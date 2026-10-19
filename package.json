@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
-    "prepare": "./scripts/install-git-hooks.sh",
+    "prepare": "node scripts/install-git-hooks.mjs",
     "build": "turbo run build",
     "test": "turbo run test",
     "format": "node scripts/ci/format-changed.mjs --write",

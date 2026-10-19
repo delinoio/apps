@@ -2,6 +2,8 @@
 
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
+The root prepare lifecycle uses `scripts/install-git-hooks.mjs` on all hosts, including Windows without a POSIX shell on PATH. It runs the pinned Lefthook Node entrypoint without shell command construction. Installation skips source archives without Git metadata and preserves failures for unrelated custom hook directories. An existing hook path can be forced only when it resolves to the repository's shared Git hooks directory, including linked worktrees.
+
 CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile and FixKey release workflows. Protocol validation includes Go vet, unit tests and consumer example build; the dedicated formatting job checks Go formatting. Real PostgreSQL integration and OCI checks belong to servers. Protocol changes require lint, format, regeneration freshness and FILE breaking checks against the comparison revision.
 
 Mobile dispatch preserves signed build-only mode and opt-in Google Play internal/TestFlight uploads. Configure the protected environment described in the application contract before use. Release workflows do not establish store acceptance until run with real accounts.
@@ -33,6 +35,8 @@ FixKey engine tests and native-adapter Clippy participate in `rust-clippy` and `
 Tags are `devbase@vMAJOR.MINOR.PATCH`, `delino-site@vMAJOR.MINOR.PATCH`, `delitools@vMAJOR.MINOR.PATCH` and the existing updater-compatible `fixkey-vMAJOR.MINOR.PATCH`. A GitHub App installation for this repository supplies `DELINO_RELEASE_BOT_CLIENT_ID` as an Actions variable and `DELINO_RELEASE_BOT_PRIVATE_KEY` as a secret. It requires contents write access and repository rules that permit its release commits and tag creation. The app token allows tag pushes to start the owning workflows; the default Actions token does not trigger that follow-up automation. Checkout temporarily retains the app credential for the atomic push and removes it during post-job cleanup. No registry package publication is part of this apps release procedure.
 
 DeliDev has no release entry because its owning desktop contract removes distribution automation. Delcore exposes protocols and consumer examples without an apps-owned server runtime; this workflow does not deploy a server.
+
+Native release preparation accepts LF and CRLF manifests and lockfiles. It preserves each file's existing line endings and changes only the selected package's version fields; mismatched versions and registry-sourced lock entries remain invalid.
 
 ## Web publication
 

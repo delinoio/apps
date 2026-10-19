@@ -60,11 +60,13 @@ for (const project of Object.values(Project)) {
       );
       const entry = project === Project.Fixkey ? "fixkey" : "delitools-shell";
       assert.equal(
-        plan.changes["Cargo.lock"].replace(
-          `name = "${entry}"\nversion = "${plan.version}"`,
-          `name = "${entry}"\nversion = "${plan.previous}"`,
-        ),
-        read("Cargo.lock"),
+        plan.changes["Cargo.lock"]
+          .replaceAll("\r\n", "\n")
+          .replace(
+            `name = "${entry}"\nversion = "${plan.version}"`,
+            `name = "${entry}"\nversion = "${plan.previous}"`,
+          ),
+        read("Cargo.lock").replaceAll("\r\n", "\n"),
       );
       assert.throws(
         () =>
@@ -81,6 +83,47 @@ for (const project of Object.values(Project)) {
     }
     assert.equal(plan.tag, releaseTag(project, plan.version));
   });
+}
+
+for (const project of [Project.Delitools, Project.Fixkey]) {
+  for (const [label, newline] of [
+    ["LF", "\n"],
+    ["CRLF", "\r\n"],
+  ]) {
+    test(`${project} release preparation preserves ${label} line endings`, () => {
+      const sources = (file) =>
+        read(file).replaceAll("\r\n", "\n").replaceAll("\n", newline);
+      const plan = versionChanges(project, Bump.Patch, sources);
+      const native = project === Project.Fixkey ? "fixkey" : "delitools-shell";
+      assert.equal(
+        plan.changes["Cargo.lock"],
+        sources("Cargo.lock").replace(
+          `name = "${native}"${newline}version = "${plan.previous}"`,
+          `name = "${native}"${newline}version = "${plan.version}"`,
+        ),
+      );
+      const manifest = `apps/${project}/src-tauri/Cargo.toml`;
+      assert.equal(
+        plan.changes[manifest],
+        sources(manifest).replace(
+          `version = "${plan.previous}"`,
+          `version = "${plan.version}"`,
+        ),
+      );
+      assert.throws(
+        () =>
+          versionChanges(project, Bump.Patch, (file) =>
+            file === "Cargo.lock"
+              ? sources(file).replace(
+                  `name = "${native}"${newline}version = "${plan.previous}"`,
+                  `name = "${native}"${newline}version = "9.9.9"`,
+                )
+              : sources(file),
+          ),
+        /Workspace lock version mismatch/u,
+      );
+    });
+  }
 }
 
 function fixture(t) {

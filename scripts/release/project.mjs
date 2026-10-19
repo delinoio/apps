@@ -85,11 +85,12 @@ export function versionChanges(project, bump, read) {
     const file = `apps/${project}/src-tauri/Cargo.toml`;
     const content = read(file);
     const section = content.match(
-      /^\[package\]\n[\s\S]*?(?=^\[|$(?![\s\S]))/mu,
+      /^\[package\]\r?\n[\s\S]*?(?=^\[|$(?![\s\S]))/mu,
     )?.[0];
+    const normalizedSection = section?.replaceAll("\r\n", "\n");
     requireValue(
-      section?.includes(`name = "${native}"\n`) &&
-        section.includes(`version = "${previous}"\n`),
+      normalizedSection?.includes(`name = "${native}"\n`) &&
+        normalizedSection.includes(`version = "${previous}"\n`),
       "Native package version mismatch",
     );
     changes[file] = content.replace(
@@ -98,12 +99,16 @@ export function versionChanges(project, bump, read) {
     );
     const lock = read("Cargo.lock");
     const entries = [
-      ...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu),
-    ].filter(([entry]) => entry.includes(`\nname = "${native}"\n`));
+      ...lock.matchAll(/^\[\[package\]\]\r?\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu),
+    ].filter(([entry]) =>
+      entry.replaceAll("\r\n", "\n").includes(`\nname = "${native}"\n`),
+    );
     requireValue(
       entries.length === 1 &&
         !/^source = /mu.test(entries[0][0]) &&
-        entries[0][0].includes(`version = "${previous}"\n`),
+        entries[0][0]
+          .replaceAll("\r\n", "\n")
+          .includes(`version = "${previous}"\n`),
       "Workspace lock version mismatch",
     );
     requireValue(

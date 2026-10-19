@@ -138,6 +138,61 @@ test("missing platforms, signatures and ambiguous bundles fail closed", (t) => {
 });
 test("source versions stay synchronized", () =>
   validateSource(path.resolve(import.meta.dirname, "../.."), "0.0.1"));
+for (const [label, newline] of [
+  ["LF", "\n"],
+  ["CRLF", "\r\n"],
+]) {
+  test(
+    "source validation accepts " +
+      label +
+      " and still rejects version mismatches",
+    (t) => {
+      const dir = fixture(t);
+      const native = path.join(dir, "apps/fixkey/src-tauri");
+      mkdirSync(native, { recursive: true });
+      writeFileSync(
+        path.join(dir, "apps/fixkey/package.json"),
+        JSON.stringify({ version: "0.0.1" }),
+      );
+      writeFileSync(
+        path.join(native, "tauri.conf.json"),
+        JSON.stringify({ version: "0.0.1" }),
+      );
+      writeFileSync(
+        path.join(native, "Cargo.toml"),
+        ["[package]", 'name = "fixkey"', 'version = "0.0.1"', ""].join(newline),
+      );
+      const lock = path.join(dir, "Cargo.lock");
+      writeFileSync(
+        lock,
+        ["[[package]]", 'name = "fixkey"', 'version = "0.0.1"', ""].join(
+          newline,
+        ),
+      );
+      assert.doesNotThrow(() => validateSource(dir, "0.0.1"));
+      writeFileSync(
+        lock,
+        ["[[package]]", 'name = "fixkey"', 'version = "0.0.2"', ""].join(
+          newline,
+        ),
+      );
+      assert.throws(
+        () => validateSource(dir, "0.0.1"),
+        /fixkey-lock-version-mismatch/u,
+      );
+      writeFileSync(
+        lock,
+        ["[[package]]", 'name = "fixkey-core"', 'version = "0.0.1"', ""].join(
+          newline,
+        ),
+      );
+      assert.throws(
+        () => validateSource(dir, "0.0.1"),
+        /fixkey-lock-version-mismatch/u,
+      );
+    },
+  );
+}
 test("release signing and publication stay behind explicit main and native-acceptance gates", () => {
   const workflow = yaml.load(
     readFileSync(

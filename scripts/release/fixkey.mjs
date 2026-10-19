@@ -67,7 +67,10 @@ export function validateSource(directory, selected) {
     manifest.match(/^version = "([^"]+)"$/mu)?.[1] === selected,
     "fixkey-source-version-mismatch",
   );
-  const lock = readFileSync(path.join(directory, "Cargo.lock"), "utf8");
+  const lock = readFileSync(
+    path.join(directory, "Cargo.lock"),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
   requireValue(
     lock.includes(`name = "fixkey"\nversion = "${selected}"`),
     "fixkey-lock-version-mismatch",
