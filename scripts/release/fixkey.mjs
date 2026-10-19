@@ -220,7 +220,7 @@ export function metadata(
         path.join(directory, `${spec.payload}.sig`),
         "utf8",
       ).trim(),
-      url: `https://github.com/delinoio/apps/releases/download/fixkey-v${selected}/${spec.payload}`,
+      url: `https://github.com/delinoio/apps/releases/download/fixkey@v${selected}/${spec.payload}`,
     };
   }
   const manifest = {

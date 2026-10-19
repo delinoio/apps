@@ -236,7 +236,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="fixkey-v$RELEASE_VERSION"
+          tag="fixkey@v$RELEASE_VERSION"
           git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
           test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
           # Existing releases, including interrupted drafts, require explicit

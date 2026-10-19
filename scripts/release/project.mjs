@@ -48,10 +48,7 @@ export function bumpVersion(version, bump) {
 export function releaseTag(project, version) {
   requireProject(project);
   requireValue(stable.test(version), "Invalid release version");
-  // FixKey's updater already consumes this tag namespace. Keep it stable.
-  return project === Project.Fixkey
-    ? `fixkey-v${version}`
-    : `${project}@v${version}`;
+  return `${project}@v${version}`;
 }
 export function versionChanges(project, bump, read) {
   requireProject(project);

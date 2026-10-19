@@ -84,7 +84,7 @@ test("metadata binds every platform to the exact source, key and payload hashes"
   ]);
   assert.match(
     result.platforms["darwin-aarch64"].url,
-    /^https:\/\/github\.com\/delinoio\/apps\/releases\/download\/fixkey-v0\.0\.1\/FixKey-macos-arm64.app.tar.gz$/u,
+    /^https:\/\/github\.com\/delinoio\/apps\/releases\/download\/fixkey@v0\.0\.1\/FixKey-macos-arm64.app.tar.gz$/u,
   );
   assert.match(
     readFileSync(path.join(out, "SHA256SUMS"), "utf8"),

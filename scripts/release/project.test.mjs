@@ -79,7 +79,8 @@ for (const project of Object.values(Project)) {
         /versions disagree/u,
       );
     }
-    assert.equal(plan.tag, releaseTag(project, plan.version));
+    assert.equal(plan.tag, `${project}@v${plan.version}`);
+    assert.equal(releaseTag(project, plan.version), plan.tag);
   });
 }
 
