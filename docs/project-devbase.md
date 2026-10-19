@@ -11,6 +11,7 @@ Provide a console for managing the API services that belong to DevBase.
 ## Domain Ownership Map
 
 - `apps/devbase`: independently built web application served at `https://devbase.delino.io`.
+- `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 

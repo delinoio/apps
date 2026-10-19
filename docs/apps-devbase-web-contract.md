@@ -38,6 +38,8 @@ Run `pnpm test` in this directory for TypeScript checks and a production build. 
 
 Cloudflare Pages builds the `devbase` workspace from the repository root with `pnpm --filter devbase build` and publishes `apps/devbase/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
+Production publication uses `.github/workflows/release-devbase.yml` after `release-project.yml` commits and tags the selected version. The owning `devbase-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
+
 ## Dependencies and Integrations
 
 Use the repository-pinned React, Rsbuild and TypeScript versions. Delcore owns billing for the separate DevBase API services; no live integration is part of the scaffold.

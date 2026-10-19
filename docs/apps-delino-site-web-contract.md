@@ -38,6 +38,8 @@ Run `pnpm test` in this directory for TypeScript checks and a production build. 
 
 Cloudflare Pages builds the `delino-site` workspace from the repository root with `pnpm --filter delino-site build` and publishes `apps/delino-site/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
+Production publication uses `.github/workflows/release-delino-site.yml` after `release-project.yml` commits and tags the selected version. The owning `delino-site-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
+
 ## Dependencies and Integrations
 
 Use the repository-pinned React, Rsbuild and TypeScript versions. The marketing site is independent of application runtime and billing services.

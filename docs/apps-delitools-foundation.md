@@ -20,6 +20,8 @@ The title is `DeliTools`; the application identifier is `io.delino.delitools`. D
 
 The shared frontend also runs as a standalone web application. Cloudflare Pages builds it from the repository root with `pnpm --filter delitools build` and publishes `apps/delitools/dist`. Include root `LICENSE` and `NOTICE` in web distributions. Domain binding and deployment require separate platform configuration. Future billable tools use server-side delcore authorization and metering; the scaffold does not implement billing or API clients.
 
+Web publication uses `.github/workflows/release-delitools.yml` and the `delitools-production` environment after shared release preparation. A DeliTools version tag deploys only the web build. Mobile distribution remains a separate main dispatch with its own build number and opt-in uploads. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
+
 ## Storage
 
 There is no product data. Native build projects under `src-tauri/gen` and frontend `dist` are ignored generated output. Desktop uses an incognito webview. Do not inspect or migrate DeliDev data.
@@ -36,7 +38,7 @@ Native hosts emit structured startup, window-ready, failure and shutdown events 
 
 ## Build and Test
 
-Run package-local `pnpm test` and root `cargo test`. Frontend validation joins affected repository CI on Ubuntu; no macOS runner is added to PR, main-push or affected manual CI. The separate main-only release dispatch builds Android arm64/armv7 AABs on Ubuntu and iOS arm64 IPAs on macOS. Its shared build number must be an integer from 1 to 9999 and increase for each store upload. This keeps the single-component iOS `CFBundleVersion` within its four-digit limit. The checked-in application version is 0.1.0. Artifacts include license notices and a revision record. Retain the CI artifacts before either store upload so a provider failure leaves the signed candidate and its validation record available for recovery. Signed build-only mode does not upload to stores; `publish` enables test-channel submission. Always remove temporary signing material and generated `dist` after validation.
+Run package-local `pnpm test` and root `cargo test`. Frontend validation joins affected repository CI on Ubuntu; no macOS runner is added to PR, main-push or affected manual CI. The separate main-only release dispatch builds Android arm64/armv7 AABs on Ubuntu and iOS arm64 IPAs on macOS. Its shared build number must be an integer from 1 to 9999 and increase for each store upload. This keeps the single-component iOS `CFBundleVersion` within its four-digit limit. The initial scaffold application version is 0.1.0. Shared release preparation increments the npm, Tauri and native package versions together; the checked-in manifests own the current version. Artifacts include license notices and a revision record. Retain the CI artifacts before either store upload so a provider failure leaves the signed candidate and its validation record available for recovery. Signed build-only mode does not upload to stores; `publish` enables test-channel submission. Always remove temporary signing material and generated `dist` after validation.
 
 Frontend builds and workflow fixtures do not establish device or store acceptance. Verify native launch, blank content, desktop resizing/exit, mobile lifecycle, signed install and account-backed upload separately. Preserve failed, skipped and unperformed checks in CI or PR evidence.
 

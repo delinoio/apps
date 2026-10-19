@@ -11,6 +11,7 @@ Provide the Delino marketing website.
 ## Domain Ownership Map
 
 - `apps/delino-site`: independently built web application served at `https://delino.io`.
+- `.github/workflows/release-delino-site.yml`: tagged Cloudflare Pages publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
