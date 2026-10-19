@@ -24,10 +24,10 @@ export function select(paths) {
       paths.some((path) =>
         /^(apps\/delitools\/|docs\/.*delitools)/u.test(path),
       ),
-    delcore:
+    protocol:
       shared ||
       paths.some((path) =>
-        /^(servers\/delcore-api\/|protos\/|docs\/.*delcore)/u.test(path),
+        /^(protos\/|examples\/|docs\/.*delcore)/u.test(path),
       ),
   };
 }

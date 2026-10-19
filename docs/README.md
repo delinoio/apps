@@ -4,6 +4,10 @@
 
 `docs/` is the source of truth for repository contracts. Each project has one project index and one or more domain contracts. Read [root instructions](../AGENTS.md) and the relevant domain instructions before implementation. This catalog owns the complete document list; root instructions link here instead of maintaining a second list.
 
+## Repository ownership
+
+See the [repository boundary contract](repository-boundary-contract.md) for server/client ownership, protocol dependency pins and companion development.
+
 ## Repository Defaults
 
 - Repository-wide default technology choices and workflow defaults are defined in [repository defaults](repository-defaults.md).
@@ -45,7 +49,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### delcore
 
 - [Project index](project-delcore.md)
-- [Service](servers-delcore-api-contract.md)
+- [Service in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
 - [Protocol](protos-delcore-v1-contract.md)
 
 ### delidev

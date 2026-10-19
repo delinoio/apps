@@ -10,7 +10,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/delinoio/delino-apps/protos/delcore/v1"
+	v1 "github.com/delinoio/apps/protos/delcore/v1"
 	http "net/http"
 	strings "strings"
 )

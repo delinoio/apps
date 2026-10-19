@@ -15,4 +15,4 @@
 
 - [project-delcore](../docs/project-delcore.md)
 - [protos-delcore-v1-contract](../docs/protos-delcore-v1-contract.md)
-- [servers-delcore-api-contract](../docs/servers-delcore-api-contract.md)
+- [servers-delcore-api-contract](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)

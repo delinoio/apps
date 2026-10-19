@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-// Command sample-client demonstrates authenticated tenant discovery without an SDK package.
+// Command delcore-client demonstrates authenticated tenant discovery without an SDK package.
 package main
 
 import (
@@ -7,8 +7,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	pb "github.com/delinoio/delino-apps/protos/delcore/v1"
-	"github.com/delinoio/delino-apps/protos/delcore/v1/delcorev1connect"
+	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"github.com/delinoio/apps/protos/delcore/v1/delcorev1connect"
 	"net/http"
 	"os"
 	"time"

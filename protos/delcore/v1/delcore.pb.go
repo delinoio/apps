@@ -5897,7 +5897,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x10SetTenantBlocked\x12#.delcore.v1.SetTenantBlockedRequest\x1a$.delcore.v1.SetTenantBlockedResponse\x12E\n" +
 	"\bListJobs\x12\x1b.delcore.v1.ListJobsRequest\x1a\x1c.delcore.v1.ListJobsResponse\x12E\n" +
 	"\bRetryJob\x12\x1b.delcore.v1.RetryJobRequest\x1a\x1c.delcore.v1.RetryJobResponse\x12H\n" +
-	"\tListAudit\x12\x1c.delcore.v1.ListAuditRequest\x1a\x1d.delcore.v1.ListAuditResponseB=Z;github.com/delinoio/delino-apps/protos/delcore/v1;delcorev1b\x06proto3"
+	"\tListAudit\x12\x1c.delcore.v1.ListAuditRequest\x1a\x1d.delcore.v1.ListAuditResponseB6Z4github.com/delinoio/apps/protos/delcore/v1;delcorev1b\x06proto3"
 
 var (
 	file_delcore_v1_delcore_proto_rawDescOnce sync.Once

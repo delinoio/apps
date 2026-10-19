@@ -38,10 +38,11 @@ try {
       [
         "github.com/delinoio/oss/protos/gen/go/delcore/v1;delcorev1",
         "github.com/delinoio/delino-apps/protos/gen/go/delcore/v1;delcorev1",
+        "github.com/delinoio/delino-apps/protos/delcore/v1;delcorev1",
       ].includes(file.options?.goPackage)
     ) {
       file.options.goPackage =
-        "github.com/delinoio/delino-apps/protos/delcore/v1;delcorev1";
+        "github.com/delinoio/apps/protos/delcore/v1;delcorev1";
     }
   }
   writeFileSync(projected, JSON.stringify(baseline));

@@ -4,7 +4,7 @@ package delcore.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/delinoio/delino-apps/protos/delcore/v1;delcorev1";
+option go_package = "github.com/delinoio/apps/protos/delcore/v1;delcorev1";
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_OWNER = 1;

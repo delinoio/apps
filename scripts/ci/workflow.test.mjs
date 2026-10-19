@@ -29,7 +29,7 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delino-site-frontend", "delino_site"],
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
-    ["delcore-api", "delcore"],
+    ["protocol", "protocol"],
   ]) {
     assert.equal(
       workflow.jobs[id].if,
@@ -62,7 +62,7 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delidev-frontend",
     "delitools-frontend",
     "rust-checks",
-    "delcore-api",
+    "protocol",
   ]) {
     const steps = workflow.jobs[id].steps;
     assert.equal(
@@ -98,7 +98,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_site: "true",
     delidev: "true",
     delitools: "true",
-    delcore: "true",
+    protocol: "true",
   };
   assert.equal(run(needs).status, 0);
   for (const id of Object.keys(needs)) {
@@ -113,7 +113,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_site: "false",
     delidev: "false",
     delitools: "false",
-    delcore: "true",
+    protocol: "true",
   };
   for (const id of [
     "devbase-frontend",

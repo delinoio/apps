@@ -2,11 +2,11 @@
 
 ## Scope
 
-Schemas and generated Go messages live together in `protos/delcore/v1`. Connect-Go bindings live in its `delcorev1connect` subdirectory.
+This contract belongs to `delinoio/apps`. Schemas and generated Go messages live together in `protos/delcore/v1`. Connect-Go bindings live in its `delcorev1connect` subdirectory.
 
 ## Runtime and Language
 
-Protobuf package `delcore.v1`; generated Go clients and handlers use the root module. There is no separate SDK package or UI.
+Protobuf package `delcore.v1`; generated Go clients and handlers use the root `github.com/delinoio/apps` module, consumed by `delinoio/servers` at a pinned commit. There is no separate SDK package or UI.
 
 ## Users and Operators
 
@@ -40,7 +40,7 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. Add Connect contract tests and a Go sample client against real PostgreSQL and mocked external services. Do not generate a TypeScript SDK.
+Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to servers. Do not generate a TypeScript SDK.
 
 ## Dependencies and Integrations
 
@@ -48,9 +48,9 @@ Connect-Go and Protobuf use the root pinned versions. Add delcore to the existin
 
 ## Change Triggers
 
-Update the [server contract](servers-delcore-api-contract.md) and [project index](project-delcore.md) when public interfaces change. Preserve field numbers and enum values.
+Update the [server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md) and [project index](project-delcore.md) when public interfaces change. Preserve field numbers and enum values.
 
 ## References
 
 - [Repository defaults](repository-defaults.md)
-- [Server contract](servers-delcore-api-contract.md)
+- [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)

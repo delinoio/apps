@@ -10,24 +10,6 @@
     },
     "test": {
       "cache": false
-    },
-    "ci:format": {
-      "cache": false
-    },
-    "ci:vet": {
-      "cache": false
-    },
-    "ci:build": {
-      "cache": false
-    },
-    "ci:unit": {
-      "cache": false
-    },
-    "ci:integration": {
-      "cache": false
-    },
-    "ci:oci": {
-      "cache": false
     }
   }
 }

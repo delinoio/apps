@@ -1,5 +1,5 @@
 # Delino Apps
 
-Delcore shared service, DeliDev desktop shell, and DeliTools desktop/mobile shell.
+DevBase, Delino website, DeliDev and DeliTools clients, shared protobuf schemas, generated Go bindings and consumer examples.
 
-See [the documentation catalog](docs/README.md) for contracts and development commands.
+Server implementations are maintained in [Delino Servers](https://github.com/delinoio/servers).

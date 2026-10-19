@@ -8,21 +8,21 @@ test("isolated projects select only their validation", () => {
     delino_site: false,
     delidev: false,
     delitools: true,
-    delcore: false,
+    protocol: false,
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
     devbase: false,
     delino_site: false,
     delidev: false,
     delitools: false,
-    delcore: true,
+    protocol: true,
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
     devbase: true,
     delino_site: true,
     delidev: true,
     delitools: true,
-    delcore: true,
+    protocol: true,
   });
 });
 
@@ -41,7 +41,7 @@ for (const [project, key] of [
         delino_site: key === "delino_site",
         delidev: false,
         delitools: false,
-        delcore: false,
+        protocol: false,
       });
     }
   });

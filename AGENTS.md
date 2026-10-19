@@ -41,6 +41,13 @@
 - Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
+## Repository ownership and companion development
+
+- `https://github.com/delinoio/servers` owns server implementations, migrations and OCI packaging. `https://github.com/delinoio/apps` owns all clients, native shells, protobuf schemas, generated Go bindings and consumer examples.
+- Read `docs/repository-boundary-contract.md` before changing a boundary. Keep code and its owning project/domain contracts in the owning repository. Do not copy client or protocol source into servers, or server source into apps.
+- A server task that explicitly requires client or protocol changes includes work in the separate apps checkout. Read that checkout's root and scoped `AGENTS.md` before editing. Keep commits, validation and review records separate for each repository.
+- Server implementations and server validation belong to the separate servers checkout. The apps Go module exposes protocols and consumer examples; it does not contain a server runtime.
+
 ## Monorepo Structure Map
 
 - `docs/`: Source of truth for project contracts and repository documentation.
@@ -48,10 +55,10 @@
 - `apps/delino-site`: Delino web application.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
-- `servers/delcore-api`: Delcore service, migrations, sample client and OCI packaging.
 - `protos/delcore/v1`: Delcore schemas, generated Go messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
+- `examples/delcore-client`: Go consumer example.
 - `.github/`: CI actions and workflows, including mobile release automation.
 
 ## Canonical Directory Map
