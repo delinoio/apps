@@ -199,8 +199,25 @@ test("tagged releases validate main ancestry before native acceptance, signing a
     workflow.jobs.publish.steps.at(-1).run,
     /tag="fixkey@v\$RELEASE_VERSION"/u,
   );
-  assert.equal(workflow.jobs.build.environment, "fixkey-signing");
-  assert.equal(workflow.jobs.publish.environment, "fixkey-publish");
+  assert.equal(workflow.jobs.build.environment, "release-signing");
+  assert.equal(workflow.jobs.publish.environment, "release-publish");
+  const buildEnv = workflow.jobs.build.steps.find(
+    (step) => step.name === "Build installers and signed updater payloads",
+  ).env;
+  for (const name of [
+    "APPLE_CERTIFICATE",
+    "APPLE_CERTIFICATE_PASSWORD",
+    "APPLE_SIGNING_IDENTITY",
+    "APPLE_ID",
+    "APPLE_PASSWORD",
+    "APPLE_TEAM_ID",
+  ]) {
+    assert.ok(buildEnv[name].includes(`secrets.${name}`));
+  }
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /FIXKEY_APPLE_|fixkey-signing|fixkey-publish/u,
+  );
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
   assert.match(
     workflow.jobs.prepare.steps.map((step) => step.run ?? "").join("\n"),
