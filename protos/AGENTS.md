@@ -8,6 +8,7 @@
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
+- External contributors use apps-local contracts and checks. Maintainers with servers access handle private contract updates and server integration validation under the [repository boundary contract](../docs/repository-boundary-contract.md).
 - Write schemas and comments in English.
 - Keep generated Go code beside its owning schemas as defined in the protocol contract. Generation must preserve schema and instruction files.
 
@@ -15,4 +16,4 @@
 
 - [project-delcore](../docs/project-delcore.md)
 - [protos-delcore-v1-contract](../docs/protos-delcore-v1-contract.md)
-- [servers-delcore-api-contract](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- Private reference for maintainers with servers access; external contributors use the local protocol contract above: [servers-delcore-api-contract](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)

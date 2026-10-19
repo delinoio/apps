@@ -28,7 +28,7 @@ Negative postpaid corrections carry forward against usage charges. Operators ref
 
 ## Storage
 
-Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. See the server contract for retention boundaries.
+Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. Server retention boundaries are owned by the private server contract. Maintainers with servers access validate changes that affect retention; external contributors use the public wire requirements in this contract.
 
 ## Security
 
@@ -40,7 +40,7 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to servers. Do not generate a TypeScript SDK.
+Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to the private servers repository and are run by maintainers with access. External contributors run the apps checks and report unperformed server integration checks in their pull request. Do not generate a TypeScript SDK.
 
 ## Dependencies and Integrations
 
@@ -48,9 +48,9 @@ Connect-Go and Protobuf use the root pinned versions. Add delcore to the existin
 
 ## Change Triggers
 
-Update the [server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md) and [project index](project-delcore.md) when public interfaces change. Preserve field numbers and enum values.
+Update this protocol contract and the [project index](project-delcore.md) when public interfaces change. Describe the interface change and apps validation results in the apps pull request. Maintainers with servers access update the private server contract and validate integration before adopting the protocol revision. External contributors do not need private repository access. Preserve field numbers and enum values.
 
 ## References
 
 - [Repository defaults](repository-defaults.md)
-- [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- Private reference for maintainers with servers access: [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)

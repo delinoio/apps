@@ -6,7 +6,17 @@
 
 The Delcore protocol is `protos/delcore/v1` in apps. Its Go import path is `github.com/delinoio/apps/protos/delcore/v1`, with Connect bindings in `delcorev1connect`. Servers imports the apps Go module at an immutable commit through `go.mod` and `go.sum`. Do not vendor, duplicate or generate protocol source in servers.
 
-## Changes across repositories
+## Access and contribution boundary
+
+`delinoio/apps` is public. `delinoio/servers` is private to authorized collaborators; external apps contributors cannot read its code, contracts or validation records. A link to servers does not grant access.
+
+External contributors prepare client and protocol changes in apps using its local project and domain contracts. They run the applicable apps checks and describe public interface changes, validation results and remaining limits in their apps pull request. A servers checkout, private contract edits, server tests and private credentials are not prerequisites for submitting an apps contribution.
+
+Maintainers with servers access coordinate private contract updates, dependency adoption and server integration validation. Keep public client behavior and protocol requirements in apps so that contributors can understand and change the public interface without reading private server documents. Keep server implementation and operational details in servers. Public review records must describe interface effects and validation outcomes without copying private source, internal diagnostics, credentials or raw account data. Record private evidence in servers review or CI records.
+
+## Changes across repositories (maintainers with servers access)
+
+The following procedure requires servers access and applies to maintainers coordinating both repositories. External apps contributors use the apps workflow above.
 
 Prepare the separate apps checkout from servers with `pnpm client:setup`. The default location is `../apps`; `DELINO_APPS_DIR` overrides it. New clones start at the immutable apps commit from the server dependency pin. Create a feature branch in that checkout before committing client edits. Existing checkouts must have the expected origin and Go module. Setup does not reset branches, discard edits or pull updates. Choose the required apps branch explicitly before development.
 

@@ -6,7 +6,7 @@
 
 ## Repository ownership
 
-See the [repository boundary contract](repository-boundary-contract.md) for server/client ownership, protocol dependency pins and companion development.
+See the [repository boundary contract](repository-boundary-contract.md) for public apps/private servers ownership, external contribution requirements, protocol dependency pins and maintainer companion development.
 
 ## Repository Defaults
 
@@ -49,7 +49,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### delcore
 
 - [Project index](project-delcore.md)
-- [Service in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- Private reference for maintainers with servers access: [Service in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
 - [Protocol](protos-delcore-v1-contract.md)
 
 ### delidev

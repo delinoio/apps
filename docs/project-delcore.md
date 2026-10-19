@@ -22,7 +22,7 @@ See the [repository boundary contract](repository-boundary-contract.md) for coor
 
 ## Domain Contract Documents
 
-- [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- Private reference for maintainers with servers access: [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
 - [Protocol contract](protos-delcore-v1-contract.md)
 
 ## Cross-Domain Invariants
@@ -31,7 +31,7 @@ PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authoriz
 
 ## Change Policy
 
-Update the owning server and protocol contracts together when their boundary changes. Update instruction files only for ownership or development-rule changes. Record validation and remaining limits in PRs, issues or CI artifacts.
+When the boundary changes, contributors update the apps-local protocol contract and this project index and describe the interface change in their apps pull request. Maintainers with servers access coordinate the private server contract update and server integration validation before adopting the apps revision. External contributors do not need to read or edit private contracts. Update instruction files only for ownership or development-rule changes. Record validation and remaining limits in PRs, issues or CI artifacts.
 
 ## References
 

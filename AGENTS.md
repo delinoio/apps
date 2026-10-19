@@ -43,6 +43,8 @@
 
 ## Repository ownership and companion development
 
+- `delinoio/apps` is public. `delinoio/servers` is private to authorized collaborators. External apps contributors must be able to submit client and protocol changes using apps-local contracts and validation without servers access. Maintainers with servers access own private contract updates, dependency adoption and server integration validation. Do not require external contributors to read or edit private files, run server checks or obtain private credentials.
+
 - `https://github.com/delinoio/servers` owns server implementations, migrations and OCI packaging. `https://github.com/delinoio/apps` owns all clients, native shells, protobuf schemas, generated Go bindings and consumer examples.
 - Read `docs/repository-boundary-contract.md` before changing a boundary. Keep code and its owning project/domain contracts in the owning repository. Do not copy client or protocol source into servers, or server source into apps.
 - A server task that explicitly requires client or protocol changes includes work in the separate apps checkout. Read that checkout's root and scoped `AGENTS.md` before editing. Keep commits, validation and review records separate for each repository.
