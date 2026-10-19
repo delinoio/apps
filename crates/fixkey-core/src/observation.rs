@@ -115,6 +115,34 @@ pub fn word_at_space(keys: &[char], rendered: &str) -> Option<(Vec<char>, String
     let [crate::tokenizer::TokenOutcome::Evaluate { word, .. }] = outcomes.as_slice() else {
         return None;
     };
+    let (keys, trailing) = split_rendered_word(keys, rendered, word)?;
+    Some((keys, format!("{trailing} ")))
+}
+
+/// Classifies held punctuation before Enter/Tab using the still-matching edit.
+/// The terminator itself is excluded from the proof and replacement. A host
+/// edit, ordinary unfinished word or excluded token cannot authorize a write.
+#[must_use]
+pub fn word_before_enter_or_tab(
+    before: &FieldSnapshot,
+    current: &FieldSnapshot,
+    keys: &[char],
+) -> Option<(Vec<char>, String)> {
+    let rendered = completed_word(before, current, keys, "")?;
+    let mut tokenizer = crate::tokenizer::Tokenizer::new();
+    for character in rendered.chars() {
+        if tokenizer.feed_char(character).is_some() {
+            return None;
+        }
+    }
+    let crate::tokenizer::TokenOutcome::Evaluate { word, .. } = tokenizer.feed_enter_or_tab()?
+    else {
+        return None;
+    };
+    split_rendered_word(keys, &rendered, &word)
+}
+
+fn split_rendered_word(keys: &[char], rendered: &str, word: &str) -> Option<(Vec<char>, String)> {
     let trailing = rendered.strip_prefix(word)?;
     let sources: Vec<_> = Language::ALL
         .into_iter()
@@ -129,7 +157,7 @@ pub fn word_at_space(keys: &[char], rendered: &str) -> Option<(Vec<char>, String
     if lengths.next().is_some() {
         return None;
     }
-    Some((keys[..length].to_vec(), format!("{trailing} ")))
+    Some((keys[..length].to_vec(), trailing.into()))
 }
 
 /// Checks an unfinished key sequence so caret, selection or external text edits
@@ -176,6 +204,74 @@ mod tests {
             selection_len: 0,
             sensitivity: FieldSensitivity::Normal,
             supports_write: true,
+        }
+    }
+    #[test]
+    fn multilingual_enter_or_tab_classifies_only_proven_held_punctuation() {
+        let before = field("prefix  suffix", 7);
+        for (physical, rendered, body, boundary) in [
+            ("rPthrgo.", "계속해.", "rPthrgo", "."),
+            ("2cole.", "école.", "2cole", "."),
+            ("caf'e-", "café-", "caf'e", "-"),
+            ("ghbdtn..", "ghbdtn..", "ghbdtn", ".."),
+        ] {
+            let keys: Vec<_> = physical.chars().collect();
+            let current = field(
+                &format!("prefix {rendered} suffix"),
+                7 + rendered.chars().count(),
+            );
+            let (word_keys, actual_boundary) =
+                word_before_enter_or_tab(&before, &current, &keys).unwrap();
+            assert_eq!(word_keys.iter().collect::<String>(), body);
+            assert_eq!(actual_boundary, boundary);
+            assert!(completed_word(&before, &current, &word_keys, &actual_boundary).is_some());
+            for terminator in ['\n', '\t'] {
+                let committed = field(
+                    &format!("prefix {rendered}{terminator} suffix"),
+                    current.caret + 1,
+                );
+                assert!(word_before_enter_or_tab(&before, &committed, &keys).is_none());
+            }
+            for stale in [
+                FieldSnapshot {
+                    target: TargetId(2),
+                    ..current.clone()
+                },
+                FieldSnapshot {
+                    caret: current.caret - 1,
+                    ..current.clone()
+                },
+                FieldSnapshot {
+                    selection_len: 1,
+                    ..current.clone()
+                },
+                FieldSnapshot {
+                    sensitivity: FieldSensitivity::Protected,
+                    ..current.clone()
+                },
+                FieldSnapshot {
+                    text: "external edit".into(),
+                    ..current
+                },
+            ] {
+                assert!(word_before_enter_or_tab(&before, &stale, &keys).is_none());
+            }
+        }
+        for text in [
+            "hello",
+            "hello!",
+            "hello!world.",
+            "https://example.com.",
+            "user@example.com.",
+            "123.",
+            "helloмир.",
+        ] {
+            let current = field(&format!("prefix {text} suffix"), 7 + text.chars().count());
+            assert!(
+                word_before_enter_or_tab(&before, &current, &text.chars().collect::<Vec<_>>())
+                    .is_none(),
+                "{text}"
+            );
         }
     }
     #[test]

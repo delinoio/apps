@@ -929,6 +929,29 @@ fn process_key(
         }
         Key::Modifier => {}
         Key::Enter | Key::Tab => {
+            if runtime.preferences.current().languages().has_additional() {
+                if let Some(pending) = context.as_ref()
+                    && let Some(current) = snapshot
+                    && let Some((keys, boundary)) =
+                        fixkey_core::observation::word_before_enter_or_tab(
+                            &pending.before,
+                            current,
+                            &pending.keys,
+                        )
+                {
+                    let physical: String = keys.iter().collect();
+                    evaluate(
+                        runtime,
+                        adapter,
+                        &pending.before,
+                        current,
+                        &physical,
+                        &boundary,
+                    );
+                }
+                *context = None;
+                return;
+            }
             if let Some(pending) = context.as_mut()
                 && let Some(TokenOutcome::Evaluate { word, boundary }) =
                     pending.tokenizer.feed_enter_or_tab()
