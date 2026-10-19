@@ -29,7 +29,7 @@
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - FixKey releases must not require a native-acceptance revision variable or comparison. Keep immutable source validation, signing and protected publication gates in the owning release workflow.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
-- Run development commands from the owning app: `pnpm dev` serves its frontend and `pnpm dev:desktop` launches its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the owning application contracts; this repository has no root `pnpm dev` or public documentation app.
+- Run development commands from the owning app: `pnpm dev` serves its frontend and `pnpm dev:desktop` launches its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the owning application contracts; this repository has no root `pnpm dev`.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
@@ -56,6 +56,7 @@
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/devbase`: DevBase web application.
 - `apps/delino-site`: Delino web application.
+- `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
 - `apps/fixkey`: Standalone FixKey desktop product and native shell.
@@ -86,7 +87,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - Every structural repository change, including changes to project paths, must update the corresponding project index and relevant domain contract docs in the same change.
 - Development-procedure, directory-ownership and repository/domain development-rule updates must be written in the appropriate `AGENTS.md` in the same change.
 - Domain-level `AGENTS.md` files must route to their owning contracts and follow the instruction-update policy.
-- When user-facing documentation content changes, update the relevant public documentation pages in the same change set as needed. This repository currently has no public documentation app.
+- When user-facing documentation content changes, update the relevant public documentation pages in the same change set as needed. `apps/delino-docs` owns the public documentation app; root `docs/` retains internal contracts.
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
 ## New Project Onboarding Checklist

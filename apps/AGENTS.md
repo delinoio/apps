@@ -24,6 +24,8 @@
 - [apps-devbase-web-contract](../docs/apps-devbase-web-contract.md)
 - [project-delino-site](../docs/project-delino-site.md)
 - [apps-delino-site-web-contract](../docs/apps-delino-site-web-contract.md)
+- [project-delino-docs](../docs/project-delino-docs.md)
+- [apps-delino-docs-web-contract](../docs/apps-delino-docs-web-contract.md)
 
 - [FixKey product](../docs/project-fixkey.md)
 - [FixKey desktop](../docs/apps-fixkey-desktop-contract.md)

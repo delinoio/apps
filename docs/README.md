@@ -72,6 +72,11 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-delino-site.md)
 - [Web application](apps-delino-site-web-contract.md)
 
+### delino-docs
+
+- [Project index](project-delino-docs.md)
+- [Public documentation app](apps-delino-docs-web-contract.md)
+
 ## Repository workflow
 
 - [Workflow contract](repository-workflow-contract.md): affected CI, release gates, formatting, cache and validation evidence.

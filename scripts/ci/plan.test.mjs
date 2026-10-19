@@ -7,6 +7,7 @@ test("isolated projects select only their validation", () => {
     fixkey: false,
     devbase: false,
     delino_site: false,
+    delino_docs: false,
     delidev: false,
     delitools: true,
     protocol: false,
@@ -15,6 +16,7 @@ test("isolated projects select only their validation", () => {
     fixkey: false,
     devbase: false,
     delino_site: false,
+    delino_docs: false,
     delidev: false,
     delitools: false,
     protocol: true,
@@ -23,6 +25,7 @@ test("isolated projects select only their validation", () => {
     fixkey: true,
     devbase: true,
     delino_site: true,
+    delino_docs: true,
     delidev: true,
     delitools: true,
     protocol: true,
@@ -32,10 +35,12 @@ test("isolated projects select only their validation", () => {
 for (const [project, key] of [
   ["devbase", "devbase"],
   ["delino-site", "delino_site"],
+  ["delino-docs", "delino_docs"],
 ]) {
   test(`${project} changes select only its frontend`, () => {
     for (const path of [
       `apps/${project}/src/main.tsx`,
+      `apps/${project}/docs/services/index.md`,
       `docs/project-${project}.md`,
       `docs/apps-${project}-web-contract.md`,
     ]) {
@@ -43,6 +48,7 @@ for (const [project, key] of [
         fixkey: false,
         devbase: key === "devbase",
         delino_site: key === "delino_site",
+        delino_docs: key === "delino_docs",
         delidev: false,
         delitools: false,
         protocol: false,
@@ -56,6 +62,7 @@ test("consumer examples select protocol validation without native runners", () =
     fixkey: false,
     devbase: false,
     delino_site: false,
+    delino_docs: false,
     delidev: false,
     delitools: false,
     protocol: true,
@@ -74,6 +81,7 @@ for (const path of [
       fixkey: true,
       devbase: false,
       delino_site: false,
+      delino_docs: false,
       delidev: false,
       delitools: false,
       protocol: false,

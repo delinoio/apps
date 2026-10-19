@@ -27,6 +27,11 @@ export function select(paths) {
       paths.some((path) =>
         /^(apps\/delino-site\/|docs\/.*delino-site)/u.test(path),
       ),
+    delino_docs:
+      shared ||
+      paths.some((path) =>
+        /^(apps\/delino-docs\/|docs\/.*delino-docs)/u.test(path),
+      ),
     delidev:
       shared ||
       paths.some((path) => /^(apps\/delidev\/|docs\/.*delidev)/u.test(path)),

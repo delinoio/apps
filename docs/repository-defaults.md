@@ -41,6 +41,7 @@ enum ProjectId {
   Delcore = "delcore",
   DevBase = "devbase",
   DelinoSite = "delino-site",
+  DelinoDocs = "delino-docs",
   DeliDev = "delidev",
   DeliTools = "delitools",
   FixKey = "fixkey",
