@@ -26,7 +26,7 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 
 - Component identifiers remain stable: `core`, `desktop`.
 - Supported language identifiers remain stable: `ko-dubeolsik`, `en-us-qwerty`.
-- Target platform identifiers remain stable: `macos-arm64`, `windows-x64`, `linux-x11-x64`.
+- Target platform identifiers remain stable: `macos-arm64`, `windows-x64`, `windows-arm64`, `linux-x11-x64`, `linux-x11-arm64`.
 - Raw input handling and morphology processing stay in Rust. The React UI never receives input text except candidate text shown in the manual picker for the active context.
 - Input text, reconstructed candidates, document content, window titles and correction history are never persisted or transmitted. Network communication is limited to application update checks and downloads.
 - Target platforms are not verified application compatibility. Documentation and release notes must keep the two distinct, and must not claim real-user accuracy or application compatibility from fixtures, mocks or builds.

@@ -342,6 +342,22 @@ describe("settings desktop contract", () => {
     await screen.findByText("Correction is inactive");
     expect(screen.queryByText("Waiting for an editable text field")).toBeNull();
   });
+  it.each(["windows-x64", "windows-arm64"])(
+    "shows Windows permission guidance on %s",
+    async (platform) => {
+      const { api } = fixture({
+        platform,
+        status: "permission-missing",
+        active: false,
+      });
+      mount(api);
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByText(/Use FixKey in your current Windows session/),
+      ).toBeTruthy();
+      expect(within(dialog).queryByText(/Use an X11 session/)).toBeNull();
+    },
+  );
   it("shows platform permission instructions and dismisses the dialog with Esc", async () => {
     const { api } = fixture({ status: "permission-missing", active: false });
     mount(api);

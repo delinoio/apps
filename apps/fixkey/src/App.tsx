@@ -151,7 +151,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const permissionInstruction =
     data.platform === "macos-arm64"
       ? t.macPermission
-      : data.platform === "windows-x64"
+      : data.platform === "windows-x64" || data.platform === "windows-arm64"
         ? t.windowsPermission
         : t.linuxPermission;
   const row = (label: string, control: ReactNode) => (

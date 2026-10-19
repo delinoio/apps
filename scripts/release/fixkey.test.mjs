@@ -125,7 +125,9 @@ test("metadata binds every platform to the exact source, key and payload hashes"
   const result = metadata(out, "0.0.1", revision, key);
   assert.deepEqual(Object.keys(result.platforms).sort(), [
     "darwin-aarch64",
+    "linux-aarch64",
     "linux-x86_64",
+    "windows-aarch64",
     "windows-x86_64",
   ]);
   assert.match(
@@ -149,6 +151,65 @@ test("metadata binds every platform to the exact source, key and payload hashes"
     () => metadata(out, "0.0.1", revision, key),
     /checksum-mismatch/u,
   );
+});
+test("ARM64 updater payloads remain separate from x64 payloads", (t) => {
+  const out = bundles(t);
+  const result = metadata(out, "0.0.1", revision, key);
+  for (const [target, payload] of [
+    ["windows-aarch64", "FixKey-windows-arm64.exe"],
+    ["linux-aarch64", "FixKey-linux-x11-arm64.AppImage"],
+  ]) {
+    assert.equal(
+      result.platforms[target].url,
+      `https://github.com/delinoio/apps/releases/download/fixkey@v0.0.1/${payload}`,
+    );
+    assert.ok(
+      readFileSync(path.join(out, "SHA256SUMS"), "utf8").includes(
+        `  ${payload}\n`,
+      ),
+    );
+  }
+  for (const platform of ["windows-arm64", "linux-x11-arm64"]) {
+    const record = path.join(out, `${platform}.json`);
+    const bytes = readFileSync(record);
+    rmSync(record);
+    assert.throws(() => metadata(out, "0.0.1", revision, key), /ENOENT/u);
+    writeFileSync(record, bytes);
+  }
+});
+test("ARM64 release jobs use native hosts and the pinned CLI", () => {
+  const workflow = yaml.load(
+    readFileSync(
+      new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+  const lock = JSON.parse(
+    readFileSync(
+      new URL("../../prebuilt-dependencies.lock.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const rows = workflow.jobs.build.strategy.matrix.include;
+  assert.deepEqual(
+    rows.map((row) => row.platform).sort(),
+    Object.keys(platforms).sort(),
+  );
+  for (const [platform, os, target, bundles] of [
+    ["windows-arm64", "windows-11-arm", "aarch64-pc-windows-msvc", "nsis"],
+    [
+      "linux-x11-arm64",
+      "ubuntu-22.04-arm",
+      "aarch64-unknown-linux-gnu",
+      "appimage",
+    ],
+  ]) {
+    assert.deepEqual(
+      rows.find((row) => row.platform === platform),
+      { platform, os, target, bundles },
+    );
+    assert.equal(lock.dependencies["tauri-cli"].assets[target].arch, "arm64");
+  }
 });
 test("missing platforms, signatures and ambiguous bundles fail closed", (t) => {
   const dir = fixture(t);

@@ -6,7 +6,7 @@ Owns the `crates/fixkey-core` crate (component `core`): layout reconstruction, l
 
 ## Runtime and Language
 
-Rust. Platform accessibility adapters sit behind traits so the engine runs against mocks in tests. Target platforms: `macos-arm64`, `windows-x64`, `linux-x11-x64`. Minimum OS requirements are derived from the pinned dependencies and documented when dependencies are pinned. Actual platform and application compatibility is unverified.
+Rust. Platform accessibility adapters sit behind traits so the engine runs against mocks in tests. Target platforms: `macos-arm64`, `windows-x64`, `windows-arm64`, `linux-x11-x64`, `linux-x11-arm64`. Minimum OS requirements are derived from the pinned dependencies and documented when dependencies are pinned. Actual platform and application compatibility is unverified.
 
 ## Users and Operators
 

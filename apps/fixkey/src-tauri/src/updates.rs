@@ -442,7 +442,9 @@ pub mod desktop {
         let payload = match crate::diagnostics::platform() {
             "macos-arm64" => "FixKey-macos-arm64.app.tar.gz",
             "windows-x64" => "FixKey-windows-x64.exe",
+            "windows-arm64" => "FixKey-windows-arm64.exe",
             "linux-x11-x64" => "FixKey-linux-x11-x64.AppImage",
+            "linux-x11-arm64" => "FixKey-linux-x11-arm64.AppImage",
             _ => return Err("update-platform-unsupported"),
         };
         let expected = format!(

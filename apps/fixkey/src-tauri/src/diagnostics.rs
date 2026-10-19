@@ -240,8 +240,12 @@ pub const fn platform() -> &'static str {
         "macos-arm64"
     } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
         "windows-x64"
+    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        "windows-arm64"
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         "linux-x11-x64"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "linux-x11-arm64"
     } else {
         "unsupported"
     }
