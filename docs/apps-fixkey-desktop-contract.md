@@ -102,6 +102,8 @@ The supported Tauri package build runs `scripts/release/fixkey-licenses.mjs` bef
 
 CI owns `fixkey-frontend` for affected UI and release-helper fixtures on Linux, and `fixkey-desktop` for affected main-push desktop tests/clippy on Linux and Windows. PRs and affected manual runs retain their existing native-job exclusions. Neither job allocates macOS runners. Native interaction and installer acceptance remain separate from these automated checks.
 
+The pinned standard license texts in `src-tauri/licenses` must retain their upstream bytes in every checkout, including Windows checkouts with `core.autocrlf=true`. Git attributes disable text conversion for those exact files. Release-helper tests check their published SHA-256 values after a Windows-style Git checkout. Do not normalize license bytes or relax the build-time checksum check.
+
 ## Dependencies and Integrations
 
 - `crates/fixkey-core` for all correction behavior.

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   mkdirSync,
@@ -27,6 +29,53 @@ function fixture(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+test("pinned standard licenses retain their checksums in Windows checkouts", (t) => {
+  const dir = fixture(t);
+  const sources = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../apps/fixkey/src-tauri/licenses/sources.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const git = (args) =>
+    execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  git(["init", "--quiet"]);
+  git(["config", "core.autocrlf", "true"]);
+  writeFileSync(
+    path.join(dir, ".gitattributes"),
+    readFileSync(new URL("../../.gitattributes", import.meta.url)),
+  );
+  const relativeDirectory = "apps/fixkey/src-tauri/licenses";
+  mkdirSync(path.join(dir, relativeDirectory), { recursive: true });
+  const files = Object.entries(sources).filter(
+    ([name]) => name !== "schemaVersion",
+  );
+  for (const [name] of files) {
+    writeFileSync(
+      path.join(dir, relativeDirectory, `${name}.txt`),
+      readFileSync(
+        new URL(`../../${relativeDirectory}/${name}.txt`, import.meta.url),
+      ),
+    );
+  }
+  git(["add", ".gitattributes", relativeDirectory]);
+  for (const [name] of files)
+    rmSync(path.join(dir, relativeDirectory, `${name}.txt`));
+  git(["checkout-index", "--all", "--force"]);
+  for (const [name, record] of files) {
+    const bytes = readFileSync(
+      path.join(dir, relativeDirectory, `${name}.txt`),
+    );
+    assert.equal(
+      createHash("sha256").update(bytes).digest("hex"),
+      record.sha256,
+      name,
+    );
+  }
+});
 function bundles(t) {
   const dir = fixture(t),
     out = path.join(dir, "assets");
