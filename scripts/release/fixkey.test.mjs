@@ -47,24 +47,20 @@ function bundles(t) {
   }
   return out;
 }
-test("updater configuration requires signature-bound versions and exact Windows signing identity", (t) => {
+test("all platforms require updater signatures without a Windows code-signing identity", (t) => {
   const dir = fixture(t),
     file = path.join(dir, "config.json");
-  configure(file, "macos-arm64", key);
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).plugins.updater, {
-    pubkey: key,
-    requireSignedVersion: true,
-    allowDowngrades: false,
-  });
-  assert.throws(
-    () => configure(file, "windows-x64", key, ""),
-    /certificate-invalid/u,
-  );
-  configure(file, "windows-x64", key, "a".repeat(40));
-  assert.equal(
-    JSON.parse(readFileSync(file, "utf8")).bundle.windows.certificateThumbprint,
-    "a".repeat(40),
-  );
+  for (const platform of Object.keys(platforms)) {
+    configure(file, platform, key);
+    const config = JSON.parse(readFileSync(file, "utf8"));
+    assert.deepEqual(config.plugins.updater, {
+      pubkey: key,
+      requireSignedVersion: true,
+      allowDowngrades: false,
+    });
+    assert.equal(config.bundle, undefined);
+    assert.throws(() => configure(file, platform, ""), /updater-key-missing/u);
+  }
   const config = JSON.parse(
     readFileSync(
       new URL("../../apps/fixkey/src-tauri/tauri.conf.json", import.meta.url),
@@ -136,8 +132,13 @@ test("missing platforms, signatures and ambiguous bundles fail closed", (t) => {
   for (const invalid of ["1.0.0-beta.1", "01.0.0", "1.0.0;touch injected"])
     assert.throws(() => version(invalid));
 });
-test("source versions stay synchronized", () =>
-  validateSource(path.resolve(import.meta.dirname, "../.."), "0.0.1"));
+test("source versions stay synchronized", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const selected = JSON.parse(
+    readFileSync(path.join(root, "apps/fixkey/package.json"), "utf8"),
+  ).version;
+  validateSource(root, selected);
+});
 test("tagged releases validate main ancestry before native acceptance, signing and publication", () => {
   const workflow = yaml.load(
     readFileSync(
@@ -204,6 +205,27 @@ test("tagged releases validate main ancestry before native acceptance, signing a
   assert.match(
     workflow.jobs.prepare.steps.map((step) => step.run ?? "").join("\n"),
     /FIXKEY_NATIVE_ACCEPTANCE_REVISION/u,
+  );
+  const steps = workflow.jobs.build.steps;
+  assert.ok(
+    steps.some(
+      (step) => step.name === "Verify macOS signature and notarization receipt",
+    ),
+  );
+  assert.ok(
+    steps.some(
+      (step) =>
+        step.name ===
+        "Verify every updater signature with the embedded release key",
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /FIXKEY_WINDOWS_|Get-AuthenticodeSignature|Import-PfxCertificate/u,
+  );
+  assert.match(
+    JSON.stringify(workflow.jobs.publish),
+    /Windows executables are not Authenticode signed/u,
   );
   assert.equal(
     workflow.jobs.build.strategy.matrix.include.find(
