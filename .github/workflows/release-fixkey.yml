@@ -105,26 +105,7 @@ jobs:
           cargo test --locked -p fixkey --features desktop --lib
           cargo clippy --locked -p fixkey-core --features native --all-targets -- -D warnings
           cargo clippy --locked -p fixkey --features desktop --all-targets -- -D warnings
-      - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
-        env:
-          FIXKEY_WINDOWS_CERTIFICATE: ${{ secrets.FIXKEY_WINDOWS_CERTIFICATE }}
-          FIXKEY_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.FIXKEY_WINDOWS_CERTIFICATE_PASSWORD }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (!$env:FIXKEY_WINDOWS_CERTIFICATE -or !$env:FIXKEY_WINDOWS_CERTIFICATE_PASSWORD) { throw 'fixkey-windows-signing-missing' }
-          $file = Join-Path $env:RUNNER_TEMP 'fixkey-signing.pfx'
-          try {
-            [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:FIXKEY_WINDOWS_CERTIFICATE))
-            $password = ConvertTo-SecureString $env:FIXKEY_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-            $certificates = @(Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\CurrentUser\My -Password $password | Where-Object HasPrivateKey)
-            if ($certificates.Count -ne 1) { throw 'fixkey-windows-signing-identity-ambiguous' }
-            $certificate = $certificates[0]
-            if (!$certificate.HasPrivateKey -or $certificate.NotAfter -lt (Get-Date)) { throw 'fixkey-windows-certificate-invalid' }
-            "FIXKEY_WINDOWS_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
-          } finally { Remove-Item -Force -ErrorAction SilentlyContinue $file }
-      - name: Build signed installers and updater payloads
+      - name: Build installers and signed updater payloads
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY_PASSWORD }}
@@ -155,17 +136,6 @@ jobs:
           set -euo pipefail
           codesign --verify --deep --strict 'target/aarch64-apple-darwin/release/bundle/macos/FixKey.app'
           xcrun stapler validate 'target/aarch64-apple-darwin/release/bundle/macos/FixKey.app'
-      - name: Verify Windows executable signatures
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $files = @((Join-Path $PWD 'target/x86_64-pc-windows-msvc/release/fixkey.exe')) + @(Get-ChildItem 'target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' | ForEach-Object FullName)
-          if ($files.Count -ne 2) { throw 'fixkey-windows-signed-inventory-invalid' }
-          foreach ($file in $files) {
-            $signature = Get-AuthenticodeSignature -FilePath $file
-            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $env:FIXKEY_WINDOWS_THUMBPRINT) { throw 'fixkey-windows-signature-invalid' }
-          }
       - name: Stage exact platform inventory
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -184,12 +154,7 @@ jobs:
           for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
             cargo run --locked -p fixkey --example verify_update -- "${signature%.sig}" "$signature"
           done
-      - name: Remove Windows signing identity
-        if: ${{ always() && runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          if ($env:FIXKEY_WINDOWS_THUMBPRINT) { Remove-Item -Force -ErrorAction SilentlyContinue "Cert:\CurrentUser\My\$env:FIXKEY_WINDOWS_THUMBPRINT" }
-      - name: Preserve source-bound signed candidate
+      - name: Preserve source-bound candidate and updater signatures
         uses: actions/upload-artifact@v7
         with:
           name: fixkey-${{ matrix.platform }}
@@ -246,6 +211,6 @@ jobs:
             exit 1
           fi
           notes="$RUNNER_TEMP/fixkey-release-notes.md"
-          printf 'Signed FixKey desktop packages.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous signed package manually for recovery; local settings are preserved.\n' "$GITHUB_SHA" > "$notes"
+          printf 'FixKey desktop packages. macOS is code signed and notarized. Windows executables are not Authenticode signed; Windows may show an unknown-publisher or SmartScreen warning. Updater payloads are signed on all platforms.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous release package manually for recovery; local settings are preserved.\n' "$GITHUB_SHA" > "$notes"
           gh release create "$tag" "$RUNNER_TEMP/fixkey-assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$GITHUB_SHA" --title "FixKey $RELEASE_VERSION" --notes-file "$notes" --draft
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false

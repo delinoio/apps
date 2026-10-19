@@ -80,7 +80,7 @@ function files(directory) {
     return entry.isDirectory() ? files(file) : [file];
   });
 }
-export function configure(output, platform, publicKey, thumbprint) {
+export function configure(output, platform, publicKey) {
   requireValue(platforms[platform], "fixkey-platform-invalid");
   requireValue(publicKey?.trim(), "fixkey-updater-key-missing");
   const config = {
@@ -92,19 +92,6 @@ export function configure(output, platform, publicKey, thumbprint) {
       },
     },
   };
-  if (platform === "windows-x64") {
-    requireValue(
-      /^[a-f0-9]{40}$/iu.test(thumbprint ?? ""),
-      "fixkey-windows-certificate-invalid",
-    );
-    config.bundle = {
-      windows: {
-        certificateThumbprint: thumbprint,
-        digestAlgorithm: "sha256",
-        timestampUrl: "http://timestamp.digicert.com",
-      },
-    };
-  }
   writeFileSync(output, JSON.stringify(config, null, 2) + "\n");
 }
 export function stage(bundle, output, platform, selected, revision, publicKey) {
@@ -250,11 +237,7 @@ if (
   const [command, ...args] = process.argv.slice(2);
   try {
     if (command === "configure")
-      configure(
-        ...args,
-        process.env.FIXKEY_UPDATER_PUBLIC_KEY,
-        process.env.FIXKEY_WINDOWS_THUMBPRINT,
-      );
+      configure(...args, process.env.FIXKEY_UPDATER_PUBLIC_KEY);
     else if (command === "source") validateSource(root, args[0]);
     else if (command === "stage")
       stage(...args, process.env.FIXKEY_UPDATER_PUBLIC_KEY);
