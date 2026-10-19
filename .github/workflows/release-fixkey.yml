@@ -1,10 +1,13 @@
 name: Release FixKey
+run-name: Release fixkey (${{ github.event_name == 'push' && github.ref_name || inputs.tag }})
 
 on:
+  push:
+    tags: ["fixkey@v*"]
   workflow_dispatch:
     inputs:
-      version:
-        description: Exact stable version already committed in the FixKey manifests
+      tag:
+        description: Existing immutable fixkey@vMAJOR.MINOR.PATCH tag
         required: true
         type: string
 
@@ -14,18 +17,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    if: github.repository == 'delinoio/apps' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Verify the immutable tagged source belongs to main
+        id: source
+        env:
+          RELEASE_PROJECT: fixkey
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: node "scripts/release/project.mjs" validate-source
+
   prepare:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: source
     runs-on: ubuntu-latest
     environment: fixkey-signing
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.source.outputs.version }}
+      version: ${{ needs.source.outputs.version }}
+      revision: ${{ needs.source.outputs.revision }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.source.outputs.revision }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -34,16 +64,16 @@ jobs:
       - name: Require reviewed native acceptance for this exact source
         id: source
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+          RELEASE_REVISION: ${{ needs.source.outputs.revision }}
           FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
           FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$GITHUB_SHA"
+          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$RELEASE_REVISION"
           test -n "$FIXKEY_UPDATER_PUBLIC_KEY"
           node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
-          printf 'version=%s\n' "$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -68,11 +98,12 @@ jobs:
             bundles: appimage
     runs-on: ${{ matrix.os }}
     env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
       FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.prepare.outputs.revision }}
           lfs: true
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
@@ -174,7 +205,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release/fixkey.mjs stage "target/$FIXKEY_TARGET/release/bundle" "$RUNNER_TEMP/fixkey-assets" "$FIXKEY_PLATFORM" "$RELEASE_VERSION" "$GITHUB_SHA"
+          node scripts/release/fixkey.mjs stage "target/$FIXKEY_TARGET/release/bundle" "$RUNNER_TEMP/fixkey-assets" "$FIXKEY_PLATFORM" "$RELEASE_VERSION" "$RELEASE_REVISION"
       - name: Verify every updater signature with the embedded release key
         env:
           FIXKEY_PLATFORM: ${{ matrix.platform }}
@@ -204,6 +235,7 @@ jobs:
     permissions:
       contents: write
     env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
       FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
       FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
@@ -211,7 +243,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
       - name: Install locked signature verifier dependencies
@@ -225,20 +257,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$GITHUB_SHA"
+          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$RELEASE_REVISION"
           node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
           rustup show active-toolchain
           for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
             cargo run --locked -p fixkey --example verify_update -- "${signature%.sig}" "$signature"
           done
-          node scripts/release/fixkey.mjs metadata "$RUNNER_TEMP/fixkey-assets" "$RELEASE_VERSION" "$GITHUB_SHA"
+          node scripts/release/fixkey.mjs metadata "$RUNNER_TEMP/fixkey-assets" "$RELEASE_VERSION" "$RELEASE_REVISION"
       - name: Publish only an exact immutable tag
         shell: bash
         run: |
           set -euo pipefail
           tag="fixkey@v$RELEASE_VERSION"
           git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
-          test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
+          test "$(git rev-parse "$tag^{commit}")" = "$RELEASE_REVISION"
           # Existing releases, including interrupted drafts, require explicit
           # operator recovery. Never replace or overwrite published assets.
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
@@ -246,6 +278,6 @@ jobs:
             exit 1
           fi
           notes="$RUNNER_TEMP/fixkey-release-notes.md"
-          printf 'Signed FixKey desktop packages.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous signed package manually for recovery; local settings are preserved.\n' "$GITHUB_SHA" > "$notes"
-          gh release create "$tag" "$RUNNER_TEMP/fixkey-assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$GITHUB_SHA" --title "FixKey $RELEASE_VERSION" --notes-file "$notes" --draft
+          printf 'Signed FixKey desktop packages.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous signed package manually for recovery; local settings are preserved.\n' "$RELEASE_REVISION" > "$notes"
+          gh release create "$tag" "$RUNNER_TEMP/fixkey-assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$RELEASE_REVISION" --title "FixKey $RELEASE_VERSION" --notes-file "$notes" --draft
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false

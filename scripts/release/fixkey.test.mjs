@@ -138,15 +138,66 @@ test("missing platforms, signatures and ambiguous bundles fail closed", (t) => {
 });
 test("source versions stay synchronized", () =>
   validateSource(path.resolve(import.meta.dirname, "../.."), "0.0.1"));
-test("release signing and publication stay behind explicit main and native-acceptance gates", () => {
+test("tagged releases validate main ancestry before native acceptance, signing and publication", () => {
   const workflow = yaml.load(
     readFileSync(
       new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
       "utf8",
     ),
   );
-  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
-  assert.match(workflow.jobs.prepare.if, /refs\/heads\/main/u);
+  assert.deepEqual(workflow.on.push.tags, ["fixkey@v*"]);
+  assert.equal(workflow.on.workflow_dispatch.inputs.tag.required, true);
+  const source = workflow.jobs.source;
+  assert.match(source.if, /github.event_name == 'push'/u);
+  assert.match(source.if, /refs\/heads\/main/u);
+  assert.equal(source.environment, undefined);
+  assert.equal(source["runs-on"], "ubuntu-latest");
+  assert.equal(source.steps[0].with.ref, "main");
+  assert.equal(source.steps[0].with["fetch-depth"], 0);
+  assert.equal(source.steps.at(-1).env.RELEASE_PROJECT, "fixkey");
+  assert.equal(
+    source.steps.at(-1).env.RELEASE_TAG,
+    "${{ github.event_name == 'push' && github.ref_name || inputs.tag }}",
+  );
+  assert.match(source.steps.at(-1).run, /validate-source/u);
+  assert.equal(workflow.jobs.prepare.needs, "source");
+  assert.equal(
+    workflow.jobs.prepare.steps[0].with.ref,
+    "${{ needs.source.outputs.revision }}",
+  );
+  assert.equal(
+    workflow.jobs.prepare.outputs.revision,
+    "${{ needs.source.outputs.revision }}",
+  );
+  for (const name of ["build", "publish"]) {
+    const job = workflow.jobs[name];
+    assert.equal(
+      job.steps[0].with.ref,
+      "${{ needs.prepare.outputs.revision }}",
+    );
+    assert.equal(
+      job.env.RELEASE_REVISION,
+      "${{ needs.prepare.outputs.revision }}",
+    );
+    assert.ok(job.needs.includes("prepare"));
+    assert.doesNotMatch(
+      job.steps.map((step) => step.run ?? "").join("\n"),
+      /\$GITHUB_SHA/u,
+    );
+  }
+  const approval = workflow.jobs.prepare.steps.at(-1);
+  assert.equal(
+    approval.env.RELEASE_REVISION,
+    "${{ needs.source.outputs.revision }}",
+  );
+  assert.match(
+    approval.run,
+    /test "\$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "\$RELEASE_REVISION"/u,
+  );
+  assert.match(
+    workflow.jobs.publish.steps.at(-1).run,
+    /tag="fixkey@v\$RELEASE_VERSION"/u,
+  );
   assert.equal(workflow.jobs.build.environment, "fixkey-signing");
   assert.equal(workflow.jobs.publish.environment, "fixkey-publish");
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
