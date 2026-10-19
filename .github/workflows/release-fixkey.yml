@@ -158,7 +158,7 @@ jobs:
             test -n "$APPLE_TEAM_ID"
           fi
           node scripts/release/fixkey.mjs configure "$RUNNER_TEMP/fixkey-build.json" '${{ matrix.platform }}'
-          pnpm --filter fixkey-desktop exec tauri build --features desktop --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}' --config "$RUNNER_TEMP/fixkey-build.json"
+          bash scripts/release/fixkey-build.sh pnpm --filter fixkey-desktop exec tauri build --features desktop --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}' --config "$RUNNER_TEMP/fixkey-build.json"
       - name: Verify macOS signature and notarization receipt
         if: runner.os == 'macOS'
         shell: bash
