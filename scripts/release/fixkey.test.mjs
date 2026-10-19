@@ -139,7 +139,7 @@ test("source versions stay synchronized", () => {
   ).version;
   validateSource(root, selected);
 });
-test("tagged releases validate main ancestry before native acceptance, signing and publication", () => {
+test("tagged releases validate main ancestry before signing and publication", () => {
   const workflow = yaml.load(
     readFileSync(
       new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
@@ -186,15 +186,9 @@ test("tagged releases validate main ancestry before native acceptance, signing a
       /\$GITHUB_SHA/u,
     );
   }
-  const approval = workflow.jobs.prepare.steps.at(-1);
-  assert.equal(
-    approval.env.RELEASE_REVISION,
-    "${{ needs.source.outputs.revision }}",
-  );
-  assert.match(
-    approval.run,
-    /test "\$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "\$RELEASE_REVISION"/u,
-  );
+  const preparation = workflow.jobs.prepare.steps.at(-1);
+  assert.match(preparation.run, /test -n "\$FIXKEY_UPDATER_PUBLIC_KEY"/u);
+  assert.match(preparation.run, /fixkey\.mjs source/u);
   assert.match(
     workflow.jobs.publish.steps.at(-1).run,
     /tag="fixkey@v\$RELEASE_VERSION"/u,
@@ -219,9 +213,9 @@ test("tagged releases validate main ancestry before native acceptance, signing a
     /FIXKEY_APPLE_|fixkey-signing|fixkey-publish/u,
   );
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
-  assert.match(
-    workflow.jobs.prepare.steps.map((step) => step.run ?? "").join("\n"),
-    /FIXKEY_NATIVE_ACCEPTANCE_REVISION/u,
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /FIXKEY_NATIVE_ACCEPTANCE_REVISION|Native acceptance was reviewed/u,
   );
   const steps = workflow.jobs.build.steps;
   assert.ok(

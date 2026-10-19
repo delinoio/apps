@@ -213,7 +213,7 @@ export function metadata(
   const manifest = {
     version: selected,
     notes:
-      "Signed FixKey desktop update. Settings are preserved. See the release for native acceptance evidence and manual recovery packages.",
+      "Signed FixKey desktop update. Settings are preserved. See the release for platform validation details and manual recovery packages.",
     pub_date: date.toISOString(),
     platforms: targets,
   };

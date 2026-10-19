@@ -33,7 +33,7 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 - The project provides no public API, account service, backend, billing, synchronization or mobile application. Rust, Tauri and local storage are explicit exceptions to the repository language and storage defaults in [repository defaults](repository-defaults.md).
 - Repository-owned code is Apache-2.0. Pinned third-party dictionaries and morphology data keep their upstream licenses and notices in every distribution.
 
-Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation). It increments the desktop application's npm, Tauri and native package versions and corresponding lock entry together, uses the updater's `fixkey@v` tag namespace and leaves the engine version independent. The tag starts the owning release workflow; native acceptance and publication remain behind its protected environments.
+Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation). It increments the desktop application's npm, Tauri and native package versions and corresponding lock entry together, uses the updater's `fixkey@v` tag namespace and leaves the engine version independent. The tag starts the owning release workflow; signing and publication use its protected environments. Native acceptance is recorded separately when performed.
 
 ## Change Policy
 

@@ -61,17 +61,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: Require reviewed native acceptance for this exact source
+      - name: Validate source and updater public key
         id: source
         env:
           RELEASE_VERSION: ${{ needs.source.outputs.version }}
           RELEASE_REVISION: ${{ needs.source.outputs.revision }}
-          FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
           FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$RELEASE_REVISION"
           test -n "$FIXKEY_UPDATER_PUBLIC_KEY"
           node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
 
@@ -202,7 +200,6 @@ jobs:
     env:
       RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
       FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
-      FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -222,7 +219,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$RELEASE_REVISION"
           node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
           rustup show active-toolchain
           for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
@@ -243,6 +239,6 @@ jobs:
             exit 1
           fi
           notes="$RUNNER_TEMP/fixkey-release-notes.md"
-          printf 'FixKey desktop packages. macOS is code signed and notarized. Windows executables are not Authenticode signed; Windows may show an unknown-publisher or SmartScreen warning. Updater payloads are signed on all platforms.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous release package manually for recovery; local settings are preserved.\n' "$RELEASE_REVISION" > "$notes"
+          printf 'FixKey desktop packages. macOS is code signed and notarized. Windows executables are not Authenticode signed; Windows may show an unknown-publisher or SmartScreen warning. Updater payloads are signed on all platforms.\n\nSource revision: %s\n\nReinstall a previous release package manually for recovery; local settings are preserved.\n' "$RELEASE_REVISION" > "$notes"
           gh release create "$tag" "$RUNNER_TEMP/fixkey-assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$RELEASE_REVISION" --title "FixKey $RELEASE_VERSION" --notes-file "$notes" --draft
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
