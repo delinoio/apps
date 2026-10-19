@@ -509,10 +509,16 @@ pub(crate) fn record_error(app: &AppHandle, reason: &'static str) {
     tracing::warn!(reason, "fixkey operation failed");
     refresh_tray(app);
     if changed {
-        notify(app, reason);
+        notify(
+            app,
+            crate::notifications::Notification::OperationFailed(reason),
+        );
     }
 }
-pub(crate) fn notify(app: &AppHandle, code: &str) {
+pub(crate) fn notify(app: &AppHandle, notification: crate::notifications::Notification<'_>) {
+    let Some(code) = notification.code() else {
+        return;
+    };
     let korean = app
         .try_state::<Shared>()
         .and_then(|shared| {
@@ -524,10 +530,6 @@ pub(crate) fn notify(app: &AppHandle, code: &str) {
         })
         .unwrap_or(false);
     let message = match (korean, code) {
-        (true, "active") => "자동 교정이 활성화되었습니다.",
-        (false, "active") => "Automatic correction is active.",
-        (true, "paused") => "자동 교정을 일시 정지했습니다.",
-        (false, "paused") => "Automatic correction is paused.",
         (true, "update-available") => {
             "새 업데이트가 있습니다. 설정에서 확인하고 설치할 수 있습니다."
         }

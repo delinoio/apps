@@ -2,6 +2,32 @@
 
 use std::sync::mpsc::{self, SyncSender};
 
+#[derive(Clone, Copy)]
+pub enum Notification<'a> {
+    Status(&'a str),
+    OperationFailed(&'a str),
+    UpdateAvailable,
+}
+
+impl<'a> Notification<'a> {
+    pub(crate) fn code(&self) -> Option<&'a str> {
+        match self {
+            Self::Status(code) => match *code {
+                "permission-missing"
+                | "input-permission-missing"
+                | "dictionary-unavailable"
+                | "input-observer-unavailable"
+                | "preferences-reconciliation-required" => Some(code),
+                // Focus changes and user preferences are routine status updates.
+                // Keep them in the tray and settings without interrupting typing.
+                _ => None,
+            },
+            Self::OperationFailed(code) => Some(code),
+            Self::UpdateAvailable => Some("update-available"),
+        }
+    }
+}
+
 /// One bounded sender to the independent OS notification worker.
 pub struct Notifications {
     sender: SyncSender<String>,
@@ -33,6 +59,45 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn routine_status_transitions_do_not_send_notifications() {
+        for code in [
+            "active",
+            "unknown-field",
+            "active",
+            "protected-field",
+            "excluded-app",
+            "paused",
+            "languages-disabled",
+            "rechecking",
+            "active",
+            "unsupported-write",
+        ] {
+            assert_eq!(Notification::Status(code).code(), None, "{code}");
+        }
+    }
+
+    #[test]
+    fn actionable_problems_and_updates_keep_notifications() {
+        for code in [
+            "permission-missing",
+            "input-permission-missing",
+            "dictionary-unavailable",
+            "input-observer-unavailable",
+            "preferences-reconciliation-required",
+        ] {
+            assert_eq!(Notification::Status(code).code(), Some(code));
+        }
+        assert_eq!(
+            Notification::OperationFailed("unsupported-write").code(),
+            Some("unsupported-write")
+        );
+        assert_eq!(
+            Notification::UpdateAvailable.code(),
+            Some("update-available")
+        );
+    }
 
     #[test]
     fn blocked_delivery_does_not_block_callers_or_grow_the_queue() {

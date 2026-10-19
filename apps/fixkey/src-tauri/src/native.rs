@@ -689,11 +689,14 @@ fn snapshot_required(
 fn publish_status(app: &AppHandle, status: &'static str, changed: bool, diagnostic: Option<&str>) {
     if let Some(reason) = diagnostic {
         crate::desktop::refresh_tray(app);
-        crate::desktop::notify(app, reason);
+        crate::desktop::notify(
+            app,
+            crate::notifications::Notification::OperationFailed(reason),
+        );
     } else if changed {
         tracing::info!(reason = status, "fixkey correction status changed");
         crate::desktop::refresh_tray(app);
-        crate::desktop::notify(app, status);
+        crate::desktop::notify(app, crate::notifications::Notification::Status(status));
     }
 }
 

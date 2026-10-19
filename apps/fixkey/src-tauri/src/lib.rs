@@ -5,7 +5,7 @@ pub mod desktop;
 pub mod diagnostics;
 #[cfg(feature = "desktop")]
 mod native;
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", test))]
 mod notifications;
 pub mod preferences;
 pub mod settings;

@@ -314,7 +314,10 @@ pub mod desktop {
                 updater.candidate = Some(update);
                 if updater.announced.as_ref() != Some(&version) {
                     updater.announced = Some(version);
-                    super::super::desktop::notify(app, "update-available");
+                    super::super::desktop::notify(
+                        app,
+                        crate::notifications::Notification::UpdateAvailable,
+                    );
                 }
                 drop(updater);
                 Ok(())
