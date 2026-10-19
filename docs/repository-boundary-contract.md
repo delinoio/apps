@@ -8,7 +8,7 @@ The Delcore protocol is `protos/delcore/v1` in apps. Its Go import path is `gith
 
 ## Changes across repositories
 
-Prepare the separate apps checkout from servers with `pnpm client:setup`. The default location is `../apps`; `DELINO_APPS_DIR` overrides it. Existing checkouts must have the expected origin and Go module. Setup does not reset branches, discard edits or pull updates. Choose the required apps branch explicitly before development.
+Prepare the separate apps checkout from servers with `pnpm client:setup`. The default location is `../apps`; `DELINO_APPS_DIR` overrides it. New clones start at the immutable apps commit from the server dependency pin. Create a feature branch in that checkout before committing client edits. Existing checkouts must have the expected origin and Go module. Setup does not reset branches, discard edits or pull updates. Choose the required apps branch explicitly before development.
 
 The ignored server-local `go.work` links the servers and apps modules for local development. Setup refuses to overwrite a different existing workspace. Do not commit workspace files, absolute paths or local `replace` directives. Run app commands from the owning app and schema commands from the apps root. Follow each repository's root and scoped instructions.
 

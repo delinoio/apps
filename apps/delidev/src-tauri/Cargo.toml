@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "DeliDev desktop shell"
 edition = "2024"
 license = "FSL-1.1-ALv2"
-repository = "https://github.com/delinoio/delino-apps"
+repository = "https://github.com/delinoio/apps"
 publish = false
 default-run = "delidev-desktop"
 
