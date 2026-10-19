@@ -1,6 +1,6 @@
 # Delino Apps
 
-DevBase, Delino website, DeliDev and DeliTools clients, shared protobuf schemas, generated Go bindings and consumer examples.
+DevBase, Delino website, DeliDev, DeliTools and the standalone FixKey desktop product, shared protobuf schemas, generated Go bindings and consumer examples.
 
 This repository is public. Server implementations are maintained in [Delino Servers](https://github.com/delinoio/servers), a private repository available only to authorized collaborators.
 

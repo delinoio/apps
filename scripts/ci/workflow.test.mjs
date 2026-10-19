@@ -22,14 +22,25 @@ const workflow = yaml.load(
 
 test("ordinary CI preserves affected-only dispatch and Linux allocation", () => {
   assert.equal(workflow.on.workflow_dispatch, null);
-  for (const job of Object.values(workflow.jobs))
-    assert.equal(job["runs-on"], "ubuntu-latest");
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (id === "fixkey-desktop") {
+      assert.deepEqual(job.strategy.matrix.os, [
+        "ubuntu-latest",
+        "windows-2022",
+      ]);
+      assert.equal(
+        job.if,
+        "github.event_name == 'push' && needs.changes.outputs.fixkey == 'true'",
+      );
+    } else assert.equal(job["runs-on"], "ubuntu-latest");
+  }
   for (const [id, owner] of [
     ["devbase-frontend", "devbase"],
     ["delino-site-frontend", "delino_site"],
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
+    ["fixkey-frontend", "fixkey"],
   ]) {
     assert.equal(
       workflow.jobs[id].if,
@@ -63,6 +74,8 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delitools-frontend",
     "rust-checks",
     "protocol",
+    "fixkey-frontend",
+    "fixkey-desktop",
   ]) {
     const steps = workflow.jobs[id].steps;
     assert.equal(
@@ -87,13 +100,14 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   const script = command.split("\n").slice(1, -1).join("\n");
   const run = (needs) =>
     spawnSync(process.execPath, ["--input-type=module", "-e", script], {
-      env: { ...process.env, NEEDS: JSON.stringify(needs) },
+      env: { ...process.env, EVENT_NAME: "push", NEEDS: JSON.stringify(needs) },
       encoding: "utf8",
     });
   const needs = Object.fromEntries(
     workflow.jobs["ci-result"].needs.map((id) => [id, { result: "success" }]),
   );
   needs.changes.outputs = {
+    fixkey: "true",
     devbase: "true",
     delino_site: "true",
     delidev: "true",
@@ -109,6 +123,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     }
   }
   needs.changes.outputs = {
+    fixkey: "false",
     devbase: "false",
     delino_site: "false",
     delidev: "false",
@@ -121,6 +136,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delidev-frontend",
     "delitools-frontend",
     "rust-checks",
+    "fixkey-frontend",
+    "fixkey-desktop",
   ])
     needs[id].result = "skipped";
   assert.equal(run(needs).status, 0);

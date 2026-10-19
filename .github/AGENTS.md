@@ -11,3 +11,5 @@
 - [Repository workflow](../docs/repository-workflow-contract.md)
 - [DeliTools application](../docs/apps-delitools-foundation.md)
 - [Environment ownership](../docs/repository-environment-contract.md)
+
+- [FixKey desktop and gated release](../docs/apps-fixkey-desktop-contract.md)

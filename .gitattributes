@@ -1,2 +1,6 @@
 apps/delidev/src-tauri/Cargo.toml text eol=lf
 apps/delitools/src-tauri/Cargo.toml text eol=lf
+
+crates/fixkey-core/assets/ko/entries.bin filter=lfs diff=lfs merge=lfs -text
+crates/fixkey-core/assets/ko/matrix.bin filter=lfs diff=lfs merge=lfs -text
+crates/fixkey-core/assets/ko/sys.dic filter=lfs diff=lfs merge=lfs -text

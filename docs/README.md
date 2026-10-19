@@ -78,3 +78,9 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Environment contract](repository-environment-contract.md): committed configuration and service/release secret ownership.
 
 Historical DeliDev validation describes the retired implementation and does not establish current shell acceptance. Preserve retained evidence in its original validation context.
+
+### fixkey
+
+- [Project index](project-fixkey.md)
+- [Rust correction engine](crates-fixkey-core-foundation.md)
+- [Desktop application](apps-fixkey-desktop-contract.md)

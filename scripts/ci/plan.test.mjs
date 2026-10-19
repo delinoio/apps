@@ -4,6 +4,7 @@ import { select } from "./plan.mjs";
 
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
+    fixkey: false,
     devbase: false,
     delino_site: false,
     delidev: false,
@@ -11,6 +12,7 @@ test("isolated projects select only their validation", () => {
     protocol: false,
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
+    fixkey: false,
     devbase: false,
     delino_site: false,
     delidev: false,
@@ -18,6 +20,7 @@ test("isolated projects select only their validation", () => {
     protocol: true,
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
+    fixkey: true,
     devbase: true,
     delino_site: true,
     delidev: true,
@@ -37,6 +40,7 @@ for (const [project, key] of [
       `docs/apps-${project}-web-contract.md`,
     ]) {
       assert.deepEqual(select([path]), {
+        fixkey: false,
         devbase: key === "devbase",
         delino_site: key === "delino_site",
         delidev: false,
@@ -49,6 +53,7 @@ for (const [project, key] of [
 
 test("consumer examples select protocol validation without native runners", () => {
   assert.deepEqual(select(["examples/delcore-client/main.go"]), {
+    fixkey: false,
     devbase: false,
     delino_site: false,
     delidev: false,
@@ -56,3 +61,22 @@ test("consumer examples select protocol validation without native runners", () =
     protocol: true,
   });
 });
+
+for (const path of [
+  "apps/fixkey/src/App.tsx",
+  "crates/fixkey-core/src/lib.rs",
+  "scripts/release/fixkey.mjs",
+  ".github/workflows/release-fixkey.yml",
+  "docs/project-fixkey.md",
+]) {
+  test(`standalone FixKey ownership: ${path}`, () => {
+    assert.deepEqual(select([path]), {
+      fixkey: true,
+      devbase: false,
+      delino_site: false,
+      delidev: false,
+      delitools: false,
+      protocol: false,
+    });
+  });
+}

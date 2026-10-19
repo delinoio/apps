@@ -5,9 +5,20 @@ import { fileURLToPath } from "node:url";
 
 export function select(paths) {
   const shared = paths.some(
-    (path) => !/^(apps|protos|examples|docs)\//u.test(path),
+    (path) =>
+      !/^(apps|protos|examples|docs)\//u.test(path) &&
+      !/^(crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$)/u.test(
+        path,
+      ),
   );
   return {
+    fixkey:
+      shared ||
+      paths.some((path) =>
+        /^(apps\/fixkey\/|crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
+          path,
+        ),
+      ),
     devbase:
       shared ||
       paths.some((path) => /^(apps\/devbase\/|docs\/.*devbase)/u.test(path)),
