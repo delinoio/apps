@@ -120,6 +120,7 @@ pub fn word_at_space(keys: &[char], rendered: &str) -> Option<(Vec<char>, String
 }
 
 /// Classifies held punctuation before Enter/Tab using the still-matching edit.
+///
 /// The terminator itself is excluded from the proof and replacement. A host
 /// edit, ordinary unfinished word or excluded token cannot authorize a write.
 #[must_use]
