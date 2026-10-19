@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 
 REVISION = "8cfea406b505e4d7df52d5a19bce525df98c54ab"
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +48,29 @@ LICENSE_TEXTS = {
     "GPL-2.0.txt": ("edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6", "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"),
     "LGPL-2.1.txt": ("5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2", "https://github.com/spdx/license-list-data/blob/31ba1a50e5397e00a304dbadc76531740e89ee48/text/LGPL-2.1-only.txt"),
 }
+
+
+def verify_source(source):
+    """Reject an unpinned or modified checkout before reading or writing assets."""
+    source = source.resolve()
+
+    def git(*arguments):
+        try:
+            return subprocess.run(
+                ["git", "-C", str(source), *arguments],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError("Dictionary source must be a readable Git checkout") from error
+
+    if Path(git("rev-parse", "--show-toplevel")).resolve() != source:
+        raise RuntimeError("Dictionary source must be the Git checkout root")
+    revision = git("rev-parse", "HEAD")
+    if revision != REVISION:
+        raise RuntimeError(f"Dictionary source revision must be {REVISION}; found {revision}")
+    if git("status", "--porcelain=v1", "--untracked-files=all"):
+        raise RuntimeError("Dictionary source must have no modified or untracked files")
+    return revision
 
 
 def bind(lib, name, result, *args):
@@ -135,6 +159,7 @@ def main():
     parser.add_argument("--compose", type=Path, required=True)
     parser.add_argument("--compose-license", type=Path, required=True)
     args = parser.parse_args()
+    revision = verify_source(args.source)
     tables = keyboard_tables(args.library, args.xkb, args.compose)
     catalog, files = [], {}
     source = args.source / "dictionaries"
@@ -184,7 +209,7 @@ def main():
             raise RuntimeError(f"Supplemental license checksum mismatch: {name}")
         files[f"notices/{name}"] = checksum
     manifest = json.loads((ASSETS / "manifest.json").read_text())
-    manifest["languages"] = {"repository": "https://github.com/wooorm/dictionaries", "revision": REVISION,
+    manifest["languages"] = {"repository": "https://github.com/wooorm/dictionaries", "revision": revision,
                              "keyboards": "xkeyboard-config 2.48", "compiler": "libxkbcommon 1.13.2",
                              "keyboardSource": "https://xorg.freedesktop.org/archive/individual/data/xkeyboard-config/xkeyboard-config-2.48.tar.xz",
                              "keyboardSourceSha256": "b77041324f0109f77161ee43743fe04baa485866af8460d31e476ad3f7648fd5",
