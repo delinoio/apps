@@ -139,6 +139,37 @@ test("source versions stay synchronized", () => {
   ).version;
   validateSource(root, selected);
 });
+test("source validation accepts Windows checkout line endings and rejects version drift", (t) => {
+  const dir = fixture(t);
+  const native = path.join(dir, "apps/fixkey/src-tauri");
+  mkdirSync(native, { recursive: true });
+  writeFileSync(
+    path.join(dir, "apps/fixkey/package.json"),
+    '{\r\n  "version": "0.1.4"\r\n}\r\n',
+  );
+  writeFileSync(
+    path.join(native, "tauri.conf.json"),
+    '{\r\n  "version": "0.1.4"\r\n}\r\n',
+  );
+  writeFileSync(
+    path.join(native, "Cargo.toml"),
+    '[package]\r\nname = "fixkey"\r\nversion = "0.1.4"\r\n',
+  );
+  const lock = path.join(dir, "Cargo.lock");
+  writeFileSync(
+    lock,
+    '[[package]]\r\nname = "fixkey"\r\nversion = "0.1.4"\r\n',
+  );
+  validateSource(dir, "0.1.4");
+  writeFileSync(
+    lock,
+    '[[package]]\r\nname = "fixkey"\r\nversion = "0.1.3"\r\n',
+  );
+  assert.throws(
+    () => validateSource(dir, "0.1.4"),
+    /fixkey-lock-version-mismatch/u,
+  );
+});
 test("tagged releases validate main ancestry before signing and publication", () => {
   const workflow = yaml.load(
     readFileSync(
