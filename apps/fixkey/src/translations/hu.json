@@ -1,0 +1,138 @@
+{
+  "general": "Általános",
+  "exclusions": "Kizárt alkalmazások",
+  "shortcuts": "Billentyűparancsok",
+  "updates": "Frissítések",
+  "diagnostics": "Diagnosztika és súgó",
+  "tagline": "Gépeljen tovább. Javítsa a kiosztást.",
+  "correction": "Automatikus javítás",
+  "pause": "Szüneteltetés",
+  "resume": "Folytatás",
+  "languages": "Engedélyezett nyelvek",
+  "languageSearch": "Nyelv vagy billentyűzet keresése",
+  "trayPause": "Javítás szüneteltetése",
+  "trayResume": "Javítás folytatása",
+  "traySettings": "Beállítások",
+  "trayExit": "Kilépés",
+  "trayStatus": "Javítás állapota",
+  "notificationUpdate": "Frissítés érhető el. Tekintse át és telepítse a Beállításokban.",
+  "notificationAttention": "A FixKey beavatkozást igényel. Ellenőrizze az okkódot a Beállításokban.",
+  "korean": "Koreai · Dubeolsik",
+  "english": "Angol · US QWERTY",
+  "startup": "Indítás bejelentkezéskor",
+  "uiLanguage": "Felület nyelve",
+  "theme": "Téma",
+  "system": "Rendszer",
+  "light": "Világos",
+  "dark": "Sötét",
+  "loading": "Kapcsolódás a FixKey alkalmazáshoz…",
+  "connection": "Nem sikerült kapcsolódni az asztali alkalmazáshoz.",
+  "retry": "Újrapróbálkozás",
+  "active": "A javítás aktív",
+  "inactive": "A javítás inaktív",
+  "waitingField": "Várakozás szerkeszthető szövegmezőre",
+  "waitingFieldHelp": "Kattintson egy szerkeszthető szövegmezőre egy másik alkalmazásban. A FixKey várakozik, amíg a Beállítások nyitva van, vagy a fókuszban lévő mező nem azonosítható biztonságosan. A részletek a Diagnosztika és súgó részben találhatók.",
+  "local": "A bevitt szöveg ezen az eszközön marad. A jelszómezők ki vannak zárva.",
+  "empty": "Nincsenek kizárt alkalmazások",
+  "emptyDetail": "A javítás a támogatott szerkeszthető vezérlőkben működhet. Adjon hozzá egy alkalmazást, hogy annak bevitt szövege mindig változatlan maradjon.",
+  "add": "Alkalmazás hozzáadása",
+  "choose": "Alkalmazás kiválasztása",
+  "remove": "Eltávolítás",
+  "unresolved": "Az alkalmazás azonossága nem állapítható meg",
+  "noApps": "Nem érhetők el azonosítható alkalmazások. Nyissa meg a kizárni kívánt alkalmazást, majd próbálja újra.",
+  "shortcut": "Kézi javaslatok",
+  "unassigned": "Nincs hozzárendelve",
+  "capture": "Billentyűparancs beállítása",
+  "captureHelp": "Nyomjon meg egy billentyűt a Control, Alt, Command vagy Shift billentyűvel együtt. Az Esc megszakítja a beállítást.",
+  "clear": "Törlés",
+  "cancel": "Mégse",
+  "done": "Kész",
+  "currentVersion": "Jelenlegi verzió",
+  "checkUpdate": "Frissítések keresése",
+  "updateConsent": "Letöltés és telepítés",
+  "updateHelp": "Az alkalmazás indításkor és 24 óránként keres frissítéseket. A letöltés csak az Ön beleegyezésével indul el.",
+  "recovery": "Ha a telepítés sikertelen, indítsa újra a FixKey alkalmazást, vagy telepítsen újra kézzel egy aláírt csomagot. A beállításai megmaradnak. A korábbi aláírt verziók kézzel újratelepíthetők.",
+  "permission": "Kisegítő hozzáférés engedélyezése",
+  "permissionHelp": "A FixKey kisegítő hozzáférést és a bevitel megfigyelésének engedélyét igényli a szerkeszthető vezérlő azonosításához és kizárólag a befejezett szó cseréjéhez.",
+  "inputPermission": "Bemenetfigyelés engedélyezése",
+  "inputPermissionRequest": "Bemenetfigyelés engedélyezése",
+  "inputPermissionSetup": "Bemenetfigyelés beállítása",
+  "inputPermissionListHelp": "A kisegítő hozzáférés már akkor is lehetővé teheti a billentyűleütések figyelését, ha a FixKey nem szerepel a Bemenetfigyelés listájában. A macOS itt nem erősíti meg, hogy van-e külön bejegyzés a listában. Ellenőrizze a listát a Rendszerbeállításokban, és ha hiányzik, a + gombbal adja hozzá a jelenlegi FixKey.app alkalmazást.",
+  "inputPermissionHelp": "A FixKey a Bemenetfigyelés engedélyét igényli a billentyűzetkiosztás javításához használt billentyűleütések észleléséhez.",
+  "accessibilityGranted": "A kisegítő hozzáférés már engedélyezve van.",
+  "inputPermissionSteps": [
+    "Válassza a Bemenetfigyelés engedélyezése lehetőséget a FixKey regisztrálásához és a macOS engedélybeállításainak megnyitásához.",
+    "A Rendszerbeállítások → Adatvédelem és biztonság → Bemenetfigyelés részen engedélyezze a FixKey alkalmazást. Ha hiányzik, válassza a + gombot, és adja hozzá a jelenlegi FixKey.app alkalmazást az Alkalmazások mappából. Térjen vissza ide, és válassza az Újraellenőrzés lehetőséget. Indítsa újra a FixKey alkalmazást, ha a macOS kéri."
+  ],
+  "permissionRequest": "Kisegítő hozzáférés engedélyezése",
+  "permissionWaiting": "A javítás a hozzáférés engedélyezéséig kikapcsolva marad. A hozzáférés engedélyezése után válassza az Újraellenőrzés lehetőséget.",
+  "permissionSteps": [
+    "Válassza a Kisegítő hozzáférés engedélyezése lehetőséget, és kövesse a macOS utasításait.",
+    "Engedélyezze a FixKey alkalmazást a Kisegítő lehetőségek részen. Ha már engedélyezve van, de ez a párbeszédablak a FixKey újraindítása után is megjelenik, távolítsa el a régi FixKey-bejegyzést a − gombbal, és a + gombbal adja hozzá újra a jelenlegi FixKey.app alkalmazást. Egy újrafordított alkalmazás már nem feltétlenül egyezik a régi engedélybejegyzéssel. Ha hiányzik, a + gombbal adja hozzá a FixKey alkalmazást az Alkalmazások mappából.",
+    "Engedélyezze a FixKey alkalmazást a Bemenetfigyelés részen is, majd végezzen újraellenőrzést. Ha nem jelenik meg bemenetfigyelési engedélykérés, válassza újra a Kisegítő hozzáférés engedélyezése lehetőséget. Indítsa újra a FixKey alkalmazást, ha a macOS kéri."
+  ],
+  "macPermission": "A Rendszerbeállításokban engedélyezze a FixKey alkalmazást a Kisegítő lehetőségek és a Bemenetfigyelés részen, majd végezzen újraellenőrzést.",
+  "windowsPermission": "Használja a FixKey alkalmazást a jelenlegi Windows-munkamenetében. A védett, emelt jogosultságú vagy nem támogatott vezérlők változatlanok maradnak.",
+  "linuxPermission": "Használjon X11-munkamenetet, amelyben elérhető az AT-SPI kisegítő szolgáltatás és az XInput2. A Wayland nem támogatott.",
+  "openSettings": "Rendszerbeállítások megnyitása",
+  "recheck": "Újraellenőrzés",
+  "later": "Később",
+  "error": "A művelet sikertelen",
+  "reason": "Ok",
+  "openLogs": "Naplómappa megnyitása",
+  "deleteLogs": "Naplók törlése",
+  "restore": "Beállítások biztonsági másolatának visszaállítása",
+  "support": "GitHub Issues",
+  "logHelp": "A naplók a verziót, a platformot, az okkódokat és az időzítési adatokat tartalmazzák. A bevitt szöveg nem kerül bele a naplókba. A naplók ezen az eszközön maradnak, legfeljebb hét napig és összesen 10 MiB méretig.",
+  "original": "Eredeti",
+  "recognized": "Felismert",
+  "notRecognized": "A szótár nem ismeri fel",
+  "unchecked": "Nem sikerült ellenőrizni",
+  "candidates": "Kiosztás szerinti javaslatok",
+  "candidateHelp": "↑ ↓ Kiválasztás · Enter Alkalmazás · Esc Bezárás",
+  "noCandidates": "A forráskörnyezet már nem érhető el.",
+  "help": "Súgó",
+  "helpTopics": [
+    [
+      "Telepítés",
+      "macOS ARM64 rendszeren telepítse az aláírt DMG-t, Windows x64 rendszeren az NSIS-telepítőt, Linux X11 x64 rendszeren pedig az AppImage-et. A célplatformok megjelölése nem jelenti azt, hogy minden alkalmazással ellenőrzött a kompatibilitás."
+    ],
+    [
+      "Engedélyek",
+      "Adja meg az operációs rendszer által kért kisegítő és beviteli engedélyeket, majd válassza az Újraellenőrzés lehetőséget. A javítás mindaddig inaktív marad, amíg az engedélyek és a szótárak nem állnak készen. macOS rendszeren a Kisegítő lehetőségek tényleges hozzáférést biztosíthatnak a billentyűleütések figyeléséhez külön Bemenetfigyelés-bejegyzés nélkül is. A lista ellenőrzéséhez használja az Általános rész Bemenetfigyelés beállítása lehetőségét; ha a FixKey hiányzik, a + gombbal adja hozzá a jelenlegi FixKey.app alkalmazást az Alkalmazások mappából."
+    ],
+    [
+      "Kiosztások és javítás",
+      "A koreai Dubeolsik és az amerikai angol US QWERTY alapértelmezés szerint engedélyezve van. Az Általános részen további szótár- és billentyűzetpárokat választhat ki. A felsorolt nyilvános billentyűzetkiosztásnak egyeznie kell azzal a kiosztással, amellyel gépel. További nyelvek engedélyezése esetén a szavak kiértékelését a szóköz váltja ki; egyébként a szóköz és az írásjelek is kiértékelést váltanak ki. Az Enter és a Tab nem. Egy szó csak akkor változik meg, ha pontosan egy engedélyezett szótár ismer fel egy javaslatot. A rokon nyelvek felismerhetik ugyanazt a szót; ilyenkor az változatlan marad. A FixKey soha nem váltja át a beviteli nyelvet. Nem támogatott módosítóbillentyűk, befejezetlen holtbillentyű-sorozatok és a felsorolt kiosztással nem egyező billentyűzetváltozatok esetén a szöveg változatlan marad."
+    ],
+    [
+      "Visszavonás",
+      "Az automatikus javítás után azonnal nyomja meg a Backspace billentyűt az eredeti szó és az azt követő elválasztó visszaállításához. A további Backspace-leütések a megszokott módon működnek."
+    ],
+    [
+      "Kézi javaslatok",
+      "Rendeljen hozzá egy billentyűparancsot, gépeljen be egy szót, majd használja a billentyűparancsot. A nyílbillentyűkkel választhat, az Enter alkalmazza a javaslatot, az Esc pedig bezárja az ablakot. Kifejezetten olyan javaslatot is kiválaszthat, amelyet a szótár nem ismer fel. A forrás szövegkurzorának elmozdítása vagy az alkalmazásváltás bezárja a választót."
+    ],
+    [
+      "Kizárások",
+      "Adjon hozzá egy alkalmazást a Kizárt alkalmazások részen. A kizárások az alkalmazás állandó azonosítója alapján érvényesülnek. Azok a bejegyzések is a listában maradnak, amelyek azonossága nem állapítható meg."
+    ],
+    [
+      "Adatvédelem",
+      "A FixKey helyben dolgozza fel a bevitt szöveget. Nem őriz beviteli előzményeket, nem használja a vágólapot a cseréhez, és nem küld telemetriai adatokat. A beillesztett, programból bevitt, számokból álló, emodzsit tartalmazó, URL-, e-mail- és vegyes írásrendszerű tokenek ki vannak zárva az automatikus javításból."
+    ],
+    [
+      "Frissítések",
+      "Az alkalmazás indításkor és 24 óránként keres stabil frissítéseket HTTPS-en keresztül. A letöltés előtt az Ön beleegyezését kéri. Az érvénytelen aláírásokat elutasítja. A telepítés előtt a javítás leáll; a beállítások megmaradnak."
+    ],
+    [
+      "Hibaelhárítás",
+      "Olvassa el az okkódot, ellenőrizze újra az engedélyeket, és próbáljon ki egy támogatott szerkeszthető vezérlőt. Hiányzó engedélyek, a mező érzékenységének ismeretlen volta, elavult célok és nem támogatott írási műveletek esetén az alkalmazás biztonsági okból elutasítja a javítást. Sikertelen frissítés után indítsa újra az alkalmazást, vagy telepítsen újra kézzel egy aláírt csomagot."
+    ],
+    [
+      "Naplók törlése",
+      "Válassza a Naplók törlése lehetőséget a helyi diagnosztikai naplók eltávolításához, vagy a Naplómappa megnyitása lehetőséget a megtekintésükhöz. GitHub-hibajegy nyitásakor ne mellékeljen magánjellegű tartalmat."
+    ]
+  ],
+  "listedWordsOnly": "Csak a szótárban szereplő szavak; az ismeretlen alakok változatlanok maradnak."
+}

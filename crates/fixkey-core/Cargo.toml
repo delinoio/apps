@@ -7,6 +7,8 @@ publish = false
 description = "Keyboard-layout reconstruction and correction engine for FixKey"
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = "=1.0.149"
 mecab-ko-core = { version = "=0.7.2", default-features = false }
 mecab-ko-dict = { version = "=0.7.2", default-features = false }
 spellbook = "=0.4.2"
@@ -33,7 +35,6 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_Wind
 
 [dev-dependencies]
 tempfile.workspace = true
-serde_json = "=1.0.149"
 sha2.workspace = true
 
 [lints]

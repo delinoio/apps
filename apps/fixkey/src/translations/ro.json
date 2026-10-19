@@ -1,0 +1,138 @@
+{
+  "general": "General",
+  "exclusions": "Aplicații excluse",
+  "shortcuts": "Comenzi rapide",
+  "updates": "Actualizări",
+  "diagnostics": "Diagnosticare și ajutor",
+  "tagline": "Continuă să tastezi. Corectează aranjamentul tastaturii.",
+  "correction": "Corectare automată",
+  "pause": "Întrerupe",
+  "resume": "Reia",
+  "languages": "Limbi activate",
+  "languageSearch": "Caută o limbă sau o tastatură",
+  "trayPause": "Întrerupe corectarea",
+  "trayResume": "Reia corectarea",
+  "traySettings": "Configurări",
+  "trayExit": "Ieșire",
+  "trayStatus": "Starea corectării",
+  "notificationUpdate": "Este disponibilă o actualizare. Consult-o și instaleaz-o din Configurări.",
+  "notificationAttention": "FixKey necesită atenție. Verifică în Configurări codul motivului.",
+  "korean": "Coreeană · Dubeolsik",
+  "english": "Engleză · US QWERTY",
+  "startup": "Pornește la autentificare",
+  "uiLanguage": "Limba interfeței",
+  "theme": "Temă",
+  "system": "Sistem",
+  "light": "Luminoasă",
+  "dark": "Întunecată",
+  "loading": "Se conectează la FixKey…",
+  "connection": "Nu se poate conecta la aplicația desktop.",
+  "retry": "Încearcă din nou",
+  "active": "Corectarea este activă",
+  "inactive": "Corectarea este inactivă",
+  "waitingField": "Se așteaptă un câmp de text editabil",
+  "waitingFieldHelp": "Fă clic pe un câmp de text editabil din altă aplicație. FixKey așteaptă cât timp fereastra Configurări este deschisă sau câmpul care are focalizarea nu poate fi identificat în siguranță. Detalii sunt disponibile în Diagnosticare și ajutor.",
+  "local": "Textul introdus rămâne pe acest dispozitiv. Câmpurile pentru parole sunt excluse.",
+  "empty": "Nicio aplicație exclusă",
+  "emptyDetail": "Corectarea poate funcționa în controalele editabile acceptate. Adaugă o aplicație pentru ca textul introdus în ea să rămână întotdeauna neschimbat.",
+  "add": "Adaugă o aplicație",
+  "choose": "Alege o aplicație",
+  "remove": "Elimină",
+  "unresolved": "Identitate neidentificată",
+  "noApps": "Nu sunt disponibile aplicații identificabile. Deschide aplicația pe care vrei să o excluzi și încearcă din nou.",
+  "shortcut": "Variante manuale",
+  "unassigned": "Neatribuită",
+  "capture": "Setează comanda rapidă",
+  "captureHelp": "Apasă o tastă împreună cu Control, Alt, Command sau Shift. Esc anulează.",
+  "clear": "Șterge",
+  "cancel": "Anulează",
+  "done": "Gata",
+  "currentVersion": "Versiunea curentă",
+  "checkUpdate": "Caută actualizări",
+  "updateConsent": "Descarcă și instalează",
+  "updateHelp": "Actualizările sunt căutate la pornire și la fiecare 24 de ore. Descărcările încep numai cu acordul tău.",
+  "recovery": "Dacă instalarea eșuează, repornește FixKey sau reinstalează manual un pachet semnat. Configurările tale sunt păstrate. Versiunile semnate anterioare pot fi reinstalate manual.",
+  "permission": "Permite accesul la accesibilitate",
+  "permissionHelp": "FixKey are nevoie de acces la accesibilitate și la observarea intrării pentru a identifica un control editabil și a înlocui numai cuvântul complet.",
+  "inputPermission": "Permite monitorizarea intrării",
+  "inputPermissionRequest": "Permite monitorizarea intrării",
+  "inputPermissionSetup": "Configurează monitorizarea intrării",
+  "inputPermissionListHelp": "Accesibilitatea poate permite deja ascultarea tastelor chiar dacă FixKey nu apare în Monitorizarea intrării. macOS nu confirmă aici existența unei intrări separate în listă. Verifică lista din Configurări sistem și adaugă aplicația FixKey.app curentă cu + dacă lipsește.",
+  "inputPermissionHelp": "FixKey are nevoie de monitorizarea intrării pentru a detecta tastele folosite la corectarea aranjamentului tastaturii.",
+  "accessibilityGranted": "Accesul la accesibilitate este deja permis.",
+  "inputPermissionSteps": [
+    "Alege Permite monitorizarea intrării pentru a înregistra FixKey și a deschide configurările permisiunilor sale din macOS.",
+    "În Configurări sistem → Confidențialitate și securitate → Monitorizarea intrării, activează FixKey. Dacă lipsește, alege + și adaugă aplicația FixKey.app curentă din Aplicații. Revino aici și alege Verifică din nou. Repornește FixKey dacă macOS solicită acest lucru."
+  ],
+  "permissionRequest": "Permite accesul la accesibilitate",
+  "permissionWaiting": "Corectarea va rămâne oprită până când accesul este permis. După activarea accesului, alege Verifică din nou.",
+  "permissionSteps": [
+    "Alege Permite accesul la accesibilitate și urmează indicațiile din solicitarea macOS.",
+    "Activează FixKey în Accesibilitate. Dacă este deja activat, dar această fereastră de dialog rămâne după repornirea FixKey, elimină vechea intrare FixKey cu − și folosește + pentru a adăuga din nou aplicația FixKey.app curentă. Este posibil ca o aplicație recompilată să nu mai corespundă vechii intrări de permisiune. Dacă lipsește, folosește + pentru a adăuga FixKey din Aplicații.",
+    "Activează FixKey și în Monitorizarea intrării, apoi verifică din nou. Dacă nu apare nicio solicitare pentru monitorizarea intrării, alege din nou Permite accesul la accesibilitate. Repornește FixKey dacă macOS solicită acest lucru."
+  ],
+  "macPermission": "În Configurări sistem, permite FixKey în Accesibilitate și Monitorizarea intrării, apoi verifică din nou.",
+  "windowsPermission": "Folosește FixKey în sesiunea Windows curentă. Controalele protejate, cele cu privilegii sporite sau cele neacceptate rămân neschimbate.",
+  "linuxPermission": "Folosește o sesiune X11 cu serviciul de accesibilitate AT-SPI și XInput2 disponibile. Wayland nu este acceptat.",
+  "openSettings": "Deschide configurările sistemului",
+  "recheck": "Verifică din nou",
+  "later": "Mai târziu",
+  "error": "Acțiunea a eșuat",
+  "reason": "Motiv",
+  "openLogs": "Deschide dosarul jurnalelor",
+  "deleteLogs": "Șterge jurnalele",
+  "restore": "Restaurează copia de siguranță a configurărilor",
+  "support": "GitHub Issues",
+  "logHelp": "Jurnalele conțin versiunea, platforma, codurile motivelor și duratele. Textul introdus este exclus. Jurnalele rămân pe acest dispozitiv cel mult șapte zile și ocupă cel mult 10 MiB în total.",
+  "original": "Original",
+  "recognized": "Recunoscută",
+  "notRecognized": "Nerecunoscută de dicționar",
+  "unchecked": "Nu a putut fi verificată",
+  "candidates": "Variante de aranjament al tastaturii",
+  "candidateHelp": "↑ ↓ Selectează · Enter Aplică · Esc Închide",
+  "noCandidates": "Contextul sursă nu mai este disponibil.",
+  "help": "Ajutor",
+  "helpTopics": [
+    [
+      "Instalare",
+      "Instalează pachetul DMG semnat pe macOS ARM64, programul de instalare NSIS pe Windows x64 sau AppImage pe Linux X11 x64. Platformele vizate nu implică o compatibilitate verificată cu fiecare aplicație."
+    ],
+    [
+      "Permisiuni",
+      "Acordă permisiunile de accesibilitate și de intrare solicitate de sistemul tău de operare, apoi alege Verifică din nou. Corectarea rămâne inactivă până când permisiunile și dicționarele sunt pregătite. Pe macOS, Accesibilitatea poate oferi acces efectiv la ascultarea tastelor fără o intrare separată în Monitorizarea intrării. Folosește Configurează monitorizarea intrării din General pentru a verifica lista; dacă FixKey lipsește, folosește + pentru a adăuga aplicația FixKey.app curentă din Aplicații."
+    ],
+    [
+      "Aranjamente de tastatură și corectare",
+      "Coreeană Dubeolsik și engleză US QWERTY sunt activate implicit. Selectează perechi suplimentare de dicționare și tastaturi în General. Tastatura publică afișată trebuie să corespundă aranjamentului cu care tastezi. Când sunt activate limbi suplimentare, cuvintele sunt evaluate la introducerea spațiilor; în caz contrar, spațiile și semnele de punctuație declanșează evaluarea. Enter și Tab nu o declanșează. Un cuvânt se schimbă numai când exact un dicționar activat recunoaște o variantă. Limbile înrudite pot recunoaște același cuvânt; în acest caz, acesta rămâne neschimbat. FixKey nu schimbă niciodată limba de introducere. Modificatorii neacceptați, tastele moarte incomplete și variantele de tastatură care nu corespund aranjamentului afișat sunt lăsate neschimbate."
+    ],
+    [
+      "Anularea corectării",
+      "Apasă Backspace imediat după corectarea automată pentru a restaura cuvântul original și separatorul său. Apăsările ulterioare ale tastei Backspace se comportă normal."
+    ],
+    [
+      "Variante manuale",
+      "Atribuie o comandă rapidă, tastează un cuvânt și folosește comanda rapidă. Tastele săgeți selectează, Enter aplică, iar Esc închide. Poți alege explicit o variantă nerecunoscută. Mutarea cursorului de text din sursă sau schimbarea aplicației închide selectorul."
+    ],
+    [
+      "Excluderi",
+      "Adaugă o aplicație în Aplicații excluse. Excluderile se potrivesc pe baza identității stabile a aplicației. Identitățile neidentificate rămân în listă."
+    ],
+    [
+      "Confidențialitate",
+      "FixKey procesează local textul introdus. Nu păstrează istoricul intrărilor, nu folosește clipboardul pentru înlocuire și nu trimite telemetrie. Elementele lipite, generate programatic, numerice, emoji, URL, adresele de e-mail și cele care combină sisteme de scriere sunt excluse de la corectarea automată."
+    ],
+    [
+      "Actualizări",
+      "Actualizările stabile sunt căutate prin HTTPS la pornire și la fiecare 24 de ore. Îți dai acordul înainte de descărcare. Semnăturile nevalide sunt respinse. Corectarea se oprește înainte de instalare; configurările rămân intacte."
+    ],
+    [
+      "Depanare",
+      "Citește codul motivului, verifică din nou permisiunile și încearcă un control editabil acceptat. Lipsa permisiunilor, sensibilitatea necunoscută a câmpului, țintele care nu mai sunt actuale și operațiunile de scriere neacceptate determină refuzul operațiunii din motive de siguranță. Repornește sau reinstalează manual un pachet semnat după eșecul unei actualizări."
+    ],
+    [
+      "Ștergerea jurnalelor",
+      "Alege Șterge jurnalele pentru a elimina jurnalele locale de diagnosticare sau Deschide dosarul jurnalelor pentru a le inspecta. Nu include conținut privat când deschizi o sesizare pe GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Numai cuvintele incluse în dicționar; formele necunoscute rămân neschimbate."
+}

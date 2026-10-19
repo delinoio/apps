@@ -1,0 +1,138 @@
+{
+  "general": "Generalia",
+  "exclusions": "Applicationes exclusae",
+  "shortcuts": "Compendia clavium",
+  "updates": "Renovationes",
+  "diagnostics": "Diagnostica et auxilium",
+  "tagline": "Perge scribere. Corrige ordinationem clavium.",
+  "correction": "Correctio automatica",
+  "pause": "Intermitte",
+  "resume": "Resume",
+  "languages": "Linguae habilitatae",
+  "languageSearch": "Quaere linguam vel claviaturam",
+  "trayPause": "Intermitte correctionem",
+  "trayResume": "Resume correctionem",
+  "traySettings": "Praeferentiae",
+  "trayExit": "Exi",
+  "trayStatus": "Status correctionis",
+  "notificationUpdate": "Renovatio praesto est. Eam in Praeferentiis inspice et institue.",
+  "notificationAttention": "FixKey attentione eget. Codicem causae in Praeferentiis inspice.",
+  "korean": "Coreana · Dubeolsik",
+  "english": "Anglica · US QWERTY",
+  "startup": "Incipe cum sessionem aperis",
+  "uiLanguage": "Lingua interfaciei",
+  "theme": "Species",
+  "system": "Systematis",
+  "light": "Clara",
+  "dark": "Obscura",
+  "loading": "Conexio cum FixKey paratur…",
+  "connection": "Cum applicatione mensali coniungi non potest.",
+  "retry": "Iterum tenta",
+  "active": "Correctio activa est",
+  "inactive": "Correctio inactiva est",
+  "waitingField": "Campus textus editabilis exspectatur",
+  "waitingFieldHelp": "Preme campum textus editabilem in alia applicatione. FixKey exspectat dum Praeferentiae apertae sunt aut campus intentus tuto agnosci non potest. Plura in Diagnosticis et auxilio invenies.",
+  "local": "Quae inscribis in hoc instrumento manent. Campi tesserarum excluduntur.",
+  "empty": "Nullae applicationes exclusae",
+  "emptyDetail": "Correctio in elementis editabilibus sustentatis operari potest. Adde applicationem ut quae in ea inscribuntur semper immutata relinquantur.",
+  "add": "Adde applicationem",
+  "choose": "Elige applicationem",
+  "remove": "Remove",
+  "unresolved": "Identitas non reperta",
+  "noApps": "Nullae applicationes agnoscibiles praesto sunt. Aperi applicationem quam excludere vis et iterum tenta.",
+  "shortcut": "Formae manu eligendae",
+  "unassigned": "Non assignatum",
+  "capture": "Constitue compendium",
+  "captureHelp": "Preme clavem una cum Control, Alt, Command vel Shift. Esc rem revocat.",
+  "clear": "Dele",
+  "cancel": "Revoca",
+  "done": "Factum",
+  "currentVersion": "Versio praesens",
+  "checkUpdate": "Quaere renovationes",
+  "updateConsent": "Deprome et institue",
+  "updateHelp": "Renovationes initio et singulis 24 horis quaeruntur. Depromptiones tantum consensu tuo incipiunt.",
+  "recovery": "Si institutio deficit, FixKey denuo incipe aut fasciculum obsignatum manu rursus institue. Praeferentiae tuae servantur. Versiones anteriores obsignatae manu rursus institui possunt.",
+  "permission": "Permitte accessum ad accessibilitatem",
+  "permissionHelp": "FixKey accessu ad accessibilitatem et observationem inscriptionis eget ut elementum editabile agnoscat et solum verbum absolutum substituat.",
+  "inputPermission": "Permitte observationem inscriptionis",
+  "inputPermissionRequest": "Permitte observationem inscriptionis",
+  "inputPermissionSetup": "Configura observationem inscriptionis",
+  "inputPermissionListHelp": "Accessibilitas iam auditionem clavium permittere potest etiamsi FixKey ab indice observationis inscriptionis abest. macOS hic non confirmat propriam inscriptionem in indice. Inspice indicem in Praeferentiis systematis et adde praesentem FixKey.app signo + si abest.",
+  "inputPermissionHelp": "FixKey observatione inscriptionis eget ut claves ad correctionem ordinationis claviaturae adhibitas deprehendat.",
+  "accessibilityGranted": "Accessus ad accessibilitatem iam permissus est.",
+  "inputPermissionSteps": [
+    "Elige Permitte observationem inscriptionis ut FixKey in indicem referas et eius praeferentias permissionum in macOS aperias.",
+    "In Praeferentiis systematis → Rerum privatarum tutela et securitas → Observatio inscriptionis, habilita FixKey. Si abest, elige + et adde praesentem FixKey.app ex Applicationibus. Huc redi et elige Iterum verifica. FixKey denuo incipe si macOS id postulat."
+  ],
+  "permissionRequest": "Permitte accessum ad accessibilitatem",
+  "permissionWaiting": "Correctio inactiva manebit donec accessus permittatur. Postquam accessum habilitaveris, elige Iterum verifica.",
+  "permissionSteps": [
+    "Elige Permitte accessum ad accessibilitatem et sequere monitionem macOS.",
+    "Habilita FixKey in Accessibilitate. Si iam habilitatum est sed hic dialogus post FixKey denuo inceptum manet, remove veterem inscriptionem FixKey signo − et utere + ut praesentem FixKey.app rursus addas. Applicatio denuo constructa veteri inscriptioni permissionis iam non congruere potest. Si abest, utere + ut FixKey ex Applicationibus addas.",
+    "Habilita quoque FixKey in Observatione inscriptionis, deinde iterum verifica. Si nulla monitio de observatione inscriptionis apparet, elige Permitte accessum ad accessibilitatem rursus. FixKey denuo incipe si macOS id postulat."
+  ],
+  "macPermission": "In Praeferentiis systematis permitte FixKey sub Accessibilitate et Observatione inscriptionis, deinde iterum verifica.",
+  "windowsPermission": "Utere FixKey in praesenti sessione Windows. Elementa protecta, privilegiis auctis praedita vel non sustentata immutata relinquuntur.",
+  "linuxPermission": "Utere sessione X11 cum ministerio accessibilitatis AT-SPI et XInput2 praesto. Wayland non sustentatur.",
+  "openSettings": "Aperi praeferentias systematis",
+  "recheck": "Iterum verifica",
+  "later": "Postea",
+  "error": "Actio defecit",
+  "reason": "Causa",
+  "openLogs": "Aperi indicem diariorum",
+  "deleteLogs": "Dele diaria",
+  "restore": "Restitue exemplar subsidiarium praeferentiarum",
+  "support": "GitHub Issues",
+  "logHelp": "Diaria versionem, systema, codices causarum et mensuras temporum continent. Textus inscriptus excluditur. Diaria in hoc instrumento non plus quam septem dies servantur nec summam 10 MiB excedunt.",
+  "original": "Forma originalis",
+  "recognized": "Agnita",
+  "notRecognized": "A lexico non agnita",
+  "unchecked": "Verificari non potuit",
+  "candidates": "Formae ex ordinationibus clavium",
+  "candidateHelp": "↑ ↓ Elige · Enter Adhibe · Esc Claude",
+  "noCandidates": "Contextus originis iam non praesto est.",
+  "help": "Auxilium",
+  "helpTopics": [
+    [
+      "Institutio",
+      "Institue DMG obsignatum in macOS ARM64, programma institutionis NSIS in Windows x64, aut AppImage in Linux X11 x64. Systemata destinata non significant congruentiam cum omni applicatione verificatam esse."
+    ],
+    [
+      "Permissiones",
+      "Concede permissiones accessibilitatis et inscriptionis quas systema tuum postulat, deinde elige Iterum verifica. Correctio inactiva manet donec permissiones et lexica parata sint. In macOS, Accessibilitas accessum efficacem ad claves audiendas praebere potest sine propria inscriptione in Observatione inscriptionis. Utere Configura observationem inscriptionis in Generalibus ut indicem inspicias; si FixKey abest, utere + ut praesentem FixKey.app ex Applicationibus addas."
+    ],
+    [
+      "Ordinationes clavium et correctio",
+      "Coreana Dubeolsik et Anglica US QWERTY initio habilitatae sunt. Elige alia paria lexicorum et claviaturarum in Generalibus. Claviatura publica in indice relata congruere debet ordinationi qua scribis. Cum linguae additae habilitatae sunt, verba ad spatia aestimantur; alioquin spatia et interpunctiones aestimationem excitant. Enter et Tab eam non excitant. Verbum tantum mutatur cum unum prorsus lexicon habilitatum formam propositam agnoscit. Linguae cognatae idem verbum agnoscere possunt; tum immutatum relinquitur. FixKey numquam linguam inscriptionis tuae mutat. Claves modificatrices non sustentatae, claves mortuae incompletae et varietates claviaturae quae ordinationi in indice relatae non congruunt immutatae relinquuntur."
+    ],
+    [
+      "Reversio",
+      "Statim preme Backspace post correctionem automaticam ut verbum originale eiusque separator restituantur. Ulteriores pressiones Backspace more solito operantur."
+    ],
+    [
+      "Formae manu eligendae",
+      "Assigna compendium clavium, scribe verbum et utere compendio. Claves sagittarum eligunt, Enter adhibet et Esc claudit. Formam non agnitam expresse eligere potes. Moto cursore insertionis originis aut mutata applicatione, selector clauditur."
+    ],
+    [
+      "Exclusiones",
+      "Adde applicationem sub Applicationibus exclusis. Exclusiones identitati stabili applicationis respondent. Identitates non repertae in indice manent."
+    ],
+    [
+      "Rerum privatarum tutela",
+      "FixKey quae inscribuntur in ipso instrumento tractat. Historiam inscriptionis non servat, area transitoria ad substitutionem non utitur nec telemetriam mittit. Partes textus conglutinatae, programmate insertae, numericae, pictogrammata emoji, URL, inscriptiones cursus electronici et partes scripturis mixtis scriptae a correctione automatica excluduntur."
+    ],
+    [
+      "Renovationes",
+      "Renovationes stabiles per HTTPS initio et singulis 24 horis quaeruntur. Ante depromptionem consentis. Subscriptiones irritae reiciuntur. Correctio ante institutionem sistitur; praeferentiae integrae manent."
+    ],
+    [
+      "Solutio difficultatum",
+      "Lege codicem causae, permissiones iterum verifica et tenta elementum editabile sustentatum. Permissiones absentes, incerta sensibilitas campi, scopi obsoleti et scriptiones non sustentatae recusationem tutam efficiunt. Post renovationem defectam, denuo incipe aut fasciculum obsignatum manu rursus institue."
+    ],
+    [
+      "Deletio diariorum",
+      "Elige Dele diaria ut diaria diagnostica localia removeas, aut Aperi indicem diariorum ut ea inspicias. Materiam privatam ne includas cum quaestionem in GitHub aperis."
+    ]
+  ],
+  "listedWordsOnly": "Verba tantum in dictionario enumerata; formae ignotae immutatae manent."
+}

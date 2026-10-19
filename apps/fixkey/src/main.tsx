@@ -8,7 +8,7 @@ document.body.append(root);
 const params = new URLSearchParams(window.location.search);
 createRoot(root).render(
   params.get("window") === "candidates" ? (
-    <CandidatePicker language={params.get("language") === "ko" ? "ko" : "en"} />
+    <CandidatePicker language={params.get("language") ?? "en"} />
   ) : (
     <QueryClientProvider
       client={

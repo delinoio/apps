@@ -1,0 +1,34 @@
+{
+  "name": "dictionary-is",
+  "version": "2.0.0",
+  "description": "Icelandic spelling dictionary",
+  "license": "CC-BY-SA-3.0",
+  "keywords": [
+    "dictionary",
+    "hunspell",
+    "icelandic",
+    "is",
+    "myspell",
+    "spelling"
+  ],
+  "repository": "https://github.com/wooorm/dictionaries/tree/main/dictionaries/is",
+  "bugs": "https://github.com/wooorm/dictionaries/issues",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/wooorm"
+  },
+  "author": "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)",
+  "contributors": [
+    "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)",
+    "Thomas Beverley <tom.beverley101@gmail.com>"
+  ],
+  "type": "module",
+  "exports": "./index.js",
+  "files": [
+    "index.aff",
+    "index.d.ts",
+    "index.d.ts.map",
+    "index.dic",
+    "index.js"
+  ]
+}

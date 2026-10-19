@@ -11,6 +11,7 @@ define.fmt({
     ".agents/skills/**",
     "crates/fspy_detours_sys/detours/**",
     "**/third-party/**",
+    "crates/fixkey-core/assets/languages/**",
     "**/testdata/**",
     "**/fixtures/**",
     "packages/*/src/gen/**",

@@ -22,18 +22,7 @@ pub enum Theme {
     Dark,
 }
 
-/// User-selected interface language.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum UiLanguage {
-    /// Korean on Korean systems; otherwise English.
-    #[default]
-    System,
-    /// English.
-    En,
-    /// Korean.
-    Ko,
-}
+pub use crate::localization::UiLanguage;
 
 /// Stable, platform-owned application identities. Display labels are never
 /// used for exclusion matching.
@@ -91,6 +80,9 @@ pub struct Settings {
     pub korean_enabled: bool,
     /// Enable US English QWERTY.
     pub english_enabled: bool,
+    /// Additional stable dictionary/layout IDs; old settings default to none.
+    #[serde(default)]
+    pub additional_languages: Vec<String>,
     /// Launch after login; opt-in.
     pub login_startup: bool,
     /// UI language.
@@ -106,10 +98,11 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             paused: false,
             korean_enabled: true,
             english_enabled: true,
+            additional_languages: Vec::new(),
             login_startup: false,
             ui_language: UiLanguage::System,
             theme: Theme::System,
@@ -132,9 +125,15 @@ impl Settings {
     /// Returns the engine's enabled layouts without exposing UI state to it.
     #[must_use]
     pub fn languages(&self) -> fixkey_core::LanguageSet {
-        fixkey_core::LanguageSet::default()
+        let mut languages = fixkey_core::LanguageSet::default()
             .with(fixkey_core::Language::KoDubeolsik, self.korean_enabled)
-            .with(fixkey_core::Language::EnUsQwerty, self.english_enabled)
+            .with(fixkey_core::Language::EnUsQwerty, self.english_enabled);
+        for id in &self.additional_languages {
+            if let Some(language) = fixkey_core::Language::from_id(id) {
+                languages = languages.with(language, true);
+            }
+        }
+        languages
     }
 }
 
@@ -216,6 +215,44 @@ impl SettingsStore {
             return Err(error);
         }
         validate(&settings)?;
+        let previous = match fs::read(&self.path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err(SettingsError::SaveFailed),
+        };
+        if let Some(bytes) = &previous {
+            // Another version or an external edit may have changed the file
+            // since startup. Never bypass recovery by overwriting that data.
+            decode(bytes)?;
+        }
+        if let Some(bytes) = previous
+            && serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("schemaVersion")
+                        .and_then(serde_json::Value::as_u64)
+                })
+                == Some(1)
+        {
+            // Version-one binaries reject new language IDs and fields. Publish
+            // their exact readable file before the first version-two write.
+            // A failed publication may retry with the same backup bytes.
+            let directory = self.path.parent().ok_or(SettingsError::SaveFailed)?;
+            let backup = directory.join("settings.v1.bak");
+            let mut temporary = tempfile::NamedTempFile::new_in(directory)
+                .map_err(|_| SettingsError::SaveFailed)?;
+            temporary
+                .write_all(&bytes)
+                .and_then(|()| temporary.as_file().sync_all())
+                .map_err(|_| SettingsError::SaveFailed)?;
+            if let Err(error) = temporary.persist_noclobber(&backup)
+                && (error.error.kind() != std::io::ErrorKind::AlreadyExists
+                    || fs::read(&backup).ok().as_deref() != Some(bytes.as_slice()))
+            {
+                return Err(SettingsError::SaveFailed);
+            }
+        }
         atomic_write(&self.path, &settings)?;
         self.current = settings;
         tracing::info!(reason = "settings-saved", "fixkey settings changed");
@@ -272,23 +309,48 @@ fn decode(bytes: &[u8]) -> Result<Settings, SettingsError> {
     if value
         .get("schemaVersion")
         .and_then(serde_json::Value::as_u64)
-        .is_some_and(|v| v > 1)
+        .is_some_and(|v| v > 2)
     {
         return Err(SettingsError::NewerSchema);
     }
-    let settings = serde_json::from_value(value).map_err(|_| SettingsError::Unreadable)?;
+    if value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        == Some(1)
+        && (value.get("additionalLanguages").is_some()
+            || !matches!(
+                value.get("uiLanguage").and_then(serde_json::Value::as_str),
+                Some("system" | "en" | "ko")
+            ))
+    {
+        return Err(SettingsError::Unreadable);
+    }
+    let mut settings: Settings =
+        serde_json::from_value(value).map_err(|_| SettingsError::Unreadable)?;
+    if settings.schema_version == 1 {
+        settings.schema_version = 2;
+    }
     validate(&settings)?;
     Ok(settings)
 }
 
 fn validate(settings: &Settings) -> Result<(), SettingsError> {
-    if settings.schema_version != 1
+    if settings.schema_version != 2
         || settings
             .shortcut
             .as_ref()
             .is_some_and(|key| key.is_empty() || key.len() > 128)
     {
         return Err(SettingsError::Invalid);
+    }
+    for (index, id) in settings.additional_languages.iter().enumerate() {
+        if !matches!(
+            fixkey_core::Language::from_id(id),
+            Some(fixkey_core::Language::Additional(_))
+        ) || settings.additional_languages[..index].contains(id)
+        {
+            return Err(SettingsError::Invalid);
+        }
     }
     for (index, app) in settings.excluded_apps.iter().enumerate() {
         let valid = match &app.identity {
@@ -341,6 +403,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn saving_never_overwrites_a_newer_file_that_appeared_after_startup() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut store = SettingsStore::load(path.clone());
+        let bytes = br#"{"schemaVersion":3,"future":true}"#;
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            store.save(Settings::default()),
+            Err(SettingsError::NewerSchema)
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn legacy_settings_are_loaded_without_writes_and_backed_up_before_migration() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy["schemaVersion"] = 1.into();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("additionalLanguages");
+        let bytes = serde_json::to_vec(&legacy).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let mut store = SettingsStore::load(path.clone());
+        assert!(store.error().is_none());
+        assert_eq!(store.current().schema_version, 2);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let mut next = store.current().clone();
+        next.additional_languages = vec!["ru-xkb-ru".into()];
+        next.ui_language = UiLanguage::Ru;
+        store.save(next.clone()).unwrap();
+        assert_eq!(
+            fs::read(temp.path().join("settings.v1.bak")).unwrap(),
+            bytes
+        );
+        assert_eq!(SettingsStore::load(path).current(), &next);
+    }
+
+    #[test]
+    fn additional_languages_reject_unknown_legacy_and_duplicate_identifiers() {
+        for languages in [
+            vec!["future"],
+            vec!["ko-dubeolsik"],
+            vec!["ru-xkb-ru", "ru-xkb-ru"],
+        ] {
+            let settings = Settings {
+                additional_languages: languages.into_iter().map(str::to_owned).collect(),
+                ..Settings::default()
+            };
+            assert_eq!(settings.validate(), Err(SettingsError::Invalid));
+        }
+    }
+
+    #[test]
     fn defaults_are_offline_and_startup_is_opt_in() {
         let settings = Settings::default();
         assert!(settings.korean_enabled && settings.english_enabled);
@@ -376,7 +494,7 @@ mod tests {
         for (bytes, expected) in [
             (b"broken".as_slice(), SettingsError::Unreadable),
             (
-                b"{\"schemaVersion\":2,\"future\":true}".as_slice(),
+                b"{\"schemaVersion\":3,\"future\":true}".as_slice(),
                 SettingsError::NewerSchema,
             ),
         ] {

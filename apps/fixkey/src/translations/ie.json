@@ -1,0 +1,138 @@
+{
+  "general": "General",
+  "exclusions": "Excludet applicationes",
+  "shortcuts": "Rapid-tastes",
+  "updates": "Actualisationes",
+  "diagnostics": "Diagnostica e auxilie",
+  "tagline": "Continua tappar. Corecte li arangeament.",
+  "correction": "Automatic corection",
+  "pause": "Pausar",
+  "resume": "Reprender",
+  "languages": "Activat lingues",
+  "languageSearch": "Trovar un lingue o tastatura",
+  "trayPause": "Pausar li corection",
+  "trayResume": "Reprender li corection",
+  "traySettings": "Parametres",
+  "trayExit": "Surtir",
+  "trayStatus": "Statu del corection",
+  "notificationUpdate": "Un actualisation es disponibil. Examina e installa it in Parametres.",
+  "notificationAttention": "FixKey besona atention. Controla li code del cause in Parametres.",
+  "korean": "Corean · Dubeolsik",
+  "english": "Anglesi · US QWERTY",
+  "startup": "Lansar al apertion del session",
+  "uiLanguage": "Lingue del interfacie",
+  "theme": "Tema",
+  "system": "Sistema",
+  "light": "Clari",
+  "dark": "Obscur",
+  "loading": "Conexion a FixKey…",
+  "connection": "Ne posse conexer al application de pupitre.",
+  "retry": "Provar denov",
+  "active": "Li corection es activ",
+  "inactive": "Li corection es inactiv",
+  "waitingField": "Atendente un modificabil camp de textu",
+  "waitingFieldHelp": "Clicca sur un modificabil camp de textu in un altri application. FixKey atende durante que Parametres es apert o li camp con focus ne posse esser identificat securmen. Detallies es disponibil in Diagnostica e auxilie.",
+  "local": "Vor intrada resta sur ti-ci aparate. Campes de passa-paroles es excludet.",
+  "empty": "Null excludet applicationes",
+  "emptyDetail": "Li corection posse functionar in supportat modificabil controles. Adjunte un application por sempre lassar su intrada ínmutat.",
+  "add": "Adjunter un application",
+  "choose": "Selecter un application",
+  "remove": "Remover",
+  "unresolved": "Identitá ne resoluet",
+  "noApps": "Null identificabil applicationes es disponibil. Aperte li application quel vu vole excluder e prova denov.",
+  "shortcut": "Manual candidates",
+  "unassigned": "Ne assignat",
+  "capture": "Assignar un rapid-taste",
+  "captureHelp": "Presse un taste con Control, Alt, Command o Shift. Esc anulla.",
+  "clear": "Vacuar",
+  "cancel": "Anullar",
+  "done": "Finit",
+  "currentVersion": "Actual version",
+  "checkUpdate": "Serchar actualisationes",
+  "updateConsent": "Descargar e installar",
+  "updateHelp": "Actualisationes es controlat al lansament e chascun 24 hores. Descargationes comensa solmen con vor consentiment.",
+  "recovery": "Si li installation falla, relansa FixKey o reinstalla manualmen un signat paccage. Vor parametres es conservat. Anteyan signat versiones posse esser reinstallat manualmen.",
+  "permission": "Permisser acces de accessibilitá",
+  "permissionHelp": "FixKey besona acces de accessibilitá e observation del intrada por identificar un modificabil control e substituer solmen li completat parol.",
+  "inputPermission": "Permisser observation del intrada",
+  "inputPermissionRequest": "Permisser observation del intrada",
+  "inputPermissionSetup": "Configurar observation del intrada",
+  "inputPermissionListHelp": "Accessibilitá posse ja permisser escutar tastes, mem si FixKey manca in Observation del intrada. macOS ne confirma ci un separat element del liste. Controla li liste in Parametres del sistema e adjunte li actual FixKey.app per + si it manca.",
+  "inputPermissionHelp": "FixKey besona observation del intrada por detectar li tastes usat por corection del arangeament del tastatura.",
+  "accessibilityGranted": "Acces de accessibilitá es ja permisset.",
+  "inputPermissionSteps": [
+    "Selecte Permisser observation del intrada por registrar FixKey e aperter su parametres de permission in macOS.",
+    "In Parametres del sistema → Privatie e securitá → Observation del intrada, activa FixKey. Si it manca, selecte + e adjunte li actual FixKey.app ex Applicationes. Retorna ci e selecte Recontrolar. Relansa FixKey si macOS demanda it."
+  ],
+  "permissionRequest": "Permisser acces de accessibilitá",
+  "permissionWaiting": "Li corection va restar desactivat til que acces es permisset. Pos permisser acces, selecte Recontrolar.",
+  "permissionSteps": [
+    "Selecte Permisser acces de accessibilitá e seque li instruction de macOS.",
+    "Activa FixKey in Accessibilitá. Si it es ja activat ma ti-ci dialog resta pos relansar FixKey, remove li old element FixKey per − e usa + por adjunter denov li actual FixKey.app. Un recompilat application posse ne plu corresponder al old element de permission. Si it manca, usa + por adjunter FixKey ex Applicationes.",
+    "Activa FixKey anc in Observation del intrada, poy recontrola. Si null demande de observation del intrada apari, selecte denov Permisser acces de accessibilitá. Relansa FixKey si macOS demanda it."
+  ],
+  "macPermission": "In Parametres del sistema, permisse FixKey in Accessibilitá e Observation del intrada, poy recontrola.",
+  "windowsPermission": "Usa FixKey in vor actual session Windows. Protectet, elevat o ne supportat controles resta ínmutat.",
+  "linuxPermission": "Usa un session X11 con li servicie de accessibilitá AT-SPI e XInput2 disponibil. Wayland ne es supportat.",
+  "openSettings": "Aperter li parametres del sistema",
+  "recheck": "Recontrolar",
+  "later": "Plu tard",
+  "error": "Li action fallit",
+  "reason": "Cause",
+  "openLogs": "Aperter li fólder del diariums",
+  "deleteLogs": "Deleter diariums",
+  "restore": "Restaurar li copie de securitá del parametres",
+  "support": "GitHub Issues",
+  "logHelp": "Diariums contene version, platform, codes de cause e mesuras de témpor. Textu del intrada es excludet. Diariums resta sur ti-ci aparate por maxim sett dies e 10 MiB in total.",
+  "original": "Original",
+  "recognized": "Reconosset",
+  "notRecognized": "Ne reconosset del dictionarium",
+  "unchecked": "Ne posset esser controlat",
+  "candidates": "Candidates de arangeament",
+  "candidateHelp": "↑ ↓ Selecter · Enter Aplicar · Esc Cluder",
+  "noCandidates": "Li contextu del orígine ne es plu disponibil.",
+  "help": "Auxilie",
+  "helpTopics": [
+    [
+      "Installation",
+      "Installa li signat DMG sur macOS ARM64, li installator NSIS sur Windows x64, o li AppImage sur Linux X11 x64. Li destinat platformes ne implica verificat compatibilitá con chascun application."
+    ],
+    [
+      "Permissiones",
+      "Concede li permissiones de accessibilitá e intrada demandat de vor sistema operativ, poy selecte Recontrolar. Li corection resta inactiv til que permissiones e dictionariums es pret. Sur macOS, Accessibilitá posse provider efectiv acces por escutar tastes sin un separat element in Observation del intrada. Usa Configurar observation del intrada in General por controlar li liste; si FixKey manca, usa + por adjunter li actual FixKey.app ex Applicationes."
+    ],
+    [
+      "Arangeamentes e corection",
+      "Corean Dubeolsik e anglesi US QWERTY es activat predefinitmen. Selecte additional pares de dictionarium e tastatura in General. Li public tastatura listat deve corresponder al arangeament con quel vu tappa. Con additional lingues activat, paroles es evaluat ye spacies; altrimen spacies e punctuation causa li evaluation. Enter e Tab ne causa it. Un parol cambia solmen quande exactmen un activat dictionarium reconosse un candidate. Parent lingues posse reconosser li sam parol; it tande resta ínmutat. FixKey nequande cambia vor lingue de intrada. Ne supportat modificatores, íncomplet mort tastes e variantes de tastatura quel ne corresponde al listat arangeament resta ínmutat."
+    ],
+    [
+      "Defar",
+      "Presse Backspace ínmediatmen pos automatic corection por restaurar li original parol e su separator. Ulterior presses de Backspace functiona normalmen."
+    ],
+    [
+      "Manual candidates",
+      "Assigna un rapid-taste, tappa un parol e usa li rapid-taste. Li flech-tastes selecte, Enter aplica e Esc clude. Vu posse explicitmen selecter un ne reconosset candidate. Mover li cursor de textu del orígine o cambiar applicationes clude li selector."
+    ],
+    [
+      "Exclusiones",
+      "Adjunte un application in Excludet applicationes. Exclusiones corresponde al stabil identitá del application. Ne resoluet identitás resta in li liste."
+    ],
+    [
+      "Privatie",
+      "FixKey tracta intrada localmen. It ne conserva un historie de intrada, ne usa li porta-paperes por substitution e ne invia telemetrie. Alglutinat, programmatic, numeric, emoji, URL, e-post e tokens con mixt scrites es excludet del automatic corection."
+    ],
+    [
+      "Actualisationes",
+      "Stabil actualisationes es controlat per HTTPS al lansament e chascun 24 hores. Vu da vor consentiment ante li descargation. Ínvalid signatures es rejectet. Li corection stoppa ante li installation; parametres resta intact."
+    ],
+    [
+      "Resolution de problemas",
+      "Lee li code del cause, recontrola permissiones e prova un supportat modificabil control. Mancant permissiones, ínconosset sensitivitá del camp, obsolet destinationes e ne supportat scritiones causa un secur refusa. Relansa o reinstalla manualmen un signat paccage pos un falliment de actualisation."
+    ],
+    [
+      "Deletion de diariums",
+      "Selecte Deleter diariums por remover local diagnostic diariums, o Aperter li fólder del diariums por inspecter les. Ne include privat contenete quande vu aperte un raport in GitHub Issues."
+    ]
+  ],
+  "listedWordsOnly": "Solmen paroles listat in li dictionarium; formes ínconosset resta ínchangeat."
+}

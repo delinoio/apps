@@ -1,0 +1,138 @@
+{
+  "general": "Generali",
+  "exclusions": "App escluse",
+  "shortcuts": "Abbreviazioni da tastiera",
+  "updates": "Aggiornamenti",
+  "diagnostics": "Diagnostica e assistenza",
+  "tagline": "Continua a scrivere. Correggi il layout.",
+  "correction": "Correzione automatica",
+  "pause": "Pausa",
+  "resume": "Riprendi",
+  "languages": "Lingue abilitate",
+  "languageSearch": "Cerca una lingua o una tastiera",
+  "trayPause": "Sospendi la correzione",
+  "trayResume": "Riprendi la correzione",
+  "traySettings": "Impostazioni",
+  "trayExit": "Esci",
+  "trayStatus": "Stato della correzione",
+  "notificationUpdate": "È disponibile un aggiornamento. Esaminalo e installalo nelle Impostazioni.",
+  "notificationAttention": "FixKey richiede attenzione. Controlla il codice del motivo nelle Impostazioni.",
+  "korean": "Coreano · Dubeolsik",
+  "english": "Inglese · US QWERTY",
+  "startup": "Avvia all'accesso",
+  "uiLanguage": "Lingua dell'interfaccia",
+  "theme": "Tema",
+  "system": "Sistema",
+  "light": "Chiaro",
+  "dark": "Scuro",
+  "loading": "Connessione a FixKey…",
+  "connection": "Impossibile connettersi all'app desktop.",
+  "retry": "Riprova",
+  "active": "La correzione è attiva",
+  "inactive": "La correzione non è attiva",
+  "waitingField": "In attesa di un campo di testo modificabile",
+  "waitingFieldHelp": "Fai clic su un campo di testo modificabile in un'altra app. FixKey attende mentre le Impostazioni sono aperte o quando non può identificare con sicurezza il campo attivo. Trovi i dettagli in Diagnostica e assistenza.",
+  "local": "Il testo digitato rimane su questo dispositivo. I campi password sono esclusi.",
+  "empty": "Nessuna app esclusa",
+  "emptyDetail": "La correzione può intervenire nei controlli modificabili supportati. Aggiungi un'app per lasciare sempre invariato il testo inserito al suo interno.",
+  "add": "Aggiungi app",
+  "choose": "Scegli un'app",
+  "remove": "Rimuovi",
+  "unresolved": "Identità non risolta",
+  "noApps": "Non sono disponibili app identificabili. Apri l'app che vuoi escludere e riprova.",
+  "shortcut": "Candidati manuali",
+  "unassigned": "Non assegnata",
+  "capture": "Imposta abbreviazione",
+  "captureHelp": "Premi un tasto insieme a Control, Alt, Command o Shift. Esc annulla.",
+  "clear": "Cancella",
+  "cancel": "Annulla",
+  "done": "Fine",
+  "currentVersion": "Versione attuale",
+  "checkUpdate": "Verifica aggiornamenti",
+  "updateConsent": "Scarica e installa",
+  "updateHelp": "Gli aggiornamenti vengono verificati all'avvio e ogni 24 ore. I download iniziano solo con il tuo consenso.",
+  "recovery": "Se l'installazione non riesce, riavvia FixKey o reinstalla manualmente un pacchetto firmato. Le tue impostazioni vengono conservate. Puoi reinstallare manualmente le versioni firmate precedenti.",
+  "permission": "Consenti accesso all'accessibilità",
+  "permissionHelp": "FixKey richiede l'accesso all'accessibilità e all'osservazione dell'input per identificare un controllo modificabile e sostituire soltanto la parola completata.",
+  "inputPermission": "Consenti Monitoraggio input",
+  "inputPermissionRequest": "Consenti Monitoraggio input",
+  "inputPermissionSetup": "Configura Monitoraggio input",
+  "inputPermissionListHelp": "Accessibilità può già consentire l'ascolto dei tasti anche se FixKey non compare in Monitoraggio input. macOS non conferma qui la presenza di una voce separata nell'elenco. Controlla l'elenco in Impostazioni di Sistema e, se manca, aggiungi la versione attuale di FixKey.app con +.",
+  "inputPermissionHelp": "FixKey richiede Monitoraggio input per rilevare i tasti usati per la correzione del layout di tastiera.",
+  "accessibilityGranted": "L'accesso all'accessibilità è già consentito.",
+  "inputPermissionSteps": [
+    "Scegli Consenti Monitoraggio input per registrare FixKey e aprire le relative impostazioni dei permessi di macOS.",
+    "In Impostazioni di Sistema → Privacy e sicurezza → Monitoraggio input, abilita FixKey. Se manca, scegli + e aggiungi la versione attuale di FixKey.app da Applicazioni. Torna qui e scegli Ricontrolla. Riavvia FixKey se macOS lo richiede."
+  ],
+  "permissionRequest": "Consenti accesso all'accessibilità",
+  "permissionWaiting": "La correzione rimarrà disattivata finché l'accesso non sarà consentito. Dopo aver abilitato l'accesso, scegli Ricontrolla.",
+  "permissionSteps": [
+    "Scegli Consenti accesso all'accessibilità e segui la richiesta di macOS.",
+    "Abilita FixKey in Accessibilità. Se è già abilitato ma questa finestra rimane dopo il riavvio di FixKey, rimuovi la vecchia voce FixKey con − e usa + per aggiungere di nuovo la versione attuale di FixKey.app. Un'app ricompilata potrebbe non corrispondere più alla vecchia voce dei permessi. Se manca, usa + per aggiungere FixKey da Applicazioni.",
+    "Abilita FixKey anche in Monitoraggio input, poi ricontrolla. Se non compare alcuna richiesta per il monitoraggio dell'input, scegli di nuovo Consenti accesso all'accessibilità. Riavvia FixKey se macOS lo richiede."
+  ],
+  "macPermission": "In Impostazioni di Sistema, consenti FixKey in Accessibilità e Monitoraggio input, poi ricontrolla.",
+  "windowsPermission": "Usa FixKey nella tua sessione Windows attuale. I controlli protetti, con privilegi elevati o non supportati vengono lasciati invariati.",
+  "linuxPermission": "Usa una sessione X11 con il servizio di accessibilità AT-SPI e XInput2 disponibili. Wayland non è supportato.",
+  "openSettings": "Apri impostazioni di sistema",
+  "recheck": "Ricontrolla",
+  "later": "Più tardi",
+  "error": "Operazione non riuscita",
+  "reason": "Motivo",
+  "openLogs": "Apri cartella dei log",
+  "deleteLogs": "Elimina log",
+  "restore": "Ripristina backup delle impostazioni",
+  "support": "GitHub Issues",
+  "logHelp": "I log contengono versione, piattaforma, codici dei motivi e tempi di elaborazione. Il testo inserito è escluso. I log rimangono su questo dispositivo per un massimo di sette giorni e 10 MiB totali.",
+  "original": "Originale",
+  "recognized": "Riconosciuto",
+  "notRecognized": "Non riconosciuto dal dizionario",
+  "unchecked": "Impossibile verificare",
+  "candidates": "Candidati del layout",
+  "candidateHelp": "↑ ↓ Seleziona · Enter Applica · Esc Chiudi",
+  "noCandidates": "Il contesto di origine non è più disponibile.",
+  "help": "Assistenza",
+  "helpTopics": [
+    [
+      "Installazione",
+      "Installa il DMG firmato su macOS ARM64, il programma di installazione NSIS su Windows x64 o l'AppImage su Linux X11 x64. Le piattaforme di destinazione non implicano una compatibilità verificata con ogni app."
+    ],
+    [
+      "Permessi",
+      "Concedi i permessi di accessibilità e di input richiesti dal tuo sistema operativo, poi scegli Ricontrolla. La correzione rimane inattiva finché i permessi e i dizionari non sono pronti. Su macOS, Accessibilità può fornire un accesso effettivo all'ascolto dei tasti senza una voce separata in Monitoraggio input. Usa Configura Monitoraggio input in Generali per controllare l'elenco; se FixKey non è presente, usa + per aggiungere la versione attuale di FixKey.app da Applicazioni."
+    ],
+    [
+      "Layout e correzione",
+      "Coreano Dubeolsik e inglese US QWERTY sono abilitati per impostazione predefinita. Seleziona altre coppie di dizionario e tastiera in Generali. La tastiera pubblica indicata deve corrispondere al layout con cui scrivi. Se sono abilitate altre lingue, le parole vengono valutate in corrispondenza degli spazi; altrimenti sono gli spazi e la punteggiatura ad attivare la valutazione. Enter e Tab non la attivano. Una parola cambia solo quando esattamente un dizionario abilitato riconosce un candidato. Lingue affini possono riconoscere la stessa parola; in tal caso, questa rimane invariata. FixKey non cambia mai la lingua di input. I modificatori non supportati, i tasti morti non completati e le varianti di tastiera che non corrispondono al layout indicato vengono lasciati invariati."
+    ],
+    [
+      "Annullamento",
+      "Premi Backspace subito dopo una correzione automatica per ripristinare la parola originale e il suo separatore. Le successive pressioni di Backspace funzionano normalmente."
+    ],
+    [
+      "Candidati manuali",
+      "Assegna un'abbreviazione da tastiera, digita una parola e usa l'abbreviazione. I tasti freccia selezionano, Enter applica ed Esc chiude. Puoi scegliere esplicitamente un candidato non riconosciuto. Lo spostamento del cursore nel testo di origine o il passaggio a un'altra app chiude il selettore."
+    ],
+    [
+      "Esclusioni",
+      "Aggiungi un'app in App escluse. Le esclusioni corrispondono all'identità stabile dell'app. Le identità non risolte rimangono nell'elenco."
+    ],
+    [
+      "Privacy",
+      "FixKey elabora localmente il testo inserito. Non conserva una cronologia dell'input, non usa gli appunti per le sostituzioni e non invia telemetria. Dalla correzione automatica sono esclusi i token incollati, generati da programmi, numerici, emoji, URL, indirizzi email e quelli che combinano sistemi di scrittura diversi."
+    ],
+    [
+      "Aggiornamenti",
+      "La disponibilità di aggiornamenti stabili viene verificata tramite HTTPS all'avvio e ogni 24 ore. Il download richiede il tuo consenso. Le firme non valide vengono rifiutate. La correzione si interrompe prima dell'installazione; le impostazioni rimangono intatte."
+    ],
+    [
+      "Risoluzione dei problemi",
+      "Leggi il codice del motivo, ricontrolla i permessi e prova un controllo modificabile supportato. La mancanza di permessi, la sensibilità sconosciuta di un campo, le destinazioni non più valide e le scritture non supportate comportano il rifiuto dell'operazione per sicurezza. Dopo un aggiornamento non riuscito, riavvia o reinstalla manualmente un pacchetto firmato."
+    ],
+    [
+      "Eliminazione dei log",
+      "Scegli Elimina log per rimuovere i log diagnostici locali oppure Apri cartella dei log per esaminarli. Non includere contenuti privati quando apri una segnalazione su GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Solo le parole elencate nel dizionario; le forme sconosciute rimangono invariate."
+}

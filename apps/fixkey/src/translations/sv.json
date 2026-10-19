@@ -1,0 +1,138 @@
+{
+  "general": "Allmänt",
+  "exclusions": "Undantagna appar",
+  "shortcuts": "Kortkommandon",
+  "updates": "Uppdateringar",
+  "diagnostics": "Diagnostik och hjälp",
+  "tagline": "Fortsätt skriva. Rätta layouten.",
+  "correction": "Automatisk korrigering",
+  "pause": "Pausa",
+  "resume": "Återuppta",
+  "languages": "Aktiverade språk",
+  "languageSearch": "Hitta ett språk eller tangentbord",
+  "trayPause": "Pausa korrigering",
+  "trayResume": "Återuppta korrigering",
+  "traySettings": "Inställningar",
+  "trayExit": "Avsluta",
+  "trayStatus": "Korrigeringsstatus",
+  "notificationUpdate": "En uppdatering är tillgänglig. Granska och installera den i Inställningar.",
+  "notificationAttention": "FixKey behöver din uppmärksamhet. Kontrollera orsakskoden i Inställningar.",
+  "korean": "Koreanska · Dubeolsik",
+  "english": "Engelska · US QWERTY",
+  "startup": "Starta vid inloggning",
+  "uiLanguage": "Gränssnittsspråk",
+  "theme": "Tema",
+  "system": "System",
+  "light": "Ljust",
+  "dark": "Mörkt",
+  "loading": "Ansluter till FixKey…",
+  "connection": "Det går inte att ansluta till skrivbordsappen.",
+  "retry": "Försök igen",
+  "active": "Korrigering är aktiv",
+  "inactive": "Korrigering är inaktiv",
+  "waitingField": "Väntar på ett redigerbart textfält",
+  "waitingFieldHelp": "Klicka på ett redigerbart textfält i en annan app. FixKey väntar medan Inställningar är öppet eller när fältet som har fokus inte kan identifieras på ett säkert sätt. Mer information finns i Diagnostik och hjälp.",
+  "local": "Det du skriver stannar på den här enheten. Lösenordsfält undantas.",
+  "empty": "Inga undantagna appar",
+  "emptyDetail": "Korrigering kan användas i redigerbara kontroller som stöds. Lägg till en app för att alltid lämna dess inmatning oförändrad.",
+  "add": "Lägg till app",
+  "choose": "Välj en app",
+  "remove": "Ta bort",
+  "unresolved": "Identiteten kunde inte fastställas",
+  "noApps": "Inga appar som kan identifieras är tillgängliga. Öppna appen du vill undanta och försök igen.",
+  "shortcut": "Manuella kandidater",
+  "unassigned": "Inte tilldelat",
+  "capture": "Ange kortkommando",
+  "captureHelp": "Tryck på en tangent tillsammans med Control, Alt, Command eller Shift. Esc avbryter.",
+  "clear": "Rensa",
+  "cancel": "Avbryt",
+  "done": "Klart",
+  "currentVersion": "Nuvarande version",
+  "checkUpdate": "Sök efter uppdateringar",
+  "updateConsent": "Hämta och installera",
+  "updateHelp": "Uppdateringar söks vid start och var 24:e timme. Hämtningar startar endast med ditt samtycke.",
+  "recovery": "Om installationen misslyckas startar du om FixKey eller installerar om ett signerat paket manuellt. Dina inställningar bevaras. Tidigare signerade versioner kan installeras om manuellt.",
+  "permission": "Tillåt åtkomst till hjälpmedelsfunktioner",
+  "permissionHelp": "FixKey behöver åtkomst till hjälpmedelsfunktioner och inmatningsövervakning för att identifiera en redigerbar kontroll och endast ersätta det färdigskrivna ordet.",
+  "inputPermission": "Tillåt inmatningsövervakning",
+  "inputPermissionRequest": "Tillåt inmatningsövervakning",
+  "inputPermissionSetup": "Ställ in inmatningsövervakning",
+  "inputPermissionListHelp": "Hjälpmedelsbehörigheten kan redan tillåta avlyssning av tangenttryckningar även när FixKey saknas under Inmatningsövervakning. macOS bekräftar inte någon separat post i listan här. Kontrollera listan i Systeminställningar och lägg till den aktuella FixKey.app med + om den saknas.",
+  "inputPermissionHelp": "FixKey behöver inmatningsövervakning för att upptäcka de tangenter som används för korrigering av tangentbordslayouten.",
+  "accessibilityGranted": "Åtkomst till hjälpmedelsfunktioner är redan tillåten.",
+  "inputPermissionSteps": [
+    "Välj Tillåt inmatningsövervakning för att registrera FixKey och öppna dess behörighetsinställningar i macOS.",
+    "Aktivera FixKey i Systeminställningar → Integritet och säkerhet → Inmatningsövervakning. Om appen saknas väljer du + och lägger till den aktuella FixKey.app från Appar. Gå tillbaka hit och välj Kontrollera igen. Starta om FixKey om macOS ber dig göra det."
+  ],
+  "permissionRequest": "Tillåt åtkomst till hjälpmedelsfunktioner",
+  "permissionWaiting": "Korrigering förblir avstängd tills åtkomst tillåts. Välj Kontrollera igen när du har aktiverat åtkomsten.",
+  "permissionSteps": [
+    "Välj Tillåt åtkomst till hjälpmedelsfunktioner och följ anvisningarna i macOS.",
+    "Aktivera FixKey under Hjälpmedel. Om appen redan är aktiverad men den här dialogrutan finns kvar efter att du har startat om FixKey, tar du bort den gamla FixKey-posten med − och använder + för att lägga till den aktuella FixKey.app igen. En ombyggd app kanske inte längre matchar den gamla behörighetsposten. Om appen saknas använder du + för att lägga till FixKey från Appar.",
+    "Aktivera även FixKey under Inmatningsövervakning och kontrollera sedan igen. Om ingen fråga om inmatningsövervakning visas väljer du Tillåt åtkomst till hjälpmedelsfunktioner igen. Starta om FixKey om macOS ber dig göra det."
+  ],
+  "macPermission": "Tillåt FixKey under Hjälpmedel och Inmatningsövervakning i Systeminställningar och kontrollera sedan igen.",
+  "windowsPermission": "Använd FixKey i din aktuella Windows-session. Kontroller som är skyddade, kräver förhöjda behörigheter eller inte stöds lämnas oförändrade.",
+  "linuxPermission": "Använd en X11-session där hjälpmedelstjänsten AT-SPI och XInput2 är tillgängliga. Wayland stöds inte.",
+  "openSettings": "Öppna systeminställningar",
+  "recheck": "Kontrollera igen",
+  "later": "Senare",
+  "error": "Åtgärden misslyckades",
+  "reason": "Orsak",
+  "openLogs": "Öppna loggmapp",
+  "deleteLogs": "Radera loggar",
+  "restore": "Återställ säkerhetskopia av inställningar",
+  "support": "GitHub Issues",
+  "logHelp": "Loggar innehåller version, plattform, orsakskoder och tidsmätningar. Inmatad text utesluts. Loggarna stannar på den här enheten i högst sju dagar och omfattar högst 10 MiB totalt.",
+  "original": "Original",
+  "recognized": "Känns igen",
+  "notRecognized": "Känns inte igen av ordlistan",
+  "unchecked": "Kunde inte kontrolleras",
+  "candidates": "Layoutkandidater",
+  "candidateHelp": "↑ ↓ Välj · Enter Tillämpa · Esc Stäng",
+  "noCandidates": "Det ursprungliga sammanhanget är inte längre tillgängligt.",
+  "help": "Hjälp",
+  "helpTopics": [
+    [
+      "Installation",
+      "Installera den signerade DMG-filen på macOS ARM64, NSIS-installationsprogrammet på Windows x64 eller AppImage på Linux X11 x64. Målplattformarna innebär inte att kompatibiliteten med varje app har verifierats."
+    ],
+    [
+      "Behörigheter",
+      "Bevilja de hjälpmedels- och inmatningsbehörigheter som operativsystemet begär och välj sedan Kontrollera igen. Korrigering förblir inaktiv tills behörigheter och ordlistor är redo. På macOS kan hjälpmedelsbehörigheten ge faktisk åtkomst till avlyssning av tangenttryckningar utan någon separat post under Inmatningsövervakning. Använd Ställ in inmatningsövervakning under Allmänt för att kontrollera listan. Om FixKey saknas använder du + för att lägga till den aktuella FixKey.app från Appar."
+    ],
+    [
+      "Layouter och korrigering",
+      "Koreanska Dubeolsik och amerikansk engelska QWERTY är aktiverade som standard. Välj ytterligare par av ordlistor och tangentbord under Allmänt. Det angivna offentligt tillgängliga tangentbordet måste matcha layouten du skriver med. När ytterligare språk är aktiverade utvärderas ord vid mellanslag. Annars utlöser mellanslag och skiljetecken utvärdering. Enter och Tab gör det inte. Ett ord ändras endast när exakt en aktiverad ordlista känner igen en kandidat. Besläktade språk kan känna igen samma ord. Då lämnas det oförändrat. FixKey byter aldrig ditt inmatningsspråk. Modifieringstangenter som inte stöds, ofullständiga sekvenser med döda tangenter och tangentbordsvarianter som inte matchar den angivna layouten lämnas oförändrade."
+    ],
+    [
+      "Ångra",
+      "Tryck på Backspace omedelbart efter en automatisk korrigering för att återställa det ursprungliga ordet och dess avskiljare. Ytterligare tryck på Backspace fungerar som vanligt."
+    ],
+    [
+      "Manuella kandidater",
+      "Tilldela ett kortkommando, skriv ett ord och använd kortkommandot. Piltangenterna väljer, Enter tillämpar och Esc stänger. Du kan uttryckligen välja en kandidat som inte känns igen. Om du flyttar textmarkören i källan eller byter app stängs väljaren."
+    ],
+    [
+      "Undantag",
+      "Lägg till en app under Undantagna appar. Undantag matchas mot appens stabila identitet. Identiteter som inte kan fastställas finns kvar i listan."
+    ],
+    [
+      "Integritet",
+      "FixKey behandlar inmatning lokalt. Appen sparar ingen inmatningshistorik, använder inte urklipp för ersättning och skickar ingen telemetri. Inklistrad och programgenererad text samt tal, emojier, webbadresser, e-postadresser och textenheter med blandade skriftsystem undantas från automatisk korrigering."
+    ],
+    [
+      "Uppdateringar",
+      "Stabila uppdateringar söks via HTTPS vid start och var 24:e timme. Du ger ditt samtycke före hämtningen. Ogiltiga signaturer avvisas. Korrigering stoppas före installationen. Inställningarna bevaras."
+    ],
+    [
+      "Felsökning",
+      "Läs orsakskoden, kontrollera behörigheterna igen och prova en redigerbar kontroll som stöds. Saknade behörigheter, okänd känslighetsklassning för fältet, inaktuella mål och skrivåtgärder som inte stöds gör att åtgärden av säkerhetsskäl avvisas. Starta om eller installera om ett signerat paket manuellt efter en misslyckad uppdatering."
+    ],
+    [
+      "Radera loggar",
+      "Välj Radera loggar för att ta bort lokala diagnostikloggar eller Öppna loggmapp för att granska dem. Ta inte med privat innehåll när du skapar ett ärende på GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Endast ord som finns i ordlistan; okända former lämnas oförändrade."
+}

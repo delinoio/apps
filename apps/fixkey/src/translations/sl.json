@@ -1,0 +1,138 @@
+{
+  "general": "Splošno",
+  "exclusions": "Izključene aplikacije",
+  "shortcuts": "Bližnjice",
+  "updates": "Posodobitve",
+  "diagnostics": "Diagnostika in pomoč",
+  "tagline": "Tipkajte naprej. Popravite razporeditev.",
+  "correction": "Samodejno popravljanje",
+  "pause": "Začasno ustavi",
+  "resume": "Nadaljuj",
+  "languages": "Omogočeni jeziki",
+  "languageSearch": "Poiščite jezik ali tipkovnico",
+  "trayPause": "Začasno ustavi popravljanje",
+  "trayResume": "Nadaljuj popravljanje",
+  "traySettings": "Nastavitve",
+  "trayExit": "Izhod",
+  "trayStatus": "Stanje popravljanja",
+  "notificationUpdate": "Na voljo je posodobitev. Preglejte in namestite jo v nastavitvah.",
+  "notificationAttention": "FixKey zahteva vašo pozornost. V nastavitvah preverite kodo razloga.",
+  "korean": "Korejščina · Dubeolsik",
+  "english": "Angleščina · US QWERTY",
+  "startup": "Zaženi ob prijavi",
+  "uiLanguage": "Jezik uporabniškega vmesnika",
+  "theme": "Tema",
+  "system": "Sistemska",
+  "light": "Svetla",
+  "dark": "Temna",
+  "loading": "Povezovanje s FixKey…",
+  "connection": "Povezava z namizno aplikacijo ni mogoča.",
+  "retry": "Poskusi znova",
+  "active": "Popravljanje je dejavno",
+  "inactive": "Popravljanje ni dejavno",
+  "waitingField": "Čakanje na besedilno polje, ki ga je mogoče urejati",
+  "waitingFieldHelp": "Kliknite besedilno polje, ki ga je mogoče urejati, v drugi aplikaciji. FixKey čaka, dokler so nastavitve odprte ali dokler polja v žarišču ni mogoče varno prepoznati. Podrobnosti so na voljo v razdelku Diagnostika in pomoč.",
+  "local": "Vaš vnos ostane v tej napravi. Polja za gesla so izključena.",
+  "empty": "Ni izključenih aplikacij",
+  "emptyDetail": "Popravljanje lahko deluje v podprtih kontrolnikih, ki jih je mogoče urejati. Dodajte aplikacijo, če želite, da njen vnos vedno ostane nespremenjen.",
+  "add": "Dodaj aplikacijo",
+  "choose": "Izberite aplikacijo",
+  "remove": "Odstrani",
+  "unresolved": "Identiteta ni razrešena",
+  "noApps": "Na voljo ni aplikacij, ki bi jih bilo mogoče prepoznati. Odprite aplikacijo, ki jo želite izključiti, in poskusite znova.",
+  "shortcut": "Ročna izbira predlogov",
+  "unassigned": "Ni dodeljeno",
+  "capture": "Nastavi bližnjico",
+  "captureHelp": "Pritisnite tipko skupaj s Control, Alt, Command ali Shift. Esc prekliče nastavitev.",
+  "clear": "Počisti",
+  "cancel": "Prekliči",
+  "done": "Končano",
+  "currentVersion": "Trenutna različica",
+  "checkUpdate": "Preveri posodobitve",
+  "updateConsent": "Prenesi in namesti",
+  "updateHelp": "Posodobitve se preverjajo ob zagonu in vsakih 24 ur. Prenosi se začnejo samo z vašo privolitvijo.",
+  "recovery": "Če namestitev ne uspe, znova zaženite FixKey ali ročno znova namestite podpisan paket. Vaše nastavitve se ohranijo. Prejšnje podpisane različice lahko ročno znova namestite.",
+  "permission": "Dovoli dostop za dostopnost",
+  "permissionHelp": "FixKey potrebuje dostop za dostopnost in opazovanje vnosa, da prepozna kontrolnik, ki ga je mogoče urejati, in zamenja samo dokončano besedo.",
+  "inputPermission": "Dovoli spremljanje vnosa",
+  "inputPermissionRequest": "Dovoli spremljanje vnosa",
+  "inputPermissionSetup": "Nastavi spremljanje vnosa",
+  "inputPermissionListHelp": "Dostopnost lahko že omogoča spremljanje tipk, tudi če FixKey ni na seznamu za spremljanje vnosa. macOS tukaj ne potrdi ločenega vnosa na seznamu. Preverite seznam v sistemskih nastavitvah in z gumbom + dodajte trenutno aplikacijo FixKey.app, če je ni na seznamu.",
+  "inputPermissionHelp": "FixKey potrebuje spremljanje vnosa, da zazna tipke, uporabljene pri popravljanju razporeditve tipkovnice.",
+  "accessibilityGranted": "Dostop za dostopnost je že dovoljen.",
+  "inputPermissionSteps": [
+    "Izberite Dovoli spremljanje vnosa, da registrirate FixKey in odprete njegove nastavitve dovoljenj v macOS.",
+    "V razdelku Sistemske nastavitve → Zasebnost in varnost → Spremljanje vnosa omogočite FixKey. Če ga ni na seznamu, izberite + in dodajte trenutno aplikacijo FixKey.app iz mape Aplikacije. Vrnite se sem in izberite Preveri znova. Če macOS to zahteva, znova zaženite FixKey."
+  ],
+  "permissionRequest": "Dovoli dostop za dostopnost",
+  "permissionWaiting": "Popravljanje bo ostalo izklopljeno, dokler ne dovolite dostopa. Ko omogočite dostop, izberite Preveri znova.",
+  "permissionSteps": [
+    "Izberite Dovoli dostop za dostopnost in sledite pozivu macOS.",
+    "Omogočite FixKey v razdelku Dostopnost. Če je že omogočen, vendar je to pogovorno okno po ponovnem zagonu FixKey še vedno prikazano, odstranite stari vnos FixKey z gumbom − in z gumbom + znova dodajte trenutno aplikacijo FixKey.app. Znova zgrajena aplikacija se morda ne ujema več s starim vnosom dovoljenja. Če je ni na seznamu, z gumbom + dodajte FixKey iz mape Aplikacije.",
+    "Omogočite FixKey tudi v razdelku Spremljanje vnosa in nato preverite znova. Če se poziv za spremljanje vnosa ne prikaže, znova izberite Dovoli dostop za dostopnost. Če macOS to zahteva, znova zaženite FixKey."
+  ],
+  "macPermission": "V sistemskih nastavitvah dovolite FixKey v razdelkih Dostopnost in Spremljanje vnosa, nato preverite znova.",
+  "windowsPermission": "FixKey uporabljajte v trenutni seji Windows. Zaščiteni, nepodprti kontrolniki ali kontrolniki s povišanimi pravicami ostanejo nespremenjeni.",
+  "linuxPermission": "Uporabljajte sejo X11, v kateri sta na voljo storitev dostopnosti AT-SPI in XInput2. Wayland ni podprt.",
+  "openSettings": "Odpri sistemske nastavitve",
+  "recheck": "Preveri znova",
+  "later": "Pozneje",
+  "error": "Dejanje ni uspelo",
+  "reason": "Razlog",
+  "openLogs": "Odpri mapo dnevnikov",
+  "deleteLogs": "Izbriši dnevnike",
+  "restore": "Obnovi varnostno kopijo nastavitev",
+  "support": "GitHub Issues",
+  "logHelp": "Dnevniki vsebujejo različico, platformo, kode razlogov in podatke o časih izvajanja. Vneseno besedilo je izključeno. Dnevniki ostanejo v tej napravi največ sedem dni, njihova skupna velikost pa ne presega 10 MiB.",
+  "original": "Izvirnik",
+  "recognized": "Prepoznano",
+  "notRecognized": "Slovar ne prepozna",
+  "unchecked": "Preverjanje ni bilo mogoče",
+  "candidates": "Predlogi razporeditev",
+  "candidateHelp": "↑ ↓ Izberi · Enter Uporabi · Esc Zapri",
+  "noCandidates": "Izvorni kontekst ni več na voljo.",
+  "help": "Pomoč",
+  "helpTopics": [
+    [
+      "Namestitev",
+      "Namestite podpisani DMG v macOS ARM64, namestitveni program NSIS v Windows x64 ali AppImage v Linux X11 x64. Ciljne platforme ne pomenijo preverjene združljivosti z vsako aplikacijo."
+    ],
+    [
+      "Dovoljenja",
+      "Dodelite dovoljenja za dostopnost in vnos, ki jih zahteva vaš operacijski sistem, nato izberite Preveri znova. Popravljanje ostane nedejavno, dokler dovoljenja in slovarji niso pripravljeni. V macOS lahko Dostopnost omogoča dejanski dostop za spremljanje tipk brez ločenega vnosa v razdelku Spremljanje vnosa. V razdelku Splošno izberite Nastavi spremljanje vnosa, da preverite seznam; če FixKey ni na njem, z gumbom + dodajte trenutno aplikacijo FixKey.app iz mape Aplikacije."
+    ],
+    [
+      "Razporeditve in popravljanje",
+      "Korejska razporeditev Dubeolsik in ameriška angleška razporeditev QWERTY sta privzeto omogočeni. Dodatne pare slovarjev in tipkovnic izberite v razdelku Splošno. Navedena javna razporeditev tipkovnice se mora ujemati z razporeditvijo, s katero tipkate. Če so omogočeni dodatni jeziki, se besede preverjajo ob presledkih; sicer preverjanje sprožijo presledki in ločila. Enter in Tab ga ne sprožita. Beseda se spremeni samo, kadar natanko en omogočeni slovar prepozna predlog. Sorodni jeziki lahko prepoznajo isto besedo; v tem primeru ostane nespremenjena. FixKey nikoli ne preklopi jezika vnosa. Vnos z nepodprtimi modifikacijskimi tipkami, nedokončanimi mrtvimi tipkami in različicami tipkovnice, ki se ne ujemajo z navedeno razporeditvijo, ostane nespremenjen."
+    ],
+    [
+      "Razveljavitev",
+      "Takoj po samodejnem popravku pritisnite Backspace, da obnovite izvirno besedo in njen ločilni znak. Nadaljnji pritiski Backspace delujejo kot običajno."
+    ],
+    [
+      "Ročna izbira predlogov",
+      "Dodelite bližnjico, vnesite besedo in uporabite bližnjico. S puščičnimi tipkami izbirate, Enter uveljavi izbiro, Esc pa zapre izbirnik. Izrecno lahko izberete tudi neprepoznan predlog. Če premaknete izvorno besedilno kazalko ali preklopite aplikacijo, se izbirnik zapre."
+    ],
+    [
+      "Izključitve",
+      "Dodajte aplikacijo v razdelku Izključene aplikacije. Izključitve se ujemajo s stalno identiteto aplikacije. Nerazrešene identitete ostanejo na seznamu."
+    ],
+    [
+      "Zasebnost",
+      "FixKey obdeluje vnos lokalno. Ne hrani zgodovine vnosa, ne uporablja odložišča za zamenjave in ne pošilja telemetrije. Prilepljeni, programsko ustvarjeni in številski nizi ter nizi z emodžiji, naslovi URL, e-poštnimi naslovi ali mešanimi pisavami so izključeni iz samodejnega popravljanja."
+    ],
+    [
+      "Posodobitve",
+      "Stabilne posodobitve se preverjajo prek HTTPS ob zagonu in vsakih 24 ur. Pred prenosom morate privoliti. Neveljavni podpisi so zavrnjeni. Popravljanje se pred namestitvijo ustavi; nastavitve se ohranijo."
+    ],
+    [
+      "Odpravljanje težav",
+      "Preberite kodo razloga, znova preverite dovoljenja in poskusite uporabiti podprt kontrolnik, ki ga je mogoče urejati. Manjkajoča dovoljenja, neznana občutljivost polja, zastareli cilji in nepodprti zapisi povzročijo varno zavrnitev. Če posodobitev ne uspe, znova zaženite aplikacijo ali ročno znova namestite podpisan paket."
+    ],
+    [
+      "Brisanje dnevnikov",
+      "Izberite Izbriši dnevnike, da odstranite lokalne diagnostične dnevnike, ali Odpri mapo dnevnikov, da jih pregledate. Pri odpiranju prijave težave na GitHub ne vključujte zasebne vsebine."
+    ]
+  ],
+  "listedWordsOnly": "Samo besede, navedene v slovarju; neznane oblike ostanejo nespremenjene."
+}

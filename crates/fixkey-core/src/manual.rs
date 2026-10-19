@@ -274,6 +274,7 @@ mod tests {
                 LanguageSet::default(),
                 field,
                 &Validators {
+                    additional: None,
                     korean: &Reject,
                     english: &Reject,
                 },
@@ -346,6 +347,7 @@ mod tests {
                 LanguageSet::default().with(Language::EnUsQwerty, false),
                 &mut field,
                 &Validators {
+                    additional: None,
                     korean: &MissingValidator,
                     english: &Reject,
                 },

@@ -454,6 +454,10 @@ impl Adapter {
             let scan = event.detail.saturating_sub(8);
             let key = if !physical || !has_node || event.response_type & 0x80 != 0 {
                 Key::Untrusted
+            } else if matches!(scan, 29 | 42 | 54 | 56 | 58 | 97 | 100 | 125 | 126) {
+                Key::Modifier
+            } else if modifiers & 128 != 0 && modifiers & (8 | 64) == 0 {
+                super::level_three(super::pc_key(scan, shift, caps))
             } else if modifiers & 4 != 0 && scan == 47 {
                 Key::Paste
             } else if modifiers & (4 | 8 | 64) != 0 {

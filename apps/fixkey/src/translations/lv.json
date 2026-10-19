@@ -1,0 +1,138 @@
+{
+  "general": "Vispārīgi",
+  "exclusions": "Izslēgtās lietotnes",
+  "shortcuts": "Īsinājumtaustiņi",
+  "updates": "Atjauninājumi",
+  "diagnostics": "Diagnostika un palīdzība",
+  "tagline": "Turpiniet rakstīt. Izlabojiet izkārtojumu.",
+  "correction": "Automātiskā labošana",
+  "pause": "Apturēt",
+  "resume": "Atsākt",
+  "languages": "Iespējotās valodas",
+  "languageSearch": "Atrast valodu vai tastatūru",
+  "trayPause": "Apturēt labošanu",
+  "trayResume": "Atsākt labošanu",
+  "traySettings": "Iestatījumi",
+  "trayExit": "Iziet",
+  "trayStatus": "Labošanas statuss",
+  "notificationUpdate": "Ir pieejams atjauninājums. Apskatiet un instalējiet to iestatījumos.",
+  "notificationAttention": "FixKey nepieciešama jūsu uzmanība. Pārbaudiet iemesla kodu iestatījumos.",
+  "korean": "Korejiešu · Dubeolsik",
+  "english": "Angļu · US QWERTY",
+  "startup": "Palaist, piesakoties sistēmā",
+  "uiLanguage": "Saskarnes valoda",
+  "theme": "Motīvs",
+  "system": "Sistēmas",
+  "light": "Gaišs",
+  "dark": "Tumšs",
+  "loading": "Notiek savienošana ar FixKey…",
+  "connection": "Nevar izveidot savienojumu ar darbvirsmas lietotni.",
+  "retry": "Mēģināt vēlreiz",
+  "active": "Labošana ir aktīva",
+  "inactive": "Labošana ir neaktīva",
+  "waitingField": "Gaida rediģējamu teksta lauku",
+  "waitingFieldHelp": "Noklikšķiniet uz rediģējama teksta lauka citā lietotnē. FixKey gaida, kamēr ir atvērti iestatījumi vai fokusēto lauku nevar droši identificēt. Plašāka informācija ir pieejama sadaļā Diagnostika un palīdzība.",
+  "local": "Jūsu ievade paliek šajā ierīcē. Paroles lauki ir izslēgti.",
+  "empty": "Nav izslēgtu lietotņu",
+  "emptyDetail": "Labošana var darboties atbalstītās rediģējamās vadīklās. Pievienojiet lietotni, lai tās ievadi vienmēr atstātu nemainītu.",
+  "add": "Pievienot lietotni",
+  "choose": "Izvēlēties lietotni",
+  "remove": "Noņemt",
+  "unresolved": "Identitāte nav noteikta",
+  "noApps": "Nav pieejamu identificējamu lietotņu. Atveriet lietotni, kuru vēlaties izslēgt, un mēģiniet vēlreiz.",
+  "shortcut": "Manuāli izvēlami varianti",
+  "unassigned": "Nav piešķirts",
+  "capture": "Iestatīt īsinājumtaustiņu",
+  "captureHelp": "Nospiediet taustiņu kopā ar Control, Alt, Command vai Shift. Esc atceļ darbību.",
+  "clear": "Notīrīt",
+  "cancel": "Atcelt",
+  "done": "Gatavs",
+  "currentVersion": "Pašreizējā versija",
+  "checkUpdate": "Pārbaudīt atjauninājumus",
+  "updateConsent": "Lejupielādēt un instalēt",
+  "updateHelp": "Atjauninājumi tiek pārbaudīti palaišanas laikā un ik pēc 24 stundām. Lejupielāde sākas tikai ar jūsu piekrišanu.",
+  "recovery": "Ja instalēšana neizdodas, restartējiet FixKey vai manuāli pārinstalējiet parakstītu pakotni. Jūsu iestatījumi tiek saglabāti. Iepriekšējās parakstītās versijas var pārinstalēt manuāli.",
+  "permission": "Atļaut piekļuvi pieejamības funkcijām",
+  "permissionHelp": "FixKey nepieciešama piekļuve pieejamības funkcijām un ievades novērošanai, lai identificētu rediģējamu vadīklu un aizstātu tikai pabeigto vārdu.",
+  "inputPermission": "Atļaut ievades pārraudzību",
+  "inputPermissionRequest": "Atļaut ievades pārraudzību",
+  "inputPermissionSetup": "Iestatīt ievades pārraudzību",
+  "inputPermissionListHelp": "Pieejamības funkcijas jau var atļaut taustiņu nospiešanas uztveršanu, pat ja FixKey nav ievades pārraudzības sarakstā. macOS šeit neapstiprina atsevišķa saraksta ieraksta esamību. Pārbaudiet sarakstu sistēmas iestatījumos un ar + pievienojiet pašreizējo FixKey.app, ja tās tur nav.",
+  "inputPermissionHelp": "FixKey nepieciešama ievades pārraudzība, lai noteiktu tastatūras izkārtojuma labošanai izmantotos taustiņus.",
+  "accessibilityGranted": "Piekļuve pieejamības funkcijām jau ir atļauta.",
+  "inputPermissionSteps": [
+    "Izvēlieties Atļaut ievades pārraudzību, lai reģistrētu FixKey un atvērtu tās macOS atļauju iestatījumus.",
+    "Sadaļā Sistēmas iestatījumi → Privātums un drošība → Ievades pārraudzība iespējojiet FixKey. Ja tās tur nav, izvēlieties + un pievienojiet pašreizējo FixKey.app no mapes Lietotnes. Atgriezieties šeit un izvēlieties Pārbaudīt vēlreiz. Restartējiet FixKey, ja macOS to pieprasa."
+  ],
+  "permissionRequest": "Atļaut piekļuvi pieejamības funkcijām",
+  "permissionWaiting": "Labošana paliks izslēgta, līdz piekļuve būs atļauta. Pēc piekļuves iespējošanas izvēlieties Pārbaudīt vēlreiz.",
+  "permissionSteps": [
+    "Izvēlieties Atļaut piekļuvi pieejamības funkcijām un izpildiet macOS uzvednē norādīto.",
+    "Iespējojiet FixKey sadaļā Pieejamība. Ja tā jau ir iespējota, bet šis dialogs paliek redzams pēc FixKey restartēšanas, noņemiet veco FixKey ierakstu ar − un izmantojiet +, lai vēlreiz pievienotu pašreizējo FixKey.app. No jauna būvēta lietotne var vairs neatbilst vecajam atļaujas ierakstam. Ja ieraksta nav, izmantojiet +, lai pievienotu FixKey no mapes Lietotnes.",
+    "Iespējojiet FixKey arī sadaļā Ievades pārraudzība un pēc tam pārbaudiet vēlreiz. Ja ievades pārraudzības uzvedne neparādās, vēlreiz izvēlieties Atļaut piekļuvi pieejamības funkcijām. Restartējiet FixKey, ja macOS to pieprasa."
+  ],
+  "macPermission": "Sistēmas iestatījumos atļaujiet FixKey sadaļās Pieejamība un Ievades pārraudzība un pēc tam pārbaudiet vēlreiz.",
+  "windowsPermission": "Izmantojiet FixKey savā pašreizējā Windows sesijā. Aizsargātas, ar paaugstinātām privilēģijām darbinātas vai neatbalstītas vadīklas tiek atstātas nemainītas.",
+  "linuxPermission": "Izmantojiet X11 sesiju, kurā ir pieejams AT-SPI pieejamības pakalpojums un XInput2. Wayland netiek atbalstīts.",
+  "openSettings": "Atvērt sistēmas iestatījumus",
+  "recheck": "Pārbaudīt vēlreiz",
+  "later": "Vēlāk",
+  "error": "Darbība neizdevās",
+  "reason": "Iemesls",
+  "openLogs": "Atvērt žurnālu mapi",
+  "deleteLogs": "Dzēst žurnālus",
+  "restore": "Atjaunot iestatījumu dublējumkopiju",
+  "support": "GitHub Issues",
+  "logHelp": "Žurnālos ir norādīta versija, platforma, iemeslu kodi un laika mērījumi. Ievadītais teksts netiek iekļauts. Žurnāli paliek šajā ierīcē ne ilgāk kā septiņas dienas, un to kopējais apjoms nepārsniedz 10 MiB.",
+  "original": "Oriģināls",
+  "recognized": "Atpazīts",
+  "notRecognized": "Vārdnīca neatpazīst",
+  "unchecked": "Neizdevās pārbaudīt",
+  "candidates": "Izkārtojuma varianti",
+  "candidateHelp": "↑ ↓ Izvēlēties · Enter Lietot · Esc Aizvērt",
+  "noCandidates": "Sākotnējais konteksts vairs nav pieejams.",
+  "help": "Palīdzība",
+  "helpTopics": [
+    [
+      "Instalēšana",
+      "Instalējiet parakstīto DMG sistēmā macOS ARM64, NSIS instalēšanas programmu sistēmā Windows x64 vai AppImage sistēmā Linux X11 x64. Mērķa platformu norādīšana nenozīmē, ka saderība ar katru lietotni ir pārbaudīta."
+    ],
+    [
+      "Atļaujas",
+      "Piešķiriet operētājsistēmas pieprasītās pieejamības un ievades atļaujas un pēc tam izvēlieties Pārbaudīt vēlreiz. Labošana paliek neaktīva, līdz atļaujas un vārdnīcas ir gatavas. Sistēmā macOS pieejamības funkcijas var nodrošināt reālu piekļuvi taustiņu nospiešanas uztveršanai bez atsevišķa ievades pārraudzības ieraksta. Sadaļā Vispārīgi izmantojiet Iestatīt ievades pārraudzību, lai pārbaudītu sarakstu; ja FixKey tajā nav, izmantojiet +, lai pievienotu pašreizējo FixKey.app no mapes Lietotnes."
+    ],
+    [
+      "Izkārtojumi un labošana",
+      "Korejiešu Dubeolsik un ASV angļu US QWERTY pēc noklusējuma ir iespējoti. Sadaļā Vispārīgi izvēlieties papildu vārdnīcu un tastatūru pārus. Sarakstā norādītajai publiskajai tastatūrai jāatbilst izkārtojumam, ar kuru rakstāt. Ja ir iespējotas papildu valodas, vārdi tiek izvērtēti, ievadot atstarpi; pretējā gadījumā izvērtēšanu izraisa atstarpes un pieturzīmes. Enter un Tab izvērtēšanu neizraisa. Vārds tiek mainīts tikai tad, ja tieši viena iespējotā vārdnīca atpazīst kādu variantu. Radniecīgas valodas var atpazīt vienu un to pašu vārdu; tādā gadījumā tas tiek atstāts nemainīts. FixKey nekad nepārslēdz jūsu ievades valodu. Ievade ar neatbalstītiem modifikatoriem, nepabeigtām diakritisko taustiņu secībām un tastatūras variantiem, kas neatbilst sarakstā norādītajam izkārtojumam, tiek atstāta nemainīta."
+    ],
+    [
+      "Atsaukšana",
+      "Tūlīt pēc automātiskās labošanas nospiediet Backspace, lai atjaunotu sākotnējo vārdu un tā atdalītāju. Turpmākie Backspace nospiedieni darbojas kā parasti."
+    ],
+    [
+      "Manuāli izvēlami varianti",
+      "Piešķiriet īsinājumtaustiņu, ierakstiet vārdu un izmantojiet īsinājumtaustiņu. Bulttaustiņi izvēlas variantu, Enter to lieto, un Esc aizver izvēlni. Jūs varat apzināti izvēlēties neatpazītu variantu. Pārvietojot ievades kursoru sākotnējā laukā vai pārslēdzot lietotnes, variantu izvēlne aizveras."
+    ],
+    [
+      "Izņēmumi",
+      "Pievienojiet lietotni sadaļā Izslēgtās lietotnes. Izņēmumi tiek piemēroti pēc lietotnes nemainīgās identitātes. Ieraksti ar nenoteiktu identitāti paliek sarakstā."
+    ],
+    [
+      "Privātums",
+      "FixKey apstrādā ievadi lokāli. Tā nesaglabā ievades vēsturi, neizmanto starpliktuvi aizstāšanai un nesūta telemetrijas datus. Ielīmētas, programmatiski ievadītas, skaitliskas, emocijzīmju, URL, e-pasta un jauktu rakstību virknes ir izslēgtas no automātiskās labošanas."
+    ],
+    [
+      "Atjauninājumi",
+      "Stabilās versijas atjauninājumi tiek pārbaudīti, izmantojot HTTPS, palaišanas laikā un ik pēc 24 stundām. Pirms lejupielādes tiek prasīta jūsu piekrišana. Nederīgi paraksti tiek noraidīti. Labošana tiek apturēta pirms instalēšanas; iestatījumi paliek neskarti."
+    ],
+    [
+      "Problēmu novēršana",
+      "Izlasiet iemesla kodu, vēlreiz pārbaudiet atļaujas un izmēģiniet atbalstītu rediģējamu vadīklu. Trūkstošas atļaujas, nezināma lauka sensitivitāte, novecojuši mērķi un neatbalstītas rakstīšanas darbības izraisa drošu atteikšanos veikt izmaiņas. Pēc atjaunināšanas kļūmes restartējiet lietotni vai manuāli pārinstalējiet parakstītu pakotni."
+    ],
+    [
+      "Žurnālu dzēšana",
+      "Izvēlieties Dzēst žurnālus, lai noņemtu lokālos diagnostikas žurnālus, vai Atvērt žurnālu mapi, lai tos apskatītu. Veidojot problēmas pieteikumu GitHub, neiekļaujiet privātu saturu."
+    ]
+  ],
+  "listedWordsOnly": "Tikai vārdnīcā uzskaitītie vārdi; nezināmās formas paliek nemainītas."
+}

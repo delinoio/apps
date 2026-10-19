@@ -1,0 +1,138 @@
+{
+  "general": "Allgemeen",
+  "exclusions": "Utslaten Apps",
+  "shortcuts": "Tastkörtels",
+  "updates": "Aktualiseren",
+  "diagnostics": "Diagnose un Hülp",
+  "tagline": "Schriev wieder. Richt de Tastatuurbeleeg.",
+  "correction": "Automaatsche Korrektuur",
+  "pause": "Paus maken",
+  "resume": "Wiedermaken",
+  "languages": "Anmaakt Spraken",
+  "languageSearch": "En Spraak oder Tastatuur söken",
+  "trayPause": "Korrektuur anhollen",
+  "trayResume": "Korrektuur wiedermaken",
+  "traySettings": "Instellen",
+  "trayExit": "Beennen",
+  "trayStatus": "Korrektuurstatus",
+  "notificationUpdate": "En Aktualiseren is dor. Prööv un installeer ehr ünner Instellen.",
+  "notificationAttention": "FixKey bruukt Dien Acht. Kiek na den Grundcode ünner Instellen.",
+  "korean": "Koreaansch · Dubeolsik",
+  "english": "Engelsch · US QWERTY",
+  "startup": "Bi't Anmellen starten",
+  "uiLanguage": "Spraak vun de Bedeenböversiet",
+  "theme": "Utsehn",
+  "system": "Systeem",
+  "light": "Hell",
+  "dark": "Düüster",
+  "loading": "Verbinnen mit FixKey…",
+  "connection": "Keen Verbinnen mit de Desktop-App mööglich.",
+  "retry": "Nochmaal versöken",
+  "active": "Korrektuur is an",
+  "inactive": "Korrektuur is ut",
+  "waitingField": "An't Töven op en Textfeld, dat sik bewarken lett",
+  "waitingFieldHelp": "Klick op en Textfeld in en anner App, dat sik bewarken lett. FixKey töövt, solang Instellen apen is oder dat Feld mit den Fokus nich seker erkannt warrn kann. Mehr steiht ünner Diagnose un Hülp.",
+  "local": "Dien Ingaav blifft op dit Reedschap. Passwoortfeller sünd utslaten.",
+  "empty": "Keen utslaten Apps",
+  "emptyDetail": "Korrektuur kann in ünnerstütt Bedeenelementen lopen, de sik bewarken laat. Föög en App to, wenn ehr Ingaav jümmers unverännert blieven schall.",
+  "add": "App tofögen",
+  "choose": "En App utsöken",
+  "remove": "Wegmaken",
+  "unresolved": "Identiteet nich faststellt",
+  "noApps": "Keen Apps dor, de sik erkennen laat. Maak de App apen, de Du utsluten wullt, un versöök dat nochmaal.",
+  "shortcut": "Kandidaten vun Hand",
+  "unassigned": "Nich towiesen",
+  "capture": "Tastkörtel fastleggen",
+  "captureHelp": "Drück en Tast mit Control, Alt, Command oder Shift. Esc brickt af.",
+  "clear": "Leddig maken",
+  "cancel": "Afbreken",
+  "done": "Fardig",
+  "currentVersion": "Aktuelle Verschoon",
+  "checkUpdate": "Na Aktualiseren söken",
+  "updateConsent": "Dalladen un installeren",
+  "updateHelp": "Bi't Starten un all 24 Stünnen warrt na Aktualiseren söcht. Dat Dalladen fangt eerst mit Dien Tostimmen an.",
+  "recovery": "Wenn dat Installeren fehlsleit, start FixKey nieg oder installeer en signeert Paket vun Hand nochmaal. Dien Instellen blievt behollen. Fröhere signeerte Verschonen köönt vun Hand nochmaal installeert warrn.",
+  "permission": "Togriep för Togänglichkeit verlöven",
+  "permissionHelp": "FixKey bruukt Togriep för Togänglichkeit un dat Beluern vun Ingaven, üm en Bedeenelement to erkennen, dat sik bewarken lett, un bloots dat afslaten Woort uttotuuschen.",
+  "inputPermission": "Ingaavöverwaaken verlöven",
+  "inputPermissionRequest": "Ingaavöverwaaken verlöven",
+  "inputPermissionSetup": "Ingaavöverwaaken inrichten",
+  "inputPermissionListHelp": "Togänglichkeit kann dat Beluern vun Tasten al verlöven, ok wenn FixKey nich ünner Ingaavöverwaaken steiht. macOS bestätigt hier keen egen Listindrag. Prööv de List in de Systeeminstellen un föög de aktuelle FixKey.app mit + to, wenn se fehlt.",
+  "inputPermissionHelp": "FixKey bruukt Ingaavöverwaaken, üm de Tasten to erkennen, de för de Korrektuur vun de Tastatuurbeleeg bruukt warrt.",
+  "accessibilityGranted": "Togriep för Togänglichkeit is al verlöövt.",
+  "inputPermissionSteps": [
+    "Köör Ingaavöverwaaken verlöven, üm FixKey intodragen un de tohören macOS-Rechteinstellen apen to maken.",
+    "Maak FixKey ünner Systeeminstellen → Privaatheit un Sekerheit → Ingaavöverwaaken an. Wenn dat fehlt, köör + un föög de aktuelle FixKey.app ut Programme to. Kumm hierhen torüch un köör Nochmaal pröven. Start FixKey nieg, wenn macOS dorüm beddt."
+  ],
+  "permissionRequest": "Togriep för Togänglichkeit verlöven",
+  "permissionWaiting": "Korrektuur blifft ut, bet de Togriep verlöövt is. Köör Nochmaal pröven, nadeem Du den Togriep verlöövt hest.",
+  "permissionSteps": [
+    "Köör Togriep för Togänglichkeit verlöven un folg de Anfraag vun macOS.",
+    "Maak FixKey ünner Togänglichkeit an. Wenn dat al anmaakt is, man disse Dialoog na en Niegstart vun FixKey noch dor is, maak den olen FixKey-Indrag mit − weg un föög de aktuelle FixKey.app mit + nochmaal to. En nieg buut App passt villicht nich mehr to den olen Rechteindrag. Wenn dat fehlt, föög FixKey ut Programme mit + to.",
+    "Maak FixKey ok ünner Ingaavöverwaaken an un prööv denn nochmaal. Wenn keen Anfraag för Ingaavöverwaaken wiest warrt, köör Togriep för Togänglichkeit verlöven nochmaal. Start FixKey nieg, wenn macOS dorüm beddt."
+  ],
+  "macPermission": "Verlööv FixKey in de Systeeminstellen ünner Togänglichkeit un Ingaavöverwaaken un prööv denn nochmaal.",
+  "windowsPermission": "Bruuk FixKey in Dien aktuelle Windows-Törn. Schüüt, mit höger Rechten utföhrt oder nich ünnerstütt Bedeenelementen blievt unverännert.",
+  "linuxPermission": "Bruuk en X11-Törn mit den AT-SPI-Togänglichkeitsdeenst un verföögbor XInput2. Wayland warrt nich ünnerstütt.",
+  "openSettings": "Systeeminstellen apen maken",
+  "recheck": "Nochmaal pröven",
+  "later": "Later",
+  "error": "Akschoon fehlslaan",
+  "reason": "Grund",
+  "openLogs": "Protokollorner apen maken",
+  "deleteLogs": "Protokollen wegsmieten",
+  "restore": "Sekerheitskopie vun Instellen wedderherstellen",
+  "support": "GitHub Issues",
+  "logHelp": "Protokollen bargt Verschoon, Plattform, Grundcodes un Tieden. Ingaavtext is utslaten. Protokollen blievt op dit Reedschap, hööchstens söven Daag lang un mit tosamen hööchstens 10 MiB.",
+  "original": "Originaal",
+  "recognized": "Erkannt",
+  "notRecognized": "Vun dat Wöörbook nich erkannt",
+  "unchecked": "Kunn nich pröövt warrn",
+  "candidates": "Kandidaten för de Tastatuurbeleeg",
+  "candidateHelp": "↑ ↓ Utsöken · Enter Anwennen · Esc Tomaken",
+  "noCandidates": "De Ursprungstohang is nich mehr verföögbor.",
+  "help": "Hülp",
+  "helpTopics": [
+    [
+      "Installeren",
+      "Installeer dat signeerte DMG op macOS ARM64, dat NSIS-Installaschoonsprogramm op Windows x64 oder dat AppImage op Linux X11 x64. Teelplattformen bedüüdt nich, dat de Tosamenarbeit mit elkeen App pröövt is."
+    ],
+    [
+      "Rechten",
+      "Verlööv de Togänglichkeits- un Ingaavrechten, de Dien Bedrievssysteem anfraagt, un köör denn Nochmaal pröven. Korrektuur blifft ut, bet de Rechten un Wöörböker praat sünd. Op macOS kann Togänglichkeit wirksamen Togriep för dat Beluern vun Tasten geven, ahn en egen Indrag ünner Ingaavöverwaaken. Bruuk Ingaavöverwaaken inrichten ünner Allgemeen, üm de List to pröven; wenn FixKey fehlt, föög de aktuelle FixKey.app ut Programme mit + to."
+    ],
+    [
+      "Tastatuurbelegen un Korrektuur",
+      "Koreaansch Dubeolsik un US-Engelsch QWERTY sünd standardmäßig anmaakt. Köör ünner Allgemeen mehr Pooren vun Wöörbook un Tastatuur. De oplist öffentlich Tastatuur mutt to de Beleeg passen, mit de Du schriffst. Wenn mehr Spraken anmaakt sünd, warrt Wöör bi Leerteken pröövt; anners lööst Leerteken un Satzteken de Prööv ut. Enter un Tab doot dat nich. En Woort ännert sik bloots, wenn nau een anmaakt Wöörbook en Kandidaten erkennt. Verwandte Spraken köönt dat sülvige Woort erkennen; denn blifft dat unverännert. FixKey wesselt Dien Ingaavspraak nienich. Nich ünnerstütt Modifikatortasten, nich afslaten Doodtasten un Tastatuurvarianten, de nich to de oplist Beleeg passt, blievt unverännert."
+    ],
+    [
+      "Torüchnehmen",
+      "Drück glieks na de automaatsche Korrektuur Backspace, üm dat ursprüngliche Woort un sien Trennteken wedderhertostellen. Wenn Du Backspace nochmaal drückst, warkt dat as gewöhnlich."
+    ],
+    [
+      "Kandidaten vun Hand",
+      "Wies en Tastkörtel to, schriev en Woort un bruuk den Tastkörtel. Mit de Pieltasten söchst Du ut, Enter wennt an un Esc maakt to. Du kannst en nich erkannten Kandidaten ausdrücklich utsöken. Wenn Du de Schrievmark in den Ursprungstext verschuffst oder de App wesselst, maakt de Utwahl to."
+    ],
+    [
+      "Utslaten Apps",
+      "Föög en App ünner Utslaten Apps to. Utsluten warrt na de faste Identiteet vun de App toornt. Identiteten, de sik nich faststellen laat, blievt oplist."
+    ],
+    [
+      "Privaatheit",
+      "FixKey verarbeidt Ingaven lokaal. Dat bewahrt keen Ingaavgeschicht, bruukt de Twischenaflaag nich för't Uttuuschen un sennt keen Telemetrie. Inföögte, vun Programmen anleggte, numerische, Emoji-, URL-, E-Mail- un mit mengte Schriften schreven Tokens sünd vun de automaatsche Korrektuur utslaten."
+    ],
+    [
+      "Aktualiseren",
+      "Bi't Starten un all 24 Stünnen warrt över HTTPS na stabile Aktualiseren söcht. Du giffst Dien Tostimmen vör dat Dalladen. Ungüllige Signaturen warrt afwiest. Korrektuur höllt vör de Installaschoon op; de Instellen blievt behollen."
+    ],
+    [
+      "Fehlersöök",
+      "Lees den Grundcode, prööv de Rechten nochmaal un versöök en ünnerstütt Bedeenelement, dat sik bewarken lett. Fehlende Rechten, unbekannte Vertraulichkeit vun dat Feld, verollerte Telen un nich ünnerstütt Schrievvörgäng föhrt to en seker Afwiesen. Start na en fehlslaan Aktualiseren nieg oder installeer en signeert Paket vun Hand nochmaal."
+    ],
+    [
+      "Protokollen wegsmieten",
+      "Köör Protokollen wegsmieten, üm de lokale Diagnoseprotokollen weg to maken, oder Protokollorner apen maken, üm se antokieken. Föög keen private Inholt bi, wenn Du en GitHub-Issue opmaakst."
+    ]
+  ],
+  "listedWordsOnly": "Bloots Wöör, de in dat Wöörbook staht; unbekannte Formen blievt unverännert."
+}

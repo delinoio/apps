@@ -1,0 +1,138 @@
+{
+  "general": "Chung",
+  "exclusions": "Ứng dụng bị loại trừ",
+  "shortcuts": "Phím tắt",
+  "updates": "Cập nhật",
+  "diagnostics": "Chẩn đoán và trợ giúp",
+  "tagline": "Cứ tiếp tục gõ. Sửa bố cục bàn phím.",
+  "correction": "Tự động sửa",
+  "pause": "Tạm dừng",
+  "resume": "Tiếp tục",
+  "languages": "Ngôn ngữ đã bật",
+  "languageSearch": "Tìm ngôn ngữ hoặc bàn phím",
+  "trayPause": "Tạm dừng sửa",
+  "trayResume": "Tiếp tục sửa",
+  "traySettings": "Cài đặt",
+  "trayExit": "Thoát",
+  "trayStatus": "Trạng thái sửa",
+  "notificationUpdate": "Có bản cập nhật mới. Xem và cài đặt trong Cài đặt.",
+  "notificationAttention": "FixKey cần bạn chú ý. Kiểm tra mã lý do trong Cài đặt.",
+  "korean": "Tiếng Hàn · Dubeolsik",
+  "english": "Tiếng Anh · US QWERTY",
+  "startup": "Khởi động khi đăng nhập",
+  "uiLanguage": "Ngôn ngữ giao diện",
+  "theme": "Giao diện",
+  "system": "Hệ thống",
+  "light": "Sáng",
+  "dark": "Tối",
+  "loading": "Đang kết nối với FixKey…",
+  "connection": "Không thể kết nối với ứng dụng máy tính.",
+  "retry": "Thử lại",
+  "active": "Chức năng sửa đang hoạt động",
+  "inactive": "Chức năng sửa không hoạt động",
+  "waitingField": "Đang chờ trường văn bản có thể chỉnh sửa",
+  "waitingFieldHelp": "Nhấp vào một trường văn bản có thể chỉnh sửa trong ứng dụng khác. FixKey sẽ chờ khi Cài đặt đang mở hoặc khi không thể xác định an toàn trường đang được chọn. Xem chi tiết trong Chẩn đoán và trợ giúp.",
+  "local": "Nội dung bạn nhập chỉ ở trên thiết bị này. Các trường mật khẩu được loại trừ.",
+  "empty": "Không có ứng dụng bị loại trừ",
+  "emptyDetail": "Chức năng sửa có thể hoạt động trong các thành phần nhập liệu có thể chỉnh sửa được hỗ trợ. Thêm ứng dụng để luôn giữ nguyên nội dung nhập trong ứng dụng đó.",
+  "add": "Thêm ứng dụng",
+  "choose": "Chọn ứng dụng",
+  "remove": "Xóa",
+  "unresolved": "Chưa xác định được danh tính",
+  "noApps": "Không có ứng dụng nào có thể xác định danh tính. Mở ứng dụng bạn muốn loại trừ rồi thử lại.",
+  "shortcut": "Phương án sửa thủ công",
+  "unassigned": "Chưa gán",
+  "capture": "Đặt phím tắt",
+  "captureHelp": "Nhấn một phím cùng với Control, Alt, Command hoặc Shift. Nhấn Esc để hủy.",
+  "clear": "Xóa",
+  "cancel": "Hủy",
+  "done": "Xong",
+  "currentVersion": "Phiên bản hiện tại",
+  "checkUpdate": "Kiểm tra cập nhật",
+  "updateConsent": "Tải xuống và cài đặt",
+  "updateHelp": "Bản cập nhật được kiểm tra khi khởi động và mỗi 24 giờ. Việc tải xuống chỉ bắt đầu khi bạn đồng ý.",
+  "recovery": "Nếu cài đặt thất bại, hãy khởi động lại FixKey hoặc cài đặt lại thủ công bằng gói đã ký. Cài đặt của bạn được giữ nguyên. Bạn có thể cài đặt lại thủ công các phiên bản trước đã ký.",
+  "permission": "Cho phép quyền truy cập trợ năng",
+  "permissionHelp": "FixKey cần quyền truy cập trợ năng và theo dõi thao tác nhập để xác định thành phần nhập liệu có thể chỉnh sửa và chỉ thay thế từ đã gõ xong.",
+  "inputPermission": "Cho phép giám sát đầu vào",
+  "inputPermissionRequest": "Cho phép giám sát đầu vào",
+  "inputPermissionSetup": "Thiết lập giám sát đầu vào",
+  "inputPermissionListHelp": "Quyền trợ năng có thể đã cho phép theo dõi phím ngay cả khi FixKey không xuất hiện trong mục Giám sát đầu vào. macOS không xác nhận một mục riêng trong danh sách tại đây. Kiểm tra danh sách trong Cài đặt hệ thống và dùng + để thêm FixKey.app hiện tại nếu chưa có.",
+  "inputPermissionHelp": "FixKey cần quyền Giám sát đầu vào để phát hiện các phím dùng cho việc sửa bố cục bàn phím.",
+  "accessibilityGranted": "Quyền truy cập trợ năng đã được cho phép.",
+  "inputPermissionSteps": [
+    "Chọn Cho phép giám sát đầu vào để đăng ký FixKey và mở cài đặt quyền của ứng dụng trong macOS.",
+    "Trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Giám sát đầu vào, bật FixKey. Nếu chưa có, chọn + và thêm FixKey.app hiện tại từ Ứng dụng. Quay lại đây và chọn Kiểm tra lại. Khởi động lại FixKey nếu macOS yêu cầu."
+  ],
+  "permissionRequest": "Cho phép quyền truy cập trợ năng",
+  "permissionWaiting": "Chức năng sửa sẽ vẫn tắt cho đến khi quyền truy cập được cho phép. Sau khi bật quyền truy cập, chọn Kiểm tra lại.",
+  "permissionSteps": [
+    "Chọn Cho phép quyền truy cập trợ năng và làm theo lời nhắc của macOS.",
+    "Bật FixKey trong Trợ năng. Nếu đã bật nhưng hộp thoại này vẫn xuất hiện sau khi khởi động lại FixKey, dùng − để xóa mục FixKey cũ rồi dùng + để thêm lại FixKey.app hiện tại. Ứng dụng được biên dịch lại có thể không còn khớp với mục quyền cũ. Nếu chưa có, dùng + để thêm FixKey từ Ứng dụng.",
+    "Đồng thời bật FixKey trong Giám sát đầu vào, rồi kiểm tra lại. Nếu không xuất hiện lời nhắc giám sát đầu vào, chọn Cho phép quyền truy cập trợ năng một lần nữa. Khởi động lại FixKey nếu macOS yêu cầu."
+  ],
+  "macPermission": "Trong Cài đặt hệ thống, cho phép FixKey trong Trợ năng và Giám sát đầu vào, rồi kiểm tra lại.",
+  "windowsPermission": "Sử dụng FixKey trong phiên Windows hiện tại. Các thành phần nhập liệu được bảo vệ, chạy với quyền cao hoặc không được hỗ trợ sẽ được giữ nguyên.",
+  "linuxPermission": "Sử dụng phiên X11 có dịch vụ trợ năng AT-SPI và XInput2. Wayland không được hỗ trợ.",
+  "openSettings": "Mở cài đặt hệ thống",
+  "recheck": "Kiểm tra lại",
+  "later": "Để sau",
+  "error": "Thao tác thất bại",
+  "reason": "Lý do",
+  "openLogs": "Mở thư mục nhật ký",
+  "deleteLogs": "Xóa nhật ký",
+  "restore": "Khôi phục bản sao lưu cài đặt",
+  "support": "GitHub Issues",
+  "logHelp": "Nhật ký chứa phiên bản, nền tảng, mã lý do và thời gian xử lý. Nội dung nhập không được ghi lại. Nhật ký chỉ được lưu trên thiết bị này tối đa bảy ngày và tổng dung lượng tối đa 10 MiB.",
+  "original": "Bản gốc",
+  "recognized": "Được nhận diện",
+  "notRecognized": "Không được từ điển nhận diện",
+  "unchecked": "Không thể kiểm tra",
+  "candidates": "Phương án theo bố cục bàn phím",
+  "candidateHelp": "↑ ↓ Chọn · Enter Áp dụng · Esc Đóng",
+  "noCandidates": "Ngữ cảnh nguồn không còn khả dụng.",
+  "help": "Trợ giúp",
+  "helpTopics": [
+    [
+      "Cài đặt",
+      "Cài đặt DMG đã ký trên macOS ARM64, trình cài đặt NSIS trên Windows x64 hoặc AppImage trên Linux X11 x64. Việc liệt kê các nền tảng đích không có nghĩa là đã xác minh khả năng tương thích với mọi ứng dụng."
+    ],
+    [
+      "Quyền truy cập",
+      "Cấp các quyền trợ năng và nhập liệu mà hệ điều hành yêu cầu, rồi chọn Kiểm tra lại. Chức năng sửa vẫn không hoạt động cho đến khi các quyền và từ điển sẵn sàng. Trên macOS, quyền Trợ năng có thể cho phép theo dõi phím thực tế mà không cần mục Giám sát đầu vào riêng. Dùng Thiết lập giám sát đầu vào trong Chung để kiểm tra danh sách; nếu chưa có FixKey, dùng + để thêm FixKey.app hiện tại từ Ứng dụng."
+    ],
+    [
+      "Bố cục bàn phím và sửa từ",
+      "Tiếng Hàn Dubeolsik và tiếng Anh US QWERTY được bật theo mặc định. Chọn thêm các cặp từ điển và bàn phím trong Chung. Bàn phím công khai được liệt kê phải khớp với bố cục bạn dùng để gõ. Khi bật thêm ngôn ngữ, từ được đánh giá tại dấu cách; nếu không, dấu cách và dấu câu sẽ kích hoạt việc đánh giá. Enter và Tab không kích hoạt việc này. Một từ chỉ thay đổi khi đúng một từ điển đã bật nhận diện một phương án. Các ngôn ngữ có quan hệ gần nhau có thể nhận diện cùng một từ; khi đó từ được giữ nguyên. FixKey không bao giờ chuyển ngôn ngữ nhập của bạn. Các phím bổ trợ không được hỗ trợ, phím chết chưa hoàn tất và biến thể bàn phím không khớp với bố cục được liệt kê sẽ được giữ nguyên."
+    ],
+    [
+      "Hoàn tác",
+      "Nhấn Backspace ngay sau khi tự động sửa để khôi phục từ gốc và ký tự phân cách của từ đó. Các lần nhấn Backspace tiếp theo hoạt động bình thường."
+    ],
+    [
+      "Phương án sửa thủ công",
+      "Gán một phím tắt, gõ một từ rồi dùng phím tắt đó. Các phím mũi tên dùng để chọn, Enter để áp dụng và Esc để đóng. Bạn có thể chủ động chọn một phương án không được nhận diện. Di chuyển con trỏ văn bản nguồn hoặc chuyển ứng dụng sẽ đóng bộ chọn."
+    ],
+    [
+      "Loại trừ",
+      "Thêm ứng dụng trong Ứng dụng bị loại trừ. Việc loại trừ dựa trên danh tính ổn định của ứng dụng. Các danh tính chưa xác định được vẫn được giữ trong danh sách."
+    ],
+    [
+      "Quyền riêng tư",
+      "FixKey xử lý nội dung nhập ngay trên thiết bị. Ứng dụng không lưu lịch sử nhập, không dùng bảng nhớ tạm để thay thế và không gửi dữ liệu đo từ xa. Các chuỗi được dán, được chèn bằng chương trình, ở dạng số, biểu tượng cảm xúc, URL, địa chỉ thư điện tử hoặc pha trộn hệ chữ viết được loại trừ khỏi việc tự động sửa."
+    ],
+    [
+      "Cập nhật",
+      "Các bản cập nhật ổn định được kiểm tra qua HTTPS khi khởi động và mỗi 24 giờ. Bạn phải đồng ý trước khi tải xuống. Chữ ký không hợp lệ sẽ bị từ chối. Chức năng sửa dừng trước khi cài đặt; cài đặt được giữ nguyên."
+    ],
+    [
+      "Khắc phục sự cố",
+      "Đọc mã lý do, kiểm tra lại quyền truy cập và thử một thành phần nhập liệu có thể chỉnh sửa được hỗ trợ. Việc thiếu quyền, không xác định được tính nhạy cảm của trường, đích không còn hợp lệ và thao tác ghi không được hỗ trợ sẽ khiến FixKey từ chối an toàn. Khởi động lại hoặc cài đặt lại thủ công bằng gói đã ký sau khi cập nhật thất bại."
+    ],
+    [
+      "Xóa nhật ký",
+      "Chọn Xóa nhật ký để xóa nhật ký chẩn đoán cục bộ, hoặc Mở thư mục nhật ký để kiểm tra chúng. Không đưa nội dung riêng tư vào khi tạo một vấn đề trên GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Chỉ các từ được liệt kê trong từ điển; các dạng từ không xác định được giữ nguyên."
+}

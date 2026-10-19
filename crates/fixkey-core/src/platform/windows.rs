@@ -575,8 +575,14 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
             // SAFETY: The documented Caps Lock virtual key is queried after the
             // safety gate.
             let caps = unsafe { GetKeyState(0x14) } & 1 != 0;
+            // SAFETY: The documented right-Alt virtual key is read after the safety gate.
+            let right_alt = unsafe { GetAsyncKeyState(0xa5) } < 0;
             let key = if event.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED) != 0 {
                 Key::Untrusted
+            } else if matches!(event.vkCode, 0x10..=0x12 | 0x5b..=0x5c | 0xa0..=0xa5) {
+                Key::Modifier
+            } else if right_alt && !meta {
+                super::level_three(super::pc_key(event.scanCode, shift, caps))
             } else if (ctrl && event.vkCode == 0x56) || (shift && event.vkCode == 0x2d) {
                 Key::Paste
             } else if ctrl || alt || meta {

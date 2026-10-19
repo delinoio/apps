@@ -12,18 +12,20 @@ pub enum Language {
     KoDubeolsik,
     /// US English QWERTY layout.
     EnUsQwerty,
+    /// An additional bundled dictionary and keyboard.
+    Additional(crate::languages::AdditionalLanguage),
 }
 
 impl Language {
-    /// Every supported language in a stable order.
-    pub const ALL: [Self; 2] = [Self::KoDubeolsik, Self::EnUsQwerty];
-
     /// Stable machine-readable identifier used in settings and diagnostics.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::KoDubeolsik => "ko-dubeolsik",
             Self::EnUsQwerty => "en-us-qwerty",
+            Self::Additional(language) => {
+                &crate::multilingual::catalog().languages[language as usize].id
+            }
         }
     }
 }
@@ -34,43 +36,61 @@ impl fmt::Display for Language {
     }
 }
 
-/// The languages the user has enabled. Both are enabled by default.
+/// Selected languages. The original pair is enabled; additional languages are opt-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanguageSet {
-    ko_dubeolsik: bool,
-    en_us_qwerty: bool,
+    bits: u128,
 }
 
 impl Default for LanguageSet {
     fn default() -> Self {
-        Self {
-            ko_dubeolsik: true,
-            en_us_qwerty: true,
+        Self { bits: 3 }
+    }
+}
+
+impl Language {
+    const fn index(self) -> u32 {
+        match self {
+            Self::KoDubeolsik => 0,
+            Self::EnUsQwerty => 1,
+            Self::Additional(language) => language as u32 + 2,
         }
+    }
+
+    /// Parses a stable settings identifier. Unknown identifiers are rejected.
+    #[must_use]
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|language| language.as_str() == id)
     }
 }
 
 impl LanguageSet {
+    /// Returns whether a public keyboard beyond the original pair is enabled.
+    #[must_use]
+    pub const fn has_additional(self) -> bool {
+        self.bits & !3 != 0
+    }
+
     /// Returns whether `language` is enabled.
     #[must_use]
     pub const fn is_enabled(self, language: Language) -> bool {
-        match language {
-            Language::KoDubeolsik => self.ko_dubeolsik,
-            Language::EnUsQwerty => self.en_us_qwerty,
-        }
+        self.bits & (1 << language.index()) != 0
     }
 
     /// Returns a copy with `language` enabled or disabled.
     #[must_use]
     pub const fn with(mut self, language: Language, enabled: bool) -> Self {
-        match language {
-            Language::KoDubeolsik => self.ko_dubeolsik = enabled,
-            Language::EnUsQwerty => self.en_us_qwerty = enabled,
+        if enabled {
+            self.bits |= 1 << language.index();
+        } else {
+            self.bits &= !(1 << language.index());
         }
         self
     }
 
-    /// Enabled languages in stable order.
+    /// Enabled languages in stable order. New languages are opt-in.
     pub fn enabled(self) -> impl Iterator<Item = Language> {
         Language::ALL
             .into_iter()
@@ -205,7 +225,10 @@ mod tests {
     #[test]
     fn both_languages_are_enabled_by_default() {
         let set = LanguageSet::default();
-        assert_eq!(set.enabled().collect::<Vec<_>>(), Language::ALL);
+        assert_eq!(
+            set.enabled().collect::<Vec<_>>(),
+            [Language::KoDubeolsik, Language::EnUsQwerty]
+        );
     }
 
     #[test]

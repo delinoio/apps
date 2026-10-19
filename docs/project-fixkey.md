@@ -2,7 +2,7 @@
 
 ## Goal
 
-Correct words typed with the wrong keyboard layout without requiring users to switch input languages. For each completed word, FixKey reconstructs candidates under every enabled layout, validates each candidate against its language dictionary, and replaces the word only when exactly one enabled language accepts its candidate. The first version supports Korean Dubeolsik and US English QWERTY in both directions on a personal, local desktop application. There is no fixed release deadline.
+Correct words typed with the wrong keyboard layout without requiring users to switch input languages. For each completed word, FixKey reconstructs candidates under every enabled layout, validates each candidate against its language dictionary, and replaces the word only when exactly one enabled language accepts its candidate. Korean Dubeolsik and US English QWERTY remain the default pair in both directions on a personal, local desktop application. Additional languages use the complete pinned public Hunspell dictionary catalog paired with published XKB keyboards; the owning core contract defines the catalog, conservative validation limits and excluded resources. UI, help, tray actions and notifications use the bundled locale catalog. There is no fixed release deadline.
 
 ## Project ID
 
@@ -15,7 +15,7 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 `crates/fixkey-core` and `apps/fixkey/src-tauri` are explicit Rust workspace members. `apps/fixkey` owns the desktop shell and frontend.
 
 - `crates/fixkey-core` (`core`): Rust engine for layout reconstruction, language validation, correction and undo state, and platform accessibility adapters. It has no UI dependency.
-- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`. This component also owns `.github/workflows/release-fixkey.yml` and the `scripts/release/fixkey*` artifact, license and release-contract helpers.
+- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`. This component also owns `.github/workflows/release-fixkey.yml` and the `scripts/release/fixkey*` artifact, license and release-contract helpers. `scripts/fixkey` owns offline language-resource import and shared locale-registry generation for these two components.
 
 ## Domain Contract Documents
 
@@ -25,7 +25,7 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 ## Cross-Domain Invariants
 
 - Component identifiers remain stable: `core`, `desktop`.
-- Supported language identifiers remain stable: `ko-dubeolsik`, `en-us-qwerty`.
+- Existing language identifiers remain stable: `ko-dubeolsik`, `en-us-qwerty`. Additional dictionary/layout identifiers are enumerated in `crates/fixkey-core/assets/languages/catalog.json` and the generated `crates/fixkey-core/src/languages.rs`. Persist identifiers, never catalog indexes or translated display names. New languages are opt-in; enabling all dictionaries is not the default.
 - Target platform identifiers remain stable: `macos-arm64`, `windows-x64`, `linux-x11-x64`.
 - Raw input handling and morphology processing stay in Rust. The React UI never receives input text except candidate text shown in the manual picker for the active context.
 - Input text, reconstructed candidates, document content, window titles and correction history are never persisted or transmitted. Network communication is limited to application update checks and downloads.

@@ -1,0 +1,138 @@
+{
+  "general": "Opšte",
+  "exclusions": "Izuzete aplikacije",
+  "shortcuts": "Prečice",
+  "updates": "Ažuriranja",
+  "diagnostics": "Dijagnostika i pomoć",
+  "tagline": "Nastavite da kucate. Ispravite raspored.",
+  "correction": "Automatsko ispravljanje",
+  "pause": "Pauziraj",
+  "resume": "Nastavi",
+  "languages": "Omogućeni jezici",
+  "languageSearch": "Pronađite jezik ili tastaturu",
+  "trayPause": "Pauziraj ispravljanje",
+  "trayResume": "Nastavi ispravljanje",
+  "traySettings": "Podešavanja",
+  "trayExit": "Izađi",
+  "trayStatus": "Status ispravljanja",
+  "notificationUpdate": "Dostupno je ažuriranje. Pregledajte ga i instalirajte u Podešavanjima.",
+  "notificationAttention": "FixKey zahteva vašu pažnju. Proverite kôd razloga u Podešavanjima.",
+  "korean": "Korejski · Dubeolsik",
+  "english": "Engleski · US QWERTY",
+  "startup": "Pokreni pri prijavljivanju",
+  "uiLanguage": "Jezik interfejsa",
+  "theme": "Tema",
+  "system": "Sistemska",
+  "light": "Svetla",
+  "dark": "Tamna",
+  "loading": "Povezivanje sa aplikacijom FixKey…",
+  "connection": "Povezivanje sa desktop aplikacijom nije moguće.",
+  "retry": "Pokušaj ponovo",
+  "active": "Ispravljanje je aktivno",
+  "inactive": "Ispravljanje nije aktivno",
+  "waitingField": "Čeka se tekstualno polje koje može da se uređuje",
+  "waitingFieldHelp": "Kliknite na tekstualno polje koje može da se uređuje u drugoj aplikaciji. FixKey čeka dok su Podešavanja otvorena ili dok fokusirano polje ne može bezbedno da se prepozna. Detalji su dostupni u odeljku Dijagnostika i pomoć.",
+  "local": "Vaš unos ostaje na ovom uređaju. Polja za lozinke su izuzeta.",
+  "empty": "Nema izuzetih aplikacija",
+  "emptyDetail": "Ispravljanje može da radi u podržanim kontrolama koje mogu da se uređuju. Dodajte aplikaciju da bi njen unos uvek ostao nepromenjen.",
+  "add": "Dodaj aplikaciju",
+  "choose": "Izaberite aplikaciju",
+  "remove": "Ukloni",
+  "unresolved": "Identitet nije utvrđen",
+  "noApps": "Nema dostupnih aplikacija čiji identitet može da se utvrdi. Otvorite aplikaciju koju želite da izuzmete i pokušajte ponovo.",
+  "shortcut": "Ručni izbor kandidata",
+  "unassigned": "Nije dodeljeno",
+  "capture": "Postavi prečicu",
+  "captureHelp": "Pritisnite taster zajedno sa Control, Alt, Command ili Shift. Esc otkazuje.",
+  "clear": "Obriši",
+  "cancel": "Otkaži",
+  "done": "Gotovo",
+  "currentVersion": "Trenutna verzija",
+  "checkUpdate": "Proveri ažuriranja",
+  "updateConsent": "Preuzmi i instaliraj",
+  "updateHelp": "Ažuriranja se proveravaju pri pokretanju i svaka 24 sata. Preuzimanje počinje samo uz vašu saglasnost.",
+  "recovery": "Ako instalacija ne uspe, ponovo pokrenite FixKey ili ručno ponovo instalirajte potpisani paket. Vaša podešavanja ostaju sačuvana. Prethodne potpisane verzije mogu se ponovo instalirati ručno.",
+  "permission": "Dozvoli pristup funkcijama pristupačnosti",
+  "permissionHelp": "Aplikaciji FixKey potreban je pristup funkcijama pristupačnosti i praćenju unosa da bi prepoznala kontrolu koja može da se uređuje i zamenila samo završenu reč.",
+  "inputPermission": "Dozvoli praćenje unosa",
+  "inputPermissionRequest": "Dozvoli praćenje unosa",
+  "inputPermissionSetup": "Podesi praćenje unosa",
+  "inputPermissionListHelp": "Pristupačnost već može da omogući praćenje tastera čak i kada FixKey nije na listi Praćenje unosa. macOS ovde ne potvrđuje poseban unos na listi. Proverite listu u Sistemskim podešavanjima i pomoću + dodajte trenutni FixKey.app ako nedostaje.",
+  "inputPermissionHelp": "Aplikaciji FixKey potrebno je praćenje unosa da bi otkrivala tastere koji se koriste za ispravljanje rasporeda tastature.",
+  "accessibilityGranted": "Pristup funkcijama pristupačnosti je već dozvoljen.",
+  "inputPermissionSteps": [
+    "Izaberite Dozvoli praćenje unosa da biste registrovali FixKey i otvorili njegova podešavanja dozvola u sistemu macOS.",
+    "U Sistemskim podešavanjima → Privatnost i bezbednost → Praćenje unosa omogućite FixKey. Ako nedostaje, izaberite + i dodajte trenutni FixKey.app iz fascikle Aplikacije. Vratite se ovde i izaberite Proveri ponovo. Ponovo pokrenite FixKey ako macOS to zatraži."
+  ],
+  "permissionRequest": "Dozvoli pristup funkcijama pristupačnosti",
+  "permissionWaiting": "Ispravljanje će ostati isključeno dok pristup ne bude dozvoljen. Kada omogućite pristup, izaberite Proveri ponovo.",
+  "permissionSteps": [
+    "Izaberite Dozvoli pristup funkcijama pristupačnosti i pratite uputstva u dijalogu sistema macOS.",
+    "Omogućite FixKey u odeljku Pristupačnost. Ako je već omogućen, ali ovaj dijalog ostaje posle ponovnog pokretanja aplikacije FixKey, uklonite stari unos FixKey pomoću − i pomoću + ponovo dodajte trenutni FixKey.app. Ponovo izgrađena aplikacija možda više ne odgovara starom unosu dozvole. Ako nedostaje, pomoću + dodajte FixKey iz fascikle Aplikacije.",
+    "Omogućite FixKey i u odeljku Praćenje unosa, a zatim proverite ponovo. Ako se zahtev za praćenje unosa ne pojavi, ponovo izaberite Dozvoli pristup funkcijama pristupačnosti. Ponovo pokrenite FixKey ako macOS to zatraži."
+  ],
+  "macPermission": "U Sistemskim podešavanjima dozvolite FixKey u odeljcima Pristupačnost i Praćenje unosa, a zatim proverite ponovo.",
+  "windowsPermission": "Koristite FixKey u trenutnoj sesiji sistema Windows. Zaštićene i nepodržane kontrole, kao i kontrole sa povišenim ovlašćenjima, ostaju nepromenjene.",
+  "linuxPermission": "Koristite X11 sesiju sa dostupnom AT-SPI uslugom pristupačnosti i XInput2. Wayland nije podržan.",
+  "openSettings": "Otvori sistemska podešavanja",
+  "recheck": "Proveri ponovo",
+  "later": "Kasnije",
+  "error": "Radnja nije uspela",
+  "reason": "Razlog",
+  "openLogs": "Otvori fasciklu sa evidencijama",
+  "deleteLogs": "Obriši evidencije",
+  "restore": "Vrati rezervnu kopiju podešavanja",
+  "support": "GitHub Issues",
+  "logHelp": "Evidencije sadrže verziju, platformu, kodove razloga i vremenske podatke. Uneti tekst je izuzet. Evidencije ostaju na ovom uređaju najviše sedam dana i zauzimaju ukupno najviše 10 MiB.",
+  "original": "Izvornik",
+  "recognized": "Prepoznato",
+  "notRecognized": "Nije prepoznato u rečniku",
+  "unchecked": "Provera nije bila moguća",
+  "candidates": "Kandidati prema rasporedu",
+  "candidateHelp": "↑ ↓ Izaberi · Enter Primeni · Esc Zatvori",
+  "noCandidates": "Izvorni kontekst više nije dostupan.",
+  "help": "Pomoć",
+  "helpTopics": [
+    [
+      "Instalacija",
+      "Instalirajte potpisani DMG na macOS ARM64, NSIS instalacioni program na Windows x64 ili AppImage na Linux X11 x64. Ciljne platforme ne podrazumevaju proverenu kompatibilnost sa svakom aplikacijom."
+    ],
+    [
+      "Dozvole",
+      "Odobrite dozvole za pristupačnost i unos koje vaš operativni sistem zatraži, a zatim izaberite Proveri ponovo. Ispravljanje ostaje neaktivno dok dozvole i rečnici ne budu spremni. Na sistemu macOS, Pristupačnost može da omogući stvarni pristup praćenju tastera bez posebnog unosa u odeljku Praćenje unosa. Koristite Podesi praćenje unosa u odeljku Opšte da proverite listu; ako FixKey nedostaje, pomoću + dodajte trenutni FixKey.app iz fascikle Aplikacije."
+    ],
+    [
+      "Rasporedi i ispravljanje",
+      "Korejski Dubeolsik i engleski US QWERTY podrazumevano su omogućeni. Izaberite dodatne parove rečnika i tastature u odeljku Opšte. Navedena javno dostupna tastatura mora da odgovara rasporedu sa kojim kucate. Kada su omogućeni dodatni jezici, reči se proveravaju pri unosu razmaka; inače razmaci i znaci interpunkcije pokreću proveru. Enter i Tab je ne pokreću. Reč se menja samo kada tačno jedan omogućeni rečnik prepozna kandidata. Srodni jezici mogu prepoznati istu reč; ona tada ostaje nepromenjena. FixKey nikada ne menja vaš jezik unosa. Nepodržani modifikatori, nedovršeni mrtvi tasteri i varijante tastature koje ne odgovaraju navedenom rasporedu ostaju nepromenjeni."
+    ],
+    [
+      "Opoziv",
+      "Odmah posle automatskog ispravljanja pritisnite Backspace da vratite izvornu reč i njen separator. Naredni pritisci na Backspace ponašaju se uobičajeno."
+    ],
+    [
+      "Ručni izbor kandidata",
+      "Dodelite prečicu, otkucajte reč i upotrebite prečicu. Tasteri sa strelicama biraju, Enter primenjuje, a Esc zatvara. Možete izričito da izaberete neprepoznatog kandidata. Pomeranje kursora u izvornom tekstu ili promena aplikacije zatvara birač."
+    ],
+    [
+      "Izuzeci",
+      "Dodajte aplikaciju u odeljku Izuzete aplikacije. Izuzeci se određuju prema stabilnom identitetu aplikacije. Identiteti koji nisu utvrđeni ostaju na listi."
+    ],
+    [
+      "Privatnost",
+      "FixKey obrađuje unos lokalno. Ne čuva istoriju unosa, ne koristi ostavu za zamenu i ne šalje telemetriju. Nalepljeni i programski uneti tokeni, brojevi, emodžiji, URL adrese, adrese e-pošte i tokeni sa mešanim pismima izuzeti su iz automatskog ispravljanja."
+    ],
+    [
+      "Ažuriranja",
+      "Stabilna ažuriranja proveravaju se preko HTTPS pri pokretanju i svaka 24 sata. Pre preuzimanja dajete saglasnost. Nevažeći potpisi se odbacuju. Ispravljanje se zaustavlja pre instalacije; podešavanja ostaju sačuvana."
+    ],
+    [
+      "Rešavanje problema",
+      "Pročitajte kôd razloga, ponovo proverite dozvole i isprobajte podržanu kontrolu koja može da se uređuje. Nedostajuće dozvole, nepoznata osetljivost polja, zastareli ciljevi i nepodržani upisi dovode do bezbednog odbijanja radnje. Posle neuspelog ažuriranja ponovo pokrenite aplikaciju ili ručno ponovo instalirajte potpisani paket."
+    ],
+    [
+      "Brisanje evidencija",
+      "Izaberite Obriši evidencije da uklonite lokalne dijagnostičke evidencije ili Otvori fasciklu sa evidencijama da ih pregledate. Nemojte uključivati privatni sadržaj pri otvaranju prijave na GitHub-u."
+    ]
+  ],
+  "listedWordsOnly": "Samo reči navedene u rečniku; nepoznati oblici ostaju nepromenjeni."
+}

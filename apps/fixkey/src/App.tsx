@@ -8,7 +8,30 @@ import {
   type ExcludedApp,
   type Settings,
 } from "./api";
-import { messages } from "./locale";
+import { messages, resolveLocale, isRtl } from "./locale";
+import languageCatalog from "./languages.json";
+
+function languageName(
+  locale: string,
+  displayLocale: string,
+  fallback: string,
+): string {
+  try {
+    const name = new Intl.DisplayNames([displayLocale], {
+      type: "language",
+    }).of(locale);
+    return name && name !== locale ? name : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function layoutName(id: string, locale: string): string {
+  const entry = languageCatalog.find((entry) => entry.id === id);
+  return entry
+    ? `${languageName(entry.locale, locale, entry.name)} · ${entry.layout}`
+    : id;
+}
 
 enum Section {
   General = "general",
@@ -59,11 +82,13 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const [choosing, setChoosing] = useState(false);
   const [apps, setApps] = useState<ExcludedApp[]>([]);
   const [appIndex, setAppIndex] = useState(0);
+  const [languageSearch, setLanguageSearch] = useState("");
   const data = query.data;
-  const language =
+  const language = resolveLocale(
     data?.settings.uiLanguage === "system"
       ? data.osLanguage
-      : (data?.settings.uiLanguage ?? "en");
+      : (data?.settings.uiLanguage ?? "en"),
+  );
   const t = messages[language];
   const save = useMutation({
     mutationFn: (settings: Settings) => api.save(settings, data!.revision),
@@ -102,6 +127,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   }, [data?.platform, data?.status, permissionDismissed, requestPermission]);
   useEffect(() => {
     document.documentElement.lang = language;
+    document.documentElement.dir = isRtl(language) ? "rtl" : "ltr";
     document.documentElement.dataset.theme = data?.settings.theme ?? "system";
   }, [language, data?.settings.theme]);
   const busy = save.isPending || action.isPending;
@@ -288,13 +314,57 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
                 <h3>{t.languages}</h3>
                 {toggle(t.korean, settings.koreanEnabled, "koreanEnabled")}
                 {toggle(t.english, settings.englishEnabled, "englishEnabled")}
+                <label className="language-search">
+                  <span>{t.languageSearch}</span>
+                  <input
+                    type="search"
+                    value={languageSearch}
+                    onChange={(event) => setLanguageSearch(event.target.value)}
+                  />
+                </label>
+                <div className="language-list">
+                  {languageCatalog
+                    .filter((entry) =>
+                      `${layoutName(entry.id, language)} ${entry.name} ${entry.locale} ${entry.id}`
+                        .toLocaleLowerCase(language)
+                        .includes(languageSearch.toLocaleLowerCase(language)),
+                    )
+                    .map((entry) => (
+                      <label className="row" key={entry.id}>
+                        <span>
+                          {layoutName(entry.id, language)}
+                          {entry.validation === "listed-words" && (
+                            <small>{t.listedWordsOnly}</small>
+                          )}
+                        </span>
+                        <input
+                          type="checkbox"
+                          aria-label={layoutName(entry.id, language)}
+                          disabled={busy}
+                          checked={(
+                            settings.additionalLanguages ?? []
+                          ).includes(entry.id)}
+                          onChange={(event) => {
+                            const selected = settings.additionalLanguages ?? [];
+                            change({
+                              additionalLanguages: event.target.checked
+                                ? [...selected, entry.id]
+                                : selected.filter((id) => id !== entry.id),
+                            });
+                          }}
+                        />
+                      </label>
+                    ))}
+                </div>
               </section>
               <section className="card">
                 {toggle(t.startup, settings.loginStartup, "loginStartup")}
                 {select(t.uiLanguage, settings.uiLanguage, "uiLanguage", [
                   ["system", t.system],
-                  ["en", "English"],
-                  ["ko", "한국어"],
+                  ...Object.keys(messages).map((locale): [string, string] => [
+                    locale,
+                    languageName(locale, locale, locale),
+                  ]),
                 ])}
                 {select(t.theme, settings.theme, "theme", [
                   ["system", t.system],
@@ -582,7 +652,7 @@ export function CandidatePicker({
   language = "en",
 }: {
   api?: DesktopApi;
-  language?: "en" | "ko";
+  language?: string;
 }) {
   const [state, setState] = useState<CandidateState>({
     generation: 0,
@@ -590,11 +660,13 @@ export function CandidatePicker({
     items: [],
   });
   const [error, setError] = useState<string | null>(null);
-  const t = messages[state.language ?? language];
+  const locale = resolveLocale(state.language ?? language);
+  const t = messages[locale];
   useEffect(() => {
     document.documentElement.dataset.theme = state.theme ?? "system";
-    document.documentElement.lang = state.language ?? language;
-  }, [state.theme, state.language, language]);
+    document.documentElement.lang = locale;
+    document.documentElement.dir = isRtl(locale) ? "rtl" : "ltr";
+  }, [state.theme, locale]);
   useEffect(() => {
     let cancelled = false;
     let stop: (() => void) | undefined;
@@ -662,7 +734,7 @@ export function CandidatePicker({
               <small>
                 {item.isOriginal
                   ? `${t.original} · `
-                  : `${item.language === "ko-dubeolsik" ? t.korean : t.english} · `}
+                  : `${item.language === "ko-dubeolsik" ? t.korean : item.language === "en-us-qwerty" ? t.english : layoutName(item.language, locale)} · `}
                 {item.validation === "recognized"
                   ? t.recognized
                   : item.validation === "not-recognized"

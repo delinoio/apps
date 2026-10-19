@@ -16,6 +16,17 @@ fn is_joiner(c: char) -> bool {
     JOINERS.contains(&c)
 }
 
+/// Includes combining marks and script-internal joiners in one word.
+#[must_use]
+pub fn is_word_character(character: char) -> bool {
+    character.is_alphabetic()
+        || is_joiner(character)
+        || matches!(u32::from(character),
+        0x0300..=0x036f | 0x0591..=0x05bd | 0x05bf | 0x05c1..=0x05c2 | 0x05c4..=0x05c5 |
+        0x0610..=0x061a | 0x064b..=0x065f | 0x0670 | 0x06d6..=0x06ed |
+        0x0900..=0x0903 | 0x093a..=0x094f | 0x0951..=0x0957 | 0x0962..=0x0963 | 0x200c)
+}
+
 fn is_held_separator(c: char) -> bool {
     is_joiner(c) || c == '_' || URL_SEPARATORS.contains(&c)
 }
@@ -67,13 +78,29 @@ pub fn classify_token(token: &str) -> Option<SkipReason> {
     if token.chars().any(char::is_numeric) {
         return Some(SkipReason::Numeric);
     }
-    let has_hangul = token.chars().any(is_hangul);
-    let has_ascii = token.chars().any(|c| c.is_ascii_alphabetic());
-    let has_other = token
-        .chars()
-        .any(|c| c.is_alphabetic() && !c.is_ascii() && !is_hangul(c));
-    if (has_hangul && has_ascii) || has_other {
-        return Some(SkipReason::MixedScript);
+    let mut previous_script = None;
+    for ch in token.chars() {
+        let code = u32::from(ch);
+        let script = match code {
+            0x0041..=0x024f | 0x1e00..=0x1eff if ch.is_alphabetic() => Some(1),
+            0x0370..=0x03ff | 0x1f00..=0x1fff => Some(2),
+            0x0400..=0x052f => Some(3),
+            0x0530..=0x058f => Some(4),
+            0x0590..=0x05ff => Some(5),
+            0x0600..=0x06ff | 0x0750..=0x077f | 0x08a0..=0x08ff => Some(6),
+            0x0900..=0x097f => Some(7),
+            0x10a0..=0x10ff | 0x2d00..=0x2d2f | 0x1c90..=0x1cbf => Some(8),
+            _ if is_hangul(ch) => Some(9),
+            0x0300..=0x036f => previous_script,
+            _ if ch.is_alphabetic() => return Some(SkipReason::MixedScript),
+            _ => None,
+        };
+        if let Some(script) = script {
+            if previous_script.is_some_and(|previous| previous != script) {
+                return Some(SkipReason::MixedScript);
+            }
+            previous_script = Some(script);
+        }
     }
     None
 }
@@ -117,7 +144,7 @@ impl Tokenizer {
             self.held.push(c);
             return None;
         }
-        if c.is_alphanumeric() || is_emoji(c) {
+        if c.is_alphanumeric() || is_emoji(c) || is_word_character(c) {
             if !self.held.is_empty() {
                 let held = std::mem::take(&mut self.held);
                 self.token.push_str(&held);
@@ -253,7 +280,7 @@ mod tests {
             ("snake_case ", SkipReason::Url),
             ("me@example.com ", SkipReason::Email),
             ("a가 ", SkipReason::MixedScript),
-            ("привет ", SkipReason::MixedScript),
+            ("你好 ", SkipReason::MixedScript),
         ];
         for (input, reason) in cases {
             assert_eq!(

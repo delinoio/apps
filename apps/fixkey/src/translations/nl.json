@@ -1,0 +1,138 @@
+{
+  "general": "Algemeen",
+  "exclusions": "Uitgesloten apps",
+  "shortcuts": "Sneltoetsen",
+  "updates": "Updates",
+  "diagnostics": "Diagnostiek en hulp",
+  "tagline": "Blijf typen. Herstel de indeling.",
+  "correction": "Automatische correctie",
+  "pause": "Pauzeren",
+  "resume": "Hervatten",
+  "languages": "Ingeschakelde talen",
+  "languageSearch": "Zoek een taal of toetsenbord",
+  "trayPause": "Correctie pauzeren",
+  "trayResume": "Correctie hervatten",
+  "traySettings": "Instellingen",
+  "trayExit": "Afsluiten",
+  "trayStatus": "Correctiestatus",
+  "notificationUpdate": "Er is een update beschikbaar. Bekijk en installeer deze in Instellingen.",
+  "notificationAttention": "FixKey heeft aandacht nodig. Bekijk de redencode in Instellingen.",
+  "korean": "Koreaans · Dubeolsik",
+  "english": "Engels · US QWERTY",
+  "startup": "Starten bij inloggen",
+  "uiLanguage": "Interfacetaal",
+  "theme": "Thema",
+  "system": "Systeem",
+  "light": "Licht",
+  "dark": "Donker",
+  "loading": "Verbinding maken met FixKey…",
+  "connection": "Kan geen verbinding maken met de desktopapp.",
+  "retry": "Opnieuw proberen",
+  "active": "Correctie is actief",
+  "inactive": "Correctie is niet actief",
+  "waitingField": "Wachten op een bewerkbaar tekstveld",
+  "waitingFieldHelp": "Klik op een bewerkbaar tekstveld in een andere app. FixKey wacht zolang Instellingen geopend is of het veld met de focus niet veilig kan worden geïdentificeerd. Meer informatie vindt u in Diagnostiek en hulp.",
+  "local": "Uw invoer blijft op dit apparaat. Wachtwoordvelden zijn uitgesloten.",
+  "empty": "Geen uitgesloten apps",
+  "emptyDetail": "Correctie kan worden uitgevoerd in ondersteunde bewerkbare besturingselementen. Voeg een app toe om de invoer daarvan altijd ongewijzigd te laten.",
+  "add": "App toevoegen",
+  "choose": "Kies een app",
+  "remove": "Verwijderen",
+  "unresolved": "Identiteit niet vastgesteld",
+  "noApps": "Er zijn geen identificeerbare apps beschikbaar. Open de app die u wilt uitsluiten en probeer het opnieuw.",
+  "shortcut": "Handmatige kandidaten",
+  "unassigned": "Niet toegewezen",
+  "capture": "Sneltoets instellen",
+  "captureHelp": "Druk op een toets samen met Control, Alt, Command of Shift. Esc annuleert.",
+  "clear": "Wissen",
+  "cancel": "Annuleren",
+  "done": "Gereed",
+  "currentVersion": "Huidige versie",
+  "checkUpdate": "Zoeken naar updates",
+  "updateConsent": "Downloaden en installeren",
+  "updateHelp": "Bij het opstarten en elke 24 uur wordt naar updates gezocht. Downloads starten alleen met uw toestemming.",
+  "recovery": "Als de installatie mislukt, start FixKey dan opnieuw of installeer een ondertekend pakket handmatig opnieuw. Uw instellingen blijven behouden. Eerdere ondertekende versies kunnen handmatig opnieuw worden geïnstalleerd.",
+  "permission": "Toegankelijkheidstoegang toestaan",
+  "permissionHelp": "FixKey heeft toegang tot toegankelijkheid en het observeren van invoer nodig om een bewerkbaar besturingselement te identificeren en alleen het voltooide woord te vervangen.",
+  "inputPermission": "Invoercontrole toestaan",
+  "inputPermissionRequest": "Invoercontrole toestaan",
+  "inputPermissionSetup": "Invoercontrole instellen",
+  "inputPermissionListHelp": "Toegankelijkheid kan het registreren van toetsaanslagen al toestaan, ook als FixKey niet bij Invoercontrole staat. macOS bevestigt hier geen afzonderlijke vermelding in de lijst. Controleer de lijst in Systeeminstellingen en voeg de huidige FixKey.app toe met + als deze ontbreekt.",
+  "inputPermissionHelp": "FixKey heeft Invoercontrole nodig om de toetsen te detecteren die worden gebruikt voor correctie van de toetsenbordindeling.",
+  "accessibilityGranted": "Toegankelijkheidstoegang is al toegestaan.",
+  "inputPermissionSteps": [
+    "Kies Invoercontrole toestaan om FixKey te registreren en de bijbehorende machtigingsinstellingen van macOS te openen.",
+    "Schakel FixKey in via Systeeminstellingen → Privacy en beveiliging → Invoercontrole. Als FixKey ontbreekt, kies dan + en voeg de huidige FixKey.app toe vanuit Apps. Keer hier terug en kies Opnieuw controleren. Start FixKey opnieuw als macOS daarom vraagt."
+  ],
+  "permissionRequest": "Toegankelijkheidstoegang toestaan",
+  "permissionWaiting": "Correctie blijft uitgeschakeld totdat toegang is toegestaan. Kies Opnieuw controleren nadat u toegang hebt ingeschakeld.",
+  "permissionSteps": [
+    "Kies Toegankelijkheidstoegang toestaan en volg de aanwijzingen van macOS.",
+    "Schakel FixKey in bij Toegankelijkheid. Als FixKey al is ingeschakeld maar dit dialoogvenster na het opnieuw starten van FixKey blijft verschijnen, verwijder dan de oude FixKey-vermelding met − en gebruik + om de huidige FixKey.app opnieuw toe te voegen. Een opnieuw gebouwde app komt mogelijk niet meer overeen met de oude machtigingsvermelding. Als FixKey ontbreekt, gebruik dan + om FixKey vanuit Apps toe te voegen.",
+    "Schakel FixKey ook in bij Invoercontrole en controleer daarna opnieuw. Als er geen verzoek voor invoercontrole verschijnt, kies dan opnieuw Toegankelijkheidstoegang toestaan. Start FixKey opnieuw als macOS daarom vraagt."
+  ],
+  "macPermission": "Sta FixKey in Systeeminstellingen toe bij Toegankelijkheid en Invoercontrole en controleer daarna opnieuw.",
+  "windowsPermission": "Gebruik FixKey in uw huidige Windows-sessie. Beveiligde besturingselementen, besturingselementen met verhoogde rechten en niet-ondersteunde besturingselementen blijven ongewijzigd.",
+  "linuxPermission": "Gebruik een X11-sessie waarin de AT-SPI-toegankelijkheidsservice en XInput2 beschikbaar zijn. Wayland wordt niet ondersteund.",
+  "openSettings": "Systeeminstellingen openen",
+  "recheck": "Opnieuw controleren",
+  "later": "Later",
+  "error": "Actie mislukt",
+  "reason": "Reden",
+  "openLogs": "Logmap openen",
+  "deleteLogs": "Logboeken verwijderen",
+  "restore": "Reservekopie van instellingen herstellen",
+  "support": "GitHub Issues",
+  "logHelp": "Logboeken bevatten de versie, het platform, redencodes en tijdmetingen. Ingevoerde tekst wordt niet opgenomen. Logboeken blijven maximaal zeven dagen op dit apparaat staan en nemen in totaal maximaal 10 MiB in beslag.",
+  "original": "Origineel",
+  "recognized": "Herkend",
+  "notRecognized": "Niet herkend door het woordenboek",
+  "unchecked": "Kon niet worden gecontroleerd",
+  "candidates": "Indelingskandidaten",
+  "candidateHelp": "↑ ↓ Selecteren · Enter Toepassen · Esc Sluiten",
+  "noCandidates": "De broncontext is niet meer beschikbaar.",
+  "help": "Hulp",
+  "helpTopics": [
+    [
+      "Installatie",
+      "Installeer de ondertekende DMG op macOS ARM64, het NSIS-installatieprogramma op Windows x64 of de AppImage op Linux X11 x64. De beoogde platforms betekenen niet dat compatibiliteit met elke app is geverifieerd."
+    ],
+    [
+      "Machtigingen",
+      "Verleen de toegankelijkheids- en invoermachtigingen die uw besturingssysteem vraagt en kies daarna Opnieuw controleren. Correctie blijft niet actief totdat de machtigingen en woordenboeken gereed zijn. Op macOS kan Toegankelijkheid daadwerkelijk toegang tot toetsaanslagen bieden zonder een afzonderlijke vermelding bij Invoercontrole. Gebruik Invoercontrole instellen in Algemeen om de lijst te controleren. Als FixKey ontbreekt, gebruik dan + om de huidige FixKey.app vanuit Apps toe te voegen."
+    ],
+    [
+      "Indelingen en correctie",
+      "Koreaans Dubeolsik en Amerikaans Engels QWERTY zijn standaard ingeschakeld. Selecteer extra combinaties van woordenboek en toetsenbord in Algemeen. Het vermelde openbare toetsenbord moet overeenkomen met de indeling waarmee u typt. Als extra talen zijn ingeschakeld, worden woorden bij spaties beoordeeld. Anders starten spaties en leestekens de beoordeling. Enter en Tab doen dit niet. Een woord verandert alleen als precies één ingeschakeld woordenboek een kandidaat herkent. Verwante talen kunnen hetzelfde woord herkennen; het blijft dan ongewijzigd. FixKey wisselt nooit van invoertaal. Niet-ondersteunde modificatietoetsen, onvoltooide dode toetsen en toetsenbordvarianten die niet overeenkomen met de vermelde indeling blijven ongewijzigd."
+    ],
+    [
+      "Ongedaan maken",
+      "Druk onmiddellijk na een automatische correctie op Backspace om het oorspronkelijke woord en het bijbehorende scheidingsteken te herstellen. Verdere drukken op Backspace werken zoals gewoonlijk."
+    ],
+    [
+      "Handmatige kandidaten",
+      "Wijs een sneltoets toe, typ een woord en gebruik de sneltoets. Met de pijltjestoetsen selecteert u, met Enter past u toe en met Esc sluit u. U kunt uitdrukkelijk een niet-herkende kandidaat kiezen. Als u de tekstcursor bij de bron verplaatst of van app wisselt, sluit de keuzelijst."
+    ],
+    [
+      "Uitsluitingen",
+      "Voeg een app toe onder Uitgesloten apps. Uitsluitingen worden gekoppeld aan de stabiele identiteit van de app. Niet-vastgestelde identiteiten blijven in de lijst staan."
+    ],
+    [
+      "Privacy",
+      "FixKey verwerkt invoer lokaal. Het bewaart geen invoergeschiedenis, gebruikt het klembord niet voor vervangingen en verstuurt geen telemetrie. Geplakte of programmatisch ingevoerde tokens, numerieke tokens, emoji's, URL's, e-mailadressen en tokens met gemengde schriften zijn uitgesloten van automatische correctie."
+    ],
+    [
+      "Updates",
+      "Bij het opstarten en elke 24 uur wordt via HTTPS naar stabiele updates gezocht. U geeft toestemming voordat het downloaden begint. Ongeldige handtekeningen worden geweigerd. Correctie stopt vóór de installatie; instellingen blijven behouden."
+    ],
+    [
+      "Problemen oplossen",
+      "Lees de redencode, controleer de machtigingen opnieuw en probeer een ondersteund bewerkbaar besturingselement. Ontbrekende machtigingen, onbekende gevoeligheid van een veld, verouderde doelen en niet-ondersteunde schrijfbewerkingen leiden ertoe dat de handeling uit veiligheid wordt geweigerd. Start na een mislukte update opnieuw of installeer handmatig een ondertekend pakket opnieuw."
+    ],
+    [
+      "Logboeken verwijderen",
+      "Kies Logboeken verwijderen om lokale diagnostische logboeken te verwijderen of Logmap openen om ze te bekijken. Neem geen privé-inhoud op wanneer u een GitHub-issue opent."
+    ]
+  ],
+  "listedWordsOnly": "Alleen woorden die in het woordenboek staan; onbekende vormen blijven ongewijzigd."
+}

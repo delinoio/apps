@@ -1,0 +1,138 @@
+{
+  "general": "Bendrieji",
+  "exclusions": "Neįtrauktos programos",
+  "shortcuts": "Spartieji klavišai",
+  "updates": "Atnaujinimai",
+  "diagnostics": "Diagnostika ir pagalba",
+  "tagline": "Rašykite toliau. Ištaisykite išdėstymą.",
+  "correction": "Automatinis taisymas",
+  "pause": "Pristabdyti",
+  "resume": "Tęsti",
+  "languages": "Įjungtos kalbos",
+  "languageSearch": "Rasti kalbą arba klaviatūrą",
+  "trayPause": "Pristabdyti taisymą",
+  "trayResume": "Tęsti taisymą",
+  "traySettings": "Nuostatos",
+  "trayExit": "Išeiti",
+  "trayStatus": "Taisymo būsena",
+  "notificationUpdate": "Yra atnaujinimas. Peržiūrėkite ir įdiekite jį nuostatose.",
+  "notificationAttention": "FixKey reikia jūsų dėmesio. Patikrinkite priežasties kodą nuostatose.",
+  "korean": "Korėjiečių · Dubeolsik",
+  "english": "Anglų · US QWERTY",
+  "startup": "Paleisti prisijungus",
+  "uiLanguage": "Sąsajos kalba",
+  "theme": "Apipavidalinimas",
+  "system": "Sistemos",
+  "light": "Šviesus",
+  "dark": "Tamsus",
+  "loading": "Jungiamasi prie FixKey…",
+  "connection": "Nepavyksta prisijungti prie darbalaukio programos.",
+  "retry": "Bandyti dar kartą",
+  "active": "Taisymas įjungtas",
+  "inactive": "Taisymas išjungtas",
+  "waitingField": "Laukiama redaguojamo teksto lauko",
+  "waitingFieldHelp": "Spustelėkite redaguojamą teksto lauką kitoje programoje. FixKey laukia, kol atvertos nuostatos arba negalima saugiai nustatyti aktyvaus lauko. Daugiau informacijos rasite skiltyje „Diagnostika ir pagalba“.",
+  "local": "Jūsų įvestis lieka šiame įrenginyje. Slaptažodžių laukai neįtraukiami.",
+  "empty": "Neįtrauktų programų nėra",
+  "emptyDetail": "Taisymas gali veikti palaikomuose redaguojamuose valdikliuose. Pridėkite programą, kad jos įvestis visada liktų nepakeista.",
+  "add": "Pridėti programą",
+  "choose": "Pasirinkti programą",
+  "remove": "Pašalinti",
+  "unresolved": "Tapatybė nenustatyta",
+  "noApps": "Nėra programų, kurių tapatybę būtų galima nustatyti. Atverkite norimą neįtraukti programą ir bandykite dar kartą.",
+  "shortcut": "Rankinis variantų pasirinkimas",
+  "unassigned": "Nepriskirta",
+  "capture": "Nustatyti spartųjį klavišą",
+  "captureHelp": "Paspauskite klavišą kartu su Control, Alt, Command arba Shift. Esc atšaukia.",
+  "clear": "Išvalyti",
+  "cancel": "Atšaukti",
+  "done": "Atlikta",
+  "currentVersion": "Dabartinė versija",
+  "checkUpdate": "Tikrinti, ar yra atnaujinimų",
+  "updateConsent": "Atsisiųsti ir įdiegti",
+  "updateHelp": "Atnaujinimų ieškoma paleidžiant ir kas 24 valandas. Atsisiuntimas pradedamas tik jums sutikus.",
+  "recovery": "Jei įdiegti nepavyksta, paleiskite FixKey iš naujo arba rankiniu būdu iš naujo įdiekite pasirašytą paketą. Jūsų nuostatos išsaugomos. Ankstesnes pasirašytas versijas galima iš naujo įdiegti rankiniu būdu.",
+  "permission": "Leisti prieinamumo prieigą",
+  "permissionHelp": "FixKey reikia prieinamumo ir įvesties stebėjimo prieigos, kad nustatytų redaguojamą valdiklį ir pakeistų tik užbaigtą žodį.",
+  "inputPermission": "Leisti įvesties stebėjimą",
+  "inputPermissionRequest": "Leisti įvesties stebėjimą",
+  "inputPermissionSetup": "Nustatyti įvesties stebėjimą",
+  "inputPermissionListHelp": "Prieinamumo leidimas jau gali suteikti galimybę stebėti klavišus net ir tada, kai FixKey nėra įvesties stebėjimo sąraše. macOS čia nepatvirtina atskiro sąrašo įrašo. Patikrinkite sąrašą sistemos nuostatose ir, jei trūksta dabartinės FixKey.app, pridėkite ją naudodami +.",
+  "inputPermissionHelp": "FixKey reikia įvesties stebėjimo, kad aptiktų klavišus, naudojamus klaviatūros išdėstymo taisymui.",
+  "accessibilityGranted": "Prieinamumo prieiga jau leidžiama.",
+  "inputPermissionSteps": [
+    "Pasirinkite „Leisti įvesties stebėjimą“, kad užregistruotumėte FixKey ir atvertumėte jos macOS leidimų nuostatas.",
+    "Skiltyje Sistemos nuostatos → Privatumas ir sauga → Įvesties stebėjimas įjunkite FixKey. Jei jos nėra, pasirinkite + ir iš programų aplanko pridėkite dabartinę FixKey.app. Grįžkite čia ir pasirinkite „Tikrinti iš naujo“. Jei macOS prašo, paleiskite FixKey iš naujo."
+  ],
+  "permissionRequest": "Leisti prieinamumo prieigą",
+  "permissionWaiting": "Taisymas liks išjungtas, kol bus leista prieiga. Leidę prieigą, pasirinkite „Tikrinti iš naujo“.",
+  "permissionSteps": [
+    "Pasirinkite „Leisti prieinamumo prieigą“ ir vykdykite macOS užklausos nurodymus.",
+    "Įjunkite FixKey prieinamumo skiltyje. Jei ji jau įjungta, bet paleidus FixKey iš naujo šis dialogas vis tiek rodomas, pašalinkite seną FixKey įrašą naudodami − ir naudodami + iš naujo pridėkite dabartinę FixKey.app. Iš naujo sukompiliuota programa gali nebeatitikti seno leidimo įrašo. Jei jos nėra, naudodami + pridėkite FixKey iš programų aplanko.",
+    "Taip pat įjunkite FixKey įvesties stebėjimo skiltyje, tada patikrinkite iš naujo. Jei įvesties stebėjimo užklausa nepasirodo, vėl pasirinkite „Leisti prieinamumo prieigą“. Jei macOS prašo, paleiskite FixKey iš naujo."
+  ],
+  "macPermission": "Sistemos nuostatų prieinamumo ir įvesties stebėjimo skiltyse suteikite FixKey leidimus, tada patikrinkite iš naujo.",
+  "windowsPermission": "Naudokite FixKey dabartiniame Windows seanse. Apsaugoti, su didesnėmis teisėmis veikiantys arba nepalaikomi valdikliai paliekami nepakeisti.",
+  "linuxPermission": "Naudokite X11 seansą, kuriame prieinamos AT-SPI prieinamumo tarnyba ir XInput2. Wayland nepalaikomas.",
+  "openSettings": "Atverti sistemos nuostatas",
+  "recheck": "Tikrinti iš naujo",
+  "later": "Vėliau",
+  "error": "Veiksmas nepavyko",
+  "reason": "Priežastis",
+  "openLogs": "Atverti žurnalų aplanką",
+  "deleteLogs": "Ištrinti žurnalus",
+  "restore": "Atkurti atsarginę nuostatų kopiją",
+  "support": "GitHub Issues",
+  "logHelp": "Žurnaluose pateikiama versija, platforma, priežasčių kodai ir trukmės. Įvesties tekstas neįtraukiamas. Žurnalai šiame įrenginyje saugomi ne ilgiau kaip septynias dienas, o jų bendras dydis neviršija 10 MiB.",
+  "original": "Pradinis",
+  "recognized": "Atpažintas",
+  "notRecognized": "Žodyne neatpažintas",
+  "unchecked": "Nepavyko patikrinti",
+  "candidates": "Išdėstymo variantai",
+  "candidateHelp": "↑ ↓ Pasirinkti · Enter Pritaikyti · Esc Užverti",
+  "noCandidates": "Pradinis kontekstas nebeprieinamas.",
+  "help": "Pagalba",
+  "helpTopics": [
+    [
+      "Diegimas",
+      "Įdiekite pasirašytą DMG sistemoje macOS ARM64, NSIS diegimo programą sistemoje Windows x64 arba AppImage sistemoje Linux X11 x64. Tikslinės platformos nereiškia, kad suderinamumas su kiekviena programa yra patikrintas."
+    ],
+    [
+      "Leidimai",
+      "Suteikite operacinės sistemos prašomus prieinamumo ir įvesties leidimus, tada pasirinkite „Tikrinti iš naujo“. Taisymas lieka išjungtas, kol leidimai ir žodynai neparuošti. Sistemoje macOS prieinamumo leidimas gali suteikti veikiančią klavišų stebėjimo prieigą be atskiro įvesties stebėjimo įrašo. Bendrųjų nuostatų skiltyje pasirinkite „Nustatyti įvesties stebėjimą“, kad patikrintumėte sąrašą; jei FixKey nėra, naudodami + pridėkite dabartinę FixKey.app iš programų aplanko."
+    ],
+    [
+      "Išdėstymai ir taisymas",
+      "Korėjiečių Dubeolsik ir JAV anglų QWERTY įjungti pagal numatytąsias nuostatas. Bendrųjų nuostatų skiltyje pasirinkite papildomas žodynų ir klaviatūrų poras. Sąraše nurodyta vieša klaviatūra turi atitikti išdėstymą, kuriuo rašote. Įjungus papildomas kalbas, žodžiai vertinami įvedus tarpą; kitu atveju vertinimą sužadina tarpai ir skyrybos ženklai. Enter ir Tab vertinimo nesužadina. Žodis keičiamas tik tada, kai lygiai vienas įjungtas žodynas atpažįsta variantą. Giminingos kalbos gali atpažinti tą patį žodį; tuomet jis paliekamas nepakeistas. FixKey niekada neperjungia jūsų įvesties kalbos. Įvestis su nepalaikomais modifikavimo klavišais, neužbaigtais diakritinių ženklų klavišų deriniais ir sąraše nurodyto išdėstymo neatitinkančiais klaviatūros variantais paliekama nepakeista."
+    ],
+    [
+      "Atšaukimas",
+      "Iškart po automatinio taisymo paspauskite Backspace, kad atkurtumėte pradinį žodį ir jo skirtuką. Vėlesni Backspace paspaudimai veikia įprastai."
+    ],
+    [
+      "Rankinis variantų pasirinkimas",
+      "Priskirkite spartųjį klavišą, įveskite žodį ir paspauskite spartųjį klavišą. Rodyklių klavišais pasirenkama, Enter pritaiko, o Esc užveria. Galite patys pasirinkti neatpažintą variantą. Perkėlus pradinės įvesties žymeklį arba perjungus programą, pasirinkimo langas užveriamas."
+    ],
+    [
+      "Išimtys",
+      "Pridėkite programą skiltyje „Neįtrauktos programos“. Išimtys taikomos pagal pastovią programos tapatybę. Nenustatytos tapatybės lieka sąraše."
+    ],
+    [
+      "Privatumas",
+      "FixKey apdoroja įvestį vietoje. Ji nesaugo įvesties istorijos, nenaudoja iškarpinės pakeitimams ir nesiunčia telemetrijos. Įklijuoti, programiniu būdu įvesti, skaitiniai, jaustukų, URL, el. pašto ir mišrių rašto sistemų elementai neįtraukiami į automatinį taisymą."
+    ],
+    [
+      "Atnaujinimai",
+      "Stabilių atnaujinimų ieškoma per HTTPS paleidžiant ir kas 24 valandas. Prieš atsisiunčiant gaunamas jūsų sutikimas. Netinkami parašai atmetami. Prieš diegiant taisymas sustabdomas; nuostatos išlieka nepakeistos."
+    ],
+    [
+      "Trikčių šalinimas",
+      "Perskaitykite priežasties kodą, iš naujo patikrinkite leidimus ir išbandykite palaikomą redaguojamą valdiklį. Trūkstant leidimų, nežinant lauko duomenų jautrumo, pasenus paskirties objektui arba nepalaikant įrašymo, saugumo sumetimais atsisakoma atlikti veiksmą. Nepavykus atnaujinti, paleiskite programą iš naujo arba rankiniu būdu iš naujo įdiekite pasirašytą paketą."
+    ],
+    [
+      "Žurnalų trynimas",
+      "Pasirinkite „Ištrinti žurnalus“, kad pašalintumėte vietinius diagnostikos žurnalus, arba „Atverti žurnalų aplanką“, kad juos peržiūrėtumėte. Kurdami pranešimą apie problemą GitHub, neįtraukite privačių duomenų."
+    ]
+  ],
+  "listedWordsOnly": "Tik žodyne išvardyti žodžiai; nežinomos formos paliekamos nepakeistos."
+}

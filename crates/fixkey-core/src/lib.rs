@@ -20,9 +20,11 @@
 pub mod decision;
 pub mod english;
 pub mod korean;
+pub mod languages;
 pub mod layout;
 pub mod manual;
 pub mod mecab;
+pub mod multilingual;
 pub mod observation;
 #[cfg(feature = "native")]
 pub mod platform;

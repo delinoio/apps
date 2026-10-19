@@ -1,0 +1,138 @@
+{
+  "general": "Geral",
+  "exclusions": "Aplicações excluídas",
+  "shortcuts": "Atalhos",
+  "updates": "Atualizações",
+  "diagnostics": "Diagnóstico e ajuda",
+  "tagline": "Continue a escrever. Corrija a disposição do teclado.",
+  "correction": "Correção automática",
+  "pause": "Pausar",
+  "resume": "Retomar",
+  "languages": "Idiomas ativados",
+  "languageSearch": "Procurar um idioma ou teclado",
+  "trayPause": "Pausar correção",
+  "trayResume": "Retomar correção",
+  "traySettings": "Definições",
+  "trayExit": "Sair",
+  "trayStatus": "Estado da correção",
+  "notificationUpdate": "Está disponível uma atualização. Consulte-a e instale-a nas Definições.",
+  "notificationAttention": "O FixKey requer atenção. Consulte o código do motivo nas Definições.",
+  "korean": "Coreano · Dubeolsik",
+  "english": "Inglês · US QWERTY",
+  "startup": "Iniciar ao iniciar sessão",
+  "uiLanguage": "Idioma da interface",
+  "theme": "Tema",
+  "system": "Sistema",
+  "light": "Claro",
+  "dark": "Escuro",
+  "loading": "A ligar ao FixKey…",
+  "connection": "Não é possível ligar à aplicação de computador.",
+  "retry": "Tentar novamente",
+  "active": "A correção está ativa",
+  "inactive": "A correção está inativa",
+  "waitingField": "À espera de um campo de texto editável",
+  "waitingFieldHelp": "Clique num campo de texto editável noutra aplicação. O FixKey aguarda enquanto as Definições estiverem abertas ou não for possível identificar com segurança o campo com foco. Consulte os detalhes em Diagnóstico e ajuda.",
+  "local": "O que escreve permanece neste dispositivo. Os campos de palavra-passe são excluídos.",
+  "empty": "Não há aplicações excluídas",
+  "emptyDetail": "A correção pode funcionar nos controlos editáveis suportados. Adicione uma aplicação para deixar sempre inalterado o que nela escreve.",
+  "add": "Adicionar aplicação",
+  "choose": "Escolher uma aplicação",
+  "remove": "Remover",
+  "unresolved": "Identidade por determinar",
+  "noApps": "Não há aplicações identificáveis disponíveis. Abra a aplicação que pretende excluir e tente novamente.",
+  "shortcut": "Candidatos manuais",
+  "unassigned": "Não atribuído",
+  "capture": "Definir atalho",
+  "captureHelp": "Prima uma tecla com Control, Alt, Command ou Shift. Esc cancela.",
+  "clear": "Limpar",
+  "cancel": "Cancelar",
+  "done": "Concluído",
+  "currentVersion": "Versão atual",
+  "checkUpdate": "Procurar atualizações",
+  "updateConsent": "Descarregar e instalar",
+  "updateHelp": "As atualizações são procuradas no arranque e a cada 24 horas. As transferências só começam com o seu consentimento.",
+  "recovery": "Se a instalação falhar, reinicie o FixKey ou reinstale manualmente um pacote assinado. As suas definições são preservadas. As versões anteriores assinadas podem ser reinstaladas manualmente.",
+  "permission": "Permitir acesso à acessibilidade",
+  "permissionHelp": "O FixKey precisa de acesso à acessibilidade e à observação da entrada para identificar um controlo editável e substituir apenas a palavra concluída.",
+  "inputPermission": "Permitir monitorização de entrada",
+  "inputPermissionRequest": "Permitir monitorização de entrada",
+  "inputPermissionSetup": "Configurar monitorização de entrada",
+  "inputPermissionListHelp": "A Acessibilidade pode já permitir a deteção de teclas mesmo que o FixKey não conste de Monitorização de entrada. O macOS não confirma aqui uma entrada separada na lista. Verifique a lista nas Definições do Sistema e adicione a versão atual de FixKey.app com + se estiver em falta.",
+  "inputPermissionHelp": "O FixKey precisa da Monitorização de entrada para detetar as teclas usadas na correção da disposição do teclado.",
+  "accessibilityGranted": "O acesso à acessibilidade já está autorizado.",
+  "inputPermissionSteps": [
+    "Escolha Permitir monitorização de entrada para registar o FixKey e abrir as respetivas definições de permissões do macOS.",
+    "Em Definições do Sistema → Privacidade e segurança → Monitorização de entrada, ative o FixKey. Se estiver em falta, escolha + e adicione a versão atual de FixKey.app a partir de Aplicações. Regresse aqui e escolha Verificar novamente. Reinicie o FixKey se o macOS o solicitar."
+  ],
+  "permissionRequest": "Permitir acesso à acessibilidade",
+  "permissionWaiting": "A correção permanecerá desligada até o acesso ser autorizado. Depois de ativar o acesso, escolha Verificar novamente.",
+  "permissionSteps": [
+    "Escolha Permitir acesso à acessibilidade e siga as instruções do macOS.",
+    "Ative o FixKey em Acessibilidade. Se já estiver ativado, mas esta caixa de diálogo continuar a aparecer depois de reiniciar o FixKey, remova a entrada antiga do FixKey com − e use + para adicionar novamente a versão atual de FixKey.app. Uma aplicação recompilada pode já não corresponder à entrada de permissão antiga. Se estiver em falta, use + para adicionar o FixKey a partir de Aplicações.",
+    "Ative também o FixKey em Monitorização de entrada e verifique novamente. Se não surgir nenhum pedido de monitorização de entrada, escolha novamente Permitir acesso à acessibilidade. Reinicie o FixKey se o macOS o solicitar."
+  ],
+  "macPermission": "Nas Definições do Sistema, autorize o FixKey em Acessibilidade e Monitorização de entrada e, em seguida, verifique novamente.",
+  "windowsPermission": "Use o FixKey na sua sessão atual do Windows. Os controlos protegidos, com privilégios elevados ou não suportados permanecem inalterados.",
+  "linuxPermission": "Use uma sessão X11 com o serviço de acessibilidade AT-SPI e o XInput2 disponíveis. O Wayland não é suportado.",
+  "openSettings": "Abrir definições do sistema",
+  "recheck": "Verificar novamente",
+  "later": "Mais tarde",
+  "error": "A ação falhou",
+  "reason": "Motivo",
+  "openLogs": "Abrir pasta de registos",
+  "deleteLogs": "Eliminar registos",
+  "restore": "Restaurar cópia de segurança das definições",
+  "support": "GitHub Issues",
+  "logHelp": "Os registos contêm a versão, a plataforma, os códigos de motivo e os tempos de execução. O texto introduzido é excluído. Os registos permanecem neste dispositivo durante um máximo de sete dias e ocupam, no total, um máximo de 10 MiB.",
+  "original": "Original",
+  "recognized": "Reconhecido",
+  "notRecognized": "Não reconhecido pelo dicionário",
+  "unchecked": "Não foi possível verificar",
+  "candidates": "Candidatos por disposição de teclado",
+  "candidateHelp": "↑ ↓ Selecionar · Enter Aplicar · Esc Fechar",
+  "noCandidates": "O contexto de origem já não está disponível.",
+  "help": "Ajuda",
+  "helpTopics": [
+    [
+      "Instalação",
+      "Instale o DMG assinado no macOS ARM64, o instalador NSIS no Windows x64 ou a AppImage no Linux X11 x64. As plataformas de destino não implicam compatibilidade verificada com todas as aplicações."
+    ],
+    [
+      "Permissões",
+      "Conceda as permissões de acessibilidade e de entrada solicitadas pelo seu sistema operativo e escolha Verificar novamente. A correção permanece inativa até as permissões e os dicionários estarem prontos. No macOS, a Acessibilidade pode dar acesso efetivo à deteção de teclas sem uma entrada separada em Monitorização de entrada. Use Configurar monitorização de entrada em Geral para verificar a lista; se o FixKey estiver ausente, use + para adicionar a versão atual de FixKey.app a partir de Aplicações."
+    ],
+    [
+      "Disposições de teclado e correção",
+      "O coreano Dubeolsik e o inglês US QWERTY estão ativados por predefinição. Selecione pares adicionais de dicionário e teclado em Geral. O teclado público indicado deve corresponder à disposição com que escreve. Com idiomas adicionais ativados, as palavras são avaliadas ao introduzir espaços; caso contrário, os espaços e a pontuação desencadeiam a avaliação. Enter e Tab não a desencadeiam. Uma palavra só é alterada quando exatamente um dos dicionários ativados reconhece um candidato. Idiomas relacionados podem reconhecer a mesma palavra; nesse caso, esta permanece inalterada. O FixKey nunca muda o idioma de entrada. Os modificadores não suportados, as teclas mortas incompletas e as variantes de teclado que não correspondam à disposição indicada permanecem inalterados."
+    ],
+    [
+      "Anular",
+      "Prima Backspace imediatamente após a correção automática para restaurar a palavra original e o respetivo separador. As pressões seguintes de Backspace funcionam normalmente."
+    ],
+    [
+      "Candidatos manuais",
+      "Atribua um atalho, escreva uma palavra e use o atalho. As teclas de seta selecionam, Enter aplica e Esc fecha. Pode escolher explicitamente um candidato não reconhecido. Mover o cursor de texto de origem ou mudar de aplicação fecha o seletor."
+    ],
+    [
+      "Exclusões",
+      "Adicione uma aplicação em Aplicações excluídas. As exclusões correspondem à identidade estável da aplicação. As identidades por determinar permanecem na lista."
+    ],
+    [
+      "Privacidade",
+      "O FixKey processa localmente o que escreve. Não mantém um histórico da entrada, não usa a área de transferência para substituir texto nem envia telemetria. Os elementos colados, introduzidos por programas, numéricos, emoji, URL, endereços de correio eletrónico e elementos que misturam sistemas de escrita são excluídos da correção automática."
+    ],
+    [
+      "Atualizações",
+      "As atualizações estáveis são procuradas através de HTTPS no arranque e a cada 24 horas. O seu consentimento é solicitado antes da transferência. As assinaturas inválidas são rejeitadas. A correção para antes da instalação; as definições permanecem intactas."
+    ],
+    [
+      "Resolução de problemas",
+      "Leia o código do motivo, verifique novamente as permissões e experimente um controlo editável suportado. A falta de permissões, a sensibilidade desconhecida do campo, os destinos desatualizados e as operações de escrita não suportadas causam uma recusa por segurança. Reinicie ou reinstale manualmente um pacote assinado após uma falha de atualização."
+    ],
+    [
+      "Eliminação de registos",
+      "Escolha Eliminar registos para remover os registos de diagnóstico locais ou Abrir pasta de registos para os consultar. Não inclua conteúdo privado ao abrir uma questão no GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Apenas palavras incluídas no dicionário; as formas desconhecidas permanecem inalteradas."
+}

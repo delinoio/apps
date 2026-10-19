@@ -1,0 +1,138 @@
+{
+  "general": "Genel",
+  "exclusions": "Hariç Tutulan Uygulamalar",
+  "shortcuts": "Kısayollar",
+  "updates": "Güncellemeler",
+  "diagnostics": "Tanılama ve Yardım",
+  "tagline": "Yazmaya devam edin. Klavye düzenini düzeltin.",
+  "correction": "Otomatik düzeltme",
+  "pause": "Duraklat",
+  "resume": "Sürdür",
+  "languages": "Etkin diller",
+  "languageSearch": "Dil veya klavye bulun",
+  "trayPause": "Düzeltmeyi duraklat",
+  "trayResume": "Düzeltmeyi sürdür",
+  "traySettings": "Ayarlar",
+  "trayExit": "Çıkış",
+  "trayStatus": "Düzeltme durumu",
+  "notificationUpdate": "Bir güncelleme var. Ayarlar'dan inceleyip yükleyin.",
+  "notificationAttention": "FixKey ile ilgilenmeniz gerekiyor. Ayarlar'daki neden kodunu kontrol edin.",
+  "korean": "Korece · Dubeolsik",
+  "english": "İngilizce · US QWERTY",
+  "startup": "Oturum açıldığında başlat",
+  "uiLanguage": "Arayüz dili",
+  "theme": "Tema",
+  "system": "Sistem",
+  "light": "Açık",
+  "dark": "Koyu",
+  "loading": "FixKey'e bağlanılıyor…",
+  "connection": "Masaüstü uygulamasına bağlanılamıyor.",
+  "retry": "Yeniden dene",
+  "active": "Düzeltme etkin",
+  "inactive": "Düzeltme etkin değil",
+  "waitingField": "Düzenlenebilir bir metin alanı bekleniyor",
+  "waitingFieldHelp": "Başka bir uygulamada düzenlenebilir bir metin alanına tıklayın. Ayarlar açıkken veya odaklanılan alan güvenli bir şekilde belirlenemediğinde FixKey bekler. Ayrıntılar Tanılama ve Yardım bölümünde bulunur.",
+  "local": "Girdileriniz bu cihazda kalır. Parola alanları hariç tutulur.",
+  "empty": "Hariç tutulan uygulama yok",
+  "emptyDetail": "Düzeltme, desteklenen düzenlenebilir denetimlerde çalışabilir. Bir uygulamanın girdilerinin her zaman olduğu gibi bırakılması için uygulamayı ekleyin.",
+  "add": "Uygulama ekle",
+  "choose": "Bir uygulama seçin",
+  "remove": "Kaldır",
+  "unresolved": "Kimlik belirlenemedi",
+  "noApps": "Kimliği belirlenebilen uygulama yok. Hariç tutmak istediğiniz uygulamayı açıp yeniden deneyin.",
+  "shortcut": "Elle aday seçimi",
+  "unassigned": "Atanmadı",
+  "capture": "Kısayol ata",
+  "captureHelp": "Control, Alt, Command veya Shift ile birlikte bir tuşa basın. Esc iptal eder.",
+  "clear": "Temizle",
+  "cancel": "İptal",
+  "done": "Bitti",
+  "currentVersion": "Geçerli sürüm",
+  "checkUpdate": "Güncellemeleri denetle",
+  "updateConsent": "İndir ve yükle",
+  "updateHelp": "Güncellemeler başlangıçta ve her 24 saatte bir denetlenir. İndirmeler yalnızca onayınızla başlar.",
+  "recovery": "Yükleme başarısız olursa FixKey'i yeniden başlatın veya imzalı bir paketi elle yeniden yükleyin. Ayarlarınız korunur. Önceki imzalı sürümler elle yeniden yüklenebilir.",
+  "permission": "Erişilebilirlik erişimine izin ver",
+  "permissionHelp": "FixKey, düzenlenebilir bir denetimi belirlemek ve yalnızca tamamlanan sözcüğü değiştirmek için erişilebilirlik ve girdi izleme erişimine ihtiyaç duyar.",
+  "inputPermission": "Giriş İzleme'ye izin ver",
+  "inputPermissionRequest": "Giriş İzleme'ye izin ver",
+  "inputPermissionSetup": "Giriş İzleme'yi ayarla",
+  "inputPermissionListHelp": "FixKey, Giriş İzleme listesinde bulunmasa bile Erişilebilirlik, tuşların dinlenmesine zaten izin veriyor olabilir. macOS burada ayrı bir liste kaydının varlığını doğrulamaz. Sistem Ayarları'ndaki listeyi kontrol edin ve yoksa + ile geçerli FixKey.app uygulamasını ekleyin.",
+  "inputPermissionHelp": "FixKey, klavye düzenini düzeltmek için kullanılan tuşları algılamak üzere Giriş İzleme'ye ihtiyaç duyar.",
+  "accessibilityGranted": "Erişilebilirlik erişimine zaten izin verilmiş.",
+  "inputPermissionSteps": [
+    "FixKey'i kaydetmek ve macOS izin ayarlarını açmak için Giriş İzleme'ye izin ver seçeneğini belirleyin.",
+    "Sistem Ayarları → Gizlilik ve Güvenlik → Giriş İzleme bölümünde FixKey'i etkinleştirin. Listede yoksa + seçeneğini kullanarak Uygulamalar'daki geçerli FixKey.app uygulamasını ekleyin. Buraya dönüp Yeniden denetle'yi seçin. macOS isterse FixKey'i yeniden başlatın."
+  ],
+  "permissionRequest": "Erişilebilirlik erişimine izin ver",
+  "permissionWaiting": "Erişime izin verilene kadar düzeltme kapalı kalır. Erişimi etkinleştirdikten sonra Yeniden denetle'yi seçin.",
+  "permissionSteps": [
+    "Erişilebilirlik erişimine izin ver seçeneğini belirleyin ve macOS istemini izleyin.",
+    "Erişilebilirlik bölümünde FixKey'i etkinleştirin. Zaten etkin olmasına rağmen FixKey yeniden başlatıldıktan sonra bu iletişim kutusu hâlâ görünüyorsa eski FixKey kaydını − ile kaldırın ve geçerli FixKey.app uygulamasını + ile yeniden ekleyin. Yeniden derlenen bir uygulama eski izin kaydıyla artık eşleşmeyebilir. Listede yoksa Uygulamalar'dan FixKey'i eklemek için + kullanın.",
+    "Giriş İzleme bölümünde de FixKey'i etkinleştirin, ardından yeniden denetleyin. Giriş izleme istemi görünmezse Erişilebilirlik erişimine izin ver seçeneğini yeniden belirleyin. macOS isterse FixKey'i yeniden başlatın."
+  ],
+  "macPermission": "Sistem Ayarları'nda Erişilebilirlik ve Giriş İzleme altında FixKey'e izin verin, ardından yeniden denetleyin.",
+  "windowsPermission": "FixKey'i geçerli Windows oturumunuzda kullanın. Korumalı, yükseltilmiş ayrıcalıklarla çalışan veya desteklenmeyen denetimler olduğu gibi bırakılır.",
+  "linuxPermission": "AT-SPI erişilebilirlik hizmeti ve XInput2'nin kullanılabilir olduğu bir X11 oturumu kullanın. Wayland desteklenmez.",
+  "openSettings": "Sistem ayarlarını aç",
+  "recheck": "Yeniden denetle",
+  "later": "Daha sonra",
+  "error": "İşlem başarısız oldu",
+  "reason": "Neden",
+  "openLogs": "Günlük klasörünü aç",
+  "deleteLogs": "Günlükleri sil",
+  "restore": "Ayarlar yedeğini geri yükle",
+  "support": "GitHub Issues",
+  "logHelp": "Günlükler sürümü, platformu, neden kodlarını ve süreleri içerir. Girdi metni dahil edilmez. Günlükler bu cihazda en fazla yedi gün ve toplam 10 MiB sınırıyla tutulur.",
+  "original": "Özgün",
+  "recognized": "Tanındı",
+  "notRecognized": "Sözlük tarafından tanınmadı",
+  "unchecked": "Denetlenemedi",
+  "candidates": "Klavye düzeni adayları",
+  "candidateHelp": "↑ ↓ Seç · Enter Uygula · Esc Kapat",
+  "noCandidates": "Kaynak bağlam artık kullanılamıyor.",
+  "help": "Yardım",
+  "helpTopics": [
+    [
+      "Kurulum",
+      "macOS ARM64'te imzalı DMG'yi, Windows x64'te NSIS yükleyicisini veya Linux X11 x64'te AppImage'ı yükleyin. Hedef platformlar, her uygulamayla uyumluluğun doğrulandığı anlamına gelmez."
+    ],
+    [
+      "İzinler",
+      "İşletim sisteminizin istediği erişilebilirlik ve girdi izinlerini verin, ardından Yeniden denetle'yi seçin. İzinler ve sözlükler hazır olana kadar düzeltme etkinleşmez. macOS'te Erişilebilirlik, ayrı bir Giriş İzleme kaydı olmadan tuşları dinlemek için geçerli erişim sağlayabilir. Listeyi kontrol etmek için Genel bölümündeki Giriş İzleme'yi ayarla seçeneğini kullanın; FixKey listede yoksa Uygulamalar'daki geçerli FixKey.app uygulamasını + ile ekleyin."
+    ],
+    [
+      "Klavye düzenleri ve düzeltme",
+      "Korece Dubeolsik ve ABD İngilizcesi QWERTY varsayılan olarak etkindir. Genel bölümünde ek sözlük ve klavye çiftleri seçin. Listelenen herkese açık klavye, yazarken kullandığınız düzenle eşleşmelidir. Ek diller etkinleştirildiğinde sözcükler boşluklarda değerlendirilir; aksi durumda boşluklar ve noktalama işaretleri değerlendirmeyi tetikler. Enter ve Tab tetiklemez. Bir sözcük, yalnızca etkin sözlüklerden tam olarak biri bir adayı tanıdığında değiştirilir. Birbiriyle ilişkili diller aynı sözcüğü tanıyabilir; bu durumda sözcük olduğu gibi bırakılır. FixKey giriş dilinizi hiçbir zaman değiştirmez. Desteklenmeyen değiştirici tuşlar, tamamlanmamış ölü tuş dizileri ve listelenen düzenle eşleşmeyen klavye çeşitleri olduğu gibi bırakılır."
+    ],
+    [
+      "Geri alma",
+      "Otomatik düzeltmeden hemen sonra Backspace'e basarak özgün sözcüğü ve ayırıcısını geri getirin. Sonraki Backspace basışları normal şekilde çalışır."
+    ],
+    [
+      "Elle aday seçimi",
+      "Bir kısayol atayın, bir sözcük yazın ve kısayolu kullanın. Ok tuşları seçer, Enter uygular ve Esc kapatır. Tanınmayan bir adayı da açıkça seçebilirsiniz. Kaynak metindeki imlecin taşınması veya uygulamanın değiştirilmesi seçim penceresini kapatır."
+    ],
+    [
+      "Hariç tutma",
+      "Hariç Tutulan Uygulamalar bölümünden bir uygulama ekleyin. Hariç tutmalar, uygulamanın değişmeyen kimliğiyle eşleşir. Kimliği belirlenemeyen kayıtlar listede kalır."
+    ],
+    [
+      "Gizlilik",
+      "FixKey girdileri yerel olarak işler. Girdi geçmişi tutmaz, değiştirme işlemi için panoyu kullanmaz ve telemetri göndermez. Yapıştırılan, program aracılığıyla eklenen, sayısal, emoji, URL, e-posta ve birden fazla yazı sistemi içeren metin parçaları otomatik düzeltmeden hariç tutulur."
+    ],
+    [
+      "Güncellemeler",
+      "Kararlı sürüm güncellemeleri HTTPS üzerinden başlangıçta ve her 24 saatte bir denetlenir. İndirmeden önce onayınız alınır. Geçersiz imzalar reddedilir. Yüklemeden önce düzeltme durdurulur; ayarlar korunur."
+    ],
+    [
+      "Sorun giderme",
+      "Neden kodunu okuyun, izinleri yeniden denetleyin ve desteklenen düzenlenebilir bir denetim deneyin. Eksik izinler, alanın hassasiyetinin bilinmemesi, geçerliliğini yitirmiş hedefler ve desteklenmeyen yazma işlemleri, işlemin güvenli bir şekilde reddedilmesine yol açar. Güncelleme başarısız olursa yeniden başlatın veya imzalı bir paketi elle yeniden yükleyin."
+    ],
+    [
+      "Günlükleri silme",
+      "Yerel tanılama günlüklerini kaldırmak için Günlükleri sil'i, incelemek için Günlük klasörünü aç'ı seçin. GitHub'da bir sorun kaydı açarken özel içerik eklemeyin."
+    ]
+  ],
+  "listedWordsOnly": "Yalnızca sözlükte listelenen sözcükler; bilinmeyen biçimler değiştirilmeden bırakılır."
+}

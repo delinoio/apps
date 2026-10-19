@@ -23,7 +23,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use crate::{
     diagnostics::{Logs, platform},
     preferences::{IntegrationError, Preferences, SystemPreferences},
-    settings::{ExcludedApp, Settings, SettingsStore, Theme, UiLanguage},
+    settings::{ExcludedApp, Settings, SettingsStore, Theme},
     updates::{
         UpdateState,
         desktop::{SharedUpdater, Updater},
@@ -109,6 +109,8 @@ pub struct Runtime {
     pub(crate) candidate_revision: u64,
     pub(crate) korean: Option<KoreanValidator<MecabAnalyzer>>,
     pub(crate) english: Option<HunspellValidator>,
+    pub(crate) additional: fixkey_core::multilingual::Dictionaries,
+    dictionary_root: std::path::PathBuf,
     pub(crate) status: String,
     pub(crate) active: bool,
     pub(crate) stopping: bool,
@@ -132,10 +134,11 @@ impl Runtime {
         self.status = "update-installing".into();
     }
 
-    pub(crate) const fn dictionaries_ready(&self) -> bool {
+    pub(crate) fn dictionaries_ready(&self) -> bool {
         let settings = self.preferences.current();
         (!settings.korean_enabled || self.korean.is_some())
             && (!settings.english_enabled || self.english.is_some())
+            && self.additional.ready(settings.languages())
     }
 }
 
@@ -250,6 +253,10 @@ async fn save_settings(
             .preferences
             .apply(settings)
             .map_err(|error| error.to_string())?;
+        runtime.additional = fixkey_core::multilingual::Dictionaries::load(
+            &runtime.dictionary_root,
+            runtime.preferences.current().languages(),
+        );
         runtime.manual.close();
         runtime.generation += 1;
         runtime.revision += 1;
@@ -319,6 +326,10 @@ async fn desktop_action(
             } else {
                 runtime.preferences.reconcile()
             };
+            runtime.additional = fixkey_core::multilingual::Dictionaries::load(
+                &runtime.dictionary_root,
+                runtime.preferences.current().languages(),
+            );
             runtime.revision += 1;
             runtime.refused_target = None;
             runtime.last_error = None;
@@ -453,12 +464,12 @@ pub(crate) fn show_candidates(
         .map_err(|_| "candidate-window-unavailable")
 }
 
-const fn interface_language(runtime: &Runtime) -> &'static str {
-    match runtime.preferences.current().ui_language {
-        UiLanguage::System => runtime.os_language,
-        UiLanguage::Ko => "ko",
-        UiLanguage::En => "en",
-    }
+fn interface_language(runtime: &Runtime) -> &'static str {
+    runtime
+        .preferences
+        .current()
+        .ui_language
+        .resolve(runtime.os_language)
 }
 struct TrayMenus {
     pause: MenuItem<tauri::DynRuntime>,
@@ -470,7 +481,7 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
     let Ok(runtime) = shared.0.lock() else {
         return;
     };
-    let korean = interface_language(&runtime) == "ko";
+    let language = interface_language(&runtime);
     let paused = runtime.preferences.current().paused;
     let status = runtime
         .last_error
@@ -478,25 +489,21 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
         .unwrap_or_else(|| runtime.status.clone());
     drop(runtime);
     if let Some(menu) = app.try_state::<TrayMenus>() {
-        let _ = menu.pause.set_text(match (korean, paused) {
-            (true, true) => "교정 재개",
-            (true, false) => "교정 일시 정지",
-            (false, true) => "Resume correction",
-            (false, false) => "Pause correction",
-        });
+        let _ = menu.pause.set_text(crate::localization::text(
+            language,
+            if paused { "trayResume" } else { "trayPause" },
+        ));
         let _ = menu
             .settings
-            .set_text(if korean { "설정" } else { "Settings" });
-        let _ = menu.exit.set_text(if korean { "종료" } else { "Exit" });
+            .set_text(crate::localization::text(language, "traySettings"));
+        let _ = menu
+            .exit
+            .set_text(crate::localization::text(language, "trayExit"));
     }
     if let Some(tray) = app.tray_by_id("fixkey") {
         let _ = tray.set_tooltip(Some(format!(
             "FixKey · {} · {status}",
-            if korean {
-                "교정 상태"
-            } else {
-                "Correction status"
-            }
+            crate::localization::text(language, "trayStatus")
         )));
     }
 }
@@ -519,24 +526,24 @@ pub(crate) fn notify(app: &AppHandle, notification: crate::notifications::Notifi
     let Some(code) = notification.code() else {
         return;
     };
-    let korean = app
+    let language = app
         .try_state::<Shared>()
         .and_then(|shared| {
             shared
                 .0
                 .lock()
                 .ok()
-                .map(|runtime| interface_language(&runtime) == "ko")
+                .map(|runtime| interface_language(&runtime))
         })
-        .unwrap_or(false);
-    let message = match (korean, code) {
-        (true, "update-available") => {
-            "새 업데이트가 있습니다. 설정에서 확인하고 설치할 수 있습니다."
-        }
-        (false, "update-available") => "An update is available. Review and install it in Settings.",
-        (true, _) => "FixKey 상태를 확인해 주세요. 설정에서 원인 코드를 확인할 수 있어요.",
-        (false, _) => "FixKey needs attention. Check the reason code in Settings.",
-    };
+        .unwrap_or("en");
+    let message = crate::localization::text(
+        language,
+        if code == "update-available" {
+            "notificationUpdate"
+        } else {
+            "notificationAttention"
+        },
+    );
     if !app
         .try_state::<crate::notifications::Notifications>()
         .is_some_and(|notifications| notifications.enqueue(format!("{message}\n{code}")))
@@ -594,12 +601,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     let _ = preferences.reconcile();
+    let dictionary_root = app.path().resource_dir()?.join("dictionaries/languages");
+    let additional = fixkey_core::multilingual::Dictionaries::load(
+        &dictionary_root,
+        preferences.current().languages(),
+    );
     let os_language = crate::native::os_language();
-    let language = match preferences.current().ui_language {
-        crate::settings::UiLanguage::Ko => "ko",
-        crate::settings::UiLanguage::En => "en",
-        crate::settings::UiLanguage::System => os_language,
-    };
+    let language = preferences.current().ui_language.resolve(os_language);
     WebviewWindowBuilder::new(
         app,
         "candidates",
@@ -621,6 +629,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         candidate_revision: 0,
         korean,
         english,
+        additional,
+        dictionary_root,
         status: "initializing".into(),
         active: false,
         stopping: false,

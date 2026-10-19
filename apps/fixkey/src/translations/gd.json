@@ -1,0 +1,138 @@
+{
+  "general": "Coitcheann",
+  "exclusions": "Aplacaidean air an dùnadh a-mach",
+  "shortcuts": "Ath-ghoiridean",
+  "updates": "Ùrachaidhean",
+  "diagnostics": "Breithneachadh is cuideachadh",
+  "tagline": "Cùm ort a’ sgrìobhadh. Ceartaich an co-dhealbhachd.",
+  "correction": "Ceartachadh fèin-obrachail",
+  "pause": "Cuir ’na stad",
+  "resume": "Lean air",
+  "languages": "Cànanan an comas",
+  "languageSearch": "Lorg cànan no meur-chlàr",
+  "trayPause": "Cuir an ceartachadh ’na stad",
+  "trayResume": "Lean air a’ cheartachadh",
+  "traySettings": "Roghainnean",
+  "trayExit": "Fàg an-seo",
+  "trayStatus": "Staid a’ cheartachaidh",
+  "notificationUpdate": "Tha ùrachadh ri fhaighinn. Thoir sùil air is stàlaich e sna Roghainnean.",
+  "notificationAttention": "Feumaidh FixKey d’ aire. Thoir sùil air còd an adhbhair sna Roghainnean.",
+  "korean": "Coirèanais · Dubeolsik",
+  "english": "Beurla · US QWERTY",
+  "startup": "Tòisich aig clàradh a-steach",
+  "uiLanguage": "Cànan na h-eadar-aghaidh",
+  "theme": "Ùrlar",
+  "system": "Siostam",
+  "light": "Soilleir",
+  "dark": "Dorcha",
+  "loading": "A’ ceangal ri FixKey…",
+  "connection": "Cha ghabh ceangal ris an aplacaid deasga a dhèanamh.",
+  "retry": "Feuch ris a-rithist",
+  "active": "Tha an ceartachadh gnìomhach",
+  "inactive": "Chan eil an ceartachadh gnìomhach",
+  "waitingField": "A’ feitheamh ri raon teacsa a ghabhas deasachadh",
+  "waitingFieldHelp": "Briog air raon teacsa a ghabhas deasachadh ann an aplacaid eile. Fuirichidh FixKey fhad ’s a bhios na Roghainnean fosgailte no nuair nach gabh an raon air a bheil am fòcas aithneachadh gu sàbhailte. Gheibh thu barrachd fiosrachaidh fo Bhreithneachadh is cuideachadh.",
+  "local": "Fuirichidh an t-ion-chur agad air an uidheam seo. Tha raointean fhaclan-faire air an dùnadh a-mach.",
+  "empty": "Chan eil aplacaid sam bith air a dùnadh a-mach",
+  "emptyDetail": "Faodaidh an ceartachadh ruith ann an uidheaman-smachd a ghabhas deasachadh ris a bheil taic. Cuir aplacaid ris airson an t-ion-chur aice fhàgail gun atharrachadh an-còmhnaidh.",
+  "add": "Cuir aplacaid ris",
+  "choose": "Tagh aplacaid",
+  "remove": "Thoir air falbh",
+  "unresolved": "Cha deach an dearbh-aithne a rèiteach",
+  "noApps": "Chan eil aplacaid ri fhaighinn a ghabhas aithneachadh. Fosgail an aplacaid a tha thu airson dùnadh a-mach is feuch ris a-rithist.",
+  "shortcut": "Tagraichean a làimh",
+  "unassigned": "Gun sònrachadh",
+  "capture": "Suidhich ath-ghoirid",
+  "captureHelp": "Brùth iuchair còmhla ri Control, Alt, Command no Shift. Cuiridh Esc dheth e.",
+  "clear": "Falamhaich",
+  "cancel": "Sguir dheth",
+  "done": "Deiseil",
+  "currentVersion": "An tionndadh làithreach",
+  "checkUpdate": "Thoir sùil airson ùrachaidhean",
+  "updateConsent": "Luchdaich a-nuas is stàlaich",
+  "updateHelp": "Thèid sùil a thoirt airson ùrachaidhean aig tòiseachadh agus gach 24 uair a thìde. Cha tòisich luchdadh a-nuas ach le d’ aonta.",
+  "recovery": "Ma dh’fhàilligeas an stàladh, ath-thòisich FixKey no ath-stàlaich pacaid shoighnichte a làimh. Thèid na roghainnean agad a ghlèidheadh. Gabhaidh tionndaidhean soighnichte a bha ann roimhe ath-stàladh a làimh.",
+  "permission": "Ceadaich inntrigeadh so-ruigsinneachd",
+  "permissionHelp": "Feumaidh FixKey inntrigeadh so-ruigsinneachd agus cothrom an t-ion-chur a choimhead airson uidheam-smachd a ghabhas deasachadh aithneachadh is dìreach am facal crìochnaichte a chur an àite.",
+  "inputPermission": "Ceadaich sgrùdadh ion-chuir",
+  "inputPermissionRequest": "Ceadaich sgrùdadh ion-chuir",
+  "inputPermissionSetup": "Suidhich sgrùdadh ion-chuir",
+  "inputPermissionListHelp": "Faodaidh so-ruigsinneachd èisteachd ri iuchraichean a cheadachadh mu thràth fiù ’s mur eil FixKey fo Sgrùdadh ion-chuir. Cha dhearbh macOS innteart fa leth san liosta an-seo. Thoir sùil air an liosta ann an Roghainnean an t-siostaim agus cuir an FixKey.app làithreach ris le + ma tha e a dhìth.",
+  "inputPermissionHelp": "Feumaidh FixKey sgrùdadh ion-chuir airson na h-iuchraichean a chleachdar airson co-dhealbhachd a’ mheur-chlàir a cheartachadh a mhothachadh.",
+  "accessibilityGranted": "Tha inntrigeadh so-ruigsinneachd ceadaichte mu thràth.",
+  "inputPermissionSteps": [
+    "Tagh Ceadaich sgrùdadh ion-chuir airson FixKey a chlàradh is na roghainnean cead aige ann am macOS fhosgladh.",
+    "Ann an Roghainnean an t-siostaim → Prìobhaideachd is tèarainteachd → Sgrùdadh ion-chuir, cuir FixKey an comas. Ma tha e a dhìth, tagh + agus cuir an FixKey.app làithreach ris o Aplacaidean. Till an-seo is tagh Thoir sùil a-rithist. Ath-thòisich FixKey ma dh’iarras macOS ort sin a dhèanamh."
+  ],
+  "permissionRequest": "Ceadaich inntrigeadh so-ruigsinneachd",
+  "permissionWaiting": "Fuirichidh an ceartachadh dheth gus an tèid inntrigeadh a cheadachadh. Às dèidh dhut inntrigeadh a chur an comas, tagh Thoir sùil a-rithist.",
+  "permissionSteps": [
+    "Tagh Ceadaich inntrigeadh so-ruigsinneachd agus lean an stiùireadh aig macOS.",
+    "Cuir FixKey an comas fo Sho-ruigsinneachd. Ma tha e an comas mu thràth ach gu bheil an còmhradh seo ann fhathast às dèidh dhut FixKey ath-thòiseachadh, thoir an seann innteart FixKey air falbh le − agus cleachd + gus an FixKey.app làithreach a chur ris a-rithist. Dh’fhaodadh nach bi aplacaid a chaidh ath-thogail a’ maidseadh an t-seann innteirt cead tuilleadh. Ma tha e a dhìth, cleachd + gus FixKey a chur ris o Aplacaidean.",
+    "Cuir FixKey an comas fo Sgrùdadh ion-chuir cuideachd is thoir sùil a-rithist an uair sin. Mur nochd iarrtas airson sgrùdadh ion-chuir, tagh Ceadaich inntrigeadh so-ruigsinneachd a-rithist. Ath-thòisich FixKey ma dh’iarras macOS ort sin a dhèanamh."
+  ],
+  "macPermission": "Ann an Roghainnean an t-siostaim, ceadaich FixKey fo Sho-ruigsinneachd agus Sgrùdadh ion-chuir is thoir sùil a-rithist an uair sin.",
+  "windowsPermission": "Cleachd FixKey san t-seisean Windows làithreach agad. Fàgar uidheaman-smachd a tha fo dhìon, aig a bheil pribhleidean àrdaichte no ris nach eil taic gun atharrachadh.",
+  "linuxPermission": "Cleachd seisean X11 leis an t-seirbheis so-ruigsinneachd AT-SPI agus XInput2 ri fhaighinn. Chan eil taic ri Wayland.",
+  "openSettings": "Fosgail roghainnean an t-siostaim",
+  "recheck": "Thoir sùil a-rithist",
+  "later": "An ceann greis",
+  "error": "Dh’fhàillig an gnìomh",
+  "reason": "Adhbhar",
+  "openLogs": "Fosgail pasgan nan logaichean",
+  "deleteLogs": "Sguab às na logaichean",
+  "restore": "Aisig lethbhreac-glèidhidh nan roghainnean",
+  "support": "GitHub Issues",
+  "logHelp": "Tha an tionndadh, an t-ùrlar, còdan adhbhair agus amannan sna logaichean. Chan eil teacsa an ion-chuir annta. Fuirichidh logaichean air an uidheam seo fad seachd làithean air a char as fhaide agus cha bhi iad nas motha na 10 MiB uile gu lèir.",
+  "original": "Tùsail",
+  "recognized": "Aithnichte",
+  "notRecognized": "Cha do dh’aithnich am faclair e",
+  "unchecked": "Cha b’ urrainn dhuinn sùil a thoirt air",
+  "candidates": "Tagraichean co-dhealbhachd",
+  "candidateHelp": "↑ ↓ Tagh · Enter Cuir an sàs · Esc Dùin",
+  "noCandidates": "Chan eil an co-theacsa tùsail ri fhaighinn tuilleadh.",
+  "help": "Cuideachadh",
+  "helpTopics": [
+    [
+      "Stàladh",
+      "Stàlaich an DMG soighnichte air macOS ARM64, an stàlaichear NSIS air Windows x64 no an AppImage air Linux X11 x64. Chan eil taghadh nan ùrlaran seo a’ ciallachadh gun deach co-chòrdalachd leis gach aplacaid a dhearbhadh."
+    ],
+    [
+      "Ceadan",
+      "Thoir seachad na ceadan so-ruigsinneachd agus ion-chuir a dh’iarras an siostam-obrachaidh agad is tagh Thoir sùil a-rithist an uair sin. Fuirichidh an ceartachadh neo-ghnìomhach gus am bi na ceadan is na faclairean deiseil. Air macOS, faodaidh So-ruigsinneachd cothrom èifeachdach air èisteachd ri iuchraichean a thoirt seachad às aonais innteart fa leth fo Sgrùdadh ion-chuir. Cleachd Suidhich sgrùdadh ion-chuir fo Choitcheann airson sùil a thoirt air an liosta; mur eil FixKey ann, cleachd + gus an FixKey.app làithreach a chur ris o Aplacaidean."
+    ],
+    [
+      "Co-dhealbhachdan is ceartachadh",
+      "Tha Coirèanais Dubeolsik agus Beurla US QWERTY an comas a ghnàth. Tagh paidhrichean faclair is meur-chlàir a bharrachd fo Choitcheann. Feumaidh am meur-chlàr poblach air an liosta a bhith co-ionnan ris a’ cho-dhealbhachd leis a bheil thu a’ sgrìobhadh. Nuair a bhios cànanan a bharrachd an comas, thèid faclan a mheasadh aig beàrnan; air neo, cuiridh beàrnan is puingeachadh am measadh gu dol. Cha dèan Enter no Tab sin. Chan atharraich facal ach nuair a dh’aithnicheas dìreach aon fhaclair a tha an comas tagraiche. Faodaidh cànanan càirdeach an aon fhacal aithneachadh; fàgar e gun atharrachadh an uair sin. Chan atharraich FixKey do chànan ion-chuir idir. Fàgar mion-atharraichean ris nach eil taic, iuchraichean marbha neo-choileanta agus caochlaidhean meur-chlàir nach eil co-ionnan ris a’ cho-dhealbhachd air an liosta gun atharrachadh."
+    ],
+    [
+      "Neo-dhèan",
+      "Brùth Backspace sa bhad às dèidh ceartachadh fèin-obrachail airson am facal tùsail agus an sgaradair aige aiseag. Obraichidh Backspace mar as àbhaist ma bhrùthas tu e a-rithist às dèidh sin."
+    ],
+    [
+      "Tagraichean a làimh",
+      "Sònraich ath-ghoirid, sgrìobh facal agus cleachd an ath-ghoirid. Nì na h-iuchraichean saigheid taghadh, cuiridh Enter an sàs e agus dùinidh Esc e. Faodaidh tu tagraiche nach deach aithneachadh a thaghadh a dh’aona-ghnothach. Ma ghluaiseas tu an cùrsair tùsail no ma dh’atharraicheas tu aplacaid, dùinidh an taghadair."
+    ],
+    [
+      "Dùnadh a-mach",
+      "Cuir aplacaid ris fo Aplacaidean air an dùnadh a-mach. Thèid an dùnadh a-mach a mhaidseadh ri dearbh-aithne sheasmhach na h-aplacaide. Fuirichidh dearbh-aithnean nach deach a rèiteach air an liosta."
+    ],
+    [
+      "Prìobhaideachd",
+      "Giullaichidh FixKey an t-ion-chur gu h-ionadail. Cha ghlèidh e eachdraidh ion-chuir, cha chleachd e an stòr-bhòrd airson rud a chur an àite agus cha chuir e dàta telemeatraidh air falbh. Tha tòcanan a chaidh a chur ann leis an stòr-bhòrd no le prògram, tòcanan àireamhach, emoji, URL, puist-d agus tòcanan le sgrìobhaidhean measgaichte air an dùnadh a-mach à ceartachadh fèin-obrachail."
+    ],
+    [
+      "Ùrachaidhean",
+      "Thèid sùil a thoirt airson ùrachaidhean seasmhach thar HTTPS aig tòiseachadh agus gach 24 uair a thìde. Bheir thu d’ aonta mus tèid an luchdadh a-nuas. Thèid soidhnidhean mì-dhligheach a dhiùltadh. Stadaidh an ceartachadh ron stàladh; glèidhear na roghainnean mar a bha iad."
+    ],
+    [
+      "Fuasgladh dhuilgheadasan",
+      "Leugh còd an adhbhair, thoir sùil air na ceadan a-rithist agus feuch uidheam-smachd a ghabhas deasachadh ris a bheil taic. Thèid an gnìomh a dhiùltadh gu sàbhailte ma tha ceadan a dhìth, mura bheil fios dè cho mothachail ’s a tha an raon, ma tha na targaidean ro shean no mura bheil taic ris an sgrìobhadh. Ath-thòisich no ath-stàlaich pacaid shoighnichte a làimh às dèidh do dh’ùrachadh fàiligeadh."
+    ],
+    [
+      "Sguabadh às nan logaichean",
+      "Tagh Sguab às na logaichean airson na logaichean breithneachaidh ionadail a thoirt air falbh no Fosgail pasgan nan logaichean airson an sgrùdadh. Na cuir susbaint phrìobhaideach ann nuair a dh’fhosglas tu cùis air GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Faclan a tha air an liostadh san fhaclair a-mhàin; fàgar cruthan neo-aithnichte gun atharrachadh."
+}

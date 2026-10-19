@@ -1,0 +1,138 @@
+{
+  "general": "Algemien",
+  "exclusions": "Utsletten apps",
+  "shortcuts": "Fluchtoetsen",
+  "updates": "Fernijingen",
+  "diagnostics": "Diagnostyk en help",
+  "tagline": "Typ troch. Ferbetterje de toetseboerdyndieling.",
+  "correction": "Automatyske korreksje",
+  "pause": "Underbrekke",
+  "resume": "Trochgean",
+  "languages": "Ynskeakele talen",
+  "languageSearch": "Sykje in taal of toetseboerd",
+  "trayPause": "Korreksje ûnderbrekke",
+  "trayResume": "Korreksje ferfetsje",
+  "traySettings": "Ynstellingen",
+  "trayExit": "Ofslute",
+  "trayStatus": "Korreksjestatus",
+  "notificationUpdate": "Der is in fernijing beskikber. Besjoch en ynstallearje dy yn Ynstellingen.",
+  "notificationAttention": "FixKey hat omtinken nedich. Besjoch de redenkoade yn Ynstellingen.",
+  "korean": "Koreaansk · Dubeolsik",
+  "english": "Ingelsk · US QWERTY",
+  "startup": "Starte by oanmelden",
+  "uiLanguage": "Taal fan de brûkersynterface",
+  "theme": "Tema",
+  "system": "Systeem",
+  "light": "Ljocht",
+  "dark": "Tsjuster",
+  "loading": "Ferbine mei FixKey…",
+  "connection": "Kin gjin ferbining meitsje mei de buroblêdapp.",
+  "retry": "Opnij besykje",
+  "active": "Korreksje is aktyf",
+  "inactive": "Korreksje is net aktyf",
+  "waitingField": "Wachtsje op in bewurkber tekstfjild",
+  "waitingFieldHelp": "Klik op in bewurkber tekstfjild yn in oare app. FixKey wachtet wylst Ynstellingen iepen is of it fjild mei de fokus net feilich identifisearre wurde kin. Mear ynformaasje stiet yn Diagnostyk en help.",
+  "local": "Jo ynfier bliuwt op dit apparaat. Wachtwurdfjilden wurde útsletten.",
+  "empty": "Gjin útsletten apps",
+  "emptyDetail": "Korreksje kin wurkje yn stipe bewurkbere eleminten. Foegje in app ta om de ynfier dêryn altyd ûnferoare te litten.",
+  "add": "App tafoegje",
+  "choose": "Kies in app",
+  "remove": "Fuortsmite",
+  "unresolved": "Identiteit net fêststeld",
+  "noApps": "Der binne gjin identifisearbere apps beskikber. Iepenje de app dy't jo útslute wolle en besykje it opnij.",
+  "shortcut": "Hânmjittige kandidaten",
+  "unassigned": "Net tawiisd",
+  "capture": "Fluchtoets ynstelle",
+  "captureHelp": "Druk op in toets mei Control, Alt, Command of Shift. Esc annulearret.",
+  "clear": "Wiskje",
+  "cancel": "Annulearje",
+  "done": "Klear",
+  "currentVersion": "Aktuele ferzje",
+  "checkUpdate": "Kontrolearje op fernijingen",
+  "updateConsent": "Downloade en ynstallearje",
+  "updateHelp": "By it starten en elke 24 oeren wurdt op fernijingen kontrolearre. Downloads begjinne allinnich mei jo tastimming.",
+  "recovery": "As de ynstallaasje mislearret, start FixKey dan opnij of ynstallearje in ûndertekene pakket hânmjittich opnij. Jo ynstellingen bliuwe bewarre. Eardere ûndertekene ferzjes kinne hânmjittich opnij ynstallearre wurde.",
+  "permission": "Tagonklikheidstagong tastean",
+  "permissionHelp": "FixKey hat tagonklikheidstagong en tagong foar it observearjen fan ynfier nedich om in bewurkber elemint te identifisearjen en allinnich it foltôge wurd te ferfangen.",
+  "inputPermission": "Ynfierkontrôle tastean",
+  "inputPermissionRequest": "Ynfierkontrôle tastean",
+  "inputPermissionSetup": "Ynfierkontrôle ynstelle",
+  "inputPermissionListHelp": "Tagonklikheid kin it belústerjen fan toetsen al tastean, ek as FixKey net ûnder Ynfierkontrôle stiet. macOS befêstiget hjir gjin aparte fermelding yn de list. Kontrolearje de list yn Systeemynstellingen en foegje de aktuele FixKey.app mei + ta as dy ûntbrekt.",
+  "inputPermissionHelp": "FixKey hat Ynfierkontrôle nedich om de toetsen te detektearjen dy't brûkt wurde foar korreksje fan de toetseboerdyndieling.",
+  "accessibilityGranted": "Tagonklikheidstagong is al tastien.",
+  "inputPermissionSteps": [
+    "Kies Ynfierkontrôle tastean om FixKey te registrearjen en de macOS-tastimmingsynstellingen te iepenjen.",
+    "Skeakelje FixKey yn ûnder Systeemynstellingen → Privacy en befeiliging → Ynfierkontrôle. As dy ûntbrekt, kies dan + en foegje de aktuele FixKey.app út Programma's ta. Kom hjir werom en kies Opnij kontrolearje. Start FixKey opnij as macOS dêrom freget."
+  ],
+  "permissionRequest": "Tagonklikheidstagong tastean",
+  "permissionWaiting": "Korreksje bliuwt út oant tagong tastien is. Kies Opnij kontrolearje neidat jo tagong ynskeakele hawwe.",
+  "permissionSteps": [
+    "Kies Tagonklikheidstagong tastean en folgje de oanwizingen fan macOS.",
+    "Skeakelje FixKey yn ûnder Tagonklikheid. As it al ynskeakele is, mar dit dialoochfinster nei it opnij starten fan FixKey noch ferskynt, smyt dan de âlde FixKey-fermelding mei − fuort en brûk + om de aktuele FixKey.app opnij ta te foegjen. In opnij boude app komt mooglik net mear oerien mei de âlde tastimmingsfermelding. As dy ûntbrekt, brûk dan + om FixKey út Programma's ta te foegjen.",
+    "Skeakelje FixKey ek yn ûnder Ynfierkontrôle en kontrolearje dan opnij. As der gjin fersyk foar ynfierkontrôle ferskynt, kies dan opnij Tagonklikheidstagong tastean. Start FixKey opnij as macOS dêrom freget."
+  ],
+  "macPermission": "Jou FixKey yn Systeemynstellingen tagong ûnder Tagonklikheid en Ynfierkontrôle, en kontrolearje dan opnij.",
+  "windowsPermission": "Brûk FixKey yn jo aktuele Windows-sesje. Beskerme eleminten, eleminten mei ferhege rjochten en net-stipe eleminten bliuwe ûnferoare.",
+  "linuxPermission": "Brûk in X11-sesje mei de AT-SPI-tagonklikheidstsjinst en XInput2 beskikber. Wayland wurdt net stipe.",
+  "openSettings": "Systeemynstellingen iepenje",
+  "recheck": "Opnij kontrolearje",
+  "later": "Letter",
+  "error": "Aksje mislearre",
+  "reason": "Reden",
+  "openLogs": "Logboekmap iepenje",
+  "deleteLogs": "Logboeken wiskje",
+  "restore": "Reservekopy fan ynstellingen weromsette",
+  "support": "GitHub Issues",
+  "logHelp": "Logboeken befetsje ferzje, platfoarm, redenkoades en tiidmjittingen. Ynfiertekst wurdt útsletten. Logboeken bliuwe op dit apparaat foar op syn heechst sân dagen en yn totaal 10 MiB.",
+  "original": "Oarspronklik",
+  "recognized": "Werkend",
+  "notRecognized": "Net werkend troch it wurdboek",
+  "unchecked": "Koe net kontrolearre wurde",
+  "candidates": "Kandidaten foar toetseboerdyndieling",
+  "candidateHelp": "↑ ↓ Selektearje · Enter Tapasse · Esc Slute",
+  "noCandidates": "De boarnekontekst is net mear beskikber.",
+  "help": "Help",
+  "helpTopics": [
+    [
+      "Ynstallaasje",
+      "Ynstallearje de ûndertekene DMG op macOS ARM64, it NSIS-ynstallaasjeprogramma op Windows x64, of de AppImage op Linux X11 x64. Doelplatfoarms betsjutte net dat kompatibiliteit mei elke app ferifiearre is."
+    ],
+    [
+      "Tastimmingen",
+      "Jou de tagonklikheids- en ynfiertastimmingen dy't jo bestjoeringssysteem freget en kies dan Opnij kontrolearje. Korreksje bliuwt net aktyf oant de tastimmingen en wurdboeken klear binne. Op macOS kin Tagonklikheid effektive tagong foar it belústerjen fan toetsen jaan sûnder in aparte fermelding ûnder Ynfierkontrôle. Brûk Ynfierkontrôle ynstelle yn Algemien om de list te kontrolearjen; as FixKey ûntbrekt, brûk dan + om de aktuele FixKey.app út Programma's ta te foegjen."
+    ],
+    [
+      "Toetseboerdyndielingen en korreksje",
+      "Koreaansk Dubeolsik en Amerikaansk Ingelsk QWERTY binne standert ynskeakele. Selektearje ekstra wurdboek- en toetseboerdpearen yn Algemien. It fermelde iepenbiere toetseboerd moat oerienkomme mei de yndieling dêr't jo mei type. As ekstra talen ynskeakele binne, wurde wurden by spaasjes beoardiele; oars liede spaasjes en lêstekens ta beoardieling. Enter en Tab dogge dat net. In wurd feroaret allinnich as krekt ien ynskeakele wurdboek in kandidaat werkent. Besibbe talen kinne itselde wurd werkenne; it bliuwt dan ûnferoare. FixKey feroaret jo ynfiertaal nea. Net-stipe modifikaasjetoetsen, net-foltôge deade toetsen en toetseboerdfarianten dy't net mei de fermelde yndieling oerienkomme, bliuwe ûnferoare."
+    ],
+    [
+      "Ungedien meitsje",
+      "Druk fuortendaliks nei automatyske korreksje op Backspace om it oarspronklike wurd en it skiedingsteken werom te setten. Fierdere kearen op Backspace drukke wurket lykas gewoanlik."
+    ],
+    [
+      "Hânmjittige kandidaten",
+      "Wiis in fluchtoets ta, typ in wurd en brûk de fluchtoets. Pylktoetsen selektearje, Enter past ta en Esc slút. Jo kinne eksplisyt in kandidaat kieze dy't net werkend wurdt. It ferpleatsen fan de tekstkursor yn de boarne of it wikseljen fan app slút it karfinster."
+    ],
+    [
+      "Utslutingen",
+      "Foegje in app ta ûnder Utsletten apps. Utslutingen wurde ferlike mei de stabile identiteit fan de app. Identiteiten dy't net fêststeld wurde kinne, bliuwe yn de list stean."
+    ],
+    [
+      "Privacy",
+      "FixKey ferwurket ynfier lokaal. It hâldt gjin ynfierskiednis by, brûkt it klamboerd net foar ferfanging en ferstjoert gjin telemetry. Plakte, programmatysk ynfoege en numerike teksteleminten, emoji's, URL's, e-mailadressen en teksteleminten mei mingde skriften wurde fan automatyske korreksje útsletten."
+    ],
+    [
+      "Fernijingen",
+      "By it starten en elke 24 oeren wurdt fia HTTPS op stabile fernijingen kontrolearre. Jo jouwe tastimming foardat it downloaden begjint. Unjildige hantekeningen wurde wegere. Korreksje stoppet foar de ynstallaasje; ynstellingen bliuwe yntakt."
+    ],
+    [
+      "Problemen oplosse",
+      "Lês de redenkoade, kontrolearje tastimmingen opnij en besykje in stipe bewurkber elemint. Untbrekkende tastimmingen, ûnbekende gefoelichheid fan it fjild, ferâldere doelen en net-stipe skriuwaksjes liede ta feilige wegering. Start nei in mislearre fernijing opnij of ynstallearje in ûndertekene pakket hânmjittich opnij."
+    ],
+    [
+      "Logboeken wiskje",
+      "Kies Logboeken wiskje om lokale diagnostyske logboeken fuort te smiten, of Logboekmap iepenje om se te besjen. Foegje gjin priveeynhâld ta as jo in GitHub-issue iepenje."
+    ]
+  ],
+  "listedWordsOnly": "Allinnich wurden út it wurdboek; ûnbekende foarmen bliuwe ûnferoare."
+}

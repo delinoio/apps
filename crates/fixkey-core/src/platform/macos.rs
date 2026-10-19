@@ -819,7 +819,11 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         } else if flags & ((1 << 18) | (1 << 20)) != 0 {
             if code == 9 { Key::Paste } else { Key::Reset }
         } else if flags & (1 << 19) != 0 {
-            Key::Reset
+            super::level_three(map_key(
+                code,
+                flags & (1 << 17) != 0,
+                flags & (1 << 16) != 0,
+            ))
         } else {
             map_key(code, flags & (1 << 17) != 0, flags & (1 << 16) != 0)
         };
@@ -840,6 +844,9 @@ fn map_key(code: i64, shift: bool, caps: bool) -> Key {
     }
     if code == 48 {
         return Key::Tab;
+    }
+    if code == 10 {
+        return Key::Character(if shift { '\u{e081}' } else { '\u{e080}' });
     }
     let letters = [
         (0, 'a'),

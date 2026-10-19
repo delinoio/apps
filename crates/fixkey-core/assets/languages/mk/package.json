@@ -1,0 +1,34 @@
+{
+  "name": "dictionary-mk",
+  "version": "2.0.0",
+  "description": "Macedonian spelling dictionary in UTF-8",
+  "license": "GPL-3.0",
+  "keywords": [
+    "dictionary",
+    "hunspell",
+    "macedonian",
+    "mk",
+    "myspell",
+    "spelling"
+  ],
+  "repository": "https://github.com/wooorm/dictionaries/tree/main/dictionaries/mk",
+  "bugs": "https://github.com/wooorm/dictionaries/issues",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/wooorm"
+  },
+  "author": "Titus Wormer <tituswormer@gmail.com> (http://wooorm.com)",
+  "contributors": [
+    "Titus Wormer <tituswormer@gmail.com> (http://wooorm.com)",
+    "Thomas Beverley <tom.beverley101@gmail.com>"
+  ],
+  "type": "module",
+  "exports": "./index.js",
+  "files": [
+    "index.aff",
+    "index.d.ts",
+    "index.d.ts.map",
+    "index.dic",
+    "index.js"
+  ]
+}

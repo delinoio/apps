@@ -3,7 +3,7 @@
 
 use crate::{
     Language,
-    layout::text_from_keys,
+    layout::{observed_text, text_from_keys},
     session::{FieldSensitivity, FieldSnapshot},
 };
 
@@ -44,6 +44,7 @@ pub fn can_start(before: &FieldSnapshot) -> bool {
     let chars: Vec<_> = before.text.chars().collect();
     let attached = |ch: char| {
         ch.is_alphanumeric()
+            || crate::tokenizer::is_word_character(ch)
             || matches!(
                 ch,
                 '\'' | '\u{2019}' | '-' | '_' | '.' | '/' | ':' | '@' | '?' | '#'
@@ -70,7 +71,8 @@ pub fn completed_word(
     keys: &[char],
     boundary: &str,
 ) -> Option<String> {
-    if !can_start(before)
+    if keys.is_empty()
+        || !can_start(before)
         || current.target != before.target
         || current.selection_len != 0
         || current.sensitivity != FieldSensitivity::Normal
@@ -79,7 +81,8 @@ pub fn completed_word(
         return None;
     }
     for language in Language::ALL {
-        let Some(word) = text_from_keys(keys, language) else {
+        let word = observed_text(keys, language, false);
+        let Some(word) = word else {
             continue;
         };
         let mut expected: Vec<char> = before.text.chars().collect();
@@ -96,6 +99,39 @@ pub fn completed_word(
     None
 }
 
+/// Splits one rendered word and its full boundary after a proven Space edit.
+///
+/// The caller must first prove the complete insertion with `completed_word`.
+/// The source keyboard must explain both the full insertion and the word's
+/// physical prefix. Ambiguous prefix lengths cannot authorize replacement.
+#[must_use]
+pub fn word_at_space(keys: &[char], rendered: &str) -> Option<(Vec<char>, String)> {
+    let mut tokenizer = crate::tokenizer::Tokenizer::new();
+    let outcomes: Vec<_> = rendered
+        .chars()
+        .chain(std::iter::once(' '))
+        .filter_map(|character| tokenizer.feed_char(character))
+        .collect();
+    let [crate::tokenizer::TokenOutcome::Evaluate { word, .. }] = outcomes.as_slice() else {
+        return None;
+    };
+    let trailing = rendered.strip_prefix(word)?;
+    let sources: Vec<_> = Language::ALL
+        .into_iter()
+        .filter(|language| observed_text(keys, *language, false).as_deref() == Some(rendered))
+        .collect();
+    let mut lengths = (1..=keys.len()).filter(|length| {
+        sources
+            .iter()
+            .any(|language| text_from_keys(&keys[..*length], *language).as_deref() == Some(word))
+    });
+    let length = lengths.next()?;
+    if lengths.next().is_some() {
+        return None;
+    }
+    Some((keys[..length].to_vec(), format!("{trailing} ")))
+}
+
 /// Checks an unfinished key sequence so caret, selection or external text edits
 /// discard its transient context before another word boundary arrives.
 #[must_use]
@@ -109,24 +145,9 @@ pub fn pending_matches(before: &FieldSnapshot, current: &FieldSnapshot, keys: &[
         return false;
     }
     Language::ALL.into_iter().any(|language| {
-        let mut inserted = String::new();
-        let mut letters = Vec::new();
-        for ch in keys.iter().copied().chain(std::iter::once('\0')) {
-            if ch.is_ascii_alphabetic() {
-                letters.push(ch);
-                continue;
-            }
-            if !letters.is_empty() {
-                let Some(word) = text_from_keys(&letters, language) else {
-                    return false;
-                };
-                inserted.push_str(&word);
-                letters.clear();
-            }
-            if ch != '\0' {
-                inserted.push(ch);
-            }
-        }
+        let Some(inserted) = observed_text(keys, language, true) else {
+            return false;
+        };
         let Some(committed) = current.caret.checked_sub(before.caret) else {
             return false;
         };

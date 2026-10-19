@@ -1,0 +1,138 @@
+{
+  "general": "General",
+  "exclusions": "Aplicacions excloses",
+  "shortcuts": "Dreceres",
+  "updates": "Actualitzacions",
+  "diagnostics": "Diagnòstic i ajuda",
+  "tagline": "Continua escrivint. Corregeix la distribució.",
+  "correction": "Correcció automàtica",
+  "pause": "Posa en pausa",
+  "resume": "Reprèn",
+  "languages": "Llengües activades",
+  "languageSearch": "Cerca una llengua o un teclat",
+  "trayPause": "Posa la correcció en pausa",
+  "trayResume": "Reprèn la correcció",
+  "traySettings": "Configuració",
+  "trayExit": "Surt",
+  "trayStatus": "Estat de la correcció",
+  "notificationUpdate": "Hi ha una actualització disponible. Revisa-la i instal·la-la a Configuració.",
+  "notificationAttention": "FixKey necessita atenció. Consulta el codi del motiu a Configuració.",
+  "korean": "Coreà · Dubeolsik",
+  "english": "Anglès · US QWERTY",
+  "startup": "Inicia en entrar a la sessió",
+  "uiLanguage": "Llengua de la interfície",
+  "theme": "Tema",
+  "system": "Sistema",
+  "light": "Clar",
+  "dark": "Fosc",
+  "loading": "S'està connectant a FixKey…",
+  "connection": "No es pot connectar amb l'aplicació d'escriptori.",
+  "retry": "Torna-ho a provar",
+  "active": "La correcció està activa",
+  "inactive": "La correcció està inactiva",
+  "waitingField": "S'espera un camp de text editable",
+  "waitingFieldHelp": "Fes clic en un camp de text editable d'una altra aplicació. FixKey espera mentre Configuració està oberta o no es pot identificar amb seguretat el camp que té el focus. Trobaràs més informació a Diagnòstic i ajuda.",
+  "local": "El text que introdueixes es queda en aquest dispositiu. Els camps de contrasenya estan exclosos.",
+  "empty": "No hi ha aplicacions excloses",
+  "emptyDetail": "La correcció pot funcionar als controls editables compatibles. Afegeix una aplicació perquè el text que hi introdueixis es mantingui sempre sense canvis.",
+  "add": "Afegeix una aplicació",
+  "choose": "Tria una aplicació",
+  "remove": "Elimina",
+  "unresolved": "Identitat no resolta",
+  "noApps": "No hi ha cap aplicació identificable disponible. Obre l'aplicació que vols excloure i torna-ho a provar.",
+  "shortcut": "Candidats manuals",
+  "unassigned": "Sense assignar",
+  "capture": "Defineix una drecera",
+  "captureHelp": "Prem una tecla amb Control, Alt, Command o Shift. Esc cancel·la l'acció.",
+  "clear": "Esborra",
+  "cancel": "Cancel·la",
+  "done": "Fet",
+  "currentVersion": "Versió actual",
+  "checkUpdate": "Comprova si hi ha actualitzacions",
+  "updateConsent": "Baixa i instal·la",
+  "updateHelp": "Es comprova si hi ha actualitzacions en iniciar i cada 24 hores. Les baixades només comencen amb el teu consentiment.",
+  "recovery": "Si la instal·lació falla, reinicia FixKey o torna a instal·lar manualment un paquet signat. Es conserva la configuració. Les versions anteriors signades es poden tornar a instal·lar manualment.",
+  "permission": "Permet l'accés d'accessibilitat",
+  "permissionHelp": "FixKey necessita accés d'accessibilitat i d'observació de l'entrada per identificar un control editable i substituir només la paraula completada.",
+  "inputPermission": "Permet el monitoratge d'entrada",
+  "inputPermissionRequest": "Permet el monitoratge d'entrada",
+  "inputPermissionSetup": "Configura el monitoratge d'entrada",
+  "inputPermissionListHelp": "L'accessibilitat ja pot permetre escoltar les pulsacions de tecles encara que FixKey no aparegui a Monitoratge d'entrada. macOS no confirma aquí si hi ha una entrada independent a la llista. Comprova la llista a Configuració del Sistema i afegeix-hi el FixKey.app actual amb + si no hi apareix.",
+  "inputPermissionHelp": "FixKey necessita el monitoratge d'entrada per detectar les tecles que es fan servir per corregir la distribució del teclat.",
+  "accessibilityGranted": "L'accés d'accessibilitat ja està permès.",
+  "inputPermissionSteps": [
+    "Tria Permet el monitoratge d'entrada per registrar FixKey i obrir-ne la configuració de permisos de macOS.",
+    "A Configuració del Sistema → Privacitat i seguretat → Monitoratge d'entrada, activa FixKey. Si no hi apareix, tria + i afegeix el FixKey.app actual des d'Aplicacions. Torna aquí i tria Torna a comprovar. Reinicia FixKey si macOS ho demana."
+  ],
+  "permissionRequest": "Permet l'accés d'accessibilitat",
+  "permissionWaiting": "La correcció es mantindrà desactivada fins que es permeti l'accés. Després d'activar-lo, tria Torna a comprovar.",
+  "permissionSteps": [
+    "Tria Permet l'accés d'accessibilitat i segueix les indicacions de macOS.",
+    "Activa FixKey a Accessibilitat. Si ja està activat però aquest diàleg continua apareixent després de reiniciar FixKey, elimina l'entrada antiga de FixKey amb − i fes servir + per tornar a afegir el FixKey.app actual. Una aplicació recompilada pot deixar de coincidir amb l'entrada de permís antiga. Si no hi apareix, fes servir + per afegir FixKey des d'Aplicacions.",
+    "Activa també FixKey a Monitoratge d'entrada i torna a comprovar els permisos. Si no apareix cap sol·licitud de monitoratge d'entrada, torna a triar Permet l'accés d'accessibilitat. Reinicia FixKey si macOS ho demana."
+  ],
+  "macPermission": "A Configuració del Sistema, permet FixKey a Accessibilitat i a Monitoratge d'entrada i torna a comprovar els permisos.",
+  "windowsPermission": "Fes servir FixKey a la sessió actual de Windows. Els controls protegits, amb privilegis elevats o no compatibles es mantenen sense canvis.",
+  "linuxPermission": "Fes servir una sessió X11 amb el servei d'accessibilitat AT-SPI i XInput2 disponibles. Wayland no és compatible.",
+  "openSettings": "Obre la configuració del sistema",
+  "recheck": "Torna a comprovar",
+  "later": "Més tard",
+  "error": "L'acció ha fallat",
+  "reason": "Motiu",
+  "openLogs": "Obre la carpeta de registres",
+  "deleteLogs": "Elimina els registres",
+  "restore": "Restaura la còpia de seguretat de la configuració",
+  "support": "GitHub Issues",
+  "logHelp": "Els registres contenen la versió, la plataforma, els codis de motiu i els temps d'execució. Se n'exclou el text introduït. Els registres es conserven en aquest dispositiu durant un màxim de set dies i amb un límit total de 10 MiB.",
+  "original": "Original",
+  "recognized": "Reconegut",
+  "notRecognized": "No reconegut pel diccionari",
+  "unchecked": "No s'ha pogut comprovar",
+  "candidates": "Candidats de distribució",
+  "candidateHelp": "↑ ↓ Selecciona · Enter Aplica · Esc Tanca",
+  "noCandidates": "El context d'origen ja no està disponible.",
+  "help": "Ajuda",
+  "helpTopics": [
+    [
+      "Instal·lació",
+      "Instal·la el DMG signat a macOS ARM64, l'instal·lador NSIS a Windows x64 o l'AppImage a Linux X11 x64. Les plataformes de destinació no impliquen que s'hagi verificat la compatibilitat amb totes les aplicacions."
+    ],
+    [
+      "Permisos",
+      "Concedeix els permisos d'accessibilitat i d'entrada que demani el sistema operatiu i tria Torna a comprovar. La correcció es manté inactiva fins que els permisos i els diccionaris estiguin a punt. A macOS, Accessibilitat pot proporcionar accés efectiu a l'escolta de pulsacions de tecles sense una entrada independent a Monitoratge d'entrada. Fes servir Configura el monitoratge d'entrada a General per comprovar la llista; si FixKey no hi apareix, fes servir + per afegir el FixKey.app actual des d'Aplicacions."
+    ],
+    [
+      "Distribucions i correcció",
+      "El coreà Dubeolsik i l'anglès US QWERTY estan activats per defecte. Selecciona altres parelles de diccionari i teclat a General. El teclat públic de la llista ha de coincidir amb la distribució amb què escrius. Quan hi ha llengües addicionals activades, les paraules s'avaluen en introduir espais; en cas contrari, els espais i la puntuació activen l'avaluació. Enter i Tab no l'activen. Una paraula només canvia quan exactament un dels diccionaris activats reconeix un candidat. Les llengües relacionades poden reconèixer la mateixa paraula; en aquest cas, es manté sense canvis. FixKey no canvia mai la llengua d'entrada. Els modificadors no compatibles, les tecles mortes incompletes i les variants de teclat que no coincideixen amb la distribució de la llista es mantenen sense canvis."
+    ],
+    [
+      "Desfés",
+      "Prem Backspace immediatament després d'una correcció automàtica per restaurar la paraula original i el seu separador. Les pulsacions posteriors de Backspace funcionen amb normalitat."
+    ],
+    [
+      "Candidats manuals",
+      "Assigna una drecera, escriu una paraula i fes servir la drecera. Les tecles de fletxa seleccionen, Enter aplica i Esc tanca. Pots triar explícitament un candidat no reconegut. Si mous el cursor de text d'origen o canvies d'aplicació, es tanca el selector."
+    ],
+    [
+      "Exclusions",
+      "Afegeix una aplicació a Aplicacions excloses. Les exclusions es basen en la identitat estable de l'aplicació. Les identitats no resoltes continuen a la llista."
+    ],
+    [
+      "Privacitat",
+      "FixKey processa localment el text introduït. No en conserva cap historial, no fa servir el porta-retalls per substituir-lo ni envia telemetria. Els elements enganxats, generats per programes, numèrics, emojis, URL, adreces de correu electrònic i elements que barregen sistemes d'escriptura queden exclosos de la correcció automàtica."
+    ],
+    [
+      "Actualitzacions",
+      "Es comprova si hi ha actualitzacions estables per HTTPS en iniciar i cada 24 hores. Has de donar el consentiment abans de baixar-les. Es rebutgen les signatures no vàlides. La correcció s'atura abans de la instal·lació; la configuració es manté intacta."
+    ],
+    [
+      "Resolució de problemes",
+      "Llegeix el codi del motiu, torna a comprovar els permisos i prova un control editable compatible. La manca de permisos, la sensibilitat desconeguda d'un camp, les destinacions obsoletes i les escriptures no compatibles provoquen que l'operació es rebutgi per seguretat. Si una actualització falla, reinicia l'aplicació o torna a instal·lar manualment un paquet signat."
+    ],
+    [
+      "Eliminació de registres",
+      "Tria Elimina els registres per eliminar els registres de diagnòstic locals, o Obre la carpeta de registres per examinar-los. No incloguis contingut privat quan obris una incidència a GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Només paraules incloses al diccionari; les formes desconegudes es deixen sense canvis."
+}

@@ -1,0 +1,138 @@
+{
+  "general": "Umumy",
+  "exclusions": "Düzedişden çykarylan programmalar",
+  "shortcuts": "Düwme utgaşmalary",
+  "updates": "Täzelenmeler",
+  "diagnostics": "Anyklama we kömek",
+  "tagline": "Ýazmagy dowam ediň. Klawiatura ýerleşişini düzediň.",
+  "correction": "Awtomatik düzediş",
+  "pause": "Wagtlaýyn duruz",
+  "resume": "Dowam et",
+  "languages": "Işjeň diller",
+  "languageSearch": "Dil ýa-da klawiatura tap",
+  "trayPause": "Düzedişi wagtlaýyn duruz",
+  "trayResume": "Düzedişi dowam et",
+  "traySettings": "Sazlamalar",
+  "trayExit": "Çyk",
+  "trayStatus": "Düzedişiň ýagdaýy",
+  "notificationUpdate": "Täzelenme elýeterli. Ony Sazlamalarda gözden geçiriň we guruň.",
+  "notificationAttention": "FixKey ünsüňizi talap edýär. Sazlamalarda sebäp koduny barlaň.",
+  "korean": "Koreýçe · Dubeolsik",
+  "english": "Iňlisçe · US QWERTY",
+  "startup": "Ulgama girilende işe giriz",
+  "uiLanguage": "Interfeýsiň dili",
+  "theme": "Tema",
+  "system": "Ulgam",
+  "light": "Açyk",
+  "dark": "Garaňky",
+  "loading": "FixKey bilen birikdirilýär…",
+  "connection": "Iş stoly programmasyna birigip bolmaýar.",
+  "retry": "Gaýtadan synanyş",
+  "active": "Düzediş işjeň",
+  "inactive": "Düzediş işjeň däl",
+  "waitingField": "Redaktirläp bolýan tekst meýdanyna garaşylýar",
+  "waitingFieldHelp": "Başga programmadaky redaktirläp bolýan tekst meýdanyna basyň. Sazlamalar açyk bolanda ýa-da fokusdaky meýdany ygtybarly kesgitläp bolmadyk ýagdaýynda FixKey garaşýar. Jikme-jiklikler Anyklama we kömek bölüminde elýeterlidir.",
+  "local": "Girizen maglumatyňyz şu enjamda galýar. Parol meýdanlary düzedişden çykarylýar.",
+  "empty": "Düzedişden çykarylan programma ýok",
+  "emptyDetail": "Düzediş goldanylýan redaktirläp bolýan dolandyryş elementlerinde işläp biler. Programmanyň girizilýän tekstini hemişe üýtgetmän goýmak üçin ony goşuň.",
+  "add": "Programma goş",
+  "choose": "Programma saýla",
+  "remove": "Aýyr",
+  "unresolved": "Programma şahsyýeti kesgitlenmedi",
+  "noApps": "Şahsyýetini kesgitläp bolýan programmalar elýeterli däl. Düzedişden çykarmak isleýän programmaňyzy açyň we gaýtadan synanyşyň.",
+  "shortcut": "El bilen saýlanýan wariantlar",
+  "unassigned": "Bellenmedik",
+  "capture": "Düwme utgaşmasyny belle",
+  "captureHelp": "Control, Alt, Command ýa-da Shift bilen bilelikde bir düwmä basyň. Esc ýatyrýar.",
+  "clear": "Arassala",
+  "cancel": "Ýatyr",
+  "done": "Taýýar",
+  "currentVersion": "Häzirki wersiýa",
+  "checkUpdate": "Täzelenmeleri barla",
+  "updateConsent": "Göçürip al we gur",
+  "updateHelp": "Täzelenmeler programma işe girizilende we her 24 sagatdan barlanýar. Göçürip almak diňe razylygyňyz bilen başlanýar.",
+  "recovery": "Gurnama başa barmasa, FixKey-i täzeden işe giriziň ýa-da gol çekilen bukjany el bilen täzeden guruň. Sazlamalaryňyz saklanýar. Öňki gol çekilen wersiýalary el bilen täzeden gurup bolýar.",
+  "permission": "Elýeterlilik rugsadyny ber",
+  "permissionHelp": "Redaktirläp bolýan dolandyryş elementini kesgitlemek we diňe tamamlanan sözi çalyşmak üçin FixKey elýeterlilik we girizişi synlamak rugsatlaryna mätäçdir.",
+  "inputPermission": "Girizişe gözegçilik rugsadyny ber",
+  "inputPermissionRequest": "Girizişe gözegçilik rugsadyny ber",
+  "inputPermissionSetup": "Girizişe gözegçiligi sazla",
+  "inputPermissionListHelp": "FixKey Girizişe gözegçilik sanawynda bolmasa-da, Elýeterlilik düwmeleri diňlemäge eýýäm rugsat berip biler. macOS bu ýerde aýratyn sanaw ýazgysyny tassyklamaýar. Ulgam sazlamalarynda sanawy barlaň we häzirki FixKey.app ýok bolsa, ony + bilen goşuň.",
+  "inputPermissionHelp": "Klawiatura ýerleşişini düzetmekde ulanylýan düwmeleri ýüze çykarmak üçin FixKey Girizişe gözegçilik rugsadyna mätäçdir.",
+  "accessibilityGranted": "Elýeterlilik rugsady eýýäm berlen.",
+  "inputPermissionSteps": [
+    "FixKey-i bellige almak we onuň macOS rugsat sazlamalaryny açmak üçin Girizişe gözegçilik rugsadyny ber saýlaň.",
+    "Ulgam sazlamalary → Gizlinlik we howpsuzlyk → Girizişe gözegçilik bölüminde FixKey-i işjeňleşdiriň. Ol ýok bolsa, + saýlap, Programmalar bölüminden häzirki FixKey.app-i goşuň. Bu ýere dolanyp, Gaýtadan barla saýlaň. macOS talap etse, FixKey-i täzeden işe giriziň."
+  ],
+  "permissionRequest": "Elýeterlilik rugsadyny ber",
+  "permissionWaiting": "Rugsat berilýänçä düzediş öçürilen ýagdaýda galar. Rugsat bereniňizden soň Gaýtadan barla saýlaň.",
+  "permissionSteps": [
+    "Elýeterlilik rugsadyny ber saýlaň we macOS görkezmesine eýeriň.",
+    "Elýeterlilik bölüminde FixKey-i işjeňleşdiriň. Ol eýýäm işjeň bolsa-da, FixKey täzeden işe girizilenden soň bu gepleşik penjiresi galýan bolsa, köne FixKey ýazgysyny − bilen aýryň we häzirki FixKey.app-i + bilen täzeden goşuň. Täzeden ýygnalan programma köne rugsat ýazgysyna indi gabat gelmän biler. Ol ýok bolsa, + ulanyp, Programmalar bölüminden FixKey-i goşuň.",
+    "Şeýle hem Girizişe gözegçilik bölüminde FixKey-i işjeňleşdiriň, soňra gaýtadan barlaň. Girizişe gözegçilik rugsat soragy görünmese, Elýeterlilik rugsadyny ber täzeden saýlaň. macOS talap etse, FixKey-i täzeden işe giriziň."
+  ],
+  "macPermission": "Ulgam sazlamalarynda Elýeterlilik we Girizişe gözegçilik bölümlerinde FixKey-e rugsat beriň, soňra gaýtadan barlaň.",
+  "windowsPermission": "FixKey-i häzirki Windows sessiýaňyzda ulanyň. Goragly, ýokary ygtyýarlyklary talap edýän ýa-da goldanylmaýan dolandyryş elementleri üýtgedilmän goýulýar.",
+  "linuxPermission": "AT-SPI elýeterlilik hyzmaty we XInput2 elýeterli bolan X11 sessiýasyny ulanyň. Wayland goldanylmaýar.",
+  "openSettings": "Ulgam sazlamalaryny aç",
+  "recheck": "Gaýtadan barla",
+  "later": "Soňrak",
+  "error": "Amal başa barmady",
+  "reason": "Sebäp",
+  "openLogs": "Žurnal bukjasyny aç",
+  "deleteLogs": "Žurnallary poz",
+  "restore": "Sazlamalaryň ätiýaçlyk nusgasyny dikelt",
+  "support": "GitHub Issues",
+  "logHelp": "Žurnallarda wersiýa, platforma, sebäp kodlary we wagt ölçegleri bar. Girizilen tekst goşulmaýar. Žurnallar şu enjamda iň köp ýedi gün saklanýar we olaryň umumy möçberi 10 MiB-den geçmeýär.",
+  "original": "Asyl nusga",
+  "recognized": "Tanyldy",
+  "notRecognized": "Sözlük tarapyndan tanalmady",
+  "unchecked": "Barlap bolmady",
+  "candidates": "Ýerleşiş wariantlary",
+  "candidateHelp": "↑ ↓ Saýla · Enter Ulan · Esc Ýap",
+  "noCandidates": "Başlangyç kontekst indi elýeterli däl.",
+  "help": "Kömek",
+  "helpTopics": [
+    [
+      "Gurnama",
+      "macOS ARM64 üçin gol çekilen DMG-ni, Windows x64 üçin NSIS gurnaýjysyny ýa-da Linux X11 x64 üçin AppImage-i guruň. Maksatlaýyn platformalaryň görkezilmegi her bir programma bilen utgaşyklygyň barlanandygyny aňlatmaýar."
+    ],
+    [
+      "Rugsatlar",
+      "Operasion ulgamyňyzyň talap edýän elýeterlilik we giriziş rugsatlaryny beriň, soňra Gaýtadan barla saýlaň. Rugsatlar we sözlükler taýýar bolýança düzediş işjeň däl ýagdaýda galýar. macOS-da Elýeterlilik aýratyn Girizişe gözegçilik ýazgysy bolmazdan düwmeleri diňlemäge hakyky rugsat berip biler. Sanawy barlamak üçin Umumy bölümindäki Girizişe gözegçiligi sazla ulanyň; FixKey ýok bolsa, + ulanyp, Programmalar bölüminden häzirki FixKey.app-i goşuň."
+    ],
+    [
+      "Ýerleşişler we düzediş",
+      "Koreýçe Dubeolsik we ABŞ iňlisçesi US QWERTY deslapdan işjeňdir. Umumy bölüminde goşmaça sözlük we klawiatura jübütlerini saýlaň. Sanawdaky köpçülige açyk klawiatura ýazýan ýerleşişiňize gabat gelmelidir. Goşmaça diller işjeňleşdirilende sözler boşluk girizilende barlanýar; beýleki ýagdaýda boşluklar we dyngy belgileri barlagy başlaýar. Enter we Tab barlagy başlatmaýar. Söz diňe işjeň sözlükleriň takyk biri warianty tananda üýtgeýär. Garyndaş diller şol bir sözi tanap biler; onda ol üýtgedilmän goýulýar. FixKey giriziş diliňizi hiç haçan çalyşmaýar. Goldanylmaýan üýtgediji düwmeler, tamamlanmadyk diakritik düwme yzygiderlilikleri we sanawdaky ýerleşişe gabat gelmeýän klawiatura görnüşleri üýtgedilmän goýulýar."
+    ],
+    [
+      "Yza gaýtarma",
+      "Asyl sözi we onuň bölüji belgisini dikeltmek üçin awtomatik düzedişden soň derrew Backspace basyň. Soňky Backspace basyşlary adaty işleýär."
+    ],
+    [
+      "El bilen saýlanýan wariantlar",
+      "Düwme utgaşmasyny belläň, bir söz ýazyň we şol utgaşmany ulanyň. Ok düwmeleri saýlaýar, Enter ulanýar, Esc bolsa ýapýar. Tanalmadyk warianty bilkastlaýyn saýlap bilersiňiz. Başlangyç tekst kursoryny süýşürmek ýa-da başga programma geçmek saýlaýjyny ýapýar."
+    ],
+    [
+      "Düzedişden çykarmalar",
+      "Düzedişden çykarylan programmalar bölüminde bir programma goşuň. Düzedişden çykarmalar programmanyň durnukly şahsyýetine görä gabat getirilýär. Şahsyýeti kesgitlenmedik programmalar sanawda galýar."
+    ],
+    [
+      "Gizlinlik",
+      "FixKey girizilen maglumatlary ýerli işleýär. Ol giriziş taryhyny saklamaýar, çalyşmak üçin alyş-çalyş buferini ulanmaýar we telemetriýa ibermeýär. Goýlan, programma arkaly girizilen, sanly, emoji, URL, e-poçta we dürli ýazuw ulgamlary garyşan birlikler awtomatik düzedişden çykarylýar."
+    ],
+    [
+      "Täzelenmeler",
+      "Durnukly täzelenmeler programma işe girizilende we her 24 sagatdan HTTPS arkaly barlanýar. Göçürip almazdan öň razylygyňyz alynýar. Nädogry gollar ret edilýär. Gurnamadan öň düzediş durýar; sazlamalar üýtgewsiz galýar."
+    ],
+    [
+      "Näsazlyklary düzetmek",
+      "Sebäp koduny okaň, rugsatlary gaýtadan barlaň we goldanylýan redaktirläp bolýan dolandyryş elementini synap görüň. Rugsatlaryň ýoklugy, meýdanyň duýgurlygynyň näbelliligi, könelen maksatlaýyn elementler we goldanylmaýan ýazuw amallary ygtybarly ret edilmegine getirýär. Täzelenme başa barmandan soň programmany täzeden işe giriziň ýa-da gol çekilen bukjany el bilen täzeden guruň."
+    ],
+    [
+      "Žurnallary pozmak",
+      "Ýerli anyklama žurnallaryny aýyrmak üçin Žurnallary poz ýa-da olary gözden geçirmek üçin Žurnal bukjasyny aç saýlaň. GitHub-da mesele açanyňyzda şahsy mazmuny goşmaň."
+    ]
+  ],
+  "listedWordsOnly": "Diňe sözlükde sanalan sözler; näbelli görnüşler üýtgedilmän galdyrylýar."
+}

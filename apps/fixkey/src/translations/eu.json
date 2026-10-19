@@ -1,0 +1,138 @@
+{
+  "general": "Orokorra",
+  "exclusions": "Baztertutako aplikazioak",
+  "shortcuts": "Laster-teklak",
+  "updates": "Eguneratzeak",
+  "diagnostics": "Diagnostikoa eta laguntza",
+  "tagline": "Jarraitu idazten. Zuzendu teklatuaren diseinua.",
+  "correction": "Zuzenketa automatikoa",
+  "pause": "Pausatu",
+  "resume": "Berrekin",
+  "languages": "Gaitutako hizkuntzak",
+  "languageSearch": "Bilatu hizkuntza edo teklatu bat",
+  "trayPause": "Pausatu zuzenketa",
+  "trayResume": "Berrekin zuzenketari",
+  "traySettings": "Ezarpenak",
+  "trayExit": "Irten",
+  "trayStatus": "Zuzenketaren egoera",
+  "notificationUpdate": "Eguneratze bat eskuragarri dago. Berrikusi eta instalatu Ezarpenetan.",
+  "notificationAttention": "FixKey-k arreta behar du. Begiratu arrazoi-kodea Ezarpenetan.",
+  "korean": "Koreera · Dubeolsik",
+  "english": "Ingelesa · US QWERTY",
+  "startup": "Abiarazi saioa hastean",
+  "uiLanguage": "Interfazearen hizkuntza",
+  "theme": "Gaia",
+  "system": "Sistema",
+  "light": "Argia",
+  "dark": "Iluna",
+  "loading": "FixKey-ra konektatzen…",
+  "connection": "Ezin da mahaigaineko aplikaziora konektatu.",
+  "retry": "Saiatu berriro",
+  "active": "Zuzenketa aktibo dago",
+  "inactive": "Zuzenketa inaktibo dago",
+  "waitingField": "Testu-eremu editagarri baten zain",
+  "waitingFieldHelp": "Egin klik beste aplikazio bateko testu-eremu editagarri batean. FixKey zain geratzen da Ezarpenak irekita daudenean edo fokua duen eremua segurtasunez identifikatu ezin denean. Xehetasunak Diagnostikoa eta laguntza atalean daude.",
+  "local": "Zure sarrera gailu honetan geratzen da. Pasahitzen eremuak baztertzen dira.",
+  "empty": "Ez dago baztertutako aplikaziorik",
+  "emptyDetail": "Zuzenketak onartutako kontrol editagarrietan funtziona dezake. Gehitu aplikazio bat haren sarrera beti aldatu gabe uzteko.",
+  "add": "Gehitu aplikazioa",
+  "choose": "Aukeratu aplikazio bat",
+  "remove": "Kendu",
+  "unresolved": "Identitatea ezin izan da zehaztu",
+  "noApps": "Ez dago identifika daitekeen aplikaziorik eskuragarri. Ireki baztertu nahi duzun aplikazioa eta saiatu berriro.",
+  "shortcut": "Eskuzko hautagaiak",
+  "unassigned": "Esleitu gabe",
+  "capture": "Ezarri laster-tekla",
+  "captureHelp": "Sakatu tekla bat Control, Alt, Command edo Shift teklarekin batera. Esc teklak bertan behera uzten du.",
+  "clear": "Garbitu",
+  "cancel": "Utzi",
+  "done": "Eginda",
+  "currentVersion": "Uneko bertsioa",
+  "checkUpdate": "Bilatu eguneratzeak",
+  "updateConsent": "Deskargatu eta instalatu",
+  "updateHelp": "Eguneratzeak abiaraztean eta 24 orduro bilatzen dira. Deskargak zure baimenarekin soilik hasten dira.",
+  "recovery": "Instalazioak huts egiten badu, berrabiarazi FixKey edo berrinstalatu eskuz sinatutako pakete bat. Zure ezarpenak gordetzen dira. Aurreko bertsio sinatuak eskuz berrinstala daitezke.",
+  "permission": "Baimendu erabilerraztasun-sarbidea",
+  "permissionHelp": "FixKey-k erabilerraztasunerako eta sarrera behatzeko sarbidea behar du kontrol editagarri bat identifikatzeko eta osatutako hitza soilik ordezteko.",
+  "inputPermission": "Baimendu sarreraren monitorizazioa",
+  "inputPermissionRequest": "Baimendu sarreraren monitorizazioa",
+  "inputPermissionSetup": "Konfiguratu sarreraren monitorizazioa",
+  "inputPermissionListHelp": "Erabilerraztasunak teklak entzutea baimen dezake dagoeneko, nahiz eta FixKey Sarreraren monitorizazioa atalean agertu ez. macOS-ek ez du hemen zerrendako sarrera bereizi bat berresten. Begiratu zerrenda Sistemaren ezarpenetan eta gehitu uneko FixKey.app + botoiarekin, falta bada.",
+  "inputPermissionHelp": "FixKey-k sarreraren monitorizazioa behar du teklatuaren diseinua zuzentzeko erabilitako teklak hautemateko.",
+  "accessibilityGranted": "Erabilerraztasun-sarbidea baimenduta dago dagoeneko.",
+  "inputPermissionSteps": [
+    "Aukeratu Baimendu sarreraren monitorizazioa FixKey erregistratzeko eta haren macOS-eko baimen-ezarpenak irekitzeko.",
+    "Sistemaren ezarpenak → Pribatutasuna eta segurtasuna → Sarreraren monitorizazioa atalean, gaitu FixKey. Falta bada, aukeratu + eta gehitu uneko FixKey.app Aplikazioak karpetatik. Itzuli hona eta aukeratu Egiaztatu berriro. Berrabiarazi FixKey macOS-ek eskatzen badu."
+  ],
+  "permissionRequest": "Baimendu erabilerraztasun-sarbidea",
+  "permissionWaiting": "Zuzenketa desaktibatuta egongo da sarbidea baimendu arte. Sarbidea gaitu ondoren, aukeratu Egiaztatu berriro.",
+  "permissionSteps": [
+    "Aukeratu Baimendu erabilerraztasun-sarbidea eta jarraitu macOS-en argibideei.",
+    "Gaitu FixKey Erabilerraztasuna atalean. Dagoeneko gaituta badago baina elkarrizketa-koadro honek FixKey berrabiarazi ondoren agertzen jarraitzen badu, kendu FixKey-ren sarrera zaharra − botoiarekin eta erabili + uneko FixKey.app berriro gehitzeko. Berreraikitako aplikazio bat agian ez dator bat baimen-sarrera zaharrarekin. Falta bada, erabili + FixKey Aplikazioak karpetatik gehitzeko.",
+    "Gaitu FixKey Sarreraren monitorizazioa atalean ere, eta egiaztatu berriro. Sarreraren monitorizaziorako baimen-eskaerarik agertzen ez bada, aukeratu berriro Baimendu erabilerraztasun-sarbidea. Berrabiarazi FixKey macOS-ek eskatzen badu."
+  ],
+  "macPermission": "Sistemaren ezarpenetan, baimendu FixKey Erabilerraztasuna eta Sarreraren monitorizazioa ataletan, eta egiaztatu berriro.",
+  "windowsPermission": "Erabili FixKey uneko Windows saioan. Babestutako kontrolak, pribilegio altuekin exekutatutakoak edo onartzen ez direnak aldatu gabe uzten dira.",
+  "linuxPermission": "Erabili X11 saio bat, AT-SPI erabilerraztasun-zerbitzua eta XInput2 erabilgarri dituena. Wayland ez da onartzen.",
+  "openSettings": "Ireki sistemaren ezarpenak",
+  "recheck": "Egiaztatu berriro",
+  "later": "Geroago",
+  "error": "Ekintzak huts egin du",
+  "reason": "Arrazoia",
+  "openLogs": "Ireki erregistroen karpeta",
+  "deleteLogs": "Ezabatu erregistroak",
+  "restore": "Leheneratu ezarpenen babeskopia",
+  "support": "GitHub Issues",
+  "logHelp": "Erregistroek bertsioa, plataforma, arrazoi-kodeak eta denborak jasotzen dituzte. Sarrerako testua ez da sartzen. Erregistroak gailu honetan geratzen dira, gehienez zazpi egunez eta guztira 10 MiB-ko mugarekin.",
+  "original": "Jatorrizkoa",
+  "recognized": "Ezagutua",
+  "notRecognized": "Hiztegiak ez du ezagutzen",
+  "unchecked": "Ezin izan da egiaztatu",
+  "candidates": "Teklatu-diseinuen hautagaiak",
+  "candidateHelp": "↑ ↓ Hautatu · Enter Aplikatu · Esc Itxi",
+  "noCandidates": "Jatorrizko testuingurua jada ez dago erabilgarri.",
+  "help": "Laguntza",
+  "helpTopics": [
+    [
+      "Instalazioa",
+      "Instalatu sinatutako DMG paketea macOS ARM64 sisteman, NSIS instalatzailea Windows x64 sisteman edo AppImage paketea Linux X11 x64 sisteman. Helburuko plataformak izateak ez du esan nahi aplikazio guztiekiko bateragarritasuna egiaztatuta dagoenik."
+    ],
+    [
+      "Baimenak",
+      "Eman zure sistema eragileak eskatutako erabilerraztasun- eta sarrera-baimenak, eta aukeratu Egiaztatu berriro. Zuzenketa inaktibo geratzen da baimenak eta hiztegiak prest egon arte. macOS-en, Erabilerraztasunak teklak entzuteko sarbide eraginkorra eman dezake Sarreraren monitorizazioa atalean sarrera bereizirik gabe. Erabili Orokorra ataleko Konfiguratu sarreraren monitorizazioa zerrenda egiaztatzeko; FixKey falta bada, erabili + uneko FixKey.app Aplikazioak karpetatik gehitzeko."
+    ],
+    [
+      "Teklatu-diseinuak eta zuzenketa",
+      "Koreerako Dubeolsik eta AEBetako ingeleseko QWERTY lehenespenez gaituta daude. Hautatu hiztegi eta teklatu bikote gehiago Orokorra atalean. Zerrendatutako teklatu publikoak bat etorri behar du idazteko erabiltzen duzun diseinuarekin. Hizkuntza gehigarriak gaituta daudenean, hitzak zuriuneetan ebaluatzen dira; bestela, zuriuneek eta puntuazio-markek abiarazten dute ebaluazioa. Enter eta Tab teklek ez dute ebaluazioa abiarazten. Hitza gaitutako hiztegi bakar batek hautagai bat ezagutzen duenean soilik aldatzen da. Elkarren hurbileko hizkuntzek hitz bera ezagut dezakete; kasu horretan, hitza aldatu gabe uzten da. FixKey-k ez du inoiz zure sarrerako hizkuntza aldatzen. Onartzen ez diren tekla aldatzaileak, osatu gabeko tekla hilak eta zerrendatutako diseinuarekin bat ez datozen teklatu-aldaerak aldatu gabe uzten dira."
+    ],
+    [
+      "Desegin",
+      "Zuzenketa automatikoaren ondoren, sakatu berehala Backspace jatorrizko hitza eta haren bereizlea leheneratzeko. Ondorengo Backspace sakatzeek ohiko jokabidea dute."
+    ],
+    [
+      "Eskuzko hautagaiak",
+      "Esleitu laster-tekla bat, idatzi hitz bat eta erabili laster-tekla. Gezi-teklek hautatzen dute, Enter teklak aplikatzen du eta Esc teklak ixten du. Ezagutu gabeko hautagai bat espresuki aukera dezakezu. Jatorrizko testu-kurtsorea mugitzeak edo aplikazioz aldatzeak hautatzailea ixten du."
+    ],
+    [
+      "Bazterketak",
+      "Gehitu aplikazio bat Baztertutako aplikazioak atalean. Bazterketak aplikazioaren identitate egonkorraren arabera aplikatzen dira. Zehaztu ezin izan diren identitateek zerrendan jarraitzen dute."
+    ],
+    [
+      "Pribatutasuna",
+      "FixKey-k sarrera gailuan bertan prozesatzen du. Ez du sarrera-historiarik gordetzen, ez du arbela ordezkapenerako erabiltzen, eta ez du telemetriarik bidaltzen. Itsatsitako edo programatikoki sortutako elementuak, zenbakiak, emojiak, URLak, helbide elektronikoak eta idazkera-sistema desberdinak nahasten dituzten elementuak zuzenketa automatikotik baztertzen dira."
+    ],
+    [
+      "Eguneratzeak",
+      "Eguneratze egonkorrak HTTPS bidez bilatzen dira abiaraztean eta 24 orduro. Deskargatu aurretik zure baimena ematen duzu. Sinadura baliogabeak baztertzen dira. Zuzenketa instalazioaren aurretik gelditzen da; ezarpenak osorik mantentzen dira."
+    ],
+    [
+      "Arazoak konpontzea",
+      "Irakurri arrazoi-kodea, egiaztatu baimenak berriro eta probatu onartutako kontrol editagarri bat. Baimenak falta direnean, eremuaren sentikortasuna ezezaguna denean, helburua zaharkituta dagoenean edo idazketa onartzen ez denean, zuzenketari uko egiten zaio segurtasunez. Eguneratzeak huts egin ondoren, berrabiarazi edo berrinstalatu eskuz sinatutako pakete bat."
+    ],
+    [
+      "Erregistroak ezabatzea",
+      "Aukeratu Ezabatu erregistroak tokiko diagnostiko-erregistroak kentzeko, edo Ireki erregistroen karpeta haiek aztertzeko. Ez sartu eduki pribaturik GitHub-en arazo bat irekitzean."
+    ]
+  ],
+  "listedWordsOnly": "Hiztegian zerrendatutako hitzak soilik; forma ezezagunak aldatu gabe uzten dira."
+}

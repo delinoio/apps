@@ -1,0 +1,138 @@
+{
+  "general": "Allgemeng",
+  "exclusions": "Ausgeschloss Apps",
+  "shortcuts": "Tastekombinatiounen",
+  "updates": "Aktualiséierungen",
+  "diagnostics": "Diagnostik an Hëllef",
+  "tagline": "Schreift weider. Korrigéiert d'Tastaturbeleeung.",
+  "correction": "Automatesch Korrektur",
+  "pause": "Pauséieren",
+  "resume": "Weiderfueren",
+  "languages": "Aktivéiert Sproochen",
+  "languageSearch": "Eng Sprooch oder Tastatur sichen",
+  "trayPause": "Korrektur pauséieren",
+  "trayResume": "Korrektur weiderféieren",
+  "traySettings": "Astellungen",
+  "trayExit": "Verloossen",
+  "trayStatus": "Korrekturstatus",
+  "notificationUpdate": "Eng Aktualiséierung ass verfügbar. Iwwerpréift an installéiert se an den Astellungen.",
+  "notificationAttention": "FixKey brauch Är Opmierksamkeet. Kuckt de Grondcode an den Astellungen no.",
+  "korean": "Koreanesch · Dubeolsik",
+  "english": "Englesch · US QWERTY",
+  "startup": "Beim Umellen starten",
+  "uiLanguage": "Sprooch vun der Benotzeruewerfläch",
+  "theme": "Design",
+  "system": "System",
+  "light": "Hell",
+  "dark": "Donkel",
+  "loading": "Verbindung mat FixKey gëtt hiergestallt…",
+  "connection": "D'Verbindung mat der Desktop-App kann net hiergestallt ginn.",
+  "retry": "Nach eng Kéier probéieren",
+  "active": "D'Korrektur ass aktiv",
+  "inactive": "D'Korrektur ass inaktiv",
+  "waitingField": "Waarden op en editéierbaart Textfeld",
+  "waitingFieldHelp": "Klickt op en editéierbaart Textfeld an enger anerer App. FixKey waart, wärend d'Astellungen op sinn oder dat fokusséiert Feld net sécher identifizéiert ka ginn. Detailer fannt Dir ënner Diagnostik an Hëllef.",
+  "local": "Är Agabe bleift op dësem Apparat. Passwuertfelder sinn ausgeschloss.",
+  "empty": "Keng ausgeschloss Apps",
+  "emptyDetail": "D'Korrektur kann a ënnerstëtzten editéierbare Steierelementer lafen. Füügt eng App derbäi, fir hir Agaben ëmmer onverännert ze loossen.",
+  "add": "App derbäifügen",
+  "choose": "Eng App auswielen",
+  "remove": "Ewechhuelen",
+  "unresolved": "Identitéit net ermëttelt",
+  "noApps": "Keng identifizéierbar Apps si verfügbar. Maacht d'App op, déi Dir ausschléisse wëllt, a probéiert nach eng Kéier.",
+  "shortcut": "Manuell Kandidaten",
+  "unassigned": "Net zougewisen",
+  "capture": "Tastekombinatioun festleeën",
+  "captureHelp": "Dréckt eng Tast zesumme mat Control, Alt, Command oder Shift. Esc brécht of.",
+  "clear": "Läschen",
+  "cancel": "Ofbriechen",
+  "done": "Fäerdeg",
+  "currentVersion": "Aktuell Versioun",
+  "checkUpdate": "No Aktualiséierunge sichen",
+  "updateConsent": "Eroflueden an installéieren",
+  "updateHelp": "Beim Start an all 24 Stonne gëtt no Aktualiséierunge gesicht. D'Erofluede fänkt nëmme mat Ärer Zoustëmmung un.",
+  "recovery": "Wann d'Installatioun feelgeschloen ass, start FixKey nei oder installéiert e signéiert Pak manuell nei. Är Astellunge bleiwen erhalen. Fréier signéiert Versioune kënne manuell nei installéiert ginn.",
+  "permission": "Zougrëff op d'Accessibilitéit erlaben",
+  "permissionHelp": "FixKey brauch Zougrëff op d'Accessibilitéit an d'Iwwerwaachung vun Agaben, fir en editéierbaart Steierelement ze identifizéieren an nëmmen dat ofgeschlossent Wuert ze ersetzen.",
+  "inputPermission": "Agabeiwwerwaachung erlaben",
+  "inputPermissionRequest": "Agabeiwwerwaachung erlaben",
+  "inputPermissionSetup": "Agabeiwwerwaachung ariichten",
+  "inputPermissionListHelp": "D'Accessibilitéit kann d'Oflauschtere vun Taste schonn erlaben, och wann FixKey net an der Agabeiwwerwaachung steet. macOS bestätegt hei kee separaten Entrée an der Lëscht. Kuckt d'Lëscht an de Systemastellungen no a füügt déi aktuell FixKey.app mat + derbäi, wann se feelt.",
+  "inputPermissionHelp": "FixKey brauch d'Agabeiwwerwaachung, fir déi Tasten z'erkennen, déi fir d'Korrektur vun der Tastaturbeleeung benotzt ginn.",
+  "accessibilityGranted": "Den Zougrëff op d'Accessibilitéit ass schonn erlaabt.",
+  "inputPermissionSteps": [
+    "Wielt Agabeiwwerwaachung erlaben, fir FixKey ze registréieren a seng macOS-Berechtegungsastellungen opzemaachen.",
+    "Aktivéiert FixKey ënner Systemastellungen → Dateschutz a Sécherheet → Agabeiwwerwaachung. Wann et feelt, wielt + a füügt déi aktuell FixKey.app aus Programmer derbäi. Kommt heihinner zréck a wielt Nach eng Kéier iwwerpréiwen. Start FixKey nei, wann macOS Iech dozou opfuerdert."
+  ],
+  "permissionRequest": "Zougrëff op d'Accessibilitéit erlaben",
+  "permissionWaiting": "D'Korrektur bleift ausgeschalt, bis den Zougrëff erlaabt ass. Nodeems Dir den Zougrëff aktivéiert hutt, wielt Nach eng Kéier iwwerpréiwen.",
+  "permissionSteps": [
+    "Wielt Zougrëff op d'Accessibilitéit erlaben a befollegt d'Ufuerderung vu macOS.",
+    "Aktivéiert FixKey an der Accessibilitéit. Wann et schonn aktivéiert ass, mee dësen Dialog nom Neistart vu FixKey nach ëmmer erschéngt, huelt den ale FixKey-Entrée mat − ewech a füügt déi aktuell FixKey.app mat + nach eng Kéier derbäi. Eng nei kompiléiert App passt eventuell net méi zum ale Berechtegungsentrée. Wann et feelt, füügt FixKey aus Programmer mat + derbäi.",
+    "Aktivéiert FixKey och an der Agabeiwwerwaachung a kontrolléiert dann nach eng Kéier. Wann keng Ufuerderung fir d'Agabeiwwerwaachung erschéngt, wielt nach eng Kéier Zougrëff op d'Accessibilitéit erlaben. Start FixKey nei, wann macOS Iech dozou opfuerdert."
+  ],
+  "macPermission": "Erlaabt FixKey an de Systemastellungen ënner Accessibilitéit an Agabeiwwerwaachung a kontrolléiert dann nach eng Kéier.",
+  "windowsPermission": "Benotzt FixKey an Ärer aktueller Windows-Sessioun. Geschützt Steierelementer, Steierelementer mat erhéichte Rechter an net ënnerstëtzt Steierelementer bleiwen onverännert.",
+  "linuxPermission": "Benotzt eng X11-Sessioun, an där den AT-SPI-Accessibilitéitsdéngscht an XInput2 verfügbar sinn. Wayland gëtt net ënnerstëtzt.",
+  "openSettings": "Systemastellungen opmaachen",
+  "recheck": "Nach eng Kéier iwwerpréiwen",
+  "later": "Méi spéit",
+  "error": "Aktioun feelgeschloen",
+  "reason": "Grond",
+  "openLogs": "Protokolldossier opmaachen",
+  "deleteLogs": "Protokoller läschen",
+  "restore": "Sécherung vun den Astellungen erëmhierstellen",
+  "support": "GitHub Issues",
+  "logHelp": "Protokoller enthale Versioun, Plattform, Grondcoden an Zäitmoossungen. Den Agabetext ass ausgeschloss. Protokoller bleiwen héchstens siwen Deeg a mat enger Gesamtgréisst vun héchstens 10 MiB op dësem Apparat.",
+  "original": "Original",
+  "recognized": "Erkannt",
+  "notRecognized": "Net vum Wierderbuch erkannt",
+  "unchecked": "Konnt net iwwerpréift ginn",
+  "candidates": "Kandidate fir d'Tastaturbeleeung",
+  "candidateHelp": "↑ ↓ Auswielen · Enter Uwenden · Esc Zoumaachen",
+  "noCandidates": "Den Ausgangskontext ass net méi verfügbar.",
+  "help": "Hëllef",
+  "helpTopics": [
+    [
+      "Installatioun",
+      "Installéiert de signéierten DMG op macOS ARM64, den NSIS-Installatiounsprogramm op Windows x64 oder d'AppImage op Linux X11 x64. D'Zilplattforme bedeiten net, datt d'Kompatibilitéit mat all App iwwerpréift gouf."
+    ],
+    [
+      "Berechtegungen",
+      "Erdeelt déi Accessibilitéits- an Agabeberechtegungen, déi Äre Betribssystem ufreet, a wielt dann Nach eng Kéier iwwerpréiwen. D'Korrektur bleift inaktiv, bis d'Berechtegungen an d'Wierderbicher prett sinn. Op macOS kann d'Accessibilitéit effektiven Zougrëff op d'Oflauschtere vun Taste ginn, ouni e separaten Entrée an der Agabeiwwerwaachung. Benotzt Agabeiwwerwaachung ariichten ënner Allgemeng, fir d'Lëscht ze kontrolléieren; wann FixKey feelt, füügt déi aktuell FixKey.app aus Programmer mat + derbäi."
+    ],
+    [
+      "Tastaturbeleeungen a Korrektur",
+      "Koreanesch Dubeolsik an US-englesch QWERTY si standardméisseg aktivéiert. Wielt ënner Allgemeng zousätzlech Koppele vu Wierderbuch an Tastatur aus. Déi opgelëscht ëffentlech Tastatur muss mat der Beleeung iwwereneestëmmen, mat där Dir tippt. Wann zousätzlech Sproochen aktivéiert sinn, gi Wierder bei Espacen ausgewäert; soss léisen Espacen a Sazzeechen d'Auswäertung aus. Enter an Tab maachen dat net. E Wuert gëtt nëmme geännert, wann genee een aktivéiert Wierderbuch e Kandidat erkennt. Verwandt Sprooche kënnen dat selwecht Wuert erkennen; da bleift et onverännert. FixKey wiesselt ni Är Agabesprooch. Net ënnerstëtzt Modifikatiounstasten, onvollstänneg dout Tasten an Tastaturvarianten, déi net mat der opgelëschter Beleeung iwwereneestëmmen, bleiwen onverännert."
+    ],
+    [
+      "Réckgängeg maachen",
+      "Dréckt direkt no enger automatescher Korrektur op Backspace, fir dat ursprénglecht Wuert a säin Trennzeechen erëmhierzestellen. Weider Drécken op Backspace verhale sech wéi gewinnt."
+    ],
+    [
+      "Manuell Kandidaten",
+      "Weist eng Tastekombinatioun zou, tippt e Wuert a benotzt d'Tastekombinatioun. Mat de Feiltaste wielt Dir aus, Enter wennt d'Auswiel un an Esc mécht d'Auswiel zou. Dir kënnt ausdrécklech en net erkannte Kandidat auswielen. Wann Dir den Textcursor an der Quell verréckelt oder d'App wiesselt, gëtt d'Auswielfënster zougemaach."
+    ],
+    [
+      "Ausnamen",
+      "Füügt eng App ënner Ausgeschloss Apps derbäi. Ausname baséieren op der stabiler Identitéit vun der App. Net ermëttelt Identitéite bleiwen an der Lëscht."
+    ],
+    [
+      "Dateschutz",
+      "FixKey verschafft Agabe lokal. Et späichert kee Verlaf vun den Agaben, benotzt d'Tëschenoflag net fir Ersetzungen a schéckt keng Telemetrie. Agepecht oder programmatesch erstallt Eenheeten, Zuelen, Emoji, URLen, E-Mail-Adressen an Eenheete mat gemëschte Schrëftsystemer si vun der automatescher Korrektur ausgeschloss."
+    ],
+    [
+      "Aktualiséierungen",
+      "Beim Start an all 24 Stonne gëtt iwwer HTTPS no stabilen Aktualiséierunge gesicht. Dir gitt Är Zoustëmmung virum Eroflueden. Ongülteg Ënnerschrëfte ginn ofgeleent. D'Korrektur hält virun der Installatioun op; d'Astellunge bleiwen intakt."
+    ],
+    [
+      "Problemer léisen",
+      "Liest de Grondcode, iwwerpréift d'Berechtegungen nach eng Kéier a probéiert en ënnerstëtzt editéierbaart Steierelement. Feelend Berechtegungen, eng onbekannt Sensibilitéit vum Feld, veralt Ziler an net ënnerstëtzt Schreifoperatioune féieren dozou, datt d'Aktioun aus Sécherheetsgrënn refuséiert gëtt. No enger feelgeschloener Aktualiséierung start d'App nei oder installéiert e signéiert Pak manuell nei."
+    ],
+    [
+      "Läsche vu Protokoller",
+      "Wielt Protokoller läschen, fir lokal Diagnosprotokoller ewechzehuelen, oder Protokolldossier opmaachen, fir se ze kucken. Gitt keng privat Inhalter un, wann Dir en Issue op GitHub opmaacht."
+    ]
+  ],
+  "listedWordsOnly": "Nëmme Wierder, déi am Dictionnaire stinn; onbekannt Forme bleiwen onverännert."
+}

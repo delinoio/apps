@@ -1,0 +1,138 @@
+{
+  "general": "Ĝenerala",
+  "exclusions": "Ekskluditaj aplikaĵoj",
+  "shortcuts": "Klavkombinoj",
+  "updates": "Ĝisdatigoj",
+  "diagnostics": "Diagnozo kaj helpo",
+  "tagline": "Daŭrigu tajpadon. Korektu la klavaranĝon.",
+  "correction": "Aŭtomata korektado",
+  "pause": "Paŭzigi",
+  "resume": "Rekomenci",
+  "languages": "Ŝaltitaj lingvoj",
+  "languageSearch": "Trovi lingvon aŭ klavaron",
+  "trayPause": "Paŭzigi korektadon",
+  "trayResume": "Rekomenci korektadon",
+  "traySettings": "Agordoj",
+  "trayExit": "Eliri",
+  "trayStatus": "Stato de korektado",
+  "notificationUpdate": "Ĝisdatigo disponeblas. Reviziu kaj instalu ĝin en Agordoj.",
+  "notificationAttention": "FixKey bezonas atenton. Kontrolu la kialokodon en Agordoj.",
+  "korean": "Korea · Dubeolsik",
+  "english": "Angla · US QWERTY",
+  "startup": "Lanĉi ĉe ensaluto",
+  "uiLanguage": "Interfaca lingvo",
+  "theme": "Etoso",
+  "system": "Sistema",
+  "light": "Hela",
+  "dark": "Malhela",
+  "loading": "Konektante al FixKey…",
+  "connection": "Ne eblas konektiĝi al la labortabla aplikaĵo.",
+  "retry": "Reprovi",
+  "active": "Korektado estas aktiva",
+  "inactive": "Korektado estas neaktiva",
+  "waitingField": "Atendante redakteblan tekstkampon",
+  "waitingFieldHelp": "Alklaku redakteblan tekstkampon en alia aplikaĵo. FixKey atendas dum Agordoj estas malfermita aŭ kiam la fokusita kampo ne povas esti sekure identigita. Detaloj disponeblas en Diagnozo kaj helpo.",
+  "local": "Via enigo restas sur ĉi tiu aparato. Pasvortaj kampoj estas ekskluditaj.",
+  "empty": "Neniuj ekskluditaj aplikaĵoj",
+  "emptyDetail": "Korektado povas funkcii en subtenataj redakteblaj regiloj. Aldonu aplikaĵon por ĉiam lasi ĝian enigon senŝanĝa.",
+  "add": "Aldoni aplikaĵon",
+  "choose": "Elekti aplikaĵon",
+  "remove": "Forigi",
+  "unresolved": "Identeco ne determinita",
+  "noApps": "Neniuj identigeblaj aplikaĵoj disponeblas. Malfermu la aplikaĵon, kiun vi volas ekskludi, kaj reprovu.",
+  "shortcut": "Manaj kandidatoj",
+  "unassigned": "Ne asignita",
+  "capture": "Agordi klavkombinon",
+  "captureHelp": "Premu klavon kune kun Control, Alt, Command aŭ Shift. Esc nuligas.",
+  "clear": "Malplenigi",
+  "cancel": "Nuligi",
+  "done": "Preta",
+  "currentVersion": "Nuna versio",
+  "checkUpdate": "Kontroli ĝisdatigojn",
+  "updateConsent": "Elŝuti kaj instali",
+  "updateHelp": "Ĝisdatigoj estas kontrolataj ĉe lanĉo kaj ĉiujn 24 horojn. Elŝutoj komenciĝas nur kun via konsento.",
+  "recovery": "Se la instalado malsukcesas, relanĉu FixKey aŭ mane reinstalu subskribitan pakaĵon. Viaj agordoj estas konservataj. Antaŭaj subskribitaj versioj povas esti mane reinstalitaj.",
+  "permission": "Permesi alireblan aliron",
+  "permissionHelp": "FixKey bezonas alireblan aliron kaj aliron por observado de enigo por identigi redakteblan regilon kaj anstataŭigi nur la finitan vorton.",
+  "inputPermission": "Permesi enigan observadon",
+  "inputPermissionRequest": "Permesi enigan observadon",
+  "inputPermissionSetup": "Agordi enigan observadon",
+  "inputPermissionListHelp": "Alireblo jam povas permesi aŭskultadon de klavpremoj eĉ kiam FixKey ne aperas sub Eniga observado. macOS ne konfirmas ĉi tie apartan listeron. Kontrolu la liston en Sistemaj agordoj kaj aldonu la nunan FixKey.app per + se ĝi mankas.",
+  "inputPermissionHelp": "FixKey bezonas enigan observadon por detekti la klavojn uzatajn por klavaranĝa korektado.",
+  "accessibilityGranted": "Alirebla aliro jam estas permesita.",
+  "inputPermissionSteps": [
+    "Elektu Permesi enigan observadon por registri FixKey kaj malfermi ĝiajn permesagordojn en macOS.",
+    "En Sistemaj agordoj → Privateco kaj sekureco → Eniga observado, ŝaltu FixKey. Se ĝi mankas, elektu + kaj aldonu la nunan FixKey.app el Aplikaĵoj. Revenu ĉi tien kaj elektu Rekontroli. Relanĉu FixKey se macOS tion petas."
+  ],
+  "permissionRequest": "Permesi alireblan aliron",
+  "permissionWaiting": "Korektado restos malŝaltita ĝis aliro estos permesita. Post permeso de aliro, elektu Rekontroli.",
+  "permissionSteps": [
+    "Elektu Permesi alireblan aliron kaj sekvu la inviton de macOS.",
+    "Ŝaltu FixKey en Alireblo. Se ĝi jam estas ŝaltita sed ĉi tiu dialogo restas post relanĉo de FixKey, forigu la malnovan FixKey-listeron per − kaj uzu + por denove aldoni la nunan FixKey.app. Rekonstruita aplikaĵo eble ne plu kongruas kun la malnova permeslistero. Se ĝi mankas, uzu + por aldoni FixKey el Aplikaĵoj.",
+    "Ankaŭ ŝaltu FixKey en Eniga observado, poste rekontrolu. Se neniu invito pri eniga observado aperas, denove elektu Permesi alireblan aliron. Relanĉu FixKey se macOS tion petas."
+  ],
+  "macPermission": "En Sistemaj agordoj, permesu FixKey sub Alireblo kaj Eniga observado, poste rekontrolu.",
+  "windowsPermission": "Uzu FixKey en via nuna Windows-seanco. Protektitaj, altrajtaj aŭ nesubtenataj regiloj restas senŝanĝaj.",
+  "linuxPermission": "Uzu X11-seancon kun la alirebla servo AT-SPI kaj XInput2 disponeblaj. Wayland ne estas subtenata.",
+  "openSettings": "Malfermi sistemajn agordojn",
+  "recheck": "Rekontroli",
+  "later": "Poste",
+  "error": "Ago malsukcesis",
+  "reason": "Kialo",
+  "openLogs": "Malfermi protokolan dosierujon",
+  "deleteLogs": "Forigi protokolojn",
+  "restore": "Restarigi rezervkopion de agordoj",
+  "support": "GitHub Issues",
+  "logHelp": "Protokoloj enhavas version, platformon, kialokodojn kaj tempomezurojn. Eniga teksto estas ekskludita. Protokoloj restas sur ĉi tiu aparato dum maksimume sep tagoj kaj okupas maksimume 10 MiB entute.",
+  "original": "Originalo",
+  "recognized": "Rekonita",
+  "notRecognized": "Ne rekonita de la vortaro",
+  "unchecked": "Ne eblis kontroli",
+  "candidates": "Klavaranĝaj kandidatoj",
+  "candidateHelp": "↑ ↓ Elekti · Enter Apliki · Esc Fermi",
+  "noCandidates": "La fonta kunteksto ne plu disponeblas.",
+  "help": "Helpo",
+  "helpTopics": [
+    [
+      "Instalado",
+      "Instalu la subskribitan DMG ĉe macOS ARM64, la NSIS-instalilon ĉe Windows x64 aŭ la AppImage ĉe Linux X11 x64. Celplatformoj ne implicas kontrolitan kongruecon kun ĉiu aplikaĵo."
+    ],
+    [
+      "Permesoj",
+      "Donu la alireblajn kaj enigajn permesojn petitajn de via operaciumo, poste elektu Rekontroli. Korektado restas neaktiva ĝis permesoj kaj vortaroj estas pretaj. Ĉe macOS, Alireblo povas disponigi efektivan aliron por aŭskultado de klavpremoj sen aparta listero en Eniga observado. Uzu Agordi enigan observadon en Ĝenerala por kontroli la liston; se FixKey mankas, uzu + por aldoni la nunan FixKey.app el Aplikaĵoj."
+    ],
+    [
+      "Klavaranĝoj kaj korektado",
+      "Korea Dubeolsik kaj usonangla QWERTY estas ŝaltitaj defaŭlte. Elektu pliajn parojn de vortaro kaj klavaro en Ĝenerala. La listigita publika klavaro devas kongrui kun la klavaranĝo, per kiu vi tajpas. Kiam pliaj lingvoj estas ŝaltitaj, vortoj estas taksataj ĉe spacetoj; alikaze spacetoj kaj interpunkcio ekigas taksadon. Enter kaj Tab ne ekigas ĝin. Vorto ŝanĝiĝas nur kiam precize unu ŝaltita vortaro rekonas kandidaton. Parencaj lingvoj povas rekoni la saman vorton; ĝi tiam restas senŝanĝa. FixKey neniam ŝanĝas vian enigan lingvon. Nesubtenataj modifklavoj, nekompletaj senpaŝaj klavoj kaj klavaraj variantoj, kiuj ne kongruas kun la listigita klavaranĝo, restas senŝanĝaj."
+    ],
+    [
+      "Malfari",
+      "Tuj premu Backspace post aŭtomata korekto por restarigi la originalan vorton kaj ĝian apartigilon. Pliaj premoj de Backspace funkcias normale."
+    ],
+    [
+      "Manaj kandidatoj",
+      "Asignu klavkombinon, tajpu vorton kaj uzu la klavkombinon. Sagoklavoj elektas, Enter aplikas kaj Esc fermas. Vi povas eksplicite elekti nerekonitan kandidaton. Movo de la fonta tekstkursoro aŭ ŝanĝo de aplikaĵo fermas la elektilon."
+    ],
+    [
+      "Ekskludoj",
+      "Aldonu aplikaĵon sub Ekskluditaj aplikaĵoj. Ekskludoj kongruas laŭ la stabila identeco de la aplikaĵo. Nedeterminitaj identecoj restas en la listo."
+    ],
+    [
+      "Privateco",
+      "FixKey prilaboras enigon loke. Ĝi ne konservas enigan historion, ne uzas la tondujon por anstataŭigo kaj ne sendas telemetrion. Algluitaj, programe enigitaj, nombraj, emoĝiaj, URL-aj, retpoŝtaj kaj miksskribaj teksteroj estas ekskluditaj de aŭtomata korektado."
+    ],
+    [
+      "Ĝisdatigoj",
+      "Stabilaj ĝisdatigoj estas kontrolataj per HTTPS ĉe lanĉo kaj ĉiujn 24 horojn. Vi konsentas antaŭ elŝuto. Nevalidaj subskriboj estas malakceptataj. Korektado ĉesas antaŭ instalado; agordoj restas netuŝitaj."
+    ],
+    [
+      "Solvado de problemoj",
+      "Legu la kialokodon, rekontrolu permesojn kaj provu subtenatan redakteblan regilon. Mankantaj permesoj, nekonata sentiveco de kampo, malaktualaj celoj kaj nesubtenataj skriboperacioj kaŭzas sekuran rifuzon. Relanĉu aŭ mane reinstalu subskribitan pakaĵon post malsukceso de ĝisdatigo."
+    ],
+    [
+      "Forigo de protokoloj",
+      "Elektu Forigi protokolojn por forigi lokajn diagnozajn protokolojn aŭ Malfermi protokolan dosierujon por inspekti ilin. Ne inkluzivu privatan enhavon kiam vi malfermas problemon ĉe GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Nur vortoj listigitaj en la vortaro; nekonataj formoj restas senŝanĝaj."
+}

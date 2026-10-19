@@ -1,0 +1,138 @@
+{
+  "general": "Ginearálta",
+  "exclusions": "Aipeanna eisiata",
+  "shortcuts": "Aicearraí",
+  "updates": "Nuashonruithe",
+  "diagnostics": "Diagnóisic agus cabhair",
+  "tagline": "Lean ort ag clóscríobh. Ceartaigh an leagan amach.",
+  "correction": "Ceartú uathoibríoch",
+  "pause": "Cuir ar sos",
+  "resume": "Atosaigh",
+  "languages": "Teangacha cumasaithe",
+  "languageSearch": "Aimsigh teanga nó méarchlár",
+  "trayPause": "Cuir an ceartú ar sos",
+  "trayResume": "Atosaigh an ceartú",
+  "traySettings": "Socruithe",
+  "trayExit": "Scoir",
+  "trayStatus": "Stádas an cheartaithe",
+  "notificationUpdate": "Tá nuashonrú ar fáil. Athbhreithnigh é agus suiteáil é sna Socruithe.",
+  "notificationAttention": "Tá aird de dhíth ar FixKey. Seiceáil an cód cúise sna Socruithe.",
+  "korean": "Cóiréis · Dubeolsik",
+  "english": "Béarla · US QWERTY",
+  "startup": "Tosaigh ag logáil isteach",
+  "uiLanguage": "Teanga an chomhéadain",
+  "theme": "Téama",
+  "system": "Córas",
+  "light": "Geal",
+  "dark": "Dorcha",
+  "loading": "Ag nascadh le FixKey…",
+  "connection": "Ní féidir nascadh leis an aip deisce.",
+  "retry": "Bain triail eile as",
+  "active": "Tá an ceartú gníomhach",
+  "inactive": "Tá an ceartú neamhghníomhach",
+  "waitingField": "Ag fanacht le réimse téacs in eagar",
+  "waitingFieldHelp": "Cliceáil ar réimse téacs in eagar in aip eile. Fanann FixKey fad atá na Socruithe oscailte nó nuair nach féidir an réimse a bhfuil an fócas air a aithint go sábháilte. Tá sonraí ar fáil in Diagnóisic agus cabhair.",
+  "local": "Fanann d'ionchur ar an ngléas seo. Eisiatar réimsí pasfhocail.",
+  "empty": "Níl aon aipeanna eisiata",
+  "emptyDetail": "Is féidir leis an gceartú oibriú i rialtáin in eagar a dtacaítear leo. Cuir aip leis chun a hionchur a fhágáil gan athrú i gcónaí.",
+  "add": "Cuir aip leis",
+  "choose": "Roghnaigh aip",
+  "remove": "Bain",
+  "unresolved": "Níor aimsíodh an t-aitheantas",
+  "noApps": "Níl aon aipeanna inaitheanta ar fáil. Oscail an aip is mian leat a eisiamh agus bain triail eile as.",
+  "shortcut": "Iarrthóirí de láimh",
+  "unassigned": "Gan sannadh",
+  "capture": "Socraigh aicearra",
+  "captureHelp": "Brúigh eochair le Control, Alt, Command nó Shift. Cuireann Esc ar ceal é.",
+  "clear": "Glan",
+  "cancel": "Cealaigh",
+  "done": "Déanta",
+  "currentVersion": "Leagan reatha",
+  "checkUpdate": "Seiceáil le haghaidh nuashonruithe",
+  "updateConsent": "Íoslódáil agus suiteáil",
+  "updateHelp": "Seiceáiltear le haghaidh nuashonruithe ag am tosaithe agus gach 24 uair an chloig. Ní thosaítear ar íoslódálacha ach amháin le do thoiliú.",
+  "recovery": "Má theipeann ar an tsuiteáil, atosaigh FixKey nó athshuiteáil pacáiste sínithe de láimh. Caomhnaítear do shocruithe. Is féidir leaganacha sínithe roimhe seo a athshuiteáil de láimh.",
+  "permission": "Ceadaigh rochtain inrochtaineachta",
+  "permissionHelp": "Tá rochtain inrochtaineachta agus rochtain chun ionchur a bhreathnú de dhíth ar FixKey chun rialtán in eagar a aithint agus an focal críochnaithe amháin a athsholáthar.",
+  "inputPermission": "Ceadaigh monatóireacht ar ionchur",
+  "inputPermissionRequest": "Ceadaigh monatóireacht ar ionchur",
+  "inputPermissionSetup": "Socraigh monatóireacht ar ionchur",
+  "inputPermissionListHelp": "D'fhéadfadh Inrochtaineacht éisteacht le heochracha a cheadú cheana féin fiú nuair nach bhfuil FixKey sa liosta Monatóireacht ar Ionchur. Ní dheimhníonn macOS iontráil ar leith sa liosta anseo. Seiceáil an liosta i Socruithe an Chórais agus cuir an FixKey.app reatha leis trí + má tá sé ar iarraidh.",
+  "inputPermissionHelp": "Tá Monatóireacht ar Ionchur de dhíth ar FixKey chun na heochracha a úsáidtear le haghaidh ceartú leagan amach an mhéarchláir a bhrath.",
+  "accessibilityGranted": "Tá rochtain inrochtaineachta ceadaithe cheana féin.",
+  "inputPermissionSteps": [
+    "Roghnaigh Ceadaigh monatóireacht ar ionchur chun FixKey a chlárú agus a shocruithe ceada macOS a oscailt.",
+    "I Socruithe an Chórais → Príobháideachas agus Slándáil → Monatóireacht ar Ionchur, cumasaigh FixKey. Má tá sé ar iarraidh, roghnaigh + agus cuir an FixKey.app reatha leis ón bhfillteán Feidhmchláir. Fill anseo agus roghnaigh Seiceáil arís. Atosaigh FixKey má iarrann macOS ort é sin a dhéanamh."
+  ],
+  "permissionRequest": "Ceadaigh rochtain inrochtaineachta",
+  "permissionWaiting": "Fanfaidh an ceartú as feidhm go dtí go gceadófar rochtain. Tar éis duit rochtain a chumasú, roghnaigh Seiceáil arís.",
+  "permissionSteps": [
+    "Roghnaigh Ceadaigh rochtain inrochtaineachta agus lean leid macOS.",
+    "Cumasaigh FixKey in Inrochtaineacht. Má tá sé cumasaithe cheana féin ach go bhfuil an dialóg seo fós ann tar éis FixKey a atosú, bain seaniontráil FixKey le − agus úsáid + chun an FixKey.app reatha a chur leis arís. D'fhéadfadh aip a atógadh gan a bheith ag teacht leis an seaniontráil cheada a thuilleadh. Má tá sé ar iarraidh, úsáid + chun FixKey a chur leis ón bhfillteán Feidhmchláir.",
+    "Cumasaigh FixKey i Monatóireacht ar Ionchur freisin, ansin seiceáil arís. Mura dtagann leid monatóireachta ar ionchur aníos, roghnaigh Ceadaigh rochtain inrochtaineachta arís. Atosaigh FixKey má iarrann macOS ort é sin a dhéanamh."
+  ],
+  "macPermission": "I Socruithe an Chórais, ceadaigh FixKey faoi Inrochtaineacht agus Monatóireacht ar Ionchur, ansin seiceáil arís.",
+  "windowsPermission": "Úsáid FixKey i do sheisiún reatha Windows. Fágtar rialtáin chosanta, rialtáin a bhfuil pribhléidí ardaithe acu, nó rialtáin nach dtacaítear leo gan athrú.",
+  "linuxPermission": "Úsáid seisiún X11 ina bhfuil an tseirbhís inrochtaineachta AT-SPI agus XInput2 ar fáil. Ní thacaítear le Wayland.",
+  "openSettings": "Oscail socruithe an chórais",
+  "recheck": "Seiceáil arís",
+  "later": "Níos déanaí",
+  "error": "Theip ar an ngníomh",
+  "reason": "Cúis",
+  "openLogs": "Oscail fillteán na logaí",
+  "deleteLogs": "Scrios logaí",
+  "restore": "Athchóirigh cúltaca na socruithe",
+  "support": "GitHub Issues",
+  "logHelp": "Bíonn leagan, ardán, cóid chúise agus amanna sna logaí. Eisiatar téacs ionchuir. Fanann na logaí ar an ngléas seo ar feadh seacht lá ar a mhéad agus suas le 10 MiB san iomlán.",
+  "original": "Bunleagan",
+  "recognized": "Aitheanta",
+  "notRecognized": "Ní aithníonn an foclóir é",
+  "unchecked": "Níorbh fhéidir é a sheiceáil",
+  "candidates": "Iarrthóirí leagan amach",
+  "candidateHelp": "↑ ↓ Roghnaigh · Enter Cuir i bhfeidhm · Esc Dún",
+  "noCandidates": "Níl an comhthéacs foinseach ar fáil a thuilleadh.",
+  "help": "Cabhair",
+  "helpTopics": [
+    [
+      "Suiteáil",
+      "Suiteáil an DMG sínithe ar macOS ARM64, an suiteálaí NSIS ar Windows x64, nó an AppImage ar Linux X11 x64. Ní chiallaíonn sprioc-ardáin go bhfuil comhoiriúnacht le gach aip fíoraithe."
+    ],
+    [
+      "Ceadanna",
+      "Deonaigh na ceadanna inrochtaineachta agus ionchuir a iarrann do chóras oibriúcháin, ansin roghnaigh Seiceáil arís. Fanann an ceartú neamhghníomhach go dtí go mbíonn ceadanna agus foclóirí réidh. Ar macOS, is féidir le hInrochtaineacht rochtain éifeachtach ar éisteacht le heochracha a sholáthar gan iontráil ar leith i Monatóireacht ar Ionchur. Úsáid Socraigh monatóireacht ar ionchur faoi Ginearálta chun an liosta a sheiceáil; mura bhfuil FixKey ann, úsáid + chun an FixKey.app reatha a chur leis ón bhfillteán Feidhmchláir."
+    ],
+    [
+      "Leaganacha amach agus ceartú",
+      "Tá Cóiréis Dubeolsik agus Béarla US QWERTY cumasaithe de réir réamhshocraithe. Roghnaigh péirí breise foclóra agus méarchláir faoi Ginearálta. Caithfidh an méarchlár poiblí atá liostaithe a bheith ag teacht leis an leagan amach a chlóscríobhann tú leis. Nuair atá teangacha breise cumasaithe, déantar focail a mheas ag spásanna; murach sin, spreagann spásanna agus poncaíocht an measúnú. Ní dhéanann Enter ná Tab amhlaidh. Ní athraítear focal ach amháin nuair a aithníonn foclóir cumasaithe amháin go díreach iarrthóir. D'fhéadfadh teangacha gaolmhara an focal céanna a aithint; fágtar gan athrú é sa chás sin. Ní athraíonn FixKey do theanga ionchuir riamh. Fágtar mionathraitheoirí nach dtacaítear leo, eochracha marbha neamhiomlána agus malairtí méarchláir nach dtagann leis an leagan amach liostaithe gan athrú."
+    ],
+    [
+      "Cealaigh an ceartú",
+      "Brúigh Backspace díreach tar éis ceartú uathoibríoch chun an focal bunaidh agus a dheighilteoir a athchóiriú. Feidhmíonn brúnna eile ar Backspace mar is gnách."
+    ],
+    [
+      "Iarrthóirí de láimh",
+      "Sann aicearra, clóscríobh focal agus úsáid an t-aicearra. Roghnaíonn na saigheadeochracha, cuireann Enter i bhfeidhm agus dúnann Esc. Is féidir leat iarrthóir nach n-aithnítear a roghnú go sainráite. Dúnann an roghnóir má bhogann tú an carat foinseach nó má athraíonn tú aipeanna."
+    ],
+    [
+      "Eisiaimh",
+      "Cuir aip leis faoi Aipeanna eisiata. Meaitseálann eisiaimh aitheantas cobhsaí na haipe. Fanann aitheantais nár aimsíodh ar an liosta."
+    ],
+    [
+      "Príobháideachas",
+      "Próiseálann FixKey ionchur go háitiúil. Ní choinníonn sé stair ionchuir, ní úsáideann sé an ghearrthaisce le haghaidh athsholáthair, ná ní sheolann sé teiliméadracht. Eisiatar comharthaí a greamaíodh, a cuireadh isteach go ríomhchláraithe, comharthaí uimhriúla, emoji, URLanna, seoltaí ríomhphoist agus comharthaí le meascán córas scríbhneoireachta ón gceartú uathoibríoch."
+    ],
+    [
+      "Nuashonruithe",
+      "Seiceáiltear le haghaidh nuashonruithe cobhsaí thar HTTPS ag am tosaithe agus gach 24 uair an chloig. Tugann tú do thoiliú sula ndéantar íoslódáil. Diúltaítear do shínithe neamhbhailí. Stopann an ceartú roimh an tsuiteáil; fanann na socruithe slán."
+    ],
+    [
+      "Fabhtcheartú",
+      "Léigh an cód cúise, seiceáil na ceadanna arís, agus bain triail as rialtán in eagar a dtacaítear leis. Diúltaítear don ghníomh go sábháilte nuair atá ceadanna ar iarraidh, íogaireacht an réimse anaithnid, spriocanna as dáta nó scríobhanna nach dtacaítear leo i gceist. Atosaigh nó athshuiteáil pacáiste sínithe de láimh tar éis teipe nuashonraithe."
+    ],
+    [
+      "Scriosadh logaí",
+      "Roghnaigh Scrios logaí chun logaí diagnóiseacha áitiúla a bhaint, nó Oscail fillteán na logaí chun iad a iniúchadh. Ná cuir ábhar príobháideach san áireamh agus tú ag oscailt tuairisce ar GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Focail atá liostaithe san fhoclóir amháin; fágtar foirmeacha anaithnide gan athrú."
+}

@@ -1,0 +1,138 @@
+{
+  "general": "General",
+  "exclusions": "Applicationes excludite",
+  "shortcuts": "Combinationes de claves",
+  "updates": "Actualisationes",
+  "diagnostics": "Diagnostica e adjuta",
+  "tagline": "Continua a scriber. Corrige le disposition.",
+  "correction": "Correction automatic",
+  "pause": "Pausar",
+  "resume": "Reprender",
+  "languages": "Linguas activate",
+  "languageSearch": "Cercar un lingua o un claviero",
+  "trayPause": "Pausar le correction",
+  "trayResume": "Reprender le correction",
+  "traySettings": "Parametros",
+  "trayExit": "Salir",
+  "trayStatus": "Stato del correction",
+  "notificationUpdate": "Un actualisation es disponibile. Examina lo e installa lo in Parametros.",
+  "notificationAttention": "FixKey require attention. Consulta le codice del motivo in Parametros.",
+  "korean": "Coreano · Dubeolsik",
+  "english": "Anglese · US QWERTY",
+  "startup": "Lancear al aperir session",
+  "uiLanguage": "Lingua del interfacie",
+  "theme": "Thema",
+  "system": "Systema",
+  "light": "Clar",
+  "dark": "Obscur",
+  "loading": "Connexion a FixKey…",
+  "connection": "Impossibile connecter se al application de scriptorio.",
+  "retry": "Retentar",
+  "active": "Le correction es active",
+  "inactive": "Le correction es inactive",
+  "waitingField": "In attender un campo de texto modificabile",
+  "waitingFieldHelp": "Clicca sur un campo de texto modificabile in un altere application. FixKey attende durante que Parametros es aperte o que le campo con foco non pote esser identificate con securitate. Le detalios es disponibile in Diagnostica e adjuta.",
+  "local": "Tu entrata remane sur iste dispositivo. Le campos de contrasigno es excludite.",
+  "empty": "Nulle application excludite",
+  "emptyDetail": "Le correction pote functionar in controles modificabile supportate. Adde un application pro lassar sempre su entrata sin modification.",
+  "add": "Adder un application",
+  "choose": "Eliger un application",
+  "remove": "Remover",
+  "unresolved": "Identitate non resolvite",
+  "noApps": "Nulle application identificabile es disponibile. Aperi le application que tu vole excluder e retenta.",
+  "shortcut": "Candidatos manual",
+  "unassigned": "Non assignate",
+  "capture": "Definir un combination de claves",
+  "captureHelp": "Preme un clave con Control, Alt, Command o Shift. Esc annulla.",
+  "clear": "Rader",
+  "cancel": "Annullar",
+  "done": "Facite",
+  "currentVersion": "Version actual",
+  "checkUpdate": "Cercar actualisationes",
+  "updateConsent": "Discargar e installar",
+  "updateHelp": "Le actualisationes es cercate al lanceamento e cata 24 horas. Le discargamentos comencia solmente con tu consentimento.",
+  "recovery": "Si le installation falle, relancea FixKey o reinstalla manualmente un pacchetto signate. Tu parametros es preservate. Versiones precedente signate pote esser reinstallate manualmente.",
+  "permission": "Permitter le accesso de accessibilitate",
+  "permissionHelp": "FixKey require le accesso de accessibilitate e de observation del entrata pro identificar un controlo modificabile e reimplaciar solmente le parola completate.",
+  "inputPermission": "Permitter le surveillance del entrata",
+  "inputPermissionRequest": "Permitter le surveillance del entrata",
+  "inputPermissionSetup": "Configurar le surveillance del entrata",
+  "inputPermissionListHelp": "Le accessibilitate pote ja permitter ascoltar le claves mesmo si FixKey non appare in Surveillance del entrata. macOS non confirma hic un entrata separate in le lista. Verifica le lista in Parametros del systema e adde le FixKey.app actual con + si illo manca.",
+  "inputPermissionHelp": "FixKey require le surveillance del entrata pro deteger le claves usate pro le correction del disposition del claviero.",
+  "accessibilityGranted": "Le accesso de accessibilitate es ja permittite.",
+  "inputPermissionSteps": [
+    "Elige Permitter le surveillance del entrata pro registrar FixKey e aperir su parametros de permission in macOS.",
+    "In Parametros del systema → Confidentialitate e securitate → Surveillance del entrata, activa FixKey. Si illo manca, elige + e adde le FixKey.app actual ab Applicationes. Retorna hic e elige Reverificar. Relancea FixKey si macOS lo demanda."
+  ],
+  "permissionRequest": "Permitter le accesso de accessibilitate",
+  "permissionWaiting": "Le correction remanera disactivate usque le accesso es permittite. Post haber permittite le accesso, elige Reverificar.",
+  "permissionSteps": [
+    "Elige Permitter le accesso de accessibilitate e seque le instructiones de macOS.",
+    "Activa FixKey in Accessibilitate. Si illo es ja activate ma iste dialogo remane post haber relanceate FixKey, remove le ancian entrata FixKey con − e usa + pro adder de novo le FixKey.app actual. Un application reconstruite pote non plus corresponder al ancian entrata de permission. Si illo manca, usa + pro adder FixKey ab Applicationes.",
+    "Activa etiam FixKey in Surveillance del entrata, e alora reverifica. Si nulle demanda de surveillance del entrata appare, elige de novo Permitter le accesso de accessibilitate. Relancea FixKey si macOS lo demanda."
+  ],
+  "macPermission": "In Parametros del systema, permitte FixKey sub Accessibilitate e Surveillance del entrata, e alora reverifica.",
+  "windowsPermission": "Usa FixKey in tu session actual de Windows. Le controles protegite, con privilegios elevate o non supportate remane sin modification.",
+  "linuxPermission": "Usa un session X11 con le servicio de accessibilitate AT-SPI e XInput2 disponibile. Wayland non es supportate.",
+  "openSettings": "Aperir le parametros del systema",
+  "recheck": "Reverificar",
+  "later": "Plus tarde",
+  "error": "Le action ha fallite",
+  "reason": "Motivo",
+  "openLogs": "Aperir le dossier del registros",
+  "deleteLogs": "Deler le registros",
+  "restore": "Restaurar le copia de reserva del parametros",
+  "support": "GitHub Issues",
+  "logHelp": "Le registros contine le version, le platteforma, le codices de motivo e le mesuras de tempore. Le texto de entrata es excludite. Le registros remane sur iste dispositivo durante al maximo septe dies e con un dimension total de al maximo 10 MiB.",
+  "original": "Original",
+  "recognized": "Recognoscite",
+  "notRecognized": "Non recognoscite per le dictionario",
+  "unchecked": "Non ha potite esser verificate",
+  "candidates": "Candidatos de disposition",
+  "candidateHelp": "↑ ↓ Eliger · Enter Applicar · Esc Clauder",
+  "noCandidates": "Le contexto de origine non es plus disponibile.",
+  "help": "Adjuta",
+  "helpTopics": [
+    [
+      "Installation",
+      "Installa le DMG signate sur macOS ARM64, le installator NSIS sur Windows x64, o le AppImage sur Linux X11 x64. Le platteformas destinatari non implica un compatibilitate verificate con cata application."
+    ],
+    [
+      "Permissiones",
+      "Accorde le permissiones de accessibilitate e de entrata demandate per tu systema operative, e alora elige Reverificar. Le correction remane inactive usque le permissiones e le dictionarios es preste. Sur macOS, Accessibilitate pote fornir un accesso effective pro ascoltar le claves sin un entrata separate in Surveillance del entrata. Usa Configurar le surveillance del entrata in General pro verificar le lista; si FixKey es absente, usa + pro adder le FixKey.app actual ab Applicationes."
+    ],
+    [
+      "Dispositiones e correction",
+      "Coreano Dubeolsik e anglese US QWERTY es activate per predefinition. Elige pares additional de dictionario e claviero in General. Le claviero public listate debe corresponder al disposition con le qual tu scribe. Con linguas additional activate, le parolas es evaluate al spatios; alteremente, spatios e punctuation activa le evaluation. Enter e Tab non lo activa. Un parola cambia solmente quando exactemente un dictionario activate recognosce un candidato. Linguas affin pote recognoscer le mesme parola; in tal caso, illo remane sin modification. FixKey nunquam cambia tu lingua de entrata. Modificatores non supportate, claves morte incomplete e variantes de claviero que non corresponde al disposition listate remane sin modification."
+    ],
+    [
+      "Disfacer",
+      "Preme Backspace immediatemente post le correction automatic pro restaurar le parola original e su separator. Pressiones ulterior de Backspace functiona normalmente."
+    ],
+    [
+      "Candidatos manual",
+      "Assigna un combination de claves, scribe un parola e usa le combination. Le claves de flecha elige, Enter applica e Esc claude. Tu pote eliger explicitemente un candidato non recognoscite. Mover le cursor de texto de origine o cambiar de application claude le selector."
+    ],
+    [
+      "Exclusiones",
+      "Adde un application sub Applicationes excludite. Le exclusiones corresponde al identitate stabile del application. Le identitates non resolvite remane listate."
+    ],
+    [
+      "Confidentialitate",
+      "FixKey processa le entrata localmente. Illo non conserva un historia del entrata, non usa le area de transferentia pro le reimplaciamento e non invia telemetria. Le elementos collate, generate per programma, numeric, emoji, URL, adresses de e-posta e elementos con scripturas miscite es excludite del correction automatic."
+    ],
+    [
+      "Actualisationes",
+      "Le actualisationes stabile es cercate per HTTPS al lanceamento e cata 24 horas. Tu da tu consentimento ante le discargamento. Signaturas invalide es rejectate. Le correction se arresta ante le installation; le parametros remane intacte."
+    ],
+    [
+      "Resolution de problemas",
+      "Lege le codice del motivo, reverifica le permissiones e proba un controlo modificabile supportate. Permissiones mancante, sensibilitate incognite del campo, destinos non plus actual e operationes de scriptura non supportate causa un refusa secur. Relancea o reinstalla manualmente un pacchetto signate post un fallimento del actualisation."
+    ],
+    [
+      "Deletion del registros",
+      "Elige Deler le registros pro remover le registros diagnostic local, o Aperir le dossier del registros pro inspectar los. Non include contento private quando tu aperi un ticket sur GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Solmente parolas listate in le dictionario; formas incognite remane inalterate."
+}

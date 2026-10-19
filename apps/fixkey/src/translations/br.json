@@ -1,0 +1,138 @@
+{
+  "general": "Hollek",
+  "exclusions": "Arloadoù ezlakaet",
+  "shortcuts": "Berradennoù",
+  "updates": "Hizivadennoù",
+  "diagnostics": "Diagnostik ha skoazell",
+  "tagline": "Kendalc'hit da skrivañ. Reizhit an aozadur.",
+  "correction": "Reizhañ emgefreek",
+  "pause": "Ehanañ",
+  "resume": "Adkregiñ",
+  "languages": "Yezhoù gweredekaet",
+  "languageSearch": "Kavout ur yezh pe ur c'hlavier",
+  "trayPause": "Ehanañ ar reizhañ",
+  "trayResume": "Adkregiñ gant ar reizhañ",
+  "traySettings": "Arventennoù",
+  "trayExit": "Kuitaat",
+  "trayStatus": "Stad ar reizhañ",
+  "notificationUpdate": "Un hizivadenn zo hegerz. Sellit outi ha staliit anezhi en Arventennoù.",
+  "notificationAttention": "FixKey en deus ezhomm eus hoc'h evezh. Gwiriit kod an abeg en Arventennoù.",
+  "korean": "Koreaneg · Dubeolsik",
+  "english": "Saozneg · US QWERTY",
+  "startup": "Loc'hañ pa vez digoret an estez",
+  "uiLanguage": "Yezh an etrefas",
+  "theme": "Neuz",
+  "system": "Reizhiad",
+  "light": "Sklaer",
+  "dark": "Teñval",
+  "loading": "O kennaskañ ouzh FixKey…",
+  "connection": "N'haller ket kennaskañ ouzh an arload burev.",
+  "retry": "Klask en-dro",
+  "active": "Gweredekaet eo ar reizhañ",
+  "inactive": "Diweredekaet eo ar reizhañ",
+  "waitingField": "O c'hortoz ur vaezienn destenn embannus",
+  "waitingFieldHelp": "Klikit war ur vaezienn destenn embannus en un arload all. Gortoz a ra FixKey keit ha m'eo digor an Arventennoù pe pa ne c'haller ket anavezout ar vaezienn stiet en un doare sur. Munudoù zo e Diagnostik ha skoazell.",
+  "local": "Chom a ra ho enankad war an trevnad-mañ. Ezlakaet eo ar maeziennoù ger-tremen.",
+  "empty": "Arload ezlakaet ebet",
+  "emptyDetail": "Gallout a ra ar reizhañ mont en-dro er reolerezhioù embannus skoret. Ouzhpennit un arload evit ma chomo e enankad digemm bepred.",
+  "add": "Ouzhpennañ un arload",
+  "choose": "Dibab un arload",
+  "remove": "Dilemel",
+  "unresolved": "Identelezh dianavezet",
+  "noApps": "N'eus arload hegerz ebet a c'haller anavezout. Digorit an arload a fell deoc'h ezlakaat ha klaskit en-dro.",
+  "shortcut": "Kinnigadennoù dre zorn",
+  "unassigned": "Nann-deverket",
+  "capture": "Arventennañ ur verradenn",
+  "captureHelp": "Pouezit war ur stokell gant Control, Alt, Command pe Shift. Esc a null.",
+  "clear": "Skarzhañ",
+  "cancel": "Nullañ",
+  "done": "Graet",
+  "currentVersion": "Handelv red",
+  "checkUpdate": "Klask hizivadennoù",
+  "updateConsent": "Pellgargañ ha staliañ",
+  "updateHelp": "Klasket e vez hizivadennoù pa loc'h an arload ha bep 24 eur. Ne grog ar pellgargañ nemet gant hoc'h asant.",
+  "recovery": "Ma c'hwit ar staliadur, adloc'hit FixKey pe adstaliit ur pakad sinet dre zorn. Miret e vez hoc'h arventennoù. Gallout a reer adstaliañ handelvoù sinet koshoc'h dre zorn.",
+  "permission": "Aotren ar moned aesgyrchedd",
+  "permissionHelp": "Ezhomm en deus FixKey eus moned aesgyrchedd hag arselliñ an enankad evit anavezout ur reolerezh embannus ha kemer lec'h ar ger echuet hepken.",
+  "inputPermission": "Aotren evezhiañ an enankad",
+  "inputPermissionRequest": "Aotren evezhiañ an enankad",
+  "inputPermissionSetup": "Kefluniañ evezhiañ an enankad",
+  "inputPermissionListHelp": "Gallout a ra an aesgyrchedd aotren selaou ar stokelloù dija, zoken pa n'emañ ket FixKey e roll evezhiañ an enankad. Ne gadarna ket macOS un enankad disparti er roll amañ. Gwiriit ar roll en Arventennoù ar reizhiad hag ouzhpennit ar FixKey.app red gant + ma vank.",
+  "inputPermissionHelp": "Ezhomm en deus FixKey eus evezhiañ an enankad evit dinoiñ ar stokelloù implijet evit reizhañ aozadur ar c'hlavier.",
+  "accessibilityGranted": "Aotreet eo ar moned aesgyrchedd dija.",
+  "inputPermissionSteps": [
+    "Dibabit Aotren evezhiañ an enankad evit enrollañ FixKey ha digeriñ e arventennoù aotreoù macOS.",
+    "En Arventennoù ar reizhiad → Buhez prevez ha surentez → Evezhiañ an enankad, gweredekait FixKey. Ma vank, dibabit + hag ouzhpennit ar FixKey.app red eus Arloadoù. Distroit amañ ha dibabit Adwiriañ. Adloc'hit FixKey ma c'houlenn macOS."
+  ],
+  "permissionRequest": "Aotren ar moned aesgyrchedd",
+  "permissionWaiting": "Chom a raio ar reizhañ diweredekaet betek ma vo aotreet ar moned. Goude bezañ aotreet ar moned, dibabit Adwiriañ.",
+  "permissionSteps": [
+    "Dibabit Aotren ar moned aesgyrchedd ha heuilhit goulenn macOS.",
+    "Gweredekait FixKey en Aesgyrchedd. M'eo gweredekaet dija met ma chom ar voestad emziviz-mañ goude adloc'hañ FixKey, dilamit enankad kozh FixKey gant − hag implijit + evit ouzhpennañ ar FixKey.app red en-dro. Un arload adsavet a c'hall chom hep klotañ gant an enankad aotre kozh ken. Ma vank, implijit + evit ouzhpennañ FixKey eus Arloadoù.",
+    "Gweredekait FixKey en Evezhiañ an enankad ivez, hag adgwiriit goude-se. Ma ne zeu goulenn evezhiañ an enankad ebet war wel, dibabit Aotren ar moned aesgyrchedd en-dro. Adloc'hit FixKey ma c'houlenn macOS."
+  ],
+  "macPermission": "En Arventennoù ar reizhiad, aotrit FixKey en Aesgyrchedd hag en Evezhiañ an enankad, hag adgwiriit goude-se.",
+  "windowsPermission": "Implijit FixKey en hoc'h estez Windows red. Chom a ra ar reolerezhioù gwarezet, gant brientoù uheloc'h pe anskoret digemm.",
+  "linuxPermission": "Implijit un estez X11 gant ar servij aesgyrchedd AT-SPI ha XInput2 hegerz. N'eo ket skoret Wayland.",
+  "openSettings": "Digeriñ arventennoù ar reizhiad",
+  "recheck": "Adwiriañ",
+  "later": "Diwezhatoc'h",
+  "error": "C'hwitet eo ar gwered",
+  "reason": "Abeg",
+  "openLogs": "Digeriñ teuliad ar c'herzlevrioù",
+  "deleteLogs": "Diverkañ ar c'herzlevrioù",
+  "restore": "Assav eilenn savete arventennoù",
+  "support": "GitHub Issues",
+  "logHelp": "Enno emañ an handelv, ar savenn, kodoù an abegoù hag ar padelezhioù. Ezlakaet eo an destenn enanket. Chom a ra ar c'herzlevrioù war an trevnad-mañ e-pad seizh devezh d'ar muiañ ha 10 MiB en holl d'ar muiañ.",
+  "original": "Orin",
+  "recognized": "Anavezet",
+  "notRecognized": "N'anavezer ket er geriadur",
+  "unchecked": "N'eus ket bet gallet gwiriañ",
+  "candidates": "Kinnigadennoù aozadur",
+  "candidateHelp": "↑ ↓ Dibab · Enter Arloañ · Esc Serriñ",
+  "noCandidates": "N'eo ket hegerz ar gendestenn orin ken.",
+  "help": "Skoazell",
+  "helpTopics": [
+    [
+      "Staliañ",
+      "Staliit ar DMG sinet war macOS ARM64, ar staliader NSIS war Windows x64, pe an AppImage war Linux X11 x64. Ar savennoù buket ne dalvezont ket ez eo bet gwiriet ar geverlec'hded gant pep arload."
+    ],
+    [
+      "Aotreoù",
+      "Roit an aotreoù aesgyrchedd hag enankañ goulennet gant ho reizhiad korvoiñ, ha dibabit Adwiriañ goude-se. Chom a ra ar reizhañ diweredekaet betek ma vo prest an aotreoù hag ar geriadurioù. War macOS e c'hall an Aesgyrchedd reiñ moned selaou ar stokelloù a ya en-dro hep un enankad disparti en Evezhiañ an enankad. Implijit Kefluniañ evezhiañ an enankad en Hollek evit gwiriañ ar roll; ma n'emañ ket FixKey ennañ, implijit + evit ouzhpennañ ar FixKey.app red eus Arloadoù."
+    ],
+    [
+      "Aozadurioù ha reizhañ",
+      "Gweredekaet eo Koreaneg Dubeolsik ha Saozneg US QWERTY dre ziouer. Dibabit koubladoù geriadur ha klavier ouzhpenn en Hollek. Ret eo d'ar c'hlavier foran er roll klotañ gant an aozadur a implijit evit skrivañ. Pa vez gweredekaet yezhoù ouzhpenn e vez priziet ar gerioù d'an esaouennoù; a-hend-all e vez lañset ar priziañ gant an esaouennoù hag ar poentadur. Ne ra ket Enter ha Tab kement-se. Ne gemm ur ger nemet pa vez anavezet ur ginnigadenn gant ur geriadur gweredekaet hepken rik. Yezhoù kar a c'hall anavezout an hevelep ger; neuze e chom digemm. Ne gemm FixKey ho yezh enankañ biken. Chom a ra an daskemmerioù anskoret, ar stokelloù marv diechu hag an doareoù klavier na glotont ket gant an aozadur er roll digemm."
+    ],
+    [
+      "Dizober",
+      "Pouezit war Backspace diouzhtu goude ar reizhañ emgefreek evit assav ar ger orin hag e zispartier. Mont a ra ar pouezadennoù Backspace da-heul en-dro evel boaz."
+    ],
+    [
+      "Kinnigadennoù dre zorn",
+      "Deverkit ur verradenn, skrivit ur ger hag implijit ar verradenn. Dibab a ra ar stokelloù biroù, arloañ a ra Enter ha serriñ a ra Esc. Gallout a rit dibab ur ginnigadenn dianavezet a-ratozh. Dilec'hiañ ar reti orin pe cheñch arload a serr ar diuzer."
+    ],
+    [
+      "Ezlakaat",
+      "Ouzhpennit un arload en Arloadoù ezlakaet. Klotañ a ra an ezlakadurioù gant identelezh stabil an arload. Chom a ra an identelezhioù dianavezet er roll."
+    ],
+    [
+      "Buhez prevez",
+      "Tretañ a ra FixKey an enankad ent lec'hel. Ne vir ket istor an enankad, ne implij ket ar golver evit erlec'hiañ ha ne gas ket telemetriezh. Ezlakaet eus ar reizhañ emgefreek eo an unanennoù peget, enanket dre brogramm, niverel, emoji, URL, postel hag ar re a vesk meur a reizhiad skrivañ."
+    ],
+    [
+      "Hizivadennoù",
+      "Klasket e vez hizivadennoù stabil dre HTTPS pa loc'h an arload ha bep 24 eur. Reiñ a rit hoc'h asant a-raok pellgargañ. Distaolet e vez ar sinadurioù didalvoudek. Paouez a ra ar reizhañ a-raok ar staliañ; chom a ra an arventennoù digemm."
+    ],
+    [
+      "Diskoulmañ kudennoù",
+      "Lennit kod an abeg, adgwiriit an aotreoù ha klaskit ur reolerezh embannus skoret. An aotreoù a vank, kizidigezh dianav ar vaezienn, ar bukadoù diamzeret hag ar skrivañ anskoret a zegas un nac'hadenn sur. Adloc'hit pe adstaliit ur pakad sinet dre zorn goude c'hwitadenn un hizivadenn."
+    ],
+    [
+      "Diverkañ ar c'herzlevrioù",
+      "Dibabit Diverkañ ar c'herzlevrioù evit dilemel ar c'herzlevrioù diagnostik lec'hel, pe Digeriñ teuliad ar c'herzlevrioù evit sellout outo. Na lakait ket endalc'had prevez pa zigorit ur goulenn war GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Ar gerioù er geriadur hepken; ar stummoù dianav a chom digemm."
+}

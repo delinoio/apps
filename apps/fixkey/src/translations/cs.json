@@ -1,0 +1,138 @@
+{
+  "general": "Obecné",
+  "exclusions": "Vyloučené aplikace",
+  "shortcuts": "Klávesové zkratky",
+  "updates": "Aktualizace",
+  "diagnostics": "Diagnostika a nápověda",
+  "tagline": "Pište dál. Opravte rozložení.",
+  "correction": "Automatické opravy",
+  "pause": "Pozastavit",
+  "resume": "Pokračovat",
+  "languages": "Zapnuté jazyky",
+  "languageSearch": "Najít jazyk nebo klávesnici",
+  "trayPause": "Pozastavit opravy",
+  "trayResume": "Obnovit opravy",
+  "traySettings": "Nastavení",
+  "trayExit": "Ukončit",
+  "trayStatus": "Stav oprav",
+  "notificationUpdate": "Je k dispozici aktualizace. Prohlédněte si ji a nainstalujte v Nastavení.",
+  "notificationAttention": "FixKey vyžaduje vaši pozornost. Zkontrolujte kód důvodu v Nastavení.",
+  "korean": "Korejština · Dubeolsik",
+  "english": "Angličtina · US QWERTY",
+  "startup": "Spustit při přihlášení",
+  "uiLanguage": "Jazyk rozhraní",
+  "theme": "Vzhled",
+  "system": "Podle systému",
+  "light": "Světlý",
+  "dark": "Tmavý",
+  "loading": "Připojování k FixKey…",
+  "connection": "Nelze se připojit k desktopové aplikaci.",
+  "retry": "Zkusit znovu",
+  "active": "Opravy jsou aktivní",
+  "inactive": "Opravy nejsou aktivní",
+  "waitingField": "Čekání na upravitelné textové pole",
+  "waitingFieldHelp": "Klikněte na upravitelné textové pole v jiné aplikaci. FixKey čeká, pokud je otevřené Nastavení nebo nelze bezpečně určit pole, které má fokus. Podrobnosti najdete v části Diagnostika a nápověda.",
+  "local": "Zadávaný text zůstává v tomto zařízení. Pole pro hesla jsou vyloučena.",
+  "empty": "Žádné vyloučené aplikace",
+  "emptyDetail": "Opravy mohou probíhat v podporovaných upravitelných ovládacích prvcích. Přidejte aplikaci, pokud chcete její vstup vždy ponechat beze změny.",
+  "add": "Přidat aplikaci",
+  "choose": "Vybrat aplikaci",
+  "remove": "Odebrat",
+  "unresolved": "Identita neurčena",
+  "noApps": "Nejsou k dispozici žádné aplikace s určitelnou identitou. Otevřete aplikaci, kterou chcete vyloučit, a zkuste to znovu.",
+  "shortcut": "Ruční výběr variant",
+  "unassigned": "Nepřiřazeno",
+  "capture": "Nastavit zkratku",
+  "captureHelp": "Stiskněte klávesu spolu s Control, Alt, Command nebo Shift. Esc akci zruší.",
+  "clear": "Vymazat",
+  "cancel": "Zrušit",
+  "done": "Hotovo",
+  "currentVersion": "Aktuální verze",
+  "checkUpdate": "Vyhledat aktualizace",
+  "updateConsent": "Stáhnout a nainstalovat",
+  "updateHelp": "Aktualizace se vyhledávají při spuštění a každých 24 hodin. Stahování začne pouze s vaším souhlasem.",
+  "recovery": "Pokud instalace selže, restartujte FixKey nebo ručně přeinstalujte podepsaný balíček. Vaše nastavení zůstane zachováno. Předchozí podepsané verze lze ručně znovu nainstalovat.",
+  "permission": "Povolit přístup ke zpřístupnění",
+  "permissionHelp": "FixKey potřebuje přístup ke zpřístupnění a sledování vstupu, aby mohl určit upravitelný ovládací prvek a nahradit pouze dokončené slovo.",
+  "inputPermission": "Povolit monitorování vstupu",
+  "inputPermissionRequest": "Povolit monitorování vstupu",
+  "inputPermissionSetup": "Nastavit monitorování vstupu",
+  "inputPermissionListHelp": "Zpřístupnění již může umožňovat sledování kláves, i když FixKey není v seznamu Monitorování vstupu. macOS zde nepotvrzuje samostatný záznam v seznamu. Zkontrolujte seznam v Nastavení systému, a pokud aktuální FixKey.app chybí, přidejte ji pomocí +.",
+  "inputPermissionHelp": "FixKey potřebuje monitorování vstupu, aby rozpoznal klávesy používané k opravě rozložení klávesnice.",
+  "accessibilityGranted": "Přístup ke zpřístupnění je již povolen.",
+  "inputPermissionSteps": [
+    "Zvolte Povolit monitorování vstupu, čímž zaregistrujete FixKey a otevřete nastavení jeho oprávnění v macOS.",
+    "V Nastavení systému → Soukromí a zabezpečení → Monitorování vstupu zapněte FixKey. Pokud chybí, zvolte + a přidejte aktuální FixKey.app ze složky Aplikace. Vraťte se sem a zvolte Znovu zkontrolovat. Pokud vás k tomu macOS vyzve, restartujte FixKey."
+  ],
+  "permissionRequest": "Povolit přístup ke zpřístupnění",
+  "permissionWaiting": "Opravy zůstanou vypnuté, dokud nebude přístup povolen. Po povolení přístupu zvolte Znovu zkontrolovat.",
+  "permissionSteps": [
+    "Zvolte Povolit přístup ke zpřístupnění a postupujte podle výzvy macOS.",
+    "Zapněte FixKey v části Zpřístupnění. Pokud už je zapnutý, ale toto dialogové okno zůstává i po restartování FixKey, odeberte starý záznam FixKey pomocí − a pomocí + znovu přidejte aktuální FixKey.app. Nově sestavená aplikace již nemusí odpovídat starému záznamu oprávnění. Pokud chybí, přidejte FixKey ze složky Aplikace pomocí +.",
+    "Zapněte FixKey také v části Monitorování vstupu a poté proveďte opětovnou kontrolu. Pokud se výzva k monitorování vstupu nezobrazí, znovu zvolte Povolit přístup ke zpřístupnění. Pokud vás k tomu macOS vyzve, restartujte FixKey."
+  ],
+  "macPermission": "V Nastavení systému povolte FixKey v částech Zpřístupnění a Monitorování vstupu a poté proveďte opětovnou kontrolu.",
+  "windowsPermission": "Používejte FixKey v aktuální relaci Windows. Chráněné či nepodporované ovládací prvky a ovládací prvky se zvýšenými oprávněními zůstanou beze změny.",
+  "linuxPermission": "Používejte relaci X11 s dostupnou službou zpřístupnění AT-SPI a XInput2. Wayland není podporován.",
+  "openSettings": "Otevřít nastavení systému",
+  "recheck": "Znovu zkontrolovat",
+  "later": "Později",
+  "error": "Akce selhala",
+  "reason": "Důvod",
+  "openLogs": "Otevřít složku protokolů",
+  "deleteLogs": "Smazat protokoly",
+  "restore": "Obnovit zálohu nastavení",
+  "support": "GitHub Issues",
+  "logHelp": "Protokoly obsahují verzi, platformu, kódy důvodů a časové údaje. Zadávaný text neobsahují. Protokoly zůstávají v tomto zařízení nejvýše sedm dní a jejich celková velikost nepřekročí 10 MiB.",
+  "original": "Původní",
+  "recognized": "Rozpoznáno",
+  "notRecognized": "Slovník nerozpoznal",
+  "unchecked": "Nepodařilo se ověřit",
+  "candidates": "Varianty rozložení",
+  "candidateHelp": "↑ ↓ Vybrat · Enter Použít · Esc Zavřít",
+  "noCandidates": "Zdrojový kontext již není k dispozici.",
+  "help": "Nápověda",
+  "helpTopics": [
+    [
+      "Instalace",
+      "Nainstalujte podepsaný DMG v macOS ARM64, instalační program NSIS ve Windows x64 nebo AppImage v Linux X11 x64. Cílové platformy neznamenají ověřenou kompatibilitu s každou aplikací."
+    ],
+    [
+      "Oprávnění",
+      "Udělte oprávnění ke zpřístupnění a vstupu, která váš operační systém požaduje, a poté zvolte Znovu zkontrolovat. Opravy zůstanou neaktivní, dokud nebudou připravena oprávnění a slovníky. V macOS může Zpřístupnění zajistit účinný přístup ke sledování kláves i bez samostatného záznamu v části Monitorování vstupu. V části Obecné zvolte Nastavit monitorování vstupu a zkontrolujte seznam; pokud FixKey chybí, pomocí + přidejte aktuální FixKey.app ze složky Aplikace."
+    ],
+    [
+      "Rozložení a opravy",
+      "Korejské Dubeolsik a americké anglické US QWERTY jsou zapnuté ve výchozím nastavení. Další dvojice slovníků a klávesnic vyberte v části Obecné. Uvedená veřejná klávesnice musí odpovídat rozložení, se kterým píšete. Jsou-li zapnuty další jazyky, slova se vyhodnocují při zadání mezery; jinak vyhodnocení spouštějí mezery a interpunkce. Enter a Tab jej nespouštějí. Slovo se změní pouze tehdy, když variantu rozpozná právě jeden zapnutý slovník. Příbuzné jazyky mohou rozpoznat stejné slovo; v takovém případě zůstane beze změny. FixKey nikdy nepřepíná jazyk zadávání. Vstup s nepodporovanými modifikačními klávesami, nedokončenými mrtvými klávesami a variantami klávesnice, které neodpovídají uvedenému rozložení, zůstane beze změny."
+    ],
+    [
+      "Zpět",
+      "Ihned po automatické opravě stiskněte Backspace, čímž obnovíte původní slovo a jeho oddělovač. Další stisknutí Backspace se chovají běžným způsobem."
+    ],
+    [
+      "Ruční výběr variant",
+      "Přiřaďte klávesovou zkratku, napište slovo a použijte zkratku. Šipkami vybíráte, Enter výběr použije a Esc jej zavře. Můžete výslovně zvolit i nerozpoznanou variantu. Přesunutím kurzoru ve zdrojovém textu nebo přepnutím aplikace se výběr zavře."
+    ],
+    [
+      "Vyloučení",
+      "Přidejte aplikaci v části Vyloučené aplikace. Vyloučení se řídí stálou identitou aplikace. Neurčené identity zůstávají v seznamu."
+    ],
+    [
+      "Soukromí",
+      "FixKey zpracovává vstup místně. Neukládá historii vstupu, nepoužívá schránku k nahrazování a neodesílá telemetrii. Vložené a programově vytvořené tokeny, číselné tokeny, emoji, URL, e-mailové adresy a tokeny kombinující různá písma jsou z automatických oprav vyloučeny."
+    ],
+    [
+      "Aktualizace",
+      "Stabilní aktualizace se vyhledávají přes HTTPS při spuštění a každých 24 hodin. Před stažením udělujete souhlas. Neplatné podpisy jsou odmítnuty. Před instalací se opravy zastaví; nastavení zůstane zachováno."
+    ],
+    [
+      "Řešení problémů",
+      "Přečtěte si kód důvodu, znovu zkontrolujte oprávnění a vyzkoušejte podporovaný upravitelný ovládací prvek. Chybějící oprávnění, neznámá citlivost pole, neaktuální cíle a nepodporované zápisy vedou k bezpečnému odmítnutí. Po selhání aktualizace aplikaci restartujte nebo ručně přeinstalujte podepsaný balíček."
+    ],
+    [
+      "Mazání protokolů",
+      "Zvolte Smazat protokoly, chcete-li odstranit místní diagnostické protokoly, nebo Otevřít složku protokolů, chcete-li si je prohlédnout. Při zakládání hlášení na GitHubu nepřikládejte soukromý obsah."
+    ]
+  ],
+  "listedWordsOnly": "Pouze slova uvedená ve slovníku; neznámé tvary zůstávají beze změny."
+}

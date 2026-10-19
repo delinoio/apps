@@ -32,11 +32,10 @@ use crate::{
 };
 
 pub fn os_language() -> &'static str {
-    if sys_locale::get_locale().is_some_and(|locale| locale.starts_with("ko")) {
-        "ko"
-    } else {
-        "en"
-    }
+    crate::settings::UiLanguage::from_locale(
+        &sys_locale::get_locale().unwrap_or_else(|| "en".into()),
+    )
+    .resolve("en")
 }
 
 fn identity(identity: &Identity) -> AppIdentity {
@@ -808,8 +807,13 @@ fn status(
         "preferences-reconciliation-required"
     } else if runtime.preferences.current().paused {
         "paused"
-    } else if !runtime.preferences.current().korean_enabled
-        && !runtime.preferences.current().english_enabled
+    } else if runtime
+        .preferences
+        .current()
+        .languages()
+        .enabled()
+        .next()
+        .is_none()
     {
         "languages-disabled"
     } else if let Some(reason) = permission_reason() {
@@ -855,6 +859,10 @@ fn process_key(
             runtime.preferences.session().clear_transient();
         }
         Key::Character(ch) => {
+            if runtime.preferences.current().languages().has_additional() {
+                process_multilingual_key(runtime, adapter, context, baseline, event, ch);
+                return;
+            }
             if context.is_none()
                 && ch.is_ascii_alphabetic()
                 && let Some(before) = baseline
@@ -937,6 +945,64 @@ fn process_key(
     }
 }
 
+// Punctuation positions differ between national keyboards. Retain physical
+// keys until Space, then tokenize the fully proven rendered insertion. Never
+// interpret a US punctuation/digit key as the user's rendered character.
+fn process_multilingual_key(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    context: &mut Option<Context>,
+    baseline: Option<&FieldSnapshot>,
+    event: KeyEvent,
+    ch: char,
+) {
+    if ch != ' '
+        && context.is_none()
+        && let Some(before) = baseline
+        && before.target == event.target
+        && can_start(before)
+    {
+        runtime.preferences.session().next_word_started();
+        *context = Some(Context {
+            before: before.clone(),
+            tokenizer: Tokenizer::new(),
+            keys: Vec::new(),
+            pending_keys: None,
+        });
+    }
+    let Some(pending) = context.as_mut() else {
+        return;
+    };
+    if ch != ' ' {
+        pending.keys.push(ch);
+        if pending.keys.len() > 256 {
+            *context = None;
+        }
+        return;
+    }
+    if let Some(current) = await_completed_word(
+        &pending.before,
+        &pending.keys,
+        " ",
+        Duration::from_millis(100),
+        || adapter.snapshot(),
+    ) && let Some(rendered) = completed_word(&pending.before, &current, &pending.keys, " ")
+        && let Some((keys, boundary)) =
+            fixkey_core::observation::word_at_space(&pending.keys, &rendered)
+    {
+        let physical: String = keys.iter().collect();
+        evaluate(
+            runtime,
+            adapter,
+            &pending.before,
+            &current,
+            &physical,
+            &boundary,
+        );
+    }
+    *context = None;
+}
+
 fn evaluate(
     runtime: &mut crate::desktop::Runtime,
     adapter: &mut Adapter,
@@ -948,6 +1014,7 @@ fn evaluate(
     let keys: Vec<char> = word_keys.chars().collect();
     if let Some(word) = completed_word(before, current, &keys, boundary) {
         let validators = Validators {
+            additional: Some(&runtime.additional),
             korean: runtime
                 .korean
                 .as_ref()
@@ -1045,9 +1112,7 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
     };
     let chars: Vec<char> = snapshot.text.chars().collect();
     let mut start = snapshot.caret;
-    while start > 0
-        && (chars[start - 1].is_alphabetic() || matches!(chars[start - 1], '\'' | '-' | '\u{2019}'))
-    {
+    while start > 0 && fixkey_core::tokenizer::is_word_character(chars[start - 1]) {
         start -= 1;
     }
     runtime.last_error = None;
@@ -1059,9 +1124,11 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
         generation,
         korean,
         english,
+        additional,
         ..
     } = &mut *runtime;
     let validators = Validators {
+        additional: Some(additional),
         korean: korean.as_ref().map_or(&MissingValidator, |validator| {
             validator as &dyn fixkey_core::decision::LanguageValidator
         }),

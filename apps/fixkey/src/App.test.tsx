@@ -22,10 +22,11 @@ function fixture(patch: Partial<DesktopState> = {}) {
     logsHealthy: true,
     unresolvedApps: [],
     settings: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       paused: false,
       koreanEnabled: true,
       englishEnabled: true,
+      additionalLanguages: [],
       loginStartup: false,
       uiLanguage: "system",
       theme: "system",
@@ -66,6 +67,38 @@ function mount(api: DesktopApi) {
 }
 
 describe("settings desktop contract", () => {
+  it("filters additional layouts and persists their stable IDs", async () => {
+    const { api } = fixture();
+    mount(api);
+    const search = await screen.findByRole("searchbox", {
+      name: "Find a language or keyboard",
+    });
+    fireEvent.change(search, { target: { value: "ru-xkb-ru" } });
+    const russian = screen.getByRole("checkbox", { name: "Russian · ru" });
+    expect((russian as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(russian);
+    await waitFor(() =>
+      expect(api.save).toHaveBeenCalledWith(
+        expect.objectContaining({ additionalLanguages: ["ru-xkb-ru"] }),
+        1,
+      ),
+    );
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Russian · ru",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+  });
+
+  it("uses supported OS locales and sets RTL direction for Hebrew", async () => {
+    const { api } = fixture({ osLanguage: "he-IL" });
+    mount(api);
+    await screen.findByRole("heading", { name: "כללי" });
+    expect(document.documentElement.lang).toBe("he");
+    expect(document.documentElement.dir).toBe("rtl");
+  });
   it("keeps the previous value when persistence fails and reports a safe error", async () => {
     const { api } = fixture();
     vi.mocked(api.save).mockRejectedValue("settings-save-failed");

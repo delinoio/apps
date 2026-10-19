@@ -1,0 +1,138 @@
+{
+  "general": "Allgemein",
+  "exclusions": "Ausgeschlossene Apps",
+  "shortcuts": "Tastenkombinationen",
+  "updates": "Updates",
+  "diagnostics": "Diagnose und Hilfe",
+  "tagline": "Einfach weitertippen. Das Tastaturlayout wird korrigiert.",
+  "correction": "Automatische Korrektur",
+  "pause": "Pausieren",
+  "resume": "Fortsetzen",
+  "languages": "Aktivierte Sprachen",
+  "languageSearch": "Sprache oder Tastatur suchen",
+  "trayPause": "Korrektur pausieren",
+  "trayResume": "Korrektur fortsetzen",
+  "traySettings": "Einstellungen",
+  "trayExit": "Beenden",
+  "trayStatus": "Korrekturstatus",
+  "notificationUpdate": "Ein Update ist verfügbar. Prüfen und installieren Sie es in den Einstellungen.",
+  "notificationAttention": "FixKey erfordert Ihre Aufmerksamkeit. Prüfen Sie den Ursachencode in den Einstellungen.",
+  "korean": "Koreanisch · Dubeolsik",
+  "english": "Englisch · US QWERTY",
+  "startup": "Bei der Anmeldung starten",
+  "uiLanguage": "Sprache der Benutzeroberfläche",
+  "theme": "Erscheinungsbild",
+  "system": "System",
+  "light": "Hell",
+  "dark": "Dunkel",
+  "loading": "Verbindung mit FixKey wird hergestellt…",
+  "connection": "Verbindung mit der Desktop-App nicht möglich.",
+  "retry": "Erneut versuchen",
+  "active": "Korrektur ist aktiv",
+  "inactive": "Korrektur ist inaktiv",
+  "waitingField": "Warten auf ein bearbeitbares Textfeld",
+  "waitingFieldHelp": "Klicken Sie auf ein bearbeitbares Textfeld in einer anderen App. FixKey wartet, solange die Einstellungen geöffnet sind oder das fokussierte Feld nicht sicher identifiziert werden kann. Einzelheiten finden Sie unter Diagnose und Hilfe.",
+  "local": "Ihre Eingaben bleiben auf diesem Gerät. Passwortfelder sind ausgeschlossen.",
+  "empty": "Keine ausgeschlossenen Apps",
+  "emptyDetail": "Die Korrektur kann in unterstützten bearbeitbaren Steuerelementen ausgeführt werden. Fügen Sie eine App hinzu, um deren Eingaben immer unverändert zu lassen.",
+  "add": "App hinzufügen",
+  "choose": "App auswählen",
+  "remove": "Entfernen",
+  "unresolved": "Identität nicht ermittelt",
+  "noApps": "Es sind keine identifizierbaren Apps verfügbar. Öffnen Sie die App, die Sie ausschließen möchten, und versuchen Sie es erneut.",
+  "shortcut": "Manuelle Kandidatenauswahl",
+  "unassigned": "Nicht zugewiesen",
+  "capture": "Tastenkombination festlegen",
+  "captureHelp": "Drücken Sie eine Taste zusammen mit Control, Alt, Command oder Shift. Esc bricht ab.",
+  "clear": "Löschen",
+  "cancel": "Abbrechen",
+  "done": "Fertig",
+  "currentVersion": "Aktuelle Version",
+  "checkUpdate": "Nach Updates suchen",
+  "updateConsent": "Herunterladen und installieren",
+  "updateHelp": "Beim Start und alle 24 Stunden wird nach Updates gesucht. Downloads beginnen nur mit Ihrer Zustimmung.",
+  "recovery": "Wenn die Installation fehlschlägt, starten Sie FixKey neu oder installieren Sie ein signiertes Paket manuell erneut. Ihre Einstellungen bleiben erhalten. Frühere signierte Versionen können manuell erneut installiert werden.",
+  "permission": "Zugriff auf Bedienungshilfen erlauben",
+  "permissionHelp": "FixKey benötigt Zugriff auf Bedienungshilfen und auf die Erfassung von Eingaben, um ein bearbeitbares Steuerelement zu identifizieren und nur das abgeschlossene Wort zu ersetzen.",
+  "inputPermission": "Eingabeüberwachung erlauben",
+  "inputPermissionRequest": "Eingabeüberwachung erlauben",
+  "inputPermissionSetup": "Eingabeüberwachung einrichten",
+  "inputPermissionListHelp": "Die Bedienungshilfen können das Erfassen von Tastendrücken bereits erlauben, auch wenn FixKey unter Eingabeüberwachung fehlt. macOS bestätigt hier keinen gesonderten Listeneintrag. Prüfen Sie die Liste in den Systemeinstellungen und fügen Sie die aktuelle FixKey.app mit + hinzu, falls sie fehlt.",
+  "inputPermissionHelp": "FixKey benötigt die Eingabeüberwachung, um die für die Tastaturlayoutkorrektur verwendeten Tasten zu erkennen.",
+  "accessibilityGranted": "Der Zugriff auf Bedienungshilfen ist bereits erlaubt.",
+  "inputPermissionSteps": [
+    "Wählen Sie Eingabeüberwachung erlauben, um FixKey zu registrieren und die zugehörigen macOS-Berechtigungseinstellungen zu öffnen.",
+    "Aktivieren Sie FixKey unter Systemeinstellungen → Datenschutz & Sicherheit → Eingabeüberwachung. Falls der Eintrag fehlt, wählen Sie + und fügen Sie die aktuelle FixKey.app aus Programme hinzu. Kehren Sie hierher zurück und wählen Sie Erneut prüfen. Starten Sie FixKey neu, wenn macOS Sie dazu auffordert."
+  ],
+  "permissionRequest": "Zugriff auf Bedienungshilfen erlauben",
+  "permissionWaiting": "Die Korrektur bleibt ausgeschaltet, bis der Zugriff erlaubt ist. Wählen Sie nach dem Erlauben des Zugriffs Erneut prüfen.",
+  "permissionSteps": [
+    "Wählen Sie Zugriff auf Bedienungshilfen erlauben und folgen Sie der macOS-Aufforderung.",
+    "Aktivieren Sie FixKey unter Bedienungshilfen. Wenn der Eintrag bereits aktiviert ist, dieser Dialog aber nach einem Neustart von FixKey weiterhin erscheint, entfernen Sie den alten FixKey-Eintrag mit − und fügen Sie die aktuelle FixKey.app mit + erneut hinzu. Eine neu erstellte App stimmt möglicherweise nicht mehr mit dem alten Berechtigungseintrag überein. Falls der Eintrag fehlt, fügen Sie FixKey aus Programme mit + hinzu.",
+    "Aktivieren Sie FixKey auch unter Eingabeüberwachung und prüfen Sie die Berechtigungen anschließend erneut. Wenn keine Aufforderung zur Eingabeüberwachung erscheint, wählen Sie erneut Zugriff auf Bedienungshilfen erlauben. Starten Sie FixKey neu, wenn macOS Sie dazu auffordert."
+  ],
+  "macPermission": "Erlauben Sie FixKey in den Systemeinstellungen unter Bedienungshilfen und Eingabeüberwachung und prüfen Sie die Berechtigungen anschließend erneut.",
+  "windowsPermission": "Verwenden Sie FixKey in Ihrer aktuellen Windows-Sitzung. Geschützte, mit erhöhten Rechten ausgeführte oder nicht unterstützte Steuerelemente bleiben unverändert.",
+  "linuxPermission": "Verwenden Sie eine X11-Sitzung, in der der AT-SPI-Dienst für Barrierefreiheit und XInput2 verfügbar sind. Wayland wird nicht unterstützt.",
+  "openSettings": "Systemeinstellungen öffnen",
+  "recheck": "Erneut prüfen",
+  "later": "Später",
+  "error": "Aktion fehlgeschlagen",
+  "reason": "Ursache",
+  "openLogs": "Protokollordner öffnen",
+  "deleteLogs": "Protokolle löschen",
+  "restore": "Einstellungssicherung wiederherstellen",
+  "support": "GitHub Issues",
+  "logHelp": "Protokolle enthalten Version, Plattform, Ursachencodes und Zeitmessungen. Eingegebener Text ist ausgeschlossen. Protokolle bleiben höchstens sieben Tage auf diesem Gerät und belegen insgesamt höchstens 10 MiB.",
+  "original": "Original",
+  "recognized": "Erkannt",
+  "notRecognized": "Vom Wörterbuch nicht erkannt",
+  "unchecked": "Konnte nicht geprüft werden",
+  "candidates": "Layoutkandidaten",
+  "candidateHelp": "↑ ↓ Auswählen · Enter Anwenden · Esc Schließen",
+  "noCandidates": "Der ursprüngliche Eingabekontext ist nicht mehr verfügbar.",
+  "help": "Hilfe",
+  "helpTopics": [
+    [
+      "Installation",
+      "Installieren Sie das signierte DMG auf macOS ARM64, das NSIS-Installationsprogramm auf Windows x64 oder das AppImage auf Linux X11 x64. Die Angabe von Zielplattformen bedeutet nicht, dass die Kompatibilität mit jeder App geprüft wurde."
+    ],
+    [
+      "Berechtigungen",
+      "Erteilen Sie die von Ihrem Betriebssystem angeforderten Berechtigungen für Bedienungshilfen und Eingaben und wählen Sie anschließend Erneut prüfen. Die Korrektur bleibt inaktiv, bis Berechtigungen und Wörterbücher bereit sind. Unter macOS können die Bedienungshilfen das Erfassen von Tastendrücken auch ohne gesonderten Eintrag unter Eingabeüberwachung ermöglichen. Verwenden Sie Eingabeüberwachung einrichten unter Allgemein, um die Liste zu prüfen. Falls FixKey fehlt, fügen Sie die aktuelle FixKey.app aus Programme mit + hinzu."
+    ],
+    [
+      "Tastaturlayouts und Korrektur",
+      "Koreanisch Dubeolsik und Englisch US QWERTY sind standardmäßig aktiviert. Wählen Sie unter Allgemein weitere Wörterbuch-Tastatur-Paare aus. Die aufgeführte öffentliche Tastatur muss dem Layout entsprechen, mit dem Sie tippen. Wenn zusätzliche Sprachen aktiviert sind, werden Wörter bei Leerzeichen ausgewertet; andernfalls lösen Leerzeichen und Satzzeichen die Auswertung aus. Enter und Tab lösen keine Auswertung aus. Ein Wort wird nur geändert, wenn genau eines der aktivierten Wörterbücher einen Kandidaten erkennt. Verwandte Sprachen können dasselbe Wort erkennen; es bleibt dann unverändert. FixKey wechselt niemals Ihre Eingabesprache. Nicht unterstützte Modifikatortasten, unvollständige Tottastensequenzen und Tastaturvarianten, die nicht dem aufgeführten Layout entsprechen, bleiben unverändert."
+    ],
+    [
+      "Rückgängig machen",
+      "Drücken Sie unmittelbar nach einer automatischen Korrektur Backspace, um das ursprüngliche Wort und sein Trennzeichen wiederherzustellen. Weitere Betätigungen von Backspace verhalten sich wie gewohnt."
+    ],
+    [
+      "Manuelle Kandidatenauswahl",
+      "Weisen Sie eine Tastenkombination zu, tippen Sie ein Wort und verwenden Sie die Tastenkombination. Mit den Pfeiltasten wählen Sie aus, Enter wendet die Auswahl an und Esc schließt die Auswahl. Sie können ausdrücklich einen nicht erkannten Kandidaten auswählen. Wenn Sie die Einfügemarke im ursprünglichen Text bewegen oder die App wechseln, wird die Auswahl geschlossen."
+    ],
+    [
+      "Ausschlüsse",
+      "Fügen Sie unter Ausgeschlossene Apps eine App hinzu. Ausschlüsse werden anhand der stabilen Identität der App zugeordnet. Nicht ermittelte Identitäten bleiben in der Liste."
+    ],
+    [
+      "Datenschutz",
+      "FixKey verarbeitet Eingaben lokal. Es speichert keinen Eingabeverlauf, verwendet die Zwischenablage nicht für Ersetzungen und sendet keine Telemetriedaten. Eingefügte und programmgesteuert erzeugte Zeichenfolgen sowie Zahlen, Emojis, URLs, E-Mail-Adressen und Zeichenfolgen aus mehreren Schriftsystemen sind von der automatischen Korrektur ausgeschlossen."
+    ],
+    [
+      "Updates",
+      "Beim Start und alle 24 Stunden wird über HTTPS nach stabilen Updates gesucht. Vor dem Download ist Ihre Zustimmung erforderlich. Ungültige Signaturen werden abgelehnt. Die Korrektur wird vor der Installation angehalten; die Einstellungen bleiben erhalten."
+    ],
+    [
+      "Fehlerbehebung",
+      "Lesen Sie den Ursachencode, prüfen Sie die Berechtigungen erneut und versuchen Sie es mit einem unterstützten bearbeitbaren Steuerelement. Fehlende Berechtigungen, unbekannte Vertraulichkeit des Feldinhalts, veraltete Ziele und nicht unterstützte Schreibzugriffe führen zur sicheren Ablehnung. Starten Sie nach einem fehlgeschlagenen Update die App neu oder installieren Sie ein signiertes Paket manuell erneut."
+    ],
+    [
+      "Protokolle löschen",
+      "Wählen Sie Protokolle löschen, um lokale Diagnoseprotokolle zu entfernen, oder Protokollordner öffnen, um sie einzusehen. Fügen Sie beim Erstellen eines GitHub-Issues keine privaten Inhalte hinzu."
+    ]
+  ],
+  "listedWordsOnly": "Nur im Wörterbuch aufgeführte Wörter; unbekannte Formen bleiben unverändert."
+}

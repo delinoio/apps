@@ -1,3 +1,4 @@
+import type { UiLocale } from "./locale";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -15,8 +16,9 @@ export interface Settings {
   paused: boolean;
   koreanEnabled: boolean;
   englishEnabled: boolean;
+  additionalLanguages: string[];
   loginStartup: boolean;
-  uiLanguage: "system" | "en" | "ko";
+  uiLanguage: "system" | UiLocale;
   theme: "system" | "light" | "dark";
   shortcut: string | null;
   excludedApps: ExcludedApp[];
@@ -33,7 +35,7 @@ export interface DesktopState {
   settings: Settings;
   version: string;
   platform: string;
-  osLanguage: "en" | "ko";
+  osLanguage: string;
   status: string;
   active: boolean;
   settingsError: string | null;
@@ -43,7 +45,7 @@ export interface DesktopState {
   update: UpdateState;
 }
 export interface CandidateState {
-  language?: "en" | "ko" | null;
+  language?: string | null;
   theme?: "system" | "light" | "dark" | null;
   generation: number;
   revision?: number;

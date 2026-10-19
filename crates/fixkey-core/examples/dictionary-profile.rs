@@ -25,6 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?);
     let startup_ns = initialization.elapsed().as_nanos();
     let validators = Validators {
+        additional: None,
         korean: &korean,
         english: &english,
     };

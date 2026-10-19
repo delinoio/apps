@@ -869,6 +869,7 @@ mod tests {
     ) -> Evaluation {
         let (ko, en) = validators(&["계속해", "키보드가"]);
         let validators = Validators {
+            additional: None,
             korean: &ko,
             english: &en,
         };
@@ -908,6 +909,7 @@ mod tests {
             captured,
             &mut shared,
             &Validators {
+                additional: None,
                 korean: &korean,
                 english: &english,
             },
@@ -1063,6 +1065,7 @@ mod tests {
             captured,
             &mut field,
             &Validators {
+                additional: None,
                 korean: &Accepts(&["계속해"]),
                 english: &Accepts(&["rPthrgo"]),
             },
@@ -1087,6 +1090,7 @@ mod tests {
             captured,
             &mut field,
             &Validators {
+                additional: None,
                 korean: &korean,
                 english: &english,
             },
@@ -1103,6 +1107,7 @@ mod tests {
         let korean = Accepts(&[]);
         let english = Accepts(&["NASA"]);
         let validators = Validators {
+            additional: None,
             korean: &korean,
             english: &english,
         };
@@ -1532,6 +1537,7 @@ mod tests {
                 captured,
                 &mut field,
                 &Validators {
+                    additional: None,
                     korean: &ko,
                     english: &en,
                 },
@@ -1589,6 +1595,7 @@ mod tests {
             captured,
             &mut interfering,
             &Validators {
+                additional: None,
                 korean: &ko,
                 english: &en,
             },

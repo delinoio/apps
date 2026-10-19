@@ -111,7 +111,7 @@ fn empty_paragraph_text(mut text: String, caret: usize, selection_len: usize) ->
 
 #[cfg(any(target_os = "windows", target_os = "linux", test))]
 pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
-    if matches!(scan, 42 | 54 | 58) {
+    if matches!(scan, 29 | 42 | 54 | 56 | 58 | 97 | 100 | 125 | 126) {
         return Key::Modifier;
     }
     if scan == 14 {
@@ -158,6 +158,7 @@ pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
         (52, '.', '>'),
         (53, '/', '?'),
         (57, ' ', ' '),
+        (86, '\u{e080}', '\u{e081}'),
     ];
     symbols
         .iter()
@@ -165,6 +166,16 @@ pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
         .map_or(Key::Reset, |(_, plain, upper)| {
             Key::Character(if shift { *upper } else { *plain })
         })
+}
+
+/// Applies the explicit level-three modifier to the physical key token.
+pub(super) fn level_three(key: Key) -> Key {
+    match key {
+        Key::Character(character) => {
+            crate::multilingual::level_three(character).map_or(Key::Reset, Key::Character)
+        }
+        other => other,
+    }
 }
 
 /// Assigns an equality-checked identity token; a hash alone is not target

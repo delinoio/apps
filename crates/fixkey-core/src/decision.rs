@@ -34,6 +34,8 @@ impl LanguageValidator for MissingValidator {
 
 /// The validators for every supported language.
 pub struct Validators<'a> {
+    /// Additional offline dictionaries; absence means unavailable.
+    pub additional: Option<&'a dyn crate::multilingual::AdditionalValidators>,
     /// Korean validator.
     pub korean: &'a dyn LanguageValidator,
     /// English validator.
@@ -45,6 +47,11 @@ impl Validators<'_> {
         match language {
             Language::KoDubeolsik => self.korean.validate(candidate),
             Language::EnUsQwerty => self.english.validate(candidate),
+            Language::Additional(_) => self
+                .additional
+                .map_or(Validation::Unavailable, |validators| {
+                    validators.validate(language, candidate)
+                }),
         }
     }
 }
@@ -178,7 +185,7 @@ pub fn manual_candidates(
     reconstructions.extend(
         reconstruct(word, enabled)
             .into_iter()
-            .filter(|candidate| candidate.language != original_language),
+            .filter(|candidate| candidate.language != original_language || candidate.text != word),
     );
     validate_all(reconstructions, validators)
         .into_iter()
@@ -260,6 +267,7 @@ mod tests {
             &keys("ajrrl"),
             all(),
             &Validators {
+                additional: None,
                 korean: &korean,
                 english: &english,
             },
@@ -278,6 +286,7 @@ mod tests {
         let english = EnglishValidator::new(Abbreviations);
         let korean = Fixed(&[]);
         let validators = Validators {
+            additional: None,
             korean: &korean,
             english: &english,
         };
@@ -307,6 +316,7 @@ mod tests {
                 &keys(typed),
                 all(),
                 &Validators {
+                    additional: None,
                     korean: &Fixed(&[]),
                     english: &english,
                 },
@@ -321,6 +331,7 @@ mod tests {
         let korean = Fixed(&["ㅜㅁㄴㅁ"]);
         let english = EnglishValidator::new(Abbreviations);
         let validators = Validators {
+            additional: None,
             korean: &korean,
             english: &english,
         };
@@ -338,6 +349,7 @@ mod tests {
             CorrectionOutcome::PreservedSkipped
         );
         let unavailable = Validators {
+            additional: None,
             korean: &MissingValidator,
             english: &english,
         };
@@ -347,6 +359,7 @@ mod tests {
         );
         let korean_only = all().with(Language::EnUsQwerty, false);
         let rejected = Validators {
+            additional: None,
             korean: &Fixed(&[]),
             english: &english,
         };
@@ -365,6 +378,7 @@ mod tests {
         let ko = Fixed(&["계속해", "키보드가"]);
         let en = Fixed(&["keyboard"]);
         let validators = Validators {
+            additional: None,
             korean: &ko,
             english: &en,
         };
@@ -379,6 +393,7 @@ mod tests {
             &keys("zlqhemrk"),
             all(),
             &Validators {
+                additional: None,
                 korean: &Fixed(&[]),
                 english: &Fixed(&["zlqhemrk"]),
             },
@@ -395,6 +410,7 @@ mod tests {
             &keys("rPthrgo"),
             all(),
             &Validators {
+                additional: None,
                 korean: &none,
                 english: &none,
             },
@@ -412,6 +428,7 @@ mod tests {
             &keys("rPthrgo"),
             all(),
             &Validators {
+                additional: None,
                 korean: &ko,
                 english: &en,
             },
@@ -428,6 +445,7 @@ mod tests {
             &keys("hello"),
             all(),
             &Validators {
+                additional: None,
                 korean: &ko,
                 english: &en,
             },
@@ -440,6 +458,7 @@ mod tests {
         let ko = Fixed(&["계속해"]);
         let en = Fixed(&[]);
         let validators = Validators {
+            additional: None,
             korean: &ko,
             english: &en,
         };
@@ -458,6 +477,7 @@ mod tests {
             &keys("rPthrgo"),
             all(),
             &Validators {
+                additional: None,
                 korean: &MissingValidator,
                 english: &en,
             },
@@ -474,6 +494,7 @@ mod tests {
                 &keys("rPthrgo"),
                 ko_off,
                 &Validators {
+                    additional: None,
                     korean: &MissingValidator,
                     english: &en,
                 }
@@ -491,6 +512,7 @@ mod tests {
             &keys("a가"),
             all(),
             &Validators {
+                additional: None,
                 korean: &none,
                 english: &none,
             },
@@ -506,6 +528,7 @@ mod tests {
             "rPthrgo",
             all(),
             &Validators {
+                additional: None,
                 korean: &ko,
                 english: &en,
             },
@@ -520,6 +543,7 @@ mod tests {
             "rPthrgo",
             all(),
             &Validators {
+                additional: None,
                 korean: &MissingValidator,
                 english: &en,
             },
@@ -534,6 +558,7 @@ mod tests {
     fn manual_candidates_keep_disabled_layout_original_once() {
         let unavailable = MissingValidator;
         let validators = Validators {
+            additional: None,
             korean: &unavailable,
             english: &unavailable,
         };
@@ -590,7 +615,11 @@ mod tests {
                 CandidateValidation::ValidatorUnavailable,
             ),
         ] {
-            let validators = Validators { korean, english };
+            let validators = Validators {
+                additional: None,
+                korean,
+                english,
+            };
             let list = manual_candidates("키보드가", korean_disabled, &validators);
             assert_eq!(list.len(), 2);
             assert_eq!(list[0].language, Language::KoDubeolsik);
@@ -606,6 +635,7 @@ mod tests {
             "키보드가",
             english_disabled,
             &Validators {
+                additional: None,
                 korean: &accepted_korean,
                 english: &unavailable,
             },

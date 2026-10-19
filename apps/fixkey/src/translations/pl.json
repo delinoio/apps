@@ -1,0 +1,138 @@
+{
+  "general": "Ogólne",
+  "exclusions": "Wykluczone aplikacje",
+  "shortcuts": "Skróty",
+  "updates": "Aktualizacje",
+  "diagnostics": "Diagnostyka i pomoc",
+  "tagline": "Pisz dalej. Popraw układ klawiatury.",
+  "correction": "Automatyczna korekta",
+  "pause": "Wstrzymaj",
+  "resume": "Wznów",
+  "languages": "Włączone języki",
+  "languageSearch": "Znajdź język lub klawiaturę",
+  "trayPause": "Wstrzymaj korektę",
+  "trayResume": "Wznów korektę",
+  "traySettings": "Ustawienia",
+  "trayExit": "Zakończ",
+  "trayStatus": "Stan korekty",
+  "notificationUpdate": "Dostępna jest aktualizacja. Sprawdź ją i zainstaluj w Ustawieniach.",
+  "notificationAttention": "FixKey wymaga uwagi. Sprawdź kod przyczyny w Ustawieniach.",
+  "korean": "Koreański · Dubeolsik",
+  "english": "Angielski · US QWERTY",
+  "startup": "Uruchamiaj po zalogowaniu",
+  "uiLanguage": "Język interfejsu",
+  "theme": "Motyw",
+  "system": "Systemowy",
+  "light": "Jasny",
+  "dark": "Ciemny",
+  "loading": "Łączenie z FixKey…",
+  "connection": "Nie można połączyć się z aplikacją komputerową.",
+  "retry": "Spróbuj ponownie",
+  "active": "Korekta jest aktywna",
+  "inactive": "Korekta jest nieaktywna",
+  "waitingField": "Oczekiwanie na edytowalne pole tekstowe",
+  "waitingFieldHelp": "Kliknij edytowalne pole tekstowe w innej aplikacji. FixKey czeka, gdy Ustawienia są otwarte lub nie można bezpiecznie zidentyfikować pola, które ma fokus. Szczegóły znajdziesz w sekcji Diagnostyka i pomoc.",
+  "local": "Wpisywany tekst pozostaje na tym urządzeniu. Pola haseł są wykluczone.",
+  "empty": "Brak wykluczonych aplikacji",
+  "emptyDetail": "Korekta może działać w obsługiwanych edytowalnych polach. Dodaj aplikację, aby jej tekst zawsze pozostawał bez zmian.",
+  "add": "Dodaj aplikację",
+  "choose": "Wybierz aplikację",
+  "remove": "Usuń",
+  "unresolved": "Nie ustalono tożsamości",
+  "noApps": "Brak aplikacji, które można zidentyfikować. Otwórz aplikację, którą chcesz wykluczyć, i spróbuj ponownie.",
+  "shortcut": "Ręczny wybór wariantu",
+  "unassigned": "Nieprzypisany",
+  "capture": "Ustaw skrót",
+  "captureHelp": "Naciśnij klawisz wraz z Control, Alt, Command lub Shift. Esc anuluje.",
+  "clear": "Wyczyść",
+  "cancel": "Anuluj",
+  "done": "Gotowe",
+  "currentVersion": "Bieżąca wersja",
+  "checkUpdate": "Sprawdź aktualizacje",
+  "updateConsent": "Pobierz i zainstaluj",
+  "updateHelp": "Aktualizacje są sprawdzane przy uruchomieniu i co 24 godziny. Pobieranie rozpoczyna się wyłącznie za Twoją zgodą.",
+  "recovery": "Jeśli instalacja się nie powiedzie, uruchom ponownie FixKey lub ręcznie zainstaluj ponownie podpisany pakiet. Twoje ustawienia zostaną zachowane. Poprzednie podpisane wersje można zainstalować ponownie ręcznie.",
+  "permission": "Zezwól na dostęp do funkcji dostępności",
+  "permissionHelp": "FixKey potrzebuje dostępu do funkcji dostępności i obserwacji danych wejściowych, aby rozpoznać edytowalne pole i zastąpić tylko zakończone słowo.",
+  "inputPermission": "Zezwól na monitorowanie wprowadzania",
+  "inputPermissionRequest": "Zezwól na monitorowanie wprowadzania",
+  "inputPermissionSetup": "Skonfiguruj monitorowanie wprowadzania",
+  "inputPermissionListHelp": "Dostęp do funkcji dostępności może już umożliwiać nasłuchiwanie klawiszy, nawet gdy FixKey nie figuruje na liście Monitorowanie wprowadzania. macOS nie potwierdza tutaj osobnego wpisu na tej liście. Sprawdź listę w Ustawieniach systemowych i dodaj bieżącą aplikację FixKey.app przyciskiem +, jeśli jej brakuje.",
+  "inputPermissionHelp": "FixKey potrzebuje monitorowania wprowadzania, aby wykrywać klawisze używane do korekty układu klawiatury.",
+  "accessibilityGranted": "Dostęp do funkcji dostępności jest już dozwolony.",
+  "inputPermissionSteps": [
+    "Wybierz Zezwól na monitorowanie wprowadzania, aby zarejestrować FixKey i otworzyć jego ustawienia uprawnień w macOS.",
+    "W Ustawieniach systemowych → Prywatność i ochrona → Monitorowanie wprowadzania włącz FixKey. Jeśli go brakuje, wybierz + i dodaj bieżącą aplikację FixKey.app z folderu Aplikacje. Wróć tutaj i wybierz Sprawdź ponownie. Uruchom ponownie FixKey, jeśli macOS o to poprosi."
+  ],
+  "permissionRequest": "Zezwól na dostęp do funkcji dostępności",
+  "permissionWaiting": "Korekta pozostanie wyłączona do czasu przyznania dostępu. Po włączeniu dostępu wybierz Sprawdź ponownie.",
+  "permissionSteps": [
+    "Wybierz Zezwól na dostęp do funkcji dostępności i postępuj zgodnie z komunikatem macOS.",
+    "Włącz FixKey w sekcji Dostępność. Jeśli jest już włączony, ale to okno nadal pojawia się po ponownym uruchomieniu FixKey, usuń stary wpis FixKey przyciskiem − i użyj +, aby ponownie dodać bieżącą aplikację FixKey.app. Ponownie zbudowana aplikacja może już nie odpowiadać staremu wpisowi uprawnień. Jeśli wpisu brakuje, użyj +, aby dodać FixKey z folderu Aplikacje.",
+    "Włącz FixKey również w sekcji Monitorowanie wprowadzania, a następnie sprawdź ponownie. Jeśli nie pojawi się monit o monitorowanie wprowadzania, ponownie wybierz Zezwól na dostęp do funkcji dostępności. Uruchom ponownie FixKey, jeśli macOS o to poprosi."
+  ],
+  "macPermission": "W Ustawieniach systemowych zezwól FixKey na dostęp w sekcjach Dostępność i Monitorowanie wprowadzania, a następnie sprawdź ponownie.",
+  "windowsPermission": "Używaj FixKey w bieżącej sesji Windows. Pola chronione, działające z podwyższonymi uprawnieniami lub nieobsługiwane pozostają bez zmian.",
+  "linuxPermission": "Używaj sesji X11 z dostępną usługą dostępności AT-SPI i XInput2. Wayland nie jest obsługiwany.",
+  "openSettings": "Otwórz ustawienia systemowe",
+  "recheck": "Sprawdź ponownie",
+  "later": "Później",
+  "error": "Działanie nie powiodło się",
+  "reason": "Przyczyna",
+  "openLogs": "Otwórz folder dzienników",
+  "deleteLogs": "Usuń dzienniki",
+  "restore": "Przywróć kopię zapasową ustawień",
+  "support": "GitHub Issues",
+  "logHelp": "Dzienniki zawierają wersję, platformę, kody przyczyn i czasy operacji. Nie zawierają wpisywanego tekstu. Dzienniki pozostają na tym urządzeniu przez maksymalnie siedem dni i zajmują łącznie nie więcej niż 10 MiB.",
+  "original": "Oryginał",
+  "recognized": "Rozpoznany",
+  "notRecognized": "Nierozpoznany przez słownik",
+  "unchecked": "Nie udało się sprawdzić",
+  "candidates": "Warianty układu klawiatury",
+  "candidateHelp": "↑ ↓ Wybierz · Enter Zastosuj · Esc Zamknij",
+  "noCandidates": "Kontekst źródłowy nie jest już dostępny.",
+  "help": "Pomoc",
+  "helpTopics": [
+    [
+      "Instalacja",
+      "Zainstaluj podpisany pakiet DMG w macOS ARM64, instalator NSIS w Windows x64 lub AppImage w Linux X11 x64. Wskazanie platform docelowych nie oznacza potwierdzonej zgodności z każdą aplikacją."
+    ],
+    [
+      "Uprawnienia",
+      "Przyznaj uprawnienia dostępności i wprowadzania danych wymagane przez system operacyjny, a następnie wybierz Sprawdź ponownie. Korekta pozostaje nieaktywna, dopóki uprawnienia i słowniki nie będą gotowe. W macOS Dostępność może zapewnić skuteczny dostęp do nasłuchiwania klawiszy bez osobnego wpisu w sekcji Monitorowanie wprowadzania. Użyj opcji Skonfiguruj monitorowanie wprowadzania w sekcji Ogólne, aby sprawdzić listę; jeśli brakuje FixKey, użyj +, aby dodać bieżącą aplikację FixKey.app z folderu Aplikacje."
+    ],
+    [
+      "Układy klawiatury i korekta",
+      "Koreański Dubeolsik i angielski US QWERTY są domyślnie włączone. W sekcji Ogólne wybierz dodatkowe pary słowników i klawiatur. Wskazana publiczna klawiatura musi odpowiadać układowi, na którym piszesz. Gdy włączone są dodatkowe języki, słowa są sprawdzane po spacji; w przeciwnym razie sprawdzanie wyzwalają spacje i znaki interpunkcyjne. Enter i Tab go nie wyzwalają. Słowo zmienia się tylko wtedy, gdy dokładnie jeden włączony słownik rozpoznaje wariant. Pokrewne języki mogą rozpoznawać to samo słowo; pozostaje ono wtedy bez zmian. FixKey nigdy nie przełącza języka wprowadzania. Nieobsługiwane modyfikatory, nieukończone sekwencje martwych klawiszy i warianty klawiatury niezgodne ze wskazanym układem pozostają bez zmian."
+    ],
+    [
+      "Cofanie",
+      "Naciśnij Backspace bezpośrednio po automatycznej korekcie, aby przywrócić oryginalne słowo i jego separator. Kolejne naciśnięcia Backspace działają normalnie."
+    ],
+    [
+      "Ręczny wybór wariantu",
+      "Przypisz skrót, wpisz słowo i użyj skrótu. Klawisze strzałek służą do wyboru, Enter stosuje wariant, a Esc zamyka okno. Możesz świadomie wybrać nierozpoznany wariant. Przesunięcie kursora w tekście źródłowym lub zmiana aplikacji zamyka okno wyboru."
+    ],
+    [
+      "Wykluczenia",
+      "Dodaj aplikację w sekcji Wykluczone aplikacje. Wykluczenia są dopasowywane na podstawie stałej tożsamości aplikacji. Aplikacje o nieustalonej tożsamości pozostają na liście."
+    ],
+    [
+      "Prywatność",
+      "FixKey przetwarza wpisywany tekst lokalnie. Nie przechowuje historii wprowadzania, nie używa schowka do zastępowania tekstu i nie wysyła telemetrii. Z automatycznej korekty wykluczone są fragmenty wklejone, wprowadzone programowo, liczbowe, emoji, adresy URL, adresy e-mail oraz fragmenty łączące różne systemy pisma."
+    ],
+    [
+      "Aktualizacje",
+      "Aktualizacje stabilnych wersji są sprawdzane przez HTTPS przy uruchomieniu i co 24 godziny. Przed pobraniem wymagana jest Twoja zgoda. Nieprawidłowe podpisy są odrzucane. Korekta zatrzymuje się przed instalacją; ustawienia pozostają nienaruszone."
+    ],
+    [
+      "Rozwiązywanie problemów",
+      "Odczytaj kod przyczyny, sprawdź ponownie uprawnienia i wypróbuj obsługiwane edytowalne pole. Brak uprawnień, nieznany status wrażliwości pola, nieaktualne pola docelowe i nieobsługiwane operacje zapisu powodują bezpieczną odmowę wykonania korekty. Po nieudanej aktualizacji uruchom ponownie aplikację lub ręcznie zainstaluj ponownie podpisany pakiet."
+    ],
+    [
+      "Usuwanie dzienników",
+      "Wybierz Usuń dzienniki, aby usunąć lokalne dzienniki diagnostyczne, lub Otwórz folder dzienników, aby je przejrzeć. Nie dołączaj prywatnych treści podczas tworzenia zgłoszenia w GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Tylko słowa wymienione w słowniku; nieznane formy pozostają bez zmian."
+}

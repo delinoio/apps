@@ -1,0 +1,138 @@
+{
+  "general": "Alment",
+  "exclusions": "Undantiknar appir",
+  "shortcuts": "Snarvegir",
+  "updates": "Dagføringar",
+  "diagnostics": "Villuleiting og hjálp",
+  "tagline": "Halt fram at skriva. Rætta knappaborðsuppsetingina.",
+  "correction": "Sjálvvirkandi rætting",
+  "pause": "Steðga fyribils",
+  "resume": "Halt fram",
+  "languages": "Virkjað mál",
+  "languageSearch": "Finn eitt mál ella knappaborð",
+  "trayPause": "Steðga rætting fyribils",
+  "trayResume": "Halt fram við rætting",
+  "traySettings": "Stillingar",
+  "trayExit": "Lat aftur",
+  "trayStatus": "Rættingarstøða",
+  "notificationUpdate": "Ein dagføring er tøk. Kanna og set hana inn í Stillingum.",
+  "notificationAttention": "FixKey krevur títt ansni. Kanna orsakarkotuna í Stillingum.",
+  "korean": "Koreanskt · Dubeolsik",
+  "english": "Enskt · US QWERTY",
+  "startup": "Byrja við innritan",
+  "uiLanguage": "Mál í brúkaramótinum",
+  "theme": "Tema",
+  "system": "Skipan",
+  "light": "Ljóst",
+  "dark": "Myrkt",
+  "loading": "Sambindur við FixKey…",
+  "connection": "Ber ikki til at sambinda við skriviborðsappina.",
+  "retry": "Royn aftur",
+  "active": "Rætting er virkin",
+  "inactive": "Rætting er óvirkin",
+  "waitingField": "Bíðar eftir einum tekstteigi, sum kann broytast",
+  "waitingFieldHelp": "Trýst í ein tekstteig, sum kann broytast, í einari aðrari app. FixKey bíðar, meðan Stillingar eru opnar, ella tá ið teigurin við fokus ikki kann eyðmerkjast trygt. Fleiri upplýsingar eru í Villuleiting og hjálp.",
+  "local": "Tað, tú skrivar, verður á hesum tóli. Loyniorðsteigar eru undantiknir.",
+  "empty": "Ongar undantiknar appir",
+  "emptyDetail": "Rætting kann koyra í stuðlaðum tekstteigum, sum kunnu broytast. Legg eina app afturat fyri altíð at lata innsláttin har vera óbroyttan.",
+  "add": "Legg app afturat",
+  "choose": "Vel eina app",
+  "remove": "Tak burtur",
+  "unresolved": "Samleiki ikki staðfestur",
+  "noApps": "Ongar appir, sum kunnu eyðmerkjast, eru tøkar. Opna appina, tú vilt undantaka, og royn aftur.",
+  "shortcut": "Handvirk uppskot",
+  "unassigned": "Ikki ásett",
+  "capture": "Áset snarveg",
+  "captureHelp": "Trýst á ein knapp saman við Control, Alt, Command ella Shift. Esc avlýsir.",
+  "clear": "Rudda",
+  "cancel": "Avlýs",
+  "done": "Liðugt",
+  "currentVersion": "Núverandi útgáva",
+  "checkUpdate": "Kanna eftir dagføringum",
+  "updateConsent": "Tak niður og set inn",
+  "updateHelp": "Kannað verður eftir dagføringum við byrjan og fyri hvørjar 24 tímar. Niðurtøka byrjar bert við tínum samtykki.",
+  "recovery": "Um innlegging miseydnast, endurbyrja FixKey ella set ein undirskrivaðan pakka inn aftur handvirkt. Tínar stillingar verða varðveittar. Eldri undirskrivaðar útgávur kunnu setast inn aftur handvirkt.",
+  "permission": "Loyv atgongd til atkomiligheit",
+  "permissionHelp": "FixKey tørvar atgongd til atkomiligheit og eygleiðing av innslátti fyri at eyðmerkja ein tekstteig, sum kann broytast, og bert skifta fullførda orðið út.",
+  "inputPermission": "Loyv eftirliti við innslátti",
+  "inputPermissionRequest": "Loyv eftirliti við innslátti",
+  "inputPermissionSetup": "Set eftirlit við innslátti upp",
+  "inputPermissionListHelp": "Atkomiligheit kann longu loyva lurtan eftir knappatrýstum, hóast FixKey ikki er á listanum fyri eftirlit við innslátti. macOS váttar ikki her, um ein serstøk skráseting er á listanum. Kanna listan í Skipanarstillingum og legg núverandi FixKey.app afturat við +, um hon manglar.",
+  "inputPermissionHelp": "FixKey tørvar eftirlit við innslátti fyri at finna knappatrýstini, sum verða brúkt til rætting av knappaborðsuppseting.",
+  "accessibilityGranted": "Atgongd til atkomiligheit er longu loyvd.",
+  "inputPermissionSteps": [
+    "Vel Loyv eftirliti við innslátti fyri at skráseta FixKey og opna loyvisstillingarnar hjá henni í macOS.",
+    "Far í Skipanarstillingar → Privatlívsvernd og trygd → Eftirlit við innslátti og virkja FixKey. Um hon manglar, vel + og legg núverandi FixKey.app afturat úr Forritum. Kom aftur higar og vel Kanna aftur. Endurbyrja FixKey, um macOS biður um tað."
+  ],
+  "permissionRequest": "Loyv atgongd til atkomiligheit",
+  "permissionWaiting": "Rætting verður verandi óvirkin, til atgongd er loyvd. Vel Kanna aftur, tá ið tú hevur loyvt atgongd.",
+  "permissionSteps": [
+    "Vel Loyv atgongd til atkomiligheit og fylg boðunum frá macOS.",
+    "Virkja FixKey undir Atkomiligheit. Um hon longu er virkjað, men hesin gluggin framvegis sæst eftir endurbyrjan av FixKey, tak gomlu FixKey-skrásetingina burtur við − og brúka + til at leggja núverandi FixKey.app afturat aftur. Ein app, sum er bygd av nýggjum, samsvarar møguliga ikki longur við gomlu loyvisskrásetingina. Um hon manglar, brúka + til at leggja FixKey afturat úr Forritum.",
+    "Virkja eisini FixKey undir Eftirlit við innslátti og kanna so aftur. Um eingin umbøn um eftirlit við innslátti kemur fram, vel Loyv atgongd til atkomiligheit aftur. Endurbyrja FixKey, um macOS biður um tað."
+  ],
+  "macPermission": "Loyv FixKey undir Atkomiligheit og Eftirlit við innslátti í Skipanarstillingum og kanna so aftur.",
+  "windowsPermission": "Brúka FixKey í tíni núverandi Windows-setu. Vardir ella óstuðlaðir teigar og teigar við hækkaðum rættindum verða latnir óbroyttir.",
+  "linuxPermission": "Brúka eina X11-setu, har AT-SPI-atkomiligheitartænastan og XInput2 eru tøk. Wayland verður ikki stuðlað.",
+  "openSettings": "Opna skipanarstillingar",
+  "recheck": "Kanna aftur",
+  "later": "Seinni",
+  "error": "Gerðin miseydnaðist",
+  "reason": "Orsøk",
+  "openLogs": "Opna loggmappu",
+  "deleteLogs": "Strika loggar",
+  "restore": "Endurles trygdaravrit av stillingum",
+  "support": "GitHub Issues",
+  "logHelp": "Loggar innihalda útgávu, pall, orsakarkotur og tíðarupplýsingar. Innsligin tekstur er ikki við. Loggar verða varðveittir á hesum tóli í mesta lagi í sjey dagar og eru í mesta lagi 10 MiB til samans.",
+  "original": "Upprunaligt",
+  "recognized": "Kent",
+  "notRecognized": "Ikki kent í orðabókini",
+  "unchecked": "Kundi ikki kannast",
+  "candidates": "Uppskot eftir knappaborðsuppseting",
+  "candidateHelp": "↑ ↓ Vel · Enter Nýt · Esc Lat aftur",
+  "noCandidates": "Upprunaliga samanhangið er ikki longur tøkt.",
+  "help": "Hjálp",
+  "helpTopics": [
+    [
+      "Innlegging",
+      "Set undirskrivaða DMG-pakkan inn á macOS ARM64, NSIS-innleggingarforritið á Windows x64 ella AppImage á Linux X11 x64. Ætlaðir pallar merkja ikki, at samsvar við allar appir er váttað."
+    ],
+    [
+      "Loyvi",
+      "Veit tey atkomiligheits- og innsláttarloyvi, sum stýriskipanin biður um, og vel so Kanna aftur. Rætting verður verandi óvirkin, til loyvi og orðabøkur eru klár. Á macOS kann Atkomiligheit veita veruliga atgongd til lurtan eftir knappatrýstum uttan eina serstaka skráseting undir Eftirlit við innslátti. Brúka Set eftirlit við innslátti upp undir Alment til at kanna listan; um FixKey manglar, brúka + til at leggja núverandi FixKey.app afturat úr Forritum."
+    ],
+    [
+      "Knappaborðsuppsetingar og rætting",
+      "Koreanskt Dubeolsik og enskt US QWERTY eru virkjað sum standard. Vel fleiri pør av orðabókum og knappaborðum undir Alment. Almenna knappaborðið á listanum skal samsvara við uppsetingina, tú skrivar við. Tá ið fleiri mál eru virkjað, verða orð mett við millumrúmum; annars seta bæði millumrúm og teknseting meting í gongd. Enter og Tab gera tað ikki. Eitt orð verður bert broytt, tá ið júst ein virkjað orðabók kennir eitt uppskot. Skyld mál kunnu kenna sama orð; tá verður tað latið óbroytt. FixKey skiftir ongantíð innsláttarmál títt. Óstuðlaðir tillagingarknappar, ófullførdir deyðir knappar og knappaborðsfrábrigdi, sum ikki samsvara við uppsetingina á listanum, verða latin óbroytt."
+    ],
+    [
+      "Angra",
+      "Trýst beinanvegin á Backspace eftir sjálvvirkandi rætting fyri at endurskapa upprunaliga orðið og skiljitekn tess. Næstu trýst á Backspace virka sum vanligt."
+    ],
+    [
+      "Handvirk uppskot",
+      "Áset ein snarveg, skriva eitt orð og brúka snarvegin. Pílaknapparnir velja, Enter nýtir valið og Esc letur aftur. Tú kanst sjálv/ur velja eitt uppskot, sum ikki er kent. Valgluggin letur aftur, um tú flytur tekstbendilin í upprunatekstinum ella skiftir app."
+    ],
+    [
+      "Undantøk",
+      "Legg eina app afturat undir Undantiknar appir. Undantøk verða samsvarað við fasta samleikan hjá appini. Samleikar, sum ikki eru staðfestir, verða verandi á listanum."
+    ],
+    [
+      "Privatlívsvernd",
+      "FixKey viðger innslátt á tínum egna tóli. Hon goymir ikki innsláttarsøgu, brúkar ikki klippiborðið til útskifting og sendir ikki fjarmátingardátur. Innlímdar eindir, eindir gjørdar av forritum, tøl, emoji, URL, teldupostadressur og eindir við blandaðum skriftarskipanum eru undantiknar sjálvvirkandi rætting."
+    ],
+    [
+      "Dagføringar",
+      "Kannað verður eftir støðugum dagføringum um HTTPS við byrjan og fyri hvørjar 24 tímar. Tú gevur samtykki áðrenn niðurtøku. Ógildar undirskriftir verða vrakaðar. Rætting steðgar undan innlegging; stillingar verða varðveittar óbroyttar."
+    ],
+    [
+      "Villuleiting",
+      "Les orsakarkotuna, kanna loyvini aftur og royn ein stuðlaðan tekstteig, sum kann broytast. Manglandi loyvi, ókend viðkvæmni hjá teigi, ótíðarhóskandi mál og óstuðlað skriving elva til, at broyting verður noktað av trygdarávum. Endurbyrja ella set ein undirskrivaðan pakka inn aftur handvirkt, um dagføring miseydnast."
+    ],
+    [
+      "Striking av loggum",
+      "Vel Strika loggar fyri at taka staðbundnar villuleitingarloggar burtur, ella Opna loggmappu fyri at kanna teir. Tak ikki privat innihald við, tá ið tú stovnar eitt mál á GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Bert orð, sum standa í orðabókini; ókendir formar verða ikki broyttir."
+}

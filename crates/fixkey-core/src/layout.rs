@@ -1,4 +1,4 @@
-//! Layout reconstruction between Korean Dubeolsik and US English QWERTY.
+//! Layout reconstruction for the default Korean/English pair and bundled public keyboards.
 //!
 //! Both layouts share the same physical keys, so a typed word is modeled as a
 //! *key sequence* expressed with the characters the US QWERTY layout produces
@@ -356,10 +356,16 @@ fn is_hangul(c: char) -> bool {
     (SYLLABLE_BASE..=SYLLABLE_LAST).contains(&code) || (0x3131..=0x3163).contains(&code)
 }
 
-/// Returns the language whose layout `word` is currently written in, or
-/// `None` for empty, mixed-script or unsupported text.
+/// Returns a compatible representation for labeling the original text.
+///
+/// Shared scripts do not identify a unique keyboard. Automatic correction
+/// proves the source with directly observed keys instead of using this label.
+/// Empty, mixed-script and unsupported text have no label.
 #[must_use]
 pub fn detect_language(word: &str) -> Option<Language> {
+    if !word.chars().any(char::is_alphabetic) || crate::tokenizer::classify_token(word).is_some() {
+        return None;
+    }
     let mut chars = word.chars().peekable();
     chars.peek()?;
     if is_word_with_internal_separators(word.chars(), is_hangul) {
@@ -369,7 +375,10 @@ pub fn detect_language(word: &str) -> Option<Language> {
     {
         Some(Language::EnUsQwerty)
     } else {
-        None
+        Language::ALL
+            .into_iter()
+            .filter(|language| matches!(language, Language::Additional(_)))
+            .find(|language| crate::multilingual::infer(word, *language).is_some())
     }
 }
 
@@ -383,6 +392,7 @@ pub fn keys_from_text(text: &str, language: Language) -> Option<Vec<char>> {
         return None;
     }
     match language {
+        Language::Additional(_) => crate::multilingual::infer(text, language),
         Language::EnUsQwerty => text
             .chars()
             .all(is_english_word_char)
@@ -415,14 +425,21 @@ pub fn keys_from_text(text: &str, language: Language) -> Option<Vec<char>> {
 
 /// Interprets a key sequence under `language`'s layout.
 ///
-/// Returns `None` when a key has no meaning in that layout. Apostrophes and
-/// hyphens are preserved when they occur between letter keys.
+/// Returns `None` when a key has no meaning in that layout. The original pair
+/// preserves internal apostrophes and hyphens. Additional keyboards interpret
+/// punctuation positions and dead keys through their compiled public tables.
 #[must_use]
 pub fn text_from_keys(keys: &[char], language: Language) -> Option<String> {
     if keys.is_empty() {
         return None;
     }
     match language {
+        Language::Additional(_) => {
+            let text = crate::multilingual::render(keys, language, false)?;
+            (text.chars().any(char::is_alphabetic)
+                && crate::tokenizer::classify_token(&text).is_none())
+            .then_some(text)
+        }
         Language::EnUsQwerty => keys
             .iter()
             .all(|key| is_english_word_char(*key))
@@ -446,6 +463,44 @@ pub fn text_from_keys(keys: &[char], language: Language) -> Option<String> {
     }
 }
 
+/// Replays a complete physical insertion, including punctuation and dead keys.
+///
+/// This is observation proof, not word eligibility or dictionary acceptance.
+#[must_use]
+pub fn observed_text(keys: &[char], language: Language, partial: bool) -> Option<String> {
+    if keys.is_empty() {
+        return None;
+    }
+    if matches!(language, Language::Additional(_)) {
+        return crate::multilingual::render(keys, language, partial);
+    }
+    if keys
+        .iter()
+        .any(|key| !key.is_ascii_graphic() && *key != ' ')
+    {
+        return None;
+    }
+    if language == Language::EnUsQwerty {
+        return Some(keys.iter().collect());
+    }
+    let mut rendered = String::new();
+    let mut letters = Vec::new();
+    for key in keys.iter().copied().chain(std::iter::once('\0')) {
+        if key.is_ascii_alphabetic() {
+            letters.push(key);
+            continue;
+        }
+        if !letters.is_empty() {
+            rendered.push_str(&text_from_keys(&letters, language)?);
+            letters.clear();
+        }
+        if key != '\0' {
+            rendered.push(key);
+        }
+    }
+    Some(rendered)
+}
+
 /// One interpretation of a word under an enabled layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reconstruction {
@@ -467,12 +522,11 @@ pub fn reconstruct_from_keys(
     recorded_keys: &[char],
     enabled: LanguageSet,
 ) -> Option<Vec<Reconstruction>> {
-    let current = detect_language(word)?;
-    // Preserve the text-only decoder's rejection of unsupported Korean input,
-    // including standalone compound compatibility jamo.
-    keys_from_text(word, current)?;
-    if !is_word_with_internal_separators(recorded_keys.iter().copied(), |c| c.is_ascii_alphabetic())
-        || text_from_keys(recorded_keys, current).as_deref() != Some(word)
+    if !word.chars().any(char::is_alphabetic)
+        || crate::tokenizer::classify_token(word).is_some()
+        || !Language::ALL
+            .into_iter()
+            .any(|language| text_from_keys(recorded_keys, language).as_deref() == Some(word))
     {
         return None;
     }
@@ -496,18 +550,36 @@ pub fn reconstruct_from_keys(
 /// languages whose layout cannot represent the key sequence are omitted.
 #[must_use]
 pub fn reconstruct(word: &str, enabled: LanguageSet) -> Vec<Reconstruction> {
-    let Some(current) = detect_language(word) else {
+    if word.is_empty() || crate::tokenizer::classify_token(word).is_some() {
         return Vec::new();
-    };
-    let Some(keys) = keys_from_text(word, current) else {
-        return Vec::new();
-    };
-    enabled
+    }
+    let mut candidates = Vec::new();
+    let sources: Vec<_> = if enabled
         .enabled()
-        .filter_map(|language| {
-            text_from_keys(&keys, language).map(|text| Reconstruction { language, text })
-        })
-        .collect()
+        .any(|language| matches!(language, Language::Additional(_)))
+    {
+        Language::ALL
+            .into_iter()
+            .filter(|language| enabled.is_enabled(*language))
+            .collect()
+    } else {
+        detect_language(word).into_iter().collect()
+    };
+    for source in sources {
+        let Some(keys) = keys_from_text(word, source) else {
+            continue;
+        };
+        for language in enabled.enabled() {
+            if let Some(text) = text_from_keys(&keys, language)
+                && !candidates.iter().any(|candidate: &Reconstruction| {
+                    candidate.language == language && candidate.text == text
+                })
+            {
+                candidates.push(Reconstruction { language, text });
+            }
+        }
+    }
+    candidates
 }
 
 #[cfg(test)]

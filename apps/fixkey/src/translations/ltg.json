@@ -1,0 +1,138 @@
+{
+  "general": "Vys puorejais",
+  "exclusions": "Izslāgtuos programys",
+  "shortcuts": "Tausteņu kombinacejis",
+  "updates": "Atjaunynuojumi",
+  "diagnostics": "Diagnostika i paleidzeiba",
+  "tagline": "Turpynoj roksteit. Loboj izkuortuojumu.",
+  "correction": "Automatiska lobuošona",
+  "pause": "Apturēt",
+  "resume": "Turpynuot",
+  "languages": "Īslāgtuos volūdys",
+  "languageSearch": "Atrast volūdu voi tastaturu",
+  "trayPause": "Apturēt lobuošonu",
+  "trayResume": "Turpynuot lobuošonu",
+  "traySettings": "Īstatejumi",
+  "trayExit": "Izīt",
+  "trayStatus": "Lobuošonys stuovūklis",
+  "notificationUpdate": "Ir pīejams atjaunynuojums. Puorsaverit i instalējit tū īstatejumūs.",
+  "notificationAttention": "FixKey vajag jiusu uzmanēbu. Puorbaudit īmesla kodu īstatejumūs.",
+  "korean": "Korejīšu · Dubeolsik",
+  "english": "Angļu · US QWERTY",
+  "startup": "Palaist, pīsasokūt sistemā",
+  "uiLanguage": "Saskarnis volūda",
+  "theme": "Izskots",
+  "system": "Sistemys",
+  "light": "Gaišs",
+  "dark": "Tumss",
+  "loading": "Savīnoj ar FixKey…",
+  "connection": "Navar savīnuotīs ar dorgolda programu.",
+  "retry": "Mēginuot vāļreiz",
+  "active": "Lobuošona ir īslāgta",
+  "inactive": "Lobuošona ir izslāgta",
+  "waitingField": "Gaida redigejamu teksta lauku",
+  "waitingFieldHelp": "Nūklykstynojit redigejamā teksta laukā cytā programā. FixKey gaida, kamer ir attaiseiti īstatejumi voi navar drūši atpazeit fokusā asūšū lauku. Seikuoka informaceja ir sadaļā Diagnostika i paleidzeiba.",
+  "local": "Jiusu īvade paleik itymā īreicē. Paroļu lauki ir izslāgti.",
+  "empty": "Nav izslāgtu programu",
+  "emptyDetail": "Lobuošona var dorbuotīs atbolsteituos redigejamūs elementos. Davīnojit programu, lai tuos īvade vysod paleiktu namaināta.",
+  "add": "Davīnuot programu",
+  "choose": "Izavielēt programu",
+  "remove": "Nūjimt",
+  "unresolved": "Identitate nav nūskaidruota",
+  "noApps": "Nav pīejamu atpazeistamu programu. Attaisit programu, kuru gribit izslāgt, i mēginojit vāļreiz.",
+  "shortcut": "Rūkas izavielis kandidati",
+  "unassigned": "Nav pīškirta",
+  "capture": "Īstateit tausteņu kombinaceju",
+  "captureHelp": "Nūspīdit tausteņu kūpā ar Control, Alt, Command voi Shift. Esc atceļ.",
+  "clear": "Nūteireit",
+  "cancel": "Atceļt",
+  "done": "Gatovs",
+  "currentVersion": "Pašreizejuo verseja",
+  "checkUpdate": "Puorbaudeit atjaunynuojumus",
+  "updateConsent": "Lejupluodēt i instalēt",
+  "updateHelp": "Atjaunynuojumi teik puorbaudeiti palaižūt i ik piec 24 stuņdem. Lejupluode suocās tikai ar jiusu pīkrišonu.",
+  "recovery": "Ka instaliešona naizadūd, puorlaizit FixKey voi ar rūku puorinstalējit paraksteitu pakotni. Jiusu īstatejumi teik saglobuoti. Īprīkšejis paraksteituos versejis var puorinstalēt ar rūku.",
+  "permission": "Atļaut pīkļuvi pīejameibai",
+  "permissionHelp": "FixKey vajag pīkļuvi pīejameibai i īvadis nūvāruošonai, lai atpazeitu redigejamu elementu i aizstātu tikai pabeigtū vuordu.",
+  "inputPermission": "Atļaut īvadis nūvāruošonu",
+  "inputPermissionRequest": "Atļaut īvadis nūvāruošonu",
+  "inputPermissionSetup": "Īstateit īvadis nūvāruošonu",
+  "inputPermissionListHelp": "Pīejameiba jau var atļaut tausteņu klausišonu, ari ka FixKey nav īvadis nūvāruošonys sarokstā. macOS ite naapstyprynoj atsevišku īrokstu sarokstā. Puorbaudit sarokstu sistemys īstatejumūs i ar + davīnojit pašreizejū FixKey.app, ka tuos nav.",
+  "inputPermissionHelp": "FixKey vajag īvadis nūvāruošonu, lai nūteiktu tausteņus, kas lītuoti tastaturys izkuortuojuma lobuošonai.",
+  "accessibilityGranted": "Pīkļuve pīejameibai jau ir atļauta.",
+  "inputPermissionSteps": [
+    "Izavielejit Atļaut īvadis nūvāruošonu, lai registreitu FixKey i attaiseitu tuos macOS atļauju īstatejumus.",
+    "Sistemys īstatejumūs → Privatums i drūšeiba → Īvadis nūvāruošona īslādzit FixKey. Ka tuos nav, izavielejit + i nu Programom davīnojit pašreizejū FixKey.app. Atsagrīzit ite i izavielejit Puorbaudeit vāļreiz. Puorlaizit FixKey, ka macOS tū prosa."
+  ],
+  "permissionRequest": "Atļaut pīkļuvi pīejameibai",
+  "permissionWaiting": "Lobuošona paleiks izslāgta, kamer pīkļuve nateiks atļauta. Piec pīkļuvis īslāgšonys izavielejit Puorbaudeit vāļreiz.",
+  "permissionSteps": [
+    "Izavielejit Atļaut pīkļuvi pīejameibai i sekojit macOS nūruodem.",
+    "Īslādzit FixKey sadaļā Pīejameiba. Ka tuo jau ir īslāgta, bet itys dialogs paleik piec FixKey puorlaišonys, ar − nūjemit vacū FixKey īrokstu i ar + vāļreiz davīnojit pašreizejū FixKey.app. Nu jauna būvēta programa var vairuok naatbiļst vacajam atļaujis īrokstam. Ka īroksta nav, ar + davīnojit FixKey nu Programom.",
+    "Īslādzit FixKey ari sadaļā Īvadis nūvāruošona i tod puorbaudit vāļreiz. Ka naparuodās īvadis nūvāruošonys pīprasejums, vāļreiz izavielejit Atļaut pīkļuvi pīejameibai. Puorlaizit FixKey, ka macOS tū prosa."
+  ],
+  "macPermission": "Sistemys īstatejumūs atļaujit FixKey sadaļuos Pīejameiba i Īvadis nūvāruošona, tod puorbaudit vāļreiz.",
+  "windowsPermission": "Lītojit FixKey sovejā pašreizejā Windows sesijā. Aizsorguoti, ar paaugstynuotom tīseibom voi naatbolsteiti elementi paleik namaināti.",
+  "linuxPermission": "Lītojit X11 sesiju ar pīejamu AT-SPI pīejameibys pakolpuojumu i XInput2. Wayland nav atbolsteits.",
+  "openSettings": "Attaiseit sistemys īstatejumus",
+  "recheck": "Puorbaudeit vāļreiz",
+  "later": "Vāļuok",
+  "error": "Darbeiba naizadeve",
+  "reason": "Īmesls",
+  "openLogs": "Attaiseit žurnālu mapi",
+  "deleteLogs": "Dzēst žurnālus",
+  "restore": "Atjaunuot īstatejumu rezerves kopeju",
+  "support": "GitHub Issues",
+  "logHelp": "Žurnālūs ir verseja, platforma, īmeslu kodi i laika duoti. Īvadeitais teksts nateik īkļauts. Žurnāli paleik itymā īreicē na ilguok par septem dīnom i kūpā naaizjem vairuok par 10 MiB.",
+  "original": "Suokūtnejais",
+  "recognized": "Atpazeits",
+  "notRecognized": "Vuordneica naatpazeist",
+  "unchecked": "Naizadeve puorbaudeit",
+  "candidates": "Izkuortuojuma kandidati",
+  "candidateHelp": "↑ ↓ Izavielēt · Enter Pīmāruot · Esc Aiztaiseit",
+  "noCandidates": "Suokūtnejais konteksts vaira nav pīejams.",
+  "help": "Paleidzeiba",
+  "helpTopics": [
+    [
+      "Instaliešona",
+      "Instalējit paraksteitu DMG macOS ARM64 sistemā, NSIS instalatoru Windows x64 sistemā voi AppImage Linux X11 x64 sistemā. Nūruodeituos platformys nanūzeimoj puorbaudeitu saderēbu ar kotru programu."
+    ],
+    [
+      "Atļaujis",
+      "Pīškirit operētājsistemys pīpraseituos pīejameibys i īvadis atļaujis, tod izavielejit Puorbaudeit vāļreiz. Lobuošona paleik naaktiva, kamer atļaujis i vuordneicys nav gatavys. macOS sistemā Pīejameiba var nūdrūšynuot tausteņu klausišonys pīkļuvi bez atseviška īvadis nūvāruošonys īroksta. Sadaļā Vys puorejais lītojit Īstateit īvadis nūvāruošonu, lai puorbaudeitu sarokstu; ka FixKey nav, ar + davīnojit pašreizejū FixKey.app nu Programom."
+    ],
+    [
+      "Izkuortuojumi i lobuošona",
+      "Korejīšu Dubeolsik i ASV angļu US QWERTY ir īslāgti piec nūklusiejuma. Sadaļā Vys puorejais izavielejit papyldu vuordneicu i tastaturu puorus. Sarokstā nūruodeitajai publiskajai tastaturai juoatbiļst izkuortuojumam, ar kuru rokstot. Ka ir īslāgtys papyldu volūdys, vuordi teik izvierteiti, īvodūt atstarpis; citaiž izvierteišonu īrosynoj atstarpis i pīturzeimis. Enter i Tab tū naīrosynoj. Vuords mainās tikai tod, ka teiši vīna īslāgta vuordneica atpazeist kandidatu. Radnīceigys volūdys var atpazeit tū pošu vuordu; tod tys paleik namaināts. FixKey nikod napuorslādz jiusu īvadis volūdu. Naatbolsteiti modifikatori, napabeigti diakritiskūs zeimu tausteņi i tastaturys varianti, kas naatbiļst sarokstā nūruodeitajam izkuortuojumam, paleik namaināti."
+    ],
+    [
+      "Atsaukšona",
+      "Tūlen piec automatiskuos lobuošonys nūspīdit Backspace, lai atjaunuotu suokūtnejū vuordu i tuo atdaleituoju. Tuoluokī Backspace spīdīni dorbojās kai parosti."
+    ],
+    [
+      "Rūkas izavielis kandidati",
+      "Pīškirit tausteņu kombinaceju, īrokstit vuordu i lītojit tū kombinaceju. Bultu tausteņi izavielej, Enter pīmāroj i Esc aiztaisa. Varat apzynuotei izavielēt naatpazeitu kandidatu. Suokūtnejā teksta kursora puorvītuošona voi programu maiņa aiztaisa izavielni."
+    ],
+    [
+      "Izslāgšona",
+      "Davīnojit programu sadaļā Izslāgtuos programys. Izslāgšonai teik lītuota programys pastuoveiguo identitate. Nanūskaidruotuos identitatis paleik sarokstā."
+    ],
+    [
+      "Privatums",
+      "FixKey apstruodoj īvadi lokali. Tys nasagloboj īvadis viesturi, nalītoj starplyktuvi aizstuošonai i nasyuta telemetriju. Īleimāti, programatiski īvadeiti, skaitļu, emocijzeimu, URL, e-posta i jauktu rokstu sistemu elementi ir izslāgti nu automatiskuos lobuošonys."
+    ],
+    [
+      "Atjaunynuojumi",
+      "Stabilī atjaunynuojumi teik puorbaudeiti, lītojūt HTTPS, palaižūt i ik piec 24 stuņdem. Pyrms lejupluodis jius dūdit pīkrišonu. Nadereigi paroksti teik nūraideiti. Lobuošona apstuojās pyrms instaliešonys; īstatejumi paleik naskorti."
+    ],
+    [
+      "Problemys nūvieršona",
+      "Izlosit īmesla kodu, vāļreiz puorbaudit atļaujis i izmieginojit atbolsteitu redigejamu elementu. Tryukstūšys atļaujis, nazynuoma lauka sensibilitate, nūvacuojuši mierki i naatbolsteita īroksteišona izraisa drūšu atteikumu. Piec atjaunynuojuma naizadūšonys puorlaizit programu voi ar rūku puorinstalējit paraksteitu pakotni."
+    ],
+    [
+      "Žurnālu dziešona",
+      "Izavielejit Dzēst žurnālus, lai nūjimtu lokalūs diagnostikys žurnālus, voi Attaiseit žurnālu mapi, lai tūs puorsavērtu. Atverūt GitHub ziņu par problemu, naīkļaujit privatu saturu."
+    ]
+  ],
+  "listedWordsOnly": "Tikai vuordineicā īraksteiti vuordi; nazynomuos formas palīk namainētas."
+}

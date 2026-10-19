@@ -1,0 +1,803 @@
+[
+  {
+    "id": "bg-xkb-bg",
+    "locale": "bg",
+    "layout": "bg",
+    "dictionary": "bg",
+    "name": "Bulgarian",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "br-xkb-fr-bre",
+    "locale": "br",
+    "layout": "fr:bre",
+    "dictionary": "br",
+    "name": "Breton",
+    "validation": "listed-words",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "ca-xkb-es-cat",
+    "locale": "ca",
+    "layout": "es:cat",
+    "dictionary": "ca",
+    "name": "Catalan",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1)"
+  },
+  {
+    "id": "ca-valencia-xkb-es-cat",
+    "locale": "ca-valencia",
+    "layout": "es:cat",
+    "dictionary": "ca-valencia",
+    "name": "Catalan (Valencia)",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1)"
+  },
+  {
+    "id": "cs-xkb-cz",
+    "locale": "cs",
+    "layout": "cz",
+    "dictionary": "cs",
+    "name": "Czech",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "cy-xkb-gb-extd",
+    "locale": "cy",
+    "layout": "gb:extd",
+    "dictionary": "cy",
+    "name": "Welsh",
+    "validation": "hunspell",
+    "license": "LGPL-3.0"
+  },
+  {
+    "id": "da-xkb-dk",
+    "locale": "da",
+    "layout": "dk",
+    "dictionary": "da",
+    "name": "Danish",
+    "validation": "listed-words",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "de-xkb-de",
+    "locale": "de",
+    "layout": "de",
+    "dictionary": "de",
+    "name": "German",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR GPL-3.0)"
+  },
+  {
+    "id": "de-at-xkb-at",
+    "locale": "de-AT",
+    "layout": "at",
+    "dictionary": "de-AT",
+    "name": "German (Austria)",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR GPL-3.0)"
+  },
+  {
+    "id": "de-ch-xkb-ch",
+    "locale": "de-CH",
+    "layout": "ch",
+    "dictionary": "de-CH",
+    "name": "German (Switzerland)",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR GPL-3.0)"
+  },
+  {
+    "id": "el-xkb-gr",
+    "locale": "el",
+    "layout": "gr",
+    "dictionary": "el",
+    "name": "Greek",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "el-polyton-xkb-gr-polytonic",
+    "locale": "el-polyton",
+    "layout": "gr:polytonic",
+    "dictionary": "el-polyton",
+    "name": "Greek (Polyton)",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "en-au-xkb-us",
+    "locale": "en-AU",
+    "layout": "us",
+    "dictionary": "en-AU",
+    "name": "English (Australia)",
+    "validation": "hunspell",
+    "license": "(MIT AND BSD)"
+  },
+  {
+    "id": "en-ca-xkb-us",
+    "locale": "en-CA",
+    "layout": "us",
+    "dictionary": "en-CA",
+    "name": "English (Canada)",
+    "validation": "hunspell",
+    "license": "(MIT AND BSD)"
+  },
+  {
+    "id": "en-gb-xkb-gb",
+    "locale": "en-GB",
+    "layout": "gb",
+    "dictionary": "en-GB",
+    "name": "English (United Kingdom)",
+    "validation": "hunspell",
+    "license": "(MIT AND BSD)"
+  },
+  {
+    "id": "en-za-xkb-us",
+    "locale": "en-ZA",
+    "layout": "us",
+    "dictionary": "en-ZA",
+    "name": "English (South Africa)",
+    "validation": "hunspell",
+    "license": "LGPL-2.1"
+  },
+  {
+    "id": "eo-xkb-epo",
+    "locale": "eo",
+    "layout": "epo",
+    "dictionary": "eo",
+    "name": "Esperanto",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "es-xkb-es",
+    "locale": "es",
+    "layout": "es",
+    "dictionary": "es",
+    "name": "Spanish",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-ar-xkb-latam",
+    "locale": "es-AR",
+    "layout": "latam",
+    "dictionary": "es-AR",
+    "name": "Spanish (Argentina)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-bo-xkb-latam",
+    "locale": "es-BO",
+    "layout": "latam",
+    "dictionary": "es-BO",
+    "name": "Spanish (Bolivia)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-cl-xkb-latam",
+    "locale": "es-CL",
+    "layout": "latam",
+    "dictionary": "es-CL",
+    "name": "Spanish (Chile)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-co-xkb-latam",
+    "locale": "es-CO",
+    "layout": "latam",
+    "dictionary": "es-CO",
+    "name": "Spanish (Colombia)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-cr-xkb-latam",
+    "locale": "es-CR",
+    "layout": "latam",
+    "dictionary": "es-CR",
+    "name": "Spanish (Costa Rica)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-cu-xkb-latam",
+    "locale": "es-CU",
+    "layout": "latam",
+    "dictionary": "es-CU",
+    "name": "Spanish (Cuba)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-do-xkb-latam",
+    "locale": "es-DO",
+    "layout": "latam",
+    "dictionary": "es-DO",
+    "name": "Spanish (Dominican Republic)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-ec-xkb-latam",
+    "locale": "es-EC",
+    "layout": "latam",
+    "dictionary": "es-EC",
+    "name": "Spanish (Ecuador)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-gt-xkb-latam",
+    "locale": "es-GT",
+    "layout": "latam",
+    "dictionary": "es-GT",
+    "name": "Spanish (Guatemala)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-hn-xkb-latam",
+    "locale": "es-HN",
+    "layout": "latam",
+    "dictionary": "es-HN",
+    "name": "Spanish (Honduras)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-mx-xkb-latam",
+    "locale": "es-MX",
+    "layout": "latam",
+    "dictionary": "es-MX",
+    "name": "Spanish (Mexico)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-ni-xkb-latam",
+    "locale": "es-NI",
+    "layout": "latam",
+    "dictionary": "es-NI",
+    "name": "Spanish (Nicaragua)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-pa-xkb-latam",
+    "locale": "es-PA",
+    "layout": "latam",
+    "dictionary": "es-PA",
+    "name": "Spanish (Panama)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-pe-xkb-latam",
+    "locale": "es-PE",
+    "layout": "latam",
+    "dictionary": "es-PE",
+    "name": "Spanish (Peru)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-ph-xkb-latam",
+    "locale": "es-PH",
+    "layout": "latam",
+    "dictionary": "es-PH",
+    "name": "Spanish (Philippines)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-pr-xkb-latam",
+    "locale": "es-PR",
+    "layout": "latam",
+    "dictionary": "es-PR",
+    "name": "Spanish (Puerto Rico)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-py-xkb-latam",
+    "locale": "es-PY",
+    "layout": "latam",
+    "dictionary": "es-PY",
+    "name": "Spanish (Paraguay)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-sv-xkb-latam",
+    "locale": "es-SV",
+    "layout": "latam",
+    "dictionary": "es-SV",
+    "name": "Spanish (El Salvador)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-us-xkb-latam",
+    "locale": "es-US",
+    "layout": "latam",
+    "dictionary": "es-US",
+    "name": "Spanish (United States of America)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-uy-xkb-latam",
+    "locale": "es-UY",
+    "layout": "latam",
+    "dictionary": "es-UY",
+    "name": "Spanish (Uruguay)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "es-ve-xkb-latam",
+    "locale": "es-VE",
+    "layout": "latam",
+    "dictionary": "es-VE",
+    "name": "Spanish (Venezuela)",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)"
+  },
+  {
+    "id": "et-xkb-ee",
+    "locale": "et",
+    "layout": "ee",
+    "dictionary": "et",
+    "name": "Estonian",
+    "validation": "hunspell",
+    "license": "LGPL-2.1"
+  },
+  {
+    "id": "eu-xkb-es",
+    "locale": "eu",
+    "layout": "es",
+    "dictionary": "eu",
+    "name": "Basque",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "fa-xkb-ir",
+    "locale": "fa",
+    "layout": "ir",
+    "dictionary": "fa",
+    "name": "Persian",
+    "validation": "hunspell",
+    "license": "Apache-2.0"
+  },
+  {
+    "id": "fo-xkb-fo",
+    "locale": "fo",
+    "layout": "fo",
+    "dictionary": "fo",
+    "name": "Faroese",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "fr-xkb-fr",
+    "locale": "fr",
+    "layout": "fr",
+    "dictionary": "fr",
+    "name": "French",
+    "validation": "hunspell",
+    "license": "MPL-2.0"
+  },
+  {
+    "id": "fur-xkb-it",
+    "locale": "fur",
+    "layout": "it",
+    "dictionary": "fur",
+    "name": "Friulian",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "fy-xkb-nl",
+    "locale": "fy",
+    "layout": "nl",
+    "dictionary": "fy",
+    "name": "Western Frisian",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "ga-xkb-ie",
+    "locale": "ga",
+    "layout": "ie",
+    "dictionary": "ga",
+    "name": "Irish",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "gd-xkb-gb-extd",
+    "locale": "gd",
+    "layout": "gb:extd",
+    "dictionary": "gd",
+    "name": "Scottish Gaelic",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "gl-xkb-es",
+    "locale": "gl",
+    "layout": "es",
+    "dictionary": "gl",
+    "name": "Galician",
+    "validation": "listed-words",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "he-xkb-il",
+    "locale": "he",
+    "layout": "il",
+    "dictionary": "he",
+    "name": "Hebrew",
+    "validation": "hunspell",
+    "license": "AGPL-3.0"
+  },
+  {
+    "id": "hr-xkb-hr",
+    "locale": "hr",
+    "layout": "hr",
+    "dictionary": "hr",
+    "name": "Croatian",
+    "validation": "hunspell",
+    "license": "(LGPL-2.1 OR SISSL)"
+  },
+  {
+    "id": "hu-xkb-hu",
+    "locale": "hu",
+    "layout": "hu",
+    "dictionary": "hu",
+    "name": "Hungarian",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "hy-xkb-am",
+    "locale": "hy",
+    "layout": "am",
+    "dictionary": "hy",
+    "name": "Armenian",
+    "validation": "listed-words",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "hyw-xkb-am-western",
+    "locale": "hyw",
+    "layout": "am:western",
+    "dictionary": "hyw",
+    "name": "Western Armenian",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "ia-xkb-us-intl",
+    "locale": "ia",
+    "layout": "us:intl",
+    "dictionary": "ia",
+    "name": "Interlingua",
+    "validation": "listed-words",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "ie-xkb-us-intl",
+    "locale": "ie",
+    "layout": "us:intl",
+    "dictionary": "ie",
+    "name": "Interlingue",
+    "validation": "hunspell",
+    "license": "Apache-2.0"
+  },
+  {
+    "id": "is-xkb-is",
+    "locale": "is",
+    "layout": "is",
+    "dictionary": "is",
+    "name": "Icelandic",
+    "validation": "hunspell",
+    "license": "CC-BY-SA-3.0"
+  },
+  {
+    "id": "it-xkb-it",
+    "locale": "it",
+    "layout": "it",
+    "dictionary": "it",
+    "name": "Italian",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "ka-xkb-ge",
+    "locale": "ka",
+    "layout": "ge",
+    "dictionary": "ka",
+    "name": "Georgian",
+    "validation": "hunspell",
+    "license": "MIT"
+  },
+  {
+    "id": "la-xkb-us-intl",
+    "locale": "la",
+    "layout": "us:intl",
+    "dictionary": "la",
+    "name": "Latin",
+    "validation": "listed-words",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "lb-xkb-ch-fr",
+    "locale": "lb",
+    "layout": "ch:fr",
+    "dictionary": "lb",
+    "name": "Luxembourgish",
+    "validation": "hunspell",
+    "license": "EUPL-1.1"
+  },
+  {
+    "id": "lt-xkb-lt",
+    "locale": "lt",
+    "layout": "lt",
+    "dictionary": "lt",
+    "name": "Lithuanian",
+    "validation": "hunspell",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "id": "ltg-xkb-lv-modern",
+    "locale": "ltg",
+    "layout": "lv:modern",
+    "dictionary": "ltg",
+    "name": "Latgalian",
+    "validation": "hunspell",
+    "license": "LGPL-2.1"
+  },
+  {
+    "id": "lv-xkb-lv",
+    "locale": "lv",
+    "layout": "lv",
+    "dictionary": "lv",
+    "name": "Latvian",
+    "validation": "hunspell",
+    "license": "LGPL-2.1"
+  },
+  {
+    "id": "mk-xkb-mk",
+    "locale": "mk",
+    "layout": "mk",
+    "dictionary": "mk",
+    "name": "Macedonian spelling dictionary in UTF-8",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "mn-xkb-mn",
+    "locale": "mn",
+    "layout": "mn",
+    "dictionary": "mn",
+    "name": "Mongolian",
+    "validation": "listed-words",
+    "license": "LPPL-1.3c"
+  },
+  {
+    "id": "nb-xkb-no",
+    "locale": "nb",
+    "layout": "no",
+    "dictionary": "nb",
+    "name": "Norwegian Bokmål",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "nds-xkb-de",
+    "locale": "nds",
+    "layout": "de",
+    "dictionary": "nds",
+    "name": "Low German",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "ne-xkb-np",
+    "locale": "ne",
+    "layout": "np",
+    "dictionary": "ne",
+    "name": "Nepali",
+    "validation": "listed-words",
+    "license": "LGPL-2.1"
+  },
+  {
+    "id": "nl-xkb-nl",
+    "locale": "nl",
+    "layout": "nl",
+    "dictionary": "nl",
+    "name": "Dutch",
+    "validation": "hunspell",
+    "license": "(BSD-3-Clause OR CC-BY-3.0)"
+  },
+  {
+    "id": "nn-xkb-no",
+    "locale": "nn",
+    "layout": "no",
+    "dictionary": "nn",
+    "name": "Norwegian Nynorsk",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "oc-xkb-fr-oci",
+    "locale": "oc",
+    "layout": "fr:oci",
+    "dictionary": "oc",
+    "name": "Occitan",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  },
+  {
+    "id": "pl-xkb-pl",
+    "locale": "pl",
+    "layout": "pl",
+    "dictionary": "pl",
+    "name": "Polish",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-3.0 OR MPL-2.0)"
+  },
+  {
+    "id": "pt-xkb-br",
+    "locale": "pt",
+    "layout": "br",
+    "dictionary": "pt",
+    "name": "Portuguese",
+    "validation": "hunspell",
+    "license": "(LGPL-3.0 OR MPL-2.0)"
+  },
+  {
+    "id": "pt-pt-xkb-pt",
+    "locale": "pt-PT",
+    "layout": "pt",
+    "dictionary": "pt-PT",
+    "name": "Portuguese (Portugal)",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "ro-xkb-ro",
+    "locale": "ro",
+    "layout": "ro",
+    "dictionary": "ro",
+    "name": "Romanian",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "ru-xkb-ru",
+    "locale": "ru",
+    "layout": "ru",
+    "dictionary": "ru",
+    "name": "Russian",
+    "validation": "hunspell",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "id": "rw-xkb-us-intl",
+    "locale": "rw",
+    "layout": "us:intl",
+    "dictionary": "rw",
+    "name": "Kinyarwanda",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "sk-xkb-sk",
+    "locale": "sk",
+    "layout": "sk",
+    "dictionary": "sk",
+    "name": "Slovak",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)"
+  },
+  {
+    "id": "sl-xkb-si",
+    "locale": "sl",
+    "layout": "si",
+    "dictionary": "sl",
+    "name": "Slovenian",
+    "validation": "hunspell",
+    "license": "(GPL-3.0 OR LGPL-2.1)"
+  },
+  {
+    "id": "sr-xkb-rs",
+    "locale": "sr",
+    "layout": "rs",
+    "dictionary": "sr",
+    "name": "Serbian",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1 OR CC-BY-SA-3.0)"
+  },
+  {
+    "id": "sr-latn-xkb-rs-latin",
+    "locale": "sr-Latn",
+    "layout": "rs:latin",
+    "dictionary": "sr-Latn",
+    "name": "Serbian (Latin script)",
+    "validation": "hunspell",
+    "license": "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1 OR CC-BY-SA-3.0)"
+  },
+  {
+    "id": "sv-xkb-se",
+    "locale": "sv",
+    "layout": "se",
+    "dictionary": "sv",
+    "name": "Swedish",
+    "validation": "hunspell",
+    "license": "LGPL-3.0"
+  },
+  {
+    "id": "sv-fi-xkb-fi",
+    "locale": "sv-FI",
+    "layout": "fi",
+    "dictionary": "sv-FI",
+    "name": "Swedish (Finland)",
+    "validation": "hunspell",
+    "license": "LGPL-3.0"
+  },
+  {
+    "id": "tk-xkb-tm",
+    "locale": "tk",
+    "layout": "tm",
+    "dictionary": "tk",
+    "name": "Turkmen",
+    "validation": "hunspell",
+    "license": "Apache-2.0"
+  },
+  {
+    "id": "tlh-latn-xkb-us",
+    "locale": "tlh-Latn",
+    "layout": "us",
+    "dictionary": "tlh-Latn",
+    "name": "Klingon (Latin script)",
+    "validation": "hunspell",
+    "license": "Apache-2.0"
+  },
+  {
+    "id": "tr-xkb-tr",
+    "locale": "tr",
+    "layout": "tr",
+    "dictionary": "tr",
+    "name": "Turkish",
+    "validation": "listed-words",
+    "license": "MIT"
+  },
+  {
+    "id": "uk-xkb-ua",
+    "locale": "uk",
+    "layout": "ua",
+    "dictionary": "uk",
+    "name": "Ukrainian",
+    "validation": "hunspell",
+    "license": "GPL-3.0"
+  },
+  {
+    "id": "vi-xkb-vn",
+    "locale": "vi",
+    "layout": "vn",
+    "dictionary": "vi",
+    "name": "Vietnamese",
+    "validation": "hunspell",
+    "license": "GPL-2.0"
+  }
+]

@@ -1,0 +1,138 @@
+{
+  "general": "Général",
+  "exclusions": "Applications exclues",
+  "shortcuts": "Raccourcis",
+  "updates": "Mises à jour",
+  "diagnostics": "Diagnostic et aide",
+  "tagline": "Continuez à écrire. Corrigez la disposition.",
+  "correction": "Correction automatique",
+  "pause": "Suspendre",
+  "resume": "Reprendre",
+  "languages": "Langues activées",
+  "languageSearch": "Rechercher une langue ou un clavier",
+  "trayPause": "Suspendre la correction",
+  "trayResume": "Reprendre la correction",
+  "traySettings": "Réglages",
+  "trayExit": "Quitter",
+  "trayStatus": "État de la correction",
+  "notificationUpdate": "Une mise à jour est disponible. Consultez-la et installez-la dans les Réglages.",
+  "notificationAttention": "FixKey nécessite votre attention. Consultez le code de motif dans les Réglages.",
+  "korean": "Coréen · Dubeolsik",
+  "english": "Anglais · US QWERTY",
+  "startup": "Lancer à l’ouverture de session",
+  "uiLanguage": "Langue de l’interface",
+  "theme": "Thème",
+  "system": "Système",
+  "light": "Clair",
+  "dark": "Sombre",
+  "loading": "Connexion à FixKey…",
+  "connection": "Impossible de se connecter à l’application de bureau.",
+  "retry": "Réessayer",
+  "active": "La correction est active",
+  "inactive": "La correction est inactive",
+  "waitingField": "En attente d’un champ de texte modifiable",
+  "waitingFieldHelp": "Cliquez sur un champ de texte modifiable dans une autre application. FixKey attend tant que les Réglages sont ouverts ou que le champ actif ne peut pas être identifié de manière sûre. Pour en savoir plus, consultez Diagnostic et aide.",
+  "local": "Votre saisie reste sur cet appareil. Les champs de mot de passe sont exclus.",
+  "empty": "Aucune application exclue",
+  "emptyDetail": "La correction peut fonctionner dans les champs modifiables pris en charge. Ajoutez une application pour que sa saisie reste toujours inchangée.",
+  "add": "Ajouter une application",
+  "choose": "Choisir une application",
+  "remove": "Supprimer",
+  "unresolved": "Identité non résolue",
+  "noApps": "Aucune application identifiable n’est disponible. Ouvrez l’application à exclure, puis réessayez.",
+  "shortcut": "Suggestions manuelles",
+  "unassigned": "Non attribué",
+  "capture": "Définir le raccourci",
+  "captureHelp": "Appuyez sur une touche avec Control, Alt, Command ou Shift. Esc annule.",
+  "clear": "Effacer",
+  "cancel": "Annuler",
+  "done": "Terminé",
+  "currentVersion": "Version actuelle",
+  "checkUpdate": "Rechercher des mises à jour",
+  "updateConsent": "Télécharger et installer",
+  "updateHelp": "Les mises à jour sont recherchées au démarrage et toutes les 24 heures. Les téléchargements ne commencent qu’avec votre consentement.",
+  "recovery": "Si l’installation échoue, redémarrez FixKey ou réinstallez manuellement un paquet signé. Vos réglages sont conservés. Les versions signées précédentes peuvent être réinstallées manuellement.",
+  "permission": "Autoriser l’accès d’accessibilité",
+  "permissionHelp": "FixKey a besoin des autorisations d’accessibilité et d’observation des entrées pour identifier un champ modifiable et remplacer uniquement le mot terminé.",
+  "inputPermission": "Autoriser la surveillance de l’entrée",
+  "inputPermissionRequest": "Autoriser la surveillance de l’entrée",
+  "inputPermissionSetup": "Configurer la surveillance de l’entrée",
+  "inputPermissionListHelp": "L’accessibilité peut déjà autoriser l’écoute des touches même si FixKey ne figure pas dans Surveillance de l’entrée. macOS ne confirme pas ici la présence d’une entrée distincte dans cette liste. Vérifiez la liste dans Réglages Système et ajoutez la version actuelle de FixKey.app avec + si elle n’y figure pas.",
+  "inputPermissionHelp": "FixKey a besoin de la surveillance de l’entrée pour détecter les touches utilisées pour la correction de disposition du clavier.",
+  "accessibilityGranted": "L’accès d’accessibilité est déjà autorisé.",
+  "inputPermissionSteps": [
+    "Choisissez Autoriser la surveillance de l’entrée pour enregistrer FixKey et ouvrir ses réglages d’autorisation macOS.",
+    "Dans Réglages Système → Confidentialité et sécurité → Surveillance de l’entrée, activez FixKey. S’il n’y figure pas, choisissez + et ajoutez la version actuelle de FixKey.app depuis Applications. Revenez ici et choisissez Revérifier. Redémarrez FixKey si macOS le demande."
+  ],
+  "permissionRequest": "Autoriser l’accès d’accessibilité",
+  "permissionWaiting": "La correction restera désactivée tant que l’accès ne sera pas autorisé. Après avoir activé l’accès, choisissez Revérifier.",
+  "permissionSteps": [
+    "Choisissez Autoriser l’accès d’accessibilité et suivez les instructions de macOS.",
+    "Activez FixKey dans Accessibilité. S’il est déjà activé mais que cette boîte de dialogue reste affichée après le redémarrage de FixKey, supprimez l’ancienne entrée FixKey avec − et utilisez + pour ajouter de nouveau la version actuelle de FixKey.app. Une application recompilée peut ne plus correspondre à l’ancienne entrée d’autorisation. S’il n’y figure pas, utilisez + pour ajouter FixKey depuis Applications.",
+    "Activez également FixKey dans Surveillance de l’entrée, puis revérifiez. Si aucune demande de surveillance de l’entrée n’apparaît, choisissez de nouveau Autoriser l’accès d’accessibilité. Redémarrez FixKey si macOS le demande."
+  ],
+  "macPermission": "Dans Réglages Système, autorisez FixKey dans Accessibilité et Surveillance de l’entrée, puis revérifiez.",
+  "windowsPermission": "Utilisez FixKey dans votre session Windows actuelle. Les champs protégés, ceux nécessitant des privilèges élevés ou ceux qui ne sont pas pris en charge restent inchangés.",
+  "linuxPermission": "Utilisez une session X11 avec le service d’accessibilité AT-SPI et XInput2 disponibles. Wayland n’est pas pris en charge.",
+  "openSettings": "Ouvrir les réglages système",
+  "recheck": "Revérifier",
+  "later": "Plus tard",
+  "error": "Échec de l’action",
+  "reason": "Motif",
+  "openLogs": "Ouvrir le dossier des journaux",
+  "deleteLogs": "Supprimer les journaux",
+  "restore": "Restaurer la sauvegarde des réglages",
+  "support": "GitHub Issues",
+  "logHelp": "Les journaux contiennent la version, la plateforme, les codes de motif et les durées. Le texte saisi en est exclu. Les journaux restent sur cet appareil pendant sept jours au maximum, avec une taille totale limitée à 10 MiB.",
+  "original": "Original",
+  "recognized": "Reconnu",
+  "notRecognized": "Non reconnu par le dictionnaire",
+  "unchecked": "Vérification impossible",
+  "candidates": "Suggestions de disposition",
+  "candidateHelp": "↑ ↓ Sélectionner · Enter Appliquer · Esc Fermer",
+  "noCandidates": "Le contexte source n’est plus disponible.",
+  "help": "Aide",
+  "helpTopics": [
+    [
+      "Installation",
+      "Installez le DMG signé sur macOS ARM64, le programme d’installation NSIS sur Windows x64 ou l’AppImage sur Linux X11 x64. Les plateformes ciblées n’impliquent pas une compatibilité vérifiée avec chaque application."
+    ],
+    [
+      "Autorisations",
+      "Accordez les autorisations d’accessibilité et d’entrée demandées par votre système d’exploitation, puis choisissez Revérifier. La correction reste inactive tant que les autorisations et les dictionnaires ne sont pas prêts. Sur macOS, Accessibilité peut fournir un accès effectif à l’écoute des touches sans entrée distincte dans Surveillance de l’entrée. Utilisez Configurer la surveillance de l’entrée dans Général pour vérifier la liste ; si FixKey n’y figure pas, utilisez + pour ajouter la version actuelle de FixKey.app depuis Applications."
+    ],
+    [
+      "Dispositions et correction",
+      "Le coréen Dubeolsik et l’anglais US QWERTY sont activés par défaut. Sélectionnez des paires supplémentaires de dictionnaires et de claviers dans Général. Le clavier public indiqué doit correspondre à la disposition avec laquelle vous tapez. Lorsque des langues supplémentaires sont activées, les mots sont évalués aux espaces ; sinon, les espaces et la ponctuation déclenchent l’évaluation. Enter et Tab ne la déclenchent pas. Un mot ne change que lorsqu’un seul dictionnaire activé reconnaît une suggestion. Des langues apparentées peuvent reconnaître le même mot ; il reste alors inchangé. FixKey ne change jamais votre langue de saisie. Les combinaisons de touches de modification non prises en charge, les séquences de touches mortes incomplètes et les variantes de clavier qui ne correspondent pas à la disposition indiquée restent inchangées."
+    ],
+    [
+      "Annulation",
+      "Appuyez immédiatement sur Backspace après une correction automatique pour rétablir le mot d’origine et son séparateur. Les pressions suivantes sur Backspace fonctionnent normalement."
+    ],
+    [
+      "Suggestions manuelles",
+      "Attribuez un raccourci, tapez un mot et utilisez le raccourci. Les touches fléchées sélectionnent une suggestion, Enter l’applique et Esc ferme la fenêtre. Vous pouvez choisir explicitement une suggestion non reconnue. Déplacer le point d’insertion dans le texte source ou changer d’application ferme le sélecteur."
+    ],
+    [
+      "Exclusions",
+      "Ajoutez une application dans Applications exclues. Les exclusions correspondent à l’identité stable de l’application. Les identités non résolues restent dans la liste."
+    ],
+    [
+      "Confidentialité",
+      "FixKey traite la saisie localement. Il ne conserve aucun historique de saisie, n’utilise pas le presse-papiers pour les remplacements et n’envoie aucune télémétrie. Les éléments collés, insérés par un programme, numériques, composés d’emoji, les URL, les adresses e-mail et les éléments mêlant plusieurs systèmes d’écriture sont exclus de la correction automatique."
+    ],
+    [
+      "Mises à jour",
+      "Les mises à jour stables sont recherchées via HTTPS au démarrage et toutes les 24 heures. Votre consentement est demandé avant le téléchargement. Les signatures invalides sont rejetées. La correction s’arrête avant l’installation ; les réglages restent intacts."
+    ],
+    [
+      "Dépannage",
+      "Lisez le code de motif, revérifiez les autorisations et essayez un champ modifiable pris en charge. Les autorisations manquantes, le caractère sensible inconnu d’un champ, les cibles devenues obsolètes et les opérations d’écriture non prises en charge entraînent un refus par sécurité. Redémarrez ou réinstallez manuellement un paquet signé après l’échec d’une mise à jour."
+    ],
+    [
+      "Suppression des journaux",
+      "Choisissez Supprimer les journaux pour supprimer les journaux de diagnostic locaux, ou Ouvrir le dossier des journaux pour les consulter. N’incluez pas de contenu privé lorsque vous ouvrez un ticket sur GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Uniquement les mots répertoriés dans le dictionnaire ; les formes inconnues restent inchangées."
+}

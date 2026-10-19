@@ -1,0 +1,138 @@
+{
+  "general": "Üldine",
+  "exclusions": "Välistatud rakendused",
+  "shortcuts": "Kiirklahvid",
+  "updates": "Uuendused",
+  "diagnostics": "Diagnostika ja abi",
+  "tagline": "Jätka kirjutamist. Paranda klahvipaigutus.",
+  "correction": "Automaatne parandamine",
+  "pause": "Peata",
+  "resume": "Jätka",
+  "languages": "Lubatud keeled",
+  "languageSearch": "Otsi keelt või klaviatuuri",
+  "trayPause": "Peata parandamine",
+  "trayResume": "Jätka parandamist",
+  "traySettings": "Seaded",
+  "trayExit": "Välju",
+  "trayStatus": "Parandamise olek",
+  "notificationUpdate": "Uuendus on saadaval. Vaata see seadetes üle ja paigalda.",
+  "notificationAttention": "FixKey vajab tähelepanu. Vaata seadetes põhjusekoodi.",
+  "korean": "Korea · Dubeolsik",
+  "english": "Inglise · US QWERTY",
+  "startup": "Käivita sisselogimisel",
+  "uiLanguage": "Kasutajaliidese keel",
+  "theme": "Kujundus",
+  "system": "Süsteemne",
+  "light": "Hele",
+  "dark": "Tume",
+  "loading": "FixKeyga ühenduse loomine…",
+  "connection": "Töölauarakendusega ei saa ühendust luua.",
+  "retry": "Proovi uuesti",
+  "active": "Parandamine on aktiivne",
+  "inactive": "Parandamine pole aktiivne",
+  "waitingField": "Muudetava tekstivälja ootel",
+  "waitingFieldHelp": "Klõpsa teises rakenduses muudetaval tekstiväljal. FixKey ootab ajal, mil seaded on avatud või fookuses olevat välja ei saa turvaliselt tuvastada. Lisateavet leiad jaotisest Diagnostika ja abi.",
+  "local": "Sinu sisestatu jääb sellesse seadmesse. Parooliväljad on välistatud.",
+  "empty": "Välistatud rakendusi pole",
+  "emptyDetail": "Parandamine saab toimida toetatud muudetavates juhtelementides. Lisa rakendus, et selle sisestatu jääks alati muutmata.",
+  "add": "Lisa rakendus",
+  "choose": "Vali rakendus",
+  "remove": "Eemalda",
+  "unresolved": "Identiteet tuvastamata",
+  "noApps": "Tuvastatavaid rakendusi pole saadaval. Ava rakendus, mille soovid välistada, ja proovi uuesti.",
+  "shortcut": "Käsitsi valitavad variandid",
+  "unassigned": "Määramata",
+  "capture": "Määra kiirklahv",
+  "captureHelp": "Vajuta klahvi koos klahviga Control, Alt, Command või Shift. Esc tühistab.",
+  "clear": "Tühjenda",
+  "cancel": "Tühista",
+  "done": "Valmis",
+  "currentVersion": "Praegune versioon",
+  "checkUpdate": "Kontrolli uuendusi",
+  "updateConsent": "Laadi alla ja paigalda",
+  "updateHelp": "Uuendusi kontrollitakse käivitamisel ja iga 24 tunni järel. Allalaadimine algab ainult sinu nõusolekul.",
+  "recovery": "Kui paigaldamine nurjub, taaskäivita FixKey või paigalda allkirjastatud pakett käsitsi uuesti. Sinu seaded säilivad. Varasemaid allkirjastatud versioone saab käsitsi uuesti paigaldada.",
+  "permission": "Luba juurdepääs hõlbustusfunktsioonidele",
+  "permissionHelp": "FixKey vajab juurdepääsu hõlbustusfunktsioonidele ja sisestuse jälgimisele, et tuvastada muudetav juhtelement ja asendada ainult lõpetatud sõna.",
+  "inputPermission": "Luba sisestuse jälgimine",
+  "inputPermissionRequest": "Luba sisestuse jälgimine",
+  "inputPermissionSetup": "Seadista sisestuse jälgimine",
+  "inputPermissionListHelp": "Hõlbustusfunktsioonide luba võib juba võimaldada klahvivajutuste jälgimist ka siis, kui FixKey puudub sisestuse jälgimise loendist. macOS ei kinnita siin eraldi loendikirje olemasolu. Kontrolli loendit süsteemiseadetes ja kui praegune FixKey.app puudub, lisa see nupuga +.",
+  "inputPermissionHelp": "FixKey vajab sisestuse jälgimise luba, et tuvastada klahvipaigutuse parandamiseks kasutatud klahvid.",
+  "accessibilityGranted": "Juurdepääs hõlbustusfunktsioonidele on juba lubatud.",
+  "inputPermissionSteps": [
+    "Vali Luba sisestuse jälgimine, et registreerida FixKey ja avada selle macOS-i loaseaded.",
+    "Lülita FixKey sisse asukohas Süsteemiseaded → Privaatsus ja turvalisus → Sisestuse jälgimine. Kui see puudub, vali + ja lisa rakenduste kaustast praegune FixKey.app. Naase siia ja vali Kontrolli uuesti. Taaskäivita FixKey, kui macOS seda palub."
+  ],
+  "permissionRequest": "Luba juurdepääs hõlbustusfunktsioonidele",
+  "permissionWaiting": "Parandamine jääb välja lülitatuks, kuni juurdepääs on lubatud. Pärast juurdepääsu lubamist vali Kontrolli uuesti.",
+  "permissionSteps": [
+    "Vali Luba juurdepääs hõlbustusfunktsioonidele ja järgi macOS-i juhist.",
+    "Lülita FixKey hõlbustusfunktsioonide jaotises sisse. Kui see on juba sisse lülitatud, kuid see dialoog jääb pärast FixKey taaskäivitamist alles, eemalda vana FixKey kirje nupuga − ja lisa praegune FixKey.app nupuga + uuesti. Uuesti kompileeritud rakendus ei pruugi enam vana loakirjega ühtida. Kui kirje puudub, lisa FixKey rakenduste kaustast nupuga +.",
+    "Lülita FixKey sisse ka sisestuse jälgimise jaotises ja kontrolli seejärel uuesti. Kui sisestuse jälgimise loa küsimust ei ilmu, vali uuesti Luba juurdepääs hõlbustusfunktsioonidele. Taaskäivita FixKey, kui macOS seda palub."
+  ],
+  "macPermission": "Luba FixKey süsteemiseadetes hõlbustusfunktsioonide ja sisestuse jälgimise jaotistes ning kontrolli seejärel uuesti.",
+  "windowsPermission": "Kasuta FixKeyd praeguses Windowsi seansis. Kaitstud, kõrgendatud õigustega või toetamata juhtelemendid jäetakse muutmata.",
+  "linuxPermission": "Kasuta X11 seanssi, kus on saadaval AT-SPI hõlbustusteenus ja XInput2. Wayland pole toetatud.",
+  "openSettings": "Ava süsteemiseaded",
+  "recheck": "Kontrolli uuesti",
+  "later": "Hiljem",
+  "error": "Toiming nurjus",
+  "reason": "Põhjus",
+  "openLogs": "Ava logikaust",
+  "deleteLogs": "Kustuta logid",
+  "restore": "Taasta seadete varukoopia",
+  "support": "GitHub Issues",
+  "logHelp": "Logid sisaldavad versiooni, platvormi, põhjusekoode ja ajakulu. Sisestatud teksti ei lisata. Logisid hoitakse selles seadmes kuni seitse päeva ja kokku kuni 10 MiB.",
+  "original": "Algne",
+  "recognized": "Tuvastatud",
+  "notRecognized": "Sõnastik ei tuvastanud",
+  "unchecked": "Ei saanud kontrollida",
+  "candidates": "Klahvipaigutuse variandid",
+  "candidateHelp": "↑ ↓ Vali · Enter Rakenda · Esc Sule",
+  "noCandidates": "Algne kontekst pole enam saadaval.",
+  "help": "Abi",
+  "helpTopics": [
+    [
+      "Paigaldamine",
+      "Paigalda allkirjastatud DMG operatsioonisüsteemis macOS ARM64, NSIS-i paigaldusprogramm operatsioonisüsteemis Windows x64 või AppImage operatsioonisüsteemis Linux X11 x64. Sihtplatvormid ei tähenda kontrollitud ühilduvust kõigi rakendustega."
+    ],
+    [
+      "Load",
+      "Anna oma operatsioonisüsteemi nõutud hõlbustusfunktsioonide ja sisestuse load ning vali seejärel Kontrolli uuesti. Parandamine jääb mitteaktiivseks, kuni load ja sõnastikud on valmis. macOS-is võib hõlbustusfunktsioonide luba anda tegeliku juurdepääsu klahvivajutuste jälgimisele ka eraldi sisestuse jälgimise kirjeta. Loendi kontrollimiseks vali jaotises Üldine käsk Seadista sisestuse jälgimine; kui FixKey puudub, lisa rakenduste kaustast praegune FixKey.app nupuga +."
+    ],
+    [
+      "Klahvipaigutused ja parandamine",
+      "Korea Dubeolsik ja inglise US QWERTY on vaikimisi lubatud. Vali jaotises Üldine täiendavad sõnastiku ja klaviatuuri paarid. Loendis olev avalik klaviatuur peab vastama klahvipaigutusele, millega kirjutad. Kui täiendavad keeled on lubatud, hinnatakse sõnu tühikute sisestamisel; muul juhul käivitavad hindamise tühikud ja kirjavahemärgid. Enter ja Tab seda ei tee. Sõna muutub ainult siis, kui täpselt üks lubatud sõnastik tuvastab variandi. Sugulaskeeled võivad tuvastada sama sõna; sel juhul jäetakse see muutmata. FixKey ei vaheta kunagi sinu sisestuskeelt. Toetamata muuteklahvid, lõpetamata surnud klahvide jadad ja klaviatuurivariandid, mis ei vasta loendis olevale klahvipaigutusele, jäetakse muutmata."
+    ],
+    [
+      "Tagasivõtmine",
+      "Vajuta kohe pärast automaatset parandust Backspace, et taastada algne sõna ja selle eraldaja. Järgmised Backspace'i vajutused toimivad tavapäraselt."
+    ],
+    [
+      "Käsitsi valitavad variandid",
+      "Määra kiirklahv, kirjuta sõna ja kasuta kiirklahvi. Nooleklahvid valivad, Enter rakendab ja Esc sulgeb. Saad teadlikult valida ka tuvastamata variandi. Algse tekstikursori liigutamine või rakenduse vahetamine sulgeb valikuakna."
+    ],
+    [
+      "Välistused",
+      "Lisa rakendus jaotises Välistatud rakendused. Välistused vastavad rakenduse püsivale identiteedile. Tuvastamata identiteedid jäävad loendisse."
+    ],
+    [
+      "Privaatsus",
+      "FixKey töötleb sisestust kohapeal. See ei säilita sisestusajalugu, ei kasuta asendamiseks lõikelauda ega saada telemeetriat. Kleebitud, programmiliselt sisestatud, arvulised, emotikonide, URL-ide, e-posti aadresside ja eri kirjasüsteeme ühendavad tekstiosad on automaatsest parandamisest välistatud."
+    ],
+    [
+      "Uuendused",
+      "Stabiilseid uuendusi kontrollitakse HTTPS-i kaudu käivitamisel ja iga 24 tunni järel. Annad nõusoleku enne allalaadimist. Kehtetud allkirjad lükatakse tagasi. Parandamine peatub enne paigaldamist; seaded säilivad muutmata."
+    ],
+    [
+      "Tõrkeotsing",
+      "Loe põhjusekoodi, kontrolli load uuesti üle ja proovi toetatud muudetavat juhtelementi. Puuduvad load, välja tundlikkuse teadmata olek, aegunud sihtmärgid ja toetamata kirjutustoimingud põhjustavad turvalise keeldumise. Pärast uuenduse nurjumist taaskäivita rakendus või paigalda allkirjastatud pakett käsitsi uuesti."
+    ],
+    [
+      "Logide kustutamine",
+      "Kohalike diagnostikalogide eemaldamiseks vali Kustuta logid või nende uurimiseks Ava logikaust. Ära lisa GitHubi probleemiteate loomisel privaatset sisu."
+    ]
+  ],
+  "listedWordsOnly": "Ainult sõnastikus loetletud sõnad; tundmatud vormid jäetakse muutmata."
+}

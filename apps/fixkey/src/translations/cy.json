@@ -1,0 +1,138 @@
+{
+  "general": "Cyffredinol",
+  "exclusions": "Apiau wedi'u heithrio",
+  "shortcuts": "Llwybrau byr",
+  "updates": "Diweddariadau",
+  "diagnostics": "Diagnosteg a chymorth",
+  "tagline": "Daliwch ati i deipio. Cywirwch y cynllun.",
+  "correction": "Cywiro awtomatig",
+  "pause": "Oedi",
+  "resume": "Ailddechrau",
+  "languages": "Ieithoedd wedi'u galluogi",
+  "languageSearch": "Canfod iaith neu fysellfwrdd",
+  "trayPause": "Oedi cywiro",
+  "trayResume": "Ailddechrau cywiro",
+  "traySettings": "Gosodiadau",
+  "trayExit": "Gadael",
+  "trayStatus": "Statws cywiro",
+  "notificationUpdate": "Mae diweddariad ar gael. Adolygwch a gosodwch ef yn y Gosodiadau.",
+  "notificationAttention": "Mae angen rhoi sylw i FixKey. Gwiriwch y cod rheswm yn y Gosodiadau.",
+  "korean": "Coreeg · Dubeolsik",
+  "english": "Saesneg · US QWERTY",
+  "startup": "Cychwyn wrth fewngofnodi",
+  "uiLanguage": "Iaith y rhyngwyneb",
+  "theme": "Thema",
+  "system": "System",
+  "light": "Golau",
+  "dark": "Tywyll",
+  "loading": "Wrthi'n cysylltu â FixKey…",
+  "connection": "Methu cysylltu â'r ap bwrdd gwaith.",
+  "retry": "Rhoi cynnig arall arni",
+  "active": "Mae cywiro yn weithredol",
+  "inactive": "Nid yw cywiro yn weithredol",
+  "waitingField": "Yn aros am faes testun y gellir ei olygu",
+  "waitingFieldHelp": "Cliciwch faes testun y gellir ei olygu mewn ap arall. Mae FixKey yn aros tra bo'r Gosodiadau ar agor neu os nad oes modd adnabod y maes sydd â'r ffocws yn ddiogel. Mae manylion ar gael yn Diagnosteg a chymorth.",
+  "local": "Mae eich mewnbwn yn aros ar y ddyfais hon. Caiff meysydd cyfrinair eu heithrio.",
+  "empty": "Dim apiau wedi'u heithrio",
+  "emptyDetail": "Gall cywiro redeg mewn rheolyddion y gellir eu golygu a gefnogir. Ychwanegwch ap i adael ei fewnbwn heb ei newid bob amser.",
+  "add": "Ychwanegu ap",
+  "choose": "Dewis ap",
+  "remove": "Tynnu",
+  "unresolved": "Heb allu pennu'r hunaniaeth",
+  "noApps": "Nid oes apiau y gellir eu hadnabod ar gael. Agorwch yr ap rydych am ei eithrio a rhowch gynnig arall arni.",
+  "shortcut": "Dewis ymgeiswyr â llaw",
+  "unassigned": "Heb ei aseinio",
+  "capture": "Gosod llwybr byr",
+  "captureHelp": "Pwyswch fysell gyda Control, Alt, Command neu Shift. Mae Esc yn canslo.",
+  "clear": "Clirio",
+  "cancel": "Canslo",
+  "done": "Gorffen",
+  "currentVersion": "Fersiwn gyfredol",
+  "checkUpdate": "Chwilio am ddiweddariadau",
+  "updateConsent": "Lawrlwytho a gosod",
+  "updateHelp": "Chwilir am ddiweddariadau wrth gychwyn a phob 24 awr. Dim ond gyda'ch caniatâd y bydd lawrlwythiadau'n dechrau.",
+  "recovery": "Os bydd y gosodiad yn methu, ailgychwynnwch FixKey neu ailosodwch becyn wedi'i lofnodi â llaw. Cedwir eich gosodiadau. Gellir ailosod fersiynau blaenorol wedi'u llofnodi â llaw.",
+  "permission": "Caniatáu mynediad hygyrchedd",
+  "permissionHelp": "Mae angen mynediad hygyrchedd ac arsylwi mewnbwn ar FixKey i adnabod rheolydd y gellir ei olygu ac amnewid y gair gorffenedig yn unig.",
+  "inputPermission": "Caniatáu monitro mewnbwn",
+  "inputPermissionRequest": "Caniatáu monitro mewnbwn",
+  "inputPermissionSetup": "Gosod monitro mewnbwn",
+  "inputPermissionListHelp": "Gall Hygyrchedd eisoes ganiatáu gwrando ar fysellau hyd yn oed pan nad yw FixKey yn y rhestr Monitro Mewnbwn. Nid yw macOS yn cadarnhau cofnod ar wahân yn y rhestr yma. Gwiriwch y rhestr yng Ngosodiadau'r System ac ychwanegwch y FixKey.app cyfredol gyda + os yw ar goll.",
+  "inputPermissionHelp": "Mae angen Monitro Mewnbwn ar FixKey i ganfod y bysellau a ddefnyddir i gywiro cynllun y bysellfwrdd.",
+  "accessibilityGranted": "Mae mynediad hygyrchedd eisoes wedi'i ganiatáu.",
+  "inputPermissionSteps": [
+    "Dewiswch Caniatáu monitro mewnbwn i gofrestru FixKey ac agor ei osodiadau caniatâd yn macOS.",
+    "Yng Ngosodiadau'r System → Preifatrwydd a Diogelwch → Monitro Mewnbwn, galluogwch FixKey. Os yw ar goll, dewiswch + ac ychwanegwch y FixKey.app cyfredol o'r ffolder Rhaglenni. Dychwelwch yma a dewiswch Ailwirio. Ailgychwynnwch FixKey os bydd macOS yn gofyn."
+  ],
+  "permissionRequest": "Caniatáu mynediad hygyrchedd",
+  "permissionWaiting": "Bydd cywiro yn aros wedi'i ddiffodd nes y caniateir mynediad. Ar ôl galluogi mynediad, dewiswch Ailwirio.",
+  "permissionSteps": [
+    "Dewiswch Caniatáu mynediad hygyrchedd a dilynwch anogwr macOS.",
+    "Galluogwch FixKey yn Hygyrchedd. Os yw eisoes wedi'i alluogi ond bod y deialog hon yn aros ar ôl ailgychwyn FixKey, tynnwch yr hen gofnod FixKey gyda − a defnyddiwch + i ychwanegu'r FixKey.app cyfredol eto. Efallai na fydd ap wedi'i ailadeiladu yn cyfateb i'r hen gofnod caniatâd mwyach. Os yw ar goll, defnyddiwch + i ychwanegu FixKey o'r ffolder Rhaglenni.",
+    "Galluogwch FixKey yn Monitro Mewnbwn hefyd, ac yna ailwiriwch. Os nad oes anogwr monitro mewnbwn yn ymddangos, dewiswch Caniatáu mynediad hygyrchedd eto. Ailgychwynnwch FixKey os bydd macOS yn gofyn."
+  ],
+  "macPermission": "Yng Ngosodiadau'r System, caniatewch FixKey o dan Hygyrchedd a Monitro Mewnbwn, ac yna ailwiriwch.",
+  "windowsPermission": "Defnyddiwch FixKey yn eich sesiwn Windows gyfredol. Gadewir rheolyddion sydd wedi'u diogelu, sydd â breintiau uwch neu nad ydynt yn cael eu cefnogi heb eu newid.",
+  "linuxPermission": "Defnyddiwch sesiwn X11 gyda gwasanaeth hygyrchedd AT-SPI ac XInput2 ar gael. Ni chefnogir Wayland.",
+  "openSettings": "Agor gosodiadau'r system",
+  "recheck": "Ailwirio",
+  "later": "Yn ddiweddarach",
+  "error": "Methodd y weithred",
+  "reason": "Rheswm",
+  "openLogs": "Agor ffolder y logiau",
+  "deleteLogs": "Dileu logiau",
+  "restore": "Adfer copi wrth gefn o'r gosodiadau",
+  "support": "GitHub Issues",
+  "logHelp": "Mae logiau'n cynnwys y fersiwn, y platfform, codau rheswm ac amseriadau. Ni chynhwysir testun mewnbwn. Mae logiau'n aros ar y ddyfais hon am saith diwrnod ar y mwyaf a chyfanswm o 10 MiB ar y mwyaf.",
+  "original": "Gwreiddiol",
+  "recognized": "Wedi'i adnabod",
+  "notRecognized": "Heb ei adnabod gan y geiriadur",
+  "unchecked": "Nid oedd modd ei wirio",
+  "candidates": "Ymgeiswyr cynllun",
+  "candidateHelp": "↑ ↓ Dewis · Enter Cymhwyso · Esc Cau",
+  "noCandidates": "Nid yw cyd-destun y ffynhonnell ar gael mwyach.",
+  "help": "Cymorth",
+  "helpTopics": [
+    [
+      "Gosod",
+      "Gosodwch y DMG wedi'i lofnodi ar macOS ARM64, y gosodwr NSIS ar Windows x64, neu'r AppImage ar Linux X11 x64. Nid yw'r platfformau targed yn golygu bod cydnawsedd â phob ap wedi'i wirio."
+    ],
+    [
+      "Caniatâd",
+      "Rhowch y caniatâd hygyrchedd a mewnbwn y mae eich system weithredu yn gofyn amdano, ac yna dewiswch Ailwirio. Mae cywiro yn aros yn anweithredol nes bod y caniatâd a'r geiriaduron yn barod. Ar macOS, gall Hygyrchedd ddarparu mynediad effeithiol i wrando ar fysellau heb gofnod Monitro Mewnbwn ar wahân. Defnyddiwch Gosod monitro mewnbwn yn Cyffredinol i wirio'r rhestr; os yw FixKey ar goll, defnyddiwch + i ychwanegu'r FixKey.app cyfredol o'r ffolder Rhaglenni."
+    ],
+    [
+      "Cynlluniau a chywiro",
+      "Mae Coreeg Dubeolsik a Saesneg US QWERTY wedi'u galluogi yn ddiofyn. Dewiswch barau ychwanegol o eiriaduron a bysellfyrddau yn Cyffredinol. Rhaid i'r bysellfwrdd cyhoeddus a restrir gyfateb i'r cynllun rydych yn ei ddefnyddio i deipio. Pan fydd ieithoedd ychwanegol wedi'u galluogi, caiff geiriau eu gwerthuso wrth fylchau; fel arall, mae bylchau ac atalnodi yn sbarduno gwerthuso. Nid yw Enter a Tab yn gwneud hynny. Dim ond pan fydd un geiriadur wedi'i alluogi yn union yn adnabod ymgeisydd y caiff gair ei newid. Gall ieithoedd perthynol adnabod yr un gair; yn yr achos hwnnw, gadewir ef heb ei newid. Nid yw FixKey byth yn newid eich iaith fewnbwn. Gadewir addaswyr nas cefnogir, bysellau marw anghyflawn ac amrywiadau bysellfwrdd nad ydynt yn cyfateb i'r cynllun a restrir heb eu newid."
+    ],
+    [
+      "Dadwneud",
+      "Pwyswch Backspace yn syth ar ôl cywiriad awtomatig i adfer y gair gwreiddiol a'i wahanydd. Mae pwyso Backspace eto wedyn yn gweithredu fel arfer."
+    ],
+    [
+      "Dewis ymgeiswyr â llaw",
+      "Aseiniwch lwybr byr, teipiwch air a defnyddiwch y llwybr byr. Mae'r bysellau saeth yn dewis, mae Enter yn cymhwyso ac mae Esc yn cau. Gallwch ddewis ymgeisydd sydd heb ei adnabod yn benodol. Mae symud cyrchwr testun y ffynhonnell neu newid apiau yn cau'r dewisydd."
+    ],
+    [
+      "Eithriadau",
+      "Ychwanegwch ap o dan Apiau wedi'u heithrio. Mae eithriadau'n cyfateb i hunaniaeth sefydlog yr ap. Mae hunaniaethau nad oes modd eu pennu yn aros ar y rhestr."
+    ],
+    [
+      "Preifatrwydd",
+      "Mae FixKey yn prosesu mewnbwn yn lleol. Nid yw'n cadw hanes mewnbwn, yn defnyddio'r clipfwrdd i amnewid testun, nac yn anfon telemetreg. Caiff tocynnau sydd wedi'u gludo, wedi'u cynhyrchu'n rhaglennol, sy'n rhifau, yn emoji, yn URLau, yn gyfeiriadau e-bost neu'n cymysgu systemau ysgrifennu eu heithrio o gywiro awtomatig."
+    ],
+    [
+      "Diweddariadau",
+      "Chwilir am ddiweddariadau sefydlog dros HTTPS wrth gychwyn a phob 24 awr. Rydych yn rhoi caniatâd cyn lawrlwytho. Gwrthodir llofnodion annilys. Mae cywiro yn stopio cyn gosod; mae'r gosodiadau'n aros yn gyfan."
+    ],
+    [
+      "Datrys problemau",
+      "Darllenwch y cod rheswm, ailwiriwch y caniatâd, a rhowch gynnig ar reolydd y gellir ei olygu a gefnogir. Mae caniatâd coll, sensitifrwydd maes anhysbys, targedau sydd wedi dyddio ac ysgrifennu nas cefnogir yn arwain at wrthodiad diogel. Ailgychwynnwch neu ailosodwch becyn wedi'i lofnodi â llaw ar ôl methiant diweddaru."
+    ],
+    [
+      "Dileu logiau",
+      "Dewiswch Dileu logiau i dynnu logiau diagnostig lleol, neu Agor ffolder y logiau i'w harchwilio. Peidiwch â chynnwys deunydd preifat wrth agor cofnod problem ar GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Dim ond geiriau sydd wedi’u rhestru yn y geiriadur; mae ffurfiau anhysbys yn aros heb eu newid."
+}

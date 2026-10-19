@@ -1,0 +1,138 @@
+{
+  "general": "Gjenerâl",
+  "exclusions": "Aplicazions esclududis",
+  "shortcuts": "Scurtis di tastiere",
+  "updates": "Inzornaments",
+  "diagnostics": "Diagnostiche e jutori",
+  "tagline": "Continue a scrivi. Corêç la disposizion.",
+  "correction": "Corezion automatiche",
+  "pause": "Met in pause",
+  "resume": "Ripie",
+  "languages": "Lenghis abilitadis",
+  "languageSearch": "Cîr une lenghe o une tastiere",
+  "trayPause": "Met in pause la corezion",
+  "trayResume": "Ripie la corezion",
+  "traySettings": "Impostazions",
+  "trayExit": "Jes",
+  "trayStatus": "Stât de corezion",
+  "notificationUpdate": "Al è disponibil un inzornament. Controlelu e instalilu tes Impostazions.",
+  "notificationAttention": "FixKey al à bisugne di atenzion. Controle il codiç de reson tes Impostazions.",
+  "korean": "Corean · Dubeolsik",
+  "english": "Inglês · US QWERTY",
+  "startup": "Invie al acès",
+  "uiLanguage": "Lenghe de interface",
+  "theme": "Teme",
+  "system": "Sisteme",
+  "light": "Clâr",
+  "dark": "Scûr",
+  "loading": "Conession a FixKey…",
+  "connection": "Impussibil conetisi ae aplicazion par scritori.",
+  "retry": "Torne prove",
+  "active": "La corezion e je ative",
+  "inactive": "La corezion e je inative",
+  "waitingField": "In spiete di un cjamp di test modificabil",
+  "waitingFieldHelp": "Fâs clic suntun cjamp di test modificabil intune altre aplicazion. FixKey al spiete intant che lis Impostazions a son viertis o se nol è pussibil identificâ cun sigurece il cjamp che al à il focus. I detais a son disponibii in Diagnostiche e jutori.",
+  "local": "Ce che tu scrivis al reste su chest dispositîf. I cjamps des password a son escludûts.",
+  "empty": "Nissune aplicazion escludude",
+  "emptyDetail": "La corezion e pues funzionâ tai controi modificabii supuartâts. Zonte une aplicazion par lassâ simpri invariât ce che tu scrivis li dentri.",
+  "add": "Zonte aplicazion",
+  "choose": "Sielç une aplicazion",
+  "remove": "Gjave",
+  "unresolved": "Identitât no risolte",
+  "noApps": "No son disponibilis aplicazions identificabilis. Vierç la aplicazion che tu vuelis escludi e torne prove.",
+  "shortcut": "Candidâts manuâi",
+  "unassigned": "No assegnade",
+  "capture": "Stabilìs la scurte",
+  "captureHelp": "Frache un tast cun Control, Alt, Command o Shift. Esc al anule.",
+  "clear": "Nete",
+  "cancel": "Anule",
+  "done": "Fat",
+  "currentVersion": "Version atuâl",
+  "checkUpdate": "Controle i inzornaments",
+  "updateConsent": "Discjarie e instale",
+  "updateHelp": "I inzornaments a vegnin controlâts al inviament e ogni 24 oris. I discjariaments a scomencin dome cul to consens.",
+  "recovery": "Se la instalazion e falìs, torne invie FixKey o torne instale a man un pachet firmât. Lis tôs impostazions a vegnin conservadis. Lis versions precedentis firmadis a puedin jessi tornadis a instalâ a man.",
+  "permission": "Permet l'acès di acessibilitât",
+  "permissionHelp": "FixKey al à bisugne dal acès di acessibilitât e de osservazion de imission par identificâ un control modificabil e sostituî dome la peraule completade.",
+  "inputPermission": "Permet il monitorament de imission",
+  "inputPermissionRequest": "Permet il monitorament de imission",
+  "inputPermissionSetup": "Configure il monitorament de imission",
+  "inputPermissionListHelp": "La Acessibilitât e pues za permeti di scoltâ i tascj ancje se FixKey nol è presint tal Monitorament de imission. macOS nol conferme achì une vôs separade te liste. Controle la liste tes Impostazions di sisteme e zonte la FixKey.app atuâl cun + se e mancje.",
+  "inputPermissionHelp": "FixKey al à bisugne dal Monitorament de imission par rilevâ i tascj doprâts pe corezion de disposizion de tastiere.",
+  "accessibilityGranted": "L'acès di acessibilitât al è za permetût.",
+  "inputPermissionSteps": [
+    "Sielç Permet il monitorament de imission par regjistrâ FixKey e vierzi lis sôs impostazions dai permès di macOS.",
+    "In Impostazions di sisteme → Riservatece e sigurece → Monitorament de imission, abilite FixKey. Se al mancje, sielç + e zonte la FixKey.app atuâl di Aplicazions. Torne achì e sielç Torne controle. Torne invie FixKey se macOS lu domande."
+  ],
+  "permissionRequest": "Permet l'acès di acessibilitât",
+  "permissionWaiting": "La corezion e restarà disativade fin cuant che l'acès nol sarà permetût. Dopo vê abilitât l'acès, sielç Torne controle.",
+  "permissionSteps": [
+    "Sielç Permet l'acès di acessibilitât e seguìs la richieste di macOS.",
+    "Abilite FixKey in Acessibilitât. Se al è za abilitât ma chest dialic al reste dopo vê tornât a inviâ FixKey, gjave la vecje vôs di FixKey cun − e dopre + par tornâ a zontâ la FixKey.app atuâl. Une aplicazion tornade a compilâ e podarès no corispuindi plui ae vecje vôs dal permès. Se al mancje, dopre + par zontâ FixKey di Aplicazions.",
+    "Abilite FixKey ancje in Monitorament de imission, po torne controle. Se no comparìs nissune richieste pal monitorament de imission, torne sielç Permet l'acès di acessibilitât. Torne invie FixKey se macOS lu domande."
+  ],
+  "macPermission": "Tes Impostazions di sisteme, permet FixKey in Acessibilitât e Monitorament de imission, po torne controle.",
+  "windowsPermission": "Dopre FixKey te tô session atuâl di Windows. I controi protezûts, cun privileçs elevâts o no supuartâts a restin invariâts.",
+  "linuxPermission": "Dopre une session X11 cul servizi di acessibilitât AT-SPI e XInput2 disponibii. Wayland nol è supuartât.",
+  "openSettings": "Vierç lis impostazions di sisteme",
+  "recheck": "Torne controle",
+  "later": "Plui indenant",
+  "error": "Azion falide",
+  "reason": "Reson",
+  "openLogs": "Vierç la cartele dai regjistris",
+  "deleteLogs": "Elimine i regjistris",
+  "restore": "Ripristine la copie di sigurece des impostazions",
+  "support": "GitHub Issues",
+  "logHelp": "I regjistris a contegnin version, plateforme, codiçs des resons e timps di esecuzion. Il test inserît al è escludût. I regjistris a restin su chest dispositîf par un massim di siet dîs e 10 MiB in totâl.",
+  "original": "Origjinâl",
+  "recognized": "Ricognossût",
+  "notRecognized": "No ricognossût dal dizionari",
+  "unchecked": "Nol è stât pussibil controlâ",
+  "candidates": "Candidâts de disposizion",
+  "candidateHelp": "↑ ↓ Sielç · Enter Apliche · Esc Siere",
+  "noCandidates": "Il contest di origjin nol è plui disponibil.",
+  "help": "Jutori",
+  "helpTopics": [
+    [
+      "Instalazion",
+      "Instale il DMG firmât su macOS ARM64, l'instaladôr NSIS su Windows x64 o la AppImage su Linux X11 x64. Lis plateformis di destinazion no implichin une compatibilitât verificade cun dutis lis aplicazions."
+    ],
+    [
+      "Permès",
+      "Concedi i permès di acessibilitât e di imission domandâts dal to sisteme operatîf, po sielç Torne controle. La corezion e reste inative fin cuant che i permès e i dizionaris no son pronts. Su macOS, la Acessibilitât e pues furnî un acès efetîf pe scolte dai tascj cence une vôs separade tal Monitorament de imission. Dopre Configure il monitorament de imission in Gjenerâl par controlâ la liste; se FixKey al mancje, dopre + par zontâ la FixKey.app atuâl di Aplicazions."
+    ],
+    [
+      "Disposizions e corezion",
+      "Il corean Dubeolsik e l'inglês US QWERTY a son abilitâts in maniere predefinide. Sielç altris cubiis di dizionari e tastiere in Gjenerâl. La tastiere publiche elencade e à di corispuindi ae disposizion che tu dopris par scrivi. Cun altris lenghis abilitadis, lis peraulis a vegnin valutadis ai spazis; in câs contrari, i spazis e la puntuazion a fasin partî la valutazion. Enter e Tab no le fasin partî. Une peraule e cambie dome cuant che juste un dizionari abilitât al ricognòs un candidât. Lenghis imparentadis a puedin ricognossi la stesse peraule; in chel câs e reste invariade. FixKey nol cambie mai la tô lenghe di imission. I modificadôrs no supuartâts, i tascj muarts incomplets e lis variantis di tastiere che no corispuindin ae disposizion elencade a restin invariâts."
+    ],
+    [
+      "Anule",
+      "Frache subite Backspace dopo une corezion automatiche par ripristinâ la peraule origjinâl e il so separadôr. Lis sucessivis pressions di Backspace a funzionin in maniere normâl."
+    ],
+    [
+      "Candidâts manuâi",
+      "Assegne une scurte di tastiere, scrîf une peraule e dopre la scurte. I tascj frece a selezionin, Enter al apliche e Esc al siere. Tu puedis sielzi in maniere esplicite un candidât no ricognossût. Spostâ il cursôr di origjin o cambiâ aplicazion al siere il seletôr."
+    ],
+    [
+      "Esclusions",
+      "Zonte une aplicazion in Aplicazions esclududis. Lis esclusions a corispuindin ae identitât stabile de aplicazion. Lis identitâts no risoltis a restin te liste."
+    ],
+    [
+      "Riservatece",
+      "FixKey al elabore localmentri ce che tu scrivis. Nol conserve une cronologjie de imission, nol dopre lis notis pe sostituzion e nol invie telemetrie. I elements tacâts, gjenerâts di programs, numerics, emoji, URL, direzions di pueste eletroniche e cun sistemis di scriture miscliçâts a son escludûts de corezion automatiche."
+    ],
+    [
+      "Inzornaments",
+      "I inzornaments stabii a vegnin controlâts vie HTTPS al inviament e ogni 24 oris. Tu dâs il consens prime dal discjariament. Lis firmis no validis a vegnin refudadis. La corezion si ferme prime de instalazion; lis impostazions a restin intatis."
+    ],
+    [
+      "Risoluzion dai problemis",
+      "Lei il codiç de reson, torne controle i permès e prove un control modificabil supuartât. Permès mancjnâts, sensibilitât dal cjamp no cognossude, destinazions no plui validis e scrituris no supuartadis a causin un refût par sigurece. Torne invie o torne instale a man un pachet firmât dopo un inzornament falît."
+    ],
+    [
+      "Eliminazion dai regjistris",
+      "Sielç Elimine i regjistris par gjavâ i regjistris diagnostics locâi, o Vierç la cartele dai regjistris par esaminâju. No sta includi contignûts privâts cuant che tu vierzis une segnalazion su GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Dome peraulis elencadis tal dizionari; lis formis no cognossudis a restin cence modifichis."
+}

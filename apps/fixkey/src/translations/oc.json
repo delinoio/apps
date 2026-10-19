@@ -1,0 +1,138 @@
+{
+  "general": "General",
+  "exclusions": "Aplicacions exclusas",
+  "shortcuts": "Acorchis",
+  "updates": "Mesas a jorn",
+  "diagnostics": "Diagnostic e ajuda",
+  "tagline": "Contunhatz de picar. Corregissètz l'agençament.",
+  "correction": "Correccion automatica",
+  "pause": "Metre en pausa",
+  "resume": "Reprene",
+  "languages": "Lengas activadas",
+  "languageSearch": "Cercar una lenga o un clavièr",
+  "trayPause": "Metre la correccion en pausa",
+  "trayResume": "Reprene la correccion",
+  "traySettings": "Paramètres",
+  "trayExit": "Quitar",
+  "trayStatus": "Estat de la correccion",
+  "notificationUpdate": "Una mesa a jorn es disponibla. Consultatz-la e installatz-la dins los Paramètres.",
+  "notificationAttention": "FixKey necessita vòstra atencion. Consultatz lo còdi del motiu dins los Paramètres.",
+  "korean": "Corean · Dubeolsik",
+  "english": "Anglés · US QWERTY",
+  "startup": "Aviar a la connexion",
+  "uiLanguage": "Lenga de l'interfàcia",
+  "theme": "Tèma",
+  "system": "Sistèma",
+  "light": "Clar",
+  "dark": "Escur",
+  "loading": "Connexion a FixKey…",
+  "connection": "Impossible de se connectar a l'aplicacion de burèu.",
+  "retry": "Tornar ensajar",
+  "active": "La correccion es activa",
+  "inactive": "La correccion es inactiva",
+  "waitingField": "En espèra d'un camp de tèxte modificable",
+  "waitingFieldHelp": "Clicatz sus un camp de tèxte modificable dins una autra aplicacion. FixKey espèra mentre que los Paramètres son dobèrts o que lo camp qu'a lo fòcus pòt pas èsser identificat amb seguretat. Los detalhs son disponibles dins Diagnostic e ajuda.",
+  "local": "Vòstra picada demòra sus aqueste aparelh. Los camps de senhal son excluses.",
+  "empty": "Cap d'aplicacion exclusa",
+  "emptyDetail": "La correccion pòt foncionar dins los contraròtles modificables preses en carga. Apondètz una aplicacion per daissar totjorn sa picada incambiada.",
+  "add": "Apondre una aplicacion",
+  "choose": "Causir una aplicacion",
+  "remove": "Suprimir",
+  "unresolved": "Identitat pas resolguda",
+  "noApps": "Cap d'aplicacion identificabla es pas disponibla. Dobrissètz l'aplicacion que volètz exclure e tornatz ensajar.",
+  "shortcut": "Candidats manuals",
+  "unassigned": "Pas atribuit",
+  "capture": "Definir l'acorchi",
+  "captureHelp": "Quichatz sus una tòca amb Control, Alt, Command o Shift. Esc anulla.",
+  "clear": "Escafar",
+  "cancel": "Anullar",
+  "done": "Acabat",
+  "currentVersion": "Version actuala",
+  "checkUpdate": "Verificar las mesas a jorn",
+  "updateConsent": "Telecargar e installar",
+  "updateHelp": "Las mesas a jorn son verificadas a l'aviada e cada 24 oras. Los telecargaments començan sonque amb vòstre consentiment.",
+  "recovery": "Se l'installacion fracassa, tornatz aviar FixKey o tornatz installar manualament un paquet signat. Vòstres paramètres son conservats. Las versions signadas precedentas pòdon èsser tornadas installar manualament.",
+  "permission": "Autorizar l'accès d'accessibilitat",
+  "permissionHelp": "FixKey necessita l'accès d'accessibilitat e d'observacion de la picada per identificar un contraròtle modificable e remplaçar sonque lo mot acabat.",
+  "inputPermission": "Autorizar la susvelhança de la picada",
+  "inputPermissionRequest": "Autorizar la susvelhança de la picada",
+  "inputPermissionSetup": "Configurar la susvelhança de la picada",
+  "inputPermissionListHelp": "L'accessibilitat pòt ja autorizar l'escota de las tòcas quitament quand FixKey es absent de la susvelhança de la picada. macOS confirma pas aicí una entrada separada dins la lista. Verificatz la lista dins los Paramètres del sistèma e apondètz lo FixKey.app actual amb + s'i manca.",
+  "inputPermissionHelp": "FixKey necessita la susvelhança de la picada per detectar las tòcas utilizadas per la correccion de l'agençament del clavièr.",
+  "accessibilityGranted": "L'accès d'accessibilitat es ja autorizat.",
+  "inputPermissionSteps": [
+    "Causissètz Autorizar la susvelhança de la picada per enregistrar FixKey e dobrir sos paramètres d'autorizacion de macOS.",
+    "Dins Paramètres del sistèma → Confidencialitat e seguretat → Susvelhança de la picada, activatz FixKey. S'i manca, causissètz + e apondètz lo FixKey.app actual dempuèi Aplicacions. Tornatz aicí e causissètz Tornar verificar. Tornatz aviar FixKey se macOS o demanda."
+  ],
+  "permissionRequest": "Autorizar l'accès d'accessibilitat",
+  "permissionWaiting": "La correccion demorarà desactivada fins que l'accès siá autorizat. Aprèp aver activat l'accès, causissètz Tornar verificar.",
+  "permissionSteps": [
+    "Causissètz Autorizar l'accès d'accessibilitat e seguissètz las instruccions de macOS.",
+    "Activatz FixKey dins Accessibilitat. S'es ja activat mas qu'aquesta bóstia de dialòg demòra aprèp aver tornat aviar FixKey, suprimissètz l'anciana entrada FixKey amb − e utilizatz + per tornar apondre lo FixKey.app actual. Una aplicacion recompilada pòt correspondre pas mai a l'anciana entrada d'autorizacion. Se l'entrada manca, utilizatz + per apondre FixKey dempuèi Aplicacions.",
+    "Activatz tanben FixKey dins Susvelhança de la picada, puèi tornatz verificar. Se cap de demanda de susvelhança de la picada apareis pas, causissètz tornarmai Autorizar l'accès d'accessibilitat. Tornatz aviar FixKey se macOS o demanda."
+  ],
+  "macPermission": "Dins los Paramètres del sistèma, autorizatz FixKey dins Accessibilitat e Susvelhança de la picada, puèi tornatz verificar.",
+  "windowsPermission": "Utilizatz FixKey dins vòstra session Windows actuala. Los contraròtles protegits, amb privilègis elevats o pas preses en carga demòran incambiats.",
+  "linuxPermission": "Utilizatz una session X11 amb lo servici d'accessibilitat AT-SPI e XInput2 disponibles. Wayland es pas pres en carga.",
+  "openSettings": "Dobrir los paramètres del sistèma",
+  "recheck": "Tornar verificar",
+  "later": "Mai tard",
+  "error": "L'accion a fracassat",
+  "reason": "Motiu",
+  "openLogs": "Dobrir lo dorsièr dels jornals",
+  "deleteLogs": "Suprimir los jornals",
+  "restore": "Restablir la còpia de salvagarda dels paramètres",
+  "support": "GitHub Issues",
+  "logHelp": "Los jornals contenon la version, la plataforma, los còdis dels motius e las duradas. Lo tèxte picat n'es exclús. Los jornals demòran sus aqueste aparelh pendent un maximum de sèt jorns e de 10 MiB al total.",
+  "original": "Original",
+  "recognized": "Reconegut",
+  "notRecognized": "Pas reconegut pel diccionari",
+  "unchecked": "A pas pogut èsser verificat",
+  "candidates": "Candidats d'agençament",
+  "candidateHelp": "↑ ↓ Seleccionar · Enter Aplicar · Esc Tampar",
+  "noCandidates": "Lo contèxte d'origina es pas mai disponible.",
+  "help": "Ajuda",
+  "helpTopics": [
+    [
+      "Installacion",
+      "Installatz lo DMG signat sus macOS ARM64, l'installador NSIS sus Windows x64 o l'AppImage sus Linux X11 x64. Las plataformas ciblas implican pas una compatibilitat verificada amb cada aplicacion."
+    ],
+    [
+      "Autorizacions",
+      "Acordatz las autorizacions d'accessibilitat e de picada demandadas per vòstre sistèma operatiu, puèi causissètz Tornar verificar. La correccion demòra inactiva fins que las autorizacions e los diccionaris sián prèstes. Sus macOS, l'accessibilitat pòt provesir un accès efectiu d'escota de las tòcas sens entrada separada dins Susvelhança de la picada. Utilizatz Configurar la susvelhança de la picada dins General per verificar la lista; se FixKey es absent, utilizatz + per apondre lo FixKey.app actual dempuèi Aplicacions."
+    ],
+    [
+      "Agençaments e correccion",
+      "Lo corean Dubeolsik e l'anglés US QWERTY son activats per defaut. Seleccionatz de parelhs suplementaris de diccionari e de clavièr dins General. Lo clavièr public indicat deu correspondre a l'agençament amb lo qual picatz. Amb de lengas suplementàrias activadas, los mots son avalorats als espacis; autrament, los espacis e la ponctuacion desencadenan l'avaloracion. Enter e Tab o fan pas. Un mot càmbia sonque quand exactament un diccionari activat reconeis un candidat. De lengas aparentadas pòdon reconéisser lo meteis mot; es alara daissat incambiat. FixKey càmbia pas jamai vòstra lenga de picada. Los modificadors pas preses en carga, las tòcas mòrtas incompletas e las variantas de clavièr que correspondon pas a l'agençament indicat son daissats incambiats."
+    ],
+    [
+      "Anullacion",
+      "Quichatz immediatament sus Backspace aprèp una correccion automatica per restablir lo mot d'origina e son separator. Las quichadas seguentas sus Backspace se compòrtan normalament."
+    ],
+    [
+      "Candidats manuals",
+      "Atribuissètz un acorchi, picatz un mot e utilizatz l'acorchi. Las tòcas de flècha seleccionan, Enter aplica e Esc tampa. Podètz causir explicitament un candidat pas reconegut. Desplaçar lo cursor d'insercion d'origina o cambiar d'aplicacion tampa lo selector."
+    ],
+    [
+      "Exclusions",
+      "Apondètz una aplicacion dins Aplicacions exclusas. Las exclusions correspondon a l'identitat establa de l'aplicacion. Las identitats pas resolgudas demòran dins la lista."
+    ],
+    [
+      "Confidencialitat",
+      "FixKey tracta la picada localament. Conserva pas cap d'istoric de picada, utiliza pas lo quichapapièrs pel remplaçament e manda pas cap de telemetria. Los elements pegats, produches per programa, numerics, los emojis, las URL, las adreças electronicas e los elements que mesclan mantun sistèma d'escritura son excluses de la correccion automatica."
+    ],
+    [
+      "Mesas a jorn",
+      "Las mesas a jorn establas son verificadas per HTTPS a l'aviada e cada 24 oras. Donatz vòstre consentiment abans lo telecargament. Las signaturas invalidas son regetadas. La correccion s'arrèsta abans l'installacion; los paramètres demòran intactes."
+    ],
+    [
+      "Resolucion dels problèmas",
+      "Legissètz lo còdi del motiu, tornatz verificar las autorizacions e ensajatz un contraròtle modificable pres en carga. Las autorizacions mancantas, la sensibilitat desconeguda d'un camp, las ciblas perimidas e las escrituras pas presas en carga provòcan un refús per seguretat. Tornatz aviar o tornatz installar manualament un paquet signat aprèp lo fracàs d'una mesa a jorn."
+    ],
+    [
+      "Supression dels jornals",
+      "Causissètz Suprimir los jornals per suprimir los jornals de diagnostic locals o Dobrir lo dorsièr dels jornals per los examinar. Incluissètz pas de contengut privat quand dobrissètz un senhalament sus GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Sonque los mots repertoriats dins lo diccionari; las formas desconegudas demòran incambiadas."
+}

@@ -1,0 +1,138 @@
+{
+  "general": "Almennt",
+  "exclusions": "Undanskilin forrit",
+  "shortcuts": "Flýtilyklar",
+  "updates": "Uppfærslur",
+  "diagnostics": "Greining og hjálp",
+  "tagline": "Haltu áfram að skrifa. Lagaðu lyklaborðsuppsetninguna.",
+  "correction": "Sjálfvirk leiðrétting",
+  "pause": "Gera hlé",
+  "resume": "Halda áfram",
+  "languages": "Virk tungumál",
+  "languageSearch": "Finna tungumál eða lyklaborð",
+  "trayPause": "Gera hlé á leiðréttingu",
+  "trayResume": "Halda leiðréttingu áfram",
+  "traySettings": "Stillingar",
+  "trayExit": "Hætta",
+  "trayStatus": "Staða leiðréttingar",
+  "notificationUpdate": "Uppfærsla er í boði. Skoðaðu hana og settu upp í Stillingum.",
+  "notificationAttention": "FixKey þarfnast athygli. Skoðaðu ástæðukóðann í Stillingum.",
+  "korean": "Kóreska · Dubeolsik",
+  "english": "Enska · US QWERTY",
+  "startup": "Ræsa við innskráningu",
+  "uiLanguage": "Tungumál viðmóts",
+  "theme": "Þema",
+  "system": "Kerfi",
+  "light": "Ljóst",
+  "dark": "Dökkt",
+  "loading": "Tengist FixKey…",
+  "connection": "Ekki er hægt að tengjast skjáborðsforritinu.",
+  "retry": "Reyna aftur",
+  "active": "Leiðrétting er virk",
+  "inactive": "Leiðrétting er óvirk",
+  "waitingField": "Bíður eftir textareit sem hægt er að breyta",
+  "waitingFieldHelp": "Smelltu á textareit sem hægt er að breyta í öðru forriti. FixKey bíður meðan Stillingar eru opnar eða ekki er hægt að auðkenna reitinn sem hefur fókus með öruggum hætti. Nánari upplýsingar eru í Greiningu og hjálp.",
+  "local": "Innslátturinn þinn verður áfram á þessu tæki. Lykilorðareitir eru undanskildir.",
+  "empty": "Engin undanskilin forrit",
+  "emptyDetail": "Leiðrétting getur virkað í studdum innsláttarreitum sem hægt er að breyta. Bættu við forriti til að láta innslátt þess alltaf vera óbreyttan.",
+  "add": "Bæta við forriti",
+  "choose": "Veldu forrit",
+  "remove": "Fjarlægja",
+  "unresolved": "Auðkenni óþekkt",
+  "noApps": "Engin auðkennanleg forrit eru tiltæk. Opnaðu forritið sem þú vilt undanskilja og reyndu aftur.",
+  "shortcut": "Handvirkt val tillagna",
+  "unassigned": "Óúthlutað",
+  "capture": "Velja flýtilykil",
+  "captureHelp": "Ýttu á lykil ásamt Control, Alt, Command eða Shift. Esc hættir við.",
+  "clear": "Hreinsa",
+  "cancel": "Hætta við",
+  "done": "Lokið",
+  "currentVersion": "Núverandi útgáfa",
+  "checkUpdate": "Leita að uppfærslum",
+  "updateConsent": "Sækja og setja upp",
+  "updateHelp": "Leitað er að uppfærslum við ræsingu og á 24 klukkustunda fresti. Niðurhal hefst aðeins með samþykki þínu.",
+  "recovery": "Ef uppsetning mistekst skaltu endurræsa FixKey eða setja undirritaðan pakka aftur upp handvirkt. Stillingarnar þínar varðveitast. Hægt er að setja eldri undirritaðar útgáfur aftur upp handvirkt.",
+  "permission": "Leyfa aðgengisaðgang",
+  "permissionHelp": "FixKey þarf aðgengisaðgang og heimild til að fylgjast með innslætti til að auðkenna innsláttarreit sem hægt er að breyta og skipta aðeins út fullkláruðu orði.",
+  "inputPermission": "Leyfa vöktun innsláttar",
+  "inputPermissionRequest": "Leyfa vöktun innsláttar",
+  "inputPermissionSetup": "Setja upp vöktun innsláttar",
+  "inputPermissionListHelp": "Aðgengisaðgangur getur þegar leyft hlustun á lykla þótt FixKey sé ekki á listanum fyrir vöktun innsláttar. macOS staðfestir ekki sérstaka færslu á listanum hér. Skoðaðu listann í Kerfisstillingum og bættu núverandi FixKey.app við með + ef það vantar.",
+  "inputPermissionHelp": "FixKey þarf vöktun innsláttar til að greina lyklana sem eru notaðir við leiðréttingu lyklaborðsuppsetningar.",
+  "accessibilityGranted": "Aðgengisaðgangur er þegar leyfður.",
+  "inputPermissionSteps": [
+    "Veldu Leyfa vöktun innsláttar til að skrá FixKey og opna heimildastillingar þess í macOS.",
+    "Í Kerfisstillingum → Persónuvernd og öryggi → Vöktun innsláttar skaltu virkja FixKey. Ef það vantar skaltu velja + og bæta núverandi FixKey.app við úr Forritum. Farðu aftur hingað og veldu Athuga aftur. Endurræstu FixKey ef macOS biður um það."
+  ],
+  "permissionRequest": "Leyfa aðgengisaðgang",
+  "permissionWaiting": "Leiðrétting verður óvirk þar til aðgangur er leyfður. Eftir að þú hefur leyft aðgang skaltu velja Athuga aftur.",
+  "permissionSteps": [
+    "Veldu Leyfa aðgengisaðgang og fylgdu fyrirmælunum frá macOS.",
+    "Virkjaðu FixKey undir Aðgengi. Ef það er þegar virkt en þessi gluggi birtist enn eftir að FixKey hefur verið endurræst skaltu fjarlægja gömlu FixKey-færsluna með − og nota + til að bæta núverandi FixKey.app við aftur. Endurbyggt forrit samsvarar hugsanlega ekki lengur gömlu heimildafærslunni. Ef það vantar skaltu nota + til að bæta FixKey við úr Forritum.",
+    "Virkjaðu FixKey einnig undir Vöktun innsláttar og athugaðu síðan aftur. Ef engin beiðni um vöktun innsláttar birtist skaltu velja Leyfa aðgengisaðgang aftur. Endurræstu FixKey ef macOS biður um það."
+  ],
+  "macPermission": "Í Kerfisstillingum skaltu leyfa FixKey undir Aðgengi og Vöktun innsláttar og athuga síðan aftur.",
+  "windowsPermission": "Notaðu FixKey í núverandi Windows-setu. Verndaðir eða óstuddir innsláttarreitir, og reitir í forritum með auknum réttindum, eru látnir vera óbreyttir.",
+  "linuxPermission": "Notaðu X11-setu þar sem AT-SPI-aðgengisþjónustan og XInput2 eru tiltæk. Wayland er ekki stutt.",
+  "openSettings": "Opna kerfisstillingar",
+  "recheck": "Athuga aftur",
+  "later": "Síðar",
+  "error": "Aðgerð mistókst",
+  "reason": "Ástæða",
+  "openLogs": "Opna annálamöppu",
+  "deleteLogs": "Eyða annálum",
+  "restore": "Endurheimta öryggisafrit stillinga",
+  "support": "GitHub Issues",
+  "logHelp": "Annálar innihalda útgáfu, stýrikerfi, ástæðukóða og tímamælingar. Innsláttur er ekki tekinn með. Annálar eru geymdir á þessu tæki í að hámarki sjö daga og samanlögð stærð þeirra er að hámarki 10 MiB.",
+  "original": "Upprunalegt",
+  "recognized": "Þekkt",
+  "notRecognized": "Ekki þekkt í orðabókinni",
+  "unchecked": "Ekki var hægt að athuga",
+  "candidates": "Tillögur að lyklaborðsuppsetningu",
+  "candidateHelp": "↑ ↓ Velja · Enter Nota · Esc Loka",
+  "noCandidates": "Upprunalega samhengið er ekki lengur tiltækt.",
+  "help": "Hjálp",
+  "helpTopics": [
+    [
+      "Uppsetning",
+      "Settu upp undirritaðan DMG-pakka á macOS ARM64, NSIS-uppsetningarforrit á Windows x64 eða AppImage á Linux X11 x64. Tilgreind stýrikerfi fela ekki í sér staðfestan samhæfanleika við öll forrit."
+    ],
+    [
+      "Heimildir",
+      "Veittu aðgengis- og innsláttarheimildirnar sem stýrikerfið biður um og veldu síðan Athuga aftur. Leiðrétting helst óvirk þar til heimildir og orðabækur eru tilbúnar. Á macOS getur aðgengisaðgangur veitt virkan aðgang til að hlusta á lykla án sérstakrar færslu fyrir vöktun innsláttar. Notaðu Setja upp vöktun innsláttar undir Almennt til að skoða listann. Ef FixKey vantar skaltu nota + til að bæta núverandi FixKey.app við úr Forritum."
+    ],
+    [
+      "Lyklaborðsuppsetningar og leiðrétting",
+      "Kóreska Dubeolsik og bandarísk enska US QWERTY eru sjálfgefið virk. Veldu fleiri pör af orðabók og lyklaborði undir Almennt. Opinbera lyklaborðið á listanum verður að samsvara uppsetningunni sem þú skrifar með. Þegar fleiri tungumál eru virk eru orð metin við bil; annars kalla bæði bil og greinarmerki fram mat. Enter og Tab gera það ekki. Orði er aðeins breytt þegar nákvæmlega ein virk orðabók þekkir tillögu. Skyld tungumál geta þekkt sama orðið; þá er það látið vera óbreytt. FixKey skiptir aldrei um innsláttartungumál. Óstuddir breytilyklar, ólokinn innsláttur með dauðum lyklum og lyklaborðsafbrigði sem samsvara ekki uppsetningunni á listanum eru látin vera óbreytt."
+    ],
+    [
+      "Afturkalla",
+      "Ýttu strax á Backspace eftir sjálfvirka leiðréttingu til að endurheimta upprunalega orðið og aðskilnaðarmerkið á eftir því. Frekari innsláttur á Backspace virkar eins og venjulega."
+    ],
+    [
+      "Handvirkt val tillagna",
+      "Úthlutaðu flýtilykli, skrifaðu orð og notaðu flýtilykilinn. Örvalyklar velja, Enter notar tillöguna og Esc lokar. Þú getur sérstaklega valið tillögu sem er ekki þekkt. Ef þú færir textabendilinn í upprunareitnum eða skiptir um forrit lokast valglugginn."
+    ],
+    [
+      "Undantekningar",
+      "Bættu forriti við undir Undanskilin forrit. Undantekningar miðast við stöðugt auðkenni forritsins. Færslur með óþekkt auðkenni haldast á listanum."
+    ],
+    [
+      "Persónuvernd",
+      "FixKey vinnur úr innslætti á tækinu. Það geymir ekki innsláttarsögu, notar ekki klippiborðið til að skipta út texta og sendir ekki fjarmælingar. Innlímdur eða forritaður innsláttur, tölur, tjákn, vefslóðir, netföng og textaeiningar með blönduðum skriftarkerfum eru undanskilin sjálfvirkri leiðréttingu."
+    ],
+    [
+      "Uppfærslur",
+      "Leitað er að stöðugum uppfærslum yfir HTTPS við ræsingu og á 24 klukkustunda fresti. Þú veitir samþykki áður en niðurhal hefst. Ógildum undirskriftum er hafnað. Leiðrétting stöðvast fyrir uppsetningu; stillingar haldast óbreyttar."
+    ],
+    [
+      "Úrræðaleit",
+      "Lestu ástæðukóðann, athugaðu heimildir aftur og reyndu studdan innsláttarreit sem hægt er að breyta. Heimildir sem vantar, óvissa um hvort reitur sé viðkvæmur, úreltir markreitir og óstuddar skrifaðgerðir leiða til öruggrar höfnunar. Endurræstu eða settu undirritaðan pakka aftur upp handvirkt ef uppfærsla mistekst."
+    ],
+    [
+      "Eyðing annála",
+      "Veldu Eyða annálum til að fjarlægja greiningarannála á tækinu eða Opna annálamöppu til að skoða þá. Ekki láta einkagögn fylgja þegar þú stofnar mál á GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Aðeins orð sem eru skráð í orðabókinni; óþekktar myndir haldast óbreyttar."
+}

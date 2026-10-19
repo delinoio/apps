@@ -1,0 +1,138 @@
+{
+  "general": "Rusange",
+  "exclusions": "Porogaramu zititabwaho",
+  "shortcuts": "Amahinanzira",
+  "updates": "Amavugurura",
+  "diagnostics": "Isuzuma n'ubufasha",
+  "tagline": "Komeza wandike. Kosora imiterere ya mwandikisho.",
+  "correction": "Gukosora byikora",
+  "pause": "Hagarika by'agateganyo",
+  "resume": "Komeza",
+  "languages": "Indimi zifunguye",
+  "languageSearch": "Shaka ururimi cyangwa mwandikisho",
+  "trayPause": "Hagarika gukosora by'agateganyo",
+  "trayResume": "Komeza gukosora",
+  "traySettings": "Igenamiterere",
+  "trayExit": "Sohoka",
+  "trayStatus": "Imiterere yo gukosora",
+  "notificationUpdate": "Hari ivugurura rishya. Risuzume maze urishyiremo mu Igenamiterere.",
+  "notificationAttention": "FixKey ikeneye ko uyitaho. Reba kode y'impamvu mu Igenamiterere.",
+  "korean": "Igikoreya · Dubeolsik",
+  "english": "Icyongereza · US QWERTY",
+  "startup": "Tangira igihe winjiye muri sisitemu",
+  "uiLanguage": "Ururimi rw'igaragaza",
+  "theme": "Insanganyamatsiko",
+  "system": "Sisitemu",
+  "light": "Icyeye",
+  "dark": "Yijimye",
+  "loading": "Birahuza na FixKey…",
+  "connection": "Ntibishoboka guhuza na porogaramu yo kuri mudasobwa.",
+  "retry": "Ongera ugerageze",
+  "active": "Gukosora birakora",
+  "inactive": "Gukosora ntibikora",
+  "waitingField": "Hategerejwe umwanya w'inyandiko ushobora guhindurwa",
+  "waitingFieldHelp": "Kanda ku mwanya w'inyandiko ushobora guhindurwa muri indi porogaramu. FixKey irategereza igihe Igenamiterere rifunguye cyangwa igihe umwanya uri gukorerwamo udashobora kumenyekana mu buryo bwizewe. Ibisobanuro birambuye biri mu Isuzuma n'ubufasha.",
+  "local": "Ibyo wandika biguma kuri iki gikoresho. Imyanya y'amagambo y'ibanga ntitabwaho.",
+  "empty": "Nta porogaramu zititabwaho",
+  "emptyDetail": "Gukosora bishobora gukora mu myanya yo kwandikamo ishyigikiwe kandi ishobora guhindurwa. Ongeraho porogaramu kugira ngo ibyo wandikamo bihore bitahinduwe.",
+  "add": "Ongeraho porogaramu",
+  "choose": "Hitamo porogaramu",
+  "remove": "Kuraho",
+  "unresolved": "Umwirondoro nturamenyekana",
+  "noApps": "Nta porogaramu zishobora kumenyekana zihari. Fungura porogaramu ushaka ko ititabwaho maze wongere ugerageze.",
+  "shortcut": "Guhitamo amagambo ubwawe",
+  "unassigned": "Ntibiragenwa",
+  "capture": "Gena ihinanzira",
+  "captureHelp": "Kanda urufunguzo hamwe na Control, Alt, Command cyangwa Shift. Esc irahagarika.",
+  "clear": "Siba",
+  "cancel": "Reka",
+  "done": "Birarangiye",
+  "currentVersion": "Verisiyo iriho",
+  "checkUpdate": "Reba niba hari amavugurura",
+  "updateConsent": "Manura kandi ushyiremo",
+  "updateHelp": "Amavugurura ashakishwa igihe porogaramu itangiye no buri masaha 24. Kuyamanura bitangira ari uko ubyemeye gusa.",
+  "recovery": "Niba kuyishyiramo binaniwe, ongera utangize FixKey cyangwa wongere ushyiremo intoki paki yashyizweho umukono. Igenamiterere ryawe riragumaho. Verisiyo za mbere zashyizweho umukono zishobora kongera gushyirwamo intoki.",
+  "permission": "Emera uburenganzira bw'ubufasha bwo gukoresha",
+  "permissionHelp": "FixKey ikeneye uburenganzira bw'ubufasha bwo gukoresha no gukurikirana ibyandikwa kugira ngo imenye umwanya ushobora guhindurwa maze isimbuze ijambo rirangiye gusa.",
+  "inputPermission": "Emera gukurikirana ibyandikwa",
+  "inputPermissionRequest": "Emera gukurikirana ibyandikwa",
+  "inputPermissionSetup": "Tegura gukurikirana ibyandikwa",
+  "inputPermissionListHelp": "Ubufasha bwo gukoresha bushobora kuba bwaramaze kwemerera gukurikirana imfunguzo nubwo FixKey itari mu rutonde rwo gukurikirana ibyandikwa. macOS ntiyemeza hano ko iri muri urwo rutonde rwihariye. Reba urutonde mu Igenamiterere rya sisitemu maze ukoreshe + wongeremo FixKey.app iriho niba itarimo.",
+  "inputPermissionHelp": "FixKey ikeneye gukurikirana ibyandikwa kugira ngo imenye imfunguzo zikoreshwa mu gukosora imiterere ya mwandikisho.",
+  "accessibilityGranted": "Uburenganzira bw'ubufasha bwo gukoresha bwaremewe.",
+  "inputPermissionSteps": [
+    "Hitamo Emera gukurikirana ibyandikwa kugira ngo wandikishe FixKey kandi ufungure igenamiterere ry'uburenganzira bwayo muri macOS.",
+    "Mu Igenamiterere rya sisitemu → Ubuzima bwite n'umutekano → Gukurikirana ibyandikwa, fungura FixKey. Niba itarimo, hitamo + maze wongeremo FixKey.app iriho uyikuye muri Porogaramu. Garuka hano maze uhitemo Ongera usuzume. Ongera utangize FixKey niba macOS ibisabye."
+  ],
+  "permissionRequest": "Emera uburenganzira bw'ubufasha bwo gukoresha",
+  "permissionWaiting": "Gukosora bizakomeza kudakora kugeza uburenganzira bwemewe. Nyuma yo kubwemerera, hitamo Ongera usuzume.",
+  "permissionSteps": [
+    "Hitamo Emera uburenganzira bw'ubufasha bwo gukoresha maze ukurikize ibyo macOS igusaba.",
+    "Fungura FixKey mu Bufasha bwo gukoresha. Niba isanzwe ifunguye ariko aka kazu k'ibiganiro kagakomeza kugaragara nyuma yo kongera gutangiza FixKey, kuraho FixKey ya kera ukoresheje − maze ukoreshe + wongere wongeremo FixKey.app iriho. Porogaramu yongeye kubakwa ishobora kuba itagihuye n'uburenganzira bwa kera. Niba itarimo, koresha + wongeremo FixKey uyikuye muri Porogaramu.",
+    "Fungura FixKey no mu Gukurikirana ibyandikwa, hanyuma wongere usuzume. Niba nta busabe bwo gukurikirana ibyandikwa bugaragaye, ongera uhitemo Emera uburenganzira bw'ubufasha bwo gukoresha. Ongera utangize FixKey niba macOS ibisabye."
+  ],
+  "macPermission": "Mu Igenamiterere rya sisitemu, emerera FixKey mu Bufasha bwo gukoresha no mu Gukurikirana ibyandikwa, hanyuma wongere usuzume.",
+  "windowsPermission": "Koresha FixKey mu mwanya wa Windows urimo ubu. Imyanya irinzwe, ikenera uburenganzira bwo hejuru cyangwa idashyigikiwe isigara idahinduwe.",
+  "linuxPermission": "Koresha umwanya wa X11 ufite serivisi y'ubufasha bwo gukoresha ya AT-SPI na XInput2 biboneka. Wayland ntishyigikiwe.",
+  "openSettings": "Fungura igenamiterere rya sisitemu",
+  "recheck": "Ongera usuzume",
+  "later": "Nyuma",
+  "error": "Igikorwa cyananiranye",
+  "reason": "Impamvu",
+  "openLogs": "Fungura ububiko bw'inyandiko z'ibyabaye",
+  "deleteLogs": "Siba inyandiko z'ibyabaye",
+  "restore": "Garura kopi y'igenamiterere",
+  "support": "GitHub Issues",
+  "logHelp": "Inyandiko z'ibyabaye zirimo verisiyo, sisitemu ikoreshwa, kode z'impamvu n'ibihe byafashwe. Ibyo wandika ntibirimo. Izo nyandiko ziguma kuri iki gikoresho mu gihe kitarenze iminsi irindwi kandi ingano yazo yose ntirenza 10 MiB.",
+  "original": "Icy'umwimerere",
+  "recognized": "Cyamenyekanye",
+  "notRecognized": "Nticyamenyekanye mu nkoranyamagambo",
+  "unchecked": "Nticyashoboye kugenzurwa",
+  "candidates": "Amagambo ashoboka bitewe n'imiterere ya mwandikisho",
+  "candidateHelp": "↑ ↓ Hitamo · Enter Koresha · Esc Funga",
+  "noCandidates": "Imiterere y'aho inyandiko yaturutse ntikiboneka.",
+  "help": "Ubufasha",
+  "helpTopics": [
+    [
+      "Gushyiramo porogaramu",
+      "Shyiramo DMG yashyizweho umukono kuri macOS ARM64, porogaramu yo gushyiramo ya NSIS kuri Windows x64, cyangwa AppImage kuri Linux X11 x64. Sisitemu zigenewe ntizisobanura ko byemejwe ko ikorana na buri porogaramu."
+    ],
+    [
+      "Uburenganzira",
+      "Tanga uburenganzira bw'ubufasha bwo gukoresha n'ubwo gukurikirana ibyandikwa busabwa na sisitemu yawe, hanyuma uhitemo Ongera usuzume. Gukosora bikomeza kudakora kugeza uburenganzira n'inkoranyamagambo biteguye. Kuri macOS, Ubufasha bwo gukoresha bushobora gutanga uburenganzira bukora bwo gukurikirana imfunguzo nta mwirondoro wihariye uri mu Gukurikirana ibyandikwa. Koresha Tegura gukurikirana ibyandikwa muri Rusange kugira ngo urebe urutonde; niba FixKey itarimo, koresha + wongeremo FixKey.app iriho uyikuye muri Porogaramu."
+    ],
+    [
+      "Imiterere ya mwandikisho no gukosora",
+      "Igikoreya Dubeolsik n'Icyongereza US QWERTY bifungurwa ku buryo busanzwe. Hitamo izindi nkoranyamagambo na mwandikisho bijyana muri Rusange. Mwandikisho rusange iri ku rutonde igomba guhuza n'imiterere ukoresha wandika. Iyo izindi ndimi zifunguye, amagambo asuzumwa iyo handitswe umwanya; bitabaye ibyo, imyanya n'utwatuzo bitangiza isuzuma. Enter na Tab ntibiritangiza. Ijambo rihinduka gusa iyo inkoranyamagambo imwe rukumbi mu zifunguye imenye ijambo rishoboka. Indimi zifitanye isano zishobora kumenya ijambo rimwe; icyo gihe risigara ridahinduwe. FixKey ntiyigera ihindura ururimi wandikamo. Imfunguzo zihindura imikorere zidashyigikiwe, imfunguzo zitegereza indi nyuguti zitaruzura n'ubundi bwoko bwa mwandikisho butajyanye n'imiterere iri ku rutonde bisigara bidahinduwe."
+    ],
+    [
+      "Gusubizaho",
+      "Kanda Backspace ako kanya nyuma yo gukosora byikora kugira ngo ugarure ijambo ry'umwimerere n'ikimenyetso kirikurikira kirutandukanya n'ibindi. Gukanda Backspace nyuma yaho bikora nk'uko bisanzwe."
+    ],
+    [
+      "Guhitamo amagambo ubwawe",
+      "Gena ihinanzira, andika ijambo maze ukoreshe iryo hinanzira. Imfunguzo z'imyambi zirahitamo, Enter ikemeza naho Esc igafunga. Ushobora guhitamo ubwawe ijambo ritamenyekanye. Kwimura akarongo kerekana aho wandika mu nyandiko y'umwimerere cyangwa guhindura porogaramu bifunga ahatoranyirizwa."
+    ],
+    [
+      "Ibititabwaho",
+      "Ongeraho porogaramu muri Porogaramu zititabwaho. Ibititabwaho bishingira ku mwirondoro udahinduka wa porogaramu. Imyirondoro itaramenyekana iguma ku rutonde."
+    ],
+    [
+      "Ubuzima bwite",
+      "FixKey itunganyiriza ibyo wandika kuri iki gikoresho. Ntibika amateka y'ibyanditswe, ntikoresha ububiko bw'ibyandukuwe kugira ngo isimbuze inyandiko, kandi ntiyohereza amakuru y'imikoreshereze. Ibyometse, ibyanditswe na porogaramu, imibare, emoji, URL, aderesi za imeli n'ibice by'inyandiko bivanga inyuguti zo mu myandikire itandukanye ntibitabwaho mu gukosora byikora."
+    ],
+    [
+      "Amavugurura",
+      "Amavugurura ahamye ashakishwa hakoreshejwe HTTPS igihe porogaramu itangiye no buri masaha 24. Urabanza ukabyemera mbere yo kuyamanura. Imikono itemewe irangwa. Gukosora bihagarara mbere yo gushyiramo; igenamiterere riragumaho ridahinduwe."
+    ],
+    [
+      "Gukemura ibibazo",
+      "Soma kode y'impamvu, ongera usuzume uburenganzira kandi ugerageze umwanya wo kwandikamo ushyigikiwe kandi ushobora guhindurwa. Kubura uburenganzira, kutamenya niba umwanya urimo amakuru y'ibanga, aho guhindura hatakigezweho no kwandika kudashyigikiwe bituma igikorwa cyangwa mu buryo bwizewe. Ongera utangize porogaramu cyangwa wongere ushyiremo intoki paki yashyizweho umukono nyuma yo kunanirwa kuvugurura."
+    ],
+    [
+      "Gusiba inyandiko z'ibyabaye",
+      "Hitamo Siba inyandiko z'ibyabaye kugira ngo ukureho inyandiko z'isuzuma ziri kuri iki gikoresho, cyangwa Fungura ububiko bw'inyandiko z'ibyabaye kugira ngo uzisuzume. Ntushyiremo amakuru y'ibanga igihe utanga ikibazo kuri GitHub Issues."
+    ]
+  ],
+  "listedWordsOnly": "Amagambo ari mu nkoranyamagambo gusa; imiterere itazwi isigara idahinduwe."
+}

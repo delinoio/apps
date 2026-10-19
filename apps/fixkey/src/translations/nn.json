@@ -1,0 +1,138 @@
+{
+  "general": "Generelt",
+  "exclusions": "Utelatne appar",
+  "shortcuts": "Snarvegar",
+  "updates": "Oppdateringar",
+  "diagnostics": "Diagnostikk og hjelp",
+  "tagline": "Hald fram med å skrive. Rett tastaturoppsettet.",
+  "correction": "Automatisk retting",
+  "pause": "Set på pause",
+  "resume": "Hald fram",
+  "languages": "Aktiverte språk",
+  "languageSearch": "Finn eit språk eller tastatur",
+  "trayPause": "Set rettinga på pause",
+  "trayResume": "Hald fram med rettinga",
+  "traySettings": "Innstillingar",
+  "trayExit": "Avslutt",
+  "trayStatus": "Rettestatus",
+  "notificationUpdate": "Ei oppdatering er tilgjengeleg. Sjå gjennom og installer henne i Innstillingar.",
+  "notificationAttention": "FixKey treng tilsyn. Sjå årsakskoden i Innstillingar.",
+  "korean": "Koreansk · Dubeolsik",
+  "english": "Engelsk · US QWERTY",
+  "startup": "Start ved innlogging",
+  "uiLanguage": "Språk i brukargrensesnittet",
+  "theme": "Tema",
+  "system": "System",
+  "light": "Lyst",
+  "dark": "Mørkt",
+  "loading": "Koplar til FixKey…",
+  "connection": "Kan ikkje kople til skrivebordsappen.",
+  "retry": "Prøv igjen",
+  "active": "Rettinga er aktiv",
+  "inactive": "Rettinga er inaktiv",
+  "waitingField": "Ventar på eit redigerbart tekstfelt",
+  "waitingFieldHelp": "Klikk på eit redigerbart tekstfelt i ein annan app. FixKey ventar medan Innstillingar er ope, eller når feltet med fokus ikkje kan identifiserast trygt. Du finn meir informasjon i Diagnostikk og hjelp.",
+  "local": "Det du skriv, blir verande på denne eininga. Passordfelt er utelatne.",
+  "empty": "Ingen utelatne appar",
+  "emptyDetail": "Retting kan køyre i støtta redigerbare kontrollar. Legg til ein app for alltid å la det du skriv der, vere uendra.",
+  "add": "Legg til app",
+  "choose": "Vel ein app",
+  "remove": "Fjern",
+  "unresolved": "Identiteten er uavklart",
+  "noApps": "Ingen appar som kan identifiserast, er tilgjengelege. Opne appen du vil utelate, og prøv igjen.",
+  "shortcut": "Manuelle kandidatar",
+  "unassigned": "Ikkje tilordna",
+  "capture": "Vel snarveg",
+  "captureHelp": "Trykk på ein tast saman med Control, Alt, Command eller Shift. Esc avbryt.",
+  "clear": "Tøm",
+  "cancel": "Avbryt",
+  "done": "Ferdig",
+  "currentVersion": "Gjeldande versjon",
+  "checkUpdate": "Sjå etter oppdateringar",
+  "updateConsent": "Last ned og installer",
+  "updateHelp": "Det blir sett etter oppdateringar ved oppstart og kvar 24. time. Nedlastingar startar berre med samtykket ditt.",
+  "recovery": "Dersom installasjonen feilar, start FixKey på nytt eller installer ein signert pakke på nytt manuelt. Innstillingane dine blir tekne vare på. Tidlegare signerte versjonar kan installerast på nytt manuelt.",
+  "permission": "Tillat tilgang til tilgjengefunksjonar",
+  "permissionHelp": "FixKey treng tilgang til tilgjengefunksjonar og overvaking av inndata for å identifisere ein redigerbar kontroll og berre byte ut det fullførte ordet.",
+  "inputPermission": "Tillat overvaking av inndata",
+  "inputPermissionRequest": "Tillat overvaking av inndata",
+  "inputPermissionSetup": "Set opp overvaking av inndata",
+  "inputPermissionListHelp": "Tilgang til tilgjengefunksjonar kan allereie tillate tastelytting sjølv om FixKey ikkje står i lista for overvaking av inndata. macOS stadfestar ikkje ei eiga oppføring her. Sjå etter i lista i Systeminnstillingar, og legg til den gjeldande FixKey.app med + dersom han manglar.",
+  "inputPermissionHelp": "FixKey treng overvaking av inndata for å registrere tastane som blir brukte til retting av tastaturoppsett.",
+  "accessibilityGranted": "Tilgang til tilgjengefunksjonar er allereie tillaten.",
+  "inputPermissionSteps": [
+    "Vel Tillat overvaking av inndata for å registrere FixKey og opne løyveinnstillingane for appen i macOS.",
+    "Aktiver FixKey i Systeminnstillingar → Personvern og tryggleik → Overvaking av inndata. Dersom han manglar, vel + og legg til den gjeldande FixKey.app frå Appar. Gå tilbake hit og vel Kontroller på nytt. Start FixKey på nytt dersom macOS ber om det."
+  ],
+  "permissionRequest": "Tillat tilgang til tilgjengefunksjonar",
+  "permissionWaiting": "Rettinga blir verande avslått til tilgangen er tillaten. Vel Kontroller på nytt etter at du har aktivert tilgangen.",
+  "permissionSteps": [
+    "Vel Tillat tilgang til tilgjengefunksjonar og følg førespurnaden frå macOS.",
+    "Aktiver FixKey under Tilgjenge. Dersom han allereie er aktivert, men denne dialogen framleis blir vist etter at du har starta FixKey på nytt, fjern den gamle FixKey-oppføringa med − og bruk + for å leggje til den gjeldande FixKey.app på nytt. Ein app som er bygd på nytt, samsvarar kanskje ikkje lenger med den gamle løyveoppføringa. Dersom han manglar, bruk + for å leggje til FixKey frå Appar.",
+    "Aktiver òg FixKey under Overvaking av inndata, og kontroller deretter på nytt. Dersom det ikkje kjem nokon førespurnad om overvaking av inndata, vel Tillat tilgang til tilgjengefunksjonar igjen. Start FixKey på nytt dersom macOS ber om det."
+  ],
+  "macPermission": "Tillat FixKey under Tilgjenge og Overvaking av inndata i Systeminnstillingar, og kontroller deretter på nytt.",
+  "windowsPermission": "Bruk FixKey i den gjeldande Windows-økta di. Kontrollar som er verna, køyrer med utvida rettar eller ikkje er støtta, blir verande uendra.",
+  "linuxPermission": "Bruk ei X11-økt med tilgjengetenesta AT-SPI og XInput2 tilgjengelege. Wayland er ikkje støtta.",
+  "openSettings": "Opne systeminnstillingar",
+  "recheck": "Kontroller på nytt",
+  "later": "Seinare",
+  "error": "Handlinga feila",
+  "reason": "Årsak",
+  "openLogs": "Opne loggmappa",
+  "deleteLogs": "Slett loggar",
+  "restore": "Gjenopprett tryggingskopi av innstillingar",
+  "support": "GitHub Issues",
+  "logHelp": "Loggar inneheld versjon, plattform, årsakskodar og tidsmålingar. Innskriven tekst er utelaten. Loggane blir verande på denne eininga i høgst sju dagar og tek høgst 10 MiB til saman.",
+  "original": "Opphavleg",
+  "recognized": "Attkjend",
+  "notRecognized": "Ikkje attkjend av ordboka",
+  "unchecked": "Kunne ikkje kontrollerast",
+  "candidates": "Kandidatar frå tastaturoppsett",
+  "candidateHelp": "↑ ↓ Vel · Enter Bruk · Esc Lukk",
+  "noCandidates": "Kjeldekonteksten er ikkje lenger tilgjengeleg.",
+  "help": "Hjelp",
+  "helpTopics": [
+    [
+      "Installasjon",
+      "Installer den signerte DMG-pakka på macOS ARM64, NSIS-installasjonsprogrammet på Windows x64 eller AppImage på Linux X11 x64. Målplattformene inneber ikkje at kompatibiliteten med kvar app er stadfesta."
+    ],
+    [
+      "Løyve",
+      "Gje dei løyva for tilgjenge og inndata som operativsystemet ber om, og vel deretter Kontroller på nytt. Rettinga blir verande inaktiv til løyva og ordbøkene er klare. På macOS kan Tilgjenge gje faktisk tilgang til tastelytting utan ei eiga oppføring under Overvaking av inndata. Bruk Set opp overvaking av inndata under Generelt for å sjå etter i lista. Dersom FixKey manglar, bruk + for å leggje til den gjeldande FixKey.app frå Appar."
+    ],
+    [
+      "Tastaturoppsett og retting",
+      "Koreansk Dubeolsik og amerikansk engelsk QWERTY er aktiverte som standard. Vel fleire par av ordbøker og tastatur under Generelt. Det oppførte offentleg tilgjengelege tastaturet må samsvare med oppsettet du skriv med. Når fleire språk er aktiverte, blir ord vurderte ved mellomrom. Elles utløyser mellomrom og teiknsetjing vurdering. Enter og Tab gjer ikkje det. Eit ord blir berre endra når nøyaktig éi aktivert ordbok kjenner att ein kandidat. Nærskylde språk kan kjenne att det same ordet. Då blir det verande uendra. FixKey byter aldri inndataspråket ditt. Modifikasjonstastar som ikkje er støtta, ufullførte dødtastar og tastaturvariantar som ikkje samsvarar med det oppførte oppsettet, blir verande uendra."
+    ],
+    [
+      "Angre",
+      "Trykk på Backspace straks etter ei automatisk retting for å gjenopprette det opphavlege ordet og skiljeteiknet som følgde det. Fleire trykk på Backspace verkar som normalt."
+    ],
+    [
+      "Manuelle kandidatar",
+      "Tilordne ein snarveg, skriv eit ord og bruk snarvegen. Piltastane vel, Enter tek i bruk og Esc lukkar. Du kan uttrykkeleg velje ein kandidat som ikkje er attkjend. Dersom du flyttar tekstmarkøren i kjelda eller byter app, blir kandidatveljaren lukka."
+    ],
+    [
+      "Utelatingar",
+      "Legg til ein app under Utelatne appar. Utelatingar blir kopla til den stabile identiteten til appen. Uavklarte identitetar blir verande i lista."
+    ],
+    [
+      "Personvern",
+      "FixKey handsamar inndata lokalt. Appen tek ikkje vare på inndatahistorikk, brukar ikkje utklippstavla til å byte ut tekst og sender ikkje telemetri. Innlimte og programmatisk innsette token, tal, emojiar, nettadresser, e-postadresser og token med blanda skriftsystem er utelatne frå automatisk retting."
+    ],
+    [
+      "Oppdateringar",
+      "Det blir sett etter stabile oppdateringar over HTTPS ved oppstart og kvar 24. time. Du gjev samtykke før nedlasting. Ugyldige signaturar blir avviste. Rettinga stoppar før installasjon. Innstillingane blir tekne vare på."
+    ],
+    [
+      "Feilsøking",
+      "Les årsakskoden, kontroller løyva på nytt og prøv ein støtta redigerbar kontroll. Manglande løyve, ukjend sensitivitet i feltet, forelda mål og skriving som ikkje er støtta, fører til trygg avvising. Start på nytt eller installer ein signert pakke på nytt manuelt dersom ei oppdatering feilar."
+    ],
+    [
+      "Sletting av loggar",
+      "Vel Slett loggar for å fjerne lokale diagnostikkloggar, eller Opne loggmappa for å sjå gjennom dei. Ikkje ta med privat innhald når du opprettar ei sak på GitHub."
+    ]
+  ],
+  "listedWordsOnly": "Berre oppførte ord; ukjende former blir ståande uendra."
+}

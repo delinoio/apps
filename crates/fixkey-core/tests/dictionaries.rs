@@ -127,6 +127,7 @@ fn required_corrections_use_both_real_dictionaries() {
     let english = HunspellValidator::bundled().unwrap();
     let korean = KoreanValidator::new(BorrowedAnalyzer);
     let validators = Validators {
+        additional: None,
         korean: &korean,
         english: &english,
     };

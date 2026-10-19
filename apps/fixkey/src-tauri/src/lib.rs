@@ -3,6 +3,7 @@
 #[cfg(feature = "desktop")]
 pub mod desktop;
 pub mod diagnostics;
+pub mod localization;
 #[cfg(feature = "desktop")]
 mod native;
 #[cfg(any(feature = "desktop", test))]
