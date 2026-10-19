@@ -67,7 +67,10 @@ export function validateSource(directory, selected) {
     manifest.match(/^version = "([^"]+)"$/mu)?.[1] === selected,
     "fixkey-source-version-mismatch",
   );
-  const lock = readFileSync(path.join(directory, "Cargo.lock"), "utf8");
+  const lock = readFileSync(
+    path.join(directory, "Cargo.lock"),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
   requireValue(
     lock.includes(`name = "fixkey"\nversion = "${selected}"`),
     "fixkey-lock-version-mismatch",
@@ -75,12 +78,15 @@ export function validateSource(directory, selected) {
 }
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    // Tauri leaves unpacked application trees beside the signed archives.
+    // Their internal links are not release artifacts; never traverse them.
+    if (entry.isDirectory() && /\.(app|AppDir)$/u.test(entry.name)) return [];
     requireValue(!entry.isSymbolicLink(), "fixkey-artifact-symlink");
     const file = path.join(directory, entry.name);
     return entry.isDirectory() ? files(file) : [file];
   });
 }
-export function configure(output, platform, publicKey, thumbprint) {
+export function configure(output, platform, publicKey) {
   requireValue(platforms[platform], "fixkey-platform-invalid");
   requireValue(publicKey?.trim(), "fixkey-updater-key-missing");
   const config = {
@@ -92,19 +98,6 @@ export function configure(output, platform, publicKey, thumbprint) {
       },
     },
   };
-  if (platform === "windows-x64") {
-    requireValue(
-      /^[a-f0-9]{40}$/iu.test(thumbprint ?? ""),
-      "fixkey-windows-certificate-invalid",
-    );
-    config.bundle = {
-      windows: {
-        certificateThumbprint: thumbprint,
-        digestAlgorithm: "sha256",
-        timestampUrl: "http://timestamp.digicert.com",
-      },
-    };
-  }
   writeFileSync(output, JSON.stringify(config, null, 2) + "\n");
 }
 export function stage(bundle, output, platform, selected, revision, publicKey) {
@@ -220,13 +213,13 @@ export function metadata(
         path.join(directory, `${spec.payload}.sig`),
         "utf8",
       ).trim(),
-      url: `https://github.com/delinoio/apps/releases/download/fixkey-v${selected}/${spec.payload}`,
+      url: `https://github.com/delinoio/apps/releases/download/fixkey@v${selected}/${spec.payload}`,
     };
   }
   const manifest = {
     version: selected,
     notes:
-      "Signed FixKey desktop update. Settings are preserved. See the release for native acceptance evidence and manual recovery packages.",
+      "Signed FixKey desktop update. Settings are preserved. See the release for platform validation details and manual recovery packages.",
     pub_date: date.toISOString(),
     platforms: targets,
   };
@@ -250,11 +243,7 @@ if (
   const [command, ...args] = process.argv.slice(2);
   try {
     if (command === "configure")
-      configure(
-        ...args,
-        process.env.FIXKEY_UPDATER_PUBLIC_KEY,
-        process.env.FIXKEY_WINDOWS_THUMBPRINT,
-      );
+      configure(...args, process.env.FIXKEY_UPDATER_PUBLIC_KEY);
     else if (command === "source") validateSource(root, args[0]);
     else if (command === "stage")
       stage(...args, process.env.FIXKEY_UPDATER_PUBLIC_KEY);

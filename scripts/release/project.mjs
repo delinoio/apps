@@ -48,10 +48,7 @@ export function bumpVersion(version, bump) {
 export function releaseTag(project, version) {
   requireProject(project);
   requireValue(stable.test(version), "Invalid release version");
-  // FixKey's updater already consumes this tag namespace. Keep it stable.
-  return project === Project.Fixkey
-    ? `fixkey-v${version}`
-    : `${project}@v${version}`;
+  return `${project}@v${version}`;
 }
 export function versionChanges(project, bump, read) {
   requireProject(project);
@@ -253,11 +250,16 @@ export function validateWebSource(directory, project, tag) {
     [Project.Devbase, Project.DelinoSite, Project.Delitools].includes(project),
     "Unknown web release project",
   );
+  return validateReleaseSource(directory, project, tag);
+}
+
+export function validateReleaseSource(directory, project, tag) {
+  requireProject(project);
   requireValue(
     typeof tag === "string" &&
       tag.startsWith(`${project}@v`) &&
       stable.test(tag.slice(project.length + 2)),
-    "Invalid web release tag",
+    "Invalid release tag",
   );
   git(
     directory,
@@ -301,8 +303,13 @@ if (
       runId: process.env.GITHUB_RUN_ID,
     });
   } else {
-    requireValue(command === "validate-web", "Unknown release command");
-    result = validateWebSource(
+    requireValue(
+      ["validate-web", "validate-source"].includes(command),
+      "Unknown release command",
+    );
+    const validate =
+      command === "validate-web" ? validateWebSource : validateReleaseSource;
+    result = validate(
       directory,
       process.env.RELEASE_PROJECT,
       process.env.RELEASE_TAG,

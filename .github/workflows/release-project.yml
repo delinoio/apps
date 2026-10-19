@@ -75,7 +75,7 @@ jobs:
           import { appendFileSync } from 'node:fs';
           const project = process.env.RELEASE_PROJECT;
           const lines = project === 'fixkey'
-            ? [`Run Release FixKey manually on main with version ${process.env.VERSION} after reviewing native acceptance for ${process.env.REVISION}. The dispatch source must match the immutable tag.`]
+            ? [`The tag starts Release FixKey for ${process.env.REVISION} (version ${process.env.VERSION}). Signing and publication run through the protected release environments.`]
             : project === 'delitools'
               ? ['The tag starts Release DeliTools Web. For mobile, run Release DeliTools Mobile on main with a new build number; store uploads remain opt-in.']
               : ['The tag starts the owning web release workflow. Inspect that run for the deployment result.'];

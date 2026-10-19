@@ -20,6 +20,7 @@ import {
   prepareRelease,
   releaseTag,
   validateWebSource,
+  validateReleaseSource,
   versionChanges,
 } from "./project.mjs";
 
@@ -79,7 +80,8 @@ for (const project of Object.values(Project)) {
         /versions disagree/u,
       );
     }
-    assert.equal(plan.tag, releaseTag(project, plan.version));
+    assert.equal(plan.tag, `${project}@v${plan.version}`);
+    assert.equal(releaseTag(project, plan.version), plan.tag);
   });
 }
 
@@ -181,47 +183,55 @@ for (const project of [Project.Delitools, Project.Fixkey]) {
   });
 }
 
-test("web source validation rejects branch names, wrong versions and tags outside main", (t) => {
-  const options = fixture(t);
-  const result = prepareRelease(options);
-  assert.deepEqual(
-    validateWebSource(options.directory, Project.Devbase, result.tag),
-    {
+for (const project of [Project.Devbase, Project.Fixkey]) {
+  test(`${project} source validation rejects branch names, wrong versions and tags outside main`, (t) => {
+    const options = { ...fixture(t), project };
+    const validate =
+      project === Project.Fixkey ? validateReleaseSource : validateWebSource;
+    const result = prepareRelease(options);
+    // Recovery must resolve the original tagged source even after main advances.
+    git(options.directory, "commit", "--allow-empty", "-m", "Advance main");
+    git(options.directory, "push", "origin", "main");
+    assert.deepEqual(validate(options.directory, project, result.tag), {
       project: result.project,
       version: result.version,
       tag: result.tag,
       revision: result.revision,
-    },
-  );
-  for (const tag of ["main", "--all", "devbase@v1.2.3;touch unsafe"]) {
+    });
+    for (const tag of [
+      "main",
+      "--all",
+      `${project}@v1.2.3;touch unsafe`,
+      `${project}-v1.2.3`,
+      "other@v1.2.3",
+    ]) {
+      assert.throws(
+        () => validate(options.directory, project, tag),
+        /Invalid release tag/u,
+      );
+    }
+    git(options.directory, "tag", `${project}@v9.9.9`);
+    git(options.directory, "push", "origin", `refs/tags/${project}@v9.9.9`);
     assert.throws(
-      () => validateWebSource(options.directory, Project.Devbase, tag),
-      /Invalid web release tag/u,
+      () => validate(options.directory, project, `${project}@v9.9.9`),
+      /Tag and source version disagree/u,
     );
-  }
-  git(options.directory, "tag", "devbase@v9.9.9");
-  git(options.directory, "push", "origin", "refs/tags/devbase@v9.9.9");
-  assert.throws(
-    () =>
-      validateWebSource(options.directory, Project.Devbase, "devbase@v9.9.9"),
-    /Tag and source version disagree/u,
-  );
-  git(options.directory, "checkout", "-b", "unmerged");
-  writeFileSync(
-    join(options.directory, "apps/devbase/package.json"),
-    read("apps/devbase/package.json").replace(
-      '"version": "0.1.0"',
-      '"version": "9.8.7"',
-    ),
-  );
-  git(options.directory, "add", ".");
-  git(options.directory, "commit", "-m", "Unmerged source");
-  git(options.directory, "tag", "devbase@v9.8.7");
-  git(options.directory, "push", "origin", "refs/tags/devbase@v9.8.7");
-  assert.throws(() =>
-    validateWebSource(options.directory, Project.Devbase, "devbase@v9.8.7"),
-  );
-});
+    git(options.directory, "checkout", "-b", "unmerged");
+    const file = `apps/${project}/package.json`;
+    const manifest = JSON.parse(
+      readFileSync(join(options.directory, file), "utf8"),
+    );
+    manifest.version = "9.8.7";
+    writeFileSync(join(options.directory, file), JSON.stringify(manifest));
+    git(options.directory, "add", ".");
+    git(options.directory, "commit", "-m", "Unmerged source");
+    git(options.directory, "tag", `${project}@v9.8.7`);
+    git(options.directory, "push", "origin", `refs/tags/${project}@v9.8.7`);
+    assert.throws(() =>
+      validate(options.directory, project, `${project}@v9.8.7`),
+    );
+  });
+}
 
 test("web workflows validate main ancestry before allocating protected deployment jobs", () => {
   const release = yaml.load(read(".github/workflows/release-project.yml"));

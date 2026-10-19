@@ -27,6 +27,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
+- FixKey releases must not require a native-acceptance revision variable or comparison. Keep immutable source validation, signing and protected publication gates in the owning release workflow.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Run development commands from the owning app: `pnpm dev` serves its frontend and `pnpm dev:desktop` launches its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the owning application contracts; this repository has no root `pnpm dev` or public documentation app.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.

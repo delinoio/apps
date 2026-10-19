@@ -352,7 +352,7 @@ pub mod desktop {
                 if release.draft || release.prerelease {
                     continue;
                 }
-                let Some(tag) = release.tag_name.strip_prefix("fixkey-v") else {
+                let Some(tag) = release.tag_name.strip_prefix("fixkey@v") else {
                     continue;
                 };
                 let Ok(version) = semver::Version::parse(tag) else {
@@ -446,7 +446,7 @@ pub mod desktop {
             _ => return Err("update-platform-unsupported"),
         };
         let expected = format!(
-            "https://github.com/delinoio/apps/releases/download/fixkey-v{version}/{payload}"
+            "https://github.com/delinoio/apps/releases/download/fixkey@v{version}/{payload}"
         );
         if update.version != version.to_string() || update.download_url.as_str() != expected {
             return Err("update-metadata-invalid");
@@ -520,11 +520,11 @@ mod discovery_tests {
     use super::desktop::{Release, latest_release};
     fn releases() -> Vec<Release> {
         serde_json::from_value(serde_json::json!([
-            {"tag_name":"fixkey-v9.0.0","draft":true,"prerelease":false,"assets":[]},
-            {"tag_name":"fixkey-v4.0.0-beta.1","draft":false,"prerelease":true,"assets":[]},
+            {"tag_name":"fixkey@v9.0.0","draft":true,"prerelease":false,"assets":[]},
+            {"tag_name":"fixkey@v4.0.0-beta.1","draft":false,"prerelease":true,"assets":[]},
             {"tag_name":"other-v9.0.0","draft":false,"prerelease":false,"assets":[]},
-            {"tag_name":"fixkey-v0.0.1","draft":false,"prerelease":false,"assets":[]},
-            {"tag_name":"fixkey-v2.0.0","draft":false,"prerelease":false,"assets":[{"name":"fixkey-latest.json","browser_download_url":"https://github.com/delinoio/apps/releases/download/fixkey-v2.0.0/fixkey-latest.json"}]}
+            {"tag_name":"fixkey@v0.0.1","draft":false,"prerelease":false,"assets":[]},
+            {"tag_name":"fixkey@v2.0.0","draft":false,"prerelease":false,"assets":[{"name":"fixkey-latest.json","browser_download_url":"https://github.com/delinoio/apps/releases/download/fixkey@v2.0.0/fixkey-latest.json"}]}
         ])).unwrap()
     }
     #[test]
@@ -535,7 +535,7 @@ mod discovery_tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(selected.0.to_string(), "2.0.0");
-        assert!(selected.1.ends_with("/fixkey-v2.0.0/fixkey-latest.json"));
+        assert!(selected.1.ends_with("/fixkey@v2.0.0/fixkey-latest.json"));
         let current = semver::Version::parse("2.0.0").unwrap();
         assert!(
             tauri::async_runtime::block_on(latest_release(&current, |_| async { Ok(releases()) }))

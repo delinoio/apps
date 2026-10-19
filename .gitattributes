@@ -1,6 +1,8 @@
 apps/delidev/src-tauri/Cargo.toml text eol=lf
 apps/delitools/src-tauri/Cargo.toml text eol=lf
 
+# Preserve upstream resource bytes for the pinned SHA-256 checks on every OS.
+crates/fixkey-core/assets/** -text
 crates/fixkey-core/assets/ko/entries.bin filter=lfs diff=lfs merge=lfs -text
 crates/fixkey-core/assets/ko/matrix.bin filter=lfs diff=lfs merge=lfs -text
 crates/fixkey-core/assets/ko/sys.dic filter=lfs diff=lfs merge=lfs -text
