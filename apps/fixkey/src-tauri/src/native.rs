@@ -928,44 +928,50 @@ fn process_key(
             }
         }
         Key::Modifier => {}
-        Key::Enter | Key::Tab => {
-            if runtime.preferences.current().languages().has_additional() {
-                if let Some(pending) = context.as_ref()
-                    && let Some(current) = snapshot
-                    && let Some((keys, boundary)) =
-                        fixkey_core::observation::word_before_enter_or_tab(
-                            &pending.before,
-                            current,
-                            &pending.keys,
-                        )
-                {
-                    let physical: String = keys.iter().collect();
-                    evaluate(
-                        runtime,
-                        adapter,
-                        &pending.before,
-                        current,
-                        &physical,
-                        &boundary,
-                    );
-                }
-                *context = None;
-                return;
-            }
-            if let Some(pending) = context.as_mut()
-                && let Some(TokenOutcome::Evaluate { word, boundary }) =
-                    pending.tokenizer.feed_enter_or_tab()
-                && let Some(current) = snapshot
-            {
-                // Enter/Tab itself is never part of the
-                // replacement. A committed host edit makes
-                // this proof fail and discards held
-                // punctuation.
-                evaluate(runtime, adapter, &pending.before, current, &word, &boundary);
-            }
-            *context = None;
-        }
+        Key::Enter | Key::Tab => process_enter_or_tab(runtime, adapter, context, snapshot),
     }
+}
+
+fn process_enter_or_tab(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    context: &mut Option<Context>,
+    snapshot: Option<&FieldSnapshot>,
+) {
+    if runtime.preferences.current().languages().has_additional() {
+        if let Some(pending) = context.as_ref()
+            && let Some(current) = snapshot
+            && let Some((keys, boundary)) = fixkey_core::observation::word_before_enter_or_tab(
+                &pending.before,
+                current,
+                &pending.keys,
+            )
+        {
+            let physical: String = keys.iter().collect();
+            evaluate(
+                runtime,
+                adapter,
+                &pending.before,
+                current,
+                &physical,
+                &boundary,
+            );
+        }
+        *context = None;
+        return;
+    }
+    if let Some(pending) = context.as_mut()
+        && let Some(TokenOutcome::Evaluate { word, boundary }) =
+            pending.tokenizer.feed_enter_or_tab()
+        && let Some(current) = snapshot
+    {
+        // Enter/Tab itself is never part of the
+        // replacement. A committed host edit makes
+        // this proof fail and discards held
+        // punctuation.
+        evaluate(runtime, adapter, &pending.before, current, &word, &boundary);
+    }
+    *context = None;
 }
 
 // Punctuation positions differ between national keyboards. Retain physical
