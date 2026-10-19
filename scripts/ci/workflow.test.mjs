@@ -50,19 +50,39 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
   }
 });
 
-test("Rust retains native prerequisites and the former strict Clippy boundary", () => {
-  const steps = workflow.jobs["rust-checks"].steps;
-  assert.ok(steps.some((step) => step.run?.includes("libwebkit2gtk-4.1-dev")));
-  const clippy = steps.find((step) => step.id === "clippy");
-  assert.match(clippy.run, /--all-targets --all-features -- -D warnings/u);
-  assert.match(steps.find((step) => step.id === "test").run, /--all-targets/u);
-  for (const owner of ["delidev", "delitools"]) {
-    const build = steps.find(
-      (step) => step.if === `needs.changes.outputs.${owner} == 'true'`,
+test("Rust jobs retain independent selection, prerequisites and strict commands", () => {
+  for (const check of ["clippy", "test"]) {
+    const job = workflow.jobs[`rust-${check}`];
+    assert.equal(job.if, `needs.changes.outputs.rust_${check} != '[]'`);
+    assert.equal(
+      job.env.RUST_PACKAGES,
+      "${{ needs.changes.outputs.rust_" + check + " }}",
     );
-    assert.match(build.run, /build:frontend$/u);
-    assert.ok(steps.indexOf(build) < steps.indexOf(clippy));
+    const steps = job.steps;
+    assert.ok(
+      steps.some((step) => step.run?.includes("libwebkit2gtk-4.1-dev")),
+    );
+    const command = steps.find((step) => step.id === check);
+    assert.equal(command.run, `node scripts/ci/rust-check.mjs ${check}`);
+    for (const [owner, pkg] of [
+      ["delidev", "delidev-desktop"],
+      ["delitools", "delitools-shell"],
+      ["fixkey", "fixkey"],
+    ]) {
+      const build = steps.find((step) => step.id === `${owner}-build`);
+      assert.equal(
+        build.if,
+        `contains(fromJSON(needs.changes.outputs.rust_${check}), '${pkg}')`,
+      );
+      assert.match(build.run, /build:frontend$/u);
+      assert.ok(steps.indexOf(build) < steps.indexOf(command));
+    }
   }
+  const steps = workflow.jobs.changes.steps;
+  const planner = steps.find((step) => step.id === "rust-plan");
+  assert.equal(planner.env.TURBO_SCM_BASE, "${{ steps.plan.outputs.base }}");
+  assert.equal(planner.env.TURBO_SCM_HEAD, "${{ steps.plan.outputs.head }}");
+  assert.ok(steps.some((step) => step.with?.tool === "cargo-mono@0.6.9"));
 });
 
 test("validation evidence and main-only cache saves survive the job split", () => {
@@ -72,7 +92,8 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delino-site-frontend",
     "delidev-frontend",
     "delitools-frontend",
-    "rust-checks",
+    "rust-clippy",
+    "rust-test",
     "protocol",
     "fixkey-frontend",
     "fixkey-desktop",
@@ -107,6 +128,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     workflow.jobs["ci-result"].needs.map((id) => [id, { result: "success" }]),
   );
   needs.changes.outputs = {
+    rust_clippy: '["fixkey-core"]',
+    rust_test: '["fixkey-core", "fixkey"]',
     fixkey: "true",
     devbase: "true",
     delino_site: "true",
@@ -123,6 +146,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     }
   }
   needs.changes.outputs = {
+    rust_clippy: "[]",
+    rust_test: "[]",
     fixkey: "false",
     devbase: "false",
     delino_site: "false",
@@ -135,12 +160,20 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delino-site-frontend",
     "delidev-frontend",
     "delitools-frontend",
-    "rust-checks",
+    "rust-clippy",
+    "rust-test",
     "fixkey-frontend",
     "fixkey-desktop",
   ])
     needs[id].result = "skipped";
   assert.equal(run(needs).status, 0);
+  // The test job can be selected independently from Clippy.
+  needs.changes.outputs.rust_test = '["fixkey"]';
+  assert.notEqual(run(needs).status, 0);
+  needs["rust-test"].result = "success";
+  assert.equal(run(needs).status, 0);
+  needs["rust-clippy"].result = "success";
+  assert.notEqual(run(needs).status, 0);
 });
 
 test("every prerequisite failure retains its command and outcome in evidence", (t) => {

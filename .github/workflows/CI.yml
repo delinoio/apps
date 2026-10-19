@@ -11,6 +11,8 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
+      rust_clippy: ${{ steps.rust-plan.outputs.rust_clippy }}
+      rust_test: ${{ steps.rust-plan.outputs.rust_test }}
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
       delidev: ${{ steps.plan.outputs.delidev }}
@@ -29,6 +31,17 @@ jobs:
         env:
           COMPARISON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/ci/plan.mjs
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-mono@0.6.9
+      - id: rust-plan
+        env:
+          TURBO_SCM_BASE: ${{ steps.plan.outputs.base }}
+          TURBO_SCM_HEAD: ${{ steps.plan.outputs.head }}
+        run: node scripts/ci/rust-plan.mjs
   validate:
     needs: changes
     runs-on: ubuntu-latest
@@ -354,11 +367,13 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/fixkey/dist"
-  rust-checks:
+  rust-clippy:
+    name: Rust Clippy
     needs: changes
-    if: needs.changes.outputs.delidev == 'true' || needs.changes.outputs.delitools == 'true' || needs.changes.outputs.fixkey == 'true'
+    if: needs.changes.outputs.rust_clippy != '[]'
     runs-on: ubuntu-latest
     env:
+      RUST_PACKAGES: ${{ needs.changes.outputs.rust_clippy }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
@@ -385,35 +400,18 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
       - id: delidev-build
-        if: needs.changes.outputs.delidev == 'true'
+        if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delidev-desktop')
         run: pnpm --filter delidev-desktop build:frontend
       - id: delitools-build
-        if: needs.changes.outputs.delitools == 'true'
+        if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delitools-shell')
         run: pnpm --filter delitools build:frontend
+      - id: fixkey-build
+        if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'fixkey')
+        run: pnpm --filter fixkey-desktop build:frontend
       - id: rustfmt
         run: cargo fmt --all --check
-      - id: test
-        env:
-          FIXKEY: ${{ needs.changes.outputs.fixkey }}
-          DELIDEV: ${{ needs.changes.outputs.delidev }}
-          DELITOOLS: ${{ needs.changes.outputs.delitools }}
-        run: |-
-          packages=()
-          if [ "$FIXKEY" = true ]; then packages+=(-p fixkey-core); fi
-          if [ "$DELIDEV" = true ]; then packages+=(-p delidev-desktop); fi
-          if [ "$DELITOOLS" = true ]; then packages+=(-p delitools-shell); fi
-          cargo test --locked "${packages[@]}" --all-targets
       - id: clippy
-        env:
-          FIXKEY: ${{ needs.changes.outputs.fixkey }}
-          DELIDEV: ${{ needs.changes.outputs.delidev }}
-          DELITOOLS: ${{ needs.changes.outputs.delitools }}
-        run: |-
-          packages=()
-          if [ "$FIXKEY" = true ]; then packages+=(-p fixkey-core); fi
-          if [ "$DELIDEV" = true ]; then packages+=(-p delidev-desktop); fi
-          if [ "$DELITOOLS" = true ]; then packages+=(-p delitools-shell); fi
-          cargo clippy --locked "${packages[@]}" --all-targets --all-features -- -D warnings
+        run: node scripts/ci/rust-check.mjs clippy
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -423,7 +421,7 @@ jobs:
       - name: Record validation
         if: ${{ always() }}
         env:
-          VALIDATION_JOB: rust-checks
+          VALIDATION_JOB: rust-clippy
           VALIDATION_RESULT: ${{ job.status }}
           VALIDATION_STEPS: ${{ toJSON(steps) }}
         run: node scripts/ci/record-validation.mjs
@@ -431,7 +429,73 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: validation-rust-checks-${{ github.run_attempt }}
+          name: validation-rust-clippy-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/fixkey/dist"
+  rust-test:
+    name: Rust Test
+    needs: changes
+    if: needs.changes.outputs.rust_test != '[]'
+    runs-on: ubuntu-latest
+    env:
+      RUST_PACKAGES: ${{ needs.changes.outputs.rust_test }}
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: native-prerequisites
+        name: Install Linux native prerequisites
+        run: |-
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+      - id: delidev-build
+        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delidev-desktop')
+        run: pnpm --filter delidev-desktop build:frontend
+      - id: delitools-build
+        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delitools-shell')
+        run: pnpm --filter delitools build:frontend
+      - id: fixkey-build
+        if: contains(fromJSON(needs.changes.outputs.rust_test), 'fixkey')
+        run: pnpm --filter fixkey-desktop build:frontend
+      - id: test
+        run: node scripts/ci/rust-check.mjs test
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: rust-test
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-rust-test-${{ github.run_attempt }}
           path: .ci-evidence/
           include-hidden-files: true
           if-no-files-found: error
@@ -449,7 +513,8 @@ jobs:
       - delitools-frontend
       - devbase-frontend
       - delino-site-frontend
-      - rust-checks
+      - rust-clippy
+      - rust-test
       - protocol
     runs-on: ubuntu-latest
     steps:
@@ -461,7 +526,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'delino-site-frontend': selection.delino_site === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-checks': selection.delidev === 'true' || selection.delitools === 'true' || selection.fixkey === 'true', protocol: selection.protocol === 'true' };
+          const expected = { 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'delino-site-frontend': selection.delino_site === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);
