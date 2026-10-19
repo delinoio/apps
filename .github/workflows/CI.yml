@@ -42,6 +42,67 @@ jobs:
           TURBO_SCM_BASE: ${{ steps.plan.outputs.base }}
           TURBO_SCM_HEAD: ${{ steps.plan.outputs.head }}
         run: node scripts/ci/rust-plan.mjs
+  check-formatting:
+    name: Check Formatting
+    needs: changes
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: dtolnay/rust-toolchain@v1
+        if: needs.changes.outputs.rust_clippy != '[]'
+        with:
+          toolchain: nightly-2026-09-28
+          components: rustfmt
+      - uses: actions/setup-go@v6
+        if: needs.changes.outputs.protocol == 'true'
+        with:
+          go-version-file: go.mod
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: format
+        run: pnpm format:check
+      - id: rustfmt
+        if: needs.changes.outputs.rust_clippy != '[]'
+        run: cargo fmt --all --check
+      - id: gofmt
+        if: needs.changes.outputs.protocol == 'true'
+        run: node scripts/ci/check-go-format.mjs protos examples
+      - id: protobuf-format
+        if: needs.changes.outputs.protocol == 'true'
+        run: pnpm exec buf format --diff --exit-code
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: check-formatting
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-check-formatting-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/fixkey/dist"
   validate:
     needs: changes
     runs-on: ubuntu-latest
@@ -61,8 +122,6 @@ jobs:
           go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: format
-        run: pnpm format:check
       - id: tooling
         run: pnpm test:tooling
       - id: workflows
@@ -387,7 +446,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
-          components: rustfmt, clippy
+          components: clippy
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: native-prerequisites
@@ -408,8 +467,6 @@ jobs:
       - id: fixkey-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'fixkey')
         run: pnpm --filter fixkey-desktop build:frontend
-      - id: rustfmt
-        run: cargo fmt --all --check
       - id: clippy
         run: node scripts/ci/rust-check.mjs clippy
       - name: Save pnpm cache after successful main validation
@@ -507,6 +564,7 @@ jobs:
     needs:
       - changes
       - validate
+      - check-formatting
       - delidev-frontend
       - fixkey-frontend
       - fixkey-desktop
@@ -526,7 +584,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'delino-site-frontend': selection.delino_site === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);
@@ -556,11 +614,10 @@ jobs:
       - name: Validate protocol and consumer example
         id: unit-protocol
         run: |
-          node scripts/ci/check-go-format.mjs protos examples
           go vet ./...
           go test -race ./...
           go build -o "$RUNNER_TEMP/delcore-client" ./examples/delcore-client
-          pnpm proto:lint
+          pnpm exec buf lint
           pnpm proto:generate
           test -z "$(git status --porcelain --untracked-files=all -- protos)"
           node scripts/check-proto-breaking.mjs "$TURBO_SCM_BASE"

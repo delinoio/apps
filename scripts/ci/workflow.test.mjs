@@ -85,9 +85,49 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
   assert.ok(steps.some((step) => step.with?.tool === "cargo-mono@0.6.9"));
 });
 
+test("all CI formatting checks belong to Check Formatting", () => {
+  const job = workflow.jobs["check-formatting"];
+  assert.equal(job.name, "Check Formatting");
+  assert.equal(job.needs, "changes");
+  assert.equal(job.env.TURBO_SCM_BASE, "${{ needs.changes.outputs.base }}");
+  assert.equal(job.env.TURBO_SCM_HEAD, "${{ needs.changes.outputs.head }}");
+  const commands = new Map(
+    job.steps.filter((step) => step.run).map((step) => [step.run, step]),
+  );
+  assert.ok(commands.has("pnpm format:check"));
+  assert.equal(
+    commands.get("cargo fmt --all --check").if,
+    "needs.changes.outputs.rust_clippy != '[]'",
+  );
+  for (const command of [
+    "node scripts/ci/check-go-format.mjs protos examples",
+    "pnpm exec buf format --diff --exit-code",
+  ])
+    assert.equal(
+      commands.get(command).if,
+      "needs.changes.outputs.protocol == 'true'",
+    );
+  for (const [id, config] of Object.entries(workflow.jobs)) {
+    if (id === "check-formatting") continue;
+    for (const step of config.steps)
+      assert.doesNotMatch(
+        step.run ?? "",
+        /pnpm (?:format:check|proto:lint)|cargo fmt|check-go-format|buf format/u,
+        id,
+      );
+  }
+  assert.ok(workflow.jobs["ci-result"].needs.includes("check-formatting"));
+  assert.match(
+    workflow.jobs.protocol.steps.find((step) => step.id === "unit-protocol")
+      .run,
+    /pnpm exec buf lint/u,
+  );
+});
+
 test("validation evidence and main-only cache saves survive the job split", () => {
   for (const id of [
     "validate",
+    "check-formatting",
     "devbase-frontend",
     "delino-site-frontend",
     "delidev-frontend",
