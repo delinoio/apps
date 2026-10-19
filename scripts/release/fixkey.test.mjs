@@ -6,6 +6,7 @@ import {
   writeFileSync,
   readFileSync,
   rmSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -132,6 +133,34 @@ test("missing platforms, signatures and ambiguous bundles fail closed", (t) => {
   for (const invalid of ["1.0.0-beta.1", "01.0.0", "1.0.0;touch injected"])
     assert.throws(() => version(invalid));
 });
+test("staging ignores unpacked application trees but rejects artifact symlinks", (t) => {
+  const assets = bundles(t);
+  for (const [platform, tree, folder] of [
+    ["macos-arm64", "FixKey.app", "macos"],
+    ["linux-x11-x64", "fixkey.AppDir", "appimage"],
+  ]) {
+    const bundle = path.join(path.dirname(assets), platform);
+    const unpacked = path.join(bundle, folder, tree);
+    mkdirSync(unpacked, { recursive: true });
+    symlinkSync(
+      "missing-internal-target",
+      path.join(unpacked, "internal-link"),
+    );
+    // A payload-shaped file inside an unpacked app must not cause ambiguity.
+    writeFileSync(
+      path.join(unpacked, `nested${platforms[platform].bundle}`),
+      "internal",
+    );
+    stage(bundle, assets, platform, "0.0.1", revision, key);
+    const link = path.join(bundle, `linked${platforms[platform].bundle}`);
+    symlinkSync("missing-payload", link);
+    assert.throws(
+      () => stage(bundle, assets, platform, "0.0.1", revision, key),
+      /artifact-symlink/u,
+    );
+    rmSync(link);
+  }
+});
 test("source versions stay synchronized", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const selected = JSON.parse(
@@ -225,6 +254,12 @@ test("tagged releases validate main ancestry before signing and publication", ()
     /tag="fixkey@v\$RELEASE_VERSION"/u,
   );
   assert.equal(workflow.jobs.build.environment, "release-signing");
+  assert.equal(
+    workflow.jobs.build.strategy.matrix.include.find(
+      (entry) => entry.platform === "macos-arm64",
+    ).bundles,
+    "app,dmg",
+  );
   assert.equal(workflow.jobs.publish.environment, "release-publish");
   const buildEnv = workflow.jobs.build.steps.find(
     (step) => step.name === "Build installers and signed updater payloads",

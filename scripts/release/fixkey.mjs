@@ -78,6 +78,9 @@ export function validateSource(directory, selected) {
 }
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    // Tauri leaves unpacked application trees beside the signed archives.
+    // Their internal links are not release artifacts; never traverse them.
+    if (entry.isDirectory() && /\.(app|AppDir)$/u.test(entry.name)) return [];
     requireValue(!entry.isSymbolicLink(), "fixkey-artifact-symlink");
     const file = path.join(directory, entry.name);
     return entry.isDirectory() ? files(file) : [file];
