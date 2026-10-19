@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export function select(paths) {
   const shared = paths.some(
-    (path) => !/^(apps|servers|protos|docs)\//u.test(path),
+    (path) => !/^(apps|protos|examples|docs)\//u.test(path),
   );
   return {
     devbase:

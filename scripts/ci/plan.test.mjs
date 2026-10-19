@@ -46,3 +46,13 @@ for (const [project, key] of [
     }
   });
 }
+
+test("consumer examples select protocol validation without native runners", () => {
+  assert.deepEqual(select(["examples/delcore-client/main.go"]), {
+    devbase: false,
+    delino_site: false,
+    delidev: false,
+    delitools: false,
+    protocol: true,
+  });
+});
