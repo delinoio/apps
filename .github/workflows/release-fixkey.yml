@@ -112,6 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup show active-toolchain
+          rustup component add clippy
           rustup target add '${{ matrix.target }}'
       - name: Install Linux desktop build prerequisites
         if: runner.os == 'Linux'
