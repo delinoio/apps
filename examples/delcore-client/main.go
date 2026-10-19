@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
+// SPDX-License-Identifier: Apache-2.0
 // Command delcore-client demonstrates authenticated tenant discovery without an SDK package.
 package main
 

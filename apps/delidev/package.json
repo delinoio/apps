@@ -2,7 +2,7 @@
   "name": "delidev-desktop",
   "version": "0.1.0",
   "private": true,
-  "license": "FSL-1.1-ALv2",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "rsbuild dev",

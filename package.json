@@ -2,7 +2,7 @@
   "name": "delino-apps",
   "packageManager": "pnpm@10.26.2",
   "private": true,
-  "license": "FSL-1.1-ALv2",
+  "license": "Apache-2.0",
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh",
     "build": "turbo run build",
