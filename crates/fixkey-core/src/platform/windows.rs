@@ -18,8 +18,11 @@ use uiautomation::{
 };
 use windows::{
     Win32::{
-        System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize},
-        UI::Accessibility::{IUIAutomation, IUIAutomation2},
+        System::Com::{
+            CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+            CoUninitialize,
+        },
+        UI::Accessibility::{CUIAutomation8, IUIAutomation, IUIAutomation2},
     },
     core::Interface,
 };
@@ -82,7 +85,14 @@ impl Adapter {
         // Successful initialization is balanced on this thread.
         let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
         let automation = if initialized {
-            UIAutomation::new_direct().ok()
+            // SAFETY: COM is initialized on this thread. CUIAutomation8
+            // implements the timeout interface required below; the older
+            // CUIAutomation class used by new_direct does not.
+            unsafe {
+                CoCreateInstance::<_, IUIAutomation>(&CUIAutomation8, None, CLSCTX_INPROC_SERVER)
+            }
+            .ok()
+            .map(UIAutomation::from)
         } else {
             None
         };
@@ -91,8 +101,9 @@ impl Adapter {
             // SAFETY: This is a live COM interface; both timeouts are finite
             // and bound provider calls.
             raw.cast::<IUIAutomation2>().is_ok_and(|automation| unsafe {
-                automation.SetConnectionTimeout(40).is_ok()
-                    && automation.SetTransactionTimeout(40).is_ok()
+                // Windows rejects the previous 40 ms value with E_INVALIDARG.
+                automation.SetConnectionTimeout(50).is_ok()
+                    && automation.SetTransactionTimeout(50).is_ok()
             })
         });
         Self {
@@ -596,4 +607,28 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
     // SAFETY: Forward the unchanged callback parameters; FixKey never consumes
     // or modifies input.
     unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Adapter, IUIAutomation, IUIAutomation2, Interface};
+
+    #[test]
+    fn initializes_bounded_automation_on_windows() {
+        let adapter = Adapter::new();
+        assert!(
+            adapter.initialized,
+            "Windows COM must initialize on the adapter thread"
+        );
+        let automation = adapter
+            .automation
+            .as_ref()
+            .expect("Windows UI Automation must support finite provider timeouts");
+        let raw: &IUIAutomation = automation.as_ref();
+        let bounded = raw.cast::<IUIAutomation2>().unwrap();
+        // SAFETY: The adapter owns this live COM interface on the current thread.
+        assert_eq!(unsafe { bounded.ConnectionTimeout() }.unwrap(), 50);
+        // SAFETY: The adapter owns this live COM interface on the current thread.
+        assert_eq!(unsafe { bounded.TransactionTimeout() }.unwrap(), 50);
+    }
 }
