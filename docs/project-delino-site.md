@@ -19,7 +19,7 @@ Provide the Delino marketing website.
 
 ## Cross-Domain Invariants
 
-This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
+This project owns the marketing website, including the FixKey product landing page at `/products/fixkey`. Product behavior remains owned by the [FixKey project](project-fixkey.md). DevBase and DeliTools remain separate applications with their own domains and contracts.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
 
