@@ -44,6 +44,8 @@ Presentation and accessibility: restrained white and light-gray surfaces, dark t
 
 Tray and notifications: tray actions are pause/resume correction, settings and exit. Closing the settings window hides it and keeps the process and correction running (prevent exit when the last window closes); only the tray Exit action, or an update installation, terminates the process. Tests cover close, reopen and exit. Show unsupported states and failures in the tray and settings. Routine status transitions (including active, paused, disabled languages, excluded apps, protected or unknown fields, and unsupported controls) update the tray and settings without OS notifications. Notify on changes to missing accessibility or Input Monitoring permissions, unavailable dictionaries or input observer, and required preference reconciliation; also retain operation-failure and available-update notifications. Deliver notifications through one separate worker with a bounded pending queue. The correction worker and UI commands never wait for the OS notification backend; when delivery is blocked and the queue is full, skip the additional notification and record a content-free reason.
 
+On macOS, initialize notification delivery with the configured FixKey bundle identifier directly. Do not discover the notification application by name or show an application chooser. If initialization fails, skip delivery and log a content-free failure reason without falling back to application discovery.
+
 Updates and distribution:
 
 - Publish macOS ARM64 DMG, Windows x64 NSIS EXE and Linux X11 x64 AppImage through GitHub Releases.

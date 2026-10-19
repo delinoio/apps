@@ -547,7 +547,26 @@ pub(crate) fn notify(app: &AppHandle, notification: crate::notifications::Notifi
         );
     }
 }
-fn deliver_notification(message: &str) {
+fn deliver_notification(message: &str, application_id: &str) {
+    #[cfg(not(target_os = "macos"))]
+    let _ = application_id;
+    #[cfg(target_os = "macos")]
+    {
+        static APPLICATION: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+        // notify-rust's macOS backend otherwise looks up an app named "use_default"
+        // through AppleScript, which opens an application chooser. Set the bundle
+        // identifier directly until the backend removes that default lookup.
+        if APPLICATION
+            .get_or_init(|| notify_rust::set_application(application_id).map_err(|e| e.to_string()))
+            .is_err()
+        {
+            tracing::warn!(
+                reason = "notification-application-unavailable",
+                "fixkey notification application initialization failed"
+            );
+            return;
+        }
+    }
     if notify_rust::Notification::new()
         .summary("FixKey")
         .body(message)
@@ -632,7 +651,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         os_language,
     })));
     app.manage(shared.clone());
-    if let Ok(notifications) = crate::notifications::Notifications::start(deliver_notification) {
+    let application_id = app.config().identifier.clone();
+    if let Ok(notifications) = crate::notifications::Notifications::start(move |message| {
+        deliver_notification(message, &application_id);
+    }) {
         app.manage(notifications);
     } else {
         tracing::warn!(
