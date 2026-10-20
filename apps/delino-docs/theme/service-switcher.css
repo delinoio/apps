@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.service-switcher {
+  position: relative;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--rp-c-text-1);
+}
+
+.service-switcher__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--rp-c-divider-light);
+  border-radius: 8px;
+  background: var(--rp-c-bg-soft);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.service-switcher svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.service-switcher__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 10;
+  padding: 4px;
+  border: 1px solid var(--rp-c-divider-light);
+  border-radius: 8px;
+  background: var(--rp-c-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+
+.service-switcher__menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.service-switcher__menu a[aria-current] {
+  color: var(--rp-c-brand);
+}
+
+.service-switcher__menu a:hover,
+.service-switcher__menu a:focus-visible {
+  background: var(--rp-c-bg-soft);
+}
+
+.service-switcher__trigger:focus-visible,
+.service-switcher__menu a:focus-visible {
+  outline: 2px solid var(--rp-c-brand);
+  outline-offset: -2px;
+}

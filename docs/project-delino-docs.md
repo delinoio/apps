@@ -11,6 +11,8 @@ Provide one public documentation app for multiple Delino services at `https://do
 ## Domain Ownership Map
 
 - `apps/delino-docs`: independently built public documentation app.
+- `apps/delino-docs/theme`: default-theme extensions, including the service selector in the sidebar.
+- `apps/delino-docs/services.ts`: service identifiers and labels shared by navigation configuration and the service selector.
 - `apps/delino-docs/docs`: curated public pages grouped by language. `en` owns source Markdown; other language directories own translated pages.
 - `apps/delino-docs/i18n`: language registry, navigation/theme text catalogs and source fingerprints.
 - `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-site`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
@@ -26,7 +28,9 @@ Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/u
 
 The documentation app serves multiple services. Each service owns a section under `/services/<service-id>/`. Service IDs use stable lowercase kebab-case values. The scaffold does not select which services publish documentation.
 
-English routes have no language prefix; Every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
+FixKey's desktop user guide uses the `fixkey` section. It covers installation, permissions, correction and undo, manual candidates, settings, privacy, updates and troubleshooting. Product behavior remains owned by the [FixKey contracts](project-fixkey.md).
+
+English routes have no language prefix; every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.
 

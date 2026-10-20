@@ -16,10 +16,12 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 
 - `/` introduces Delino Docs.
 - `/guide/getting-started` explains how to browse the documentation.
-- `/services/` is the service documentation directory. Delcore publishes its service-developer tenant state guide under `/services/delcore/`, DevBase publishes its end-user directory API guide under `/services/devbase/`, and Git Tracker publishes a guide under `/services/git-tracker/`.
+- `/services/` is the service documentation directory. Delcore publishes its service-developer tenant state guide under `/services/delcore/`, DevBase publishes its end-user directory API guide under `/services/devbase/`, Git Tracker publishes a guide under `/services/git-tracker/`, and FixKey publishes its desktop user guide under `/services/fixkey/`.
 - Future service pages use `/services/<service-id>/` with stable lowercase kebab-case service IDs and separate navigation sections.
 
-Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
+Use Rspress navigation and sidebars to keep service documentation separate. Each `/services/<service-id>/` section has a service selector above a document list containing only that service's documentation. The selector displays the current service name. Opening it lists Delcore, DevBase, Git Tracker and FixKey and marks the current service with a check. Selecting a service navigates to its overview in the current language. The popup overlays the document list without shifting it. Support mouse, touch, Tab, Enter, Space, arrow keys, Home and End. Escape closes the popup and restores focus to its trigger; clicking outside or moving focus outside also closes it. Match the default theme in light and dark modes. Each service currently has one overview page. The `/services/` directory retains the complete service list, and the top navigation's Services link provides access to that directory from each service. Apply the same separation to every registered language and the mobile sidebar. Previous and next page navigation stays within the selected service's sidebar.
+
+The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
 
 The listed routes remain the English routes. Translated equivalents use the registered language prefix, such as `/ko/`, `/ja/`, `/zh-Hans/`, `/es/`, `/fr/`, `/de/` and `/pt-BR/`. The language menu retains the current page when switching languages. Navigation, page content, theme text, search and HTML metadata use the selected language. Language selection is explicit; do not redirect by browser language. Public source pages live under `docs/en/`, translated pages under `docs/<language>/`, and navigation/theme catalogs under `i18n/`. Follow the [localization contract](apps-delino-site-localization-contract.md) for source tracking and local ChatGPT generation.
 
@@ -46,6 +48,8 @@ Affected CI runs `delino-docs-frontend` on Ubuntu and retains validation evidenc
 For Cloudflare Pages, build from the repository root with `pnpm --filter delino-docs build` and publish `apps/delino-docs/dist`. Production publication uses `.github/workflows/release-delino.yml` with the shared `delino@vMAJOR.MINOR.PATCH` tag. Release preparation updates both Delino package versions, and both apps deploy from the same source revision. The shared `delino-site-production` environment supplies the deployment token and account ID. `CLOUDFLARE_PAGES_PROJECT_DOCS` selects this app’s Pages project; `CLOUDFLARE_PAGES_PROJECT_SITE` selects the marketing app’s project. Dispatch the existing immutable tag from main to retry. Follow the [release procedure](repository-workflow-contract.md#web-publication). Cloudflare project creation, custom-domain binding and DNS require separate platform configuration. A local build does not establish platform or domain acceptance.
 
 ## Dependencies and Integrations
+
+`theme/` extends the default Rspress layout through its `beforeSidebar` slot. `services.ts` owns the shared service identifiers and labels used by both the sidebar configuration and service selector. Guide and service-directory pages retain their existing navigation.
 
 `@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
