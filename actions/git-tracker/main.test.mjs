@@ -44,3 +44,25 @@ test("transient failures retry three times, permanent failures do not", async ()
   );
   assert.equal(calls, 1);
 });
+
+test("RPC origin trailing slashes preserve POST endpoint and body", async () => {
+  for (const origin of ["https://api.example", "https://api.example/"]) {
+    await rpc(
+      origin,
+      "Complete",
+      { context: { executionId: "run" } },
+      "Bearer fixture",
+      {
+        request: async (url, options) => {
+          assert.equal(
+            url,
+            "https://api.example/gittracker.v1.GitTrackerService/Complete",
+          );
+          assert.equal(options.method, "POST");
+          assert.equal(JSON.parse(options.body).context.executionId, "run");
+          return new Response("{}", { status: 200 });
+        },
+      },
+    );
+  }
+});

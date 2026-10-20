@@ -3153,7 +3153,7 @@ async function rpc(origin, method, body, authorization, {
     let response;
     try {
       response = await request(
-        `${origin}/gittracker.v1.GitTrackerService/${method}`,
+        new URL(`/gittracker.v1.GitTrackerService/${method}`, origin).href,
         {
           method: "POST",
           headers: {
