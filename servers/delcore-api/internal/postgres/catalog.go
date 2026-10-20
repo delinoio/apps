@@ -270,18 +270,26 @@ FOR UPDATE`, planID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	var tenantIDs []string
 	for rows.Next() {
 		var tenantID string
 		if err = rows.Scan(&tenantID); err != nil {
+			rows.Close()
 			return err
 		}
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, tenantID := range tenantIDs {
 		if _, err = tx.Exec(ctx, `INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at)
 VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, catalogID(), tenantID, planID, version, at); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 // ReplaceTenantSelections records the versions chosen by an explicit change.
