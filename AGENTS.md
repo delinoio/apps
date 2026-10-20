@@ -171,3 +171,11 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
 - [Environment ownership](docs/repository-environment-contract.md) owns configuration and secret boundaries.
 - Read scoped instructions in every affected domain, including cross-domain consumers.
+
+## Git Tracker ownership
+
+- `apps/git-tracker`: Web application.
+- `actions/git-tracker`: Official GitHub Action.
+- `protos/gittracker/v1`: Connect schema and generated Go bindings.
+
+Read [Git Tracker contracts](docs/project-git-tracker.md) before changing these paths.

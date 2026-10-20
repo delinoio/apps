@@ -1,0 +1,193 @@
+syntax = "proto3";
+package gittracker.v1;
+
+option go_package = "github.com/delinoio/apps/protos/gittracker/v1;gittrackerv1";
+
+// Decimal values use JSON-number spelling in strings to preserve precision.
+message Column {
+  string id = 1;
+  string name = 2;
+  string unit = 3;
+  Direction direction = 4;
+  string absolute_threshold = 5;
+  string percentage_threshold = 6;
+}
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_LOWER = 1;
+  DIRECTION_HIGHER = 2;
+  DIRECTION_NEUTRAL = 3;
+}
+message Dataset {
+  string id = 1;
+  string name = 2;
+  repeated Column columns = 3;
+}
+message Row {
+  string id = 1;
+  string name = 2;
+  map<string, string> values = 3;
+}
+message Context {
+  string repository_id = 1;
+  string execution_id = 2;
+  string commit = 3;
+  string branch = 4;
+  int64 pull_request = 5;
+  string baseline_commit = 6;
+}
+message UploadRequest {
+  Context context = 1;
+  Dataset dataset = 2;
+  repeated Row rows = 3;
+}
+message UploadResponse {
+  Execution execution = 1;
+  repeated Comparison comparisons = 2;
+  repeated string warnings = 3;
+}
+message CompleteRequest {
+  Context context = 1;
+}
+message CompleteResponse {
+  Execution execution = 1;
+  repeated string warnings = 2;
+}
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  EXECUTION_STATE_MEASURING = 1;
+  EXECUTION_STATE_COMPLETED = 2;
+  EXECUTION_STATE_INTERRUPTED = 3;
+}
+message Execution {
+  Context context = 1;
+  ExecutionState state = 2;
+  string registered_at = 3;
+  string completed_at = 4;
+  repeated Measurement measurements = 5;
+  string registration_order = 6;
+}
+message Measurement {
+  Dataset dataset = 1;
+  repeated Row rows = 2;
+}
+message Comparison {
+  string dataset_id = 1;
+  string row_id = 2;
+  string column_id = 3;
+  string value = 4;
+  string baseline_value = 5;
+  string delta = 6;
+  string percentage = 7;
+  ComparisonStatus status = 8;
+  string baseline_commit = 9;
+  string baseline_execution_id = 10;
+  string unit = 11;
+}
+enum ComparisonStatus {
+  COMPARISON_STATUS_UNSPECIFIED = 0;
+  COMPARISON_STATUS_UNAVAILABLE = 1;
+  COMPARISON_STATUS_NEW = 2;
+  COMPARISON_STATUS_INCOMPATIBLE = 3;
+  COMPARISON_STATUS_BASELINE_DELETED = 4;
+  COMPARISON_STATUS_REGRESSION = 5;
+  COMPARISON_STATUS_IMPROVEMENT = 6;
+  COMPARISON_STATUS_UNCHANGED = 7;
+  COMPARISON_STATUS_CHANGED = 8;
+}
+message Repository {
+  string id = 1;
+  string space_id = 2;
+  string full_name = 3;
+  bool public = 4;
+  bool connected = 5;
+  string installation_id = 6;
+}
+message ConnectRepositoryRequest {
+  string space_id = 1;
+  string full_name = 2;
+  string github_access_token = 3;
+}
+message ConnectRepositoryResponse {
+  Repository repository = 1;
+}
+message ListRepositoriesRequest {
+  string space_id = 1;
+}
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+}
+message GetHistoryRequest {
+  string repository_id = 1;
+  string branch = 2;
+  string dataset_id = 3;
+  string since = 4;
+  string until = 5;
+  string from_commit = 6;
+  string to_commit = 7;
+  string cursor = 8;
+}
+message GetHistoryResponse {
+  repeated Execution executions = 1;
+  string next_cursor = 2;
+  repeated string commits = 3;
+}
+message GetExecutionRequest {
+  string repository_id = 1;
+  string execution_id = 2;
+}
+message GetExecutionResponse {
+  Execution execution = 1;
+  repeated Comparison comparisons = 2;
+}
+message CompareRequest {
+  string repository_id = 1;
+  string baseline_commit = 2;
+  string target_commit = 3;
+}
+message CompareResponse {
+  repeated Comparison comparisons = 1;
+}
+message IssueTokenRequest {
+  string repository_id = 1;
+  string expires_at = 2;
+}
+message IssueTokenResponse {
+  string token_id = 1;
+  string token = 2;
+}
+message RevokeTokenRequest {
+  string repository_id = 1;
+  string token_id = 2;
+}
+message RevokeTokenResponse {}
+enum DeleteKind {
+  DELETE_KIND_UNSPECIFIED = 0;
+  DELETE_KIND_REPOSITORY = 1;
+  DELETE_KIND_DATASET = 2;
+  DELETE_KIND_EXECUTION = 3;
+}
+message DeleteRequest {
+  string repository_id = 1;
+  DeleteKind kind = 2;
+  string id = 3;
+  bool confirmed = 4;
+}
+message DeleteResponse {}
+message DisconnectRequest {
+  string repository_id = 1;
+}
+message DisconnectResponse {}
+service GitTrackerService {
+  rpc Upload(UploadRequest) returns (UploadResponse);
+  rpc Complete(CompleteRequest) returns (CompleteResponse);
+  rpc ConnectRepository(ConnectRepositoryRequest) returns (ConnectRepositoryResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+  rpc Compare(CompareRequest) returns (CompareResponse);
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+}

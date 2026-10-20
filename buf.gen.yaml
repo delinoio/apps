@@ -20,3 +20,4 @@ inputs:
   - directory: protos
     paths:
       - protos/delcore/v1
+      - protos/gittracker/v1

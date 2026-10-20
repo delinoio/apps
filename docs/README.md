@@ -89,3 +89,10 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Project index](project-fixkey.md)
 - [Rust correction engine](crates-fixkey-core-foundation.md)
 - [Desktop application](apps-fixkey-desktop-contract.md)
+
+### git-tracker
+
+- [Project index](project-git-tracker.md)
+- [Web application](apps-git-tracker-web-contract.md)
+- [GitHub Action](packages-git-tracker-action-contract.md)
+- [Connect protocol](protos-git-tracker-v1-contract.md)
