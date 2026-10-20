@@ -928,3 +928,37 @@ func TestKeyWorkRacesWithProjectDeletion(t *testing.T) {
 		}
 	}
 }
+
+// A deleted user's replay record keeps no fingerprint, which is where the original project was
+// compared. Reusing the key in another project of the tenant must still conflict.
+func TestScrubbedUserReplayKeyReusedInAnotherProjectConflicts(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	first := f.project(login(owner), tenant, "First")
+	second := f.project(login(owner), tenant, "Second")
+	key := idem()
+	create := func(project string) error {
+		_, e := f.client.CreateEndUser(ctx, as(login(owner), &pb.CreateEndUserRequest{IdempotencyKey: key, ProjectId: project, ExternalId: "scrubbed"}))
+		return e
+	}
+	made, e := f.client.CreateEndUser(ctx, as(login(owner), &pb.CreateEndUserRequest{IdempotencyKey: key, ProjectId: first.Id, ExternalId: "scrubbed"}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = f.client.DeleteEndUser(ctx, as(login(owner), &pb.DeleteEndUserRequest{IdempotencyKey: idem(), ProjectId: first.Id, EndUserId: made.Msg.EndUser.Id, Version: 1})); e != nil {
+		t.Fatal(e)
+	}
+	if n := f.count("SELECT count(*) FROM replays WHERE idempotency_key=$1 AND scrubbed", key); n != 1 {
+		t.Fatal("the creation record was not scrubbed", n)
+	}
+	if e = create(second.Id); code(e) != connect.CodeAlreadyExists {
+		t.Fatal("a scrubbed key reused in another project did not conflict", e)
+	}
+	if e = create(first.Id); code(e) != connect.CodeNotFound {
+		t.Fatal("a scrubbed replay did not report not_found", e)
+	}
+	if f.count("SELECT count(*) FROM end_users") != 0 {
+		t.Fatal("a replay restored a deleted user")
+	}
+}
