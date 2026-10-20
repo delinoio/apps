@@ -13,4 +13,4 @@ Use the navigation to choose a section, the sidebar to browse its pages, or sear
 
 ## Choose a language
 
-Use the language menu to switch between English and Korean while staying on the same page.
+Use the language menu to switch between the available languages while staying on the same page.

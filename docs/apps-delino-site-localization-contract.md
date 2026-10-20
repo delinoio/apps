@@ -2,9 +2,9 @@
 
 ## Ownership
 
-`delino-site` and `delino-docs` use English (`en`) as their source language and initially publish Korean (`ko`). Each app owns its `i18n/locales.json` language registry and `i18n/messages/<language>.json` flat text catalog. Documentation sources live under `apps/delino-docs/docs/en`; translated pages use sibling language directories. Shared tooling lives in `scripts/localization/`.
+`delino-site` and `delino-docs` use English (`en`) as their source language and publish these target languages, identified by BCP 47 tags: Korean (`ko`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Spanish (`es`), French (`fr`), German (`de`) and Brazilian Portuguese (`pt-BR`). Both apps register the same set. Right-to-left languages are not registered until the layouts define mirroring. Each app owns its `i18n/locales.json` language registry and `i18n/messages/<language>.json` flat text catalog. Documentation sources live under `apps/delino-docs/docs/en`; translated pages use sibling language directories. Shared tooling lives in `scripts/localization/`.
 
-English routes keep their existing paths. Other languages use `/<language>/`. Language selection is explicit and links between the two apps retain the selected language. Rspress owns documentation language selection, navigation, search and HTML language metadata. The marketing app emits one HTML entry per registered language and loads only its selected text catalog.
+English routes keep their existing paths. Other languages use `/<language>/`, for example `/ja/` and `/zh-Hans/`. Language selection is explicit and links between the two apps retain the selected language. Rspress owns documentation language selection, navigation, search and HTML language metadata. The marketing app emits one HTML entry per registered language and loads only its selected text catalog.
 
 ## Translation workflow
 

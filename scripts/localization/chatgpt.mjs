@@ -392,7 +392,10 @@ export class ChatGPT {
       },
       body: JSON.stringify({
         model,
-        input,
+        // The Responses endpoint rejects a bare string; it requires a message list.
+        input: [
+          { role: "user", content: [{ type: "input_text", text: input }] },
+        ],
         instructions,
         store: false,
         stream: true,
@@ -451,6 +454,10 @@ export class ChatGPT {
 
 export async function completedText(response) {
   let buffer = "";
+  // Workaround: the live endpoint sends an empty `output` in `response.completed`
+  // and delivers message items only through `response.output_item.done`. Scope:
+  // this function only. Remove the fallback if completed events carry the output.
+  const items = [];
   const decoder = new TextDecoder();
   for await (const chunk of response.body) {
     buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(
@@ -474,11 +481,14 @@ export async function completedText(response) {
         throw new Error(
           `ChatGPT inference failed or was incomplete. Manage usage: ${USAGE}`,
         );
+      if (event.type === "response.output_item.done") items.push(event.item);
       if (event.type === "response.completed") {
         if (event.response.status !== "completed")
           throw new Error("ChatGPT response did not complete.");
-        const content =
-          event.response.output?.flatMap((item) => item.content ?? []) ?? [];
+        const output = event.response.output?.length
+          ? event.response.output
+          : items;
+        const content = output.flatMap((item) => item.content ?? []);
         if (content.some((item) => item.type === "refusal"))
           throw new Error("ChatGPT declined the translation.");
         const text = content

@@ -486,6 +486,27 @@ test("stream accepts completed output across arbitrary UTF-8 and CRLF boundaries
   );
 });
 
+test("stream falls back to output items when the completed event has empty output", async () => {
+  assert.equal(
+    await completedText(
+      events([
+        {
+          type: "response.output_item.done",
+          item: {
+            type: "message",
+            content: [{ type: "output_text", text: "Item \uD55C\uAE00" }],
+          },
+        },
+        {
+          type: "response.completed",
+          response: { status: "completed", output: [] },
+        },
+      ]),
+    ),
+    "Item \uD55C\uAE00",
+  );
+});
+
 test("stream rejects truncation, errors after deltas, incomplete responses and refusals", async () => {
   await assert.rejects(
     completedText(
@@ -520,6 +541,9 @@ test("inference sends only public Responses requests with plan storage settings"
       const body = JSON.parse(options.body);
       assert.equal(body.store, false);
       assert.equal(body.stream, true);
+      assert.deepEqual(body.input, [
+        { role: "user", content: [{ type: "input_text", text: "Input" }] },
+      ]);
       assert.equal(options.headers.Authorization, "Bearer access");
       return events([completed('{"message":"Translated"}')]);
     },
