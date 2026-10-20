@@ -62,7 +62,7 @@
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
 - `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
-- `protos/delcore/v1`: Delcore schemas, generated Go messages and Connect bindings.
+- `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
@@ -179,6 +179,6 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - `servers/git-tracker-api`: Go API, PostgreSQL persistence and background maintenance.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
-- `protos/gittracker/v1`: Connect schema and generated Go bindings.
+- `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
 Read [Git Tracker contracts](docs/project-git-tracker.md) before changing these paths.

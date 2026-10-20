@@ -15,7 +15,7 @@ define.fmt({
     "**/fixtures/**",
     "packages/*/src/gen/**",
     "apps/bundlewhy-web/src/gen/**",
-    "apps/git-tracker/src/gen/**",
+    "protos/**/*_pb.ts",
     "actions/git-tracker/action.cjs",
     "**/*.generated.*",
     "**/pnpm-lock.yaml",

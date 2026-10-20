@@ -38,6 +38,9 @@ importers:
       '@bufbuild/buf':
         specifier: 1.72.0
         version: 1.72.0
+      '@bufbuild/protoc-gen-es':
+        specifier: 2.16.0
+        version: 2.16.0(@bufbuild/protobuf@2.16.0)
       jose:
         specifier: 6.2.12
         version: 6.2.12
@@ -243,6 +246,9 @@ importers:
 
   apps/git-tracker:
     dependencies:
+      '@delino/protos':
+        specifier: workspace:*
+        version: link:../../protos
       '@bufbuild/protobuf':
         specifier: 2.16.0
         version: 2.16.0
@@ -268,9 +274,6 @@ importers:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
     devDependencies:
-      '@bufbuild/protoc-gen-es':
-        specifier: 2.16.0
-        version: 2.16.0(@bufbuild/protobuf@2.16.0)
       '@rsbuild/core':
         specifier: 2.1.10
         version: 2.1.10
@@ -354,6 +357,11 @@ importers:
   servers/delcore-api: {}
 
   servers/git-tracker-api: {}
+  protos:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.16.0
+        version: 2.16.0
 
 packages:
 

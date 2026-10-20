@@ -2,7 +2,7 @@
 
 ## Scope
 
-This contract belongs to `delinoio/apps`. Schemas and generated Go messages live together in `protos/delcore/v1`. Connect-Go bindings live in its `delcorev1connect` subdirectory.
+This contract belongs to `delinoio/apps`. Schemas and generated Go and TypeScript messages live together in `protos/delcore/v1`. Connect-Go bindings live in its `delcorev1connect` subdirectory.
 
 ## Runtime and Language
 
@@ -42,7 +42,7 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services live under `servers/` in this checkout. Run affected server integration checks and report any unperformed checks in the pull request. App-local TypeScript bindings may be generated for Git Tracker; do not publish a separate TypeScript SDK.
+Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services live under `servers/` in this checkout. Run affected server integration checks and report any unperformed checks in the pull request. Root `pnpm proto:generate` also generates TypeScript bindings beside the schemas. Git Tracker consumes them through the private `@delino/protos` workspace; do not publish a separate TypeScript SDK.
 
 ## Dependencies and Integrations
 

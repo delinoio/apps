@@ -364,14 +364,17 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: frontend
         run: |
           pnpm --filter git-tracker test
           pnpm --filter git-tracker-action ci:checks
-          pnpm --dir apps/git-tracker exec buf generate
-          git diff --exit-code -- apps/git-tracker/src/gen
+          pnpm proto:generate
+          test -z "$(git status --porcelain --untracked-files=all -- protos)"
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25

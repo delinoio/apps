@@ -23,8 +23,8 @@ import {
   type Comparison,
   type Execution,
   type Dataset,
-} from "./gen/gittracker/v1/gittracker_pb";
-import { DelcoreService } from "./gen/delcore/v1/delcore_pb";
+} from "@delino/protos/gittracker/v1/gittracker_pb";
+import { DelcoreService } from "@delino/protos/delcore/v1/delcore_pb";
 import { points, readable, graphValue, representatives } from "./history.mjs";
 import "./style.css";
 

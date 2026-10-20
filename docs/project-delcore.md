@@ -15,7 +15,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 ## Domain Ownership Map
 
 - `servers/delcore-api`: one Go API and background worker process, migrations and OCI packaging.
-- `protos/delcore/v1`: Connect schemas, generated Go messages and Connect bindings.
+- `protos/delcore/v1`: Connect schemas, generated Go and TypeScript messages and Connect bindings.
 - `examples/delcore-client`: Go consumer example.
 
 See the [repository boundary contract](repository-boundary-contract.md) for coordinated changes.
