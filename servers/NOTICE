@@ -1,3 +1,15 @@
 Copyright 2026 Delino
 
-All repository-owned files in this directory and its descendants are licensed under FSL-1.1-ALv2. See LICENSE. Third-party components retain their original licenses and notices.
+All repository-owned files in servers/ and its descendants, including source,
+tests, migrations, configuration examples, package metadata and documentation,
+are licensed under FSL-1.1-ALv2. This applies with or without a file-level
+license header. See LICENSE in this directory for the complete terms.
+
+The root Apache-2.0 license does not provide an immediate alternative license
+for these files. The additional Apache-2.0 grant takes effect for each version
+on the second anniversary of the date Delino makes that version available
+under FSL. Each newer version has its own two-year period.
+
+Third-party components retain their original licenses and notices. Shared
+protocol code from outside servers/ retains its Apache-2.0 license when
+included in a server distribution.
