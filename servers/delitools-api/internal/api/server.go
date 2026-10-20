@@ -214,9 +214,18 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 	}
 	defer s.release(x.tenant)
 	state := pb.RequestState_REQUEST_STATE_COMPLETED
+	attemptStarted := false
 	defer func() {
 		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
 		defer cancel()
+		if !attemptStarted {
+			deleted, e := s.DB.Pool.Exec(bg, "DELETE FROM requests WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM attempts WHERE request_id=$1)", x.id)
+			if e == nil && deleted.RowsAffected() == 1 {
+				return
+			}
+			state = pb.RequestState_REQUEST_STATE_UNKNOWN
+			err = fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
+		}
 		if _, e := s.DB.Pool.Exec(bg, "UPDATE requests SET state=$2 WHERE id=$1", x.id, state); e != nil {
 			err = fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
 		}
@@ -241,6 +250,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 			_, e := s.DB.Pool.Exec(bg, "UPDATE attempts SET generation_id=$2 WHERE id=$1", attemptID, generation)
 			return e
 		}
+		attemptStarted = true
 		result, err = s.Gateway.Execute(ctx, x.model, prompt, schema, capture)
 		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
 		var measured any

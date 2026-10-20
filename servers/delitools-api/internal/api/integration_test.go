@@ -564,3 +564,30 @@ func TestPriceSyncPreservesRequestStartSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstAttemptInsertFailureReleasesClaim(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	if _, err := s.DB.Pool.Exec(ctx, "ALTER TABLE attempts ADD CONSTRAINT reject_attempt CHECK(false)"); err != nil {
+		t.Fatal(err)
+	}
+	q := translate(tenant, "retry-insert")
+	_, err := s.TranslateTextArray(ctx, request(q, "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_INTERNAL)
+	if g.calls != 0 {
+		t.Fatal("provider called before durable attempt")
+	}
+	var count int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM requests").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("retained claim %d: %v", count, err)
+	}
+	if _, err := s.DB.Pool.Exec(ctx, "ALTER TABLE attempts DROP CONSTRAINT reject_attempt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TranslateTextArray(ctx, request(q, "Bearer user")); err != nil {
+		t.Fatal(err)
+	}
+	if g.calls != 1 {
+		t.Fatal(g.calls)
+	}
+}
