@@ -149,6 +149,18 @@ func (s *Server) ListEndUsers(ctx context.Context, r *connect.Request[pb.ListEnd
 			out.EndUsers = out.EndUsers[:size]
 			out.NextPageToken = encodeCursor(created[size-1], out.EndUsers[size-1].Id)
 		}
+		if len(out.EndUsers) == 0 {
+			// A project deleted after authorization cascades away every user, so an empty page
+			// is also what a deleted project returns. Check the parent before reporting success.
+			rows.Close()
+			var exists bool
+			if e = c.DB.QueryRow(c.Ctx, "SELECT EXISTS(SELECT 1 FROM projects WHERE id=$1)", q.ProjectId).Scan(&exists); e != nil {
+				return e
+			}
+			if !exists {
+				return notFound()
+			}
+		}
 		return nil
 	})
 }
