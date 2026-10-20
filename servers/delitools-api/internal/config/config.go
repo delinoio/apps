@@ -46,6 +46,9 @@ func Load(path string, getenv func(string) string, migrate bool) (Config, error)
 	if e = d.Decode(new(any)); e != io.EOF {
 		return c, errors.New("operator configuration must contain one JSON document")
 	}
+	if listen := getenv("DELITOOLS_LISTEN"); listen != "" {
+		c.Listen = listen
+	}
 	c.DatabaseURL = getenv("DELITOOLS_DATABASE_URL")
 	if c.DatabaseURL == "" {
 		return c, errors.New("database configuration required")

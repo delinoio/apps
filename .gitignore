@@ -219,3 +219,6 @@ tmp/
 
 # FixKey generated license inventory and Tauri schemas
 /apps/fixkey-app/src-tauri/gen/
+
+# Local DeliTools operator configuration
+/servers/delitools-api/config.local.json

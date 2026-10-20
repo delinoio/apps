@@ -7,6 +7,7 @@ import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
 
 export const Api = Object.freeze({
   Delcore: "delcore",
+  DeliTools: "delitools",
   GitTracker: "git-tracker",
 });
 export const databaseHandoff = "DEV_COMPOSE_DATABASE_URLS";

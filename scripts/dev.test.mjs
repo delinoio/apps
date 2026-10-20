@@ -19,6 +19,8 @@ import { prepareApiEnvironment } from "./dev-api.mjs";
 const urls = {
   [Api.Delcore]:
     "postgres://delcore:fixture@127.0.0.1:15432/delcore?sslmode=disable",
+  [Api.DeliTools]:
+    "postgres://delitools:fixture@127.0.0.1:15434/delitools?sslmode=disable",
   [Api.GitTracker]:
     "postgres://git_tracker:fixture@127.0.0.1:15433/git_tracker?sslmode=disable",
 };
@@ -122,7 +124,11 @@ test("direct API development preserves existing environment without a Compose ha
     };
     assert.deepEqual(prepareApiEnvironment(api, source).env, {
       ...source,
-      LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+      ...(api === Api.DeliTools
+        ? { DELITOOLS_LISTEN: "127.0.0.1:46322" }
+        : {
+            LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+          }),
     });
   }
   assert.throws(
@@ -226,3 +232,18 @@ test(
     }
   },
 );
+
+test("DeliTools keeps its namespaced environment and fixed listener after injection", () => {
+  const prepared = prepareApiEnvironment(Api.DeliTools, {
+    ...handoff,
+    DELITOOLS_DATABASE_URL: "postgres://remote/shared",
+    DELITOOLS_LISTEN: "0.0.0.0:9999",
+    DELITOOLS_GATEWAY_KEY: "fixture-key",
+    LISTEN: "127.0.0.1:8080",
+  });
+  assert.equal(prepared.env.DELITOOLS_DATABASE_URL, urls[Api.DeliTools]);
+  assert.equal(prepared.env.DELITOOLS_LISTEN, "127.0.0.1:46322");
+  assert.equal(prepared.env.DELITOOLS_GATEWAY_KEY, "fixture-key");
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:8080");
+  assert.equal(prepared.env[databaseHandoff], undefined);
+});

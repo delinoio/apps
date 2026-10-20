@@ -91,6 +91,19 @@
     },
     "fixkey-desktop#build": {
       "cache": false
+    },
+    "@delinoio/delitools-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "DELITOOLS_DATABASE_URL",
+        "DELITOOLS_GATEWAY_KEY",
+        "DELITOOLS_CLIENT_SECRET",
+        "DELITOOLS_LISTEN",
+        "OTEL_*",
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS"
+      ]
     }
   },
   "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"]

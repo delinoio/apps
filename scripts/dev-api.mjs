@@ -11,14 +11,17 @@ export function prepareApiEnvironment(api, source = process.env) {
     ...source,
     // Development listeners are fixed per service, including when a shared
     // parent shell or Infisical value supplies LISTEN.
-    LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+    ...(api === Api.DeliTools
+      ? { DELITOOLS_LISTEN: "127.0.0.1:46322" }
+      : { LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321" }),
   };
   delete env[databaseHandoff];
   if (source[databaseHandoff]) {
     const url = JSON.parse(source[databaseHandoff])[api];
     if (typeof url !== "string" || new URL(url).hostname !== "127.0.0.1")
       throw new Error("Missing local database handoff");
-    env.DATABASE_URL = url;
+    env[api === Api.DeliTools ? "DELITOOLS_DATABASE_URL" : "DATABASE_URL"] =
+      url;
   }
   return { env };
 }

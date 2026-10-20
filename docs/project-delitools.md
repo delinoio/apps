@@ -40,3 +40,5 @@ Update this index and the application contract together when paths, targets or r
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [DeliDev](project-delidev.md)
+
+The API development task uses `servers/delitools-api/.air.toml` and the shared `scripts/dev-api.mjs` launcher. Its local configuration and database preparation follow the [server contract](servers-delitools-api-contract.md#local-development).

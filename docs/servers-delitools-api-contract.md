@@ -173,3 +173,18 @@ Monitor `/healthz`, `/readyz` and `/metrics` on a restricted network. Readiness 
 Back up before updates. Stop the old process, run forward migrations and start the matching binary. The generation uniqueness migration rejects pre-existing duplicate nonempty IDs; reconcile their verified attribution and billing evidence before retrying the migration, without deleting or guessing usage. Startup validates schema version and rejects a second instance through a PostgreSQL session lock. Loss of the lock session stops the server. Fix defects forward; neither image rollback nor reverse migration is supported. Infrastructure provisioning, live account acceptance and deployment are separate from automated tests.
 
 Gateway inference uses the configured execution context deadline for both response headers and streaming. The dependency HTTP timeout does not shorten paid execution; catalog and generation lookups also receive bounded caller contexts.
+
+## Local development
+
+Run service-local `pnpm dev` to inject the root-linked Infisical development folder `/delitools-api` and start pinned Air through the shared API launcher. Root `pnpm dev` starts the owning Compose database, then includes the same task. Root Portless registers `delitools-api` on the fixed `127.0.0.1:46322` upstream. The launcher overrides `DELITOOLS_LISTEN` after injection; port conflicts fail startup.
+
+Copy `config.example.json` to ignored `config.local.json` in the service directory and configure the registered service identity, Logto endpoints, Delcore URL, Gateway URL and required settings. Air passes this file explicitly. Keep the JSON local and supply `DELITOOLS_DATABASE_URL`, `DELITOOLS_GATEWAY_KEY` and `DELITOOLS_CLIENT_SECRET` through the owning Infisical folder. The runtime accepts an optional `DELITOOLS_LISTEN` override after reading JSON. The root Compose handoff overrides only the database URL after secret injection; service-local development preserves the injected database URL. Neither launcher rewrites local files or provisions provider accounts.
+
+The disposable Compose database uses `127.0.0.1:55433` by default, overridden by `DELITOOLS_POSTGRES_PORT`. Start it and apply forward migrations explicitly before development. From the repository root:
+
+```sh
+docker compose up -d --wait delitools-postgres
+(cd "servers/delitools-api" && infisical run --env=dev --project-config-dir=../.. --path=/delitools-api -- go run ./cmd/delitools-api -config config.local.json -migrate)
+```
+
+Set the migration command's injected `DELITOOLS_DATABASE_URL` to the resolved local Compose URL. Migrations do not run in Air or root development. Air rebuilds on service/shared Go or SQL changes and reloads local JSON changes. Generated binaries stay in ignored `tmp/delitools-api`; no source content, provider credentials or live-account acceptance is supplied by the launcher.

@@ -44,3 +44,5 @@ pnpm --filter @delinoio/delitools-api ci:oci
 ```
 
 Use a disposable database. Integration tests create and remove isolated schemas and use mocked authorities/providers. OCI tests create disposable containers and verify migration, startup, readiness, metrics, single-instance enforcement and schema/configuration rejection. Automated fixtures and image checks do not establish production deployment or live provider-account acceptance.
+
+`DELITOOLS_LISTEN` optionally overrides the JSON listen address. The override must be a valid host and port; startup fails if the address is already in use.

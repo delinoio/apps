@@ -5,6 +5,7 @@
   "license": "FSL-1.1-ALv2",
   "type": "module",
   "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/delitools-api -- node ../../scripts/dev-api.mjs delitools",
     "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/delitools-api",
     "ci:vet": "go vet ./...",
     "ci:build": "go build -o /tmp/delitools-api-validation ./cmd/delitools-api",

@@ -17,7 +17,12 @@ func TestStartupValidation(t *testing.T) {
 	if e = os.WriteFile(path, b, 0600); e != nil {
 		t.Fatal(e)
 	}
-	env := func(string) string { return "fixture" }
+	env := func(key string) string {
+		if key == "DELITOOLS_LISTEN" {
+			return ""
+		}
+		return "fixture"
+	}
 	if _, e = Load(path, env, false); e != nil {
 		t.Fatal(e)
 	}
@@ -47,10 +52,35 @@ func TestRejectTrailingConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, migrate := range []bool{false, true} {
-			_, err := Load(path, func(string) string { return "fixture" }, migrate)
+			_, err := Load(path, func(key string) string {
+				if key == "DELITOOLS_LISTEN" {
+					return ""
+				}
+				return "fixture"
+			}, migrate)
 			if (err == nil) != (strings.TrimSpace(suffix) == "") {
 				t.Fatalf("suffix %q migration %v: %v", suffix, migrate, err)
 			}
 		}
+	}
+}
+
+func TestDevelopmentListenOverride(t *testing.T) {
+	c, err := Load("../../config.example.json", func(key string) string {
+		if key == "DELITOOLS_LISTEN" {
+			return "127.0.0.1:46323"
+		}
+		return "fixture"
+	}, false)
+	if err != nil || c.Listen != "127.0.0.1:46323" {
+		t.Fatal(c.Listen, err)
+	}
+	if _, err := Load("../../config.example.json", func(key string) string {
+		if key == "DELITOOLS_LISTEN" {
+			return "invalid"
+		}
+		return "fixture"
+	}, false); err == nil {
+		t.Fatal("invalid listener accepted")
 	}
 }
