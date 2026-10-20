@@ -12,6 +12,17 @@ CREATE TABLE catalog_entities (
  UNIQUE(kind,scope,key),
  UNIQUE(id,kind)
 );
+
+-- Plans and add-ons created before catalog versioning have no stable entity
+-- rows. Keep those products addressable so their first catalog mutation can
+-- create an immutable version without breaking the existing price flow.
+INSERT INTO catalog_entities(id,kind,scope,key)
+SELECT id,'plan','','legacy-plan-'||replace(id::text,'-','')
+FROM plans;
+INSERT INTO catalog_entities(id,kind,scope,key)
+SELECT id,'addon',service_id::text,'legacy-addon-'||replace(id::text,'-','')
+FROM addons;
+
 CREATE TABLE catalog_versions (
  id uuid PRIMARY KEY,
  entity_id uuid NOT NULL REFERENCES catalog_entities(id),
