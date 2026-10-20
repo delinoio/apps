@@ -31,7 +31,7 @@ The app serves static content and has no application database or account state. 
 
 ## Security
 
-Public pages must not expose secrets, internal contracts, private server details or user data. Curate documentation explicitly; do not copy or expose repository-root `docs/` automatically. No deployment credentials belong in the browser bundle.
+Public pages must not expose secrets, internal contracts, internal server details or user data. Curate documentation explicitly; do not copy or expose repository-root `docs/` automatically. No deployment credentials belong in the browser bundle.
 
 ## Logging
 

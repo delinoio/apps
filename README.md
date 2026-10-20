@@ -1,7 +1,9 @@
 # Delino Apps
 
-DevBase, Delino website, DeliDev, DeliTools and the standalone FixKey desktop product, shared protobuf schemas, generated Go bindings and consumer examples.
+DevBase, Delino website, DeliDev, DeliTools, FixKey, Git Tracker, shared protocols and consumer examples, and the Delcore and Git Tracker servers.
 
-This repository is public. Server implementations are maintained in [Delino Servers](https://github.com/delinoio/servers), a private repository available only to authorized collaborators.
+This repository contains clients and servers in one checkout. Repository-owned files under `servers/` use [FSL-1.1-ALv2](servers/LICENSE), with Apache-2.0 available two years after each version is first publicly distributed. Other repository-owned files use [Apache-2.0](LICENSE). Third-party licenses and notices remain in effect.
 
-Contribute clients and protocols using the [documentation catalog](docs/README.md) and [apps validation workflow](docs/repository-workflow-contract.md). You can submit an apps contribution without servers access, a local server checkout or private credentials. For protocol changes, update the [protocol contract](docs/protos-delcore-v1-contract.md) and describe the interface change in your pull request. Maintainers with servers access handle private contract updates and server integration validation. See the [repository boundary contract](docs/repository-boundary-contract.md) for responsibilities.
+Contributors can change clients, protocols and servers together. Follow the owning scoped instructions and run the affected checks with disposable databases and mocked providers. Production credentials are not required for fixture-based contributions.
+
+Maintainer guidance: [documentation catalog](docs/README.md), [validation workflow](docs/repository-workflow-contract.md), [protocol contract](docs/protos-delcore-v1-contract.md) and [directory boundaries](docs/repository-boundary-contract.md). For protocol changes, update affected contracts and describe interface changes and validation in the pull request.

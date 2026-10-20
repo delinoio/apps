@@ -1,0 +1,10 @@
+{
+  "name": "@delinoio/git-tracker-api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "scripts": {
+    "ci:checks": "go test -race ./...",
+    "build": "go build ./cmd/git-tracker-api"
+  }
+}

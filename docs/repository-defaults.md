@@ -6,7 +6,7 @@ This document defines default technology choices and repository workflow default
 
 ## License
 
-Repository-owned source, package metadata and future release artifacts use Apache-2.0. Preserve the original licenses and copyright notices of imported code and bundled fonts. See `docs/repository-license-contract.md`.
+Repository-owned files under `servers/`, their package metadata and distributions use FSL-1.1-ALv2. Other repository-owned source, package metadata and future release artifacts use Apache-2.0. Preserve the original licenses and copyright notices of imported code and bundled fonts. See `docs/repository-license-contract.md`.
 
 ## Default Technology Choices
 

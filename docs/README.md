@@ -6,7 +6,7 @@
 
 ## Repository ownership
 
-See the [repository boundary contract](repository-boundary-contract.md) for public apps/private servers ownership, external contribution requirements, protocol dependency pins and maintainer companion development.
+See the [repository boundary contract](repository-boundary-contract.md) for client/server directory ownership, contribution requirements and development in one checkout.
 
 ## Repository Defaults
 
@@ -49,7 +49,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### delcore
 
 - [Project index](project-delcore.md)
-- Private reference for maintainers with servers access: [Service in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- [Delcore server](servers-delcore-api-contract.md)
 - [Protocol](protos-delcore-v1-contract.md)
 
 ### delidev
@@ -98,6 +98,8 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Web application](apps-git-tracker-web-contract.md)
 - [GitHub Action](packages-git-tracker-action-contract.md)
 - [Connect protocol](protos-git-tracker-v1-contract.md)
+- [Server](servers-git-tracker-api-contract.md)
+- [Threat model](servers-git-tracker-threat-model.md)
 
 ### ui
 

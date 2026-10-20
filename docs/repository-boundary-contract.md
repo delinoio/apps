@@ -2,26 +2,20 @@
 
 ## Ownership
 
-`https://github.com/delinoio/servers` owns server runtimes, background workers, migrations, server configuration examples and OCI packaging. `https://github.com/delinoio/apps` owns web, desktop and mobile clients, protobuf source, generated Go messages and Connect bindings, and consumer examples. Licenses and third-party notices remain with their sources.
+This repository owns server runtimes, background workers, migrations, server configuration examples and OCI packaging under `servers/`, alongside web, desktop and mobile clients, protocols and consumer examples. Root `docs/` owns all project indexes and domain contracts. Server files use FSL-1.1-ALv2; other repository-owned files use Apache-2.0. Preserve third-party licenses and notices under the [license contract](repository-license-contract.md).
 
-The Delcore protocol is `protos/delcore/v1` in apps. Its Go import path is `github.com/delinoio/apps/protos/delcore/v1`, with Connect bindings in `delcorev1connect`. Servers imports the apps Go module at an immutable commit through `go.mod` and `go.sum`. Do not vendor, duplicate or generate protocol source in servers.
+The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1`. Servers consume these packages directly through the root `github.com/delinoio/apps` Go module. Do not vendor, duplicate or generate protocol source under `servers/`.
 
-## Access and contribution boundary
+## Contribution boundary
 
-`delinoio/apps` is public. `delinoio/servers` is private to authorized collaborators; external apps contributors cannot read its code, contracts or validation records. A link to servers does not grant access.
+Client, protocol and server contributions use one checkout, branch and review. No separate private repository access, companion checkout, `DELINO_APPS_DIR`, `client:setup`, protocol dependency pin or local `go.work` is required. Do not commit absolute paths or local `replace` directives.
 
-External contributors prepare client and protocol changes in apps using its local project and domain contracts. They run the applicable apps checks and describe public interface changes, validation results and remaining limits in their apps pull request. A servers checkout, private contract edits, server tests and private credentials are not prerequisites for submitting an apps contribution.
+Read root and affected scoped instructions. Keep public client behavior and protocol requirements in their owning contracts and server implementation details in root server contracts. Public product documentation describes supported behavior and interfaces. Review and CI records must exclude credentials, user state and raw account data. Live provider credentials are not prerequisites for fixture-based contributions.
 
-Maintainers with servers access coordinate private contract updates, dependency adoption and server integration validation. Keep public client behavior and protocol requirements in apps so that contributors can understand and change the public interface without reading private server documents. Keep server implementation and operational details in servers. Public review records must describe interface effects and validation outcomes without copying private source, internal diagnostics, credentials or raw account data. Record private evidence in servers review or CI records.
+## Changes across domains
 
-## Changes across repositories (maintainers with servers access)
+Update affected project, protocol, client and server contracts in the same change. Preserve protocol field numbers, enum values and wire behavior. Run protocol lint, generation, freshness and FILE breaking checks against the comparison revision. Run Go vet, tests and consumer builds from the root, plus applicable frontend tests from the owning app.
 
-The following procedure requires servers access and applies to maintainers coordinating both repositories. External apps contributors use the apps workflow above.
+Server changes require `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/... ./servers/git-tracker-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL integration and Delcore OCI checks against disposable databases and mocked providers. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
 
-Prepare the separate apps checkout from servers with `pnpm client:setup`. The default location is `../apps`; `DELINO_APPS_DIR` overrides it. New clones start at the immutable apps commit from the server dependency pin. Create a feature branch in that checkout before committing client edits. Existing checkouts must have the expected origin and Go module. Setup does not reset branches, discard edits or pull updates. Choose the required apps branch explicitly before development.
-
-The ignored server-local `go.work` links the servers and apps modules for local development. Setup refuses to overwrite a different existing workspace. Do not commit workspace files, absolute paths or local `replace` directives. Run app commands from the owning app and schema commands from the apps root. Follow each repository's root and scoped instructions.
-
-For protocol changes, preserve field numbers, enum values and wire behavior. Run apps protocol lint, generation, freshness, FILE breaking checks and Go tests. Publish the apps commit on a branch before pinning it in servers with `GOWORK=off go get github.com/delinoio/apps@<commit>`, then run `GOWORK=off go mod tidy`. A local workspace can mask a missing or stale pin; validate servers with `GOWORK=off go vet ./...`, `GOWORK=off go build ./servers/delcore-api/cmd/...` and `GOWORK=off go test -race ./...` before delivery. OCI builds use only the committed module dependency.
-
-Keep client and server changes in separate commits and branches. Record both revisions, commands, results and unperformed platform/account checks in review or CI records. Server CI validates its pinned dependency; apps CI owns protocol generation and breaking validation. A protocol change requires server integration validation before adopting its pin. No release or provider credentials move between repositories.
+Record the source revision, commands, results and unperformed platform/account checks in review or CI records. Builds and fixtures do not establish live provider, deployment or native acceptance. No credentials or account state move through Git.

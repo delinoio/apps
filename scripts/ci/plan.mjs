@@ -6,12 +6,29 @@ import { fileURLToPath } from "node:url";
 export function select(paths) {
   const shared = paths.some(
     (path) =>
-      !/^(apps|actions|protos|examples|docs)\//u.test(path) &&
+      !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
       !/^(crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$)/u.test(
         path,
       ),
   );
+  const serverShared = paths.some((path) => /^servers\/[^/]+$/u.test(path));
   return {
+    delcore_api:
+      shared ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore))/u.test(
+          path,
+        ),
+      ),
+    git_tracker_api:
+      shared ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker))/u.test(
+          path,
+        ),
+      ),
     git_tracker:
       shared ||
       paths.some((path) =>

@@ -10,14 +10,17 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 ## Domain Ownership Map
 
+- `servers/git-tracker-api`: Go API, PostgreSQL persistence and background maintenance.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
 - `protos/gittracker/v1`: Connect schema and generated Go bindings.
 
-Apps owns clients, the Action and protocol. Servers owns the Go runtime, migrations and persistence.
+Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Go runtime, migrations and persistence in this repository.
 
 ## Domain Contract Documents
 
+- [Server](servers-git-tracker-api-contract.md)
+- [Threat model](servers-git-tracker-threat-model.md)
 - [Web application](apps-git-tracker-web-contract.md)
 - [GitHub Action](packages-git-tracker-action-contract.md)
 - [Connect protocol](protos-git-tracker-v1-contract.md)

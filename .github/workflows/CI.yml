@@ -21,6 +21,8 @@ jobs:
       git_tracker: ${{ steps.plan.outputs.git_tracker }}
       delino_site: ${{ steps.plan.outputs.delino_site }}
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
+      delcore_api: ${{ steps.plan.outputs.delcore_api }}
+      git_tracker_api: ${{ steps.plan.outputs.git_tracker_api }}
       protocol: ${{ steps.plan.outputs.protocol }}
       fixkey: ${{ steps.plan.outputs.fixkey }}
     steps:
@@ -65,7 +67,7 @@ jobs:
           toolchain: nightly-2026-09-28
           components: rustfmt
       - uses: actions/setup-go@v6
-        if: needs.changes.outputs.protocol == 'true'
+        if: needs.changes.outputs.protocol == 'true' || needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -78,6 +80,9 @@ jobs:
       - id: gofmt
         if: needs.changes.outputs.protocol == 'true'
         run: node scripts/ci/check-go-format.mjs protos examples
+      - id: server-gofmt
+        if: needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
+        run: node scripts/ci/check-go-format.mjs servers
       - id: protobuf-format
         if: needs.changes.outputs.protocol == 'true'
         run: pnpm exec buf format --diff --exit-code
@@ -653,6 +658,145 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
+  delcore-api:
+    needs: changes
+    if: needs.changes.outputs.delcore_api == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate Delcore with local protocol packages
+        run: |
+          go vet ./servers/delcore-api/...
+          go build ./servers/delcore-api/cmd/...
+          go test -race ./servers/delcore-api/...
+        id: unit
+      - name: Start integration database
+        run: |
+          # Interrupted jobs can leave this container on a persistent runner.
+          docker rm --force delcore-postgres >/dev/null 2>&1 || true
+          docker run --detach --name delcore-postgres -p 127.0.0.1:5432:5432 -e POSTGRES_USER=delcore -e POSTGRES_PASSWORD=delcore -e POSTGRES_DB=delcore_api_test --health-cmd 'pg_isready -U delcore -d delcore_api_test' --health-interval 2s --health-retries 30 postgres:17
+          for attempt in $(seq 1 60); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' delcore-postgres)" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs delcore-postgres
+          exit 1
+        id: postgres
+      - name: Integration and OCI tests
+        env:
+          DELCORE_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:5432/delcore_api_test?sslmode=disable
+        run: |
+          pnpm --filter @delinoio/delcore-api ci:integration
+          pnpm --filter @delinoio/delcore-api ci:oci
+        id: integration-oci
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: delcore-api
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-delcore-api-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove integration database
+        if: ${{ always() }}
+        run: docker rm --force delcore-postgres >/dev/null 2>&1 || true
+  git-tracker-api:
+    needs: changes
+    if: needs.changes.outputs.git_tracker_api == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate Git Tracker with local protocol packages
+        run: |
+          go vet ./servers/git-tracker-api/...
+          go build ./servers/git-tracker-api/cmd/...
+          go test -race ./servers/git-tracker-api/...
+        id: unit
+      - name: Start integration database
+        run: |
+          # Interrupted jobs can leave this container on a persistent runner.
+          docker rm --force git-tracker-postgres >/dev/null 2>&1 || true
+          docker run --detach --name git-tracker-postgres -p 127.0.0.1:55432:5432 -e POSTGRES_USER=delcore -e POSTGRES_PASSWORD=delcore -e POSTGRES_DB=delcore_api_test --health-cmd 'pg_isready -U delcore -d delcore_api_test' --health-interval 2s --health-retries 30 postgres:17
+          for attempt in $(seq 1 60); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' git-tracker-postgres)" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs git-tracker-postgres
+          exit 1
+        id: postgres
+      - name: PostgreSQL integration tests
+        env:
+          GIT_TRACKER_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:55432/delcore_api_test?sslmode=disable
+        run: |
+          go test -race -count=1 ./servers/git-tracker-api/...
+        id: integration
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: git-tracker-api
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-git-tracker-api-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove integration database
+        if: ${{ always() }}
+        run: docker rm --force git-tracker-postgres >/dev/null 2>&1 || true
   ci-result:
     if: ${{ always() }}
     needs:
@@ -670,6 +814,8 @@ jobs:
       - rust-clippy
       - rust-test
       - protocol
+      - delcore-api
+      - git-tracker-api
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected job
@@ -680,7 +826,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'delcore-api': selection.delcore_api === 'true', 'git-tracker-api': selection.git_tracker_api === 'true', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);
@@ -710,8 +856,8 @@ jobs:
       - name: Validate protocol and consumer example
         id: unit-protocol
         run: |
-          go vet ./...
-          go test -race ./...
+          go vet ./protos/... ./examples/...
+          go test -race ./protos/... ./examples/...
           go build -o "$RUNNER_TEMP/delcore-client" ./examples/delcore-client
           go build -o "$RUNNER_TEMP/git-tracker-client" ./examples/git-tracker-client
           pnpm exec buf lint

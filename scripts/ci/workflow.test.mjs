@@ -41,6 +41,8 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
+    ["delcore-api", "delcore_api"],
+    ["git-tracker-api", "git_tracker_api"],
     ["fixkey-frontend", "fixkey"],
   ]) {
     assert.equal(
@@ -130,6 +132,8 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "validate",
     "check-formatting",
     "git-tracker-clients",
+    "delcore-api",
+    "git-tracker-api",
     "devbase-frontend",
     "delino-site-frontend",
     "delino-docs-frontend",
@@ -180,6 +184,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "true",
     delidev: "true",
     delitools: "true",
+    delcore_api: "true",
+    git_tracker_api: "true",
     protocol: "true",
   };
   assert.equal(run(needs).status, 0);
@@ -200,6 +206,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "false",
     delidev: "false",
     delitools: "false",
+    delcore_api: "true",
+    git_tracker_api: "true",
     protocol: "true",
   };
   for (const id of [
@@ -282,4 +290,23 @@ test("every prerequisite failure retains its command and outcome in evidence", (
       }
     }
   }
+});
+
+test("server validation uses local protocols, PostgreSQL and licensed OCI packaging", () => {
+  for (const id of ["delcore-api", "git-tracker-api"]) {
+    const job = workflow.jobs[id];
+    assert.equal(job["runs-on"], "ubuntu-latest");
+    assert.ok(workflow.jobs["ci-result"].needs.includes(id));
+    const commands = job.steps.map((step) => step.run ?? "").join("\n");
+    assert.match(commands, /go vet \.\/servers\//u);
+    assert.match(commands, /docker run.*postgres:17/u);
+    assert.doesNotMatch(commands, /go get|client:setup|delinoio\/servers/u);
+  }
+  const dockerfile = readFileSync(
+    new URL("../../servers/delcore-api/Dockerfile", import.meta.url),
+    "utf8",
+  );
+  assert.match(dockerfile, /COPY protos \.\/protos/u);
+  assert.match(dockerfile, /COPY servers\/LICENSE servers\/NOTICE/u);
+  assert.match(dockerfile, /COPY LICENSE NOTICE/u);
 });

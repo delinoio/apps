@@ -6,7 +6,7 @@ This contract belongs to `delinoio/apps`. Schemas and generated Go messages live
 
 ## Runtime and Language
 
-Protobuf package `delcore.v1`; generated Go clients and handlers use the root `github.com/delinoio/apps` module, consumed by `delinoio/servers` at a pinned commit. There is no separate SDK package or UI.
+Protobuf package `delcore.v1`; generated Go clients and handlers use the root `github.com/delinoio/apps` module, consumed directly by local server packages in the same module. There is no separate SDK package or UI.
 
 ## Users and Operators
 
@@ -30,7 +30,7 @@ Consumer services with the `authorize` scope may call `CheckTenantLifecycle` for
 
 ## Storage
 
-Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. Server retention boundaries are owned by the private server contract. Maintainers with servers access validate changes that affect retention; external contributors use the public wire requirements in this contract.
+Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. Server retention boundaries are owned by the [server contract](servers-delcore-api-contract.md). Validate changes that affect retention against the local server implementation and this wire contract.
 
 ## Security
 
@@ -42,7 +42,7 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to the private servers repository and are run by maintainers with access. External contributors run the apps checks and report unperformed server integration checks in their pull request. App-local TypeScript bindings may be generated for Git Tracker; do not publish a separate TypeScript SDK.
+Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services live under `servers/` in this checkout. Run affected server integration checks and report any unperformed checks in the pull request. App-local TypeScript bindings may be generated for Git Tracker; do not publish a separate TypeScript SDK.
 
 ## Dependencies and Integrations
 
@@ -50,9 +50,9 @@ Connect-Go and Protobuf use the root pinned versions. Add delcore to the existin
 
 ## Change Triggers
 
-Update this protocol contract and the [project index](project-delcore.md) when public interfaces change. Describe the interface change and apps validation results in the apps pull request. Maintainers with servers access update the private server contract and validate integration before adopting the protocol revision. External contributors do not need private repository access. Preserve field numbers and enum values.
+Update this protocol contract and the [project index](project-delcore.md) when public interfaces change. Describe the interface change and validation results in the pull request. Update the local server contract and validate affected integration in the same change. Preserve field numbers and enum values.
 
 ## References
 
 - [Repository defaults](repository-defaults.md)
-- Private reference for maintainers with servers access: [Server contract in servers](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- [Server contract](servers-delcore-api-contract.md)

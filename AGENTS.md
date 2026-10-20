@@ -11,7 +11,7 @@
 - Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
 
 - Use the `docs/` directory as the source of truth for project contracts and implementation documents.
-- License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
+- License repository-owned files under `servers/` and their distributions under FSL-1.1-ALv2. Repository-owned source outside `servers/` and its distributions use Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - Track repository asset files of at least 512 KiB through exact-path Git LFS attributes. Checkouts that compile, test, or package those assets must hydrate LFS objects first; preserve source licenses and notices. Schema-only Buf baseline clones must skip LFS smudging within the breaking-check command so pointer-only checkouts need no unrelated asset downloads. Follow `docs/repository-workflow-contract.md`.
@@ -43,17 +43,16 @@
 - Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
-## Repository ownership and companion development
+## Repository ownership and integrated development
 
-- `delinoio/apps` is public. `delinoio/servers` is private to authorized collaborators. External apps contributors must be able to submit client and protocol changes using apps-local contracts and validation without servers access. Maintainers with servers access own private contract updates, dependency adoption and server integration validation. Do not require external contributors to read or edit private files, run server checks or obtain private credentials.
-
-- `https://github.com/delinoio/servers` owns server implementations, migrations and OCI packaging. `https://github.com/delinoio/apps` owns all clients, native shells, protobuf schemas, generated Go bindings and consumer examples.
-- Read `docs/repository-boundary-contract.md` before changing a boundary. Keep code and its owning project/domain contracts in the owning repository. Do not copy client or protocol source into servers, or server source into apps.
-- A server task that explicitly requires client or protocol changes includes work in the separate apps checkout. Read that checkout's root and scoped `AGENTS.md` before editing. Keep commits, validation and review records separate for each repository.
-- Server implementations and server validation belong to the separate servers checkout. The apps Go module exposes protocols and consumer examples; it does not contain a server runtime.
+- This repository owns clients, native shells, protocols, consumer examples and server implementations. `servers/` owns runtimes, background workers, migrations and OCI packaging; `protos/` owns schemas and generated Go bindings.
+- Read `docs/repository-boundary-contract.md` before changing a boundary. Keep project and domain contracts in root `docs/`; read scoped instructions for every affected domain.
+- Develop client, protocol and server changes in the same checkout and review. The root Go module is `github.com/delinoio/apps`; server packages consume local protocol packages. Do not create a companion checkout, protocol dependency pin, local workspace or duplicate generated source for this integration.
+- Run applicable client, protocol and server checks. Use disposable databases and mocked providers for server integration; production credentials and live-account acceptance remain separate.
 
 ## Monorepo Structure Map
 
+- `servers/`: Delcore and Git Tracker services, migrations and OCI packaging; follow `servers/AGENTS.md`.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/devbase`: DevBase web application.
@@ -177,6 +176,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 
 ## Git Tracker ownership
 
+- `servers/git-tracker-api`: Go API, PostgreSQL persistence and background maintenance.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
 - `protos/gittracker/v1`: Connect schema and generated Go bindings.

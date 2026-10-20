@@ -85,7 +85,7 @@ External individuals and organizations, CI jobs and service operators.
 - Use equally spaced commits on the horizontal axis, ordered along the branch's first-parent path. Dates appear in details.
 - Plot actual measurements only and connect surrounding measured points across skipped commits. Do not fabricate or carry forward values.
 - Provide automatic-baseline comparisons and user-selected two-commit comparisons in tables.
-- Support keyboard use of primary functions, tabular alternatives to graphs, and text as well as color for improvement/regression. Follow the apps repository's existing UI instructions.
+- Support keyboard use of primary functions, tabular alternatives to graphs, and text as well as color for improvement/regression. Follow this repository's existing UI instructions.
 - Empty states explain connection/upload steps; loading states show progress; request failures offer retry and a trace/correlation ID; permission failures explain lack of access without exposing private data.
 - The official Action provides logs, Job Summary, and web detail links. Each upload job judges its uploaded data. By default regressions are reported without failing CI; users can enable regression failure.
 - For transient upload/completion network or server errors, retry at most three times. After retries, fail the job by default; permit configuration to warn and pass instead.
@@ -107,7 +107,7 @@ External individuals and organizations, CI jobs and service operators.
 
 - Provide repository connection instructions, YAML/JSON format guidance, Action and Connect API examples, permissions/deletion documentation, error troubleshooting, and a SWC-style table example.
 - Explain completion versus CI result, execution identity, row-level push baselines, missing comparisons, historical uploads, unit conversion, and precision preservation.
-- Keep owning project/domain contracts and documentation catalogs current during implementation. Public documentation contains public behavior and interfaces, not private server internals.
+- Keep owning project/domain contracts and documentation catalogs current during implementation. Public documentation contains public behavior and interfaces, not internal server details.
 - Do not create a Runbook or a separate support administration UI.
 
 ## Storage
@@ -128,7 +128,7 @@ Run the owning repository format checks, Go tests, protocol generation/lint/brea
 
 ## Dependencies and Integrations
 
-Logto, Delcore, GitHub App, GitHub Actions OIDC, PostgreSQL and the apps-owned Connect protocol. External apps contributors need no private server access.
+Logto, Delcore, GitHub App, GitHub Actions OIDC, PostgreSQL and the apps-owned Connect protocol. Client and server contributors use this checkout and require no production credentials for fixture-based validation.
 
 ## Change Triggers
 
