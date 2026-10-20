@@ -31,6 +31,33 @@ const locales = registry.locales.map((locale) => {
           ],
         },
       ],
+      [`${prefix}/services/delcore/`]: [
+        {
+          text: "Delcore",
+          items: [
+            { text: messages.overview, link: `${prefix}/services/delcore/` },
+          ],
+        },
+      ],
+      [`${prefix}/services/devbase/`]: [
+        {
+          text: "DevBase",
+          items: [
+            { text: messages.overview, link: `${prefix}/services/devbase/` },
+          ],
+        },
+      ],
+      [`${prefix}/services/git-tracker/`]: [
+        {
+          text: "Git Tracker",
+          items: [
+            {
+              text: messages.overview,
+              link: `${prefix}/services/git-tracker/`,
+            },
+          ],
+        },
+      ],
       [`${prefix}/services/`]: [
         {
           text: messages.services,

@@ -19,7 +19,9 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 - `/services/` is the service documentation directory. Delcore publishes its service-developer tenant state guide under `/services/delcore/`, DevBase publishes its end-user directory API guide under `/services/devbase/`, and Git Tracker publishes a guide under `/services/git-tracker/`.
 - Future service pages use `/services/<service-id>/` with stable lowercase kebab-case service IDs and separate navigation sections.
 
-Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
+Use Rspress navigation and sidebars to keep service documentation separate. Each `/services/<service-id>/` section has a sidebar titled with the service name and containing only that service's documentation. Each service currently has one overview page. The `/services/` directory retains the complete service list, and the top navigation's Services link provides access to that directory from each service. Apply the same separation to every registered language and the mobile sidebar. Previous and next page navigation stays within the selected service's sidebar.
+
+The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
 
 The listed routes remain the English routes. Korean equivalents use `/ko/`, and future languages use their registered prefix. The language menu retains the current page when switching languages. Navigation, page content, theme text, search and HTML metadata use the selected language. Language selection is explicit; do not redirect by browser language. Public source pages live under `docs/en/`, translated pages under `docs/<language>/`, and navigation/theme catalogs under `i18n/`. Follow the [localization contract](apps-delino-site-localization-contract.md) for source tracking and local ChatGPT generation.
 
