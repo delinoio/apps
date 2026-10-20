@@ -254,6 +254,9 @@ func (s *Server) claim(ctx context.Context, x *execution, input []byte) error {
 		if e := json.Unmarshal(raw, &x.price); e != nil || !x.price.Valid() {
 			return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
 		}
+		if _, httpGateway := s.Gateway.(*HTTPGateway); httpGateway && x.price.Provider == "" {
+			return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
+		}
 		var key any
 		if x.key != "" {
 			key = x.key
@@ -311,7 +314,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 			return e
 		}
 		x.attemptStarted = true
-		result, err = s.Gateway.Execute(context.WithValue(ctx, attemptReference{}, attemptID), x.model, prompt, schema, capture)
+		result, err = s.Gateway.Execute(context.WithValue(context.WithValue(ctx, priceRoute{}, x.price.Provider), attemptReference{}, attemptID), x.model, prompt, schema, capture)
 		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
 		var measured any
 		if result.Usage != nil {

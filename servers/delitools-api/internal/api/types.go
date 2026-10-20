@@ -93,6 +93,7 @@ type Tier struct {
 	Max  *uint64 `json:"max,omitempty"`
 }
 type Price struct {
+	Provider        string `json:"provider,omitempty"`
 	Input           string `json:"input"`
 	Output          string `json:"output"`
 	CacheRead       string `json:"input_cache_read"`
@@ -110,7 +111,7 @@ type Result struct {
 	Unknown      bool
 }
 type Gateway interface {
-	Catalog(context.Context) (map[string]Price, error)
+	Catalog(context.Context, []string) (map[string]Price, error)
 	Execute(context.Context, string, string, map[string]any, func(string) error) (Result, error)
 	Lookup(context.Context, string, string) (*Counts, error)
 }

@@ -15,7 +15,12 @@ func (s *Server) SyncPrices(ctx context.Context) (err error) {
 			s.event("price_sync_failure", ID())
 		}
 	}()
-	catalog, e := s.Gateway.Catalog(ctx)
+	settings, e := s.DB.Settings(ctx)
+	if e != nil {
+		return e
+	}
+	models := append([]string{ExtractionModel}, settings.TranslationModels...)
+	catalog, e := s.Gateway.Catalog(ctx, models)
 	if e != nil {
 		return e
 	}

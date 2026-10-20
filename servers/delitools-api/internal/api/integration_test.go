@@ -76,7 +76,7 @@ type fakeGateway struct {
 	prompts []string
 }
 
-func (g *fakeGateway) Catalog(context.Context) (map[string]Price, error) {
+func (g *fakeGateway) Catalog(context.Context, []string) (map[string]Price, error) {
 	return map[string]Price{ExtractionModel: g.price}, nil
 }
 func (g *fakeGateway) Execute(ctx context.Context, model, prompt string, schema map[string]any, capture func(string) error) (Result, error) {

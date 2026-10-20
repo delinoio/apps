@@ -37,7 +37,7 @@ func TestGatewayCapturesGenerationBeforeOutput(t *testing.T) {
 	}))
 	defer h.Close()
 	g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, Token: "fixture", MaxResponseBytes: 10000}
-	result, e := g.Execute(context.Background(), ExtractionModel, "fixture", map[string]any{}, func(id string) error { captured = id == "gen_fixture"; return nil })
+	result, e := g.Execute(context.WithValue(context.Background(), priceRoute{}, "openai"), ExtractionModel, "fixture", map[string]any{}, func(id string) error { captured = id == "gen_fixture"; return nil })
 	if e != nil || !captured || result.Content != "{}" || result.Usage.Input != 7 || result.Usage.CacheRead != 3 {
 		t.Fatalf("%+v %v", result, e)
 	}
@@ -54,7 +54,7 @@ func TestGatewayAmbiguityAndReconciliation(t *testing.T) {
 	}))
 	defer h.Close()
 	g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, MaxResponseBytes: 10000}
-	result, e := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return nil })
+	result, e := g.Execute(context.WithValue(context.Background(), priceRoute{}, "openai"), ExtractionModel, "fixture", nil, func(string) error { return nil })
 	if e == nil || !result.Unknown || result.Usage != nil {
 		t.Fatal("interrupted stream treated as known", result, e)
 	}
@@ -107,7 +107,7 @@ func TestGatewayCacheCreationUsage(t *testing.T) {
 			}))
 			defer h.Close()
 			g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, MaxResponseBytes: 10000}
-			result, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return nil })
+			result, err := g.Execute(context.WithValue(context.Background(), priceRoute{}, "openai"), ExtractionModel, "fixture", nil, func(string) error { return nil })
 			if tc.conflict {
 				if err == nil || !result.Unknown || result.Usage != nil {
 					t.Fatal("conflicting counts accepted", result, err)
@@ -175,10 +175,62 @@ func TestGatewayConnectionFailureClassification(t *testing.T) {
 			client := &http.Client{Transport: transport}
 			defer client.CloseIdleConnections()
 			g := &HTTPGateway{Client: client, BaseURL: tc.url, MaxResponseBytes: 10000}
-			result, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return errors.New("unexpected generation") })
+			result, err := g.Execute(context.WithValue(context.Background(), priceRoute{}, "openai"), ExtractionModel, "fixture", nil, func(string) error { return errors.New("unexpected generation") })
 			if err == nil || result.Unknown == tc.known || result.Transient != tc.known || (result.Usage != nil) != tc.known {
 				t.Fatal(result, err)
 			}
 		})
+	}
+}
+
+func TestCatalogPinsMatchingProviderPrices(t *testing.T) {
+	ambiguous := false
+	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			fmt.Fprint(w, `{"data":[{"id":"openai/gpt-6-luna","type":"language","pricing":{"input":"0.001","output":"0.002"}}]}`)
+		case "/models/openai/gpt-6-luna/endpoints":
+			extra := ""
+			if ambiguous {
+				extra = `,{"provider_name":"openai","pricing":{"prompt":"0.003","completion":"0.002"}}`
+			}
+			fmt.Fprintf(w, `{"data":{"endpoints":[{"provider_name":"other","pricing":{"prompt":"0.009","completion":"0.002"}},{"provider_name":"openai","pricing":{"prompt":"0.001","completion":"0.002"}}%s]}}`, extra)
+		case "/chat/completions":
+			var body struct {
+				ProviderOptions struct {
+					Gateway struct {
+						Only []string `json:"only"`
+					} `json:"gateway"`
+				} `json:"providerOptions"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if len(body.ProviderOptions.Gateway.Only) != 1 || body.ProviderOptions.Gateway.Only[0] != "openai" {
+				t.Error("unrestricted provider routing", body)
+			}
+			fmt.Fprintln(w, `data: {"id":"gen_fixture","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+			fmt.Fprintln(w, "data: [DONE]")
+		default:
+			t.Error(r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer h.Close()
+	g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, MaxResponseBytes: 10000}
+	prices, err := g.Catalog(context.Background(), []string{ExtractionModel})
+	if err != nil || prices[ExtractionModel].Provider != "openai" {
+		t.Fatal(prices, err)
+	}
+	ctx := context.WithValue(context.Background(), priceRoute{}, prices[ExtractionModel].Provider)
+	if _, err := g.Execute(ctx, ExtractionModel, "fixture", nil, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ambiguous = true
+	if _, err := g.Catalog(context.Background(), []string{ExtractionModel}); err == nil {
+		t.Fatal("ambiguous endpoint prices accepted")
+	}
+	if _, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return nil }); err == nil {
+		t.Fatal("unpriced route accepted")
 	}
 }
