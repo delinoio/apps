@@ -39,7 +39,7 @@ try {
       }
     }
     // Load auth only for commands that need it. Builds and checks never read credentials.
-    await new ChatGPT().run(async (client) => {
+    const action = async (client) => {
       if (command === "login") return client.login(argument);
       if (command === "logout") return client.logout();
       if (command === "profiles") {
@@ -87,7 +87,10 @@ try {
         },
         argument,
       );
-    });
+    };
+    const client = new ChatGPT();
+    if (command === "translate") await action(client);
+    else await client.run(action);
   } else {
     throw new Error(
       "Expected localization command: check, translate [language], login [profile|--new], profiles, models, logout.",
