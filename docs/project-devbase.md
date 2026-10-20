@@ -11,9 +11,9 @@ Provide a console and the API services of DevBase. The first API service is a fr
 ## Domain Ownership Map
 
 - `apps/devbase`: independently built web application served at `https://devbase.delino.io`.
-- `servers/devbase-api`: independent Go API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
+- `servers/devbase-api` (`planned`): independent Go API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
 - `protos/devbase/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.
-- `examples/devbase-client` and `examples/devbase-client-ts`: Go and TypeScript consumer examples.
+- `examples/devbase-client` and `examples/devbase-client-ts` (`planned`): Go and TypeScript consumer examples.
 - `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
