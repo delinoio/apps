@@ -147,6 +147,10 @@ Delcore owns and audits shared permission grants and revocations. Git Tracker au
 
 PR execution measurements remain available in execution history and explicit comparisons, but never supply upstream branch baselines or branch graph points. Baseline representative selection considers completed branch executions only, so a fork cannot replace baseline data or configuration by uploading an execution for a shared commit SHA.
 
+## Environment configuration
+
+Server environment variables have no service-name prefix. Use `DATABASE_URL`, `LISTEN`, `WEB_ORIGIN`, `AUDIT_RETENTION`, `GITHUB_APP_ID`, `GITHUB_KEY_FILE`, `WEBHOOK_SECRET`, `DELCORE_URL`, `DELCORE_RESOURCE`, `LOGTO_TOKEN_URL`, `CLIENT_ID` and `CLIENT_SECRET`. Alert generation reads `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`; PostgreSQL integration tests read `TEST_DATABASE_URL`. Configure the new names in each service environment before upgrading; prefixed aliases are not supported. `DELCORE_URL` and `DELCORE_RESOURCE` identify the upstream service and retain that name.
+
 ## Local development
 
 The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).

@@ -20,10 +20,10 @@ Repository rows serialize atomic uploads, completion, deletion and comment publi
 
 ## Alert rules
 
-Generate Prometheus rules with `go run ./servers/git-tracker-api/cmd/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `GIT_TRACKER_ALERT_<name>_THRESHOLD`, `GIT_TRACKER_ALERT_<name>_WINDOW` and `GIT_TRACKER_ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
+Generate Prometheus rules with `go run ./servers/git-tracker-api/cmd/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
 
 ## Validation
 
-Run `GOWORK=off go test ./...` and `GOWORK=off go vet ./...` from the root. Set `GIT_TRACKER_TEST_DATABASE_URL` to a dedicated disposable PostgreSQL database and run `GOWORK=off go test -race ./servers/git-tracker-api/...`. Integration tests reset Git Tracker tables in that test database. CI runs these tests on an isolated PostgreSQL container. External integrations are mocked in automated tests; they do not establish live-account or deployment acceptance.
+Run `GOWORK=off go test ./...` and `GOWORK=off go vet ./...` from the root. Set `TEST_DATABASE_URL` to a dedicated disposable PostgreSQL database and run `GOWORK=off go test -race ./servers/git-tracker-api/...`. Integration tests reset Git Tracker tables in that test database. CI runs these tests on an isolated PostgreSQL container. External integrations are mocked in automated tests; they do not establish live-account or deployment acceptance.
 
 Operator logs use ANSI color by default. Set `NO_COLOR=1` for uncolored structured key/value output.

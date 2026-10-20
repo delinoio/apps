@@ -7,7 +7,7 @@ env_files = ["servers/delcore-api/.env"]
 [build]
 cmd = 'go build -o "../../tmp/delcore-api/server" "./cmd/delcore-api"'
 entrypoint = ["./tmp/delcore-api/server"]
-full_bin = '"../../tmp/delcore-api/server" -config "$DELCORE_CONFIG"'
+full_bin = '"../../tmp/delcore-api/server" -config "$CONFIG"'
 include_dir = ["servers/delcore-api", "protos"]
 include_file = ["go.mod", "go.sum"]
 include_ext = ["go", "sql"]
@@ -21,7 +21,7 @@ kill_delay = "5s"
 [build.windows]
 cmd = 'go build -o "../../tmp/delcore-api/server.exe" "./cmd/delcore-api"'
 entrypoint = ["tmp\\delcore-api\\server.exe"]
-full_bin = '"..\..\tmp\delcore-api\server.exe" -config "%DELCORE_CONFIG%"'
+full_bin = '"..\..\tmp\delcore-api\server.exe" -config "%CONFIG%"'
 
 [log]
 time = true

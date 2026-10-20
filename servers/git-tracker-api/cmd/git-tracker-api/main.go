@@ -57,7 +57,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	dsn, e := required("GIT_TRACKER_DATABASE_URL")
+	dsn, e := required("DATABASE_URL")
 	if e != nil {
 		return e
 	}
@@ -70,7 +70,7 @@ func run() error {
 		_, e = db.Exec(ctx, migrations.Initial)
 		return e
 	}
-	retention, e := required("GIT_TRACKER_AUDIT_RETENTION")
+	retention, e := required("AUDIT_RETENTION")
 	if e != nil {
 		return e
 	}
@@ -79,14 +79,14 @@ func run() error {
 		return errors.New("positive audit retention is required")
 	}
 	settings := map[string]string{}
-	for _, key := range []string{"GIT_TRACKER_GITHUB_APP_ID", "GIT_TRACKER_GITHUB_KEY_FILE", "GIT_TRACKER_WEBHOOK_SECRET", "GIT_TRACKER_DELCORE_URL", "GIT_TRACKER_LOGTO_TOKEN_URL", "GIT_TRACKER_CLIENT_ID", "GIT_TRACKER_CLIENT_SECRET", "GIT_TRACKER_DELCORE_RESOURCE", "GIT_TRACKER_WEB_ORIGIN"} {
+	for _, key := range []string{"GITHUB_APP_ID", "GITHUB_KEY_FILE", "WEBHOOK_SECRET", "DELCORE_URL", "LOGTO_TOKEN_URL", "CLIENT_ID", "CLIENT_SECRET", "DELCORE_RESOURCE", "WEB_ORIGIN"} {
 		v, e := required(key)
 		if e != nil {
 			return e
 		}
 		settings[key] = v
 	}
-	pem, e := os.ReadFile(settings["GIT_TRACKER_GITHUB_KEY_FILE"])
+	pem, e := os.ReadFile(settings["GITHUB_KEY_FILE"])
 	if e != nil {
 		return errors.New("GitHub key unavailable")
 	}
@@ -95,19 +95,19 @@ func run() error {
 		return errors.New("GitHub key invalid")
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
-	g := &service.GitHubClient{HTTP: client, BaseURL: "https://api.github.com", AppID: settings["GIT_TRACKER_GITHUB_APP_ID"], Key: key}
+	g := &service.GitHubClient{HTTP: client, BaseURL: "https://api.github.com", AppID: settings["GITHUB_APP_ID"], Key: key}
 	provider, e := oidc.NewProvider(oidc.ClientContext(ctx, client), "https://token.actions.githubusercontent.com")
 	if e != nil {
 		return errors.New("Actions OIDC discovery failed")
 	}
-	authority := &service.DelcoreAuthority{Client: delcorev1connect.NewDelcoreServiceClient(client, settings["GIT_TRACKER_DELCORE_URL"]), Actions: provider.Verifier(&oidc.Config{ClientID: "https://git-tracker.api.delino.io"}), GitHub: g}
+	authority := &service.DelcoreAuthority{Client: delcorev1connect.NewDelcoreServiceClient(client, settings["DELCORE_URL"]), Actions: provider.Verifier(&oidc.Config{ClientID: "https://git-tracker.api.delino.io"}), GitHub: g}
 	authority.ServiceToken = func(ctx context.Context) (string, error) {
-		form := url.Values{"grant_type": {"client_credentials"}, "resource": {settings["GIT_TRACKER_DELCORE_RESOURCE"]}, "scope": {"authorize"}}
-		req, e := http.NewRequestWithContext(ctx, "POST", settings["GIT_TRACKER_LOGTO_TOKEN_URL"], strings.NewReader(form.Encode()))
+		form := url.Values{"grant_type": {"client_credentials"}, "resource": {settings["DELCORE_RESOURCE"]}, "scope": {"authorize"}}
+		req, e := http.NewRequestWithContext(ctx, "POST", settings["LOGTO_TOKEN_URL"], strings.NewReader(form.Encode()))
 		if e != nil {
 			return "", e
 		}
-		req.SetBasicAuth(settings["GIT_TRACKER_CLIENT_ID"], settings["GIT_TRACKER_CLIENT_SECRET"])
+		req.SetBasicAuth(settings["CLIENT_ID"], settings["CLIENT_SECRET"])
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		resp, e := client.Do(req)
 		if e != nil {
@@ -139,7 +139,7 @@ func run() error {
 	mux := http.NewServeMux()
 	path, handler := s.Handler()
 	mux.Handle(path, handler)
-	mux.Handle("/github/events", s.Webhook(settings["GIT_TRACKER_WEBHOOK_SECRET"]))
+	mux.Handle("/github/events", s.Webhook(settings["WEBHOOK_SECRET"]))
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +157,7 @@ func run() error {
 	cors := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if origin := r.Header.Get("Origin"); origin != "" {
-			if origin != settings["GIT_TRACKER_WEB_ORIGIN"] {
+			if origin != settings["WEB_ORIGIN"] {
 				w.WriteHeader(403)
 				return
 			}
@@ -181,7 +181,7 @@ func run() error {
 		}
 		requests.WithLabelValues(outcome).Inc()
 	})
-	address := os.Getenv("GIT_TRACKER_LISTEN")
+	address := os.Getenv("LISTEN")
 	if address == "" {
 		address = "127.0.0.1:46321"
 	}
