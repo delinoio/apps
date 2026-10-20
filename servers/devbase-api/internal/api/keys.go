@@ -56,14 +56,17 @@ func (s *Server) IssueApiKey(ctx context.Context, r *connect.Request[pb.IssueApi
 			if e := q.ExpireTime.CheckValid(); e != nil {
 				return invalid("expire_time is invalid")
 			}
+			// Only the structure is checked here. "In the future" depends on the clock, so it
+			// is checked after replay resolution; a retry of a successful issuance must
+			// replay even after the requested expiry has passed.
 			t := q.ExpireTime.AsTime().Truncate(time.Microsecond)
-			if !t.After(s.now()) {
-				return invalid("expire_time must be in the future")
-			}
 			expires = &t
 		}
 		return nil
 	}, func(c *Call) error {
+		if expires != nil && !expires.After(c.Now) {
+			return invalid("expire_time must be in the future")
+		}
 		// Serialize issuers per project so the active-key count and insert are atomic.
 		if _, e := c.DB.Exec(c.Ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "keys:"+q.ProjectId); e != nil {
 			return e

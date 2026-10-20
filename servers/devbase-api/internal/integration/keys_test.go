@@ -163,3 +163,29 @@ func TestKeyIssuanceRaceRespectsLimit(t *testing.T) {
 		t.Fatalf("concurrent issuance exceeded the limit: %d", ok)
 	}
 }
+
+func TestKeyIssuanceReplayAfterRequestedExpiry(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	p := f.project(login(owner), tenant, "Late replay")
+	req := &pb.IssueApiKeyRequest{IdempotencyKey: idem(), ProjectId: p.Id, Permission: pb.ApiKeyPermission_API_KEY_PERMISSION_CRUD, ExpireTime: timestamppb.New(f.clock.now().Add(time.Hour))}
+	first, e := f.client.IssueApiKey(ctx, as(login(owner), req))
+	if e != nil {
+		t.Fatal(e)
+	}
+	// The retry arrives after the requested expiry but inside the replay window.
+	f.clock.advance(2 * time.Hour)
+	again, e := f.client.IssueApiKey(ctx, as(login(owner), req))
+	if e != nil || again.Msg.ApiKey.Id != first.Msg.ApiKey.Id || again.Msg.Secret != "" {
+		t.Fatal("a late retry must replay the prior key ID and permission", e)
+	}
+	// A genuinely new request with a past expiry is still rejected.
+	past := &pb.IssueApiKeyRequest{IdempotencyKey: idem(), ProjectId: p.Id, Permission: pb.ApiKeyPermission_API_KEY_PERMISSION_CRUD, ExpireTime: timestamppb.New(f.clock.now().Add(-time.Minute))}
+	if _, e = f.client.IssueApiKey(ctx, as(login(owner), past)); code(e) != connect.CodeInvalidArgument {
+		t.Fatal("past expiry accepted", e)
+	}
+	if f.count("SELECT count(*) FROM api_keys") != 1 {
+		t.Fatal("unexpected key count")
+	}
+}
