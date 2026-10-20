@@ -2,6 +2,10 @@
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["go.mod", "go.sum", "protos/**"],
   "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
     "build": {
       "outputs": ["dist/**"]
     },

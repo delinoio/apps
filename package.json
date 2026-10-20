@@ -5,6 +5,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh",
+    "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
     "i18n:check": "pnpm -r --if-present run i18n:check",
