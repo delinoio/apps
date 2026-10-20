@@ -117,7 +117,7 @@ User requests count together for all keys and login tokens of a project. Managem
 | `resource_exhausted` | A rate limit or a resource limit applies.                                        |
 | `unavailable`        | A dependency or the database failed. A change may or may not have been applied.  |
 
-Every error and response has a trace ID. Include it when you ask for support. If you get `unavailable` for a change, repeat the same request with the same idempotency key to find out whether it was applied.
+Every response, and every error that DevBase itself returns, has a trace ID. Include it when you ask for support. A request larger than 256 KiB is rejected earlier, by the transport, with `resource_exhausted` and no trace ID; reduce the request size instead. If you get `unavailable` for a change, repeat the same request with the same idempotency key to find out whether it was applied.
 
 ## Tenant state
 
