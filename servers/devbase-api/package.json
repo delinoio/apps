@@ -5,7 +5,7 @@
   "license": "FSL-1.1-ALv2",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/devbase-api -- node ../../scripts/dev-api.mjs devbase",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/devbase-api -- node ../scripts/dev-api.mjs devbase",
     "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/devbase-api",
     "ci:vet": "go vet ./...",
     "ci:build": "go build ./cmd/devbase-api",

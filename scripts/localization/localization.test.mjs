@@ -17,7 +17,7 @@ import {
   completedText,
   validateCallback,
   verifyIdentity,
-} from "./localization/chatgpt.mjs";
+} from "./chatgpt.mjs";
 import {
   fingerprint,
   generate,
@@ -26,7 +26,7 @@ import {
   localizeLinks,
   validateTranslation,
   writeJson,
-} from "./localization/catalog.mjs";
+} from "./catalog.mjs";
 
 async function temporary(t) {
   const directory = await mkdtemp(join(tmpdir(), "delino-localization-"));
@@ -295,6 +295,7 @@ test("loopback callback receives consent once and rejects unrelated paths", asyn
 test("login validates identity before activation and reuses registered host across restarts", async (t) => {
   const directory = await temporary(t);
   let nonce;
+  let host;
   const client = new ChatGPT({
     directory,
     fetcher: async () =>
@@ -322,6 +323,7 @@ test("login validates identity before activation and reuses registered host acro
         );
       },
     });
+    host = auth.state.hostId;
     assert.equal(await auth.accessToken(), "access");
     if (process.platform !== "win32")
       assert.equal(
@@ -329,7 +331,6 @@ test("login validates identity before activation and reuses registered host acro
         0o600,
       );
   });
-  const host = client.state.hostId;
   await new ChatGPT({ directory }).run(async (auth) =>
     assert.equal(auth.state.hostId, host),
   );
@@ -486,6 +487,27 @@ test("stream accepts completed output across arbitrary UTF-8 and CRLF boundaries
   );
 });
 
+test("stream falls back to output items when the completed event has empty output", async () => {
+  assert.equal(
+    await completedText(
+      events([
+        {
+          type: "response.output_item.done",
+          item: {
+            type: "message",
+            content: [{ type: "output_text", text: "Item \uD55C\uAE00" }],
+          },
+        },
+        {
+          type: "response.completed",
+          response: { status: "completed", output: [] },
+        },
+      ]),
+    ),
+    "Item \uD55C\uAE00",
+  );
+});
+
 test("stream rejects truncation, errors after deltas, incomplete responses and refusals", async () => {
   await assert.rejects(
     completedText(
@@ -520,6 +542,9 @@ test("inference sends only public Responses requests with plan storage settings"
       const body = JSON.parse(options.body);
       assert.equal(body.store, false);
       assert.equal(body.stream, true);
+      assert.deepEqual(body.input, [
+        { role: "user", content: [{ type: "input_text", text: "Input" }] },
+      ]);
       assert.equal(options.headers.Authorization, "Bearer access");
       return events([completed('{"message":"Translated"}')]);
     },
@@ -537,3 +562,165 @@ test("inference sends only public Responses requests with plan storage settings"
     );
   });
 });
+
+test(
+  "parallel requests reload auth and rotate an expired session only once",
+  { timeout: 5000 },
+  async (t) => {
+    const directory = await temporary(t);
+    await new ChatGPT({ directory }).run(async (auth) => {
+      auth.state.active = "id";
+      auth.state.profiles.id = {
+        clientId: "issued",
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: 0,
+        scopes: ["chatgpt.tokens.use.direct"],
+      };
+      await auth.save();
+    });
+    let refreshes = 0;
+    let requests = 0;
+    const bothStarted = Promise.withResolvers();
+    const fetcher = async (url, options) => {
+      if (url.endsWith("/oauth/token")) {
+        refreshes++;
+        assert.equal(options.body.get("refresh_token"), "old-refresh");
+        return Response.json({
+          access_token: "new-access",
+          refresh_token: "new-refresh",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      }
+      assert.equal(options.headers.Authorization, "Bearer new-access");
+      if (++requests === 2) bothStarted.resolve();
+      await bothStarted.promise;
+      return events([completed("Translated")]);
+    };
+    const clients = [
+      new ChatGPT({ directory, fetcher }),
+      new ChatGPT({ directory, fetcher }),
+    ];
+    assert.deepEqual(
+      await Promise.all(
+        clients.map((client) =>
+          client.translate("model", "input", "instructions"),
+        ),
+      ),
+      ["Translated", "Translated"],
+    );
+    assert.equal(refreshes, 1);
+    assert.equal(requests, 2);
+    const state = JSON.parse(
+      await readFile(join(directory, "auth.json"), "utf8"),
+    );
+    assert.equal(state.profiles.id.refreshToken, "new-refresh");
+    // An existing inference client must observe subsequent account changes.
+    await new ChatGPT({ directory }).run(async (auth) => {
+      auth.state.profiles.id.accessToken = "changed-access";
+      await auth.save();
+    });
+    assert.equal(await clients[0].accessToken(), "changed-access");
+    assert.equal(clients[0].state, undefined);
+  },
+);
+
+async function batchProject(t) {
+  const data = await project(t);
+  // Three catalog batches exercise bounded scheduling and shared-file writes.
+  await writeJson(join(data.root, "i18n/messages/en.json"), {
+    greeting: "Hello {name}",
+    ...Object.fromEntries(
+      Array.from({ length: 81 }, (_, index) => [
+        `added${index}`,
+        `Text ${index}`,
+      ]),
+    ),
+  });
+  return loadProject(data.root);
+}
+
+test(
+  "generation overlaps two requests and serializes catalog and state writes",
+  { timeout: 5000 },
+  async (t) => {
+    const data = await batchProject(t);
+    const secondStarted = Promise.withResolvers();
+    let requests = 0;
+    let active = 0;
+    let maximum = 0;
+    const generation = generate(data, async (_locale, input) => {
+      const number = ++requests;
+      maximum = Math.max(maximum, ++active);
+      if (number === 1) await secondStarted.promise;
+      if (number === 2) secondStarted.resolve();
+      active--;
+      return Object.fromEntries(
+        Object.entries(input).map(([key, value]) => [
+          key,
+          `Translated ${value}`,
+        ]),
+      );
+    });
+    assert.equal(await generation, 81);
+    assert.equal(maximum, 2);
+    assert.equal(requests, 3);
+    assert.deepEqual((await inspect(await loadProject(data.root))).issues, []);
+    const messages = JSON.parse(
+      await readFile(join(data.root, "i18n/messages/ko.json"), "utf8"),
+    );
+    assert.equal(messages.greeting, "Translated {name}");
+    assert.equal(messages.added0, "Translated Text 0");
+    assert.equal(messages.added80, "Translated Text 80");
+  },
+);
+
+test("failed parallel batches preserve successful peers and resume remaining work", async (t) => {
+  const data = await batchProject(t);
+  let calls = 0;
+  await assert.rejects(
+    generate(data, async (_locale, input) => {
+      if (++calls === 1) throw new Error("Usage limit");
+      return input;
+    }),
+    /Usage limit/u,
+  );
+  assert.equal(calls, 2);
+  let next = await loadProject(data.root);
+  assert.equal((await inspect(next)).pending.length, 41);
+  assert.equal(await generate(next, async (_locale, input) => input), 41);
+  next = await loadProject(data.root);
+  assert.deepEqual((await inspect(next)).issues, []);
+});
+
+test(
+  "overlapping commands for one app are rejected while separate apps can translate",
+  { timeout: 5000 },
+  async (t) => {
+    const first = await batchProject(t);
+    const other = await batchProject(t);
+    const started = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const running = generate(first, async (_locale, input) => {
+      started.resolve();
+      await release.promise;
+      return input;
+    });
+    try {
+      await started.promise;
+      await assert.rejects(
+        generate(
+          await loadProject(first.root),
+          async (_locale, input) => input,
+        ),
+        /already running/u,
+      );
+      assert.equal(await generate(other, async (_locale, input) => input), 81);
+    } finally {
+      release.resolve();
+      await running;
+    }
+    assert.deepEqual((await inspect(await loadProject(first.root))).issues, []);
+  },
+);

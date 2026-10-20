@@ -131,7 +131,10 @@ test("Windows and Linux failures are never retried", (t) => {
 test("release workflow routes the complete signed build through the retry wrapper", () => {
   const workflow = yaml.load(
     readFileSync(
-      new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
+      new URL(
+        "../../../../.github/workflows/release-fixkey.yml",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );
@@ -140,7 +143,7 @@ test("release workflow routes the complete signed build through the retry wrappe
   );
   assert.match(
     step.run,
-    /bash scripts\/release\/fixkey-build\.sh pnpm --filter fixkey-desktop exec tauri build --features desktop --target/u,
+    /bash apps\/fixkey-app\/scripts\/release\/fixkey-build\.sh pnpm --filter fixkey-desktop exec tauri build --features desktop --target/u,
   );
   assert.match(step.run, /--bundles '\$\{\{ matrix.bundles \}\}' --config/u);
   assert.equal(

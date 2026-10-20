@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { globSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolveBufEntry } from "./buf-entry.mjs";
+import { resolveBufEntry } from "../../protos/scripts/buf-entry.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const [command, ...patterns] = process.argv.slice(2);

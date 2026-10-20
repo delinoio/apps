@@ -136,7 +136,7 @@ func TestDirectAndDevelopmentDotEnvParity(t *testing.T) {
 	if err != nil {
 		t.Fatal("Node.js is required for the development launcher regression test")
 	}
-	launcher, err := filepath.Abs("../../../../scripts/dev-api.mjs")
+	launcher, err := filepath.Abs("../../../scripts/dev-api.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}

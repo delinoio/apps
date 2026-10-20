@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const ISSUER = "https://auth.openai.com";
@@ -167,18 +168,23 @@ export class ChatGPT {
     this.verify = verify;
   }
 
-  async run(action) {
+  async run(action, { wait = false } = {}) {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await chmod(this.directory, 0o700);
     const lock = join(this.directory, "operation.lock");
-    try {
-      await mkdir(lock);
-    } catch (error) {
-      if (error.code === "EEXIST")
-        throw new Error(
-          "Another translation authentication operation is running. If it stopped unexpectedly, remove ~/.config/delino-translations/operation.lock and retry.",
-        );
-      throw error;
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      try {
+        await mkdir(lock);
+        break;
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        if (!wait || Date.now() >= deadline)
+          throw new Error(
+            "Another translation authentication operation is running. If it stopped unexpectedly, remove ~/.config/delino-translations/operation.lock and retry.",
+          );
+        await delay(50);
+      }
     }
     try {
       try {
@@ -197,6 +203,7 @@ export class ChatGPT {
       }
       return await action(this);
     } finally {
+      this.state = undefined;
       await rm(lock, { recursive: true, force: true });
     }
   }
@@ -345,6 +352,14 @@ export class ChatGPT {
   }
 
   async accessToken() {
+    // Inference does not hold the auth lock. Reload under the lock for every
+    // request so concurrent processes cannot reuse a rotated refresh token.
+    if (!this.state)
+      return new ChatGPT({
+        directory: this.directory,
+        fetcher: this.fetcher,
+        verify: this.verify,
+      }).run((client) => client.accessToken(), { wait: true });
     const id = this.state.active;
     let profile = this.state.profiles[id];
     if (!profile?.accessToken || !profile.scopes?.includes(SCOPE))
@@ -392,7 +407,10 @@ export class ChatGPT {
       },
       body: JSON.stringify({
         model,
-        input,
+        // The Responses endpoint rejects a bare string; it requires a message list.
+        input: [
+          { role: "user", content: [{ type: "input_text", text: input }] },
+        ],
         instructions,
         store: false,
         stream: true,
@@ -451,6 +469,10 @@ export class ChatGPT {
 
 export async function completedText(response) {
   let buffer = "";
+  // Workaround: the live endpoint sends an empty `output` in `response.completed`
+  // and delivers message items only through `response.output_item.done`. Scope:
+  // this function only. Remove the fallback if completed events carry the output.
+  const items = [];
   const decoder = new TextDecoder();
   for await (const chunk of response.body) {
     buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(
@@ -474,11 +496,14 @@ export async function completedText(response) {
         throw new Error(
           `ChatGPT inference failed or was incomplete. Manage usage: ${USAGE}`,
         );
+      if (event.type === "response.output_item.done") items.push(event.item);
       if (event.type === "response.completed") {
         if (event.response.status !== "completed")
           throw new Error("ChatGPT response did not complete.");
-        const content =
-          event.response.output?.flatMap((item) => item.content ?? []) ?? [];
+        const output = event.response.output?.length
+          ? event.response.output
+          : items;
+        const content = output.flatMap((item) => item.content ?? []);
         if (content.some((item) => item.type === "refusal"))
           throw new Error("ChatGPT declined the translation.");
         const text = content

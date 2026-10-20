@@ -95,7 +95,7 @@ go vet ./servers/delcore-api/...
 go test -count=1 -race -tags=integration ./servers/delcore-api/...
 pnpm proto:lint
 pnpm proto:generate
-node scripts/check-proto-breaking.mjs "<comparison-revision>"
+node protos/scripts/check-breaking.mjs "<comparison-revision>"
 pnpm --filter @delinoio/delcore-api ci:oci
 docker build -f "servers/delcore-api/Dockerfile" -t delcore-api:local .
 ```

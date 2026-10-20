@@ -27,27 +27,109 @@ use windows::{
     core::Interface,
 };
 use windows_sys::Win32::{
-    Foundation::CloseHandle,
+    Foundation::{CloseHandle, HWND},
     Storage::Packaging::Appx::GetApplicationUserModelId,
     System::{
         ProcessStatus::K32EnumProcesses,
         Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW},
     },
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyState},
+        Input::{
+            Ime::{IMC_SETCONVERSIONMODE, IME_CMODE_NATIVE, ImmGetDefaultIMEWnd},
+            KeyboardAndMouse::{
+                GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardLayoutList, HKL,
+            },
+        },
         WindowsAndMessaging::{
-            CallNextHookEx, DispatchMessageW, GetMessageW, KBDLLHOOKSTRUCT, LLKHF_INJECTED,
-            LLKHF_LOWER_IL_INJECTED, MSG, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx,
-            WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+            CallNextHookEx, DispatchMessageW, GUITHREADINFO, GetGUIThreadInfo, GetMessageW,
+            GetWindowThreadProcessId, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED,
+            MSG, SMTO_ABORTIFHUNG, SMTO_BLOCK, SMTO_ERRORONEXIT, SendMessageTimeoutW,
+            SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL,
+            WM_IME_CONTROL, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_SYSKEYDOWN,
         },
     },
 };
 
 use super::{Application, Cursor, Gate, Handler, Identity, Key, KeyEvent};
 use crate::{
-    SkipReason,
+    Language, SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
 };
+
+fn layout_matches(layout: HKL, language: Language) -> bool {
+    let identifier = layout as usize & 0xffff_ffff;
+    match language {
+        Language::EnUsQwerty => identifier == 0x0409_0409,
+        Language::KoDubeolsik => matches!(identifier, 0x0412_0412 | 0xe001_0412),
+    }
+}
+
+fn preferred_layout(layouts: &[HKL], current: HKL, language: Language) -> Option<HKL> {
+    let supports = |layout| layout_matches(layout, language);
+    if layouts.contains(&current) && supports(current) {
+        Some(current)
+    } else {
+        layouts
+            .iter()
+            .copied()
+            .find(|layout| supports(*layout))
+            .or_else(|| {
+                (language == Language::EnUsQwerty)
+                    .then(|| preferred_layout(layouts, current, Language::KoDubeolsik))
+                    .flatten()
+            })
+    }
+}
+
+// Legacy IMM query commands have no windows-sys constants. Keep them local
+// until Windows exposes typed cross-process mode queries. Only the captured
+// foreground control's default IME window receives these bounded messages.
+const GET_CONVERSION_MODE: usize = 1;
+const GET_OPEN_STATUS: usize = 5;
+
+fn select_ime_mode(
+    language: Language,
+    mut message: impl FnMut(usize, isize) -> Option<usize>,
+) -> Option<()> {
+    // A delivered unsupported query can return zero. Require an affirmative
+    // open-status response before interpreting zero as a valid Latin mode.
+    // Closed and unsupported IMEs are left untouched, never probed by a write.
+    if message(GET_OPEN_STATUS, 0)? != 1 {
+        return None;
+    }
+    let mode = message(GET_CONVERSION_MODE, 0)?;
+    let desired = match language {
+        Language::KoDubeolsik => mode | IME_CMODE_NATIVE as usize,
+        Language::EnUsQwerty => mode & !(IME_CMODE_NATIVE as usize),
+    };
+    if desired != mode
+        && message(
+            IMC_SETCONVERSIONMODE as usize,
+            isize::try_from(desired).ok()?,
+        )? != 0
+    {
+        return None;
+    }
+    (message(GET_OPEN_STATUS, 0)? == 1 && message(GET_CONVERSION_MODE, 0)? == desired).then_some(())
+}
+
+fn send_input_message(window: HWND, message: u32, command: usize, value: isize) -> Option<usize> {
+    let mut result = 0;
+    // SAFETY: Messages carry integer values only, never borrowed pointers. A
+    // hung or exiting target is refused after a finite timeout without retry.
+    let sent = unsafe {
+        SendMessageTimeoutW(
+            window,
+            message,
+            command,
+            value,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+            50,
+            &raw mut result,
+        )
+    };
+    (sent != 0).then_some(result)
+}
 
 pub struct Adapter {
     automation: Option<UIAutomation>,
@@ -165,6 +247,89 @@ impl Adapter {
             return Err(SkipReason::UnsupportedWrite);
         }
         Ok(element)
+    }
+
+    fn input_target(&self) -> Option<(HWND, u32)> {
+        let element = self.focus().ok()?;
+        let native: windows::Win32::Foundation::HWND =
+            element.get_native_window_handle().ok()?.into();
+        let mut info = GUITHREADINFO {
+            cbSize: u32::try_from(std::mem::size_of::<GUITHREADINFO>()).ok()?,
+            ..GUITHREADINFO::default()
+        };
+        // SAFETY: The output structure has its required size. Thread zero
+        // queries the foreground thread, not FixKey's background worker.
+        if unsafe { GetGUIThreadInfo(0, &raw mut info) } == 0
+            || info.hwndFocus.is_null()
+            || info.hwndFocus != native.0
+        {
+            return None;
+        }
+        let mut process = 0;
+        // SAFETY: This is the foreground focus HWND; the output pointer is live.
+        let thread = unsafe { GetWindowThreadProcessId(info.hwndFocus, &raw mut process) };
+        if thread == 0 || process != element.get_process_id().ok()? {
+            return None;
+        }
+        Some((info.hwndFocus, thread))
+    }
+
+    fn input_target_matches(&mut self, expected: &FieldSnapshot, target: (HWND, u32)) -> bool {
+        self.snapshot().as_ref() == Ok(expected) && self.input_target() == Some(target)
+    }
+
+    fn select_language(&mut self, expected: &FieldSnapshot, language: Language) -> Option<()> {
+        let target = self.input_target()?;
+        // SAFETY: Query only loaded layouts; never load or enable a layout.
+        let count = unsafe { GetKeyboardLayoutList(0, std::ptr::null_mut()) };
+        if !(1..=256).contains(&count) {
+            return None;
+        }
+        let mut layouts = vec![std::ptr::null_mut(); usize::try_from(count).ok()?];
+        // SAFETY: The buffer contains count writable HKL slots.
+        let copied = unsafe { GetKeyboardLayoutList(count, layouts.as_mut_ptr()) };
+        if copied <= 0 || copied > count {
+            return None;
+        }
+        layouts.truncate(usize::try_from(copied).ok()?);
+        // SAFETY: Query the captured foreground thread, not the adapter thread.
+        let current = unsafe { GetKeyboardLayout(target.1) };
+        let layout = preferred_layout(&layouts, current, language)?;
+        if !self.input_target_matches(expected, target) {
+            return None;
+        }
+        if current != layout {
+            send_input_message(target.0, WM_INPUTLANGCHANGEREQUEST, 0, layout as isize)?;
+        }
+        // SAFETY: The captured thread ID is used only for a layout query.
+        if unsafe { GetKeyboardLayout(target.1) } != layout {
+            return None;
+        }
+        if layout_matches(layout, Language::KoDubeolsik) {
+            // SAFETY: The HWND is used only to locate its default IME window.
+            let ime = unsafe { ImmGetDefaultIMEWnd(target.0) };
+            if ime.is_null() {
+                return None;
+            }
+            select_ime_mode(language, |command, value| {
+                if !self.input_target_matches(expected, target) {
+                    return None;
+                }
+                // SAFETY: These are read-only queries of the captured thread
+                // and focus window; refuse a changed input context.
+                let context_matches = unsafe {
+                    GetKeyboardLayout(target.1) == layout && ImmGetDefaultIMEWnd(target.0) == ime
+                };
+                if !context_matches {
+                    return None;
+                }
+                send_input_message(ime, WM_IME_CONTROL, command, value)
+            })?;
+        }
+        // SAFETY: Read back the selected layout on the captured thread.
+        (self.input_target_matches(expected, target)
+            && unsafe { GetKeyboardLayout(target.1) } == layout)
+            .then_some(())
     }
 
     /// Gets a classified target without reading its text.
@@ -385,6 +550,13 @@ pub fn available_applications() -> Vec<Application> {
         .collect()
 }
 impl Accessibility for Adapter {
+    fn select_input_language(&mut self, expected: &FieldSnapshot, language: Language) -> bool {
+        if self.snapshot().as_ref() != Ok(expected) {
+            return false;
+        }
+        self.select_language(expected, language).is_some()
+    }
+
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
         let element = self.focus()?;
         let application = application(
@@ -611,7 +783,149 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
 
 #[cfg(test)]
 mod tests {
-    use super::{Adapter, IUIAutomation, IUIAutomation2, Interface};
+    use super::{
+        Adapter, GET_CONVERSION_MODE, GET_OPEN_STATUS, HKL, IMC_SETCONVERSIONMODE,
+        IME_CMODE_NATIVE, IUIAutomation, IUIAutomation2, Interface, Language, layout_matches,
+        preferred_layout, select_ime_mode,
+    };
+
+    #[test]
+    fn input_layouts_accept_only_us_qwerty_and_microsoft_korean() {
+        for identifier in [0x0409_0409usize, 0x0412_0412, 0xe001_0412] {
+            let language = if identifier == 0x0409_0409 {
+                Language::EnUsQwerty
+            } else {
+                Language::KoDubeolsik
+            };
+            assert!(layout_matches(identifier as HKL, language));
+        }
+        for identifier in [
+            0usize,
+            0x0409,
+            0x0412,
+            0xf002_0409,
+            0x0809_0809,
+            0xe020_0412,
+            0xe001_0411,
+        ] {
+            for language in [Language::EnUsQwerty, Language::KoDubeolsik] {
+                assert!(!layout_matches(identifier as HKL, language));
+            }
+        }
+    }
+
+    #[test]
+    fn input_layout_selection_preserves_loaded_sources_and_current_preference() {
+        let english = 0x0409_0409usize as HKL;
+        let korean = 0x0412_0412usize as HKL;
+        let legacy_korean = 0xe001_0412usize as HKL;
+        let layouts = [english, korean, legacy_korean];
+        assert_eq!(
+            preferred_layout(&layouts, legacy_korean, Language::KoDubeolsik),
+            Some(legacy_korean)
+        );
+        assert_eq!(
+            preferred_layout(&layouts, english, Language::KoDubeolsik),
+            Some(korean)
+        );
+        assert_eq!(
+            preferred_layout(&layouts, korean, Language::EnUsQwerty),
+            Some(english)
+        );
+        assert_eq!(
+            preferred_layout(&[english], english, Language::KoDubeolsik),
+            None
+        );
+        assert_eq!(preferred_layout(&[], english, Language::EnUsQwerty), None);
+    }
+
+    #[test]
+    fn ime_modes_switch_both_directions_and_preserve_other_flags() {
+        for (language, initial, expected) in [
+            (Language::KoDubeolsik, 0x10usize, 0x11usize),
+            (Language::EnUsQwerty, 0x11usize, 0x10usize),
+        ] {
+            let mut mode = initial;
+            let mut writes = 0;
+            let result = select_ime_mode(language, |command, value| match command {
+                GET_OPEN_STATUS => Some(1),
+                GET_CONVERSION_MODE => Some(mode),
+                command if command == IMC_SETCONVERSIONMODE as usize => {
+                    mode = usize::try_from(value).unwrap();
+                    writes += 1;
+                    Some(0)
+                }
+                _ => panic!("unexpected IME command"),
+            });
+            assert_eq!(result, Some(()));
+            assert_eq!(mode, expected);
+            assert_eq!(writes, 1);
+        }
+    }
+
+    #[test]
+    fn ime_modes_refuse_closed_unsupported_or_timed_out_queries_without_writes() {
+        for response in [None, Some(0), Some(2)] {
+            let mut calls = 0;
+            assert_eq!(
+                select_ime_mode(Language::KoDubeolsik, |command, _| {
+                    calls += 1;
+                    assert_eq!(command, GET_OPEN_STATUS);
+                    response
+                }),
+                None
+            );
+            assert_eq!(calls, 1);
+        }
+    }
+
+    #[test]
+    fn ime_modes_verify_changes_and_never_retry_failures() {
+        for response in [None, Some(0), Some(1)] {
+            let mut writes = 0;
+            let result = select_ime_mode(Language::KoDubeolsik, |command, _| match command {
+                GET_OPEN_STATUS => Some(1),
+                GET_CONVERSION_MODE => Some(0),
+                command if command == IMC_SETCONVERSIONMODE as usize => {
+                    writes += 1;
+                    response
+                }
+                _ => panic!("unexpected IME command"),
+            });
+            assert_eq!(result, None);
+            assert_eq!(writes, 1);
+        }
+    }
+
+    #[test]
+    fn ime_modes_do_not_write_when_already_selected() {
+        for language in [Language::KoDubeolsik, Language::EnUsQwerty] {
+            let mode = if language == Language::KoDubeolsik {
+                IME_CMODE_NATIVE as usize
+            } else {
+                0
+            };
+            assert_eq!(
+                select_ime_mode(language, |command, _| {
+                    match command {
+                        GET_OPEN_STATUS => Some(1),
+                        GET_CONVERSION_MODE => Some(mode),
+                        _ => panic!("must not change an already selected mode"),
+                    }
+                }),
+                Some(())
+            );
+        }
+    }
+
+    #[test]
+    fn english_selection_can_use_korean_ime_without_a_loaded_us_layout() {
+        let korean = 0x0412_0412usize as HKL;
+        assert_eq!(
+            preferred_layout(&[korean], korean, Language::EnUsQwerty),
+            Some(korean)
+        );
+    }
 
     #[test]
     fn initializes_bounded_automation_on_windows() {

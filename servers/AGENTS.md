@@ -6,6 +6,8 @@
 
 ## Development and validation
 
+- `servers/scripts/` owns development helpers shared by the Go APIs; follow the [repository workflow](../docs/repository-workflow-contract.md).
+
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Run service-local `pnpm dev` for one Go API or root `pnpm dev` for the full workspace. Follow the owning server contract for required configuration and database preparation; the pinned Air watcher does not provision dependencies or run migrations. Root development passes Compose database URLs to the API launchers after Infisical injection; preserve the environment precedence and secret boundaries in the environment contract. Keep each API's Infisical development settings in its owning folder and select that folder explicitly in its development command.
 - All repository-owned files under `servers/` use FSL-1.1-ALv2; preserve third-party licenses and notices. Include `servers/LICENSE` and `servers/NOTICE` in server distributions.

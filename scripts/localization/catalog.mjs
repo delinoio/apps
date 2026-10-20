@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import yaml from "js-yaml";
 
 export const fingerprint = (text) =>
@@ -272,6 +280,33 @@ export async function inspect(project) {
 }
 
 export async function generate(project, translate, lang) {
+  // A per-checkout lock protects catalogs and state while other apps translate.
+  const lock = join(
+    tmpdir(),
+    `delino-translation-${fingerprint(await realpath(project.root))}.lock`,
+  );
+  try {
+    await mkdir(lock);
+  } catch (error) {
+    if (error.code === "EEXIST")
+      throw new Error(
+        `Translation generation is already running for this app. If it stopped unexpectedly, remove ${lock} and retry.`,
+      );
+    throw error;
+  }
+  try {
+    // Reload after acquiring the lock; callers may have inspected an older state.
+    return await generateProject(
+      await loadProject(project.root),
+      translate,
+      lang,
+    );
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
+async function generateProject(project, translate, lang) {
   if (
     lang &&
     !project.locales.some(
@@ -302,52 +337,66 @@ export async function generate(project, translate, lang) {
     batches.push(
       ...needed.filter((unit) => unit.markdown).map((unit) => [unit]),
     );
-    for (const batch of batches) {
-      const input = Object.fromEntries(
-        batch.map((unit) => [unit.id, unit.text]),
-      );
-      const result = await translate(locale, input);
-      if (
-        !result ||
-        Array.isArray(result) ||
-        typeof result !== "object" ||
-        JSON.stringify(Object.keys(result).sort()) !==
-          JSON.stringify(Object.keys(input).sort())
-      )
-        throw new Error(
-          "Translation response keys did not match the requested units.",
-        );
-      for (const unit of batch)
-        validateTranslation(unit.text, result[unit.id], unit.markdown);
-      for (const unit of batch) {
-        const text = localizeLinks(
-          result[unit.id],
-          locale.lang,
-          project.sourceLang,
-        );
-        if (unit.markdown) {
-          const path = join(project.root, "docs", locale.lang, unit.path);
-          await mkdir(dirname(path), { recursive: true });
-          await writeFile(path, text.endsWith("\n") ? text : `${text}\n`);
-        } else {
-          messages[unit.key] = text;
-        }
-        project.state[locale.lang] ??= {};
-        project.state[locale.lang][unit.id] = fingerprint(unit.text);
-      }
-      await writeJson(
-        join(project.root, `i18n/messages/${locale.lang}.json`),
-        messages,
-      );
-      await writeJson(join(project.root, "i18n/state.json"), project.state);
-      count += batch.length;
-      console.log(
-        JSON.stringify({
-          event: "translations_updated",
-          language: locale.lang,
-          units: batch.length,
+    for (let index = 0; index < batches.length; index += 2) {
+      // Drain each bounded group before writing. Successful peers remain resumable
+      // even when another request fails; do not start the next group on failure.
+      const group = batches.slice(index, index + 2);
+      const results = await Promise.allSettled(
+        group.map(async (batch) => {
+          const input = Object.fromEntries(
+            batch.map((unit) => [unit.id, unit.text]),
+          );
+          const result = await translate(locale, input);
+          if (
+            !result ||
+            Array.isArray(result) ||
+            typeof result !== "object" ||
+            JSON.stringify(Object.keys(result).sort()) !==
+              JSON.stringify(Object.keys(input).sort())
+          )
+            throw new Error(
+              "Translation response keys did not match the requested units.",
+            );
+          for (const unit of batch)
+            validateTranslation(unit.text, result[unit.id], unit.markdown);
+          return result;
         }),
       );
+      for (const [offset, batch] of group.entries()) {
+        if (results[offset].status === "rejected") continue;
+        const result = results[offset].value;
+        for (const unit of batch) {
+          const text = localizeLinks(
+            result[unit.id],
+            locale.lang,
+            project.sourceLang,
+          );
+          if (unit.markdown) {
+            const path = join(project.root, "docs", locale.lang, unit.path);
+            await mkdir(dirname(path), { recursive: true });
+            await writeFile(path, text.endsWith("\n") ? text : `${text}\n`);
+          } else {
+            messages[unit.key] = text;
+          }
+          project.state[locale.lang] ??= {};
+          project.state[locale.lang][unit.id] = fingerprint(unit.text);
+        }
+        await writeJson(
+          join(project.root, `i18n/messages/${locale.lang}.json`),
+          messages,
+        );
+        await writeJson(join(project.root, "i18n/state.json"), project.state);
+        count += batch.length;
+        console.log(
+          JSON.stringify({
+            event: "translations_updated",
+            language: locale.lang,
+            units: batch.length,
+          }),
+        );
+      }
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
     }
   }
   return count;

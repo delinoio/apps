@@ -92,7 +92,7 @@ test("consumer examples select protocol validation without native runners", () =
 for (const path of [
   "apps/fixkey-app/src/App.tsx",
   "crates/fixkey-core/src/lib.rs",
-  "scripts/release/fixkey.mjs",
+  "apps/fixkey-app/scripts/release/fixkey.mjs",
   ".github/workflows/release-fixkey.yml",
   "docs/project-fixkey.md",
 ]) {
@@ -152,9 +152,10 @@ for (const [service, key] of [
     }
   });
 }
-test("server-wide license and instructions select every server", () => {
+test("server-wide license, instructions and helpers select every server", () => {
   for (const path of [
     "servers/LICENSE",
+    "servers/scripts/dev-api.mjs",
     "servers/AGENTS.md",
     "servers/NOTICE",
   ]) {
@@ -189,5 +190,67 @@ test("protocol contract changes select their owning server", () => {
     ]) {
       assert.equal(selection[frontend], false, `${path}: ${frontend}`);
     }
+  }
+});
+
+for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
+  test(`${path} selects native products without unrelated web or Go jobs`, () => {
+    assert.deepEqual(select([path]), {
+      delcore_api: false,
+      devbase_api: false,
+      git_tracker_api: false,
+      git_tracker: false,
+      fixkey: true,
+      devbase: false,
+      delino_site: false,
+      delino_docs: false,
+      delidev: true,
+      delitools: true,
+      protocol: false,
+    });
+  });
+}
+
+test("go.sum selects every Go runtime and consumer validation", () => {
+  assert.deepEqual(select(["go.sum"]), {
+    delcore_api: true,
+    devbase_api: true,
+    git_tracker_api: true,
+    git_tracker: false,
+    fixkey: false,
+    devbase: false,
+    delino_site: false,
+    delino_docs: false,
+    delidev: false,
+    delitools: false,
+    protocol: true,
+  });
+});
+
+test("dependency lock selection combines with other changes", () => {
+  const native = select(["Cargo.lock"]);
+  const go = select(["go.sum"]);
+  const combine = (left, right) =>
+    Object.fromEntries(
+      Object.keys(left).map((key) => [key, left[key] || right[key]]),
+    );
+  for (const [paths, expected] of [
+    [["Cargo.lock", "go.sum"], combine(native, go)],
+    [
+      ["prebuilt-dependencies.lock.json", "apps/delino-docs/src/main.tsx"],
+      combine(native, select(["apps/delino-docs/src/main.tsx"])),
+    ],
+    [
+      ["go.sum", "apps/git-tracker/src/main.tsx"],
+      combine(go, select(["apps/git-tracker/src/main.tsx"])),
+    ],
+  ]) {
+    assert.deepEqual(select(paths), expected);
+  }
+  for (const path of ["package.json", "Cargo.toml", "go.mod", "unknown.lock"]) {
+    assert.deepEqual(
+      select(["Cargo.lock", "go.sum", path]),
+      select(["package.json"]),
+    );
   }
 });

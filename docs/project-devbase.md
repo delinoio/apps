@@ -10,6 +10,9 @@ Provide a console and the API services of DevBase. The first API service is a fr
 
 ## Domain Ownership Map
 
+- `servers/scripts/dev-api.mjs`: shared Go API development launcher.
+- `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
+
 - `apps/devbase`: independently built web application served at `https://devbase.delino.io`.
 - `servers/devbase-api`: independent Go API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
 - `protos/devbase/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.

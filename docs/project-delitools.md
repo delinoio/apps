@@ -12,6 +12,7 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 
 - `apps/delitools`: shared React frontend for the web application at `https://delitools.delino.io`, CEF desktop host and Wry mobile host.
 - `.github/workflows/release-delitools.yml`: tagged Cloudflare Pages web publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `apps/delitools/scripts/mobile-workflow.test.mjs`: fixture checks for the mobile release workflow.
 - `.github/workflows/release-delitools-mobile.yml`: signed Android internal testing and iOS TestFlight uploads.
 
 ## Domain Contract Documents

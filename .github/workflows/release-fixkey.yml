@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$FIXKEY_UPDATER_PUBLIC_KEY"
-          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          node apps/fixkey-app/scripts/release/fixkey.mjs source "$RELEASE_VERSION"
 
   build:
     needs: prepare
@@ -133,7 +133,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          node apps/fixkey-app/scripts/release/fixkey.mjs source "$RELEASE_VERSION"
           cargo test --locked -p fixkey-core --test dictionaries
       - name: Validate UI and native contracts without application interaction
         shell: bash
@@ -165,8 +165,8 @@ jobs:
             test -n "$APPLE_PASSWORD"
             test -n "$APPLE_TEAM_ID"
           fi
-          node scripts/release/fixkey.mjs configure "$RUNNER_TEMP/fixkey-build.json" '${{ matrix.platform }}'
-          bash scripts/release/fixkey-build.sh pnpm --filter fixkey-desktop exec tauri build --features desktop --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}' --config "$RUNNER_TEMP/fixkey-build.json"
+          node apps/fixkey-app/scripts/release/fixkey.mjs configure "$RUNNER_TEMP/fixkey-build.json" '${{ matrix.platform }}'
+          bash apps/fixkey-app/scripts/release/fixkey-build.sh pnpm --filter fixkey-desktop exec tauri build --features desktop --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}' --config "$RUNNER_TEMP/fixkey-build.json"
       - name: Verify macOS signature and notarization receipt
         if: runner.os == 'macOS'
         shell: bash
@@ -182,7 +182,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release/fixkey.mjs stage "target/$FIXKEY_TARGET/release/bundle" "$RUNNER_TEMP/fixkey-assets" "$FIXKEY_PLATFORM" "$RELEASE_VERSION" "$RELEASE_REVISION"
+          node apps/fixkey-app/scripts/release/fixkey.mjs stage "target/$FIXKEY_TARGET/release/bundle" "$RUNNER_TEMP/fixkey-assets" "$FIXKEY_PLATFORM" "$RELEASE_VERSION" "$RELEASE_REVISION"
       - name: Verify every updater signature with the embedded release key
         env:
           FIXKEY_PLATFORM: ${{ matrix.platform }}
@@ -228,12 +228,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          node apps/fixkey-app/scripts/release/fixkey.mjs source "$RELEASE_VERSION"
           rustup show active-toolchain
           for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
             cargo run --locked -p fixkey --example verify_update -- "${signature%.sig}" "$signature"
           done
-          node scripts/release/fixkey.mjs metadata "$RUNNER_TEMP/fixkey-assets" "$RELEASE_VERSION" "$RELEASE_REVISION"
+          node apps/fixkey-app/scripts/release/fixkey.mjs metadata "$RUNNER_TEMP/fixkey-assets" "$RELEASE_VERSION" "$RELEASE_REVISION"
       - name: Publish only an exact immutable tag
         shell: bash
         run: |

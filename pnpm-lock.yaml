@@ -263,6 +263,12 @@ importers:
       '@delino/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
     devDependencies:
       '@rspress/core':
         specifier: 2.0.23
@@ -270,6 +276,9 @@ importers:
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
       typescript:
         specifier: 5.9.3
         version: 5.9.3
