@@ -6,6 +6,7 @@ import (
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
 	"strconv"
+	"time"
 )
 
 func (c *call) consumerAuthorization(q *pb.AuthorizeRequest) (bool, error) {
@@ -60,8 +61,11 @@ func rateAI(u *pb.Usage) (accounting.Decimal, error) {
 	fail := func() (accounting.Decimal, error) {
 		return accounting.Zero(), invalid("invalid measured AI usage or frozen USD catalog price")
 	}
+	// Validate against the occurrence precision used by PostgreSQL and ListUsage.
+	// Keep the frozen price timestamp unchanged so accepted snapshots and fingerprints
+	// retain their identity. Reject prices later than the stored occurrence.
 	a := u.AiUsage
-	if a == nil || len(a.Model) == 0 || len(a.Model) > 200 || a.PriceEffectiveAt == nil || a.PriceEffectiveAt.CheckValid() != nil || u.OccurredAt == nil || a.PriceEffectiveAt.AsTime().After(u.OccurredAt.AsTime()) || len(a.Tokens) == 0 || len(a.Tokens) > 4 || u.Quantity != "1" {
+	if a == nil || len(a.Model) == 0 || len(a.Model) > 200 || a.PriceEffectiveAt == nil || a.PriceEffectiveAt.CheckValid() != nil || u.OccurredAt == nil || a.PriceEffectiveAt.AsTime().After(u.OccurredAt.AsTime().Truncate(time.Microsecond)) || len(a.Tokens) == 0 || len(a.Tokens) > 4 || u.Quantity != "1" {
 		return fail()
 	}
 	factor := ""

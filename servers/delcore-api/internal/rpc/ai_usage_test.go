@@ -10,7 +10,7 @@ import (
 
 func TestExactAIRating(t *testing.T) {
 	for _, tc := range []struct{ meter, want string }{{"translator", "0.000000345"}, {"extractor", "0.00000039"}} {
-		now := timestamppb.New(time.Now())
+		now := timestamppb.New(time.Now().Truncate(time.Microsecond))
 		u := &pb.Usage{Meter: tc.meter, Quantity: "1", OccurredAt: now, AiUsage: &pb.AiUsage{Model: "openai/gpt-6-luna", PriceEffectiveAt: now, Tokens: []*pb.AiTokenUsage{{Kind: pb.AiTokenKind_AI_TOKEN_KIND_INPUT, Tokens: 3, UsdPerToken: "0.0000001"}}}}
 		got, err := rateAI(u)
 		if err != nil || got.String() != tc.want {
@@ -24,6 +24,24 @@ func TestExactAIRating(t *testing.T) {
 		u.AiUsage.Tokens[0].UsdPerToken = "NaN"
 		if _, err = rateAI(u); err == nil {
 			t.Fatal("invalid price accepted")
+		}
+	}
+}
+
+func TestAIPriceOrderingUsesStoredOccurrence(t *testing.T) {
+	at := time.Date(2026, 10, 20, 0, 0, 0, 123456789, time.UTC)
+	u := &pb.Usage{Meter: "translator", Quantity: "1", OccurredAt: timestamppb.New(at), AiUsage: &pb.AiUsage{Model: "openai/gpt-6-luna", Tokens: []*pb.AiTokenUsage{{Kind: pb.AiTokenKind_AI_TOKEN_KIND_INPUT, Tokens: 1, UsdPerToken: "1"}}}}
+	for _, tc := range []struct {
+		price time.Time
+		valid bool
+	}{
+		{at, false}, {at.Truncate(time.Microsecond).Add(time.Nanosecond), false},
+		{at.Truncate(time.Microsecond), true}, {at.Truncate(time.Microsecond).Add(-time.Nanosecond), true},
+	} {
+		u.AiUsage.PriceEffectiveAt = timestamppb.New(tc.price)
+		_, err := rateAI(u)
+		if (err == nil) != tc.valid {
+			t.Fatal(tc, err)
 		}
 	}
 }

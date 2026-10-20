@@ -69,8 +69,13 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		t.Fatalf("tenant key: %v %v", a, err)
 	}
 	for i, tc := range []struct{ meter, price string }{{"translator", "0.001"}, {"translator", "0.002"}, {"extractor", "0.001"}} {
-		now := timestamppb.New(time.Now())
-		u := &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: key(), Meter: tc.meter, Quantity: "1", OccurredAt: now, AiUsage: &pb.AiUsage{Model: "openai/gpt-6-luna", PriceEffectiveAt: now, Tokens: []*pb.AiTokenUsage{{Kind: pb.AiTokenKind_AI_TOKEN_KIND_INPUT, Tokens: 100, UsdPerToken: tc.price}}}}
+		now := timestamppb.New(time.Now().Truncate(time.Microsecond))
+		u := &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: key(), Meter: tc.meter, Quantity: "1", OccurredAt: timestamppb.New(now.AsTime().Add(789 * time.Nanosecond)), AiUsage: &pb.AiUsage{Model: "openai/gpt-6-luna", PriceEffectiveAt: now, Tokens: []*pb.AiTokenUsage{{Kind: pb.AiTokenKind_AI_TOKEN_KIND_INPUT, Tokens: 100, UsdPerToken: tc.price}}}}
+		invalid := proto.Clone(u).(*pb.Usage)
+		invalid.AiUsage.PriceEffectiveAt = invalid.OccurredAt
+		if _, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: invalid}, "service")); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatal("price after stored occurrence accepted", err)
+		}
 		r, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
 		if err != nil {
 			t.Fatalf("report %d: %v", i, err)
@@ -97,6 +102,12 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		for _, event := range listed.Msg.Events {
 			if event.Id == r.Msg.UsageId {
 				found = true
+				if event.AiUsage.PriceEffectiveAt.AsTime().After(event.OccurredAt.AsTime()) {
+					t.Fatal("listed price follows occurrence")
+				}
+				// Build a correction from the persisted representation, including its time.
+				u.OccurredAt = event.OccurredAt
+
 				if !proto.Equal(event.AiUsage, u.AiUsage) {
 					t.Fatal("listed AI evidence differs")
 				}
