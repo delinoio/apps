@@ -8,6 +8,7 @@ import (
 	"github.com/delinoio/apps/servers/delitools-api/internal/api"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -41,6 +42,9 @@ func Load(path string, getenv func(string) string, migrate bool) (Config, error)
 	d.DisallowUnknownFields()
 	if e = d.Decode(&c); e != nil {
 		return c, errors.New("invalid operator configuration")
+	}
+	if e = d.Decode(new(any)); e != io.EOF {
+		return c, errors.New("operator configuration must contain one JSON document")
 	}
 	c.DatabaseURL = getenv("DELITOOLS_DATABASE_URL")
 	if c.DatabaseURL == "" {

@@ -35,3 +35,22 @@ func TestStartupValidation(t *testing.T) {
 		t.Fatal("migration unnecessarily requires runtime settings", e)
 	}
 }
+
+func TestRejectTrailingConfiguration(t *testing.T) {
+	b, err := os.ReadFile("../../config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"{}", "false", "garbage", " \n\t"} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, append(b, []byte(suffix)...), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, migrate := range []bool{false, true} {
+			_, err := Load(path, func(string) string { return "fixture" }, migrate)
+			if (err == nil) != (strings.TrimSpace(suffix) == "") {
+				t.Fatalf("suffix %q migration %v: %v", suffix, migrate, err)
+			}
+		}
+	}
+}
