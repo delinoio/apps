@@ -262,12 +262,7 @@ test("web workflows validate main ancestry before allocating protected deploymen
     assert.deepEqual(workflow.on.push.tags, [`${project}@v*`]);
     assert.equal(workflow.jobs.source.environment, undefined);
     const job = workflow.jobs.deploy;
-    assert.deepEqual(
-      job.needs,
-      project === Project.Delino
-        ? ["source", "deploy-delcore-api", "deploy-dependent-servers"]
-        : "source",
-    );
+    assert.deepEqual(job.needs, "source");
     if (project === Project.Delino) {
       assert.deepEqual(job.strategy.matrix.include, [
         {
@@ -323,7 +318,7 @@ test("web workflows validate main ancestry before allocating protected deploymen
   }
 });
 
-test("Delino releases deploy servers in dependency order before web applications", () => {
+test("Delino releases publish server images with narrowly scoped package access", () => {
   const workflow = yaml.load(read(".github/workflows/release-delino.yml"));
   const { jobs } = workflow;
   assert.equal(jobs.source.environment, undefined);
@@ -333,39 +328,16 @@ test("Delino releases deploy servers in dependency order before web applications
     packages: "write",
   });
   assert.equal(jobs.images.needs, "source");
+  assert.equal(jobs.images.environment, undefined);
   assert.deepEqual(jobs.images.strategy.matrix.server, [
     "delcore-api",
     "devbase-api",
     "git-tracker-api",
   ]);
-  assert.deepEqual(jobs["deploy-delcore-api"].needs, ["source", "images"]);
-  assert.deepEqual(jobs["deploy-dependent-servers"].needs, [
-    "source",
-    "images",
-    "deploy-delcore-api",
-  ]);
-  assert.deepEqual(
-    jobs["deploy-dependent-servers"].strategy.matrix.include.map(
-      (entry) => entry.server,
-    ),
-    ["devbase-api", "git-tracker-api"],
+  assert.equal(
+    jobs.images.steps[0].with.ref,
+    "${{ needs.source.outputs.revision }}",
   );
-  for (const name of ["deploy-delcore-api", "deploy-dependent-servers"]) {
-    assert.equal(jobs[name].environment, "delino-servers-production");
-    assert.equal(
-      jobs[name].steps[0].with.ref,
-      "${{ needs.source.outputs.revision }}",
-    );
-    const step = jobs[name].steps.at(-1);
-    assert.equal(
-      step.env.RAILWAY_PROJECT_TOKEN,
-      "${{ secrets.RAILWAY_PROJECT_TOKEN }}",
-    );
-    assert.match(
-      step.env.RELEASE_IMAGE,
-      /^ghcr\.io\/\$\{\{ github\.repository_owner \}\}\//u,
-    );
-  }
 });
 
 test("Delino preparation synchronizes both apps even when their versions differ", () => {

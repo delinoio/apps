@@ -92,69 +92,8 @@ jobs:
         if: always()
         run: docker logout ghcr.io
 
-  # Delcore owns tenants and authorization for the other servers, so it is
-  # deployed first and must report success before they start.
-  deploy-delcore-api:
-    needs: [source, images]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: delino-servers-production
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.source.outputs.revision }}
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Deploy the tagged image to Railway
-        env:
-          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
-          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
-          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID_DELCORE_API }}
-          RELEASE_IMAGE: ghcr.io/${{ github.repository_owner }}/delcore-api:${{ needs.source.outputs.version }}
-          RAILWAY_PRE_DEPLOY_COMMAND: '["/delcore-api -migrate"]'
-        run: node "scripts/release/railway-deploy.mjs"
-
-  deploy-dependent-servers:
-    needs: [source, images, deploy-delcore-api]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: delino-servers-production
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - server: devbase-api
-            service_variable: RAILWAY_SERVICE_ID_DEVBASE_API
-            pre_deploy_command: '["/devbase-api migrate"]'
-          # The Git Tracker migration is a one-time initial schema that cannot
-          # be repeated, so the operator applies it manually before first use.
-          - server: git-tracker-api
-            service_variable: RAILWAY_SERVICE_ID_GIT_TRACKER_API
-            pre_deploy_command: ""
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.source.outputs.revision }}
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Deploy the tagged image to Railway
-        env:
-          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
-          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
-          RAILWAY_SERVICE_ID: ${{ vars[matrix.service_variable] }}
-          RELEASE_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.server }}:${{ needs.source.outputs.version }}
-          RAILWAY_PRE_DEPLOY_COMMAND: ${{ matrix.pre_deploy_command }}
-        run: node "scripts/release/railway-deploy.mjs"
-
-  # Web applications call the servers, so they publish after every server succeeds.
   deploy:
-    needs: [source, deploy-delcore-api, deploy-dependent-servers]
+    needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

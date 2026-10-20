@@ -14,7 +14,7 @@ Provide a console and the API services of DevBase. The first API service is a fr
 - `servers/devbase-api`: independent Go API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
 - `protos/devbase/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.
 - `examples/devbase-client` and `examples/devbase-client-ts`: Go and TypeScript consumer examples.
-- `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. The `delino` release also deploys this application after the servers, and publishes and deploys `devbase-api`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. The `delino` release also deploys this application and publishes the `devbase-api` image. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
