@@ -101,14 +101,28 @@ jobs:
       matrix:
         include:
           - app: delino-site
+            environment: delino-site-production
+            concurrency_group: release-delino-site
             pages_project_variable: CLOUDFLARE_PAGES_PROJECT_SITE
           - app: delino-docs
+            environment: delino-site-production
+            concurrency_group: release-delino-docs
             pages_project_variable: CLOUDFLARE_PAGES_PROJECT_DOCS
+          # DevBase keeps its owning environment and the concurrency group of
+          # release-devbase.yml, so both workflows share one reviewer gate and
+          # never upload to the same Pages project at the same time.
           - app: devbase
-            pages_project_variable: CLOUDFLARE_PAGES_PROJECT_DEVBASE
+            environment: devbase-production
+            concurrency_group: release-devbase
+            pages_project_variable: CLOUDFLARE_PAGES_PROJECT
           - app: git-tracker
+            environment: delino-site-production
+            concurrency_group: release-git-tracker
             pages_project_variable: CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER
-    environment: delino-site-production
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: ${{ matrix.concurrency_group }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

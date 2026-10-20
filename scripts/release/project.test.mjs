@@ -267,23 +267,42 @@ test("web workflows validate main ancestry before allocating protected deploymen
       assert.deepEqual(job.strategy.matrix.include, [
         {
           app: "delino-site",
+          environment: "delino-site-production",
+          concurrency_group: "release-delino-site",
           pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_SITE",
         },
         {
           app: "delino-docs",
+          environment: "delino-site-production",
+          concurrency_group: "release-delino-docs",
           pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DOCS",
         },
         {
           app: "devbase",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DEVBASE",
+          environment: "devbase-production",
+          concurrency_group: "release-devbase",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT",
         },
         {
           app: "git-tracker",
+          environment: "delino-site-production",
+          concurrency_group: "release-git-tracker",
           pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER",
         },
       ]);
+      assert.equal(job.environment, "${{ matrix.environment }}");
+      assert.deepEqual(job.concurrency, {
+        group: "${{ matrix.concurrency_group }}",
+        "cancel-in-progress": false,
+      });
+      // DevBase must share the owning workflow's gate and concurrency group.
+      const devbase = yaml.load(read(".github/workflows/release-devbase.yml"));
+      const owned = job.strategy.matrix.include.find(
+        (entry) => entry.app === "devbase",
+      );
+      assert.equal(owned.environment, devbase.jobs.deploy.environment);
+      assert.equal(owned.concurrency_group, devbase.concurrency.group);
       assert.equal(job.strategy["fail-fast"], false);
-      assert.equal(job.environment, "delino-site-production");
       const configuration = job.steps.find(
         (step) => step.name === "Validate deployment configuration",
       );
