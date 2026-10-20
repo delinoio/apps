@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/devbase/v1"
+	"github.com/delinoio/apps/servers/devbase-api/internal/delcore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -59,6 +60,17 @@ func (s *Server) CreateProject(ctx context.Context, r *connect.Request[pb.Create
 		if cleaned {
 			// Authorization used a state read from before the permanent deletion finished.
 			return denied("the tenant was permanently deleted")
+		}
+		// Maintenance finds tenants through their project rows, so it can never record a
+		// tenant that has none. Read the state again under the lock, right before the insert,
+		// instead of trusting the read that authorized the request. A deletion that finalizes
+		// after this read is cleaned up by the next maintenance cycle.
+		state, e := s.tenantState(c.Ctx, q.TenantId)
+		if e != nil {
+			return e
+		}
+		if state != delcore.StateActive {
+			return denied("the tenant state does not permit project creation")
 		}
 		var count int64
 		if e := c.DB.QueryRow(c.Ctx, "SELECT count(*) FROM projects WHERE tenant_id=$1", q.TenantId).Scan(&count); e != nil {

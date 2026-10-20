@@ -36,7 +36,8 @@ type fakeDelcore struct {
 	mu       sync.Mutex
 	roles    map[string]string // user|tenant -> role name
 	states   map[string]delcore.State
-	fail     error // returned by every call when set
+	queued   map[string][]delcore.State // answered once each, in order, before states
+	fail     error                      // returned by every call when set
 	stateErr error
 	delay    time.Duration
 	calls    int
@@ -65,7 +66,7 @@ func (f *fakeDelcore) wait(ctx context.Context) error {
 func (f *fakeDelcore) setDelay(d time.Duration) { f.mu.Lock(); f.delay = d; f.mu.Unlock() }
 
 func newFake() *fakeDelcore {
-	return &fakeDelcore{roles: map[string]string{}, states: map[string]delcore.State{}}
+	return &fakeDelcore{roles: map[string]string{}, states: map[string]delcore.State{}, queued: map[string][]delcore.State{}}
 }
 
 func (f *fakeDelcore) grant(user, tenant, role string) {
@@ -78,6 +79,13 @@ func (f *fakeDelcore) setState(tenant string, s delcore.State) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.states[tenant] = s
+}
+
+// queueState makes the next state read of the tenant answer s once, before the stored state.
+func (f *fakeDelcore) queueState(tenant string, s delcore.State) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.queued[tenant] = append(f.queued[tenant], s)
 }
 
 func (f *fakeDelcore) setFail(e error) { f.mu.Lock(); f.fail = e; f.mu.Unlock() }
@@ -145,7 +153,9 @@ func (f *fakeDelcore) TenantStates(ctx context.Context, tenants []string) (map[s
 	}
 	out := map[string]delcore.State{}
 	for _, t := range tenants {
-		if s, ok := f.states[t]; ok {
+		if q := f.queued[t]; len(q) > 0 {
+			out[t], f.queued[t] = q[0], q[1:]
+		} else if s, ok := f.states[t]; ok {
 			out[t] = s
 		}
 	}

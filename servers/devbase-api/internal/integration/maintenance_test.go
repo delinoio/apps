@@ -255,3 +255,34 @@ func TestStaleProjectCreationAfterTenantCleanup(t *testing.T) {
 	f.fake.setState(tenant, delcore.StateDeleted)
 	f.worker().Cycle(ctx)
 }
+
+// Maintenance lists only tenants that already have a project, so a tenant without projects can
+// never be recorded as cleaned up. A request authorized while that tenant was still active must
+// not create data when the deletion finalizes before the insert.
+func TestProjectCreationForTenantWithoutProjectsRechecksTheState(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	// The authorization read sees ACTIVE; the read under the tenant lock sees DELETED.
+	f.fake.setState(tenant, delcore.StateDeleted)
+	f.fake.queueState(tenant, delcore.StateActive)
+	_, e := f.client.CreateProject(ctx, as(login(owner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: tenant, Name: "Late"}))
+	if code(e) != connect.CodePermissionDenied {
+		t.Fatal("a tenant deleted before the insert received a project", e)
+	}
+	if f.count("SELECT count(*) FROM projects WHERE tenant_id=$1", tenant) != 0 || f.count("SELECT count(*) FROM replays WHERE tenant_id=$1", tenant) != 0 {
+		t.Fatal("data was created for the deleted tenant")
+	}
+	// Any state other than ACTIVE at the second read denies creation, not only DELETED.
+	other, otherOwner, _ := f.tenant()
+	f.fake.queueState(other, delcore.StateActive)
+	f.fake.setState(other, delcore.StateBlocked)
+	if _, e = f.client.CreateProject(ctx, as(login(otherOwner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: other, Name: "Blocked"})); code(e) != connect.CodePermissionDenied {
+		t.Fatal("a tenant blocked before the insert received a project", e)
+	}
+	// An active tenant still creates normally.
+	active, activeOwner, _ := f.tenant()
+	if _, e = f.client.CreateProject(ctx, as(login(activeOwner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: active, Name: "Fine"})); e != nil {
+		t.Fatal(e)
+	}
+}
