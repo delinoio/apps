@@ -19,7 +19,7 @@ async function main() {
   createRoot(document.getElementById("root")!).render(
     <>
       <a className="skip-link" href="#content">
-        {messages.skipContent}
+        {messages["common.skipContent"]}
       </a>
       <header className="site-header">
         <a className="brand" href={prefix}>
@@ -27,12 +27,12 @@ async function main() {
         </a>
         {isProduct && (
           <nav aria-label="FixKey">
-            <a href="#features">{messages.features}</a>
-            <a href="#how-it-works">{messages.howItWorks}</a>
+            <a href="#features">{messages["fixkey.features"]}</a>
+            <a href="#how-it-works">{messages["fixkey.howItWorks"]}</a>
           </nav>
         )}
         <label>
-          {messages.language}
+          {messages["common.language"]}
           <select
             value={lang}
             onChange={(event) => {
@@ -63,12 +63,14 @@ async function main() {
         )}
       </main>
       <footer>
-        <span>{messages.footerNote}</span>
+        <span>{messages["common.footerNote"]}</span>
         <div>
           <a href={`https://docs.delino.io${prefix}`}>
-            {messages.documentation}
+            {messages["common.documentation"]}
           </a>
-          <a href="https://github.com/delinoio/apps">{messages.sourceCode}</a>
+          <a href="https://github.com/delinoio/apps">
+            {messages["common.sourceCode"]}
+          </a>
         </div>
       </footer>
     </>,

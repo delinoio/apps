@@ -36,8 +36,8 @@ export default defineConfig({
       return {
         ...parameters,
         lang,
-        title: product ? messages.fixkeyTitle : "Delino",
-        description: product ? messages.fixkeyDescription : "Delino",
+        title: product ? messages["fixkey.title"] : "Delino",
+        description: product ? messages["fixkey.description"] : "Delino",
       };
     },
   },
