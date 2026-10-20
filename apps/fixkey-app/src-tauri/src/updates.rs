@@ -4,6 +4,15 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+// GitHub percent-encodes the tag separator in browser_download_url. Accept
+// either spelling while keeping the repository, tag and asset path exact.
+#[cfg(any(feature = "desktop", test))]
+fn release_asset_url_matches(url: &str, tag: &str, asset: &str) -> bool {
+    let base = "https://github.com/delinoio/apps/releases/download";
+    url == format!("{base}/{tag}/{asset}")
+        || url == format!("{base}/{}/{asset}", tag.replace('@', "%40"))
+}
+
 /// Stable updater presentation states.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -158,6 +167,39 @@ pub fn verify_payload(
 mod tests {
     use super::*;
     #[test]
+    fn release_asset_urls_accept_github_tag_encoding() {
+        for asset in ["fixkey-latest.json", "FixKey-macos-arm64.app.tar.gz"] {
+            for tag in ["fixkey@v0.1.8", "fixkey%40v0.1.8"] {
+                let url =
+                    format!("https://github.com/delinoio/apps/releases/download/{tag}/{asset}");
+                assert!(release_asset_url_matches(&url, "fixkey@v0.1.8", asset));
+            }
+        }
+    }
+
+    #[test]
+    fn release_asset_urls_reject_other_origins_tags_and_paths() {
+        let expected =
+            "https://github.com/delinoio/apps/releases/download/fixkey%40v0.1.8/fixkey-latest.json";
+        for url in [
+            expected.replace("https:", "http:"),
+            expected.replace("github.com/", "github.com.evil.invalid/"),
+            expected.replace("github.com/", "github.com@evil.invalid/"),
+            expected.replace("delinoio/apps", "other/apps"),
+            expected.replace("0.1.8", "0.1.9"),
+            expected.replace("%40", "%2540"),
+            expected.replace("fixkey-latest.json", "other.json"),
+            format!("{expected}?download=1"),
+            format!("{expected}#fragment"),
+        ] {
+            assert!(
+                !release_asset_url_matches(&url, "fixkey@v0.1.8", "fixkey-latest.json"),
+                "unexpected accepted URL: {url}"
+            );
+        }
+    }
+
+    #[test]
     fn authentic_payload_is_accepted_and_corruption_or_missing_keys_are_rejected() {
         use base64::Engine as _;
         let encode = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
@@ -258,7 +300,7 @@ pub mod desktop {
     use tauri::AppHandle;
     use tauri_plugin_updater::{Update, UpdaterExt};
 
-    use super::{Phase, Schedule, UpdateState};
+    use super::{Phase, Schedule, UpdateState, release_asset_url_matches};
 
     #[derive(Default)]
     pub struct Updater {
@@ -369,14 +411,14 @@ pub mod desktop {
                     .into_iter()
                     .find(|asset| asset.name == "fixkey-latest.json")
                     .ok_or("update-metadata-missing")?;
-                let expected = format!(
-                    "https://github.com/delinoio/apps/releases/download/{}/fixkey-latest.json",
-                    release.tag_name
-                );
-                if asset.browser_download_url != expected {
+                if !release_asset_url_matches(
+                    &asset.browser_download_url,
+                    &release.tag_name,
+                    "fixkey-latest.json",
+                ) {
                     return Err("update-metadata-invalid");
                 }
-                selected = Some((version, expected));
+                selected = Some((version, asset.browser_download_url));
             }
             if complete {
                 break;
@@ -447,10 +489,13 @@ pub mod desktop {
             "linux-x11-arm64" => "FixKey-linux-x11-arm64.AppImage",
             _ => return Err("update-platform-unsupported"),
         };
-        let expected = format!(
-            "https://github.com/delinoio/apps/releases/download/fixkey@v{version}/{payload}"
-        );
-        if update.version != version.to_string() || update.download_url.as_str() != expected {
+        if update.version != version.to_string()
+            || !release_asset_url_matches(
+                update.download_url.as_str(),
+                &format!("fixkey@v{version}"),
+                payload,
+            )
+        {
             return Err("update-metadata-invalid");
         }
         Ok(Some(update))
@@ -529,6 +574,24 @@ mod discovery_tests {
             {"tag_name":"fixkey@v2.0.0","draft":false,"prerelease":false,"assets":[{"name":"fixkey-latest.json","browser_download_url":"https://github.com/delinoio/apps/releases/download/fixkey@v2.0.0/fixkey-latest.json"}]}
         ])).unwrap()
     }
+    #[test]
+    fn mocked_release_check_accepts_github_encoded_metadata_url() {
+        let current = semver::Version::parse("0.1.7").unwrap();
+        let url =
+            "https://github.com/delinoio/apps/releases/download/fixkey%40v0.1.8/fixkey-latest.json";
+        let selected = tauri::async_runtime::block_on(latest_release(&current, |_| async {
+            Ok(serde_json::from_value(serde_json::json!([{
+                "tag_name": "fixkey@v0.1.8", "draft": false, "prerelease": false,
+                "assets": [{"name": "fixkey-latest.json", "browser_download_url": url}]
+            }]))
+            .unwrap())
+        }))
+        .unwrap()
+        .unwrap();
+        assert_eq!(selected.0.to_string(), "0.1.8");
+        assert_eq!(selected.1, url);
+    }
+
     #[test]
     fn mocked_release_check_selects_only_newer_stable_project_releases() {
         let current = semver::Version::parse("1.0.0").unwrap();
