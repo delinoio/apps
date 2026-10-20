@@ -66,6 +66,8 @@ func TestOCI(t *testing.T) {
 	run(args("migrate")...)
 	run(args("migrate")...) // Repeating is safe.
 	run(args("check-schema")...)
+	run(args("audit", "--limit", "5")...) // The operator audit procedure runs from the image.
+	fails(args("audit", "--limit", "0")...)
 	// A modified applied migration fails both the migration command and the startup check.
 	run("exec", name, "psql", "-U", "postgres", "-d", "devbase", "-c", "UPDATE devbase_schema SET digest='tampered'")
 	fails(args("check-schema")...)

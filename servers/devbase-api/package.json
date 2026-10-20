@@ -10,7 +10,7 @@
     "ci:vet": "go vet ./...",
     "ci:build": "go build ./cmd/devbase-api",
     "ci:unit": "go test -count=1 ./...",
-    "ci:integration": "go test -count=1 -race -tags=integration ./...",
+    "ci:integration": "go test -count=1 -race -p 1 -tags=integration ./...",
     "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration"
   }
 }

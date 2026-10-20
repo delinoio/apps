@@ -130,3 +130,8 @@ func ScrubProject(ctx context.Context, q Querier, project string) error {
 func ScrubUser(ctx context.Context, q Querier, user string) error {
 	return scrubReplays(ctx, q, "target_user_id=$1", user)
 }
+
+// ScrubTenant scrubs every replay record of a tenant whose data is being cleaned up.
+func ScrubTenant(ctx context.Context, q Querier, tenant string) error {
+	return scrubReplays(ctx, q, "tenant_id=$1", tenant)
+}

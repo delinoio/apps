@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/delinoio/apps/servers/devbase-api/internal/api"
 	"github.com/delinoio/apps/servers/devbase-api/internal/config"
 	"github.com/delinoio/apps/servers/devbase-api/internal/delcore"
+	"github.com/delinoio/apps/servers/devbase-api/internal/maintenance"
 	"github.com/delinoio/apps/servers/devbase-api/internal/metrics"
 	"github.com/delinoio/apps/servers/devbase-api/internal/store"
 	"github.com/google/uuid"
@@ -36,12 +38,31 @@ type fakeDelcore struct {
 	states   map[string]delcore.State
 	fail     error // returned by every call when set
 	stateErr error
+	delay    time.Duration
 	calls    int
 	// beforeStates runs once at the start of the next tenant-state read. Authorization reads
 	// the state after it resolved the project and before the operation runs, so a hook can
 	// delete the project in exactly that window.
 	beforeStates func()
 }
+
+// wait simulates a slow dependency and honors cancellation like a real client.
+func (f *fakeDelcore) wait(ctx context.Context) error {
+	f.mu.Lock()
+	d := f.delay
+	f.mu.Unlock()
+	if d == 0 {
+		return nil
+	}
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return delcore.ErrUnavailable
+	}
+}
+
+func (f *fakeDelcore) setDelay(d time.Duration) { f.mu.Lock(); f.delay = d; f.mu.Unlock() }
 
 func newFake() *fakeDelcore {
 	return &fakeDelcore{roles: map[string]string{}, states: map[string]delcore.State{}}
@@ -70,6 +91,9 @@ func (f *fakeDelcore) user(authorization string) (string, error) {
 }
 
 func (f *fakeDelcore) Identify(ctx context.Context, authorization string) (string, error) {
+	if e := f.wait(ctx); e != nil {
+		return "", e
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -80,6 +104,9 @@ func (f *fakeDelcore) Identify(ctx context.Context, authorization string) (strin
 }
 
 func (f *fakeDelcore) RequireManager(ctx context.Context, authorization, tenant string) error {
+	if e := f.wait(ctx); e != nil {
+		return e
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -97,6 +124,9 @@ func (f *fakeDelcore) RequireManager(ctx context.Context, authorization, tenant 
 }
 
 func (f *fakeDelcore) TenantStates(ctx context.Context, tenants []string) (map[string]delcore.State, error) {
+	if e := f.wait(ctx); e != nil {
+		return nil, e
+	}
 	f.mu.Lock()
 	hook := f.beforeStates
 	f.beforeStates = nil
@@ -131,7 +161,22 @@ type fixture struct {
 	limits  config.Limits
 	clock   *clock
 	metrics *metrics.Metrics
+	gather  prometheus.Gatherer
+	logs    *syncBuffer
 }
+
+// syncBuffer collects server logs so tests can assert that nothing sensitive is logged.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+func (s *syncBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
 type clock struct {
 	mu sync.Mutex
@@ -171,8 +216,10 @@ func setup(t *testing.T, mutate ...func(*config.Limits)) *fixture {
 		m(&limits)
 	}
 	f := &fixture{t: t, db: db, fake: newFake(), limits: limits, clock: &clock{t: time.Now().UTC()}}
-	f.metrics = metrics.New(prometheus.NewRegistry())
-	f.server = api.New(db.Pool, f.fake, limits, slog.New(slog.NewTextHandler(logSink(), nil)), f.metrics, f.clock.now)
+	registry := prometheus.NewRegistry()
+	f.metrics, f.gather = metrics.New(registry), registry
+	f.logs = &syncBuffer{}
+	f.server = api.New(db.Pool, f.fake, limits, slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), f.metrics, f.clock.now)
 	path, handler := f.server.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
@@ -250,4 +297,18 @@ func logSink() io.Writer {
 		return os.Stderr
 	}
 	return discard{}
+}
+
+func (f *fixture) worker() *maintenance.Worker {
+	return &maintenance.Worker{Pool: f.db.Pool, Authority: f.fake, Log: slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), Metrics: f.metrics, Now: f.clock.now, Interval: time.Minute}
+}
+
+// user creates an end user through the login Owner token.
+func (f *fixture) user(token, project, external string) *pb.EndUser {
+	f.t.Helper()
+	r, e := f.client.CreateEndUser(context.Background(), as(token, &pb.CreateEndUserRequest{IdempotencyKey: idem(), ProjectId: project, ExternalId: external, Name: "Name " + external, Email: external + "@example.com"}))
+	if e != nil {
+		f.t.Fatal("create end user:", e)
+	}
+	return r.Msg.EndUser
 }

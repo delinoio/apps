@@ -5,6 +5,7 @@
 //	devbase-api            serve the API
 //	devbase-api migrate    apply explicit database migrations and exit
 //	devbase-api check-schema  fail unless the schema matches this binary
+//	devbase-api audit      query audit records as JSON lines
 package main
 
 import (
@@ -24,6 +25,7 @@ import (
 	"github.com/delinoio/apps/servers/devbase-api/internal/api"
 	"github.com/delinoio/apps/servers/devbase-api/internal/config"
 	"github.com/delinoio/apps/servers/devbase-api/internal/delcore"
+	"github.com/delinoio/apps/servers/devbase-api/internal/maintenance"
 	"github.com/delinoio/apps/servers/devbase-api/internal/metrics"
 	"github.com/delinoio/apps/servers/devbase-api/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,6 +90,8 @@ func run(args []string) error {
 			slog.Info("schema is compatible")
 		}
 		return e
+	case "audit":
+		return auditQuery(ctx, args[1:], os.Stdout)
 	case "serve":
 		return serve(ctx)
 	}
@@ -150,6 +154,11 @@ func serve(ctx context.Context) error {
 		IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10,
 	}
 	failed := make(chan error, 2)
+	maintained := make(chan struct{})
+	maintenanceCtx, stopMaintenance := context.WithCancel(ctx)
+	defer stopMaintenance()
+	worker := &maintenance.Worker{Pool: db.Pool, Authority: authority, Log: slog.Default(), Metrics: m, Interval: cfg.CleanupInterval}
+	go func() { defer close(maintained); worker.Run(maintenanceCtx) }()
 	go func() { failed <- httpServer.ListenAndServe() }()
 	// A lost session lock means another instance could start; stop serving.
 	go func() {
@@ -176,10 +185,16 @@ func serve(ctx context.Context) error {
 	case <-ctx.Done():
 	case failure = <-failed:
 	}
+	stopMaintenance()
 	shutdown, cancel := context.WithTimeout(context.Background(), cfg.RequestTimeout)
 	defer cancel()
 	if e = httpServer.Shutdown(shutdown); e != nil {
 		return e
+	}
+	select {
+	case <-maintained:
+	case <-shutdown.Done():
+		return shutdown.Err()
 	}
 	if errors.Is(failure, http.ErrServerClosed) {
 		return nil
