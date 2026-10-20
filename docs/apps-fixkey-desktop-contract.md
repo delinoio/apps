@@ -14,6 +14,8 @@ Individual desktop users who type Korean and English. Support uses GitHub Issues
 
 ## Interfaces and Contracts
 
+After a successful automatic correction on macOS, select an enabled input source for the corrected language so subsequent typing continues in that language. Follow the [core input-source contract](crates-fixkey-core-foundation.md#interfaces-and-contracts) for supported layouts, revalidation and failure behavior.
+
 Settings window (reference viewport 840×680), left navigation sections in this order:
 
 ```ts

@@ -8,7 +8,7 @@
 
 use crate::{
     decision::{Validators, decide},
-    types::{CorrectionOutcome, LanguageSet, SkipReason},
+    types::{CorrectionOutcome, Language, LanguageSet, SkipReason},
 };
 
 /// Opaque identity of the focused editable control.
@@ -61,6 +61,13 @@ pub enum WriteError {
 
 /// Accessibility access to the focused control.
 pub trait Accessibility {
+    /// Selects the input language after a successful automatic correction.
+    /// Implementations must revalidate the complete corrected snapshot before
+    /// changing the input source. Unsupported platforms return false.
+    fn select_input_language(&mut self, _expected: &FieldSnapshot, _language: Language) -> bool {
+        false
+    }
+
     /// Reads the focused editable control.
     ///
     /// # Errors
@@ -476,6 +483,7 @@ impl CorrectionSession {
                     caret,
                     backspace_pending: false,
                 });
+                self.select_input_language(accessibility, decision.language, &current);
                 Evaluation::outcome(CorrectionOutcome::Replaced)
             }
             Err(error) => {
@@ -492,6 +500,27 @@ impl CorrectionSession {
                 );
                 Evaluation::skipped(SkipReason::UnsupportedWrite)
             }
+        }
+    }
+
+    fn select_input_language(
+        &self,
+        accessibility: &mut dyn Accessibility,
+        language: Option<Language>,
+        before: &FieldSnapshot,
+    ) {
+        if let (Some(undo), Some(language)) = (&self.undo, language) {
+            let expected = FieldSnapshot {
+                text: undo.text.clone(),
+                caret: undo.caret,
+                ..*before
+            };
+            let selected = accessibility.select_input_language(&expected, language);
+            tracing::info!(
+                language = language.as_str(),
+                selected,
+                "fixkey input language selection completed"
+            );
         }
     }
 
@@ -667,6 +696,8 @@ mod tests {
         writes: usize,
         reads: usize,
         snapshot_error: Option<SkipReason>,
+        selected_languages: Vec<Language>,
+        selection_succeeds: bool,
     }
 
     impl MockField {
@@ -683,6 +714,8 @@ mod tests {
                 writes: 0,
                 reads: 0,
                 snapshot_error: None,
+                selected_languages: Vec::new(),
+                selection_succeeds: true,
             }
         }
 
@@ -712,6 +745,12 @@ mod tests {
     }
 
     impl Accessibility for MockField {
+        fn select_input_language(&mut self, expected: &FieldSnapshot, language: Language) -> bool {
+            assert_eq!(&self.snapshot().unwrap(), expected);
+            self.selected_languages.push(language);
+            self.selection_succeeds
+        }
+
         fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
             self.reads += 1;
             if let Some(reason) = self.snapshot_error {
@@ -974,6 +1013,7 @@ mod tests {
             let field = field.borrow();
             assert_eq!(result.outcome, CorrectionOutcome::PreservedStaleContext);
             assert_eq!(field.writes, 0);
+            assert_eq!(field.selected_languages, [] as [Language; 0]);
             assert_eq!(field.reads, 2);
             assert!(!session.has_undo());
             assert_ne!(field.text(), "계속해 ");
@@ -1008,6 +1048,7 @@ mod tests {
             assert_eq!(result.outcome, CorrectionOutcome::PreservedSkipped);
             assert_eq!(result.skip_reason, Some(reason));
             assert_eq!(field.writes, 0);
+            assert_eq!(field.selected_languages, [] as [Language; 0]);
             assert_eq!(field.reads, 2);
             assert!(!session.has_undo());
         }
@@ -1070,6 +1111,7 @@ mod tests {
         assert_eq!(ambiguous.outcome, CorrectionOutcome::PreservedAmbiguous);
         assert_eq!(field.reads, 1);
         assert_eq!(field.writes, 0);
+        assert_eq!(field.selected_languages, [] as [Language; 0]);
         assert!(!session.has_undo());
     }
 
@@ -1121,6 +1163,7 @@ mod tests {
             assert_eq!(result.outcome, CorrectionOutcome::PreservedSkipped);
             assert_eq!(result.skip_reason, Some(SkipReason::Programmatic));
             assert_eq!(field.writes, 0);
+            assert_eq!(field.selected_languages, [] as [Language; 0]);
             assert!(!session.has_undo());
         }
     }
@@ -1133,6 +1176,61 @@ mod tests {
         assert_eq!(result.outcome, CorrectionOutcome::Replaced);
         assert_eq!(field.text(), "hi 계속해 ");
         assert!(session.has_undo());
+    }
+
+    #[test]
+    fn successful_corrections_select_the_winning_input_language() {
+        for (word, keys, korean, english, language, expected) in [
+            (
+                "ㅏ됴",
+                "key",
+                &[][..],
+                &["key"][..],
+                Language::EnUsQwerty,
+                "key ",
+            ),
+            (
+                "rPthrgo",
+                "rPthrgo",
+                &["계속해"][..],
+                &[][..],
+                Language::KoDubeolsik,
+                "계속해 ",
+            ),
+        ] {
+            let mut field = MockField::new(&format!("{word} "));
+            let mut session = new_session();
+            let result = session.on_word_complete(
+                word,
+                &keys.chars().collect::<Vec<_>>(),
+                " ",
+                field.captured(),
+                &mut field,
+                &Validators {
+                    korean: &Accepts(korean),
+                    english: &Accepts(english),
+                },
+            );
+            assert_eq!(result.outcome, CorrectionOutcome::Replaced);
+            assert_eq!(field.text(), expected);
+            assert_eq!(field.selected_languages, [language]);
+        }
+    }
+
+    #[test]
+    fn input_source_failure_keeps_the_correction_and_immediate_undo() {
+        let mut field = MockField::new("rPthrgo ");
+        field.selection_succeeds = false;
+        let mut session = new_session();
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").outcome,
+            CorrectionOutcome::Replaced
+        );
+        assert_eq!(field.text(), "계속해 ");
+        field.backspace();
+        assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+        assert_eq!(field.text(), "rPthrgo ");
+        assert_eq!(field.selected_languages, [Language::KoDubeolsik]);
     }
 
     #[test]
@@ -1503,6 +1601,7 @@ mod tests {
             assert_eq!(result.outcome, CorrectionOutcome::PreservedSkipped);
             assert_eq!(result.skip_reason, Some(reason));
             assert_eq!(field.writes, 0);
+            assert_eq!(field.selected_languages, [] as [Language; 0]);
             assert_eq!(field.text(), "rPthrgo ");
         }
     }
@@ -1538,6 +1637,7 @@ mod tests {
             );
             assert_eq!(result.outcome, CorrectionOutcome::PreservedStaleContext);
             assert_eq!(field.writes, 0);
+            assert_eq!(field.selected_languages, [] as [Language; 0]);
         }
     }
 
@@ -1548,6 +1648,7 @@ mod tests {
         let mut session = new_session();
         let result = run(&mut field, &mut session, "rPthrgo");
         assert_eq!(result.skip_reason, Some(SkipReason::UnsupportedWrite));
+        assert_eq!(field.selected_languages, [] as [Language; 0]);
         assert_eq!(field.writes, 1);
         assert_eq!(field.text(), "rPthrgo ");
         assert!(!session.has_undo());
@@ -1560,6 +1661,7 @@ mod tests {
         let mut session = new_session();
         let result = run(&mut field, &mut session, "rPthrgo");
         assert_eq!(result.skip_reason, Some(SkipReason::UnsupportedWrite));
+        assert_eq!(field.selected_languages, [] as [Language; 0]);
         assert_eq!(field.writes, 2);
         assert_eq!(field.text(), "rPthrgo ");
         assert!(!session.has_undo());
@@ -1603,6 +1705,7 @@ mod tests {
         let result = run(&mut field, &mut session, "zzzz");
         assert_eq!(result.outcome, CorrectionOutcome::PreservedNoMatch);
         assert_eq!(field.writes, 0);
+        assert_eq!(field.selected_languages, [] as [Language; 0]);
         assert!(!session.has_undo());
     }
 }
