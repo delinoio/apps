@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMeasurements, parseConfiguration, rpc } from "./main.mjs";
+// Import helpers without starting the Action when tests run on GitHub Actions.
+process.env.GIT_TRACKER_ACTION_TEST = "1";
+const { parseMeasurements, parseConfiguration, rpc } =
+  await import("./main.mjs");
 test("JSON and YAML decimals retain their exact value", () => {
   assert.equal(
     parseMeasurements(
