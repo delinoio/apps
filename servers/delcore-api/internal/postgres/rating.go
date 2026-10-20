@@ -59,9 +59,9 @@ func RatePeriod(ctx context.Context, tx pgx.Tx, tenant, service, meter string, s
 }
 
 // HasAllowance matches the service-level paid authorization rule: any current
-// meter with remaining included units permits use of that service.
+// meter with remaining included units permits use, except DeliTools token billing.
 func HasAllowance(ctx context.Context, tx pgx.Tx, tenant, service string, start time.Time) (bool, error) {
-	rows, e := tx.Query(ctx, "SELECT DISTINCT p.meter FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.kind=1 AND en.ends_at IS NULL", tenant, service)
+	rows, e := tx.Query(ctx, "SELECT DISTINCT p.meter FROM entitlements en JOIN prices p ON p.id=en.price_id JOIN services s ON s.id=p.service_id WHERE s.name<>'delitools' AND en.tenant_id=$1 AND p.service_id=$2 AND p.kind=1 AND en.ends_at IS NULL", tenant, service)
 	if e != nil {
 		return false, e
 	}

@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"context"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"github.com/delinoio/apps/servers/delcore-api/internal/worker"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"testing"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
-	db, c, _ := setup(t)
+	db, c, cfg := setup(t)
 	ctx := context.Background()
 	service, err := c.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register DeliTools", Service: &pb.Service{Name: "delitools", ClientId: "service", Capabilities: []string{"translator", "extractor"}, Scopes: []string{"authorize", "usage:write", "usage:read"}}}, "owner"))
 	if err != nil {
@@ -45,9 +46,23 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 	if err != nil || zero.Msg.Allowed {
 		t.Fatalf("AI allowances authorized zero credit: %v %v", zero, err)
 	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	checkNotice := func(want bool) {
+		t.Helper()
+		if err := w.Maintain(ctx, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		var active bool
+		if err := db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM billing_notices WHERE tenant_id=$1 AND reason='balance' AND active)", tenant).Scan(&active); err != nil || active != want {
+			t.Fatal("DeliTools balance notice", active, want, err)
+		}
+	}
+	checkNotice(true)
+	checkNotice(true)
 	if _, err = db.Pool.Exec(ctx, `INSERT INTO ledger(id,tenant_id,meter,kind,amount,source_key,created_at) VALUES($1,$2,'','credit',10,$3,now())`, key(), tenant, key()); err != nil {
 		t.Fatal(err)
 	}
+	checkNotice(false)
 	auth := &pb.AuthorizeRequest{TenantId: tenant, Paid: true, Capability: "translator", ConsumerAuthorization: pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_TENANT_KEY}
 	a, err := c.Authorize(ctx, req(auth, "service"))
 	if err != nil || !a.Msg.Allowed {
