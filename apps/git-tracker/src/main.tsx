@@ -219,11 +219,21 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
     setComparePair({ baselineCommit: "", targetCommit: "" });
   };
   const [manage, setManage] = useState(false);
-  const user = useQuery(
+  const user = useInfiniteQuery(
     DelcoreService.method.getCurrentUser,
-    {},
-    { transport: delcore, enabled: session.authenticated },
+    { page: { afterId: "", size: 100 } },
+    {
+      transport: delcore,
+      enabled: session.authenticated,
+      pageParamKey: "page",
+      getNextPageParam: (page) =>
+        page.nextAfterId ? { afterId: page.nextAfterId, size: 100 } : undefined,
+    },
   );
+  useEffect(() => {
+    if (user.hasNextPage && !user.isFetching && !user.isError)
+      void user.fetchNextPage();
+  }, [user.hasNextPage, user.isFetching, user.isError, user.fetchNextPage]);
   const repositories = useQuery(method.listRepositories, { spaceId: space });
   const history = useInfiniteQuery(
     method.getHistory,
@@ -358,11 +368,13 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
               }}
             >
               <option value="">Public repositories</option>
-              {user.data?.tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              {user.data?.pages
+                .flatMap((page) => page.tenants)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
             </select>
           </label>
           <label>
