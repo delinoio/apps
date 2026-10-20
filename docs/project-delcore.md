@@ -27,7 +27,7 @@ See the [repository boundary contract](repository-boundary-contract.md) for coor
 
 ## Cross-Domain Invariants
 
-PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authorization. Paddle owns payment execution; delcore owns usage rating and credits. Purchased credits pay usage only. Paid periods follow Paddle renewal periods, and paid authorization ends at the confirmed period end until a renewal advances it; free periods use UTC calendar months. Consumers fail closed for new paid execution when authorization cannot be checked and retain pending usage reports. Server files use FSL-1.1-ALv2; protocol and consumer files use Apache-2.0.
+PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authorization. Paddle owns payment execution; delcore owns usage rating and credits. Purchased credits pay usage only. Paid periods follow Paddle renewal periods, and paid authorization ends at the confirmed period end until a renewal advances it; free periods use UTC calendar months. Consumers fail closed for new paid execution when authorization cannot be checked and retain pending usage reports. Registered services read billing-independent tenant state (`ACTIVE`, `BLOCKED`, `DELETING`, `DELETED`, `UNKNOWN`) through `GetTenantStates`; only `DELETED` permits consumer cleanup of retained tenant data. Server files use FSL-1.1-ALv2; protocol and consumer files use Apache-2.0.
 
 ## Change Policy
 

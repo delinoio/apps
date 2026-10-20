@@ -37,7 +37,8 @@
     "messages/theme.promptCollapseText": "be6eb1fc3b05bf9dceebad2eac7841d1b2f40bda9aa2da34df8ca22af02bc3ed",
     "docs/guide/getting-started.md": "efa099e3f07728f2367503bfdf8d3dba7fbeae74020ed22a9e2e207dc4381e17",
     "docs/index.md": "b5bd62604fc9146a1ffbdb28a224611f66fd71b133addf4651bfe1ed5cfa68cd",
-    "docs/services/index.md": "4e123461b49bf36ea22af386677daa73f6f8413ddf4ee1b6a815dd2868ea6d85",
-    "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1"
+    "docs/services/index.md": "56a69bad1cf3f3abd1d402c0237ecf3b11c975d40e4fc19078e052a28851294e",
+    "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
+    "docs/services/delcore/index.md": "d4c6dec461b249966d5c9ebfdce87eea5633e4d02af2bd4ccd7f5bc3c6704b97"
   }
 }

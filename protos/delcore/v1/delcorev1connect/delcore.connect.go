@@ -100,6 +100,9 @@ const (
 	// DelcoreServiceCheckTenantLifecycleProcedure is the fully-qualified name of the DelcoreService's
 	// CheckTenantLifecycle RPC.
 	DelcoreServiceCheckTenantLifecycleProcedure = "/delcore.v1.DelcoreService/CheckTenantLifecycle"
+	// DelcoreServiceGetTenantStatesProcedure is the fully-qualified name of the DelcoreService's
+	// GetTenantStates RPC.
+	DelcoreServiceGetTenantStatesProcedure = "/delcore.v1.DelcoreService/GetTenantStates"
 	// DelcoreServiceReportUsageProcedure is the fully-qualified name of the DelcoreService's
 	// ReportUsage RPC.
 	DelcoreServiceReportUsageProcedure = "/delcore.v1.DelcoreService/ReportUsage"
@@ -166,6 +169,7 @@ type DelcoreServiceClient interface {
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
+	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
@@ -331,6 +335,12 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("CheckTenantLifecycle")),
 			connect.WithClientOptions(opts...),
 		),
+		getTenantStates: connect.NewClient[v1.GetTenantStatesRequest, v1.GetTenantStatesResponse](
+			httpClient,
+			baseURL+DelcoreServiceGetTenantStatesProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("GetTenantStates")),
+			connect.WithClientOptions(opts...),
+		),
 		reportUsage: connect.NewClient[v1.ReportUsageRequest, v1.ReportUsageResponse](
 			httpClient,
 			baseURL+DelcoreServiceReportUsageProcedure,
@@ -443,6 +453,7 @@ type delcoreServiceClient struct {
 	createPrice          *connect.Client[v1.CreatePriceRequest, v1.CreatePriceResponse]
 	authorize            *connect.Client[v1.AuthorizeRequest, v1.AuthorizeResponse]
 	checkTenantLifecycle *connect.Client[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse]
+	getTenantStates      *connect.Client[v1.GetTenantStatesRequest, v1.GetTenantStatesResponse]
 	reportUsage          *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
 	correctUsage         *connect.Client[v1.CorrectUsageRequest, v1.CorrectUsageResponse]
 	listUsage            *connect.Client[v1.ListUsageRequest, v1.ListUsageResponse]
@@ -574,6 +585,11 @@ func (c *delcoreServiceClient) CheckTenantLifecycle(ctx context.Context, req *co
 	return c.checkTenantLifecycle.CallUnary(ctx, req)
 }
 
+// GetTenantStates calls delcore.v1.DelcoreService.GetTenantStates.
+func (c *delcoreServiceClient) GetTenantStates(ctx context.Context, req *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error) {
+	return c.getTenantStates.CallUnary(ctx, req)
+}
+
 // ReportUsage calls delcore.v1.DelcoreService.ReportUsage.
 func (c *delcoreServiceClient) ReportUsage(ctx context.Context, req *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
 	return c.reportUsage.CallUnary(ctx, req)
@@ -669,6 +685,7 @@ type DelcoreServiceHandler interface {
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
+	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
@@ -830,6 +847,12 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("CheckTenantLifecycle")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceGetTenantStatesHandler := connect.NewUnaryHandler(
+		DelcoreServiceGetTenantStatesProcedure,
+		svc.GetTenantStates,
+		connect.WithSchema(delcoreServiceMethods.ByName("GetTenantStates")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServiceReportUsageHandler := connect.NewUnaryHandler(
 		DelcoreServiceReportUsageProcedure,
 		svc.ReportUsage,
@@ -962,6 +985,8 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceAuthorizeHandler.ServeHTTP(w, r)
 		case DelcoreServiceCheckTenantLifecycleProcedure:
 			delcoreServiceCheckTenantLifecycleHandler.ServeHTTP(w, r)
+		case DelcoreServiceGetTenantStatesProcedure:
+			delcoreServiceGetTenantStatesHandler.ServeHTTP(w, r)
 		case DelcoreServiceReportUsageProcedure:
 			delcoreServiceReportUsageHandler.ServeHTTP(w, r)
 		case DelcoreServiceCorrectUsageProcedure:
@@ -1089,6 +1114,10 @@ func (UnimplementedDelcoreServiceHandler) Authorize(context.Context, *connect.Re
 
 func (UnimplementedDelcoreServiceHandler) CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.CheckTenantLifecycle is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.GetTenantStates is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
