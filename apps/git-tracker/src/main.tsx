@@ -24,7 +24,7 @@ import {
   type Execution,
 } from "./gen/gittracker/v1/gittracker_pb";
 import { DelcoreService } from "./gen/delcore/v1/delcore_pb";
-import { points, readable } from "./history.mjs";
+import { points, readable, graphValue } from "./history.mjs";
 import "./style.css";
 
 const api =
@@ -666,18 +666,20 @@ function HistoryGraph({
 }) {
   const series = rows.map((row) => ({
     row,
-    points: points(commits, executions, dataset, column, row),
+    points: points(commits, executions, dataset, column, row).map((point) => ({
+      ...point,
+      plotted: graphValue(point.value, point.unit, unit),
+    })),
   }));
   const values = series
-    .flatMap((s) => s.points.map((p) => Number(p.value)))
+    .flatMap((s) => s.points.map((p) => p.plotted))
     .filter(Number.isFinite);
   const low = Math.min(...values),
     high = Math.max(...values);
   const colors = ["#3668e8", "#128572", "#b5651c", "#934dc0"];
   const x = (index: number) =>
     60 + (index / Math.max(1, commits.length - 1)) * 820;
-  const y = (value: string) =>
-    235 - ((Number(value) - low) / (high - low || 1)) * 185;
+  const y = (value: number) => 235 - ((value - low) / (high - low || 1)) * 185;
   return (
     <>
       <div className="chart">
@@ -704,22 +706,22 @@ function HistoryGraph({
                 stroke={colors[index % colors.length]}
                 strokeWidth="2.5"
                 points={s.points
-                  .filter((p) => Number.isFinite(Number(p.value)))
-                  .map((p) => `${x(p.index)},${y(p.value)}`)
+                  .filter((p) => Number.isFinite(p.plotted))
+                  .map((p) => `${x(p.index)},${y(p.plotted)}`)
                   .join(" ")}
               />
               {s.points
-                .filter((p) => Number.isFinite(Number(p.value)))
+                .filter((p) => Number.isFinite(p.plotted))
                 .map((p) => (
                   <circle
                     key={p.commit}
                     cx={x(p.index)}
-                    cy={y(p.value)}
+                    cy={y(p.plotted)}
                     r="4.5"
                     fill={colors[index % colors.length]}
                   >
                     <title>
-                      {s.row}: {p.value} {unit}, {p.commit}
+                      {s.row}: {p.value} {p.unit}, {p.commit}
                     </title>
                   </circle>
                 ))}
@@ -757,9 +759,9 @@ function HistoryGraph({
                   <td>
                     <code>{p.commit.slice(0, 8)}</code>
                   </td>
-                  <td>{readable(p.value, unit)}</td>
+                  <td>{readable(p.value, p.unit)}</td>
                   <td>
-                    {p.value} {unit}
+                    {p.value} {p.unit}
                   </td>
                   <td>
                     <button className="link" onClick={() => open(p.execution)}>

@@ -28,6 +28,7 @@ export function points(commits, executions, dataset, column, row) {
         commit,
         index,
         value: item.values[column],
+        unit: measurement.dataset.columns.find((c) => c.id === column)?.unit,
         execution: execution.context.executionId,
       },
     ];
@@ -44,4 +45,30 @@ export function readable(value, unit) {
     return `${(numeric / 1024 ** power).toLocaleString("en", { maximumFractionDigits: 3 })} ${["B", "KiB", "MiB", "GiB"][power]}${unit.endsWith("/s") ? "/s" : ""}`;
   }
   return `${numeric.toLocaleString("en", { maximumFractionDigits: 6 })} ${unit}`;
+}
+
+// Conversion is only for graph coordinates. Exact stored values stay in tables.
+export function graphValue(value, source, target) {
+  const sizes = {
+    B: 1,
+    kB: 1e3,
+    MB: 1e6,
+    GB: 1e9,
+    KiB: 1024,
+    MiB: 1024 ** 2,
+    GiB: 1024 ** 3,
+  };
+  const times = { ns: 1e-9, μs: 1e-6, ms: 1e-3, s: 1 };
+  const unit = (name) => {
+    if (name in sizes) return ["size", sizes[name]];
+    if (name in times) return ["time", times[name]];
+    if (name?.endsWith("/s") && name.slice(0, -2) in sizes)
+      return ["byte-rate", sizes[name.slice(0, -2)]];
+    if (["count", "%", "unitless", "ops/s"].includes(name)) return [name, 1];
+    return [];
+  };
+  const [sourceKind, sourceScale] = unit(source);
+  const [targetKind, targetScale] = unit(target);
+  if (!sourceKind || sourceKind !== targetKind) return NaN;
+  return (Number(value) * sourceScale) / targetScale;
 }
