@@ -1,6 +1,7 @@
 import { defineConfig } from "@rspress/core";
 import { readFileSync } from "node:fs";
 import registry from "./i18n/locales.json";
+import { services } from "./services";
 
 const locales = registry.locales.map((locale) => {
   const messages: Record<string, string> = JSON.parse(
@@ -31,41 +32,21 @@ const locales = registry.locales.map((locale) => {
           ],
         },
       ],
-      [`${prefix}/services/delcore/`]: [
-        {
-          text: "Delcore",
-          items: [
-            { text: messages.overview, link: `${prefix}/services/delcore/` },
-          ],
-        },
-      ],
-      [`${prefix}/services/devbase/`]: [
-        {
-          text: "DevBase",
-          items: [
-            { text: messages.overview, link: `${prefix}/services/devbase/` },
-          ],
-        },
-      ],
-      [`${prefix}/services/git-tracker/`]: [
-        {
-          text: "Git Tracker",
-          items: [
-            {
-              text: messages.overview,
-              link: `${prefix}/services/git-tracker/`,
-            },
-          ],
-        },
-      ],
+      ...Object.fromEntries(
+        services.map(({ id }) => [
+          `${prefix}/services/${id}/`,
+          [{ text: messages.overview, link: `${prefix}/services/${id}/` }],
+        ]),
+      ),
       [`${prefix}/services/`]: [
         {
           text: messages.services,
           items: [
             { text: messages.overview, link: `${prefix}/services/` },
-            { text: "Delcore", link: `${prefix}/services/delcore/` },
-            { text: "DevBase", link: `${prefix}/services/devbase/` },
-            { text: "Git Tracker", link: `${prefix}/services/git-tracker/` },
+            ...services.map(({ id, name }) => ({
+              text: name,
+              link: `${prefix}/services/${id}/`,
+            })),
           ],
         },
       ],
