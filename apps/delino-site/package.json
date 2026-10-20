@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "rsbuild dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
     "build": "pnpm i18n:check && rsbuild build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\" && cp \"../../packages/ui/LICENSE.shadcn\" \"dist/LICENSE.shadcn\"",
     "typecheck": "tsc --noEmit",
     "test": "pnpm i18n:check && pnpm typecheck && pnpm build",

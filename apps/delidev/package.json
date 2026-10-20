@@ -5,8 +5,8 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "rsbuild dev",
-    "dev:desktop": "node ../../scripts/tauri-cli.mjs -- dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- node ../../scripts/tauri-cli.mjs -- dev",
     "build": "rsbuild build",
     "build:frontend": "rsbuild build",
     "build:native": "node ../../scripts/tauri-cli.mjs -- build --no-bundle",

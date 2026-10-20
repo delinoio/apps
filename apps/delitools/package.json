@@ -5,8 +5,8 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "rsbuild dev",
-    "dev:desktop": "node ../../scripts/tauri-cli.mjs -- dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- node ../../scripts/tauri-cli.mjs -- dev",
     "build": "rsbuild build",
     "build:frontend": "rsbuild build",
     "build:native": "node ../../scripts/tauri-cli.mjs -- build --no-bundle",
@@ -15,8 +15,8 @@
     "ci:checks": "pnpm test",
     "mobile:android:init": "node scripts/mobile.mjs android init",
     "mobile:ios:init": "node scripts/mobile.mjs ios init",
-    "dev:android": "node scripts/mobile.mjs android dev",
-    "dev:ios": "node scripts/mobile.mjs ios dev",
+    "dev:android": "infisical run --env=dev --project-config-dir=../.. -- node scripts/mobile.mjs android dev",
+    "dev:ios": "infisical run --env=dev --project-config-dir=../.. -- node scripts/mobile.mjs ios dev",
     "build:android": "node scripts/mobile.mjs android build",
     "build:ios": "node scripts/mobile.mjs ios build"
   },
