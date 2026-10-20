@@ -213,7 +213,7 @@ Server development uses `CONFIG` for the operator-owned JSON configuration path.
 
 ## Local development
 
-The root [development Compose procedure](repository-workflow-contract.md#local-development-databases) provides a local PostgreSQL instance and explicit migration commands.
+The root [development Compose procedure](repository-workflow-contract.md#local-development-databases) provides a local PostgreSQL instance and explicit migration commands. Root `pnpm dev` applies the resolved Compose database URL after Infisical injection through the shared API launcher. The launcher creates a private temporary copy of the source `CONFIG` with only `database_url` replaced and removes it on exit; it preserves the original file and all other settings. Direct service-local development has no Compose override. Follow the [environment contract](repository-environment-contract.md#local-development-injection) for precedence and temporary-file ownership.
 
 The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 

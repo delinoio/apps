@@ -10,7 +10,15 @@ Install the [Infisical CLI](https://infisical.com/docs/cli/overview), run `infis
 
 Every app-local `dev` and `dev:*` script and Go API `dev` script wraps its development command with `infisical run --env=dev --project-config-dir=../.. --`. The CLI fetches variables from the linked project's `dev` environment and default secret path `/`, then injects them into the child process. No project ID, token or secret value is embedded in a package script. Native development hooks invoke the same wrapped frontend scripts. CLI installation, authentication and access to the development project are prerequisites; injection failures stop startup.
 
-Root `pnpm dev` delegates to these workspace scripts through Turborepo, so each workspace fetches its variables after Turborepo starts its task. Build, test, localization and release commands do not use this injection. Keep service, production and signing credentials out of frontend development secrets. Only public client configuration may enter browser bundles.
+Root `pnpm dev` resolves the local database URLs from `docker compose config --format json`, waits for Compose, then delegates to the workspace scripts through Turborepo. The reserved `DEV_COMPOSE_DATABASE_URLS` handoff is passed only to the two API development tasks; do not define it in Infisical or service environment files. Each workspace still fetches its Infisical variables after Turborepo starts its task.
+
+After injection, the API development launcher applies the owning Compose database URL with higher priority than Infisical, the parent shell and the service-local `.env`. Git Tracker receives `DATABASE_URL`. Delcore receives `CONFIG` pointing to a private temporary copy of its existing JSON configuration with only `database_url` replaced. The source `CONFIG` is read from the injected/process environment, falling back to the service-local `.env`. The original JSON file is never changed.
+
+Temporary configuration uses an owner-only directory and file outside the checkout and is removed on normal exit, startup failure or handled termination. A force-killed launcher cannot clean up; remove its temporary directory manually. Database URLs and configuration contents must not be logged.
+
+Root database port overrides are resolved before Infisical injection, so remote database settings cannot redirect this local workflow. Direct service-local development and root `pnpm dev:portless` have no handoff and retain their existing configuration behavior.
+
+Build, test, localization and release commands do not use this injection. Keep service, production and signing credentials out of frontend development secrets. Only public client configuration may enter browser bundles.
 
 ## Turborepo remote cache
 

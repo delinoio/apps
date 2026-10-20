@@ -30,7 +30,12 @@
     "@delinoio/delcore-api#dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["CONFIG", "OTEL_*", "NO_COLOR"]
+      "passThroughEnv": [
+        "CONFIG",
+        "OTEL_*",
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS"
+      ]
     },
     "@delinoio/git-tracker-api#dev": {
       "cache": false,
@@ -50,7 +55,8 @@
         "CLIENT_SECRET",
         "ALERT_*",
         "OTEL_*",
-        "NO_COLOR"
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS"
       ]
     },
     "fixkey-desktop#build": {
