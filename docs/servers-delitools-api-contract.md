@@ -132,4 +132,3 @@ Update the project index, protocol and delcore contracts with boundary changes. 
 When Delcore serves DeliTools, operators must configure both `USAGE_LATENESS_SECONDS` and `REPORTING_GRACE_SECONDS` to at least 2592000 (30 days). Keep raw usage and webhook retention at least as long as their corresponding reporting windows, as required by Delcore configuration validation. The Delcore `.env.example` uses these DeliTools-compatible windows. Verify these settings before enabling paid DeliTools traffic and after configuration changes; shorter windows are supported only for installations that do not serve DeliTools. Do not shorten them while DeliTools attempts remain eligible for delivery.
 
 Catalog synchronization retains immutable model/price/effective-time versions. Admission selects the latest version effective at the initial request start, including when authorization overlaps a synchronization. Forward migrations preserve existing catalog rows.
-
