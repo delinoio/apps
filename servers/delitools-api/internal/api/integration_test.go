@@ -1202,3 +1202,23 @@ func TestAssociationStorageFailureIsInternal(t *testing.T) {
 		t.Fatalf("partial association: %q %v", generation, err)
 	}
 }
+
+func TestReadinessRequiresInitialCatalog(t *testing.T) {
+	s, _, _, _ := setupAPI(t)
+	ctx := context.Background()
+	if err := s.DB.CheckReadiness(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Pool.Exec(ctx, "DELETE FROM catalog"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.CheckReadiness(ctx); err == nil {
+		t.Fatal("empty catalog ready")
+	}
+	if err := s.SyncPrices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.CheckReadiness(ctx); err != nil {
+		t.Fatal(err)
+	}
+}

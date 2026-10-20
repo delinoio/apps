@@ -165,3 +165,19 @@ func begin(ctx context.Context, s *Store, fn func(pgx.Tx) error) error {
 	}
 	return tx.Commit(ctx)
 }
+
+// Readiness requires at least one successfully synchronized price snapshot.
+// Failed refreshes do not invalidate an existing catalog.
+func (s *Store) CheckReadiness(ctx context.Context) error {
+	if err := s.CheckSchema(ctx); err != nil {
+		return err
+	}
+	var populated bool
+	if err := s.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM catalog)").Scan(&populated); err != nil {
+		return err
+	}
+	if !populated {
+		return errors.New("catalog is not initialized")
+	}
+	return nil
+}

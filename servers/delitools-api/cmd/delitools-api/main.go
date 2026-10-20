@@ -158,7 +158,7 @@ func run() (err error) {
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		check, stop := context.WithTimeout(r.Context(), timeout)
 		defer stop()
-		if ctx.Err() != nil || db.CheckSchema(check) != nil {
+		if ctx.Err() != nil || db.CheckReadiness(check) != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
