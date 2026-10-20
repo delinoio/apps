@@ -6,17 +6,19 @@ Root `pnpm dev` runs every workspace `dev` script concurrently through Turborepo
 
 ## Named local development URLs
 
-The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends through the existing Turbo `dev` task and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
+The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends and both Go APIs through the existing Turbo `dev` tasks and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server and Air-managed APIs. Portless does not change the servers' listeners: keep Delcore configured on `127.0.0.1:8080` and Git Tracker on `127.0.0.1:46321`. Prepare each API's database, schema and provider configuration before starting, as for root `pnpm dev`. Each task retains its Infisical injection and the API environment allowlists. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
 
-| Application | Main-checkout URL               | Upstream          |
-| ----------- | ------------------------------- | ----------------- |
-| DeliDev     | `https://delidev.localhost`     | `127.0.0.1:46311` |
-| DeliTools   | `https://delitools.localhost`   | `127.0.0.1:46312` |
-| DevBase     | `https://devbase.localhost`     | `127.0.0.1:46313` |
-| Delino Site | `https://delino-site.localhost` | `127.0.0.1:46314` |
-| Delino Docs | `https://delino-docs.localhost` | `127.0.0.1:46315` |
-| FixKey      | `https://fixkey.localhost`      | `127.0.0.1:46316` |
-| Git Tracker | `https://git-tracker.localhost` | `127.0.0.1:46320` |
+| Application     | Main-checkout URL                   | Upstream          |
+| --------------- | ----------------------------------- | ----------------- |
+| DeliDev         | `https://delidev.localhost`         | `127.0.0.1:46311` |
+| DeliTools       | `https://delitools.localhost`       | `127.0.0.1:46312` |
+| DevBase         | `https://devbase.localhost`         | `127.0.0.1:46313` |
+| Delino Site     | `https://delino-site.localhost`     | `127.0.0.1:46314` |
+| Delino Docs     | `https://delino-docs.localhost`     | `127.0.0.1:46315` |
+| FixKey          | `https://fixkey.localhost`          | `127.0.0.1:46316` |
+| Git Tracker     | `https://git-tracker.localhost`     | `127.0.0.1:46320` |
+| Delcore API     | `https://delcore-api.localhost`     | `127.0.0.1:8080`  |
+| Git Tracker API | `https://git-tracker-api.localhost` | `127.0.0.1:46321` |
 
 Portless prefixes names with the branch in linked Git worktrees. Use the URLs printed at startup. Upstream ports remain fixed to preserve native shell development URLs and strict conflict handling; different worktrees cannot serve the same app concurrently on those ports.
 
@@ -28,17 +30,21 @@ Before the first session, run `pnpm exec portless proxy start` from an interacti
 
 The Git Tracker frontend also needs an API URL with the proxy's scheme and an exact matching allowed web origin. The direct-loopback values in the app and server `.env.example` files apply to direct development, not the Portless URLs. An HTTPS page cannot call the HTTP loopback API, and an HTTP Portless page still needs its own allowed origin.
 
-After starting the proxy, register the separately started API's fixed loopback listener from the repository root:
+Root `pnpm dev:portless` starts the Git Tracker API through its Air task and registers its route automatically. For the default HTTPS proxy in the main checkout, set `PUBLIC_GIT_TRACKER_API_URL=https://git-tracker-api.localhost` in the frontend's Infisical development configuration, or in the uncommitted `apps/git-tracker/.env.local` when the injected environment does not define it. Set `GIT_TRACKER_WEB_ORIGIN=https://git-tracker.localhost` in the API's Infisical development configuration, process environment or ignored service-local `.env`. Keep its other required settings under the [server contract](servers-git-tracker-api-contract.md). Restart the frontend and API after changing their settings. Portless does not provision databases or supply credentials.
+
+In a linked worktree, both web and API routes receive the branch prefix. Set `PUBLIC_GIT_TRACKER_API_URL` to the printed Git Tracker API origin and `GIT_TRACKER_WEB_ORIGIN` to the exact printed frontend origin. With the HTTP proxy on port 1355, the main-checkout API URL is `http://git-tracker-api.localhost:1355`; a linked worktree also includes its branch prefix. Include the scheme and any non-default proxy port, with no path or trailing slash. Register the frontend's `/callback` URL and sign-out origin in the development Logto application for the selected origin; authentication still requires its normal public application configuration.
+
+When running the API separately without a root Portless session, an optional static route remains available after starting the proxy:
 
 ```sh
 pnpm exec portless alias git-tracker-api 46321
 ```
 
-For the default HTTPS proxy in the main checkout, set `PUBLIC_GIT_TRACKER_API_URL=https://git-tracker-api.localhost` in the uncommitted `apps/git-tracker/.env.local`. Set `GIT_TRACKER_WEB_ORIGIN=https://git-tracker.localhost` in the API process environment, then start the API with its other required settings under the [server contract](servers-git-tracker-api-contract.md). Restart the frontend and API after changing their settings. Root `pnpm dev:portless` starts the frontend; it does not start the API or supply its credentials.
+This explicit alias has no automatic worktree prefix and persists until removed with `pnpm exec portless alias --remove git-tracker-api`. Remove an existing static alias before starting root `pnpm dev:portless`, which manages its own routes and removes them on shutdown. Point the frontend at the static alias only while using that separate API workflow. Fixed upstream ports still permit only one local instance. Restore direct-loopback API and allowed-origin settings before returning to direct frontend development.
 
-In a linked worktree, set `GIT_TRACKER_WEB_ORIGIN` to the exact frontend origin printed by Portless, including its branch prefix. The explicit `git-tracker-api` alias has no automatic worktree prefix. With the HTTP proxy on port 1355, use `PUBLIC_GIT_TRACKER_API_URL=http://git-tracker-api.localhost:1355` and set `GIT_TRACKER_WEB_ORIGIN` to the printed `http://<frontend-host>:1355` origin. Include the scheme and any non-default proxy port, with no path or trailing slash. Register the frontend's `/callback` URL and sign-out origin in the development Logto application for the selected origin; authentication still requires its normal public application configuration.
+The local Delcore route supports server and command-line clients. The current Delcore handler does not provide CORS preflight responses or allow-origin headers, so browsers cannot make authenticated Connect calls to it from a different frontend origin. Do not set `PUBLIC_DELCORE_API_URL` to the local Portless origin for this workflow. Browser access to local Delcore requires separate CORS support; a registered Logto origin alone does not enable it. Keep `PUBLIC_DELCORE_RESOURCE` set to the resource identifier registered with Logto.
 
-The API alias persists after the frontend session stops. Remove it with `pnpm exec portless alias --remove git-tracker-api` when finished. The alias and API listener are shared by these instructions; fixed upstream ports still permit only one local instance. Restore direct-loopback API and allowed-origin settings before returning to direct frontend development.
+For server-to-server calls from Git Tracker to local Delcore, set `GIT_TRACKER_DELCORE_URL` to the printed Delcore API origin and retain its registered `GIT_TRACKER_DELCORE_RESOURCE`. Portless provides transport routing; it does not change resource identifiers or register development origins with identity providers. Follow the [Delcore server contract](servers-delcore-api-contract.md#local-development) for its remaining settings.
 
 ## Validation
 

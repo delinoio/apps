@@ -18,6 +18,16 @@
       "name": "git-tracker",
       "appPort": 46320,
       "proxy": true
+    },
+    "servers/delcore-api": {
+      "name": "delcore-api",
+      "appPort": 8080,
+      "proxy": true
+    },
+    "servers/git-tracker-api": {
+      "name": "git-tracker-api",
+      "appPort": 46321,
+      "proxy": true
     }
   }
 }
