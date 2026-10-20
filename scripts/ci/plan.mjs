@@ -17,7 +17,7 @@ export function select(paths) {
       shared ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore))/u.test(
+        /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore|protos-delcore-v1-contract\.md$))/u.test(
           path,
         ),
       ),
@@ -25,7 +25,7 @@ export function select(paths) {
       shared ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker))/u.test(
+        /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker|protos-git-tracker-v1-contract\.md$))/u.test(
           path,
         ),
       ),

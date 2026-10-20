@@ -159,3 +159,28 @@ test("server-wide license and instructions select both servers", () => {
     assert.equal(selection.fixkey, false);
   }
 });
+
+test("protocol contract changes select their owning server", () => {
+  for (const [path, owner, other] of [
+    ["docs/protos-delcore-v1-contract.md", "delcore_api", "git_tracker_api"],
+    [
+      "docs/protos-git-tracker-v1-contract.md",
+      "git_tracker_api",
+      "delcore_api",
+    ],
+  ]) {
+    const selection = select([path]);
+    assert.equal(selection[owner], true, path);
+    assert.equal(selection[other], false, path);
+    for (const frontend of [
+      "fixkey",
+      "devbase",
+      "delino_site",
+      "delino_docs",
+      "delidev",
+      "delitools",
+    ]) {
+      assert.equal(selection[frontend], false, `${path}: ${frontend}`);
+    }
+  }
+});
