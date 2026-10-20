@@ -36,7 +36,7 @@ Use safe correlation IDs and bounded reason codes. No raw message logging.
 
 ## Build and Test
 
-Run root Buf lint, generation, freshness, FILE breaking checks and Go tests including the consumer example. Verify server behavior with PostgreSQL and mocked providers in this checkout.
+Run root Buf lint, generation, freshness, FILE breaking checks and protocol Go tests. The server and consumer example currently have reserved skeletons. Once their implementations are present, also run consumer Go tests and verify server behavior with PostgreSQL and mocked providers in this checkout.
 
 ## Dependencies and Integrations
 
