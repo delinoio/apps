@@ -126,6 +126,8 @@ message Usage {
   AiUsage ai_usage = 9;
 }
 // Trusted DeliTools reports use USD public catalog prices, never provider charges.
+// Usage.meter must be translator (1.15 markup) or extractor (1.30 markup).
+// Other meter values are invalid for this payload.
 message AiUsage {
   string model = 1;
   google.protobuf.Timestamp price_effective_at = 2;

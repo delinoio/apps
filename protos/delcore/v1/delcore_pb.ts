@@ -454,6 +454,8 @@ export const UsageSchema: GenMessage<Usage> = /*@__PURE__*/
 
 /**
  * Trusted DeliTools reports use USD public catalog prices, never provider charges.
+ * Usage.meter must be translator (1.15 markup) or extractor (1.30 markup).
+ * Other meter values are invalid for this payload.
  *
  * @generated from message delcore.v1.AiUsage
  */

@@ -1332,6 +1332,8 @@ func (x *Usage) GetAiUsage() *AiUsage {
 }
 
 // Trusted DeliTools reports use USD public catalog prices, never provider charges.
+// Usage.meter must be translator (1.15 markup) or extractor (1.30 markup).
+// Other meter values are invalid for this payload.
 type AiUsage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Model            string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`

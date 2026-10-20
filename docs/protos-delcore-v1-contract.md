@@ -64,3 +64,5 @@ The registered service named `delitools` uses call-time public Gateway prices fo
 DeliTools may authorize tenant-owned service keys independently of the issuing member. Personal-key management requires current membership; service-key management requires current Owner/Admin. User execution still requires the requested capability. These modes are restricted to the registered DeliTools service and do not grant platform authority.
 
 DeliTools deletes pending delivery and unknown-usage records 30 days after their first creation, regardless of state. This explicit exception permits permanent loss of unreported charges; it never deletes delcore's accepted events, replay protection or ledger entries. Other consumers retain pending reports under their existing contracts.
+
+For DeliTools AI reports, `Usage.meter` is an immutable operation identifier: `translator` selects the 1.15 multiplier and `extractor` selects the 1.30 multiplier. No other meter is valid for an AI payload. The selected meter, actual tokens and price snapshot participate in the durable event fingerprint; changing the meter for an existing event is an input conflict.
