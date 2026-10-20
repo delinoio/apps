@@ -275,7 +275,7 @@ test("web workflows validate main ancestry before allocating protected deploymen
         },
       ]);
       assert.equal(job.strategy["fail-fast"], false);
-      assert.equal(job.environment, "delino-production");
+      assert.equal(job.environment, "delino-site-production");
       const configuration = job.steps.find(
         (step) => step.name === "Validate deployment configuration",
       );
