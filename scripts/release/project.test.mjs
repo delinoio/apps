@@ -299,7 +299,9 @@ test("web workflows validate main ancestry before allocating protected deploymen
         /--project-name=\$\{\{ vars\[matrix\.pages_project_variable\] \}\}/u,
       );
       assert.equal(
-        job.steps.find((step) => step.run === "pnpm test")["working-directory"],
+        job.steps.find((step) => step.run === "pnpm build")[
+          "working-directory"
+        ],
         "apps/${{ matrix.app }}",
       );
     } else {
