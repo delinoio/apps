@@ -2,9 +2,7 @@
 // Build-time notice assembly. This never runs in the desktop application.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -13,6 +11,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectNodeLicenses } from "./fixkey-node-licenses.mjs";
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
 const output = path.join(root, "apps/fixkey-app/src-tauri/gen/licenses");
 rmSync(output, { recursive: true, force: true });
@@ -196,42 +195,12 @@ while (pending.length) {
     if (dependency.dep_kinds.some((kind) => kind.kind !== "dev"))
       pending.push(dependency.pkg);
 }
-const nodeSeen = new Set();
-function nodePackage(file) {
-  const directory = path.dirname(file);
-  if (nodeSeen.has(directory)) return;
-  nodeSeen.add(directory);
-  const pkg = JSON.parse(readFileSync(file, "utf8"));
-  inventory.push({
-    name: pkg.name,
-    version: pkg.version,
-    license: pkg.license,
-    source: `https://www.npmjs.com/package/${pkg.name}/v/${pkg.version}`,
-    notices: notices(directory, null, false),
-  });
-  const require = createRequire(file);
-  for (const name of Object.keys(pkg.dependencies ?? {})) {
-    let manifest;
-    try {
-      manifest = require.resolve(`${name}/package.json`);
-    } catch {
-      let entry = path.dirname(require.resolve(name));
-      while (!existsSync(path.join(entry, "package.json"))) {
-        const parent = path.dirname(entry);
-        if (parent === entry)
-          throw new Error("fixkey-js-license-owner-missing");
-        entry = parent;
-      }
-      manifest = path.join(entry, "package.json");
-    }
-    nodePackage(manifest);
-  }
-}
-const appManifest = path.join(root, "apps/fixkey-app/package.json"),
-  app = JSON.parse(readFileSync(appManifest, "utf8")),
-  require = createRequire(appManifest);
-for (const name of Object.keys(app.dependencies))
-  nodePackage(require.resolve(`${name}/package.json`));
+inventory.push(
+  ...collectNodeLicenses(
+    path.join(root, "apps/fixkey-app/package.json"),
+    notices,
+  ),
+);
 inventory.sort((a, b) =>
   `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`),
 );
