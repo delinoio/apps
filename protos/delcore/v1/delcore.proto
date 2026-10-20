@@ -140,6 +140,7 @@ message Price {
   PriceKind kind = 10;
   string key = 11;
   string stable_id = 12;
+  bool active = 13;
 }
 enum MeterAggregation {
   METER_AGGREGATION_UNSPECIFIED = 0;

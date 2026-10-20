@@ -287,6 +287,48 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, plan.Msg.Plan.Id, servic
 	}
 }
 
+func TestCatalogReadMarksActivePriceVersion(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare active price service", Service: &pb.Service{Key: "active-price-service", Name: "Active Price Service", ClientId: "active-price", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare active price plan", Plan: &pb.Plan{Key: "active-price-plan", Name: "Active Price Plan", Free: true, DefaultFree: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare active price meter", Meter: &pb.Meter{ServiceId: service.Msg.Service.Id, Name: "requests"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	priceInput := &pb.Price{Key: "active-price", PlanId: plan.Msg.Plan.Id, ServiceId: service.Msg.Service.Id, Meter: "requests", UnitPrice: "1", Included: "0", Currency: "USD"}
+	first, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "create first active price", Price: priceInput}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	priceInput.UnitPrice = "2"
+	second, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "create second active price", Price: priceInput}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstActive, secondActive bool
+	for _, price := range catalog.Msg.Prices {
+		switch price.Id {
+		case first.Msg.Price.Id:
+			firstActive = price.Active
+		case second.Msg.Price.Id:
+			secondActive = price.Active
+		}
+	}
+	if firstActive || !secondActive {
+		t.Fatalf("catalog active markers were incorrect: first=%t second=%t", firstActive, secondActive)
+	}
+}
+
 func TestLegacyPlanMutationSnapshotsTenants(t *testing.T) {
 	db, client, _ := setup(t)
 	ctx := context.Background()

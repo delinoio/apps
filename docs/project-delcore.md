@@ -31,6 +31,8 @@ PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authoriz
 
 Catalog entities use stable, scoped keys and UUID v7 identities. Billing and feature definitions have immutable semantic versions. A tenant selects versions when its subscription changes; a renewal retains those selections. The [server contract](servers-delcore-api-contract.md) owns catalog selection and payment-confirmation rules, and the [protocol contract](protos-delcore-v1-contract.md) owns the public types.
 
+Catalog reads identify the active immutable price version for each stable price key so subscription clients can select the version accepted by the server.
+
 ## Change Policy
 
 When the boundary changes, update the local protocol and server contracts and this project index in the same change. Describe interface effects and client/server integration validation in the pull request. Update instruction files only for ownership or development-rule changes. Record validation and remaining limits in PRs, issues or CI artifacts.
