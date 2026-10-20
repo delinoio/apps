@@ -13,7 +13,7 @@ Repository-owned source, package metadata and future release artifacts use Apach
 - New persisted entities should use UUID v7 identifiers by default. Use another identifier shape only when there is a documented compatibility, storage, protocol, or product reason.
 - AI-based search should use Cloudflare AI Search by default. Use another search backend only when the project contract documents the reason and migration boundary.
 - When a new project does not specify its primary language, default to Golang.
-- Build tooling should prefer the Rspack family when it fits the runtime and deployment target, including Rsbuild and Rspress for app and documentation surfaces.
+- Tooling should prefer the Rspack and Rstack families when they fit the runtime and deployment target, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Any exception must be documented in its project contract.
 - File handling should use Cloudflare R2 for object storage plus signed URLs for upload and download access by default. Use another storage or access pattern only when the project contract documents the reason, trust boundary, and migration considerations.
 

@@ -79,7 +79,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - New persisted entities should use UUID v7 identifiers by default unless a documented compatibility, storage, protocol, or product issue requires another ID shape.
 - AI-based search should default to Cloudflare AI Search unless a project contract documents a different backend and migration boundary.
 - When a new project does not specify its primary language, default to Golang.
-- Prefer Rspack-family build tools when possible, including Rsbuild and Rspress for app and documentation surfaces.
+- Prefer tools from the Rspack and Rstack families when possible, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Existing documented exceptions remain valid until their project contract changes.
 - File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless a project contract documents another storage or access pattern.
 
