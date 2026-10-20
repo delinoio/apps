@@ -97,6 +97,9 @@ const (
 	// DelcoreServiceAuthorizeProcedure is the fully-qualified name of the DelcoreService's Authorize
 	// RPC.
 	DelcoreServiceAuthorizeProcedure = "/delcore.v1.DelcoreService/Authorize"
+	// DelcoreServiceCheckTenantLifecycleProcedure is the fully-qualified name of the DelcoreService's
+	// CheckTenantLifecycle RPC.
+	DelcoreServiceCheckTenantLifecycleProcedure = "/delcore.v1.DelcoreService/CheckTenantLifecycle"
 	// DelcoreServiceReportUsageProcedure is the fully-qualified name of the DelcoreService's
 	// ReportUsage RPC.
 	DelcoreServiceReportUsageProcedure = "/delcore.v1.DelcoreService/ReportUsage"
@@ -162,6 +165,7 @@ type DelcoreServiceClient interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
@@ -321,6 +325,12 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 			connect.WithClientOptions(opts...),
 		),
+		checkTenantLifecycle: connect.NewClient[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse](
+			httpClient,
+			baseURL+DelcoreServiceCheckTenantLifecycleProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("CheckTenantLifecycle")),
+			connect.WithClientOptions(opts...),
+		),
 		reportUsage: connect.NewClient[v1.ReportUsageRequest, v1.ReportUsageResponse](
 			httpClient,
 			baseURL+DelcoreServiceReportUsageProcedure,
@@ -410,42 +420,43 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // delcoreServiceClient implements DelcoreServiceClient.
 type delcoreServiceClient struct {
-	deleteGroup        *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
-	putMeter           *connect.Client[v1.PutMeterRequest, v1.PutMeterResponse]
-	putAddOn           *connect.Client[v1.PutAddOnRequest, v1.PutAddOnResponse]
-	listBillingHistory *connect.Client[v1.ListBillingHistoryRequest, v1.ListBillingHistoryResponse]
-	getCurrentUser     *connect.Client[v1.GetCurrentUserRequest, v1.GetCurrentUserResponse]
-	createTenant       *connect.Client[v1.CreateTenantRequest, v1.CreateTenantResponse]
-	getTenant          *connect.Client[v1.GetTenantRequest, v1.GetTenantResponse]
-	listMembers        *connect.Client[v1.ListMembersRequest, v1.ListMembersResponse]
-	setMemberRoles     *connect.Client[v1.SetMemberRolesRequest, v1.SetMemberRolesResponse]
-	removeMember       *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
-	createInvitation   *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
-	acceptInvitation   *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
-	revokeInvitation   *connect.Client[v1.RevokeInvitationRequest, v1.RevokeInvitationResponse]
-	transferOwnership  *connect.Client[v1.TransferOwnershipRequest, v1.TransferOwnershipResponse]
-	acceptOwnership    *connect.Client[v1.AcceptOwnershipRequest, v1.AcceptOwnershipResponse]
-	setGroup           *connect.Client[v1.SetGroupRequest, v1.SetGroupResponse]
-	listGroups         *connect.Client[v1.ListGroupsRequest, v1.ListGroupsResponse]
-	getCatalog         *connect.Client[v1.GetCatalogRequest, v1.GetCatalogResponse]
-	putService         *connect.Client[v1.PutServiceRequest, v1.PutServiceResponse]
-	putPlan            *connect.Client[v1.PutPlanRequest, v1.PutPlanResponse]
-	createPrice        *connect.Client[v1.CreatePriceRequest, v1.CreatePriceResponse]
-	authorize          *connect.Client[v1.AuthorizeRequest, v1.AuthorizeResponse]
-	reportUsage        *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
-	correctUsage       *connect.Client[v1.CorrectUsageRequest, v1.CorrectUsageResponse]
-	listUsage          *connect.Client[v1.ListUsageRequest, v1.ListUsageResponse]
-	listLedger         *connect.Client[v1.ListLedgerRequest, v1.ListLedgerResponse]
-	requestTopUp       *connect.Client[v1.RequestTopUpRequest, v1.RequestTopUpResponse]
-	setAutoTopUp       *connect.Client[v1.SetAutoTopUpRequest, v1.SetAutoTopUpResponse]
-	changeSubscription *connect.Client[v1.ChangeSubscriptionRequest, v1.ChangeSubscriptionResponse]
-	cancelSubscription *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
-	deleteTenant       *connect.Client[v1.DeleteTenantRequest, v1.DeleteTenantResponse]
-	withdraw           *connect.Client[v1.WithdrawRequest, v1.WithdrawResponse]
-	setTenantBlocked   *connect.Client[v1.SetTenantBlockedRequest, v1.SetTenantBlockedResponse]
-	listJobs           *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
-	retryJob           *connect.Client[v1.RetryJobRequest, v1.RetryJobResponse]
-	listAudit          *connect.Client[v1.ListAuditRequest, v1.ListAuditResponse]
+	deleteGroup          *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
+	putMeter             *connect.Client[v1.PutMeterRequest, v1.PutMeterResponse]
+	putAddOn             *connect.Client[v1.PutAddOnRequest, v1.PutAddOnResponse]
+	listBillingHistory   *connect.Client[v1.ListBillingHistoryRequest, v1.ListBillingHistoryResponse]
+	getCurrentUser       *connect.Client[v1.GetCurrentUserRequest, v1.GetCurrentUserResponse]
+	createTenant         *connect.Client[v1.CreateTenantRequest, v1.CreateTenantResponse]
+	getTenant            *connect.Client[v1.GetTenantRequest, v1.GetTenantResponse]
+	listMembers          *connect.Client[v1.ListMembersRequest, v1.ListMembersResponse]
+	setMemberRoles       *connect.Client[v1.SetMemberRolesRequest, v1.SetMemberRolesResponse]
+	removeMember         *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
+	createInvitation     *connect.Client[v1.CreateInvitationRequest, v1.CreateInvitationResponse]
+	acceptInvitation     *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
+	revokeInvitation     *connect.Client[v1.RevokeInvitationRequest, v1.RevokeInvitationResponse]
+	transferOwnership    *connect.Client[v1.TransferOwnershipRequest, v1.TransferOwnershipResponse]
+	acceptOwnership      *connect.Client[v1.AcceptOwnershipRequest, v1.AcceptOwnershipResponse]
+	setGroup             *connect.Client[v1.SetGroupRequest, v1.SetGroupResponse]
+	listGroups           *connect.Client[v1.ListGroupsRequest, v1.ListGroupsResponse]
+	getCatalog           *connect.Client[v1.GetCatalogRequest, v1.GetCatalogResponse]
+	putService           *connect.Client[v1.PutServiceRequest, v1.PutServiceResponse]
+	putPlan              *connect.Client[v1.PutPlanRequest, v1.PutPlanResponse]
+	createPrice          *connect.Client[v1.CreatePriceRequest, v1.CreatePriceResponse]
+	authorize            *connect.Client[v1.AuthorizeRequest, v1.AuthorizeResponse]
+	checkTenantLifecycle *connect.Client[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse]
+	reportUsage          *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
+	correctUsage         *connect.Client[v1.CorrectUsageRequest, v1.CorrectUsageResponse]
+	listUsage            *connect.Client[v1.ListUsageRequest, v1.ListUsageResponse]
+	listLedger           *connect.Client[v1.ListLedgerRequest, v1.ListLedgerResponse]
+	requestTopUp         *connect.Client[v1.RequestTopUpRequest, v1.RequestTopUpResponse]
+	setAutoTopUp         *connect.Client[v1.SetAutoTopUpRequest, v1.SetAutoTopUpResponse]
+	changeSubscription   *connect.Client[v1.ChangeSubscriptionRequest, v1.ChangeSubscriptionResponse]
+	cancelSubscription   *connect.Client[v1.CancelSubscriptionRequest, v1.CancelSubscriptionResponse]
+	deleteTenant         *connect.Client[v1.DeleteTenantRequest, v1.DeleteTenantResponse]
+	withdraw             *connect.Client[v1.WithdrawRequest, v1.WithdrawResponse]
+	setTenantBlocked     *connect.Client[v1.SetTenantBlockedRequest, v1.SetTenantBlockedResponse]
+	listJobs             *connect.Client[v1.ListJobsRequest, v1.ListJobsResponse]
+	retryJob             *connect.Client[v1.RetryJobRequest, v1.RetryJobResponse]
+	listAudit            *connect.Client[v1.ListAuditRequest, v1.ListAuditResponse]
 }
 
 // DeleteGroup calls delcore.v1.DelcoreService.DeleteGroup.
@@ -558,6 +569,11 @@ func (c *delcoreServiceClient) Authorize(ctx context.Context, req *connect.Reque
 	return c.authorize.CallUnary(ctx, req)
 }
 
+// CheckTenantLifecycle calls delcore.v1.DelcoreService.CheckTenantLifecycle.
+func (c *delcoreServiceClient) CheckTenantLifecycle(ctx context.Context, req *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error) {
+	return c.checkTenantLifecycle.CallUnary(ctx, req)
+}
+
 // ReportUsage calls delcore.v1.DelcoreService.ReportUsage.
 func (c *delcoreServiceClient) ReportUsage(ctx context.Context, req *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
 	return c.reportUsage.CallUnary(ctx, req)
@@ -652,6 +668,7 @@ type DelcoreServiceHandler interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
@@ -807,6 +824,12 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceCheckTenantLifecycleHandler := connect.NewUnaryHandler(
+		DelcoreServiceCheckTenantLifecycleProcedure,
+		svc.CheckTenantLifecycle,
+		connect.WithSchema(delcoreServiceMethods.ByName("CheckTenantLifecycle")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServiceReportUsageHandler := connect.NewUnaryHandler(
 		DelcoreServiceReportUsageProcedure,
 		svc.ReportUsage,
@@ -937,6 +960,8 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceCreatePriceHandler.ServeHTTP(w, r)
 		case DelcoreServiceAuthorizeProcedure:
 			delcoreServiceAuthorizeHandler.ServeHTTP(w, r)
+		case DelcoreServiceCheckTenantLifecycleProcedure:
+			delcoreServiceCheckTenantLifecycleHandler.ServeHTTP(w, r)
 		case DelcoreServiceReportUsageProcedure:
 			delcoreServiceReportUsageHandler.ServeHTTP(w, r)
 		case DelcoreServiceCorrectUsageProcedure:
@@ -1060,6 +1085,10 @@ func (UnimplementedDelcoreServiceHandler) CreatePrice(context.Context, *connect.
 
 func (UnimplementedDelcoreServiceHandler) Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.Authorize is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.CheckTenantLifecycle is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {

@@ -26,6 +26,8 @@ Disabling automatic top-ups clears the settings and stops queued charges that ne
 
 Negative postpaid corrections carry forward against usage charges. Operators refund any remainder in Paddle on cancellation. Confirmed usage-line refunds clear the corresponding settlement balance; fixed subscription refunds do not clear usage debt.
 
+Consumer services with the `authorize` scope may call `CheckTenantLifecycle` for up to 100 known tenant IDs. Only IDs whose deletion is finalized are returned. Unknown IDs and pending deletion do not authorize cleanup. The result contains no tenant names or personal information. Consumers fail closed on request errors and delete their own retained tenant data only after explicit finalization.
+
 ## Storage
 
 Wire messages are not the database schema. Historical pricing and usage identities survive replay and corrections. Server retention boundaries are owned by the private server contract. Maintainers with servers access validate changes that affect retention; external contributors use the public wire requirements in this contract.
@@ -40,7 +42,7 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to the private servers repository and are run by maintainers with access. External contributors run the apps checks and report unperformed server integration checks in their pull request. Do not generate a TypeScript SDK.
+Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services belong to the private servers repository and are run by maintainers with access. External contributors run the apps checks and report unperformed server integration checks in their pull request. App-local TypeScript bindings may be generated for Git Tracker; do not publish a separate TypeScript SDK.
 
 ## Dependencies and Integrations
 

@@ -336,6 +336,14 @@ message AuthorizeResponse {
   bool allowed = 2;
   repeated BlockReason reasons = 3;
 }
+// Service-scoped lifecycle checks expose only finalized deletion for known IDs.
+message CheckTenantLifecycleRequest {
+  repeated string tenant_ids = 1;
+}
+message CheckTenantLifecycleResponse {
+  Metadata metadata = 1;
+  repeated string finalized_tenant_ids = 2;
+}
 message ReportUsageRequest {
   string request_key = 1;
   Usage usage = 2;
@@ -487,6 +495,7 @@ service DelcoreService {
   rpc PutPlan(PutPlanRequest) returns (PutPlanResponse);
   rpc CreatePrice(CreatePriceRequest) returns (CreatePriceResponse);
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);
   rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
   rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse);
   rpc ListUsage(ListUsageRequest) returns (ListUsageResponse);
