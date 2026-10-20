@@ -161,7 +161,7 @@ func ValidateOutput(s map[string]any, v any) bool {
 	if values, ok := s["enum"].([]any); ok {
 		found := false
 		for _, x := range values {
-			if reflect.DeepEqual(x, v) {
+			if enumEqual(x, v) {
 				found = true
 			}
 		}
@@ -228,4 +228,21 @@ func schemaBudget(root map[string]any) bool {
 		return properties <= 5000 && enums <= 1000 && chars <= 120000
 	}
 	return visit(root)
+}
+
+func enumEqual(a, b any) bool {
+	x, xok := a.(json.Number)
+	y, yok := b.(json.Number)
+	if xok || yok {
+		if !xok || !yok {
+			return false
+		}
+		xr, ok := new(big.Rat).SetString(string(x))
+		if !ok {
+			return false
+		}
+		yr, ok := new(big.Rat).SetString(string(y))
+		return ok && xr.Cmp(yr) == 0
+	}
+	return reflect.DeepEqual(a, b)
 }

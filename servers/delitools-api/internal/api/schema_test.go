@@ -63,3 +63,19 @@ func TestCatalogCategories(t *testing.T) {
 	}
 }
 func ptr(n uint64) *uint64 { return &n }
+
+func TestNumericEnumUsesExactEquality(t *testing.T) {
+	schema, err := ParseSchema(`{"type":"object","properties":{"x":{"type":"number","enum":[1,9007199254740993]}},"required":["x"],"additionalProperties":false}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{{"1", true}, {"1.0", true}, {"1e0", true}, {"9007199254740993.0", true}, {"9007199254740992", false}, {"1.01", false}, {`"1"`, false}} {
+		data, err := DecodeJSON([]byte(`{"x":` + tc.value + `}`))
+		if err != nil || ValidateOutput(schema, data) != tc.want {
+			t.Fatal(tc, err)
+		}
+	}
+}
