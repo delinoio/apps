@@ -130,7 +130,10 @@ func (w *Worker) cleanup(ctx context.Context, trace string) (tenants, projects i
 }
 
 func (w *Worker) knownTenants(ctx context.Context, after string) ([]string, error) {
-	rows, e := w.Pool.Query(ctx, "SELECT DISTINCT tenant_id::text FROM projects WHERE tenant_id>$1::uuid ORDER BY 1 LIMIT $2", after, TenantBatch)
+	// Keep the predicate, the distinct key and the ordering on the uuid column so that PostgreSQL
+	// streams distinct tenants from the tenant index and stops at the limit. Ordering the text
+	// cast instead sorts every remaining project row on each page. Cast only the result.
+	rows, e := w.Pool.Query(ctx, "SELECT page.tenant_id::text FROM (SELECT DISTINCT tenant_id FROM projects WHERE tenant_id>$1::uuid ORDER BY tenant_id LIMIT $2) AS page ORDER BY page.tenant_id", after, TenantBatch)
 	if e != nil {
 		return nil, e
 	}
