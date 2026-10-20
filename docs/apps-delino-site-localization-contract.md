@@ -8,7 +8,7 @@ English routes keep their existing paths. Other languages use `/<language>/`. La
 
 ## Translation workflow
 
-Run these commands from either owning app:
+Run these commands from the repository root or either owning app. At the root, `pnpm i18n:translate` and `pnpm i18n:check` run the corresponding command in every workspace that provides it, currently Delino Site and Delino Docs. Future apps participate by providing these package scripts. Workspaces without localization scripts are skipped. Generation runs sequentially to share ChatGPT authentication without lock conflicts and stops if an app fails. Account commands use the same shared local session from either location.
 
 - `pnpm i18n:login`: continue with ChatGPT in the system browser and authorize ChatGPT plan usage.
 - `pnpm i18n:models`: list models available to the connected account.
@@ -16,9 +16,9 @@ Run these commands from either owning app:
 - `pnpm i18n:check`: validate catalog keys, document coverage, protected syntax and source fingerprints without network access or credentials.
 - `pnpm i18n:logout`: end the renewable session and clear local credentials while retaining the host and registration identifiers.
 
-`pnpm i18n:translate ko` restricts generation to one target language. `pnpm i18n:profiles` lists saved registrations; `pnpm i18n:login <profile-id>` reauthorizes and selects one, and `pnpm i18n:login --new` adds a separate registration. A fresh host UUID is an opaque OAuth installation identifier, not a persisted business entity.
+`pnpm i18n:translate ko` restricts generation to one target language, including when run for all apps from the root. `pnpm i18n:profiles` lists saved registrations; `pnpm i18n:login <profile-id>` reauthorizes and selects one, and `pnpm i18n:login --new` adds a separate registration. A fresh host UUID is an opaque OAuth installation identifier, not a persisted business entity.
 
-To add a language, add its BCP 47 `lang` and native `label` to each app's registry, run translation generation in each app, review the generated files, and run each app's `pnpm test`. The registry drives routes and language menus; adding a language must not require switch statements in runtime code. Keep English text in catalogs rather than components. Keep product names unchanged in translations.
+To add a language, add its BCP 47 `lang` and native `label` to each app's registry, run root `pnpm i18n:translate`, review the generated files, and run each app's `pnpm test`. The registry drives routes and language menus; adding a language must not require switch statements in runtime code. Keep English text in catalogs rather than components. Keep product names unchanged in translations.
 
 The generator treats catalog values and Markdown pages as translation units. It batches up to 40 catalog values or one Markdown page per request, and saves completed batches so reruns resume remaining work. It records SHA-256 source fingerprints in each app's `i18n/state.json`. It preserves unchanged human-reviewed translations. Changed units are replaced only by an explicit translation command. New source text, missing output, obsolete units and invalid translations fail the offline check. Remove obsolete catalog keys/pages and their state entries explicitly when removing source content. Review translations for meaning; structural validation cannot establish linguistic accuracy. Source MDX fails validation until an explicit contract defines how to protect its executable content.
 
