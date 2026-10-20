@@ -108,3 +108,17 @@ console.log(JSON.stringify({merge_base: "${base}", packages: ["core"]}));
     rust_test: ["core"],
   });
 });
+
+test("Go checksums do not select Rust packages", () => {
+  assert.deepEqual(planner(["go.sum"], [], []), {
+    rust_clippy: [],
+    rust_test: [],
+  });
+});
+
+test("Cargo lockfiles preserve cargo-mono global-impact handling", () => {
+  assert.deepEqual(planner(["Cargo.lock"], ["core", "app"], ["core", "app"]), {
+    rust_clippy: ["core", "app"],
+    rust_test: ["core", "app"],
+  });
+});

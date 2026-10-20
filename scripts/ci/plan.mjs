@@ -17,8 +17,15 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         .concat(affected);
     }
   }
+  const nativeLock = paths.some((path) =>
+    /^(Cargo\.lock|prebuilt-dependencies\.lock\.json)$/u.test(path),
+  );
+  const goLock = paths.includes("go.sum");
   const shared = paths.some(
     (path) =>
+      !/^(Cargo\.lock|go\.sum|prebuilt-dependencies\.lock\.json)$/u.test(
+        path,
+      ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
       !/^(crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$)/u.test(
         path,
@@ -28,6 +35,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
   return {
     delcore_api:
       shared ||
+      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore|protos-delcore-v1-contract\.md$))/u.test(
@@ -36,6 +44,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     devbase_api:
       shared ||
+      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/devbase-api\/|protos\/|examples\/devbase|docs\/(?:project-devbase|servers-devbase|protos-devbase-v1-contract\.md$))/u.test(
@@ -44,6 +53,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     git_tracker_api:
       shared ||
+      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker|protos-git-tracker-v1-contract\.md$))/u.test(
@@ -59,6 +69,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     fixkey:
       shared ||
+      nativeLock ||
       paths.some((path) =>
         /^(apps\/fixkey-app\/|crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
           path,
@@ -81,14 +92,17 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     delidev:
       shared ||
+      nativeLock ||
       paths.some((path) => /^(apps\/delidev\/|docs\/.*delidev)/u.test(path)),
     delitools:
       shared ||
+      nativeLock ||
       paths.some((path) =>
         /^(apps\/delitools\/|docs\/.*delitools)/u.test(path),
       ),
     protocol:
       shared ||
+      goLock ||
       paths.some((path) =>
         /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1))/u.test(path),
       ),
