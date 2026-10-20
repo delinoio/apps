@@ -1157,8 +1157,15 @@ func TestConnectWireAndTelemetry(t *testing.T) {
 	_, e = client.TranslateTextArray(ctx, request(q, "Bearer user"))
 	reason(t, e, pb.ErrorReason_ERROR_REASON_ALREADY_PROCESSED)
 	inspect, e := client.InspectRequest(ctx, request(&pb.InspectRequestRequest{RequestId: v.Msg.RequestId}, "Bearer operator"))
-	if e != nil || len(inspect.Msg.Attempts) != 1 || inspect.Msg.Attempts[0].CatalogPriceJson == "" || inspect.Msg.Attempts[0].MeasuredUsageJson == "" {
+	if e != nil || len(inspect.Msg.Attempts) != 1 || inspect.Msg.Attempts[0].CatalogPriceJson == "" || inspect.Msg.Attempts[0].MeasuredUsageJson == "" || inspect.Msg.Attempts[0].PriceEffectiveAt == nil {
 		t.Fatal("inspection missing usage evidence", inspect, e)
+	}
+	var effective time.Time
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT price_effective_at FROM attempts WHERE id=$1", inspect.Msg.Attempts[0].Id).Scan(&effective); err != nil {
+		t.Fatal(err)
+	}
+	if !inspect.Msg.Attempts[0].PriceEffectiveAt.AsTime().Equal(effective) {
+		t.Fatal("incorrect snapshot effective time")
 	}
 	resp, e := server.Client().Get(server.URL + "/metrics")
 	if e != nil {
@@ -1320,49 +1327,5 @@ func TestAlertCooldownSurvivesRestart(t *testing.T) {
 	}
 	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category='backlog_alert'").Scan(&count); err != nil || count != 2 {
 		t.Fatalf("renewed alert count %d: %v", count, err)
-	}
-}
-
-func TestInspectionRetainsTerminalFailure(t *testing.T) {
-	s, _, g, tenant := setupAPI(t)
-	ctx := context.Background()
-	for _, want := range []pb.ErrorReason{pb.ErrorReason_ERROR_REASON_INVALID_OUTPUT, pb.ErrorReason_ERROR_REASON_EXTRACTION_IMPOSSIBLE, pb.ErrorReason_ERROR_REASON_PROVIDER, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME} {
-		g.run = func(context.Context, int, func(string) error) (Result, error) {
-			switch want {
-			case pb.ErrorReason_ERROR_REASON_PROVIDER:
-				return Result{Usage: &Counts{}}, errors.New("rejected")
-			case pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME:
-				return Result{Unknown: true}, errors.New("lost")
-			case pb.ErrorReason_ERROR_REASON_EXTRACTION_IMPOSSIBLE:
-				return Result{Content: `{"items":[]}`, Usage: &Counts{}}, nil
-			default:
-				return Result{Content: "invalid", Usage: &Counts{}}, nil
-			}
-		}
-		key := ID()
-		q := &pb.ExtractDataFromTextRequest{TenantId: tenant, Text: "source", JsonSchema: personSchema, IdempotencyKey: key}
-		_, err := s.ExtractDataFromText(ctx, request(q, "Bearer user"))
-		reason(t, err, want)
-		var id string
-		if err := s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM requests WHERE dedup_key=$1", key).Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		for i := 0; i < 2; i++ {
-			inspected, err := s.InspectRequest(ctx, request(&pb.InspectRequestRequest{RequestId: id}, "Bearer operator"))
-			if err != nil || inspected.Msg.ErrorReason != want {
-				t.Fatalf("inspection: %v %v", inspected, err)
-			}
-			state := pb.RequestState_REQUEST_STATE_COMPLETED
-			duplicate := pb.ErrorReason_ERROR_REASON_ALREADY_PROCESSED
-			if want == pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME {
-				state = pb.RequestState_REQUEST_STATE_UNKNOWN
-				duplicate = want
-			}
-			if inspected.Msg.State != state {
-				t.Fatal(inspected.Msg.State)
-			}
-			_, err = s.ExtractDataFromText(ctx, request(q, "Bearer user"))
-			reason(t, err, duplicate)
-		}
 	}
 }

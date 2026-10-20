@@ -143,20 +143,20 @@ The stable command is `servers/delitools-api/cmd/delitools-api`, built from the 
 
 Required deployment fields are `listen`, `issuer`, `audience`, `operator_role`, `delcore_url`, `service_id`, `token_url`, `client_id`, `gateway_url`, `http_timeout_seconds`, `max_gateway_response_bytes` and `settings`. URLs require HTTPS outside loopback fixtures. `service_id` is the registered UUID v7 for the service named `delitools`. Environment variables `DELITOOLS_DATABASE_URL`, `DELITOOLS_GATEWAY_KEY` and `DELITOOLS_CLIENT_SECRET` carry secrets; only database access is needed for explicit migration. Endpoint and transport settings require restart. Stored execution settings are initialized once from the file, then changed only by an authenticated platform operator with a reason and audit record.
 
-| Settings field            | Meaning                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------ |
-| `maxInputBytes`           | Input text/schema and decoded request bound.                                         |
-| `maxTranslationItems`     | Largest accepted translation array.                                                  |
-| `executionTimeoutSeconds` | Whole paid request deadline, including retries.                                      |
-| `tenantRequestsPerMinute` | Per-tenant fixed-minute admission count.                                             |
-| `tenantConcurrency`       | Maximum simultaneously running calls for a tenant.                                   |
-| `maxAiRetries`            | Explicit retry count; zero is valid.                                                 |
-| `priceSyncSeconds`        | Public catalog refresh interval.                                                     |
+| Settings field            | Meaning                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `maxInputBytes`           | Input text/schema and decoded request bound.                                           |
+| `maxTranslationItems`     | Largest accepted translation array.                                                    |
+| `executionTimeoutSeconds` | Whole paid request deadline, including retries.                                        |
+| `tenantRequestsPerMinute` | Per-tenant fixed-minute admission count.                                               |
+| `tenantConcurrency`       | Maximum simultaneously running calls for a tenant.                                     |
+| `maxAiRetries`            | Explicit retry count; zero is valid.                                                   |
+| `priceSyncSeconds`        | Public catalog refresh interval.                                                       |
 | `deliveryRetrySeconds`    | Background tick and initial delivery retry delay; independent of AI execution retries. |
-| `maxBackoffSeconds`       | Maximum background retry delay; at least the initial delay.                          |
-| `alertBacklog`            | Pending-attempt count that emits a backlog alert.                                    |
-| `alertExpirySeconds`      | Warning window before the 30-day expiration boundary.                                |
-| `translationModels`       | Explicit model allowlist; catalog synchronization never extends it.                  |
+| `maxBackoffSeconds`       | Maximum background retry delay; at least the initial delay.                            |
+| `alertBacklog`            | Pending-attempt count that emits a backlog alert.                                      |
+| `alertExpirySeconds`      | Warning window before the 30-day expiration boundary.                                  |
+| `translationModels`       | Explicit model allowlist; catalog synchronization never extends it.                    |
 
 The RPC transport cap is ten times `maxInputBytes` plus 64 KiB for bounded metadata and JSON/protobuf encoding. Paid methods independently enforce the decoded input limit.
 
@@ -165,8 +165,6 @@ All size/count/interval/alert fields must be positive. The expiry warning window
 Configure Logto user tokens for the shared delcore resource audience. Delcore validates the token and resolves the current user; DeliTools uses its separate M2M token to check that user's current tenant permissions. Personal key management checks membership; service key management checks Owner/Admin. The dedicated operator role is verified against signed OIDC claims and never inferred from tenant roles. Register both capabilities and both USD usage meters in delcore and provision entitlements. DeliTools ignores subscription unit rates and unit allowances for AI usage; keep delcore's reporting lateness and deletion grace compatible with the 30-day delivery window.
 
 Use `InspectRequest` with the recorded UUID to view request state, attempt identifiers, generation IDs, price snapshots and measured usage. Never collect original text or results for diagnosis. An active call's generation ID is persisted from the first stream chunk. When an attempt has no generation ID, find the Gateway generation using the safe attempt UUID supplied as the provider user reference. Verify tenant/request attribution through the operator request record and the Gateway attempt reference, model and time. Use `AssociateGeneration` with that attempt ID, generation ID and an audit reason. The method validates readable Gateway usage for the stored model, rejects a generation already associated with another retained attempt, and schedules normal reconciliation. It accepts no tokens, prices or fees, and never replays inference. Do not associate a generation based on a guessed match. If evidence cannot establish the usage, let the record expire; no charge is estimated.
-
-Inspection retains a bounded terminal error reason after output validation, distinguishing failed completed executions from successes without storing output. Pre-upgrade records retain an unspecified reason. Duplicate requests never overwrite the original reason.
 
 Unknown request states remain unknown after usage reconciliation: accounting completion does not reconstruct a result. Pending delivery uses a durable attempt UUID as both usage event identity and delivery request key. Each attempt keeps its actual occurrence time and the original request pricing snapshot. Background retries use capped exponential delay until expiration. Restart marks interrupted requests unknown and resumes usage processing; it never resumes an AI prompt. Deduplication, attempt, audit and operational-log deletion use each row's immutable creation time, independent of retry timestamps. Exported telemetry needs the same 30-day TTL in its collector; process stdout cannot enforce external storage retention.
 
