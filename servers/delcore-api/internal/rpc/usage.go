@@ -25,15 +25,24 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 		if e := c.serviceScope("authorize"); e != nil {
 			return e
 		}
-		if !canonical(q.TenantId) || !canonical(q.UserId) {
+		if !canonical(q.TenantId) || (q.ConsumerAuthorization != pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_TENANT_KEY && !canonical(q.UserId)) {
 			return invalid("invalid tenant or user ID")
 		}
 		var allowed bool
-		e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM members m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id JOIN services s ON s.id=$3
+		var e error
+		if q.ConsumerAuthorization == pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_UNSPECIFIED {
+			e = c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM members m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id JOIN services s ON s.id=$3
  WHERE m.tenant_id=$1 AND m.user_id=$2 AND u.withdrawing_at IS NULL AND t.deleted_at IS NULL AND $4=ANY(s.capabilities)
  AND (1=ANY(m.roles) OR EXISTS(SELECT 1 FROM group_members gm JOIN group_permissions gp ON gp.group_id=gm.group_id WHERE gm.tenant_id=m.tenant_id AND gm.user_id=m.user_id AND gp.service_id=$3 AND gp.capability=$4)))`, q.TenantId, q.UserId, c.service, q.Capability).Scan(&allowed)
-		if e != nil {
-			return e
+			if e != nil {
+				return e
+			}
+		}
+		if q.ConsumerAuthorization != pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_UNSPECIFIED {
+			allowed, e = c.consumerAuthorization(q)
+			if e != nil {
+				return e
+			}
 		}
 		if !allowed {
 			o.Reasons = append(o.Reasons, pb.BlockReason_BLOCK_REASON_PERMISSION)
@@ -114,10 +123,15 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	if occurred.After(c.now) || occurred.Before(c.now.Add(-time.Duration(c.s.Config.UsageLatenessSeconds)*time.Second)) {
 		return "", invalid("usage occurrence is outside reporting window")
 	}
+	aiCost, aiJSON, e := c.aiCost(u)
+	if e != nil {
+		return "", e
+	}
 	canonicalInput := struct {
 		Tenant, Service, Key, Meter, Quantity, Correction string
 		Time                                              time.Time
-	}{u.TenantId, c.service, u.EventKey, u.Meter, quantity.String(), u.CorrectionOf, occurred}
+		AI                                                string
+	}{u.TenantId, c.service, u.EventKey, u.Meter, quantity.String(), u.CorrectionOf, occurred, string(aiJSON)}
 	raw, _ := json.Marshal(canonicalInput)
 	sum := sha256.Sum256(raw)
 	fingerprint := hex.EncodeToString(sum[:])
@@ -182,6 +196,11 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	_, e = c.tx.Exec(c.ctx, `INSERT INTO usage_events VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, id, u.TenantId, c.service, u.EventKey, fingerprint, u.Meter, quantity.String(), occurred, c.now, price, start, end, reference)
 	if e != nil {
 		return "", e
+	}
+	if u.AiUsage != nil {
+		if _, e = c.tx.Exec(c.ctx, "INSERT INTO ai_usage_prices(usage_id,details,cost) VALUES($1,$2,$3)", id, aiJSON, aiCost.String()); e != nil {
+			return "", e
+		}
 	}
 	total, _, e := c.ratePeriod(u.TenantId, c.service, u.Meter, start)
 	if e != nil {

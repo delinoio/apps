@@ -14,18 +14,18 @@ func RatePeriod(ctx context.Context, tx pgx.Tx, tenant, service, meter string, s
  SELECT id root,id,quantity,price_id,occurred_at FROM usage_events WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 AND correction_of IS NULL
  UNION ALL SELECT c.root,u.id,u.quantity,c.price_id,c.occurred_at FROM chain c JOIN usage_events u ON u.correction_of=c.id
  ), actions AS (
- SELECT c.root id,c.occurred_at at,false is_grant,c.quantity amount,p.unit_price rate FROM chain c JOIN prices p ON p.id=c.price_id WHERE NOT EXISTS(SELECT 1 FROM usage_events n WHERE n.correction_of=c.id)
- UNION ALL SELECT id,applied_at,true,amount,0::numeric FROM allowance_grants WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4
- ) SELECT is_grant,amount::text,rate::text FROM actions ORDER BY at,is_grant DESC,id`, tenant, service, meter, start)
+ SELECT c.root id,c.occurred_at at,false is_grant,c.quantity amount,COALESCE(ai.cost,p.unit_price) rate,ai.usage_id IS NOT NULL ai FROM chain c JOIN prices p ON p.id=c.price_id LEFT JOIN ai_usage_prices ai ON ai.usage_id=c.id WHERE NOT EXISTS(SELECT 1 FROM usage_events n WHERE n.correction_of=c.id)
+ UNION ALL SELECT id,applied_at,true,amount,0::numeric,false FROM allowance_grants WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4
+ ) SELECT is_grant,amount::text,rate::text,ai FROM actions ORDER BY at,is_grant DESC,id`, tenant, service, meter, start)
 	if e != nil {
 		return accounting.Zero(), accounting.Zero(), e
 	}
 	defer rows.Close()
 	remaining, total := accounting.Zero(), accounting.Zero()
 	for rows.Next() {
-		var grant bool
+		var grant, ai bool
 		var amountText, rateText string
-		if e = rows.Scan(&grant, &amountText, &rateText); e != nil {
+		if e = rows.Scan(&grant, &amountText, &rateText, &ai); e != nil {
 			return total, remaining, e
 		}
 		amount, e := accounting.Parse(amountText)
@@ -34,6 +34,14 @@ func RatePeriod(ctx context.Context, tx pgx.Tx, tenant, service, meter string, s
 		}
 		if grant {
 			remaining = remaining.Add(amount)
+			continue
+		}
+		if ai {
+			rate, err := accounting.Parse(rateText)
+			if err != nil {
+				return total, remaining, err
+			}
+			total = total.Add(rate)
 			continue
 		}
 		included := amount

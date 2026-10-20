@@ -1,0 +1,94 @@
+//go:build integration
+
+// SPDX-License-Identifier: FSL-1.1-ALv2
+package integration
+
+import (
+	"connectrpc.com/connect"
+	"context"
+	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"testing"
+	"time"
+)
+
+func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
+	db, c, _ := setup(t)
+	ctx := context.Background()
+	service, err := c.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register DeliTools", Service: &pb.Service{Name: "delitools", ClientId: "service", Capabilities: []string{"translator", "extractor"}, Scopes: []string{"authorize", "usage:write"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := c.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "configure free plan", Plan: &pb.Plan{Name: "free", Free: true, DefaultFree: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, meter := range []string{"translator", "extractor"} {
+		if _, err = c.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "register AI meter", Meter: &pb.Meter{ServiceId: service.Msg.Service.Id, Name: meter}}, "owner")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = c.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "configure entitlement", Price: &pb.Price{PlanId: plan.Msg.Plan.Id, ServiceId: service.Msg.Service.Id, Meter: meter, UnitPrice: "999", Included: "999", Currency: "USD"}}, "owner")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	me, err := c.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := c.CreateTenant(ctx, req(&pb.CreateTenantRequest{RequestKey: key(), Name: "AI tenant"}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := org.Msg.Tenant.Id
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO ledger(id,tenant_id,meter,kind,amount,source_key,created_at) VALUES($1,$2,'','credit',10,$3,now())`, key(), tenant, key()); err != nil {
+		t.Fatal(err)
+	}
+	auth := &pb.AuthorizeRequest{TenantId: tenant, Paid: true, Capability: "translator", ConsumerAuthorization: pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_TENANT_KEY}
+	a, err := c.Authorize(ctx, req(auth, "service"))
+	if err != nil || !a.Msg.Allowed {
+		t.Fatalf("tenant key: %v %v", a, err)
+	}
+	for i, tc := range []struct{ meter, price string }{{"translator", "0.001"}, {"translator", "0.002"}, {"extractor", "0.001"}} {
+		now := timestamppb.New(time.Now())
+		u := &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: key(), Meter: tc.meter, Quantity: "1", OccurredAt: now, AiUsage: &pb.AiUsage{Model: "openai/gpt-6-luna", PriceEffectiveAt: now, Tokens: []*pb.AiTokenUsage{{Kind: pb.AiTokenKind_AI_TOKEN_KIND_INPUT, Tokens: 100, UsdPerToken: tc.price}}}}
+		r, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
+		if err != nil {
+			t.Fatalf("report %d: %v", i, err)
+		}
+		replay, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
+		if err != nil || replay.Msg.UsageId != r.Msg.UsageId {
+			t.Fatal("duplicate effect", err)
+		}
+		u.AiUsage.Tokens[0].Tokens++
+		if _, err = c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service")); connect.CodeOf(err) != connect.CodeAlreadyExists {
+			t.Fatal("changed evidence accepted", err)
+		}
+	}
+	var cost string
+	if err = db.Pool.QueryRow(ctx, "SELECT (-sum(amount))::text FROM ledger WHERE tenant_id=$1 AND kind='usage'", tenant).Scan(&cost); err != nil {
+		t.Fatal(err)
+	}
+	if cost != "0.47500" && cost != "0.475" {
+		t.Fatal("call-time prices or markups not applied", cost)
+	}
+	if _, err = db.Pool.Exec(ctx, "DELETE FROM members WHERE tenant_id=$1", tenant); err != nil {
+		t.Fatal(err)
+	}
+	a, err = c.Authorize(ctx, req(auth, "service"))
+	if err != nil || !a.Msg.Allowed {
+		t.Fatal("service key depended on removed issuer", err)
+	}
+	auth.ConsumerAuthorization = pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_UNSPECIFIED
+	auth.UserId = me.Msg.UserId
+	a, err = c.Authorize(ctx, req(auth, "service"))
+	if err != nil || a.Msg.Allowed {
+		t.Fatal("removed user's execution accepted", err)
+	}
+	auth.ConsumerAuthorization = pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_SERVICE_KEYS
+	auth.Paid = false
+	auth.Capability = ""
+	a, err = c.Authorize(ctx, req(auth, "service"))
+	if err != nil || a.Msg.Allowed {
+		t.Fatal("removed admin managed keys", err)
+	}
+}

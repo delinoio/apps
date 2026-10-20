@@ -9,4 +9,4 @@ import "embed"
 //go:embed *.sql
 var Files embed.FS
 
-const Version = 5
+const Version = 6
