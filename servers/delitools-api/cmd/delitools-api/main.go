@@ -140,7 +140,7 @@ func run() (err error) {
 	}()
 	// The request context owns inference duration; a static http.Client timeout
 	// must not override operator changes to the execution timeout.
-	gatewayClient := newGatewayClient(timeout)
+	gatewayClient := newGatewayClient()
 	s := &api.Server{DB: db, Auth: auth, Gateway: &api.HTTPGateway{Client: gatewayClient, BaseURL: c.GatewayURL, Token: c.GatewayKey, MaxResponseBytes: c.MaxGatewayResponseBytes}, ServiceID: c.ServiceID, Log: logger}
 	mux := http.NewServeMux()
 	rpcPath, _ := s.Handler(int(c.Settings.MaxInputBytes))
@@ -204,8 +204,10 @@ loop:
 	return failure
 }
 
-func newGatewayClient(timeout time.Duration) *http.Client {
+func newGatewayClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.ResponseHeaderTimeout = timeout
+	// Inference headers can arrive only after provider work. The caller context
+	// bounds headers and streaming together, including updated execution settings.
+	transport.ResponseHeaderTimeout = 0
 	return &http.Client{Transport: transport}
 }
