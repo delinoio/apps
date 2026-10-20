@@ -1,6 +1,6 @@
 # FixKey
 
-FixKey corrects words typed with the wrong keyboard layout. It supports Korean Dubeolsik and US English QWERTY in both directions without switching your system input language. FixKey runs locally on your desktop and requires no account.
+FixKey corrects words typed with the wrong keyboard layout. It supports Korean Dubeolsik and US English QWERTY in both directions. FixKey runs locally on your desktop and requires no account.
 
 ## Install FixKey
 
@@ -27,6 +27,8 @@ For example, the key sequences `rPthrgo` and `zlqhemrk` can become `계속해` a
 FixKey preserves the separator after a corrected word. Enter and Tab do not trigger correction. Punctuation used in URLs or email addresses can delay evaluation until FixKey can classify the whole token. Apostrophes and hyphens between letters stay inside the word.
 
 Automatic correction skips pasted or programmatically inserted text, numbers, emoji, URLs, email addresses and mixed-script tokens. It waits for Korean input composition to finish. Unknown fields, unavailable permissions and fields that cannot be safely changed remain untouched.
+
+After a successful automatic correction on macOS or Windows, FixKey also tries to select an enabled input source for the corrected language. On Windows, it can use the Microsoft Korean IME's Hangul and Latin modes, including when no separate US QWERTY source is enabled. Keep your Korean IME configured for Dubeolsik. If input-source selection is unavailable or fails, the corrected text and immediate undo remain available. Closed or unsupported Windows IMEs are not changed. Linux keeps the current input source. Immediate undo does not change the input source again.
 
 ### Undo a correction
 
