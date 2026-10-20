@@ -33,7 +33,7 @@ type ApiKeyPermission int32
 
 const (
 	ApiKeyPermission_API_KEY_PERMISSION_UNSPECIFIED ApiKeyPermission = 0
-	// READ_ONLY permits end-user lookup and listing.
+	// READ_ONLY permits end-user get, lookup and list.
 	ApiKeyPermission_API_KEY_PERMISSION_READ_ONLY ApiKeyPermission = 1
 	// CRUD additionally permits end-user creation, update and deletion.
 	ApiKeyPermission_API_KEY_PERMISSION_CRUD ApiKeyPermission = 2

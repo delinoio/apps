@@ -13,7 +13,7 @@ option go_package = "github.com/delinoio/apps/protos/devbase/v1;devbasev1";
 // grant project or key management.
 enum ApiKeyPermission {
   API_KEY_PERMISSION_UNSPECIFIED = 0;
-  // READ_ONLY permits end-user lookup and listing.
+  // READ_ONLY permits end-user get, lookup and list.
   API_KEY_PERMISSION_READ_ONLY = 1;
   // CRUD additionally permits end-user creation, update and deletion.
   API_KEY_PERMISSION_CRUD = 2;

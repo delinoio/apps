@@ -1019,7 +1019,7 @@ export enum ApiKeyPermission {
   UNSPECIFIED = 0,
 
   /**
-   * READ_ONLY permits end-user lookup and listing.
+   * READ_ONLY permits end-user get, lookup and list.
    *
    * @generated from enum value: API_KEY_PERMISSION_READ_ONLY = 1;
    */
