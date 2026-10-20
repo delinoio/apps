@@ -955,3 +955,38 @@ func TestSettingsLookupContextErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestRevocationLookupErrors(t *testing.T) {
+	for _, mode := range []string{"missing", "canceled", "deadline", "storage"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, _, tenant := setupAPI(t)
+			ctx := context.Background()
+			want := pb.ErrorReason_ERROR_REASON_FORBIDDEN
+			switch mode {
+			case "storage":
+				s.DB.Pool.Close()
+				want = pb.ErrorReason_ERROR_REASON_INTERNAL
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+				want = pb.ErrorReason_ERROR_REASON_CANCELED
+			case "deadline":
+				tx, err := s.DB.Pool.Begin(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback(context.Background())
+				if _, err := tx.Exec(ctx, "LOCK TABLE api_keys IN ACCESS EXCLUSIVE MODE"); err != nil {
+					t.Fatal(err)
+				}
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				want = pb.ErrorReason_ERROR_REASON_TIMEOUT
+			}
+			_, err := s.RevokeKey(ctx, request(&pb.RevokeKeyRequest{TenantId: tenant, KeyId: ID()}, "Bearer user"))
+			reason(t, err, want)
+		})
+	}
+}

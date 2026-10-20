@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	core "github.com/delinoio/apps/protos/delcore/v1"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
 	"github.com/jackc/pgx/v5"
@@ -142,7 +143,10 @@ func (s *Server) RevokeKey(ctx context.Context, r *connect.Request[pb.RevokeKeyR
 	var kind pb.KeyKind
 	var owner string
 	if e = s.DB.Pool.QueryRow(ctx, "SELECT kind,user_id FROM api_keys WHERE tenant_id=$1 AND id=$2", q.TenantId, q.KeyId).Scan(&kind, &owner); e != nil {
-		return nil, fault(pb.ErrorReason_ERROR_REASON_FORBIDDEN, id)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_FORBIDDEN, id)
+		}
+		return nil, storageFault(e, id)
 	}
 	if kind == pb.KeyKind_KEY_KIND_PERSONAL && owner != user {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_FORBIDDEN, id)
