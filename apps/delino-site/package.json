@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@delino/ui": "workspace:*"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",

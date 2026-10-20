@@ -91,3 +91,8 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Project index](project-fixkey.md)
 - [Rust correction engine](crates-fixkey-core-foundation.md)
 - [Desktop application](apps-fixkey-desktop-contract.md)
+
+### ui
+
+- [Project index](project-ui.md)
+- [Shared UI foundation](packages-ui-foundation.md)

@@ -54,6 +54,7 @@
 
 ## Monorepo Structure Map
 
+- `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/devbase`: DevBase web application.
 - `apps/delino-site`: Delino web application.

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@delino/ui/components",
+    "ui": "@delino/ui/components",
+    "utils": "@delino/ui/lib/utils",
+    "lib": "@delino/ui/lib",
+    "hooks": "@delino/ui/hooks"
+  }
+}

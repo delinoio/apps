@@ -20,6 +20,8 @@ Provide the Delino marketing website.
 
 ## Cross-Domain Invariants
 
+Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
+
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.

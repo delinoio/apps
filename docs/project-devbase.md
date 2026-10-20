@@ -19,6 +19,8 @@ Provide a console for managing the API services that belong to DevBase.
 
 ## Cross-Domain Invariants
 
+Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
+
 DevBase API services run as separate servers. They use delcore for billing; the console does not host these services or own billing. Individual API service names, server paths and protocols must be defined in their own contracts before implementation.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.

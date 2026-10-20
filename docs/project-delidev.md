@@ -18,6 +18,8 @@ Keep an executable desktop shell with an empty native window. Existing product f
 
 ## Cross-Domain Invariants
 
+Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
+
 The shell has no product backend or API. It does not read, migrate or delete previous DeliDev account data or credentials. Shared repository tooling remains owned by its existing projects.
 
 ## Change Policy

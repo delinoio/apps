@@ -47,6 +47,8 @@ For Cloudflare Pages, build from the repository root with `pnpm --filter delino-
 
 ## Dependencies and Integrations
 
+`@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
+
 Pin the Rspress and TypeScript dependencies in the workspace lockfile. Rspress owns its compatible Rsbuild integration. The app does not call service APIs.
 
 ## Change Triggers
