@@ -26,6 +26,8 @@ Before the first session, run `pnpm exec portless proxy start` from an interacti
 
 ## Validation
 
+The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the same version and a version-specific store cache. Dependency overrides and build-script decisions are configured in `pnpm-workspace.yaml`, because pnpm 12 does not read the `pnpm` field in `package.json`.
+
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
 CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the FixKey release workflow for tags verified to belong to main. Protocol validation includes Go vet, unit tests and consumer example build; the dedicated formatting job checks Go formatting. Real PostgreSQL integration and OCI checks run for the affected services under `servers/`. Protocol changes require lint, format, regeneration freshness and FILE breaking checks against the comparison revision.
