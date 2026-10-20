@@ -61,14 +61,18 @@ func (s *Server) mutate(ctx context.Context, c *Call, op Op, who identity, msg, 
 	}
 	var (
 		operation, tenant string
+		recorded          *string
 		stored            []byte
 		response          []byte
 		scrubbed          bool
 	)
-	e = tx.QueryRow(ctx, "SELECT operation,tenant_id::text,fingerprint,response,scrubbed FROM replays WHERE principal=$1 AND idempotency_key=$2", who.principal, key).Scan(&operation, &tenant, &stored, &response, &scrubbed)
+	e = tx.QueryRow(ctx, "SELECT operation,tenant_id::text,project_id::text,fingerprint,response,scrubbed FROM replays WHERE principal=$1 AND idempotency_key=$2", who.principal, key).Scan(&operation, &tenant, &recorded, &stored, &response, &scrubbed)
 	switch {
 	case e == nil:
-		if operation != op.Name || tenant != who.tenantID {
+		// A scrubbed record has no fingerprint, which is where the project of the original
+		// request is otherwise compared, so compare the retained project here. Project
+		// creation has no project yet, so its identity carries none.
+		if operation != op.Name || tenant != who.tenantID || (recorded != nil && who.projectID != "" && *recorded != who.projectID) {
 			return idempotencyConflict()
 		}
 		if scrubbed {

@@ -214,6 +214,36 @@ func TestDeleteReplayKeyReusedForAnotherMissingProjectConflicts(t *testing.T) {
 	}
 }
 
+func TestScrubbedReplayKeyReusedForAnotherProjectConflicts(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	first := f.project(login(owner), tenant, "First")
+	second := f.project(login(owner), tenant, "Second")
+	key := idem()
+	issue := func(project string) error {
+		_, e := f.client.IssueApiKey(ctx, as(login(owner), &pb.IssueApiKeyRequest{IdempotencyKey: key, ProjectId: project, Permission: pb.ApiKeyPermission_API_KEY_PERMISSION_READ_ONLY}))
+		return e
+	}
+	if e := issue(first.Id); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.client.DeleteProject(ctx, as(login(owner), &pb.DeleteProjectRequest{IdempotencyKey: idem(), ProjectId: first.Id, Version: 1})); e != nil {
+		t.Fatal(e)
+	}
+	if n := f.count("SELECT count(*) FROM replays WHERE idempotency_key=$1 AND scrubbed", key); n != 1 {
+		t.Fatal("the issuance record was not scrubbed", n)
+	}
+	// The scrubbed record has no fingerprint, but its project must still conflict.
+	if e := issue(second.Id); code(e) != connect.CodeAlreadyExists {
+		t.Fatal("a scrubbed key reused for another project did not conflict", e)
+	}
+	// The same project still reports the scrubbed outcome.
+	if e := issue(first.Id); code(e) != connect.CodeNotFound {
+		t.Fatal("a scrubbed replay did not report not_found", e)
+	}
+}
+
 func TestManagementRateLimitIsPerTenantWithRetryTiming(t *testing.T) {
 	f := setup(t, func(l *config.Limits) { l.ManagementRate = 2; l.ManagementBurst = 4 })
 	ctx := context.Background()
