@@ -14,6 +14,16 @@
     },
     "test": {
       "cache": false
+    },
+    "@delinoio/delcore-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["DELCORE_CONFIG", "OTEL_*", "NO_COLOR"]
+    },
+    "@delinoio/git-tracker-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["GIT_TRACKER_*", "OTEL_*", "NO_COLOR"]
     }
   }
 }
