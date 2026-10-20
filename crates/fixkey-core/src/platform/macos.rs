@@ -17,7 +17,7 @@ use super::{
     empty_paragraph_text, utf16_offset, write_ack::wait_for_transition,
 };
 use crate::{
-    SkipReason,
+    Language, SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
 };
 const WRITE_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
@@ -64,6 +64,8 @@ unsafe extern "C" {
 }
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
+    fn CFArrayGetCount(array: Ref) -> isize;
+    fn CFArrayGetValueAtIndex(array: Ref, index: isize) -> Ref;
     fn CFRelease(value: Ref);
     fn CFRetain(value: Ref) -> Ref;
     fn CFEqual(a: Ref, b: Ref) -> bool;
@@ -90,6 +92,80 @@ unsafe extern "C" {
     fn CFRunLoopStop(loop_ref: Ref);
     static kCFRunLoopCommonModes: Ref;
 }
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn TISCreateInputSourceList(properties: Ref, include_all_installed: bool) -> Ref;
+    fn TISGetInputSourceProperty(source: Ref, property: Ref) -> Ref;
+    fn TISSelectInputSource(source: Ref) -> i32;
+    fn TISCopyCurrentKeyboardInputSource() -> Ref;
+    static kTISPropertyInputSourceID: Ref;
+    static kTISPropertyInputSourceIsSelectCapable: Ref;
+}
+
+/// Match exact layout identifiers: a language tag alone could select Dvorak
+/// or a Korean three-set layout, which would break physical-key reconstruction.
+fn input_source_matches(identifier: &str, language: Language) -> bool {
+    match language {
+        Language::EnUsQwerty => matches!(
+            identifier,
+            "com.apple.keylayout.ABC" | "com.apple.keylayout.US"
+        ),
+        Language::KoDubeolsik => identifier == "com.apple.inputmethod.Korean.2SetKorean",
+    }
+}
+
+fn select_input_source(language: Language) -> bool {
+    // SAFETY: TIS is called on the main thread. Copy/Create results are owned;
+    // properties and array elements remain borrowed while their owners live.
+    unsafe {
+        let current = TISCopyCurrentKeyboardInputSource();
+        if !current.is_null() {
+            let current = Owned(current);
+            if text(TISGetInputSourceProperty(
+                current.0,
+                kTISPropertyInputSourceID,
+            ))
+            .is_ok_and(|id| input_source_matches(&id, language))
+            {
+                return true;
+            }
+        }
+        // Only inspect enabled sources. Never enable or install a layout.
+        let sources = TISCreateInputSourceList(ptr::null(), false);
+        if sources.is_null() {
+            return false;
+        }
+        let sources = Owned(sources);
+        for index in 0..CFArrayGetCount(sources.0) {
+            let source = CFArrayGetValueAtIndex(sources.0, index);
+            let selectable =
+                TISGetInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable);
+            if selectable.is_null() || !CFBooleanGetValue(selectable) {
+                continue;
+            }
+            if !text(TISGetInputSourceProperty(source, kTISPropertyInputSourceID))
+                .is_ok_and(|id| input_source_matches(&id, language))
+            {
+                continue;
+            }
+            if TISSelectInputSource(source) != 0 {
+                return false;
+            }
+            let selected = TISCopyCurrentKeyboardInputSource();
+            if selected.is_null() {
+                return false;
+            }
+            let selected = Owned(selected);
+            return text(TISGetInputSourceProperty(
+                selected.0,
+                kTISPropertyInputSourceID,
+            ))
+            .is_ok_and(|id| input_source_matches(&id, language));
+        }
+    }
+    false
+}
+
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGPreflightListenEventAccess() -> bool;
@@ -1043,6 +1119,18 @@ impl Adapter {
     }
 }
 impl Accessibility for Adapter {
+    fn select_input_language(&mut self, expected: &FieldSnapshot, language: Language) -> bool {
+        let expected = expected.clone();
+        on_main(move || {
+            CURRENT.with(|current| {
+                if current.borrow_mut().snapshot().as_ref() != Ok(&expected) {
+                    return false;
+                }
+                select_input_source(language)
+            })
+        })
+    }
+
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
         on_main(|| CURRENT.with(|current| current.borrow_mut().snapshot()))
     }
@@ -1061,5 +1149,32 @@ impl Accessibility for Adapter {
                     .replace(target, start, end, replacement)
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod input_source_tests {
+    use super::*;
+
+    #[test]
+    fn only_supported_physical_layouts_match() {
+        for id in ["com.apple.keylayout.ABC", "com.apple.keylayout.US"] {
+            assert!(input_source_matches(id, Language::EnUsQwerty));
+            assert!(!input_source_matches(id, Language::KoDubeolsik));
+        }
+        assert!(input_source_matches(
+            "com.apple.inputmethod.Korean.2SetKorean",
+            Language::KoDubeolsik
+        ));
+        for id in [
+            "com.apple.keylayout.Dvorak",
+            "com.apple.inputmethod.Korean.390Sebulshik",
+            "com.apple.inputmethod.Korean",
+            "",
+        ] {
+            for language in Language::ALL {
+                assert!(!input_source_matches(id, language));
+            }
+        }
     }
 }

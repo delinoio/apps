@@ -10,9 +10,11 @@ Tauri 2 shell in Rust with a React UI built by Rsbuild. Raw input and morphology
 
 ## Users and Operators
 
-Individual desktop users who type Korean and English. Support uses GitHub Issues; there is no separate support service or public documentation website.
+Individual desktop users who type Korean and English. Support uses GitHub Issues; there is no separate support service. The public desktop user guide is published by [Delino Docs](project-delino-docs.md) under `/services/fixkey/`, with localized routes owned by that app.
 
 ## Interfaces and Contracts
+
+After a successful automatic correction on macOS, select an enabled input source for the corrected language so subsequent typing continues in that language. Follow the [core input-source contract](crates-fixkey-core-foundation.md#interfaces-and-contracts) for supported layouts, revalidation and failure behavior.
 
 Settings window (reference viewport 840×680), left navigation sections in this order:
 
