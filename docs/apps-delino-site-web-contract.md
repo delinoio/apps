@@ -34,7 +34,7 @@ Rsbuild reports startup and build failures. Future service integrations must emi
 
 ## Build and Test
 
-Run `pnpm test` in this directory for offline translation validation, TypeScript checks and a production build. `pnpm build` also validates translations before emitting `dist`. Affected CI runs these checks on Ubuntu without ChatGPT credentials. Remove generated `dist` after validation.
+Run `pnpm test` in this directory for offline translation validation, TypeScript checks and a production build. `pnpm build` also validates translations before emitting `dist` and includes the repository `LICENSE` and `NOTICE`. Affected CI runs these checks on Ubuntu without ChatGPT credentials. Remove generated `dist` after validation.
 
 Cloudflare Pages builds the `delino-site` workspace from the repository root with `pnpm --filter delino-site build` and publishes `apps/delino-site/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 

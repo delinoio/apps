@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "rsbuild dev",
-    "build": "pnpm i18n:check && rsbuild build",
+    "build": "pnpm i18n:check && rsbuild build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\"",
     "typecheck": "tsc --noEmit",
     "test": "pnpm i18n:check && pnpm typecheck && pnpm build",
     "ci:checks": "pnpm test",
