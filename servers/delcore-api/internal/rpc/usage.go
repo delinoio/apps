@@ -131,14 +131,7 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	canonicalInput := struct {
-		Tenant, Service, Key, Meter, Quantity, Correction string
-		Time                                              time.Time
-		AI                                                string
-	}{u.TenantId, c.service, u.EventKey, u.Meter, quantity.String(), u.CorrectionOf, occurred, string(aiJSON)}
-	raw, _ := json.Marshal(canonicalInput)
-	sum := sha256.Sum256(raw)
-	fingerprint := hex.EncodeToString(sum[:])
+	fingerprint := usageFingerprint(u, c.service, quantity.String(), occurred, aiJSON)
 	var existing, old string
 	e = c.tx.QueryRow(c.ctx, "SELECT id::text,fingerprint FROM usage_events WHERE service_id=$1 AND event_key=$2 UNION ALL SELECT event_id::text,fingerprint FROM usage_replay WHERE service_id=$1 AND event_key=$2 LIMIT 1", c.service, u.EventKey).Scan(&existing, &old)
 	if e == nil {
@@ -377,4 +370,16 @@ func (s *Server) CheckTenantLifecycle(ctx context.Context, r *connect.Request[pb
 		}
 		return rows.Err()
 	})
+}
+
+// Preserve the pre-AI encoding for durable retries of ordinary usage.
+func usageFingerprint(u *pb.Usage, service, quantity string, occurred time.Time, aiJSON []byte) string {
+	canonicalInput := struct {
+		Tenant, Service, Key, Meter, Quantity, Correction string
+		Time                                              time.Time
+		AI                                                string `json:",omitempty"`
+	}{u.TenantId, service, u.EventKey, u.Meter, quantity, u.CorrectionOf, occurred, string(aiJSON)}
+	raw, _ := json.Marshal(canonicalInput)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
