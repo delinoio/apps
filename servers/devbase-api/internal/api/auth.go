@@ -177,14 +177,16 @@ func (s *Server) authenticateLogin(ctx context.Context, cred credential, op Op, 
 		tenant, e = s.projectTenant(ctx, t.ProjectID)
 		if errors.Is(e, pgx.ErrNoRows) {
 			// The project is gone. A repeated delete may still replay, but only for
-			// the same authenticated caller; everything else is not found.
+			// the same authenticated caller; everything else is not found. The caller's
+			// record is found by caller and key alone, so a key already used for another
+			// project or operation still ends in a conflict.
 			if user, e = s.identify(ctx, cred); e != nil {
 				return identity{}, e
 			}
 			if !op.Mutation {
 				return identity{}, notFound()
 			}
-			if tenant, e = s.replayTenant(ctx, "user:"+user, idempotency, t.ProjectID); e != nil {
+			if tenant, e = s.replayTenant(ctx, "user:"+user, idempotency); e != nil {
 				return identity{}, e
 			}
 		} else if e != nil {
@@ -240,9 +242,11 @@ func (s *Server) projectTenant(ctx context.Context, project string) (string, err
 
 // replayTenant finds the tenant of a deleted project from the caller's own replay
 // record. It lets a repeated delete re-check current authority instead of trusting the record.
-func (s *Server) replayTenant(ctx context.Context, principal, key, project string) (string, error) {
+// The lookup is by caller and key only: filtering by project would hide the record when the key
+// was used for another project, and the uniqueness rule requires that case to conflict.
+func (s *Server) replayTenant(ctx context.Context, principal, key string) (string, error) {
 	var tenant string
-	e := s.Pool.QueryRow(ctx, "SELECT tenant_id::text FROM replays WHERE principal=$1 AND idempotency_key=$2 AND project_id=$3 AND expires_at>$4", principal, key, project, s.now()).Scan(&tenant)
+	e := s.Pool.QueryRow(ctx, "SELECT tenant_id::text FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3", principal, key, s.now()).Scan(&tenant)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return "", notFound()
 	}

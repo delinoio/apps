@@ -189,6 +189,31 @@ func TestDeletedProjectReplays(t *testing.T) {
 	}
 }
 
+func TestDeleteReplayKeyReusedForAnotherMissingProjectConflicts(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	made, e := f.client.CreateProject(ctx, as(login(owner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: tenant, Name: "Gone"}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	key := idem()
+	if _, e = f.client.DeleteProject(ctx, as(login(owner), &pb.DeleteProjectRequest{IdempotencyKey: key, ProjectId: made.Msg.Project.Id, Version: 1})); e != nil {
+		t.Fatal(e)
+	}
+	// The key already belongs to the first delete, so a delete of another missing
+	// project is a key conflict rather than a missing project.
+	other := &pb.DeleteProjectRequest{IdempotencyKey: key, ProjectId: newID(), Version: 1}
+	if _, e = f.client.DeleteProject(ctx, as(login(owner), other)); code(e) != connect.CodeAlreadyExists {
+		t.Fatal("a key reused for another missing project did not conflict", e)
+	}
+	// A key the caller never used still reports the missing project.
+	other.IdempotencyKey = idem()
+	if _, e = f.client.DeleteProject(ctx, as(login(owner), other)); code(e) != connect.CodeNotFound {
+		t.Fatal("an unused key did not report the missing project", e)
+	}
+}
+
 func TestManagementRateLimitIsPerTenantWithRetryTiming(t *testing.T) {
 	f := setup(t, func(l *config.Limits) { l.ManagementRate = 2; l.ManagementBurst = 4 })
 	ctx := context.Background()
