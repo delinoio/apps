@@ -2,6 +2,7 @@ packages:
   - apps/*
   - actions/*
   - packages/*
+  - examples/devbase-client-ts
   - servers/*
   - protos
 

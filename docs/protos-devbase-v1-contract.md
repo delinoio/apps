@@ -47,7 +47,7 @@ Correlate responses, errors and logs through the trace ID without exposing crede
 
 ## Build and Test
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks: `pnpm proto:generate`, `pnpm proto:lint` and `buf breaking` against the comparison revision. Generation preserves schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The examples in `examples/devbase-client` and `examples/devbase-client-ts` consume the generated bindings; build them after protocol changes. Server contract tests run against disposable PostgreSQL and a mocked Delcore.
+Use the root Buf generation, lint, formatting, breaking and freshness checks: `pnpm proto:generate`, `pnpm proto:lint` and `buf breaking` against the comparison revision. Generation preserves schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The examples in `examples/devbase-client` and `examples/devbase-client-ts` consume the generated bindings; build and type-check them after protocol changes with `go build ./examples/devbase-client` and `pnpm --filter devbase-client-ts typecheck`. The server integration tests execute both examples against a local server with a mocked Delcore. Server contract tests run against disposable PostgreSQL and a mocked Delcore.
 
 ## Dependencies and Integrations
 

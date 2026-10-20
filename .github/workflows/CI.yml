@@ -947,6 +947,8 @@ jobs:
           go test -race ./protos/... ./examples/...
           go build -o "$RUNNER_TEMP/delcore-client" ./examples/delcore-client
           go build -o "$RUNNER_TEMP/git-tracker-client" ./examples/git-tracker-client
+          go build -o "$RUNNER_TEMP/devbase-client" ./examples/devbase-client
+          pnpm --filter devbase-client-ts typecheck
           pnpm exec buf lint
           pnpm proto:generate
           test -z "$(git status --porcelain --untracked-files=all -- protos)"
