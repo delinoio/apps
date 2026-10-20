@@ -59,4 +59,4 @@ enum ProjectId {
 
 ## Existing project choices
 
-Delcore uses Go, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port.
+Delcore uses Go, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run root `pnpm dev` for all workspace development servers, or run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port. See the [workflow contract](repository-workflow-contract.md) for participants and separate server startup.
