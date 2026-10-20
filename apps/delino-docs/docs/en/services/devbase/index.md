@@ -115,7 +115,7 @@ User requests count together for all keys and login tokens of a project. Managem
 | `already_exists`     | A name or external ID exists, or an idempotency key was used with other content. |
 | `aborted`            | The version is old.                                                              |
 | `resource_exhausted` | A rate limit or a resource limit applies.                                        |
-| `unavailable`        | A dependency or the database failed. DevBase did not apply the change.           |
+| `unavailable`        | A dependency or the database failed. A change may or may not have been applied.  |
 
 Every error and response has a trace ID. Include it when you ask for support. If you get `unavailable` for a change, repeat the same request with the same idempotency key to find out whether it was applied.
 
