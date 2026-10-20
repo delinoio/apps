@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -46,6 +48,7 @@ type Config struct {
 	BacklogAlert               int
 	SettlementAlertSeconds     int
 	Development                bool
+	CatalogDir                 string
 }
 
 // Load reads .env from the working directory. Process variables take precedence,
@@ -79,6 +82,15 @@ func load(getenv func(string) string) (Config, error) {
 	c.EmailToken = getenv("EMAIL_TOKEN")
 	c.EmailAccount = getenv("EMAIL_ACCOUNT")
 	c.EmailSender = getenv("EMAIL_SENDER")
+	c.CatalogDir = getenv("CATALOG_DIR")
+	if c.CatalogDir == "" {
+		c.CatalogDir = "servers/delcore-api/catalog"
+	} else {
+		if strings.TrimSpace(c.CatalogDir) != c.CatalogDir || strings.ContainsRune(c.CatalogDir, 0) || filepath.Clean(c.CatalogDir) == "." {
+			return c, errors.New("CATALOG_DIR must name a directory")
+		}
+		c.CatalogDir = filepath.Clean(c.CatalogDir)
+	}
 	if err := json.Unmarshal([]byte(getenv("RETURN_URLS")), &c.ReturnURLs); err != nil {
 		return c, errors.New("RETURN_URLS must be a JSON array of strings")
 	}

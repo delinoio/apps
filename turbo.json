@@ -65,6 +65,7 @@
         "BACKLOG_ALERT",
         "SETTLEMENT_ALERT_SECONDS",
         "DEVELOPMENT",
+        "CATALOG_DIR",
         "OTEL_*",
         "NO_COLOR",
         "DEV_COMPOSE_DATABASE_URLS"

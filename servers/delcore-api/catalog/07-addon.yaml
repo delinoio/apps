@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: addon
+service: example-api
+key: priority
+name: Priority requests

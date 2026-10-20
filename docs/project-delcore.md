@@ -20,6 +20,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 
 - `servers/delcore-api`: one Go API and background worker process, migrations and OCI packaging. The `delino` release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
+- `servers/delcore-api/catalog`: split-file development catalog examples; the server contract owns the file format and startup behavior.
 - `protos/delcore/v1`: Connect schemas, generated Go and TypeScript messages and Connect bindings.
 - `examples/delcore-client`: Go consumer example.
 
@@ -37,6 +38,8 @@ PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authoriz
 Catalog entities use stable, scoped keys and UUID v7 identities. Billing and feature definitions have immutable semantic versions. A tenant selects versions when its subscription changes; a renewal retains those selections. The [server contract](servers-delcore-api-contract.md) owns catalog selection and payment-confirmation rules, and the [protocol contract](protos-delcore-v1-contract.md) owns the public types.
 
 Catalog reads identify the active immutable price version for each stable price key so subscription clients can select the version accepted by the server.
+
+Development startup reconciles the declared YAML catalog after schema compatibility and single-instance checks, before API and worker startup. Production startup does not read the development catalog. The [server contract](servers-delcore-api-contract.md#development-catalog) owns the file format and reconciliation rules.
 
 ## Change Policy
 
