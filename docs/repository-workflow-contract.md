@@ -20,13 +20,15 @@ docker compose ps
 
 Set Delcore's `database_url` in its operator-owned JSON configuration to the first URL. Set Git Tracker's `DATABASE_URL` in its development configuration to the second URL. Keep the remaining provider and authentication configuration under the owning [Delcore](servers-delcore-api-contract.md#local-development) and [Git Tracker](servers-git-tracker-api-contract.md#local-development) contracts. Compose does not provision Logto, Paddle, GitHub or email provider accounts. Configure Infisical as described in the [environment contract](repository-environment-contract.md#local-development-injection); injected settings must point to these local databases when using this workflow.
 
-Apply migrations explicitly before the first API start and after schema changes. From the repository root, with `CONFIG` set to the absolute path of the local Delcore JSON configuration, run:
+Initialize each empty database explicitly before the first API start. From the repository root, with `CONFIG` set to the absolute path of the local Delcore JSON configuration, run:
 
 ```sh
 go run ./servers/delcore-api/cmd/delcore-api -config "$CONFIG" -migrate
 DATABASE_URL='postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable' go run ./servers/git-tracker-api/cmd/git-tracker-api migrate
 pnpm dev
 ```
+
+Delcore tracks migration versions and checksums; rerun its migration command after schema changes. Git Tracker currently embeds a single bootstrap SQL script with unconditional table and index creation. Run its migration command only once against an empty database. Do not rerun it on a retained volume after restarts or schema changes. Until upgrade migrations are supported, use a fresh disposable Git Tracker database for a changed schema; preserve any needed data before resetting its volume.
 
 Database health does not establish schema readiness. Compose and root `pnpm dev` do not apply application migrations. Root `pnpm dev:portless` and service-local `pnpm dev` can also use these databases; start Compose separately before using those commands.
 
