@@ -246,7 +246,7 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 	}
 	var model string
-	if e = s.DB.Pool.QueryRow(ctx, "SELECT model FROM attempts WHERE id=$1 AND created_at>$2 AND generation_id='' AND NOT delivered AND usage IS NULL AND EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=3)", q.AttemptId, s.now().Add(-Retention)).Scan(&model); e != nil {
+	if e = s.DB.Pool.QueryRow(ctx, "SELECT model FROM attempts WHERE id=$1 AND created_at>$2 AND generation_id='' AND NOT delivered AND usage IS NULL AND association_eligible", q.AttemptId, s.now().Add(-Retention)).Scan(&model); e != nil {
 		if errors.Is(e, pgx.ErrNoRows) {
 			return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 		}
@@ -279,7 +279,7 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 		if exists {
 			return fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
 		}
-		result, e := tx.Exec(ctx, "UPDATE attempts SET generation_id=$2,retry_at=$3 WHERE id=$1 AND generation_id='' AND NOT delivered AND usage IS NULL AND EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=3) AND created_at>$4", q.AttemptId, q.GenerationId, s.now(), s.now().Add(-Retention))
+		result, e := tx.Exec(ctx, "UPDATE attempts SET generation_id=$2,retry_at=$3 WHERE id=$1 AND generation_id='' AND NOT delivered AND usage IS NULL AND association_eligible AND created_at>$4", q.AttemptId, q.GenerationId, s.now(), s.now().Add(-Retention))
 		if e != nil {
 			return e
 		}

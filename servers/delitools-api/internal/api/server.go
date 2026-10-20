@@ -494,7 +494,15 @@ func (s *Server) finishRequest(x *execution, settings *pb.Settings, err *error) 
 		reason = pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME
 		*err = fault(reason, x.id)
 	}
-	if _, e := s.DB.Pool.Exec(bg, "UPDATE requests SET state=$2,error_reason=$3 WHERE id=$1", x.id, x.state, reason); e != nil {
+	if e := begin(bg, s.DB, func(tx pgx.Tx) error {
+		if x.state == pb.RequestState_REQUEST_STATE_UNKNOWN {
+			if _, e := tx.Exec(bg, "UPDATE attempts SET association_eligible=true WHERE request_id=$1 AND generation_id='' AND usage IS NULL AND NOT delivered", x.id); e != nil {
+				return e
+			}
+		}
+		_, e := tx.Exec(bg, "UPDATE requests SET state=$2,error_reason=$3 WHERE id=$1", x.id, x.state, reason)
+		return e
+	}); e != nil {
 		*err = fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
 		return
 	}

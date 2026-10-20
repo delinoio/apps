@@ -1436,3 +1436,49 @@ func TestAssociationLookupContextErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestAssociationSurvivesRequestExpiry(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	g.run = func(context.Context, int, func(string) error) (Result, error) {
+		return Result{Unknown: true}, errors.New("lost response")
+	}
+	_, err := s.TranslateTextArray(ctx, request(translate(tenant, "expires-first"), "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+	var id string
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM attempts").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	now := s.now()
+	// Model a later attempt: request expires now, attempt retains one more minute.
+	if _, err := s.DB.Pool.Exec(ctx, "UPDATE requests SET created_at=$1", now.Add(-Retention)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Pool.Exec(ctx, "UPDATE attempts SET created_at=$1", now.Add(-Retention).Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.Expire(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM requests").Scan(&count); err != nil || count != 0 {
+		t.Fatal("request retained", count, err)
+	}
+	g.lookup = &Counts{Input: 8, Output: 3}
+	if _, err := s.AssociateGeneration(ctx, request(&pb.AssociateGenerationRequest{AttemptId: id, GenerationId: "gen_retained", Reason: "verified retained attempt reference"}, "Bearer operator")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Deliver(ctx, testSettings()); err != nil {
+		t.Fatal(err)
+	}
+	var delivered bool
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT delivered FROM attempts WHERE id=$1", id).Scan(&delivered); err != nil || !delivered {
+		t.Fatal("retained attempt not reconciled", err)
+	}
+	if err := s.DB.Expire(ctx, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM attempts").Scan(&count); err != nil || count != 0 {
+		t.Fatal("attempt lifetime extended", count, err)
+	}
+}
