@@ -85,7 +85,7 @@ Denied calls return `permission_denied`. Creation, modification and key issuance
 
 - A project may have multiple keys, at most 20 active ones by default. A key is active while it is neither revoked nor expired.
 - A key has a typed `READ_ONLY` or `CRUD` permission. Expiration is optional; omitting it means no automatic expiry. An expiration in the past is invalid.
-- Issuance returns the secret once. Replaying issuance returns only the key ID and permission, never the secret. If the response was lost, revoke that key and issue another. Rotate by issuing a new key and revoking the old one.
+- Issuance returns the secret once. Replaying issuance returns the complete stored key representation, including its project, permission, creation time and expiry, with an empty secret. If the response was lost, revoke that key and issue another. Rotate by issuing a new key and revoking the old one.
 - Revocation is idempotent in effect and immediate. Keys appear in management reads with their revocation and expiry times but never with secrets or hashes.
 
 ### Pagination
