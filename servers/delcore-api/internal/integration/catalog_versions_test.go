@@ -402,6 +402,39 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, le
 	}
 }
 
+func TestSubscriptionRejectsPartialActivePriceSet(t *testing.T) {
+	_, client, cfg := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare subscription service", Service: &pb.Service{Key: "subscription-service", Name: "Subscription Service", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare subscription meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "requests", Key: "requests"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare subscription plan", Plan: &pb.Plan{Key: "partial-price-plan", Name: "Partial Price Plan", Free: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	priceIDs := make([]string, 2)
+	for i, priceKey := range []string{"requests-base", "requests-extra"} {
+		price, createErr := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "declare subscription price", Price: &pb.Price{Key: priceKey, PlanId: plan.Msg.Plan.Id, ServiceId: serviceID, Meter: "requests", UnitPrice: "1", Included: "0", Currency: "USD"}}, "owner"))
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		priceIDs[i] = price.Msg.Price.Id
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: me.Msg.Tenants[0].Id, PlanId: plan.Msg.Plan.Id, PriceIds: []string{priceIDs[0]}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("partial active price set accepted: %v", err)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string

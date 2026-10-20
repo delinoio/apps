@@ -108,6 +108,18 @@ func ActiveProductVersions(ctx context.Context, tx pgx.Tx, plan string, addons [
 	return versions, nil
 }
 
+func ProductVersionPrices(ctx context.Context, tx pgx.Tx, productID, versionID string) ([]string, error) {
+	var raw []byte
+	if err := tx.QueryRow(ctx, "SELECT definition->'prices' FROM catalog_versions WHERE id=$1 AND entity_id=$2", versionID, productID).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var prices []string
+	if err := json.Unmarshal(raw, &prices); err != nil {
+		return nil, err
+	}
+	return prices, nil
+}
+
 func ConflictingFeature(ctx context.Context, tx pgx.Tx, versions []string) (bool, error) {
 	if len(versions) < 2 {
 		return false, nil

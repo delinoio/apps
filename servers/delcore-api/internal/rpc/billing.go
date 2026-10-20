@@ -119,6 +119,7 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		external := []string{}
 		seen := map[string]bool{}
 		newAddons := map[string]bool{}
+		requestedPrices := map[string][]string{q.PlanId: []string{}}
 		usageMeters := map[string]accounting.Decimal{}
 		addonRecurring := map[string]int{}
 		baseRecurring := 0
@@ -144,6 +145,9 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			}
 			if addon != "" {
 				newAddons[addon] = true
+				requestedPrices[addon] = append(requestedPrices[addon], priceID)
+			} else {
+				requestedPrices[q.PlanId] = append(requestedPrices[q.PlanId], priceID)
 			}
 			if kind == 1 {
 				k := service + "\x00" + meter
@@ -183,6 +187,32 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 		versions, e := postgres.ActiveProductVersions(c.ctx, c.tx, q.PlanId, addonIDs)
 		if e != nil {
 			return e
+		}
+		productVersions := map[string]string{}
+		productVersions[q.PlanId], e = postgres.ActiveCatalogVersion(c.ctx, c.tx, "plan", q.PlanId)
+		if e != nil {
+			return e
+		}
+		for addon := range newAddons {
+			productVersions[addon], e = postgres.ActiveCatalogVersion(c.ctx, c.tx, "addon", addon)
+			if e != nil {
+				return e
+			}
+		}
+		for product, requested := range requestedPrices {
+			version := productVersions[product]
+			if version == "" {
+				continue
+			}
+			active, err := postgres.ProductVersionPrices(c.ctx, c.tx, product, version)
+			if err != nil {
+				return err
+			}
+			sort.Strings(requested)
+			sort.Strings(active)
+			if !slices.Equal(requested, active) {
+				return invalid("selected prices must match the active product version")
+			}
 		}
 		featureConflict, e := postgres.ConflictingFeature(c.ctx, c.tx, versions)
 		if e != nil {
