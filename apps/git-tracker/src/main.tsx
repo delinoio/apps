@@ -385,6 +385,9 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
             />
           </label>
         </section>
+        {session.authenticated && user.isError && (
+          <Failure error={user.error} retry={() => void user.refetch()} />
+        )}
         {repositories.isError && (
           <Failure
             error={repositories.error}
