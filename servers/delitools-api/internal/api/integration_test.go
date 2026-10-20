@@ -1385,3 +1385,54 @@ func TestGenerationAssignmentIsUniqueAcrossWriters(t *testing.T) {
 		t.Fatal("generation assigned more than once", success, conflict)
 	}
 }
+
+type waitingLookupGateway struct {
+	Gateway
+	entered chan struct{}
+}
+
+func (g waitingLookupGateway) Lookup(ctx context.Context, _, _ string) (*Counts, error) {
+	close(g.entered)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func TestAssociationLookupContextErrors(t *testing.T) {
+	for _, canceled := range []bool{true, false} {
+		t.Run(map[bool]string{true: "canceled", false: "deadline"}[canceled], func(t *testing.T) {
+			s, _, g, tenant := setupAPI(t)
+			ctx := context.Background()
+			g.run = func(context.Context, int, func(string) error) (Result, error) {
+				return Result{Unknown: true}, errors.New("lost response")
+			}
+			_, err := s.TranslateTextArray(ctx, request(translate(tenant, "lookup"), "Bearer user"))
+			reason(t, err, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+			var id string
+			if err := s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM attempts").Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			entered := make(chan struct{})
+			s.Gateway = waitingLookupGateway{g, entered}
+			v := testSettings()
+			v.ExecutionTimeoutSeconds = 1
+			data, _ := protojson.Marshal(v)
+			if _, err := s.DB.Pool.Exec(ctx, "UPDATE settings SET value=$1", data); err != nil {
+				t.Fatal(err)
+			}
+			call, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if canceled {
+				go func() { <-entered; cancel() }()
+			}
+			_, err = s.AssociateGeneration(call, request(&pb.AssociateGenerationRequest{AttemptId: id, GenerationId: "gen_lookup", Reason: "verified correlation"}, "Bearer operator"))
+			want := pb.ErrorReason_ERROR_REASON_TIMEOUT
+			if canceled {
+				want = pb.ErrorReason_ERROR_REASON_CANCELED
+			}
+			reason(t, err, want)
+			var generation string
+			if err := s.DB.Pool.QueryRow(ctx, "SELECT generation_id FROM attempts WHERE id=$1", id).Scan(&generation); err != nil || generation != "" {
+				t.Fatal("failed lookup mutated association", generation, err)
+			}
+		})
+	}
+}

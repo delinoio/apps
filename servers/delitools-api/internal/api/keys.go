@@ -260,6 +260,12 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 	_, e = s.Gateway.Lookup(lookup, q.GenerationId, model)
 	cancel()
 	if e != nil {
+		if errors.Is(e, context.Canceled) {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_CANCELED, id)
+		}
+		if errors.Is(e, context.DeadlineExceeded) {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_TIMEOUT, id)
+		}
 		return nil, fault(pb.ErrorReason_ERROR_REASON_PROVIDER, id)
 	}
 	e = begin(ctx, s.DB, func(tx pgx.Tx) error {
