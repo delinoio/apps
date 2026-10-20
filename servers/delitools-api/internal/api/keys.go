@@ -198,7 +198,7 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 	}
 	out := &pb.InspectRequestResponse{RequestId: id, InspectedRequestId: r.Msg.RequestId}
 	var created time.Time
-	if e := s.DB.Pool.QueryRow(ctx, "SELECT tenant_id::text,capability,state,model,created_at FROM requests WHERE id=$1 AND created_at>$2", r.Msg.RequestId, s.now().Add(-Retention)).Scan(&out.TenantId, &out.Capability, &out.State, &out.Model, &created); e != nil {
+	if e := s.DB.Pool.QueryRow(ctx, "SELECT tenant_id::text,capability,state,model,created_at,error_reason FROM requests WHERE id=$1 AND created_at>$2", r.Msg.RequestId, s.now().Add(-Retention)).Scan(&out.TenantId, &out.Capability, &out.State, &out.Model, &created, &out.ErrorReason); e != nil {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 	}
 	out.CreatedAt = timestamppb.New(created)

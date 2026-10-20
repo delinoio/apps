@@ -686,3 +686,47 @@ func TestInspectFrozenPriceTimestamp(t *testing.T) {
 		t.Fatal("incorrect frozen price timestamp")
 	}
 }
+
+func TestInspectionRetainsTerminalFailure(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	for _, want := range []pb.ErrorReason{pb.ErrorReason_ERROR_REASON_INVALID_OUTPUT, pb.ErrorReason_ERROR_REASON_EXTRACTION_IMPOSSIBLE, pb.ErrorReason_ERROR_REASON_PROVIDER, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME} {
+		g.run = func(context.Context, int, func(string) error) (Result, error) {
+			switch want {
+			case pb.ErrorReason_ERROR_REASON_PROVIDER:
+				return Result{Usage: &Counts{}}, errors.New("rejected")
+			case pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME:
+				return Result{Unknown: true}, errors.New("lost")
+			case pb.ErrorReason_ERROR_REASON_EXTRACTION_IMPOSSIBLE:
+				return Result{Content: `{"items":[]}`, Usage: &Counts{}}, nil
+			default:
+				return Result{Content: "invalid", Usage: &Counts{}}, nil
+			}
+		}
+		key := ID()
+		q := &pb.ExtractDataFromTextRequest{TenantId: tenant, Text: "source", JsonSchema: personSchema, IdempotencyKey: key}
+		_, err := s.ExtractDataFromText(ctx, request(q, "Bearer user"))
+		reason(t, err, want)
+		var id string
+		if err := s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM requests WHERE dedup_key=$1", key).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			inspected, err := s.InspectRequest(ctx, request(&pb.InspectRequestRequest{RequestId: id}, "Bearer operator"))
+			if err != nil || inspected.Msg.ErrorReason != want {
+				t.Fatalf("inspection: %v %v", inspected, err)
+			}
+			state := pb.RequestState_REQUEST_STATE_COMPLETED
+			duplicate := pb.ErrorReason_ERROR_REASON_ALREADY_PROCESSED
+			if want == pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME {
+				state = pb.RequestState_REQUEST_STATE_UNKNOWN
+				duplicate = want
+			}
+			if inspected.Msg.State != state {
+				t.Fatal(inspected.Msg.State)
+			}
+			_, err = s.ExtractDataFromText(ctx, request(q, "Bearer user"))
+			reason(t, err, duplicate)
+		}
+	}
+}
