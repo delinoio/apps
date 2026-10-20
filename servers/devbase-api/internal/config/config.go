@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"time"
@@ -146,6 +147,12 @@ func (c Config) Validate() error {
 	}
 	if c.MaxProjectsPerTenant <= 0 || c.MaxUsersPerProject <= 0 || c.MaxActiveKeysPerProject <= 0 {
 		return errors.New("resource limits must be positive")
+	}
+	// ParseFloat accepts NaN and Inf, and NaN passes every ordered comparison below.
+	for _, rate := range []float64{c.UserRate, c.ManagementRate} {
+		if math.IsNaN(rate) || math.IsInf(rate, 0) {
+			return errors.New("rate limits must be finite numbers")
+		}
 	}
 	if c.UserRate <= 0 || c.ManagementRate <= 0 || c.UserBurst <= 0 || c.ManagementBurst <= 0 {
 		return errors.New("rate limits and bursts must be positive")

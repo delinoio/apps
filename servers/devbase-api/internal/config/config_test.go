@@ -46,6 +46,10 @@ func TestRejections(t *testing.T) {
 		"negative rate":      {"MANAGEMENT_RATE_PER_SECOND": "-1"},
 		"non-numeric rate":   {"USER_RATE_PER_SECOND": "fast"},
 		"zero cleanup cycle": {"CLEANUP_INTERVAL": "0s"},
+		"NaN user rate":      {"USER_RATE_PER_SECOND": "NaN"},
+		"NaN management":     {"MANAGEMENT_RATE_PER_SECOND": "nan"},
+		"infinite rate":      {"USER_RATE_PER_SECOND": "Inf"},
+		"negative infinity":  {"MANAGEMENT_RATE_PER_SECOND": "-Inf"},
 	} {
 		if _, e := Load(env(extra)); e == nil {
 			t.Errorf("%s accepted", name)
