@@ -1329,3 +1329,14 @@ func TestAlertCooldownSurvivesRestart(t *testing.T) {
 		t.Fatalf("renewed alert count %d: %v", count, err)
 	}
 }
+
+func TestAssociationLookupPreservesStorageFailure(t *testing.T) {
+	s, _, _, _ := setupAPI(t)
+	ctx := context.Background()
+	q := &pb.AssociateGenerationRequest{AttemptId: ID(), GenerationId: "gen_fixture", Reason: "reconcile attempt"}
+	_, err := s.AssociateGeneration(ctx, request(q, "Bearer operator"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_INVALID_INPUT)
+	s.DB.Pool.Close()
+	_, err = s.AssociateGeneration(ctx, request(q, "Bearer operator"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_INTERNAL)
+}

@@ -246,7 +246,10 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 	}
 	var model string
 	if e = s.DB.Pool.QueryRow(ctx, "SELECT model FROM attempts WHERE id=$1 AND created_at>$2 AND generation_id='' AND NOT delivered AND usage IS NULL AND EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=3)", q.AttemptId, s.now().Add(-Retention)).Scan(&model); e != nil {
-		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+		}
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
 	v, e := s.DB.Settings(ctx)
 	if e != nil {
