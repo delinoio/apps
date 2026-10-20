@@ -70,33 +70,28 @@ test("Git Tracker overrides injected DATABASE_URL while preserving provider sett
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
-test("Delcore loads local settings with injected and Compose values taking priority", (t) => {
+test("Delcore leaves dotenv parsing to Go while preserving injected and Compose values", (t) => {
   const directory = fixture(t);
   const path = join(directory, ".env");
   const original =
-    "DATABASE_URL=postgres://local/shared\nIDENTITY_KEY=fixture-local\nISSUER=https://fixture.invalid\n";
+    "SUFFIX=fixture-local\nIDENTITY_KEY=prefix$SUFFIX\nISSUER=https://fixture.invalid\n";
   writeFileSync(path, original);
-  const prepared = prepareApiEnvironment(
-    Api.Delcore,
-    {
-      ...handoff,
-      DATABASE_URL: "postgres://remote/shared",
-      IDENTITY_KEY: "fixture-injected",
-    },
-    directory,
-  );
+  const prepared = prepareApiEnvironment(Api.Delcore, {
+    ...handoff,
+    DATABASE_URL: "postgres://remote/shared",
+    IDENTITY_KEY: "fixture-injected",
+  });
   assert.equal(prepared.env.DATABASE_URL, urls[Api.Delcore]);
   assert.equal(prepared.env.IDENTITY_KEY, "fixture-injected");
-  assert.equal(prepared.env.ISSUER, "https://fixture.invalid");
+  assert.equal(prepared.env.ISSUER, undefined);
   assert.equal(prepared.env[databaseHandoff], undefined);
   assert.equal(readFileSync(path, "utf8"), original);
   assert.equal(
-    prepareApiEnvironment(Api.Delcore, {}, directory).env.DATABASE_URL,
-    "postgres://local/shared",
+    prepareApiEnvironment(Api.Delcore, {}).env.IDENTITY_KEY,
+    undefined,
   );
   assert.equal(
-    prepareApiEnvironment(Api.Delcore, { IDENTITY_KEY: "" }, directory).env
-      .IDENTITY_KEY,
+    prepareApiEnvironment(Api.Delcore, { IDENTITY_KEY: "" }).env.IDENTITY_KEY,
     "",
   );
 });
@@ -108,11 +103,11 @@ test("API development listeners stay distinct despite shared and local LISTEN va
     for (const injected of ["127.0.0.1:8080", "127.0.0.1:46321", ""]) {
       const source = { ...(compose ? handoff : {}), LISTEN: injected };
       assert.equal(
-        prepareApiEnvironment(Api.Delcore, source, directory).env.LISTEN,
+        prepareApiEnvironment(Api.Delcore, source).env.LISTEN,
         "127.0.0.1:8080",
       );
       assert.equal(
-        prepareApiEnvironment(Api.GitTracker, source, directory).env.LISTEN,
+        prepareApiEnvironment(Api.GitTracker, source).env.LISTEN,
         "127.0.0.1:46321",
       );
     }

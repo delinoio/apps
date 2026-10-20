@@ -1,30 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { parseEnv } from "node:util";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Api, databaseHandoff } from "./dev.mjs";
 import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
 
-export function prepareApiEnvironment(
-  api,
-  source = process.env,
-  cwd = process.cwd(),
-) {
+export function prepareApiEnvironment(api, source = process.env) {
   if (!Object.values(Api).includes(api))
     throw new Error("Unknown development API");
-  // Load Delcore's local values before Air starts. Injected values and the
-  // Compose handoff must retain priority over the service-local file.
-  let local = {};
-  if (api === Api.Delcore) {
-    try {
-      local = parseEnv(readFileSync(join(cwd, ".env"), "utf8"));
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
   const env = {
-    ...local,
     ...source,
     // Development listeners are fixed per service, including when a shared
     // parent shell or Infisical value supplies LISTEN.
