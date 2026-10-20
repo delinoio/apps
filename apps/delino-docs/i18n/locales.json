@@ -1,0 +1,7 @@
+{
+  "sourceLang": "en",
+  "locales": [
+    { "lang": "en", "label": "English" },
+    { "lang": "ko", "label": "한국어" }
+  ]
+}

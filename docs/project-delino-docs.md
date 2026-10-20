@@ -11,16 +11,20 @@ Provide one public documentation app for multiple Delino services at `https://do
 ## Domain Ownership Map
 
 - `apps/delino-docs`: independently built public documentation app.
-- `apps/delino-docs/docs`: curated public Markdown and MDX pages.
+- `apps/delino-docs/docs`: curated public pages grouped by language. `en` owns source Markdown; other language directories own translated pages.
+- `apps/delino-docs/i18n`: language registry, navigation/theme text catalogs and source fingerprints.
 - `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-site`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
 - [Documentation app](apps-delino-docs-web-contract.md)
+- [Localization and translation tooling](apps-delino-site-localization-contract.md)
 
 ## Cross-Domain Invariants
 
 The documentation app serves multiple services. Each service owns a section under `/services/<service-id>/`. Service IDs use stable lowercase kebab-case values. The scaffold does not select which services publish documentation.
+
+English routes have no language prefix; Korean and future languages use `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.
 

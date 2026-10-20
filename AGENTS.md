@@ -63,6 +63,7 @@
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go messages and Connect bindings.
 - `scripts/`: Shared build and development support.
+- `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
 - `examples/delcore-client`: Go consumer example.
 - `.github/`: CI actions and workflows, including mobile release automation.

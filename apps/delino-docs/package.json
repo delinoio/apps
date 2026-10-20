@@ -6,13 +6,20 @@
   "type": "module",
   "scripts": {
     "dev": "rspress dev",
-    "build": "rspress build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\"",
+    "build": "pnpm i18n:check && rspress build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\" && cp \"i18n/RSPRESS-LICENSE\" \"dist/\" && cp \"i18n/NOTICE\" \"dist/TRANSLATION-NOTICE\"",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm typecheck && pnpm build",
-    "ci:checks": "pnpm test"
+    "test": "pnpm i18n:check && pnpm typecheck && pnpm build",
+    "ci:checks": "pnpm test",
+    "i18n:check": "node ../../scripts/localization/cli.mjs check",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
+    "i18n:login": "node ../../scripts/localization/cli.mjs login",
+    "i18n:logout": "node ../../scripts/localization/cli.mjs logout",
+    "i18n:models": "node ../../scripts/localization/cli.mjs models",
+    "i18n:profiles": "node ../../scripts/localization/cli.mjs profiles"
   },
   "devDependencies": {
     "@rspress/core": "2.0.23",
+    "@types/node": "24.19.2",
     "typescript": "5.9.3"
   }
 }

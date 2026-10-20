@@ -14,7 +14,7 @@ Visitors learn about Delino through the marketing website. Maintainers build and
 
 ## Interfaces and Contracts
 
-The root route `/` has the title `Delino`. The scaffold renders an empty React root. Product screens and API clients require subsequent implementation.
+The root route `/` has the title `Delino`. The minimal page provides a language selector and a link to documentation in the selected language. English uses `/`; Korean uses `/ko/`. Each registered language has an independent static HTML entry with matching `lang` metadata. Product screens and API clients require subsequent implementation. Follow the [localization contract](apps-delino-site-localization-contract.md) for catalogs and automated generation.
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
@@ -34,7 +34,7 @@ Rsbuild reports startup and build failures. Future service integrations must emi
 
 ## Build and Test
 
-Run `pnpm test` in this directory for TypeScript checks and a production build. `pnpm build` emits `dist`. Affected CI runs these checks on Ubuntu. Remove generated `dist` after validation.
+Run `pnpm test` in this directory for offline translation validation, TypeScript checks and a production build. `pnpm build` also validates translations before emitting `dist`. Affected CI runs these checks on Ubuntu without ChatGPT credentials. Remove generated `dist` after validation.
 
 Cloudflare Pages builds the `delino-site` workspace from the repository root with `pnpm --filter delino-site build` and publishes `apps/delino-site/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 

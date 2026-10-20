@@ -6,10 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "rsbuild dev",
-    "build": "rsbuild build",
+    "build": "pnpm i18n:check && rsbuild build",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm typecheck && pnpm build",
-    "ci:checks": "pnpm test"
+    "test": "pnpm i18n:check && pnpm typecheck && pnpm build",
+    "ci:checks": "pnpm test",
+    "i18n:check": "node ../../scripts/localization/cli.mjs check",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
+    "i18n:login": "node ../../scripts/localization/cli.mjs login",
+    "i18n:logout": "node ../../scripts/localization/cli.mjs logout",
+    "i18n:models": "node ../../scripts/localization/cli.mjs models",
+    "i18n:profiles": "node ../../scripts/localization/cli.mjs profiles"
   },
   "dependencies": {
     "react": "19.2.8",

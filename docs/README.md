@@ -71,11 +71,13 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [Project index](project-delino-site.md)
 - [Web application](apps-delino-site-web-contract.md)
+- [Shared Delino localization](apps-delino-site-localization-contract.md)
 
 ### delino-docs
 
 - [Project index](project-delino-docs.md)
 - [Public documentation app](apps-delino-docs-web-contract.md)
+- [Shared Delino localization](apps-delino-site-localization-contract.md)
 
 ## Repository workflow
 

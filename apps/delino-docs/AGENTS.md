@@ -6,3 +6,4 @@
 - Keep public content in this app's `docs/`; repository-root `docs/` owns internal contracts.
 - Keep frontend development on fixed loopback port 46315 and fail on conflicts.
 - Run package-local `pnpm test` for frontend changes. Verify deployment separately.
+- Follow the [localization contract](../../docs/apps-delino-site-localization-contract.md) for source catalogs, new languages and local ChatGPT translation commands.

@@ -16,12 +16,15 @@ Provide the Delino marketing website.
 ## Domain Contract Documents
 
 - [Web application](apps-delino-site-web-contract.md)
+- [Localization and translation tooling](apps-delino-site-localization-contract.md)
 
 ## Cross-Domain Invariants
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
+
+`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; Korean uses `/ko/`. Other registered languages use the same prefixed route convention.
 
 ## Change Policy
 
