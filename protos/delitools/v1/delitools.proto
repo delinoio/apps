@@ -142,6 +142,11 @@ message Attempt {
   bool usage_known = 3;
   bool delivered = 4;
   google.protobuf.Timestamp created_at = 5;
+  string catalog_price_json = 6;
+  string measured_usage_json = 7;
+  google.protobuf.Timestamp occurred_at = 8;
+  google.protobuf.Timestamp retry_at = 9;
+  uint32 delivery_failures = 10;
   google.protobuf.Timestamp price_effective_at = 11;
 }
 message InspectRequestResponse {
@@ -156,7 +161,16 @@ message InspectRequestResponse {
   // Safe terminal failure reason; unspecified for success or pre-upgrade records.
   ErrorReason error_reason = 9;
 }
+message AssociateGenerationRequest {
+  string attempt_id = 1;
+  string generation_id = 2;
+  string reason = 3;
+}
+message AssociateGenerationResponse {
+  string request_id = 1;
+}
 service DeliToolsService {
+  rpc AssociateGeneration(AssociateGenerationRequest) returns (AssociateGenerationResponse);
   rpc TranslateTextArray(TranslateTextArrayRequest) returns (TranslateTextArrayResponse);
   rpc ExtractDataFromText(ExtractDataFromTextRequest) returns (ExtractDataFromTextResponse);
   rpc CreateKey(CreateKeyRequest) returns (CreateKeyResponse);

@@ -9,6 +9,7 @@ import (
 	"errors"
 	core "github.com/delinoio/apps/protos/delcore/v1"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
+	"github.com/delinoio/apps/protos/delitools/v1/delitoolsv1connect"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"io"
@@ -1098,5 +1099,81 @@ func TestCatalogPublicationSerializesClaims(t *testing.T) {
 	}
 	if x.price.Input != "0.009" || x.effective.After(x.started) {
 		t.Fatal("claim froze inconsistent price", x.price, x.effective, x.started)
+	}
+}
+
+func TestAuditedGenerationAssociation(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	g.run = func(context.Context, int, func(string) error) (Result, error) {
+		return Result{Unknown: true}, errors.New("connection lost before first chunk")
+	}
+	_, e := s.TranslateTextArray(ctx, request(translate(tenant, "unknown"), "Bearer user"))
+	reason(t, e, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+	var id string
+	if e = s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM attempts").Scan(&id); e != nil {
+		t.Fatal(e)
+	}
+	g.lookup = &Counts{Input: 8, Output: 3}
+	q := &pb.AssociateGenerationRequest{AttemptId: id, GenerationId: "gen_verified", Reason: "matched Gateway attempt reference and model"}
+	_, e = s.AssociateGeneration(ctx, request(q, "Bearer user"))
+	reason(t, e, pb.ErrorReason_ERROR_REASON_FORBIDDEN)
+	if _, e = s.AssociateGeneration(ctx, request(q, "Bearer operator")); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Deliver(ctx, testSettings()); e != nil {
+		t.Fatal(e)
+	}
+	var delivered bool
+	if e = s.DB.Pool.QueryRow(ctx, "SELECT delivered FROM attempts WHERE id=$1", id).Scan(&delivered); e != nil || !delivered {
+		t.Fatal("reconciliation not delivered", e)
+	}
+	var audits int
+	s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM audit WHERE action LIKE 'associate_generation:%'").Scan(&audits)
+	if audits != 1 {
+		t.Fatal("missing attribution audit")
+	}
+}
+
+func TestConnectWireAndTelemetry(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	path, h := s.Handler(100000)
+	mux.Handle(path, h)
+	mux.Handle("/metrics", s.Metrics())
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := delitoolsv1connect.NewDeliToolsServiceClient(server.Client(), server.URL)
+	key, e := client.CreateKey(ctx, request(&pb.CreateKeyRequest{TenantId: tenant, Kind: pb.KeyKind_KEY_KIND_PERSONAL, Capabilities: []pb.Capability{pb.Capability_CAPABILITY_TRANSLATOR}}, "Bearer user"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	q := translate(tenant, "wire")
+	v, e := client.TranslateTextArray(ctx, request(q, "Bearer "+key.Msg.Secret))
+	if e != nil || !validID(v.Msg.RequestId) {
+		t.Fatal(v, e)
+	}
+	_, e = client.TranslateTextArray(ctx, request(q, "Bearer user"))
+	reason(t, e, pb.ErrorReason_ERROR_REASON_ALREADY_PROCESSED)
+	inspect, e := client.InspectRequest(ctx, request(&pb.InspectRequestRequest{RequestId: v.Msg.RequestId}, "Bearer operator"))
+	if e != nil || len(inspect.Msg.Attempts) != 1 || inspect.Msg.Attempts[0].CatalogPriceJson == "" || inspect.Msg.Attempts[0].MeasuredUsageJson == "" {
+		t.Fatal("inspection missing usage evidence", inspect, e)
+	}
+	resp, e := server.Client().Get(server.URL + "/metrics")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), "delitools_pending_usage") || strings.Contains(string(b), tenant) || strings.Contains(string(b), key.Msg.Secret) {
+		t.Fatal("unsafe metrics")
+	}
+	var logs string
+	if e = s.DB.Pool.QueryRow(ctx, "SELECT COALESCE(json_agg(l)::text,'') FROM operational_logs l").Scan(&logs); e != nil {
+		t.Fatal(e)
+	}
+	if strings.Contains(logs, "Hello") || strings.Contains(logs, key.Msg.Secret) {
+		t.Fatal("unsafe logs")
 	}
 }

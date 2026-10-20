@@ -38,6 +38,7 @@ const locales = registry.locales.map((locale) => {
             { text: messages.overview, link: `${prefix}/services/` },
             { text: "Delcore", link: `${prefix}/services/delcore/` },
             { text: "Git Tracker", link: `${prefix}/services/git-tracker/` },
+            { text: "DeliTools", link: `${prefix}/services/delitools/` },
           ],
         },
       ],

@@ -14,7 +14,7 @@ External clients use Logto bearer tokens or DeliTools bearer API keys. Key manag
 
 ## Interfaces and Contracts
 
-`DeliToolsService` exposes synchronous `TranslateTextArray` and `ExtractDataFromText`, key creation/list/revocation, operator settings and request inspection. Success returns only a request ID and result. Requests carry tenant IDs and optional idempotency keys. Duplicate state never replays a result. Authentication precedes duplicate disclosure.
+`DeliToolsService` exposes synchronous `TranslateTextArray` and `ExtractDataFromText`, key creation/list/revocation, operator settings, request inspection and audited association of Gateway generation IDs for unknown attempts. `AssociateGeneration` accepts no source, result, tokens or fee and never replays AI. Success returns only a request ID and result. Requests carry tenant IDs and optional idempotency keys. Duplicate state never replays a result. Authentication precedes duplicate disclosure.
 
 Schema subset: object roots, nested object/array/string/number/integer/boolean/null types, required properties, `additionalProperties: false`, descriptions and scalar enums. All object properties must be required. The caller schema supports eight nesting levels; the service reserves two provider levels for its response envelope. Provider bounds also limit the combined schema to 5,000 properties, 1,000 enum values and 120,000 characters of property names and enum values. An enum with more than 250 values has a 15,000-character string-value limit. Reject unknown schema keywords and recursive references before execution. Missing source information is extraction-impossible; malformed or nonconforming output is extraction-failed. No repair retry is permitted.
 
@@ -36,7 +36,7 @@ Use safe correlation IDs and bounded reason codes. No raw message logging.
 
 ## Build and Test
 
-Run root Buf lint, generation, freshness, FILE breaking checks and protocol Go tests. Verify the implemented server runtime with PostgreSQL and mocked providers in this checkout. The consumer example remains a reserved skeleton; run its Go tests once its implementation is present.
+Run root Buf lint, generation, freshness, FILE breaking checks and Go tests including the consumer example. Verify server behavior with PostgreSQL and mocked providers in this checkout.
 
 ## Dependencies and Integrations
 

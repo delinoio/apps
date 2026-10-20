@@ -525,6 +525,8 @@ importers:
 
   servers/delcore-api: {}
 
+  servers/delitools-api: {}
+
   servers/git-tracker-api: {}
 
 packages:

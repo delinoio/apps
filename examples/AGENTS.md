@@ -5,3 +5,5 @@
 - Run `go test ./...` and `go build ./examples/delcore-client` from the repository root.
 - Read access tokens from the environment. Do not print tokens or raw response content.
 - `examples/git-tracker-client` owns the Git Tracker Go consumer example. Read its [protocol contract](../docs/protos-git-tracker-v1-contract.md) and run `go build ./examples/git-tracker-client` from the root.
+
+- `examples/delitools-client` owns the DeliTools Go consumer example. Follow its [protocol contract](../docs/protos-delitools-v1-contract.md). Build it from the root with output outside the checkout.

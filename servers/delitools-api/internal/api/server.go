@@ -47,7 +47,7 @@ func (s *Server) now() time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond)
 }
 func (s *Server) Handler(maxBytes int) (string, http.Handler) {
-	return delitoolsv1connect.NewDeliToolsServiceHandler(s, connect.WithReadMaxBytes(maxBytes))
+	return delitoolsv1connect.NewDeliToolsServiceHandler(s, connect.WithReadMaxBytes(maxBytes), connect.WithInterceptors(s.interceptor()))
 }
 
 type operationalEvent struct {
@@ -307,7 +307,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 			return e
 		}
 		x.attemptStarted = true
-		result, err = s.Gateway.Execute(ctx, x.model, prompt, schema, capture)
+		result, err = s.Gateway.Execute(context.WithValue(ctx, attemptReference{}, attemptID), x.model, prompt, schema, capture)
 		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
 		var measured any
 		if result.Usage != nil {
@@ -363,12 +363,12 @@ func (s *Server) TranslateTextArray(ctx context.Context, r *connect.Request[pb.T
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_MODEL, id)
 	}
 	out, e := language.Parse(q.OutputLanguage)
-	if e != nil || q.OutputLanguage == "" {
+	if e != nil || q.OutputLanguage == "" || strings.Contains(q.OutputLanguage, "_") {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 	}
 	if q.InputLanguage != "" {
 		in, e := language.Parse(q.InputLanguage)
-		if e != nil || in == out {
+		if e != nil || in == out || strings.Contains(q.InputLanguage, "_") {
 			return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 		}
 	}

@@ -209,18 +209,20 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 		return nil, storageFault(e, id)
 	}
 	out.CreatedAt = timestamppb.New(created)
-	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,attempts.id", r.Msg.RequestId, s.now().Add(-Retention))
+	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price::text,COALESCE(usage::text,''),occurred_at,retry_at,failures,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,attempts.id", r.Msg.RequestId, s.now().Add(-Retention))
 	if e != nil {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		a := &pb.Attempt{}
-		var at, effective time.Time
-		if e = rows.Scan(&a.Id, &a.GenerationId, &a.UsageKnown, &a.Delivered, &at, &effective); e != nil {
+		var at, occurred, retry, effective time.Time
+		if e = rows.Scan(&a.Id, &a.GenerationId, &a.UsageKnown, &a.Delivered, &at, &a.CatalogPriceJson, &a.MeasuredUsageJson, &occurred, &retry, &a.DeliveryFailures, &effective); e != nil {
 			return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 		}
 		a.CreatedAt = timestamppb.New(at)
+		a.OccurredAt = timestamppb.New(occurred)
+		a.RetryAt = timestamppb.New(retry)
 		a.PriceEffectiveAt = timestamppb.New(effective)
 		out.Attempts = append(out.Attempts, a)
 	}
@@ -228,4 +230,57 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
 	return connect.NewResponse(out), nil
+}
+
+// AssociateGeneration links externally verified Gateway evidence to an ambiguous
+// attempt. It accepts no source, output, token counts or fee and never executes AI.
+func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.AssociateGenerationRequest]) (*connect.Response[pb.AssociateGenerationResponse], error) {
+	id := ID()
+	actor, e := s.Auth.Operator(ctx, r.Header().Get("Authorization"))
+	if e != nil {
+		return nil, authFault(e, id)
+	}
+	q := r.Msg
+	if !validID(q.AttemptId) || !strings.HasPrefix(q.GenerationId, "gen_") || len(q.GenerationId) > 200 || len(strings.TrimSpace(q.Reason)) < 3 || len(q.Reason) > 1000 {
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+	}
+	var model string
+	if e = s.DB.Pool.QueryRow(ctx, "SELECT model FROM attempts WHERE id=$1 AND created_at>$2 AND generation_id='' AND NOT delivered AND usage IS NULL AND EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=3)", q.AttemptId, s.now().Add(-Retention)).Scan(&model); e != nil {
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+	}
+	v, e := s.DB.Settings(ctx)
+	if e != nil {
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
+	}
+	lookup, cancel := context.WithTimeout(ctx, time.Duration(v.ExecutionTimeoutSeconds)*time.Second)
+	_, e = s.Gateway.Lookup(lookup, q.GenerationId, model)
+	cancel()
+	if e != nil {
+		return nil, fault(pb.ErrorReason_ERROR_REASON_PROVIDER, id)
+	}
+	e = begin(ctx, s.DB, func(tx pgx.Tx) error {
+		if _, e := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(41824703)"); e != nil {
+			return e
+		}
+		var exists bool
+		if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM attempts WHERE generation_id=$1)", q.GenerationId).Scan(&exists); e != nil {
+			return e
+		}
+		if exists {
+			return fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
+		}
+		result, e := tx.Exec(ctx, "UPDATE attempts SET generation_id=$2,retry_at=$3 WHERE id=$1 AND generation_id='' AND NOT delivered AND usage IS NULL AND EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=3) AND created_at>$4", q.AttemptId, q.GenerationId, s.now(), s.now().Add(-Retention))
+		if e != nil {
+			return e
+		}
+		if result.RowsAffected() != 1 {
+			return fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO audit VALUES($1,$2,$3,$4,$5,$6)", ID(), actor, "associate_generation:"+q.AttemptId+":"+q.GenerationId, q.Reason, id, s.now())
+		return e
+	})
+	if e != nil {
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
+	}
+	return connect.NewResponse(&pb.AssociateGenerationResponse{RequestId: id}), nil
 }

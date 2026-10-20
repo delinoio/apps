@@ -43,6 +43,7 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
     ["delcore-api", "delcore_api"],
+    ["delitools-api", "delitools_api"],
     ["git-tracker-api", "git_tracker_api"],
     ["fixkey-frontend", "fixkey"],
   ]) {
@@ -213,6 +214,7 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "check-formatting",
     "git-tracker-clients",
     "delcore-api",
+    "delitools-api",
     "git-tracker-api",
     "devbase-frontend",
     "delino-site-frontend",
@@ -265,6 +267,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delidev: "true",
     delitools: "true",
     delcore_api: "true",
+    delitools_api: "true",
     git_tracker_api: "true",
     protocol: "true",
   };
@@ -287,6 +290,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delidev: "false",
     delitools: "false",
     delcore_api: "true",
+    delitools_api: "true",
     git_tracker_api: "true",
     protocol: "true",
   };
@@ -373,7 +377,7 @@ test("every prerequisite failure retains its command and outcome in evidence", (
 });
 
 test("server validation uses local protocols, PostgreSQL and licensed OCI packaging", () => {
-  for (const id of ["delcore-api", "git-tracker-api"]) {
+  for (const id of ["delcore-api", "git-tracker-api", "delitools-api"]) {
     const job = workflow.jobs[id];
     assert.equal(job["runs-on"], "ubuntu-latest");
     assert.ok(workflow.jobs["ci-result"].needs.includes(id));

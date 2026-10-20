@@ -35,6 +35,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DeliToolsServiceAssociateGenerationProcedure is the fully-qualified name of the
+	// DeliToolsService's AssociateGeneration RPC.
+	DeliToolsServiceAssociateGenerationProcedure = "/delitools.v1.DeliToolsService/AssociateGeneration"
 	// DeliToolsServiceTranslateTextArrayProcedure is the fully-qualified name of the DeliToolsService's
 	// TranslateTextArray RPC.
 	DeliToolsServiceTranslateTextArrayProcedure = "/delitools.v1.DeliToolsService/TranslateTextArray"
@@ -63,6 +66,7 @@ const (
 
 // DeliToolsServiceClient is a client for the delitools.v1.DeliToolsService service.
 type DeliToolsServiceClient interface {
+	AssociateGeneration(context.Context, *connect.Request[v1.AssociateGenerationRequest]) (*connect.Response[v1.AssociateGenerationResponse], error)
 	TranslateTextArray(context.Context, *connect.Request[v1.TranslateTextArrayRequest]) (*connect.Response[v1.TranslateTextArrayResponse], error)
 	ExtractDataFromText(context.Context, *connect.Request[v1.ExtractDataFromTextRequest]) (*connect.Response[v1.ExtractDataFromTextResponse], error)
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.CreateKeyResponse], error)
@@ -84,6 +88,12 @@ func NewDeliToolsServiceClient(httpClient connect.HTTPClient, baseURL string, op
 	baseURL = strings.TrimRight(baseURL, "/")
 	deliToolsServiceMethods := v1.File_delitools_v1_delitools_proto.Services().ByName("DeliToolsService").Methods()
 	return &deliToolsServiceClient{
+		associateGeneration: connect.NewClient[v1.AssociateGenerationRequest, v1.AssociateGenerationResponse](
+			httpClient,
+			baseURL+DeliToolsServiceAssociateGenerationProcedure,
+			connect.WithSchema(deliToolsServiceMethods.ByName("AssociateGeneration")),
+			connect.WithClientOptions(opts...),
+		),
 		translateTextArray: connect.NewClient[v1.TranslateTextArrayRequest, v1.TranslateTextArrayResponse](
 			httpClient,
 			baseURL+DeliToolsServiceTranslateTextArrayProcedure,
@@ -137,6 +147,7 @@ func NewDeliToolsServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // deliToolsServiceClient implements DeliToolsServiceClient.
 type deliToolsServiceClient struct {
+	associateGeneration *connect.Client[v1.AssociateGenerationRequest, v1.AssociateGenerationResponse]
 	translateTextArray  *connect.Client[v1.TranslateTextArrayRequest, v1.TranslateTextArrayResponse]
 	extractDataFromText *connect.Client[v1.ExtractDataFromTextRequest, v1.ExtractDataFromTextResponse]
 	createKey           *connect.Client[v1.CreateKeyRequest, v1.CreateKeyResponse]
@@ -145,6 +156,11 @@ type deliToolsServiceClient struct {
 	getSettings         *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
 	updateSettings      *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
 	inspectRequest      *connect.Client[v1.InspectRequestRequest, v1.InspectRequestResponse]
+}
+
+// AssociateGeneration calls delitools.v1.DeliToolsService.AssociateGeneration.
+func (c *deliToolsServiceClient) AssociateGeneration(ctx context.Context, req *connect.Request[v1.AssociateGenerationRequest]) (*connect.Response[v1.AssociateGenerationResponse], error) {
+	return c.associateGeneration.CallUnary(ctx, req)
 }
 
 // TranslateTextArray calls delitools.v1.DeliToolsService.TranslateTextArray.
@@ -189,6 +205,7 @@ func (c *deliToolsServiceClient) InspectRequest(ctx context.Context, req *connec
 
 // DeliToolsServiceHandler is an implementation of the delitools.v1.DeliToolsService service.
 type DeliToolsServiceHandler interface {
+	AssociateGeneration(context.Context, *connect.Request[v1.AssociateGenerationRequest]) (*connect.Response[v1.AssociateGenerationResponse], error)
 	TranslateTextArray(context.Context, *connect.Request[v1.TranslateTextArrayRequest]) (*connect.Response[v1.TranslateTextArrayResponse], error)
 	ExtractDataFromText(context.Context, *connect.Request[v1.ExtractDataFromTextRequest]) (*connect.Response[v1.ExtractDataFromTextResponse], error)
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.CreateKeyResponse], error)
@@ -206,6 +223,12 @@ type DeliToolsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDeliToolsServiceHandler(svc DeliToolsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	deliToolsServiceMethods := v1.File_delitools_v1_delitools_proto.Services().ByName("DeliToolsService").Methods()
+	deliToolsServiceAssociateGenerationHandler := connect.NewUnaryHandler(
+		DeliToolsServiceAssociateGenerationProcedure,
+		svc.AssociateGeneration,
+		connect.WithSchema(deliToolsServiceMethods.ByName("AssociateGeneration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	deliToolsServiceTranslateTextArrayHandler := connect.NewUnaryHandler(
 		DeliToolsServiceTranslateTextArrayProcedure,
 		svc.TranslateTextArray,
@@ -256,6 +279,8 @@ func NewDeliToolsServiceHandler(svc DeliToolsServiceHandler, opts ...connect.Han
 	)
 	return "/delitools.v1.DeliToolsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DeliToolsServiceAssociateGenerationProcedure:
+			deliToolsServiceAssociateGenerationHandler.ServeHTTP(w, r)
 		case DeliToolsServiceTranslateTextArrayProcedure:
 			deliToolsServiceTranslateTextArrayHandler.ServeHTTP(w, r)
 		case DeliToolsServiceExtractDataFromTextProcedure:
@@ -280,6 +305,10 @@ func NewDeliToolsServiceHandler(svc DeliToolsServiceHandler, opts ...connect.Han
 
 // UnimplementedDeliToolsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDeliToolsServiceHandler struct{}
+
+func (UnimplementedDeliToolsServiceHandler) AssociateGeneration(context.Context, *connect.Request[v1.AssociateGenerationRequest]) (*connect.Response[v1.AssociateGenerationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delitools.v1.DeliToolsService.AssociateGeneration is not implemented"))
+}
 
 func (UnimplementedDeliToolsServiceHandler) TranslateTextArray(context.Context, *connect.Request[v1.TranslateTextArrayRequest]) (*connect.Response[v1.TranslateTextArrayResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delitools.v1.DeliToolsService.TranslateTextArray is not implemented"))

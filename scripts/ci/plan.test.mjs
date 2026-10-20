@@ -4,6 +4,7 @@ import { select } from "./plan.mjs";
 
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
+    delitools_api: false,
     delcore_api: false,
     git_tracker_api: false,
     git_tracker: false,
@@ -16,6 +17,7 @@ test("isolated projects select only their validation", () => {
     protocol: false,
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
+    delitools_api: true,
     delcore_api: true,
     git_tracker_api: true,
     git_tracker: true,
@@ -28,6 +30,7 @@ test("isolated projects select only their validation", () => {
     protocol: true,
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
+    delitools_api: true,
     delcore_api: true,
     git_tracker_api: true,
     git_tracker: true,
@@ -54,6 +57,7 @@ for (const [project, key] of [
       `docs/apps-${project}-web-contract.md`,
     ]) {
       assert.deepEqual(select([path]), {
+        delitools_api: false,
         delcore_api: false,
         git_tracker_api: false,
         git_tracker: false,
@@ -71,6 +75,7 @@ for (const [project, key] of [
 
 test("consumer examples select protocol validation without native runners", () => {
   assert.deepEqual(select(["examples/delcore-client/main.go"]), {
+    delitools_api: false,
     delcore_api: false,
     git_tracker_api: false,
     git_tracker: false,
@@ -93,6 +98,7 @@ for (const path of [
 ]) {
   test(`standalone FixKey ownership: ${path}`, () => {
     assert.deepEqual(select([path]), {
+      delitools_api: false,
       delcore_api: false,
       git_tracker_api: false,
       git_tracker: false,
@@ -183,4 +189,11 @@ test("protocol contract changes select their owning server", () => {
       assert.equal(selection[frontend], false, `${path}: ${frontend}`);
     }
   }
+});
+
+test("DeliTools API changes select its server without application integration", () => {
+  const result = select(["servers/delitools-api/internal/api/server.go"]);
+  assert.equal(result.delitools_api, true);
+  assert.equal(result.delitools, false);
+  assert.equal(result.delcore_api, false);
 });

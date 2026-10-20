@@ -1392,15 +1392,20 @@ func (x *InspectRequestRequest) GetRequestId() string {
 }
 
 type Attempt struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	GenerationId     string                 `protobuf:"bytes,2,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
-	UsageKnown       bool                   `protobuf:"varint,3,opt,name=usage_known,json=usageKnown,proto3" json:"usage_known,omitempty"`
-	Delivered        bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	PriceEffectiveAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=price_effective_at,json=priceEffectiveAt,proto3" json:"price_effective_at,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	GenerationId      string                 `protobuf:"bytes,2,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	UsageKnown        bool                   `protobuf:"varint,3,opt,name=usage_known,json=usageKnown,proto3" json:"usage_known,omitempty"`
+	Delivered         bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CatalogPriceJson  string                 `protobuf:"bytes,6,opt,name=catalog_price_json,json=catalogPriceJson,proto3" json:"catalog_price_json,omitempty"`
+	MeasuredUsageJson string                 `protobuf:"bytes,7,opt,name=measured_usage_json,json=measuredUsageJson,proto3" json:"measured_usage_json,omitempty"`
+	OccurredAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	RetryAt           *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=retry_at,json=retryAt,proto3" json:"retry_at,omitempty"`
+	DeliveryFailures  uint32                 `protobuf:"varint,10,opt,name=delivery_failures,json=deliveryFailures,proto3" json:"delivery_failures,omitempty"`
+	PriceEffectiveAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=price_effective_at,json=priceEffectiveAt,proto3" json:"price_effective_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Attempt) Reset() {
@@ -1466,6 +1471,41 @@ func (x *Attempt) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *Attempt) GetCatalogPriceJson() string {
+	if x != nil {
+		return x.CatalogPriceJson
+	}
+	return ""
+}
+
+func (x *Attempt) GetMeasuredUsageJson() string {
+	if x != nil {
+		return x.MeasuredUsageJson
+	}
+	return ""
+}
+
+func (x *Attempt) GetOccurredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return nil
+}
+
+func (x *Attempt) GetRetryAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RetryAt
+	}
+	return nil
+}
+
+func (x *Attempt) GetDeliveryFailures() uint32 {
+	if x != nil {
+		return x.DeliveryFailures
+	}
+	return 0
 }
 
 func (x *Attempt) GetPriceEffectiveAt() *timestamppb.Timestamp {
@@ -1584,6 +1624,110 @@ func (x *InspectRequestResponse) GetErrorReason() ErrorReason {
 	return ErrorReason_ERROR_REASON_UNSPECIFIED
 }
 
+type AssociateGenerationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	GenerationId  string                 `protobuf:"bytes,2,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssociateGenerationRequest) Reset() {
+	*x = AssociateGenerationRequest{}
+	mi := &file_delitools_v1_delitools_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssociateGenerationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssociateGenerationRequest) ProtoMessage() {}
+
+func (x *AssociateGenerationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delitools_v1_delitools_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssociateGenerationRequest.ProtoReflect.Descriptor instead.
+func (*AssociateGenerationRequest) Descriptor() ([]byte, []int) {
+	return file_delitools_v1_delitools_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *AssociateGenerationRequest) GetAttemptId() string {
+	if x != nil {
+		return x.AttemptId
+	}
+	return ""
+}
+
+func (x *AssociateGenerationRequest) GetGenerationId() string {
+	if x != nil {
+		return x.GenerationId
+	}
+	return ""
+}
+
+func (x *AssociateGenerationRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type AssociateGenerationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssociateGenerationResponse) Reset() {
+	*x = AssociateGenerationResponse{}
+	mi := &file_delitools_v1_delitools_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssociateGenerationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssociateGenerationResponse) ProtoMessage() {}
+
+func (x *AssociateGenerationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delitools_v1_delitools_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssociateGenerationResponse.ProtoReflect.Descriptor instead.
+func (*AssociateGenerationResponse) Descriptor() ([]byte, []int) {
+	return file_delitools_v1_delitools_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AssociateGenerationResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 var File_delitools_v1_delitools_proto protoreflect.FileDescriptor
 
 const file_delitools_v1_delitools_proto_rawDesc = "" +
@@ -1680,7 +1824,7 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"6\n" +
 	"\x15InspectRequestRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"\x82\x02\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\x81\x04\n" +
 	"\aAttempt\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rgeneration_id\x18\x02 \x01(\tR\fgenerationId\x12\x1f\n" +
@@ -1688,7 +1832,14 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"usageKnown\x12\x1c\n" +
 	"\tdelivered\x18\x04 \x01(\bR\tdelivered\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12H\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12,\n" +
+	"\x12catalog_price_json\x18\x06 \x01(\tR\x10catalogPriceJson\x12.\n" +
+	"\x13measured_usage_json\x18\a \x01(\tR\x11measuredUsageJson\x12;\n" +
+	"\voccurred_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"occurredAt\x125\n" +
+	"\bretry_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\aretryAt\x12+\n" +
+	"\x11delivery_failures\x18\n" +
+	" \x01(\rR\x10deliveryFailures\x12H\n" +
 	"\x12price_effective_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x10priceEffectiveAt\"\xb4\x03\n" +
 	"\x16InspectRequestResponse\x12\x1d\n" +
 	"\n" +
@@ -1703,7 +1854,15 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x121\n" +
 	"\battempts\x18\b \x03(\v2\x15.delitools.v1.AttemptR\battempts\x12<\n" +
-	"\ferror_reason\x18\t \x01(\x0e2\x19.delitools.v1.ErrorReasonR\verrorReason*]\n" +
+	"\ferror_reason\x18\t \x01(\x0e2\x19.delitools.v1.ErrorReasonR\verrorReason\"x\n" +
+	"\x1aAssociateGenerationRequest\x12\x1d\n" +
+	"\n" +
+	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12#\n" +
+	"\rgeneration_id\x18\x02 \x01(\tR\fgenerationId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"<\n" +
+	"\x1bAssociateGenerationResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId*]\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -1738,8 +1897,9 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"\x14ERROR_REASON_TIMEOUT\x10\x0f\x12\x19\n" +
 	"\x15ERROR_REASON_CANCELED\x10\x10\x12\"\n" +
 	"\x1eERROR_REASON_PRICE_UNAVAILABLE\x10\x11\x12\x19\n" +
-	"\x15ERROR_REASON_INTERNAL\x10\x122\xdc\x05\n" +
-	"\x10DeliToolsService\x12g\n" +
+	"\x15ERROR_REASON_INTERNAL\x10\x122\xc8\x06\n" +
+	"\x10DeliToolsService\x12j\n" +
+	"\x13AssociateGeneration\x12(.delitools.v1.AssociateGenerationRequest\x1a).delitools.v1.AssociateGenerationResponse\x12g\n" +
 	"\x12TranslateTextArray\x12'.delitools.v1.TranslateTextArrayRequest\x1a(.delitools.v1.TranslateTextArrayResponse\x12j\n" +
 	"\x13ExtractDataFromText\x12(.delitools.v1.ExtractDataFromTextRequest\x1a).delitools.v1.ExtractDataFromTextResponse\x12L\n" +
 	"\tCreateKey\x12\x1e.delitools.v1.CreateKeyRequest\x1a\x1f.delitools.v1.CreateKeyResponse\x12I\n" +
@@ -1762,7 +1922,7 @@ func file_delitools_v1_delitools_proto_rawDescGZIP() []byte {
 }
 
 var file_delitools_v1_delitools_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delitools_v1_delitools_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_delitools_v1_delitools_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_delitools_v1_delitools_proto_goTypes = []any{
 	(Capability)(0),                     // 0: delitools.v1.Capability
 	(KeyKind)(0),                        // 1: delitools.v1.KeyKind
@@ -1788,50 +1948,56 @@ var file_delitools_v1_delitools_proto_goTypes = []any{
 	(*InspectRequestRequest)(nil),       // 21: delitools.v1.InspectRequestRequest
 	(*Attempt)(nil),                     // 22: delitools.v1.Attempt
 	(*InspectRequestResponse)(nil),      // 23: delitools.v1.InspectRequestResponse
-	(*timestamppb.Timestamp)(nil),       // 24: google.protobuf.Timestamp
+	(*AssociateGenerationRequest)(nil),  // 24: delitools.v1.AssociateGenerationRequest
+	(*AssociateGenerationResponse)(nil), // 25: delitools.v1.AssociateGenerationResponse
+	(*timestamppb.Timestamp)(nil),       // 26: google.protobuf.Timestamp
 }
 var file_delitools_v1_delitools_proto_depIdxs = []int32{
 	3,  // 0: delitools.v1.ErrorDetail.reason:type_name -> delitools.v1.ErrorReason
 	1,  // 1: delitools.v1.ApiKey.kind:type_name -> delitools.v1.KeyKind
 	0,  // 2: delitools.v1.ApiKey.capabilities:type_name -> delitools.v1.Capability
-	24, // 3: delitools.v1.ApiKey.created_at:type_name -> google.protobuf.Timestamp
-	24, // 4: delitools.v1.ApiKey.expires_at:type_name -> google.protobuf.Timestamp
+	26, // 3: delitools.v1.ApiKey.created_at:type_name -> google.protobuf.Timestamp
+	26, // 4: delitools.v1.ApiKey.expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: delitools.v1.CreateKeyRequest.kind:type_name -> delitools.v1.KeyKind
 	0,  // 6: delitools.v1.CreateKeyRequest.capabilities:type_name -> delitools.v1.Capability
-	24, // 7: delitools.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	26, // 7: delitools.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	9,  // 8: delitools.v1.CreateKeyResponse.key:type_name -> delitools.v1.ApiKey
 	1,  // 9: delitools.v1.ListKeysRequest.kind:type_name -> delitools.v1.KeyKind
 	9,  // 10: delitools.v1.ListKeysResponse.keys:type_name -> delitools.v1.ApiKey
 	16, // 11: delitools.v1.GetSettingsResponse.settings:type_name -> delitools.v1.Settings
 	16, // 12: delitools.v1.UpdateSettingsRequest.settings:type_name -> delitools.v1.Settings
-	24, // 13: delitools.v1.Attempt.created_at:type_name -> google.protobuf.Timestamp
-	24, // 14: delitools.v1.Attempt.price_effective_at:type_name -> google.protobuf.Timestamp
-	0,  // 15: delitools.v1.InspectRequestResponse.capability:type_name -> delitools.v1.Capability
-	2,  // 16: delitools.v1.InspectRequestResponse.state:type_name -> delitools.v1.RequestState
-	24, // 17: delitools.v1.InspectRequestResponse.created_at:type_name -> google.protobuf.Timestamp
-	22, // 18: delitools.v1.InspectRequestResponse.attempts:type_name -> delitools.v1.Attempt
-	3,  // 19: delitools.v1.InspectRequestResponse.error_reason:type_name -> delitools.v1.ErrorReason
-	5,  // 20: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
-	7,  // 21: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
-	10, // 22: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
-	12, // 23: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
-	14, // 24: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
-	17, // 25: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
-	19, // 26: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
-	21, // 27: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
-	6,  // 28: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
-	8,  // 29: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
-	11, // 30: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
-	13, // 31: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
-	15, // 32: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
-	18, // 33: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
-	20, // 34: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
-	23, // 35: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
-	28, // [28:36] is the sub-list for method output_type
-	20, // [20:28] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	26, // 13: delitools.v1.Attempt.created_at:type_name -> google.protobuf.Timestamp
+	26, // 14: delitools.v1.Attempt.occurred_at:type_name -> google.protobuf.Timestamp
+	26, // 15: delitools.v1.Attempt.retry_at:type_name -> google.protobuf.Timestamp
+	26, // 16: delitools.v1.Attempt.price_effective_at:type_name -> google.protobuf.Timestamp
+	0,  // 17: delitools.v1.InspectRequestResponse.capability:type_name -> delitools.v1.Capability
+	2,  // 18: delitools.v1.InspectRequestResponse.state:type_name -> delitools.v1.RequestState
+	26, // 19: delitools.v1.InspectRequestResponse.created_at:type_name -> google.protobuf.Timestamp
+	22, // 20: delitools.v1.InspectRequestResponse.attempts:type_name -> delitools.v1.Attempt
+	3,  // 21: delitools.v1.InspectRequestResponse.error_reason:type_name -> delitools.v1.ErrorReason
+	24, // 22: delitools.v1.DeliToolsService.AssociateGeneration:input_type -> delitools.v1.AssociateGenerationRequest
+	5,  // 23: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
+	7,  // 24: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
+	10, // 25: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
+	12, // 26: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
+	14, // 27: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
+	17, // 28: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
+	19, // 29: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
+	21, // 30: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
+	25, // 31: delitools.v1.DeliToolsService.AssociateGeneration:output_type -> delitools.v1.AssociateGenerationResponse
+	6,  // 32: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
+	8,  // 33: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
+	11, // 34: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
+	13, // 35: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
+	15, // 36: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
+	18, // 37: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
+	20, // 38: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
+	23, // 39: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
+	31, // [31:40] is the sub-list for method output_type
+	22, // [22:31] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_delitools_v1_delitools_proto_init() }
@@ -1846,7 +2012,7 @@ func file_delitools_v1_delitools_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delitools_v1_delitools_proto_rawDesc), len(file_delitools_v1_delitools_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

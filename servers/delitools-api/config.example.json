@@ -1,0 +1,27 @@
+{
+  "listen": "127.0.0.1:46322",
+  "issuer": "https://identity.example.test/oidc",
+  "audience": "https://delcore.api.delino.io",
+  "operator_role": "delitools-platform-operator",
+  "delcore_url": "https://delcore.api.delino.io",
+  "service_id": "01900000-0000-7000-8000-000000000001",
+  "token_url": "https://identity.example.test/oidc/token",
+  "client_id": "replace-with-registered-delitools-client",
+  "gateway_url": "https://ai-gateway.vercel.sh/v1",
+  "http_timeout_seconds": 15,
+  "max_gateway_response_bytes": 4194304,
+  "settings": {
+    "maxInputBytes": 65536,
+    "maxTranslationItems": 50,
+    "executionTimeoutSeconds": 120,
+    "tenantRequestsPerMinute": 60,
+    "tenantConcurrency": 4,
+    "maxAiRetries": 2,
+    "priceSyncSeconds": 3600,
+    "deliveryRetrySeconds": 10,
+    "maxBackoffSeconds": 300,
+    "alertBacklog": 100,
+    "alertExpirySeconds": 86400,
+    "translationModels": ["openai/gpt-6-luna"]
+  }
+}

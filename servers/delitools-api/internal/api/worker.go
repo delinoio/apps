@@ -127,6 +127,9 @@ func (s *Server) Background(ctx context.Context) error {
 			s.event("delivery_failure", ID())
 		}
 		s.flushEvents(ctx)
+		if e = s.Alerts(ctx); e != nil {
+			s.event("alert_query_failure", ID())
+		}
 		timer := time.NewTimer(time.Duration(v.DeliveryRetrySeconds) * time.Second)
 		select {
 		case <-ctx.Done():

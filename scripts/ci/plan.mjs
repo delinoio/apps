@@ -13,6 +13,14 @@ export function select(paths) {
   );
   const serverShared = paths.some((path) => /^servers\/[^/]+$/u.test(path));
   return {
+    delitools_api:
+      shared ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/delitools-api\/|protos\/|examples\/delitools-client\/|docs\/(?:project-delitools\.md$|servers-delitools|protos-delitools))/u.test(
+          path,
+        ),
+      ),
     delcore_api:
       shared ||
       serverShared ||

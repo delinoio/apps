@@ -16,6 +16,6 @@ Read root and affected scoped instructions. Keep public client behavior and prot
 
 Update affected project, protocol, client and server contracts in the same change. Preserve protocol field numbers, enum values and wire behavior. Run protocol lint, generation, freshness and FILE breaking checks against the comparison revision. Run Go vet, tests and consumer builds from the root, plus applicable frontend tests from the owning app.
 
-Server changes require `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/... ./servers/git-tracker-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL integration and Delcore OCI checks against disposable databases and mocked providers. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
+Server changes require `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/... ./servers/git-tracker-api/cmd/... ./servers/delitools-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL integration and Delcore OCI checks against disposable databases and mocked providers. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
 
 Record the source revision, commands, results and unperformed platform/account checks in review or CI records. Builds and fixtures do not establish live provider, deployment or native acceptance. No credentials or account state move through Git.

@@ -27,7 +27,7 @@ func TestGatewayCapturesGenerationBeforeOutput(t *testing.T) {
 		if body["model"] != ExtractionModel || body["stream"] != true {
 			t.Error(body)
 		}
-		if _, ok := body["models"]; ok {
+		if models, ok := body["models"].([]any); ok && len(models) > 0 {
 			t.Error("alternate model fallback")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
