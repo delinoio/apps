@@ -66,6 +66,7 @@ message Execution {
   string completed_at = 4;
   repeated Measurement measurements = 5;
   string registration_order = 6;
+  bool representative = 7;
 }
 message Measurement {
   Dataset dataset = 1;
@@ -102,6 +103,7 @@ message Repository {
   bool public = 4;
   bool connected = 5;
   string installation_id = 6;
+  string github_repository_id = 7;
 }
 message ConnectRepositoryRequest {
   string space_id = 1;

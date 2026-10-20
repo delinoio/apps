@@ -34,3 +34,7 @@ Update the owning domain contracts and this index together for boundary changes.
 
 - [Defaults](repository-defaults.md)
 - [Boundary](repository-boundary-contract.md)
+
+The Go calling example is `examples/git-tracker-client`. Public setup and calling guidance is curated under `apps/delino-docs/docs/services/git-tracker`.
+
+Repository connection IDs are UUID v7 values. `github_repository_id` retains GitHub’s numeric external identifier. Reconnecting within a space preserves its connection ID and history. A disconnected repository can be connected to a different authorized space with a distinct connection ID; retained history does not cross spaces. History responses identify globally representative completed executions so date filtering cannot promote an older run. Deletion tombstones prevent delayed retries from recreating deleted executions or datasets within the same execution.

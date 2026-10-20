@@ -757,6 +757,7 @@ type Execution struct {
 	CompletedAt       string                 `protobuf:"bytes,4,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	Measurements      []*Measurement         `protobuf:"bytes,5,rep,name=measurements,proto3" json:"measurements,omitempty"`
 	RegistrationOrder string                 `protobuf:"bytes,6,opt,name=registration_order,json=registrationOrder,proto3" json:"registration_order,omitempty"`
+	Representative    bool                   `protobuf:"varint,7,opt,name=representative,proto3" json:"representative,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -831,6 +832,13 @@ func (x *Execution) GetRegistrationOrder() string {
 		return x.RegistrationOrder
 	}
 	return ""
+}
+
+func (x *Execution) GetRepresentative() bool {
+	if x != nil {
+		return x.Representative
+	}
+	return false
 }
 
 type Measurement struct {
@@ -1010,15 +1018,16 @@ func (x *Comparison) GetUnit() string {
 }
 
 type Repository struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SpaceId        string                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
-	FullName       string                 `protobuf:"bytes,3,opt,name=full_name,json=fullName,proto3" json:"full_name,omitempty"`
-	Public         bool                   `protobuf:"varint,4,opt,name=public,proto3" json:"public,omitempty"`
-	Connected      bool                   `protobuf:"varint,5,opt,name=connected,proto3" json:"connected,omitempty"`
-	InstallationId string                 `protobuf:"bytes,6,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SpaceId            string                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
+	FullName           string                 `protobuf:"bytes,3,opt,name=full_name,json=fullName,proto3" json:"full_name,omitempty"`
+	Public             bool                   `protobuf:"varint,4,opt,name=public,proto3" json:"public,omitempty"`
+	Connected          bool                   `protobuf:"varint,5,opt,name=connected,proto3" json:"connected,omitempty"`
+	InstallationId     string                 `protobuf:"bytes,6,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	GithubRepositoryId string                 `protobuf:"bytes,7,opt,name=github_repository_id,json=githubRepositoryId,proto3" json:"github_repository_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Repository) Reset() {
@@ -1089,6 +1098,13 @@ func (x *Repository) GetConnected() bool {
 func (x *Repository) GetInstallationId() string {
 	if x != nil {
 		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *Repository) GetGithubRepositoryId() string {
+	if x != nil {
+		return x.GithubRepositoryId
 	}
 	return ""
 }
@@ -2071,14 +2087,15 @@ const file_gittracker_v1_gittracker_proto_rawDesc = "" +
 	"\acontext\x18\x01 \x01(\v2\x16.gittracker.v1.ContextR\acontext\"f\n" +
 	"\x10CompleteResponse\x126\n" +
 	"\texecution\x18\x01 \x01(\v2\x18.gittracker.v1.ExecutionR\texecution\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xa9\x02\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xd1\x02\n" +
 	"\tExecution\x120\n" +
 	"\acontext\x18\x01 \x01(\v2\x16.gittracker.v1.ContextR\acontext\x123\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1d.gittracker.v1.ExecutionStateR\x05state\x12#\n" +
 	"\rregistered_at\x18\x03 \x01(\tR\fregisteredAt\x12!\n" +
 	"\fcompleted_at\x18\x04 \x01(\tR\vcompletedAt\x12>\n" +
 	"\fmeasurements\x18\x05 \x03(\v2\x1a.gittracker.v1.MeasurementR\fmeasurements\x12-\n" +
-	"\x12registration_order\x18\x06 \x01(\tR\x11registrationOrder\"g\n" +
+	"\x12registration_order\x18\x06 \x01(\tR\x11registrationOrder\x12&\n" +
+	"\x0erepresentative\x18\a \x01(\bR\x0erepresentative\"g\n" +
 	"\vMeasurement\x120\n" +
 	"\adataset\x18\x01 \x01(\v2\x16.gittracker.v1.DatasetR\adataset\x12&\n" +
 	"\x04rows\x18\x02 \x03(\v2\x12.gittracker.v1.RowR\x04rows\"\xfc\x02\n" +
@@ -2098,7 +2115,7 @@ const file_gittracker_v1_gittracker_proto_rawDesc = "" +
 	"\x0fbaseline_commit\x18\t \x01(\tR\x0ebaselineCommit\x122\n" +
 	"\x15baseline_execution_id\x18\n" +
 	" \x01(\tR\x13baselineExecutionId\x12\x12\n" +
-	"\x04unit\x18\v \x01(\tR\x04unit\"\xb3\x01\n" +
+	"\x04unit\x18\v \x01(\tR\x04unit\"\xe5\x01\n" +
 	"\n" +
 	"Repository\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -2106,7 +2123,8 @@ const file_gittracker_v1_gittracker_proto_rawDesc = "" +
 	"\tfull_name\x18\x03 \x01(\tR\bfullName\x12\x16\n" +
 	"\x06public\x18\x04 \x01(\bR\x06public\x12\x1c\n" +
 	"\tconnected\x18\x05 \x01(\bR\tconnected\x12'\n" +
-	"\x0finstallation_id\x18\x06 \x01(\tR\x0einstallationId\"\x82\x01\n" +
+	"\x0finstallation_id\x18\x06 \x01(\tR\x0einstallationId\x120\n" +
+	"\x14github_repository_id\x18\a \x01(\tR\x12githubRepositoryId\"\x82\x01\n" +
 	"\x18ConnectRepositoryRequest\x12\x19\n" +
 	"\bspace_id\x18\x01 \x01(\tR\aspaceId\x12\x1b\n" +
 	"\tfull_name\x18\x02 \x01(\tR\bfullName\x12.\n" +

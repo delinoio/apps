@@ -138,3 +138,5 @@ Update the project index and affected protocol/client/server contracts when beha
 
 - [Project](project-git-tracker.md)
 - [Defaults](repository-defaults.md)
+
+Repository connection IDs are UUID v7 values. `github_repository_id` retains GitHub’s numeric external identifier. Reconnecting within a space preserves its connection ID and history. A disconnected repository can be connected to a different authorized space with a distinct connection ID; retained history does not cross spaces. History responses identify globally representative completed executions so date filtering cannot promote an older run. Deletion tombstones prevent delayed retries from recreating deleted executions or datasets within the same execution.
