@@ -131,6 +131,12 @@ func ActiveProductPrices(ctx context.Context, tx pgx.Tx, ownerKind, ownerID stri
  SELECT id::text FROM (SELECT DISTINCT ON (p.service_id,p.meter,p.kind) p.id
  FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id
  WHERE p.`+column+`=$1 AND cv.id IS NULL
+ AND NOT EXISTS (SELECT 1 FROM catalog_entities ae
+  JOIN prices ap ON ap.id=ae.active_version_id
+  WHERE ae.kind='price' AND ae.scope=$2
+    AND ap.plan_id IS NOT DISTINCT FROM p.plan_id
+    AND ap.addon_id IS NOT DISTINCT FROM p.addon_id
+    AND ap.service_id=p.service_id AND ap.meter=p.meter AND ap.kind=p.kind)
  ORDER BY p.service_id,p.meter,p.kind,p.created_at DESC,p.id DESC) legacy`, ownerID, ownerKind+":"+ownerID)
 	if err != nil {
 		return nil, err
@@ -180,6 +186,12 @@ func RebuildProductVersion(ctx context.Context, tx pgx.Tx, kind, productID strin
  SELECT id::text FROM (SELECT DISTINCT ON (p.service_id,p.meter,p.kind) p.id
  FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id
  WHERE p.`+ownerColumn+`=$1 AND cv.id IS NULL
+ AND NOT EXISTS (SELECT 1 FROM catalog_entities ae
+  JOIN prices ap ON ap.id=ae.active_version_id
+  WHERE ae.kind='price' AND ae.scope=$2
+    AND ap.plan_id IS NOT DISTINCT FROM p.plan_id
+    AND ap.addon_id IS NOT DISTINCT FROM p.addon_id
+    AND ap.service_id=p.service_id AND ap.meter=p.meter AND ap.kind=p.kind)
  ORDER BY p.service_id,p.meter,p.kind,p.created_at DESC,p.id DESC) legacy`, productID, kind+":"+productID)
 	if err != nil {
 		return "", err
