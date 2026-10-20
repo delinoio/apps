@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const Project = Object.freeze({
   Devbase: "devbase",
-  DelinoSite: "delino-site",
+  Delino: "delino",
   Delitools: "delitools",
   Fixkey: "fixkey",
 });
@@ -50,13 +50,19 @@ export function releaseTag(project, version) {
   requireValue(stable.test(version), "Invalid release version");
   return `${project}@v${version}`;
 }
+function releaseApps(project) {
+  return project === Project.Delino
+    ? ["delino-site", "delino-docs"]
+    : [project];
+}
 export function versionChanges(project, bump, read) {
   requireProject(project);
-  const packageFile = `apps/${project}/package.json`;
+  const apps = releaseApps(project);
+  const packageFile = `apps/${apps[0]}/package.json`;
   const source = read(packageFile);
   const manifest = JSON.parse(source);
   requireValue(
-    manifest.name === (project === Project.Fixkey ? "fixkey-desktop" : project),
+    manifest.name === (project === Project.Fixkey ? "fixkey-desktop" : apps[0]),
     "Package identity mismatch",
   );
   const previous = manifest.version;
@@ -75,7 +81,15 @@ export function versionChanges(project, bump, read) {
       `  "version": "${version}"`,
     );
   };
-  replaceJson(packageFile);
+  for (const app of apps) {
+    const file = `apps/${app}/package.json`;
+    requireValue(
+      JSON.parse(read(file)).name ===
+        (project === Project.Fixkey ? "fixkey-desktop" : app),
+      "Package identity mismatch",
+    );
+    replaceJson(file);
+  }
   const native = nativePackages[project];
   if (native) {
     replaceJson(`apps/${project}/src-tauri/tauri.conf.json`);
@@ -247,7 +261,7 @@ export function prepareRelease({ directory, project, bump, runId }) {
 
 export function validateWebSource(directory, project, tag) {
   requireValue(
-    [Project.Devbase, Project.DelinoSite, Project.Delitools].includes(project),
+    [Project.Devbase, Project.Delino, Project.Delitools].includes(project),
     "Unknown web release project",
   );
   return validateReleaseSource(directory, project, tag);
@@ -270,14 +284,21 @@ export function validateReleaseSource(directory, project, tag) {
   );
   const revision = git(directory, "rev-parse", `${tag}^{commit}`);
   git(directory, "merge-base", "--is-ancestor", revision, "origin/main");
-  const manifest = JSON.parse(
-    git(directory, "show", `${revision}:apps/${project}/package.json`),
-  );
-  requireValue(
-    tag === releaseTag(project, manifest.version),
-    "Tag and source version disagree",
-  );
-  return { project, version: manifest.version, tag, revision };
+  const version = tag.slice(project.length + 2);
+  for (const app of releaseApps(project)) {
+    const manifest = JSON.parse(
+      git(directory, "show", `${revision}:apps/${app}/package.json`),
+    );
+    requireValue(
+      manifest.name === (project === Project.Fixkey ? "fixkey-desktop" : app),
+      "Package identity mismatch",
+    );
+    requireValue(
+      manifest.version === version,
+      "Tag and source version disagree",
+    );
+  }
+  return { project, version, tag, revision };
 }
 
 if (

@@ -41,7 +41,7 @@ Run package-local `pnpm test` for TypeScript validation and a production build. 
 
 Affected CI runs `delino-docs-frontend` on Ubuntu and retains validation evidence. Changes in this app or its owning contracts select that job.
 
-For Cloudflare Pages, build from the repository root with `pnpm --filter delino-docs build` and publish `apps/delino-docs/dist`. Cloudflare project creation, custom-domain binding, DNS and production release automation are outside this scaffold. A local build does not establish platform or domain acceptance.
+For Cloudflare Pages, build from the repository root with `pnpm --filter delino-docs build` and publish `apps/delino-docs/dist`. Production publication uses `.github/workflows/release-delino.yml` with the shared `delino@vMAJOR.MINOR.PATCH` tag. Release preparation updates both Delino package versions, and both apps deploy from the same source revision. The `delino-docs-production` environment supplies Cloudflare configuration. Dispatch the existing immutable tag from main to retry. Follow the [release procedure](repository-workflow-contract.md#web-publication). Cloudflare project creation, custom-domain binding and DNS require separate platform configuration. A local build does not establish platform or domain acceptance.
 
 ## Dependencies and Integrations
 

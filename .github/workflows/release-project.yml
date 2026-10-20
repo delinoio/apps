@@ -8,7 +8,7 @@ on:
         description: Project to version and tag
         required: true
         type: choice
-        options: [devbase, delino-site, delitools, fixkey]
+        options: [devbase, delino, delitools, fixkey]
       bump:
         description: Stable SemVer increment
         required: true
@@ -78,6 +78,8 @@ jobs:
             ? [`The tag starts Release FixKey for ${process.env.REVISION} (version ${process.env.VERSION}). Signing and publication run through the protected release environments.`]
             : project === 'delitools'
               ? ['The tag starts Release DeliTools Web. For mobile, run Release DeliTools Mobile on main with a new build number; store uploads remain opt-in.']
-              : ['The tag starts the owning web release workflow. Inspect that run for the deployment result.'];
+              : project === 'delino'
+                ? ['The tag starts Release Delino for delino-site and delino-docs from the same source revision. Inspect both deployment jobs for the result.']
+                : ['The tag starts the owning web release workflow. Inspect that run for the deployment result.'];
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n' + lines.join('\n') + '\n');
           JS

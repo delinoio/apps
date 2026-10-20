@@ -12,6 +12,7 @@ Provide one public documentation app for multiple Delino services at `https://do
 
 - `apps/delino-docs`: independently built public documentation app.
 - `apps/delino-docs/docs`: curated public Markdown and MDX pages.
+- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-site`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
