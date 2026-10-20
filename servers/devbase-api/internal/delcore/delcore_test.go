@@ -110,22 +110,35 @@ func TestTenantStatesUseTheServiceToken(t *testing.T) {
 	var authorization string
 	s := &stub{states: func(a string, ids []string) ([]*pb.TenantStateEntry, error) {
 		authorization = a
-		out := []*pb.TenantStateEntry{{TenantId: ids[0], State: pb.TenantState_TENANT_STATE_BLOCKED}}
-		if len(ids) > 1 {
-			out = append(out, &pb.TenantStateEntry{TenantId: ids[1], State: pb.TenantState_TENANT_STATE_DELETED})
-		}
-		return out, nil
+		return []*pb.TenantStateEntry{
+			{TenantId: ids[0], State: pb.TenantState_TENANT_STATE_BLOCKED},
+			{TenantId: ids[1], State: pb.TenantState_TENANT_STATE_DELETED},
+			{TenantId: ids[2], State: pb.TenantState_TENANT_STATE_UNKNOWN},
+		}, nil
 	}}
 	c := client(t, s, time.Second)
 	got, e := c.TenantStates(context.Background(), []string{"a", "b", "c"})
 	if e != nil || authorization != "Bearer service-token" || got["a"] != StateBlocked || got["b"] != StateDeleted || got["c"] != StateUnknown {
 		t.Fatal(got, authorization, e)
 	}
-	s.states = func(string, []string) ([]*pb.TenantStateEntry, error) {
-		return []*pb.TenantStateEntry{{TenantId: "a", State: pb.TenantState_TENANT_STATE_UNSPECIFIED}}, nil
+	// A malformed answer must fail closed, never grant access.
+	entry := func(id string, s pb.TenantState) *pb.TenantStateEntry {
+		return &pb.TenantStateEntry{TenantId: id, State: s}
 	}
-	if got, _ = c.TenantStates(context.Background(), []string{"a"}); got["a"] != StateUnknown {
-		t.Fatal("an unspecified state must not grant access")
+	active, deleted := pb.TenantState_TENANT_STATE_ACTIVE, pb.TenantState_TENANT_STATE_DELETED
+	for name, answer := range map[string][]*pb.TenantStateEntry{
+		"unspecified state": {entry("a", pb.TenantState_TENANT_STATE_UNSPECIFIED), entry("b", active)},
+		"duplicate entry":   {entry("a", deleted), entry("a", active)},
+		"missing entry":     {entry("a", active)},
+		"extra entry":       {entry("a", active), entry("b", active), entry("c", active)},
+		"reordered":         {entry("b", active), entry("a", deleted)},
+		"unrequested id":    {entry("a", active), entry("z", active)},
+		"empty":             nil,
+	} {
+		s.states = func(string, []string) ([]*pb.TenantStateEntry, error) { return answer, nil }
+		if got, e = c.TenantStates(context.Background(), []string{"a", "b"}); !errors.Is(e, ErrUnavailable) || got != nil {
+			t.Errorf("%s: %v %v", name, got, e)
+		}
 	}
 	s.states = func(string, []string) ([]*pb.TenantStateEntry, error) {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("x"))

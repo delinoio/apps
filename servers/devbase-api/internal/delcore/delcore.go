@@ -117,8 +117,20 @@ func (c *Client) TenantStates(ctx context.Context, tenantIDs []string) (map[stri
 	if e != nil {
 		return nil, ErrUnavailable
 	}
+	// Delcore answers one entry per requested ID, in request order. Any other shape is a
+	// malformed answer: a duplicate or reordered entry could otherwise overwrite a
+	// DELETED state with ACTIVE, so it fails closed as unavailable.
+	if len(r.Msg.States) != len(tenantIDs) {
+		return nil, ErrUnavailable
+	}
 	out := make(map[string]State, len(tenantIDs))
-	for _, entry := range r.Msg.States {
+	for i, entry := range r.Msg.States {
+		if entry == nil || entry.TenantId != tenantIDs[i] || entry.State == pb.TenantState_TENANT_STATE_UNSPECIFIED {
+			return nil, ErrUnavailable
+		}
+		if _, dup := out[entry.TenantId]; dup {
+			return nil, ErrUnavailable
+		}
 		out[entry.TenantId] = fromProto(entry.State)
 	}
 	return out, nil
