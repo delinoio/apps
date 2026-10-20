@@ -9,10 +9,14 @@ import (
 	"time"
 )
 
-func (s *Server) SyncPrices(ctx context.Context) error {
+func (s *Server) SyncPrices(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			s.event("price_sync_failure", ID())
+		}
+	}()
 	catalog, e := s.Gateway.Catalog(ctx)
 	if e != nil {
-		s.event("price_sync_failure", ID())
 		return e
 	}
 	now := s.now()

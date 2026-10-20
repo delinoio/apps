@@ -650,3 +650,19 @@ func TestRetryUsageUsesAttemptOccurrence(t *testing.T) {
 		t.Fatal("incorrect attempt attribution", seen)
 	}
 }
+
+func TestPriceSyncReportsDatabaseFailure(t *testing.T) {
+	s, _, g, _ := setupAPI(t)
+	ctx := context.Background()
+	if _, err := s.DB.Pool.Exec(ctx, "ALTER TABLE catalog ADD CONSTRAINT reject_price CHECK(false) NOT VALID"); err != nil {
+		t.Fatal(err)
+	}
+	g.price.Input = "0.009"
+	if err := s.SyncPrices(ctx); err == nil {
+		t.Fatal("storage failure ignored")
+	}
+	var count int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category='price_sync_failure'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("failure logs %d %v", count, err)
+	}
+}
