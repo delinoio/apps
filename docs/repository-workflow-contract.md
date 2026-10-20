@@ -42,7 +42,9 @@ pnpm exec portless alias git-tracker-api 46321
 
 This explicit alias has no automatic worktree prefix and persists until removed with `pnpm exec portless alias --remove git-tracker-api`. Remove an existing static alias before starting root `pnpm dev:portless`, which manages its own routes and removes them on shutdown. Point the frontend at the static alias only while using that separate API workflow. Fixed upstream ports still permit only one local instance. Restore direct-loopback API and allowed-origin settings before returning to direct frontend development.
 
-To use the local Delcore API, set `PUBLIC_DELCORE_API_URL` to its printed Portless origin and keep `PUBLIC_DELCORE_RESOURCE` set to the resource identifier registered with Logto. If Git Tracker calls this local Delcore instance, set `GIT_TRACKER_DELCORE_URL` to that API origin and retain its registered `GIT_TRACKER_DELCORE_RESOURCE`. Portless provides transport routing; it does not change resource identifiers or register development origins with identity providers. Follow the [Delcore server contract](servers-delcore-api-contract.md#local-development) for its remaining settings.
+The local Delcore route supports server and command-line clients. The current Delcore handler does not provide CORS preflight responses or allow-origin headers, so browsers cannot make authenticated Connect calls to it from a different frontend origin. Do not set `PUBLIC_DELCORE_API_URL` to the local Portless origin for this workflow. Browser access to local Delcore requires separate CORS support; a registered Logto origin alone does not enable it. Keep `PUBLIC_DELCORE_RESOURCE` set to the resource identifier registered with Logto.
+
+For server-to-server calls from Git Tracker to local Delcore, set `GIT_TRACKER_DELCORE_URL` to the printed Delcore API origin and retain its registered `GIT_TRACKER_DELCORE_RESOURCE`. Portless provides transport routing; it does not change resource identifiers or register development origins with identity providers. Follow the [Delcore server contract](servers-delcore-api-contract.md#local-development) for its remaining settings.
 
 ## Validation
 
