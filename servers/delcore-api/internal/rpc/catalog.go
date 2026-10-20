@@ -46,9 +46,14 @@ func (s *Server) PutService(ctx context.Context, r *connect.Request[pb.PutServic
 		} else if !canonical(v.Id) {
 			return invalid("invalid service ID")
 		}
-		_, e := c.tx.Exec(c.ctx, `INSERT INTO services VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,client_id=EXCLUDED.client_id,capabilities=EXCLUDED.capabilities,scopes=EXCLUDED.scopes`, v.Id, v.Name, v.ClientId, v.Capabilities, v.Scopes)
+		// The reserved DeliTools identity cannot move to a different service ID.
+		// Enforce this in the upsert so concurrent renames cannot bypass the check.
+		tag, e := c.tx.Exec(c.ctx, `INSERT INTO services VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,client_id=EXCLUDED.client_id,capabilities=EXCLUDED.capabilities,scopes=EXCLUDED.scopes WHERE (services.name='delitools')=(EXCLUDED.name='delitools')`, v.Id, v.Name, v.ClientId, v.Capabilities, v.Scopes)
 		if e != nil {
 			return e
+		}
+		if tag.RowsAffected() == 0 {
+			return precondition("the reserved DeliTools service identity is immutable")
 		}
 		o.Service = v
 		return c.audit("", "catalog.service", q.Reason)
