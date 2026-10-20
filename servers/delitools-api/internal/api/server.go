@@ -510,3 +510,39 @@ func transportReadLimit(decoded int) int {
 	}
 	return decoded*10 + 65536
 }
+
+// Finish only newly admitted executions, after output validation. A duplicate or
+// rejected admission must not overwrite the retained result of another call.
+func (s *Server) finishRequest(x *execution, settings *pb.Settings, err *error) {
+	if !x.claimed {
+		return
+	}
+	reason := pb.ErrorReason_ERROR_REASON_UNSPECIFIED
+	var ce *connect.Error
+	if errors.As(*err, &ce) {
+		for _, d := range ce.Details() {
+			if value, e := d.Value(); e == nil {
+				if detail, ok := value.(*pb.ErrorDetail); ok {
+					reason = detail.Reason
+					break
+				}
+			}
+		}
+	}
+	bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
+	defer cancel()
+	if !x.attemptStarted {
+		deleted, e := s.DB.Pool.Exec(bg, "DELETE FROM requests WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM attempts WHERE request_id=$1)", x.id)
+		if e == nil && deleted.RowsAffected() == 1 {
+			return
+		}
+		x.state = pb.RequestState_REQUEST_STATE_UNKNOWN
+		reason = pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME
+		*err = fault(reason, x.id)
+	}
+	if _, e := s.DB.Pool.Exec(bg, "UPDATE requests SET state=$2,error_reason=$3 WHERE id=$1", x.id, x.state, reason); e != nil {
+		*err = fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
+		return
+	}
+	s.event(x.state.String(), x.id)
+}
