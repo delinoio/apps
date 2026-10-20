@@ -156,9 +156,10 @@ type completion struct {
 	Usage *struct {
 		Prompt     *uint64 `json:"prompt_tokens"`
 		Completion *uint64 `json:"completion_tokens"`
+		Creation   *uint64 `json:"cache_creation_input_tokens"`
 		Details    struct {
-			Cached   uint64 `json:"cached_tokens"`
-			Creation uint64 `json:"cache_creation_tokens"`
+			Cached   uint64  `json:"cached_tokens"`
+			Creation *uint64 `json:"cache_creation_input_tokens"`
 		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 }
@@ -231,7 +232,17 @@ func (g *HTTPGateway) Execute(ctx context.Context, model, prompt string, schema 
 		if c.Usage != nil && c.Usage.Prompt != nil && c.Usage.Completion != nil {
 			p := *c.Usage.Prompt
 			cached := c.Usage.Details.Cached
-			created := c.Usage.Details.Creation
+			var created uint64
+			if c.Usage.Creation != nil {
+				created = *c.Usage.Creation
+			}
+			if c.Usage.Details.Creation != nil {
+				if c.Usage.Creation != nil && created != *c.Usage.Details.Creation {
+					result.Unknown = true
+					return result, errors.New("conflicting cache creation usage")
+				}
+				created = *c.Usage.Details.Creation
+			}
 			if cached <= p && created <= p-cached {
 				result.Usage = &Counts{Input: p - cached - created, Output: *c.Usage.Completion, CacheRead: cached, CacheWrite: created}
 			}

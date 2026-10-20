@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	core "github.com/delinoio/apps/protos/delcore/v1"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,5 +85,53 @@ func TestPriceSettlementGrammar(t *testing.T) {
 				t.Errorf("accepted invalid price %q: %+v", value, price)
 			}
 		}
+	}
+}
+
+func TestGatewayCacheCreationUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		conflict     bool
+	}{
+		{"root", `"cache_creation_input_tokens":4,"prompt_tokens_details":{"cached_tokens":3}`, false},
+		{"details", `"prompt_tokens_details":{"cached_tokens":3,"cache_creation_input_tokens":4}`, false},
+		{"both", `"cache_creation_input_tokens":4,"prompt_tokens_details":{"cached_tokens":3,"cache_creation_input_tokens":4}`, false},
+		{"conflict", `"cache_creation_input_tokens":0,"prompt_tokens_details":{"cached_tokens":3,"cache_creation_input_tokens":4}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintln(w, `data: {"id":"gen_cache","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":2,`+tc.fields+`}}`)
+				fmt.Fprintln(w, "data: [DONE]")
+			}))
+			defer h.Close()
+			g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, MaxResponseBytes: 10000}
+			result, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return nil })
+			if tc.conflict {
+				if err == nil || !result.Unknown || result.Usage != nil {
+					t.Fatal("conflicting counts accepted", result, err)
+				}
+				return
+			}
+			if err != nil || result.Usage == nil || result.Usage.Input != 5 || result.Usage.CacheRead != 3 || result.Usage.CacheWrite != 4 {
+				t.Fatal(result, err)
+			}
+			price := Price{Input: "1", Output: "2", CacheRead: "3", CacheWrite: "4", CacheWriteTiers: []Tier{{Cost: "5"}}}
+			tokens, err := price.Tokens(*result.Usage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, token := range tokens {
+				if token.Kind == core.AiTokenKind_AI_TOKEN_KIND_CACHE_WRITE {
+					found = true
+					if token.Tokens != 4 || token.UsdPerToken != "5" {
+						t.Fatal(token)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("missing cache write billing")
+			}
+		})
 	}
 }
