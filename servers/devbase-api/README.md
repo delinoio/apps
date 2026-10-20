@@ -14,7 +14,7 @@ go run ./servers/devbase-api/cmd/devbase-api check-schema   # fail unless the sc
 go run ./servers/devbase-api/cmd/devbase-api                # serve
 ```
 
-Normal startup never migrates. It checks the schema version and digests, then takes a PostgreSQL session lock so only one instance serves one database. `/healthz` reports liveness, `/readyz` checks schema compatibility and `/metrics` exposes Prometheus counters and histograms with bounded labels. The default listener is `127.0.0.1:46317`.
+Normal startup never migrates. It checks the schema version and digests, then takes a PostgreSQL session lock so only one instance serves one database. `/healthz` reports liveness, `/readyz` checks schema compatibility and `/metrics` exposes Prometheus counters and histograms with bounded labels. The default listener is `127.0.0.1:46317`. `WEB_ORIGIN` names the one exact browser origin, the DevBase console, that may call the API; requests from any other origin are rejected, and requests without an `Origin` header are unaffected.
 
 Recovery is fix-forward: deploy a corrected image and, when data needs correction, a new migration. Take a database backup before migrating. Do not roll back images or reverse migrations.
 

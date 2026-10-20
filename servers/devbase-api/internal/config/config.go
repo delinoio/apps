@@ -52,6 +52,8 @@ type Config struct {
 	TokenURL        string
 	ClientID        string
 	ClientSecret    string
+	// WebOrigin is the one browser origin allowed to call the API. Empty allows none.
+	WebOrigin string
 	Limits
 }
 
@@ -76,6 +78,7 @@ func Load(get func(string) string) (Config, error) {
 	}
 	c.DelcoreURL, c.DelcoreResource, c.TokenURL = get("DELCORE_URL"), get("DELCORE_RESOURCE"), get("LOGTO_TOKEN_URL")
 	c.ClientID, c.ClientSecret = get("CLIENT_ID"), get("CLIENT_SECRET")
+	c.WebOrigin = get("WEB_ORIGIN")
 	for name, value := range map[string]string{"DELCORE_URL": c.DelcoreURL, "DELCORE_RESOURCE": c.DelcoreResource, "LOGTO_TOKEN_URL": c.TokenURL, "CLIENT_ID": c.ClientID, "CLIENT_SECRET": c.ClientSecret} {
 		if value == "" {
 			return c, fmt.Errorf("%s is required", name)
@@ -171,7 +174,20 @@ func (c Config) Validate() error {
 			return errors.New("Delcore and token endpoints must be https or loopback http URLs")
 		}
 	}
+	if c.WebOrigin != "" && !validOrigin(c.WebOrigin) {
+		return errors.New("WEB_ORIGIN must be one exact http or https origin without a path")
+	}
 	return nil
+}
+
+// validOrigin accepts only the scheme, host and optional port that a browser sends in
+// the Origin header, so the configured value can be compared exactly.
+func validOrigin(s string) bool {
+	u, e := url.Parse(s)
+	if e != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return s == u.Scheme+"://"+u.Host
 }
 
 func safeURL(s string) bool {

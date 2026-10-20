@@ -132,7 +132,7 @@ func serve(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	path, handler := server.Handler()
-	mux.Handle(path, otelhttp.NewHandler(handler, "devbase.connect"))
+	mux.Handle(path, api.CORS(cfg.WebOrigin, otelhttp.NewHandler(handler, "devbase.connect")))
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
