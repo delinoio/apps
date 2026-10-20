@@ -208,9 +208,19 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			if err != nil {
 				return err
 			}
-			sort.Strings(requested)
+			catalogRequested := make([]string, 0, len(requested))
+			for _, priceID := range requested {
+				var catalogPrice bool
+				if err := c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM catalog_versions WHERE id=$1)", priceID).Scan(&catalogPrice); err != nil {
+					return err
+				}
+				if catalogPrice {
+					catalogRequested = append(catalogRequested, priceID)
+				}
+			}
+			sort.Strings(catalogRequested)
 			sort.Strings(active)
-			if !slices.Equal(requested, active) {
+			if len(catalogRequested) > 0 && !slices.Equal(catalogRequested, active) {
 				return invalid("selected prices must match the active product version")
 			}
 		}
