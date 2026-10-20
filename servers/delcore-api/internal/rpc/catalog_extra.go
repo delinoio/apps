@@ -54,12 +54,11 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 			if filter == nil || filter.Attribute == "" || filter.Operator < pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL || filter.Operator > pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS {
 				return invalid("invalid meter filter")
 			}
-			copy := *filter
-			copy.Values = append([]string(nil), filter.Values...)
-			if copy.Operator == pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN {
-				sort.Strings(copy.Values)
+			item := &pb.MeterFilter{Attribute: filter.Attribute, Operator: filter.Operator, Values: append([]string(nil), filter.Values...)}
+			if item.Operator == pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN {
+				sort.Strings(item.Values)
 			}
-			filters = append(filters, &copy)
+			filters = append(filters, item)
 		}
 		sort.Slice(filters, func(i, j int) bool {
 			a, _ := json.Marshal(filters[i])
