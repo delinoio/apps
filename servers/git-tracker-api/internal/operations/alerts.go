@@ -22,7 +22,7 @@ func AlertRules(get func(string) string) (string, error) {
 		{"GitTrackerGitHubFailures", "GITHUB", `sum(increase(git_tracker_events_total{kind="github",category="failure"}[%s]))`},
 		{"GitTrackerInterruptedExecutions", "INTERRUPTED", `sum(increase(git_tracker_events_total{kind="execution",category="interrupted"}[%s]))`},
 	} {
-		threshold, window, hold := get("GIT_TRACKER_ALERT_"+rule.key+"_THRESHOLD"), get("GIT_TRACKER_ALERT_"+rule.key+"_WINDOW"), get("GIT_TRACKER_ALERT_"+rule.key+"_FOR")
+		threshold, window, hold := get("ALERT_"+rule.key+"_THRESHOLD"), get("ALERT_"+rule.key+"_WINDOW"), get("ALERT_"+rule.key+"_FOR")
 		value, e := strconv.ParseFloat(threshold, 64)
 		if e != nil || value < 0 || !regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`).MatchString(threshold) || !windowPattern.MatchString(window) || !windowPattern.MatchString(hold) {
 			return "", errors.New("valid threshold, observation window and hold duration required for " + rule.key)

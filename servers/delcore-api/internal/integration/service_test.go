@@ -62,9 +62,9 @@ func req[T any](m *T, token string) *connect.Request[T] {
 func key() string { return uuid.Must(uuid.NewV7()).String() }
 func setup(t *testing.T) (*postgres.Store, delcorev1connect.DelcoreServiceClient, config.Config) {
 	t.Helper()
-	dsn := os.Getenv("DELCORE_TEST_DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Fatal("DELCORE_TEST_DATABASE_URL is required for integration tests")
+		t.Fatal("TEST_DATABASE_URL is required for integration tests")
 	}
 	ctx := context.Background()
 	root, e := postgres.Open(ctx, dsn)

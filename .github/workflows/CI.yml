@@ -714,7 +714,7 @@ jobs:
         id: postgres
       - name: Integration and OCI tests
         env:
-          DELCORE_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:5432/delcore_api_test?sslmode=disable
+          TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:5432/delcore_api_test?sslmode=disable
         run: |
           pnpm --filter @delinoio/delcore-api ci:integration
           pnpm --filter @delinoio/delcore-api ci:oci
@@ -784,7 +784,7 @@ jobs:
         id: postgres
       - name: PostgreSQL integration tests
         env:
-          GIT_TRACKER_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:55432/delcore_api_test?sslmode=disable
+          TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:55432/delcore_api_test?sslmode=disable
         run: |
           go test -race -count=1 ./servers/git-tracker-api/...
         id: integration

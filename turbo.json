@@ -30,12 +30,28 @@
     "@delinoio/delcore-api#dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["DELCORE_CONFIG", "OTEL_*", "NO_COLOR"]
+      "passThroughEnv": ["CONFIG", "OTEL_*", "NO_COLOR"]
     },
     "@delinoio/git-tracker-api#dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["GIT_TRACKER_*", "OTEL_*", "NO_COLOR"]
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "LISTEN",
+        "WEB_ORIGIN",
+        "AUDIT_RETENTION",
+        "GITHUB_APP_ID",
+        "GITHUB_KEY_FILE",
+        "WEBHOOK_SECRET",
+        "DELCORE_URL",
+        "DELCORE_RESOURCE",
+        "LOGTO_TOKEN_URL",
+        "CLIENT_ID",
+        "CLIENT_SECRET",
+        "ALERT_*",
+        "OTEL_*",
+        "NO_COLOR"
+      ]
     },
     "fixkey-desktop#build": {
       "cache": false

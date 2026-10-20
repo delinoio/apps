@@ -56,9 +56,9 @@ func (testGitHub) Comment(context.Context, *pb.Repository, *measurement.State, *
 }
 func database(t *testing.T) *Server {
 	t.Helper()
-	dsn := os.Getenv("GIT_TRACKER_TEST_DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("GIT_TRACKER_TEST_DATABASE_URL required for PostgreSQL integration")
+		t.Skip("TEST_DATABASE_URL required for PostgreSQL integration")
 	}
 	ctx := context.Background()
 	db, e := pgxpool.New(ctx, dsn)
