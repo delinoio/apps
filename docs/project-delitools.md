@@ -14,7 +14,7 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 - `.github/workflows/release-delitools.yml`: tagged Cloudflare Pages web publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 - `.github/workflows/release-delitools-mobile.yml`: signed Android internal testing and iOS TestFlight uploads.
 
-- `servers/delitools-api`: reserved skeleton for the independent public Connect API, PostgreSQL migrations and OCI packaging; runtime implementation is planned.
+- `servers/delitools-api`: independent Connect API runtime, persistence, background workers and PostgreSQL migrations. The executable and OCI packaging are planned.
 - `protos/delitools/v1`: schemas and generated Go/TypeScript bindings.
 - `examples/delitools-client`: reserved skeleton for the planned Go consumer example.
 - `apps/delino-docs`: public API usage documentation.
