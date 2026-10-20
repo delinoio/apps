@@ -22,6 +22,7 @@ import {
   GitTrackerService,
   type Comparison,
   type Execution,
+  type Dataset,
 } from "./gen/gittracker/v1/gittracker_pb";
 import { DelcoreService } from "./gen/delcore/v1/delcore_pb";
 import { points, readable, graphValue } from "./history.mjs";
@@ -259,15 +260,16 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       ),
     },
   );
-  const datasets = useMemo(
-    () =>
-      new Map(
-        (historyData?.executions || []).flatMap((e) =>
-          e.measurements.map((m) => [m.dataset!.id, m.dataset!] as const),
-        ),
-      ),
-    [historyData],
-  );
+  const datasets = useMemo(() => {
+    const latest = new Map<string, Dataset>();
+    for (const execution of historyData?.executions || []) {
+      for (const measurement of execution.measurements) {
+        if (measurement.dataset && !latest.has(measurement.dataset.id))
+          latest.set(measurement.dataset.id, measurement.dataset);
+      }
+    }
+    return latest;
+  }, [historyData]);
   const activeDataset = datasets.get(dataset) || datasets.values().next().value;
   const activeColumn =
     activeDataset?.columns.find((c) => c.id === column) ||
