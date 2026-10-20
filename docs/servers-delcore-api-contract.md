@@ -8,6 +8,8 @@
 
 Use the root Go module and pinned toolchain. Run one process against PostgreSQL. Do not change root development commands.
 
+Until the official Go 1.27.3 Bookworm image is published, the OCI build stage bootstraps from `golang:1.27.2-bookworm` with `GOTOOLCHAIN=auto`. After copying `go.mod`, Go selects and downloads the required 1.27.3 toolchain before downloading dependencies or compiling the server. Restore the matching image and remove the override when it becomes available.
+
 ## Users and Operators
 
 Authenticated users, registered M2M consumer services, tenant administrators and dedicated platform operators.
