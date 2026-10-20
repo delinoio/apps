@@ -94,7 +94,7 @@ func (p Price) Valid() bool {
 			return false
 		}
 	}
-	for _, tiers := range [][]Tier{p.InputTiers, p.OutputTiers} {
+	for _, tiers := range [][]Tier{p.InputTiers, p.OutputTiers, p.CacheReadTiers, p.CacheWriteTiers} {
 		var end uint64
 		for i, t := range tiers {
 			if !decimal(t.Cost) || t.Min != end || (t.Max != nil && *t.Max <= t.Min) || (t.Max == nil && i != len(tiers)-1) {
@@ -132,7 +132,7 @@ func (p Price) Tokens(n Counts) ([]*core.AiTokenUsage, error) {
 		k core.AiTokenKind
 		n uint64
 		p string
-	}{{core.AiTokenKind_AI_TOKEN_KIND_INPUT, n.Input, rate(p.Input, p.InputTiers, total)}, {core.AiTokenKind_AI_TOKEN_KIND_OUTPUT, n.Output, rate(p.Output, p.OutputTiers, total)}, {core.AiTokenKind_AI_TOKEN_KIND_CACHE_READ, n.CacheRead, p.CacheRead}, {core.AiTokenKind_AI_TOKEN_KIND_CACHE_WRITE, n.CacheWrite, p.CacheWrite}} {
+	}{{core.AiTokenKind_AI_TOKEN_KIND_INPUT, n.Input, rate(p.Input, p.InputTiers, total)}, {core.AiTokenKind_AI_TOKEN_KIND_OUTPUT, n.Output, rate(p.Output, p.OutputTiers, total)}, {core.AiTokenKind_AI_TOKEN_KIND_CACHE_READ, n.CacheRead, rate(p.CacheRead, p.CacheReadTiers, total)}, {core.AiTokenKind_AI_TOKEN_KIND_CACHE_WRITE, n.CacheWrite, rate(p.CacheWrite, p.CacheWriteTiers, total)}} {
 		if x.p == "" {
 			if x.n != 0 {
 				return nil, errors.New("missing token category price")

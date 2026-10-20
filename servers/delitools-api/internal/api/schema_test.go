@@ -79,3 +79,15 @@ func TestNumericEnumUsesExactEquality(t *testing.T) {
 		}
 	}
 }
+
+func TestCachedTokenPriceTiers(t *testing.T) {
+	p := Price{Input: "1", Output: "1", CacheRead: "2", CacheWrite: "3", CacheReadTiers: []Tier{{Min: 0, Max: ptr(100), Cost: "2"}, {Min: 100, Cost: "4"}}, CacheWriteTiers: []Tier{{Min: 0, Max: ptr(100), Cost: "3"}, {Min: 100, Cost: "6"}}}
+	tokens, err := p.Tokens(Counts{Input: 70, CacheRead: 20, CacheWrite: 10})
+	if err != nil || tokens[2].UsdPerToken != "4" || tokens[3].UsdPerToken != "6" {
+		t.Fatal(tokens, err)
+	}
+	tokens, err = p.Tokens(Counts{Input: 69, CacheRead: 20, CacheWrite: 10})
+	if err != nil || tokens[2].UsdPerToken != "2" || tokens[3].UsdPerToken != "3" {
+		t.Fatal(tokens, err)
+	}
+}

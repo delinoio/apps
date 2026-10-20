@@ -82,12 +82,14 @@ type Tier struct {
 	Max  *uint64 `json:"max,omitempty"`
 }
 type Price struct {
-	Input       string `json:"input"`
-	Output      string `json:"output"`
-	CacheRead   string `json:"input_cache_read"`
-	CacheWrite  string `json:"input_cache_write"`
-	InputTiers  []Tier `json:"input_tiers,omitempty"`
-	OutputTiers []Tier `json:"output_tiers,omitempty"`
+	Input           string `json:"input"`
+	Output          string `json:"output"`
+	CacheRead       string `json:"input_cache_read"`
+	CacheWrite      string `json:"input_cache_write"`
+	InputTiers      []Tier `json:"input_tiers,omitempty"`
+	OutputTiers     []Tier `json:"output_tiers,omitempty"`
+	CacheReadTiers  []Tier `json:"input_cache_read_tiers,omitempty"`
+	CacheWriteTiers []Tier `json:"input_cache_write_tiers,omitempty"`
 }
 type Result struct {
 	Content      string
