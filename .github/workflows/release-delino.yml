@@ -1,13 +1,13 @@
-name: Release Delino Site
-run-name: Release delino-site (${{ github.event_name == 'push' && github.ref_name || inputs.tag }})
+name: Release Delino
+run-name: Release delino (${{ github.event_name == 'push' && github.ref_name || inputs.tag }})
 
 on:
   push:
-    tags: ["delino-site@v*"]
+    tags: ["delino@v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing immutable delino-site@vMAJOR.MINOR.PATCH tag
+        description: Existing immutable delino@vMAJOR.MINOR.PATCH tag
         required: true
         type: string
 
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-delino-site
+  group: release-delino
   cancel-in-progress: false
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
       - name: Verify the immutable tagged source belongs to main
         id: source
         env:
-          RELEASE_PROJECT: delino-site
+          RELEASE_PROJECT: delino
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: node "scripts/release/project.mjs" validate-web
 
@@ -47,7 +47,11 @@ jobs:
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: delino-site-production
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [delino-site, delino-docs]
+    environment: ${{ matrix.app }}-production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -68,15 +72,15 @@ jobs:
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test and build the selected web application
-        working-directory: apps/delino-site
+        working-directory: apps/${{ matrix.app }}
         run: pnpm test
       - name: Include distribution notices
-        run: cp "LICENSE" "NOTICE" "apps/delino-site/dist/"
+        run: cp "LICENSE" "NOTICE" "apps/${{ matrix.app }}/dist/"
       - name: Preserve the deployment candidate
         uses: actions/upload-artifact@v7
         with:
-          name: delino-site-${{ needs.source.outputs.version }}-${{ needs.source.outputs.revision }}
-          path: apps/delino-site/dist/
+          name: ${{ matrix.app }}-${{ needs.source.outputs.version }}-${{ needs.source.outputs.revision }}
+          path: apps/${{ matrix.app }}/dist/
           if-no-files-found: error
           retention-days: 7
       - name: Deploy the tagged build to Cloudflare Pages production
@@ -85,7 +89,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.151.1"
-          command: pages deploy "apps/delino-site/dist" --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.source.outputs.revision }}
+          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.source.outputs.revision }}
       - name: Remove generated frontend output
         if: always()
-        run: rm -rf "apps/delino-site/dist"
+        run: rm -rf "apps/${{ matrix.app }}/dist"

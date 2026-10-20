@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "apps/fixkey/src-tauri", "crates/fixkey-core"]
+members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "apps/fixkey-app/src-tauri", "crates/fixkey-core"]
 
 [patch.crates-io]
 # Match the upstream CEF/winit patch so menus and runtime windows share one dpi type.

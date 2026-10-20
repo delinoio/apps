@@ -11,17 +11,20 @@ Provide the Delino marketing website.
 ## Domain Ownership Map
 
 - `apps/delino-site`: independently built web application served at `https://delino.io`.
-- `.github/workflows/release-delino-site.yml`: tagged Cloudflare Pages publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-docs`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
 - [Web application](apps-delino-site-web-contract.md)
+- [Localization and translation tooling](apps-delino-site-localization-contract.md)
 
 ## Cross-Domain Invariants
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
+
+`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; Korean uses `/ko/`. Other registered languages use the same prefixed route convention.
 
 ## Change Policy
 

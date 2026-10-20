@@ -8,7 +8,7 @@ on:
         description: Project to version and tag
         required: true
         type: choice
-        options: [devbase, delino-site, delitools, fixkey]
+        options: [devbase, delino, delitools, fixkey]
       bump:
         description: Stable SemVer increment
         required: true
@@ -66,18 +66,3 @@ jobs:
       - name: Commit and atomically push the selected version and tag
         id: source
         run: node "scripts/release/project.mjs" prepare
-      - name: Record the distribution handoff
-        env:
-          VERSION: ${{ steps.source.outputs.version }}
-          REVISION: ${{ steps.source.outputs.revision }}
-        run: |
-          node --input-type=module <<'JS'
-          import { appendFileSync } from 'node:fs';
-          const project = process.env.RELEASE_PROJECT;
-          const lines = project === 'fixkey'
-            ? [`The tag starts Release FixKey for ${process.env.REVISION} (version ${process.env.VERSION}). Signing and publication run through the protected release environments.`]
-            : project === 'delitools'
-              ? ['The tag starts Release DeliTools Web. For mobile, run Release DeliTools Mobile on main with a new build number; store uploads remain opt-in.']
-              : ['The tag starts the owning web release workflow. Inspect that run for the deployment result.'];
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n' + lines.join('\n') + '\n');
-          JS

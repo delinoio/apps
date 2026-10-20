@@ -10,3 +10,7 @@ Each service will have its own guides and reference pages.
 ## Find a topic
 
 Use the navigation to choose a section, the sidebar to browse its pages, or search to find a topic.
+
+## Choose a language
+
+Use the language menu to switch between English and Korean while staying on the same page.

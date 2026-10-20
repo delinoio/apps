@@ -47,15 +47,24 @@ test("stable bumps reset lower components and reject malformed or overflowing ve
 for (const project of Object.values(Project)) {
   test(`${project} changes only its synchronized source versions`, () => {
     const plan = versionChanges(project, Bump.Patch, read);
+    const app =
+      project === Project.Delino
+        ? "delino-site"
+        : project === Project.Fixkey
+          ? "fixkey-app"
+          : project;
     assert.equal(
-      JSON.parse(plan.changes[`apps/${project}/package.json`]).version,
+      JSON.parse(plan.changes[`apps/${app}/package.json`]).version,
       plan.version,
     );
     const native = [Project.Delitools, Project.Fixkey].includes(project);
-    assert.equal(Object.keys(plan.changes).length, native ? 4 : 1);
+    assert.equal(
+      Object.keys(plan.changes).length,
+      native ? 4 : project === Project.Delino ? 2 : 1,
+    );
     if (native) {
       assert.equal(
-        JSON.parse(plan.changes[`apps/${project}/src-tauri/tauri.conf.json`])
+        JSON.parse(plan.changes[`apps/${app}/src-tauri/tauri.conf.json`])
           .version,
         plan.version,
       );
@@ -175,15 +184,15 @@ test("workflow run IDs do not match a longer run ID prefix", (t) => {
   assert.equal(prepareRelease(options).resumed, false);
 });
 
-for (const project of [Project.Delitools, Project.Fixkey]) {
-  test(`${project} can resume the committed native manifest and lock update`, (t) => {
+for (const project of [Project.Delino, Project.Delitools, Project.Fixkey]) {
+  test(`${project} can resume all committed version updates`, (t) => {
     const options = { ...fixture(t), project };
     const result = prepareRelease(options);
     assert.deepEqual(prepareRelease(options), { ...result, resumed: true });
   });
 }
 
-for (const project of [Project.Devbase, Project.Fixkey]) {
+for (const project of [Project.Devbase, Project.Delino, Project.Fixkey]) {
   test(`${project} source validation rejects branch names, wrong versions and tags outside main`, (t) => {
     const options = { ...fixture(t), project };
     const validate =
@@ -217,7 +226,13 @@ for (const project of [Project.Devbase, Project.Fixkey]) {
       /Tag and source version disagree/u,
     );
     git(options.directory, "checkout", "-b", "unmerged");
-    const file = `apps/${project}/package.json`;
+    const app =
+      project === Project.Delino
+        ? "delino-site"
+        : project === Project.Fixkey
+          ? "fixkey-app"
+          : project;
+    const file = `apps/${app}/package.json`;
     const manifest = JSON.parse(
       readFileSync(join(options.directory, file), "utf8"),
     );
@@ -240,11 +255,7 @@ test("web workflows validate main ancestry before allocating protected deploymen
     Object.values(Project),
   );
   assert.equal(release.concurrency["cancel-in-progress"], false);
-  for (const project of [
-    Project.Devbase,
-    Project.DelinoSite,
-    Project.Delitools,
-  ]) {
+  for (const project of [Project.Devbase, Project.Delino, Project.Delitools]) {
     const workflow = yaml.load(
       read(`.github/workflows/release-${project}.yml`),
     );
@@ -252,7 +263,17 @@ test("web workflows validate main ancestry before allocating protected deploymen
     assert.equal(workflow.jobs.source.environment, undefined);
     const job = workflow.jobs.deploy;
     assert.equal(job.needs, "source");
-    assert.equal(job.environment, `${project}-production`);
+    if (project === Project.Delino) {
+      assert.deepEqual(job.strategy.matrix.app, ["delino-site", "delino-docs"]);
+      assert.equal(job.strategy["fail-fast"], false);
+      assert.equal(job.environment, "${{ matrix.app }}-production");
+      assert.equal(
+        job.steps.find((step) => step.run === "pnpm test")["working-directory"],
+        "apps/${{ matrix.app }}",
+      );
+    } else {
+      assert.equal(job.environment, `${project}-production`);
+    }
     assert.equal(job.steps[0].with.ref, "${{ needs.source.outputs.revision }}");
     const upload = job.steps.findIndex((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
@@ -264,4 +285,59 @@ test("web workflows validate main ancestry before allocating protected deploymen
     assert.match(job.steps[deploy].with.command, /--branch=main/u);
     assert.equal(job.steps.at(-1).if, "always()");
   }
+});
+
+test("Delino preparation synchronizes both apps and rejects divergent versions", () => {
+  const plan = versionChanges(Project.Delino, Bump.Minor, read);
+  assert.deepEqual(Object.keys(plan.changes).sort(), [
+    "apps/delino-docs/package.json",
+    "apps/delino-site/package.json",
+  ]);
+  for (const content of Object.values(plan.changes)) {
+    assert.equal(JSON.parse(content).version, plan.version);
+  }
+  assert.throws(
+    () =>
+      versionChanges(Project.Delino, Bump.Patch, (file) =>
+        file === "apps/delino-docs/package.json"
+          ? read(file).replace('"version": "0.1.0"', '"version": "9.9.9"')
+          : read(file),
+      ),
+    /Source versions disagree/u,
+  );
+});
+
+test("Delino source validation checks the docs version at the immutable tag", (t) => {
+  const options = { ...fixture(t), project: Project.Delino };
+  const result = prepareRelease(options);
+  const file = join(options.directory, "apps/delino-docs/package.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  manifest.version = "9.9.9";
+  writeFileSync(file, JSON.stringify(manifest));
+  git(options.directory, "add", ".");
+  git(options.directory, "commit", "-m", "Diverge docs version");
+  const tag = `delino@v${result.version}`;
+  git(options.directory, "tag", "--delete", tag);
+  git(options.directory, "tag", tag);
+  git(
+    options.directory,
+    "push",
+    "--force",
+    "origin",
+    "main",
+    `refs/tags/${tag}`,
+  );
+  assert.throws(
+    () => validateWebSource(options.directory, Project.Delino, tag),
+    /Tag and source version disagree/u,
+  );
+  assert.throws(
+    () =>
+      validateWebSource(
+        options.directory,
+        Project.Delino,
+        `delino-site@v${result.version}`,
+      ),
+    /Invalid release tag/u,
+  );
 });

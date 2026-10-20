@@ -14,7 +14,7 @@ Visitors learn about Delino through the marketing website. Maintainers build and
 
 ## Interfaces and Contracts
 
-The root route `/` has the title `Delino`. The scaffold renders an empty React root. Product screens and API clients require subsequent implementation.
+The root route `/` has the title `Delino`. The minimal page provides a language selector and a link to documentation in the selected language. English uses `/`; Korean uses `/ko/`. Each registered language has an independent static HTML entry with matching `lang` metadata. Product screens and API clients require subsequent implementation. Follow the [localization contract](apps-delino-site-localization-contract.md) for catalogs and automated generation.
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
@@ -34,11 +34,11 @@ Rsbuild reports startup and build failures. Future service integrations must emi
 
 ## Build and Test
 
-Run `pnpm test` in this directory for TypeScript checks and a production build. `pnpm build` emits `dist`. Affected CI runs these checks on Ubuntu. Remove generated `dist` after validation.
+Run `pnpm test` in this directory for offline translation validation, TypeScript checks and a production build. `pnpm build` also validates translations before emitting `dist` and includes the repository `LICENSE` and `NOTICE`. Affected CI runs these checks on Ubuntu without ChatGPT credentials. Remove generated `dist` after validation.
 
 Cloudflare Pages builds the `delino-site` workspace from the repository root with `pnpm --filter delino-site build` and publishes `apps/delino-site/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
-Production publication uses `.github/workflows/release-delino-site.yml` after `release-project.yml` commits and tags the selected version. The owning `delino-site-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
+Production publication uses `.github/workflows/release-delino.yml` after `release-project.yml` commits both Delino app versions and creates the shared `delino@vMAJOR.MINOR.PATCH` tag. Both apps deploy from the same source revision. The owning `delino-site-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
 
 ## Dependencies and Integrations
 

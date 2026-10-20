@@ -22,7 +22,7 @@ export function select(paths) {
     fixkey:
       shared ||
       paths.some((path) =>
-        /^(apps\/fixkey\/|crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
+        /^(apps\/fixkey-app\/|crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
           path,
         ),
       ),

@@ -34,7 +34,7 @@ test("pinned standard licenses retain their checksums in Windows checkouts", (t)
   const sources = JSON.parse(
     readFileSync(
       new URL(
-        "../../apps/fixkey/src-tauri/licenses/sources.json",
+        "../../apps/fixkey-app/src-tauri/licenses/sources.json",
         import.meta.url,
       ),
       "utf8",
@@ -48,7 +48,7 @@ test("pinned standard licenses retain their checksums in Windows checkouts", (t)
     path.join(dir, ".gitattributes"),
     readFileSync(new URL("../../.gitattributes", import.meta.url)),
   );
-  const relativeDirectory = "apps/fixkey/src-tauri/licenses";
+  const relativeDirectory = "apps/fixkey-app/src-tauri/licenses";
   mkdirSync(path.join(dir, relativeDirectory), { recursive: true });
   const files = Object.entries(sources).filter(
     ([name]) => name !== "schemaVersion",
@@ -113,7 +113,10 @@ test("all platforms require updater signatures without a Windows code-signing id
   }
   const config = JSON.parse(
     readFileSync(
-      new URL("../../apps/fixkey/src-tauri/tauri.conf.json", import.meta.url),
+      new URL(
+        "../../apps/fixkey-app/src-tauri/tauri.conf.json",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );
@@ -274,16 +277,16 @@ test("staging ignores unpacked application trees but rejects artifact symlinks",
 test("source versions stay synchronized", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const selected = JSON.parse(
-    readFileSync(path.join(root, "apps/fixkey/package.json"), "utf8"),
+    readFileSync(path.join(root, "apps/fixkey-app/package.json"), "utf8"),
   ).version;
   validateSource(root, selected);
 });
 test("source validation accepts Windows checkout line endings and rejects version drift", (t) => {
   const dir = fixture(t);
-  const native = path.join(dir, "apps/fixkey/src-tauri");
+  const native = path.join(dir, "apps/fixkey-app/src-tauri");
   mkdirSync(native, { recursive: true });
   writeFileSync(
-    path.join(dir, "apps/fixkey/package.json"),
+    path.join(dir, "apps/fixkey-app/package.json"),
     '{\r\n  "version": "0.1.4"\r\n}\r\n',
   );
   writeFileSync(

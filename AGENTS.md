@@ -30,6 +30,7 @@
 - FixKey releases must not require a native-acceptance revision variable or comparison. Keep immutable source validation, signing and protected publication gates in the owning release workflow.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Run development commands from the owning app: `pnpm dev` serves its frontend and `pnpm dev:desktop` launches its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the owning application contracts; this repository has no root `pnpm dev`.
+- Run root `pnpm i18n:translate` or `pnpm i18n:check` to process all workspaces that provide the corresponding localization command. Keep translation generation sequential because the apps share local ChatGPT authentication. Follow the [localization contract](docs/apps-delino-site-localization-contract.md).
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
@@ -59,10 +60,11 @@
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
-- `apps/fixkey`: Standalone FixKey desktop product and native shell.
+- `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go messages and Connect bindings.
 - `scripts/`: Shared build and development support.
+- `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
 - `examples/delcore-client`: Go consumer example.
 - `.github/`: CI actions and workflows, including mobile release automation.
@@ -77,7 +79,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - New persisted entities should use UUID v7 identifiers by default unless a documented compatibility, storage, protocol, or product issue requires another ID shape.
 - AI-based search should default to Cloudflare AI Search unless a project contract documents a different backend and migration boundary.
 - When a new project does not specify its primary language, default to Golang.
-- Prefer Rspack-family build tools when possible, including Rsbuild and Rspress for app and documentation surfaces.
+- Prefer tools from the Rspack and Rstack families when possible, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Existing documented exceptions remain valid until their project contract changes.
 - File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless a project contract documents another storage or access pattern.
 

@@ -6,7 +6,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, rs } from "@rstest/core";
 import { App, CandidatePicker } from "./App";
 import type { DesktopApi, DesktopState } from "./api";
 
@@ -36,15 +36,15 @@ function fixture(patch: Partial<DesktopState> = {}) {
     ...patch,
   };
   const api: DesktopApi = {
-    state: vi.fn(async () => state),
-    save: vi.fn(async (settings) => {
+    state: rs.fn(async () => state),
+    save: rs.fn(async (settings) => {
       state = { ...state, settings, revision: state.revision + 1 };
       return state;
     }),
-    action: vi.fn(async () => {}),
-    apps: vi.fn(async () => []),
-    candidates: vi.fn(async () => () => {}),
-    candidateAction: vi.fn(async () => {}),
+    action: rs.fn(async () => {}),
+    apps: rs.fn(async () => []),
+    candidates: rs.fn(async () => () => {}),
+    candidateAction: rs.fn(async () => {}),
   };
   return { api, state };
 }
@@ -68,7 +68,7 @@ function mount(api: DesktopApi) {
 describe("settings desktop contract", () => {
   it("keeps the previous value when persistence fails and reports a safe error", async () => {
     const { api } = fixture();
-    vi.mocked(api.save).mockRejectedValue("settings-save-failed");
+    rs.mocked(api.save).mockRejectedValue("settings-save-failed");
     mount(api);
     const checkbox = await screen.findByLabelText("Start at login");
     expect((checkbox as HTMLInputElement).checked).toBe(false);
@@ -125,7 +125,7 @@ describe("settings desktop contract", () => {
       identity: { platform: "macos" as const, bundle_id: "io.example.editor" },
       displayName: "Editor",
     };
-    vi.mocked(api.apps).mockResolvedValue([app]);
+    rs.mocked(api.apps).mockResolvedValue([app]);
     fireEvent.click(screen.getByRole("button", { name: "Add app" }));
     await screen.findByRole("dialog");
     fireEvent.click(screen.getAllByRole("button", { name: "Add app" }).at(-1)!);
@@ -148,7 +148,7 @@ describe("settings desktop contract", () => {
     });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.save).not.toHaveBeenCalled();
-    vi.mocked(api.save).mockRejectedValue("shortcut-conflict");
+    rs.mocked(api.save).mockRejectedValue("shortcut-conflict");
     fireEvent.click(screen.getByRole("button", { name: "Set shortcut" }));
     fireEvent.keyDown(screen.getByRole("textbox"), {
       key: "f",
@@ -191,7 +191,7 @@ describe("settings desktop contract", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Allow accessibility access" }),
     );
-    vi.mocked(api.state).mockResolvedValue({
+    rs.mocked(api.state).mockResolvedValue({
       ...state,
       status: "active",
       active: true,
@@ -205,7 +205,7 @@ describe("settings desktop contract", () => {
       active: false,
       osLanguage: "ko",
     });
-    vi.mocked(api.action).mockRejectedValueOnce(
+    rs.mocked(api.action).mockRejectedValueOnce(
       "permission-request-unavailable",
     );
     mount(api);
@@ -252,7 +252,7 @@ describe("settings desktop contract", () => {
     mount(api);
     await screen.findByRole("dialog");
     await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
-    vi.mocked(api.state).mockResolvedValue({
+    rs.mocked(api.state).mockResolvedValue({
       ...state,
       status: "input-permission-missing",
     });
@@ -262,7 +262,7 @@ describe("settings desktop contract", () => {
       screen.queryByRole("button", { name: "Allow accessibility access" }),
     ).toBeNull();
     expect(api.action).toHaveBeenCalledTimes(2);
-    vi.mocked(api.state).mockResolvedValue({
+    rs.mocked(api.state).mockResolvedValue({
       ...state,
       status: "active",
       active: true,
@@ -373,7 +373,7 @@ describe("settings desktop contract", () => {
 
 it("keeps manual candidates ephemeral and distinguishes unavailable validation", async () => {
   const { api } = fixture();
-  vi.mocked(api.candidates).mockImplementation(async (callback) => {
+  rs.mocked(api.candidates).mockImplementation(async (callback) => {
     callback({
       generation: 4,
       selected: 0,
@@ -405,7 +405,7 @@ it("keeps manual candidates ephemeral and distinguishes unavailable validation",
 
 it("retains the latest candidate generation and applies the current presentation", async () => {
   const { api } = fixture();
-  vi.mocked(api.candidates).mockImplementation(async (callback) => {
+  rs.mocked(api.candidates).mockImplementation(async (callback) => {
     callback({
       generation: 5,
       revision: 2,

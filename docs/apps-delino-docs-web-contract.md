@@ -21,6 +21,8 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 
 Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
 
+The listed routes remain the English routes. Korean equivalents use `/ko/`, and future languages use their registered prefix. The language menu retains the current page when switching languages. Navigation, page content, theme text, search and HTML metadata use the selected language. Language selection is explicit; do not redirect by browser language. Public source pages live under `docs/en/`, translated pages under `docs/<language>/`, and navigation/theme catalogs under `i18n/`. Follow the [localization contract](apps-delino-site-localization-contract.md) for source tracking and local ChatGPT generation.
+
 Run package-local `pnpm dev` on `127.0.0.1:46315`. A port conflict must stop startup. The production origin is `https://docs.delino.io` with base path `/`.
 
 ## Storage
@@ -37,11 +39,11 @@ Rspress reports development, rendering and build failures through its CLI. Futur
 
 ## Build and Test
 
-Run package-local `pnpm test` for TypeScript validation and a production build. `pnpm build` generates `dist` and includes the repository `LICENSE` and `NOTICE`. Remove generated `dist` after validation.
+Run package-local `pnpm test` for offline translation checks, TypeScript validation and a production build. `pnpm build` also validates translations, generates `dist` and includes the repository `LICENSE` and `NOTICE`. These checks require no ChatGPT credentials. Remove generated `dist` after validation.
 
 Affected CI runs `delino-docs-frontend` on Ubuntu and retains validation evidence. Changes in this app or its owning contracts select that job.
 
-For Cloudflare Pages, build from the repository root with `pnpm --filter delino-docs build` and publish `apps/delino-docs/dist`. Cloudflare project creation, custom-domain binding, DNS and production release automation are outside this scaffold. A local build does not establish platform or domain acceptance.
+For Cloudflare Pages, build from the repository root with `pnpm --filter delino-docs build` and publish `apps/delino-docs/dist`. Production publication uses `.github/workflows/release-delino.yml` with the shared `delino@vMAJOR.MINOR.PATCH` tag. Release preparation updates both Delino package versions, and both apps deploy from the same source revision. The `delino-docs-production` environment supplies Cloudflare configuration. Dispatch the existing immutable tag from main to retry. Follow the [release procedure](repository-workflow-contract.md#web-publication). Cloudflare project creation, custom-domain binding and DNS require separate platform configuration. A local build does not establish platform or domain acceptance.
 
 ## Dependencies and Integrations
 

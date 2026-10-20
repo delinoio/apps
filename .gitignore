@@ -217,4 +217,4 @@ tmp/
 .ci-evidence/
 
 # FixKey generated license inventory and Tauri schemas
-/apps/fixkey/src-tauri/gen/
+/apps/fixkey-app/src-tauri/gen/

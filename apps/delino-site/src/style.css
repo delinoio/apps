@@ -1,0 +1,47 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #191f28;
+  background: #fff;
+}
+
+body {
+  margin: 0;
+}
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 48px;
+}
+h1 {
+  font-size: 24px;
+  margin: 0;
+}
+label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+select {
+  font: inherit;
+  border: 1px solid #8b95a1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  color: inherit;
+}
+a {
+  color: #1957c2;
+  text-underline-offset: 4px;
+}
+:focus-visible {
+  outline: 3px solid #3182f6;
+  outline-offset: 4px;
+}

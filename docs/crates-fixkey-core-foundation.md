@@ -157,7 +157,7 @@ Use `tracing` structured events for errors, processing durations, correction out
 
 - `hephaex/mecab-ko` and SCOWL/ESDB data: pin versions and record source, hash, license and notices.
 - Platform accessibility APIs for macOS, Windows and Linux X11.
-- Consumed by `apps/fixkey`; the engine stays independent of UI rendering.
+- Consumed by `apps/fixkey-app`; the engine stays independent of UI rendering.
 
 ## Change Triggers
 

@@ -1,4 +1,62 @@
 import { defineConfig } from "@rspress/core";
+import { readFileSync } from "node:fs";
+import registry from "./i18n/locales.json";
+
+const locales = registry.locales.map((locale) => {
+  const messages: Record<string, string> = JSON.parse(
+    readFileSync(
+      new URL(`./i18n/messages/${locale.lang}.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+  const prefix = locale.lang === registry.sourceLang ? "" : `/${locale.lang}`;
+  return {
+    ...locale,
+    title: "Delino Docs",
+    description: messages.description,
+    nav: [
+      { text: messages.guide, link: `${prefix}/guide/getting-started` },
+      { text: messages.services, link: `${prefix}/services/` },
+      { text: "Delino", link: `https://delino.io${prefix}/` },
+    ],
+    sidebar: {
+      [`${prefix}/guide/`]: [
+        {
+          text: messages.guide,
+          items: [
+            {
+              text: messages.gettingStarted,
+              link: `${prefix}/guide/getting-started`,
+            },
+          ],
+        },
+      ],
+      [`${prefix}/services/`]: [
+        {
+          text: messages.services,
+          items: [
+            { text: messages.overview, link: `${prefix}/services/` },
+            { text: "Git Tracker", link: `${prefix}/services/git-tracker/` },
+          ],
+        },
+      ],
+    },
+  };
+});
+
+const themeText: Record<string, Record<string, string>> = {};
+for (const locale of registry.locales) {
+  const messages: Record<string, string> = JSON.parse(
+    readFileSync(
+      new URL(`./i18n/messages/${locale.lang}.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const [key, value] of Object.entries(messages)) {
+    if (!key.startsWith("theme.")) continue;
+    (themeText[key.slice(6)] ??= {})[locale.lang] = value;
+  }
+}
 
 export default defineConfig({
   root: "docs",
@@ -7,32 +65,26 @@ export default defineConfig({
   description: "Documentation for Delino services.",
   siteOrigin: "https://docs.delino.io",
   base: "/",
-  lang: "en",
+  lang: registry.sourceLang,
+  locales: locales.map(({ lang, label, title, description }) => ({
+    lang,
+    label,
+    title,
+    description,
+  })),
+  route: { localeRedirect: "never" },
+  i18nSource: (defaults) => {
+    for (const key of Object.keys(defaults)) {
+      if (registry.locales.some(({ lang }) => !themeText[key]?.[lang])) {
+        throw new Error(`Missing theme translation: theme.${key}`);
+      }
+    }
+    for (const [key, translations] of Object.entries(themeText))
+      defaults[key] = { ...defaults[key], ...translations };
+    return defaults;
+  },
   builderConfig: {
     server: { host: "127.0.0.1", port: 46315, strictPort: true },
   },
-  themeConfig: {
-    nav: [
-      { text: "Guide", link: "/guide/getting-started" },
-      { text: "Services", link: "/services/" },
-      { text: "Delino", link: "https://delino.io" },
-    ],
-    sidebar: {
-      "/guide/": [
-        {
-          text: "Guide",
-          items: [{ text: "Getting started", link: "/guide/getting-started" }],
-        },
-      ],
-      "/services/": [
-        {
-          text: "Services",
-          items: [
-            { text: "Overview", link: "/services/" },
-            { text: "Git Tracker", link: "/services/git-tracker/" },
-          ],
-        },
-      ],
-    },
-  },
+  themeConfig: { locales },
 });
