@@ -248,6 +248,42 @@ func TestScheduledFreeDowngradeKeepsRequestedVersion(t *testing.T) {
 	}
 }
 
+func TestLegacyPlanMutationSnapshotsTenants(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	if _, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare default plan", Plan: &pb.Plan{Key: "legacy-default", Name: "Legacy Default", Free: true, DefaultFree: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil || len(me.Msg.Tenants) == 0 {
+		t.Fatal("personal tenant was not created", err)
+	}
+	tenantID := me.Msg.Tenants[0].Id
+	legacyPlanID := key()
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1,$2,$3,$4,$5,$6)`, legacyPlanID, "Legacy Plan", 100, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO catalog_entities(id,kind,scope,key) VALUES($1,'plan','',$2)`, legacyPlanID, "legacy-plan"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", tenantID, legacyPlanID); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "mutate legacy plan", Plan: &pb.Plan{Id: legacyPlanID, Name: "Updated Legacy Plan", Rank: 101, Free: false}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected, selectedFree string
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.version_id::text,cv.definition->>'free'
+FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, legacyPlanID).Scan(&selected, &selectedFree); err != nil {
+		t.Fatal(err)
+	}
+	if selected == updated.Msg.Plan.ActiveVersionId || selectedFree != "true" {
+		t.Fatalf("legacy tenant did not retain old plan version: selected=%s free=%s active=%s", selected, selectedFree, updated.Msg.Plan.ActiveVersionId)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string

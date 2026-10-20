@@ -99,6 +99,15 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 		if e != nil {
 			return e
 		}
+		var existing bool
+		if e = c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)", v.Id).Scan(&existing); e != nil {
+			return e
+		}
+		if existing {
+			if e = postgres.SnapshotLegacyPlanSelections(c.ctx, c.tx, v.Id, c.now); e != nil {
+				return e
+			}
+		}
 		if !v.DefaultFree {
 			var currentDefault bool
 			if e := c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1 AND is_default)", v.Id).Scan(&currentDefault); e != nil {

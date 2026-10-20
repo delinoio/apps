@@ -227,6 +227,39 @@ func RebuildProductVersion(ctx context.Context, tx pgx.Tx, kind, productID strin
 	return version, nil
 }
 
+// SnapshotLegacyPlanSelections creates the first immutable plan selection for
+// tenants created before catalog versioning. Call it before changing the plan
+// row so legacy tenants keep the policy they already use.
+func SnapshotLegacyPlanSelections(ctx context.Context, tx pgx.Tx, planID string, at time.Time) error {
+	version, err := RebuildProductVersion(ctx, tx, "plan", planID)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT t.id::text
+FROM tenants t
+WHERE t.plan_id=$1
+  AND NOT EXISTS (
+    SELECT 1 FROM tenant_catalog_selections cs
+    WHERE cs.tenant_id=t.id AND cs.product_id=t.plan_id AND cs.ends_at IS NULL
+  )
+FOR UPDATE`, planID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tenantID string
+		if err = rows.Scan(&tenantID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at)
+VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, catalogID(), tenantID, planID, version, at); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // ReplaceTenantSelections records the versions chosen by an explicit change.
 // Empty versions are permitted only for legacy rows created outside catalog APIs.
 func ReplaceTenantSelections(ctx context.Context, tx pgx.Tx, tenant string, versions []string, at time.Time) error {
