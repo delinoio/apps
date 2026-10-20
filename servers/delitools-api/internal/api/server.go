@@ -120,8 +120,18 @@ func (s *Server) authorize(ctx context.Context, header, tenant string, cap pb.Ca
 	return nil
 }
 func authFault(e error, id string) error {
+	if errors.Is(e, context.Canceled) {
+		return fault(pb.ErrorReason_ERROR_REASON_CANCELED, id)
+	}
+	if errors.Is(e, context.DeadlineExceeded) {
+		return fault(pb.ErrorReason_ERROR_REASON_TIMEOUT, id)
+	}
 	reason := pb.ErrorReason_ERROR_REASON_PROVIDER
 	switch connect.CodeOf(e) {
+	case connect.CodeCanceled:
+		reason = pb.ErrorReason_ERROR_REASON_CANCELED
+	case connect.CodeDeadlineExceeded:
+		reason = pb.ErrorReason_ERROR_REASON_TIMEOUT
 	case connect.CodeUnauthenticated:
 		reason = pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED
 	case connect.CodePermissionDenied:
