@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Use the root Go module and pinned toolchain. Run one process against PostgreSQL. Do not change root development commands.
+Use the root Go module and pinned toolchain. Run one process against PostgreSQL. Root `pnpm dev` includes this service through its workspace script.
 
 ## Users and Operators
 
@@ -204,3 +204,9 @@ Update the [project index](project-delcore.md) and [protocol contract](protos-de
 ### Consumer deletion synchronization
 
 Registered services with the `authorize` scope can check final deletion for 1 to 100 known tenant IDs with `CheckTenantLifecycle`. Return only IDs with `deleted_at` set. Pending deletion and unknown IDs do not authorize consumer cleanup. Never return tenant names or personal details through this service interface.
+
+## Local development
+
+Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with the repository root as its working directory. Set `DELCORE_CONFIG` to the absolute path of an operator-owned JSON configuration outside the checkout, either in the shell environment or in the ignored `servers/delcore-api/.env`. The service-local `.env.example` lists this variable. Use `config.example.json` as the configuration template, replace placeholders, and keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.
+
+Prepare PostgreSQL and apply the existing explicit migration command before starting. Air does not bypass configuration validation, authentication or schema compatibility checks. Stop with `Ctrl+C`; Air sends an interrupt before terminating the server after five seconds. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
