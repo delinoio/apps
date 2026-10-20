@@ -68,7 +68,7 @@ Denied calls return `permission_denied`. Creation, modification and key issuance
 
 - A Delcore tenant owns projects. Each project owns a separate end-user directory; no user is shared across projects, including projects in the same tenant.
 - A project stores an internal UUID v7, the owning tenant, a required name, creation and update timestamps and a version that starts at 1 and increases on each update.
-- Project names are unique within a tenant ignoring case, non-empty, without leading or trailing whitespace, valid UTF-8 and at most 256 bytes. Updates change only the name and require the current version. Projects never move between tenants.
+- Project names are unique within a tenant ignoring case, compared with an explicit ICU collation (`und-u-ks-level2`, which ignores case and keeps accents) rather than the database locale, non-empty, without leading or trailing whitespace, valid UTF-8 and at most 256 bytes. Updates change only the name and require the current version. Projects never move between tenants.
 - Deleting a project requires the current version and deletes the project, its users and its keys in one transaction. A default of at most 100 projects per tenant applies; concurrent creation cannot exceed it.
 
 ### End users
@@ -133,7 +133,7 @@ Error codes: `unauthenticated` for invalid authentication, `permission_denied` f
 
 ## Storage
 
-PostgreSQL is authoritative. Tables: `projects`, `api_keys`, `end_users`, `replays`, `audit_events` and `devbase_schema`. Entity IDs are UUID v7. Foreign keys cascade project deletion to keys and users. The database enforces unique `(tenant_id, lower(name))` for projects and unique `(project_id, external_id)` for users.
+PostgreSQL is authoritative. Tables: `projects`, `api_keys`, `end_users`, `replays`, `audit_events` and `devbase_schema`. The migrations require PostgreSQL built with ICU for the project-name collation. Entity IDs are UUID v7. Foreign keys cascade project deletion to keys and users. The database enforces unique `(tenant_id, name)` under the `project_name_ci` collation for projects and unique `(project_id, external_id)` for users.
 
 Migrations are explicit, ordered and immutable SQL files embedded in the binary. `devbase-api migrate` applies them under an advisory lock and records a version and SHA-256 digest per file. The server refuses to start and reports unready when the recorded schema differs from the binary's expected version or digests. `devbase-api check-schema` performs the same check without serving. Recovery is fix-forward: correct a defect with a new migration and release. Do not roll back to a prior image or write reverse migrations.
 

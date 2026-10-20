@@ -10,7 +10,13 @@ CREATE TABLE projects (
     created_at  timestamptz NOT NULL,
     updated_at  timestamptz NOT NULL
 );
-CREATE UNIQUE INDEX projects_tenant_name ON projects (tenant_id, lower(name));
+-- Project names are unique ignoring case. lower() follows the database locale, which differs
+-- between deployments (Turkish and others map case differently), so name the comparison
+-- explicitly: the ICU root locale at strength level 2 ignores case, keeps accents and does not
+-- depend on the database locale. A nondeterministic collation is valid in a unique index, and
+-- this migration therefore requires PostgreSQL built with ICU.
+CREATE COLLATION project_name_ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+CREATE UNIQUE INDEX projects_tenant_name ON projects (tenant_id, (name COLLATE project_name_ci));
 CREATE INDEX projects_tenant_order ON projects (tenant_id, created_at, id);
 
 CREATE TABLE api_keys (

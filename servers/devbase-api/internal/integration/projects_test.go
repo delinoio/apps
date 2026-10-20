@@ -330,3 +330,32 @@ func TestProjectPagination(t *testing.T) {
 		t.Fatal("default page", e)
 	}
 }
+
+// Name uniqueness ignores case through an explicit ICU collation, not the database locale, and
+// keeps accents distinct.
+func TestProjectNamesAreUniqueIgnoringCaseWithoutDatabaseLocale(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	create := func(name string) error {
+		_, e := f.client.CreateProject(ctx, as(login(owner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: tenant, Name: name}))
+		return e
+	}
+	for _, pair := range [][2]string{{"Alpha", "aLPHA"}, {"INDIGO", "indigo"}, {"Éclair", "éclair"}, {"Ωmega", "ωMEGA"}} {
+		if e := create(pair[0]); e != nil {
+			t.Fatal(pair[0], e)
+		}
+		if e := create(pair[1]); code(e) != connect.CodeAlreadyExists {
+			t.Fatalf("%q was accepted next to %q: %v", pair[1], pair[0], e)
+		}
+	}
+	// Accents are letters, not case: a different name stays allowed.
+	if e := create("Eclair"); e != nil {
+		t.Fatal("an unaccented name conflicted with an accented one", e)
+	}
+	// Renaming into a case-insensitive duplicate conflicts too.
+	other := f.project(login(owner), tenant, "Zeta")
+	if _, e := f.client.UpdateProject(ctx, as(login(owner), &pb.UpdateProjectRequest{IdempotencyKey: idem(), ProjectId: other.Id, Name: "ALPHA", Version: other.Version})); code(e) != connect.CodeAlreadyExists {
+		t.Fatal("a rename into a case-insensitive duplicate was accepted", e)
+	}
+}
