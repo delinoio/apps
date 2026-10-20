@@ -213,6 +213,8 @@ Server development uses `CONFIG` for the operator-owned JSON configuration path.
 
 ## Local development
 
+The root [development Compose procedure](repository-workflow-contract.md#local-development-databases) provides a local PostgreSQL instance and explicit migration commands.
+
 The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 
 Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` to watch the repository root while build and run commands execute from the service workspace. Set `CONFIG` to the absolute path of an operator-owned JSON configuration outside the checkout, either in the shell environment or in the ignored `servers/delcore-api/.env`. The service-local `.env.example` lists this variable. Use `config.example.json` as the configuration template, replace placeholders, and keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.

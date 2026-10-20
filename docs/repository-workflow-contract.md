@@ -4,6 +4,52 @@ Generated protobuf and Connect bindings under `protos/` (`*.pb.go`, `*.connect.g
 
 Root `pnpm dev` runs every workspace `dev` script concurrently through Turborepo. The `dev` task is persistent and uncached. The current participants are DeliDev, DeliTools, DevBase, Delino Site, Delino Docs, FixKey and Git Tracker frontends, plus the Delcore and Git Tracker Go APIs. Each retains its documented fixed loopback port and fails on conflicts. Stop the development session with `Ctrl+C`. App-local `pnpm dev` and `pnpm dev:desktop` remain available for individual frontend and native development. Each Go API also supports service-local `pnpm dev`. The server scripts run pinned Air `v1.67.4` through `go run`, without a global Air install. Each service configures Air with `root = "../.."` to watch shared files from the repository root. Build and run commands remain relative to the service workspace; no shell directory change is needed. Air rebuilds and restarts the owning server for Go or SQL changes in its service or `protos/`, and for root `go.mod` or `go.sum` changes. Each service uses a separate ignored `tmp/` directory and loads its optional service-local `.env`. Turborepo passes `CONFIG` to Delcore, the Git Tracker server's unprefixed runtime settings and `ALERT_*` to Git Tracker, and `OTEL_*` and `NO_COLOR` to both API development tasks. Configure the existing database and provider requirements before starting; development does not provision databases, apply migrations or supply credentials. See the [Delcore server contract](servers-delcore-api-contract.md#local-development) and [Git Tracker server contract](servers-git-tracker-api-contract.md#local-development) for configuration. Each app-local `dev` and `dev:*` command and each Go API `dev` command injects the linked Infisical project's `dev` variables before startup. Install and authenticate the CLI and initialize the local root project configuration as described in the [environment contract](repository-environment-contract.md#local-development-injection). Root development delegates injection to each workspace task.
 
+## Local development databases
+
+Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore and Git Tracker, matching the major version used by server integration CI. The frontends, native shells and Air-managed APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Run these commands from the repository root:
+
+```sh
+docker compose up -d --wait
+docker compose ps
+```
+
+`--wait` waits for both database healthchecks. To start only one database, append `delcore-postgres` or `git-tracker-postgres` to the `up` command. Both databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
+
+- Delcore: `postgres://delcore:local-delcore@127.0.0.1:5432/delcore?sslmode=disable`
+- Git Tracker: `postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable`
+
+Set Delcore's `database_url` in its operator-owned JSON configuration to the first URL. Set Git Tracker's `DATABASE_URL` in its development configuration to the second URL. Keep the remaining provider and authentication configuration under the owning [Delcore](servers-delcore-api-contract.md#local-development) and [Git Tracker](servers-git-tracker-api-contract.md#local-development) contracts. Compose does not provision Logto, Paddle, GitHub or email provider accounts. Configure Infisical as described in the [environment contract](repository-environment-contract.md#local-development-injection); injected settings must point to these local databases when using this workflow.
+
+Apply migrations explicitly before the first API start and after schema changes. From the repository root, with `CONFIG` set to the absolute path of the local Delcore JSON configuration, run:
+
+```sh
+go run ./servers/delcore-api/cmd/delcore-api -config "$CONFIG" -migrate
+DATABASE_URL='postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable' go run ./servers/git-tracker-api/cmd/git-tracker-api migrate
+pnpm dev
+```
+
+Database health does not establish schema readiness. Compose does not apply application migrations. Root `pnpm dev:portless` and service-local `pnpm dev` can also use these databases.
+
+Inspect logs with `docker compose logs -f delcore-postgres git-tracker-postgres`. Open a SQL session with either command:
+
+```sh
+docker compose exec delcore-postgres psql -U delcore -d delcore
+docker compose exec git-tracker-postgres psql -U git_tracker -d git_tracker
+```
+
+Stop and remove containers with `docker compose down`; the data volumes remain. `docker compose down --volumes` also deletes both local databases. After deleting volumes, start Compose and reapply the migrations.
+
+For another checkout or occupied database ports, select an explicit project name and host ports on every Compose command. For example:
+
+```sh
+DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 docker compose -p apps-local-second up -d --wait
+DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 docker compose -p apps-local-second down
+```
+
+Update the database URLs and migration commands to the selected host ports. Each Compose project has its own data volumes. These overrides affect database ports only; application listeners retain their fixed ports, so concurrent worktrees cannot serve the same application on the host. PostgreSQL integration tests require separate disposable test databases through `TEST_DATABASE_URL`; do not point tests at databases containing development data.
+
+See the Docker references for [Compose startup and healthchecks](https://docs.docker.com/compose/how-tos/startup-order/) and [PostgreSQL image storage and initialization](https://hub.docker.com/_/postgres).
+
 ## Named local development URLs
 
 The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends and both Go APIs through the existing Turbo `dev` tasks and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server and Air-managed APIs. Portless does not change the servers' listeners: keep Delcore configured on `127.0.0.1:8080` and Git Tracker on `127.0.0.1:46321`. Prepare each API's database, schema and provider configuration before starting, as for root `pnpm dev`. Each task retains its Infisical injection and the API environment allowlists. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
