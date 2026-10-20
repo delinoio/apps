@@ -65,7 +65,11 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 			if e != nil {
 				return e
 			}
-			if depleted {
+			var callTimeAI bool
+			if e = c.tx.QueryRow(c.ctx, "SELECT name='delitools' FROM services WHERE id=$1", c.service).Scan(&callTimeAI); e != nil {
+				return e
+			}
+			if depleted && !callTimeAI {
 				var periodStart time.Time
 				if e = c.tx.QueryRow(c.ctx, "SELECT period_start FROM tenants WHERE id=$1", q.TenantId).Scan(&periodStart); e != nil {
 					return e

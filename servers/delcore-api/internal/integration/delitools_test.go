@@ -40,6 +40,10 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenant := org.Msg.Tenant.Id
+	zero, err := c.Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: tenant, Paid: true, Capability: "translator", ConsumerAuthorization: pb.ConsumerAuthorization_CONSUMER_AUTHORIZATION_TENANT_KEY}, "service"))
+	if err != nil || zero.Msg.Allowed {
+		t.Fatalf("AI allowances authorized zero credit: %v %v", zero, err)
+	}
 	if _, err = db.Pool.Exec(ctx, `INSERT INTO ledger(id,tenant_id,meter,kind,amount,source_key,created_at) VALUES($1,$2,'','credit',10,$3,now())`, key(), tenant, key()); err != nil {
 		t.Fatal(err)
 	}
