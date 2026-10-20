@@ -75,6 +75,16 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		if err != nil {
 			t.Fatalf("report %d: %v", i, err)
 		}
+		for _, statement := range []string{
+			"UPDATE ai_usage_prices SET cost=0 WHERE usage_id=$1",
+			"UPDATE ai_usage_prices SET details='{}' WHERE usage_id=$1",
+			"DELETE FROM ai_usage_prices WHERE usage_id=$1",
+			"DELETE FROM usage_events WHERE id=$1",
+		} {
+			if _, err := db.Pool.Exec(ctx, statement, r.Msg.UsageId); err == nil {
+				t.Fatal("mutable AI evidence", statement)
+			}
+		}
 		replay, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
 		if err != nil || replay.Msg.UsageId != r.Msg.UsageId {
 			t.Fatal("duplicate effect", err)
@@ -138,4 +148,17 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 	if err != nil || a.Msg.Allowed {
 		t.Fatal("removed admin managed keys", err)
 	}
+	if _, err := db.Pool.Exec(ctx, "UPDATE tenants SET deleted_at=$2 WHERE id=$1", tenant, time.Now().AddDate(-10, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	w.Config.RawUsageRetentionSeconds = 3600
+	w.Config.AccountingRetentionSeconds = 3600
+	if err := w.Maintain(ctx, time.Now()); err != nil {
+		t.Fatal("accounting retention", err)
+	}
+	var retained int
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM ai_usage_prices").Scan(&retained); err != nil || retained != 0 {
+		t.Fatal("retained AI evidence", retained, err)
+	}
+
 }

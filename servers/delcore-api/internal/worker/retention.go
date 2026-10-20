@@ -29,6 +29,9 @@ func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	if _, e := tx.Exec(ctx, "DELETE FROM ledger WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)", cutoff); e != nil {
 		return e
 	}
+	if _, e := tx.Exec(ctx, "DELETE FROM ai_usage_prices WHERE usage_id IN (SELECT u.id FROM usage_events u JOIN tenants t ON t.id=u.tenant_id WHERE t.deleted_at<$1)", cutoff); e != nil {
+		return e
+	}
 	if _, e := tx.Exec(ctx, "DELETE FROM usage_events WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)", cutoff); e != nil {
 		return e
 	}
