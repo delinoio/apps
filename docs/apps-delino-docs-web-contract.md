@@ -19,6 +19,10 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 - `/services/` is the service documentation directory. The scaffold has no service-specific guides.
 - Future service pages use `/services/<service-id>/` with stable lowercase kebab-case service IDs and separate navigation sections.
 
+English is the default language and retains these unprefixed routes. Korean pages use `/ko/`, `/ko/guide/getting-started` and `/ko/services/`. Both languages provide the same public content, translated navigation and a language selector that retains the current page. Do not redirect visitors automatically based on browser language. The Delino navigation link retains the selected language when opening the marketing site.
+
+Rspress reads English sources from `apps/delino-docs/docs/en` and Korean sources from `apps/delino-docs/docs/ko`. Use matching relative page paths for each language.
+
 Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
 
 Run package-local `pnpm dev` on `127.0.0.1:46315`. A port conflict must stop startup. The production origin is `https://docs.delino.io` with base path `/`.

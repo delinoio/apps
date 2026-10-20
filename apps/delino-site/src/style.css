@@ -1,0 +1,52 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #191f28;
+  background: #fff;
+}
+
+body {
+  margin: 0;
+}
+
+header {
+  max-width: 1080px;
+  margin: auto;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+nav,
+label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+a {
+  color: #1957c2;
+  padding: 12px 0;
+}
+
+select {
+  font: inherit;
+  color: inherit;
+  background: #f2f4f6;
+  border: 1px solid #b0b8c1;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+:focus-visible {
+  outline: 2px solid #1957c2;
+  outline-offset: 4px;
+}

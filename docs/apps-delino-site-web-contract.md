@@ -14,7 +14,7 @@ Visitors learn about Delino through the marketing website. Maintainers build and
 
 ## Interfaces and Contracts
 
-The root route `/` has the title `Delino`. The scaffold renders an empty React root. Product screens and API clients require subsequent implementation.
+The root route `/` has the title `Delino`. The header provides a documentation link and an English/Korean language selector. English is the default; `?lang=en` and `?lang=ko` select the language explicitly, and unsupported values fall back to English. The HTML language follows the selection. The documentation link opens the matching language at `https://docs.delino.io/` or `https://docs.delino.io/ko/`. Product screens and API clients require subsequent implementation.
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
