@@ -10,7 +10,8 @@
 
 - External contributors use apps-local contracts and checks. Maintainers with servers access handle private contract updates and server integration validation under the [repository boundary contract](../docs/repository-boundary-contract.md).
 - Write schemas and comments in English.
-- Keep generated Go code beside its owning schemas as defined in the protocol contract. Generation must preserve schema and instruction files.
+- Keep all generated protobuf and Connect bindings under `protos/`, beside their owning schemas as defined in the protocol contracts. Run root `pnpm proto:generate` for all languages; generation must preserve schema and instruction files.
+- The private `@delino/protos` workspace owns TypeScript exports and their protobuf runtime dependency; applications consume these exports instead of generating app-local copies.
 
 ## Owning contracts
 

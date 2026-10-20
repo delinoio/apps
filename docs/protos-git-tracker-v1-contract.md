@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Protobuf and generated Go bindings.
+Protobuf and generated Go and TypeScript bindings. Root `pnpm proto:generate` writes bindings beside their schemas in `protos/gittracker/v1` and `protos/delcore/v1`. The private `@delino/protos` workspace exports the TypeScript bindings and declares their protobuf runtime dependency. Applications consume these exports; no separate TypeScript SDK is published.
 
 ## Users and Operators
 

@@ -12,7 +12,8 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
-- `protos/gittracker/v1`: Connect schema and generated Go bindings.
+- `protos/package.json`: Internal `@delino/protos` workspace for generated TypeScript exports and runtime dependencies.
+- `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
 Apps owns clients, the Action and protocol. Servers owns the Go runtime, migrations and persistence.
 

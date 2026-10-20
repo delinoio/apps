@@ -16,6 +16,9 @@ plugins:
     out: protos
     opt:
       - paths=source_relative
+  - local: protoc-gen-es
+    out: protos
+    opt: target=ts
 inputs:
   - directory: protos
     paths:
