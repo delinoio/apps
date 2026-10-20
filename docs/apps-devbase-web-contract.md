@@ -16,7 +16,7 @@ DevBase API service users manage services through the console. Maintainers build
 
 The root route `/` has the title `DevBase`. The scaffold renders an empty React root. Product screens and API clients require subsequent implementation.
 
-DevBase API services run as separate servers. They use delcore for billing; the console does not host these services or own billing. Individual API service names, server paths and protocols must be defined in their own contracts before implementation.
+DevBase API services run as separate servers; the console does not host them or own billing. Delcore owns tenants and billing. The end-user directory API is free and billing-independent: it never charges, meters or gates by plan or balance, so the console must not add billing behavior for it. Other API services use delcore for billing under their own contracts. Individual API service names, server paths and protocols must be defined in their own contracts before implementation.
 
 Run package-local `pnpm dev` on `127.0.0.1:46313`. A port conflict must stop startup. The production domain does not replace the loopback development address.
 
@@ -44,7 +44,7 @@ Production publication uses `.github/workflows/release-devbase.yml` after `relea
 
 `@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
-Use the repository-pinned React, Rsbuild and TypeScript versions. Delcore owns billing for the separate DevBase API services; no live integration is part of the scaffold.
+Use the repository-pinned React, Rsbuild and TypeScript versions. Delcore owns tenants and billing for the separate DevBase API services. The end-user directory is free and billing-independent. No live integration is part of the scaffold.
 
 ## Change Triggers
 
