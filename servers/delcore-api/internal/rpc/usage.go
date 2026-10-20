@@ -186,6 +186,19 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 		if e != nil || originalTenant != u.TenantId || originalService != c.service || meter != u.Meter || !originalTime.Equal(occurred) {
 			return "", forbidden()
 		}
+		if u.AiUsage != nil {
+			var raw []byte
+			if e = c.tx.QueryRow(c.ctx, "SELECT details FROM ai_usage_prices WHERE usage_id=$1", u.CorrectionOf).Scan(&raw); e != nil {
+				return "", e
+			}
+			originalAI := &pb.AiUsage{}
+			if e = json.Unmarshal(raw, originalAI); e != nil {
+				return "", e
+			}
+			if !sameAIPrices(originalAI, u.AiUsage) {
+				return "", invalid("AI corrections must preserve the original price snapshot")
+			}
+		}
 		_ = originalQuantity
 		reference = u.CorrectionOf
 	}

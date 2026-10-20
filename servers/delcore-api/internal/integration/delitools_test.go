@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"context"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"testing"
 	"time"
@@ -62,6 +63,17 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		replay, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
 		if err != nil || replay.Msg.UsageId != r.Msg.UsageId {
 			t.Fatal("duplicate effect", err)
+		}
+		correction := proto.Clone(u).(*pb.Usage)
+		correction.EventKey = key()
+		correction.CorrectionOf = r.Msg.UsageId
+		correction.AiUsage.Tokens[0].UsdPerToken = "0.004"
+		if _, err = c.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: correction}, "service")); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatal("correction repriced request", err)
+		}
+		correction.AiUsage.Tokens[0].UsdPerToken = tc.price
+		if _, err = c.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: correction}, "service")); err != nil {
+			t.Fatal("unchanged snapshot rejected", err)
 		}
 		u.AiUsage.Tokens[0].Tokens++
 		if _, err = c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service")); connect.CodeOf(err) != connect.CodeAlreadyExists {

@@ -90,3 +90,23 @@ func rateAI(u *pb.Usage) (accounting.Decimal, error) {
 	markup, _ := accounting.Parse(factor)
 	return sum.Mul(markup), nil
 }
+
+// Corrections may change measured counts, but never the frozen pricing identity.
+func sameAIPrices(a, b *pb.AiUsage) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Model != b.Model || a.PriceEffectiveAt == nil || b.PriceEffectiveAt == nil || !a.PriceEffectiveAt.AsTime().Equal(b.PriceEffectiveAt.AsTime()) || len(a.Tokens) != len(b.Tokens) {
+		return false
+	}
+	prices := make(map[pb.AiTokenKind]string, len(a.Tokens))
+	for _, t := range a.Tokens {
+		prices[t.Kind] = t.UsdPerToken
+	}
+	for _, t := range b.Tokens {
+		if price, ok := prices[t.Kind]; !ok || price != t.UsdPerToken {
+			return false
+		}
+	}
+	return true
+}
