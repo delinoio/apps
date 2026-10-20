@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/protos/delcore/v1/delcorev1connect"
+	"github.com/google/uuid"
 )
 
 // State is the billing-independent tenant state reported by Delcore.
@@ -87,7 +88,9 @@ func (c *Client) Identify(ctx context.Context, authorization string) (string, er
 	if e != nil {
 		return "", classify(e)
 	}
-	if r.Msg.UserId == "" {
+	// The ID becomes the audit actor and the idempotency principal, so a malformed value could make
+	// two callers share a replay namespace. Delcore entity IDs are canonical UUID v7 values.
+	if u, e := uuid.Parse(r.Msg.UserId); e != nil || u.Version() != 7 || u.String() != r.Msg.UserId {
 		return "", ErrUnavailable
 	}
 	return r.Msg.UserId, nil

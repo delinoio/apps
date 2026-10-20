@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,15 +64,36 @@ func client(t *testing.T, s *stub, timeout time.Duration) *Client {
 	}
 }
 
+const userID = "0198f3c0-1b2a-7c3d-8e4f-5a6b7c8d9e0f"
+
+func TestIdentifyRejectsMalformedUserIDs(t *testing.T) {
+	var answer string
+	c := client(t, &stub{user: func(string) (string, error) { return answer, nil }}, time.Second)
+	for name, bad := range map[string]string{
+		"not a uuid": "user-1", "uppercase": strings.ToUpper(userID), "braced": "{" + userID + "}",
+		"padded": " " + userID, "no hyphens": strings.ReplaceAll(userID, "-", ""), "uuid v4": "6fa459ea-ee8a-4ca4-894e-db77e160355e",
+		"nil uuid": "00000000-0000-0000-0000-000000000000", "empty": "",
+	} {
+		answer = bad
+		if got, e := c.Identify(context.Background(), "Bearer x"); !errors.Is(e, ErrUnavailable) || got != "" {
+			t.Errorf("%s accepted: %q %v", name, got, e)
+		}
+	}
+	answer = userID
+	if got, e := c.Identify(context.Background(), "Bearer x"); e != nil || got != userID {
+		t.Fatal("canonical UUID v7 rejected", got, e)
+	}
+}
+
 func TestLoginChecksForwardTheCallerToken(t *testing.T) {
 	var seen []string
 	s := &stub{
-		user:    func(a string) (string, error) { seen = append(seen, a); return "user-1", nil },
+		user:    func(a string) (string, error) { seen = append(seen, a); return userID, nil },
 		members: func(a string) error { seen = append(seen, a); return nil },
 	}
 	c := client(t, s, time.Second)
 	id, e := c.Identify(context.Background(), "Bearer login")
-	if e != nil || id != "user-1" {
+	if e != nil || id != userID {
 		t.Fatal(e)
 	}
 	if e = c.RequireManager(context.Background(), "Bearer login", "tenant"); e != nil {
