@@ -19,8 +19,13 @@ func (s *Server) SyncPrices(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	now := s.now()
 	return begin(ctx, s.DB, func(tx pgx.Tx) error {
+		// Claims must observe every price whose effective time precedes their start.
+		// Share the claim lock through commit, and timestamp only after acquiring it.
+		if _, e := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(41824703)"); e != nil {
+			return e
+		}
+		now := s.now()
 		for model, p := range catalog {
 			if !p.Valid() {
 				continue

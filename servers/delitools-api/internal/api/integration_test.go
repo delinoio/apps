@@ -1049,3 +1049,54 @@ func TestExecutionAuthorizationDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogPublicationSerializesClaims(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := s.DB.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	if _, err := tx.Exec(ctx, "LOCK TABLE catalog IN SHARE MODE"); err != nil {
+		t.Fatal(err)
+	}
+	g.price.Input = "0.009"
+	synced := make(chan error, 1)
+	go func() { synced <- s.SyncPrices(ctx) }()
+	for {
+		var waiting bool
+		if err := s.DB.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE relation='catalog'::regclass AND NOT granted)").Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	x := &execution{id: ID(), tenant: tenant, cap: pb.Capability_CAPABILITY_TRANSLATOR, model: ExtractionModel, started: s.now()}
+	claimed := make(chan error, 1)
+	go func() { claimed <- s.claim(ctx, x, []byte("fixture")) }()
+	select {
+	case err := <-claimed:
+		t.Fatal("claim bypassed unpublished effective price", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-synced; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-claimed; err != nil {
+		t.Fatal(err)
+	}
+	if x.price.Input != "0.009" || x.effective.After(x.started) {
+		t.Fatal("claim froze inconsistent price", x.price, x.effective, x.started)
+	}
+}
