@@ -7,11 +7,10 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Api, composeDatabaseUrls, databaseHandoff } from "./dev.mjs";
@@ -71,66 +70,60 @@ test("Git Tracker overrides injected DATABASE_URL while preserving provider sett
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
-test("Delcore preserves its source and all non-database settings in a private temporary copy", (t) => {
+test("Delcore leaves dotenv parsing to Go while preserving injected and Compose values", (t) => {
   const directory = fixture(t);
-  const path = join(directory, "operator.json");
-  const original = JSON.stringify(
-    {
-      database_url: "postgres://remote/shared",
-      issuer: "https://fixture.invalid",
-      identity_key: "fixture-key",
-    },
-    null,
-    2,
-  );
+  const path = join(directory, ".env");
+  const original =
+    "SUFFIX=fixture-local\nIDENTITY_KEY=prefix$SUFFIX\nISSUER=https://fixture.invalid\n";
   writeFileSync(path, original);
   const prepared = prepareApiEnvironment(Api.Delcore, {
     ...handoff,
-    CONFIG: path,
+    DATABASE_URL: "postgres://remote/shared",
+    IDENTITY_KEY: "fixture-injected",
   });
-  t.after(prepared.cleanup);
-  const config = JSON.parse(readFileSync(prepared.env.CONFIG));
-  assert.equal(config.database_url, urls[Api.Delcore]);
-  assert.equal(config.identity_key, "fixture-key");
-  assert.equal(config.issuer, "https://fixture.invalid");
+  assert.equal(prepared.env.DATABASE_URL, urls[Api.Delcore]);
+  assert.equal(prepared.env.IDENTITY_KEY, "fixture-injected");
+  assert.equal(prepared.env.ISSUER, undefined);
+  assert.equal(prepared.env[databaseHandoff], undefined);
   assert.equal(readFileSync(path, "utf8"), original);
-  assert.notEqual(prepared.env.CONFIG, path);
-  if (process.platform !== "win32") {
-    assert.equal(statSync(prepared.env.CONFIG).mode & 0o777, 0o600);
-    assert.equal(statSync(dirname(prepared.env.CONFIG)).mode & 0o777, 0o700);
-  }
-  prepared.cleanup();
-  assert.equal(existsSync(prepared.env.CONFIG), false);
+  assert.equal(
+    prepareApiEnvironment(Api.Delcore, {}).env.IDENTITY_KEY,
+    undefined,
+  );
+  assert.equal(
+    prepareApiEnvironment(Api.Delcore, { IDENTITY_KEY: "" }).env.IDENTITY_KEY,
+    "",
+  );
 });
 
-test("Delcore supports a service-local CONFIG fallback; injected CONFIG takes priority", (t) => {
+test("API development listeners stay distinct despite shared and local LISTEN values", (t) => {
   const directory = fixture(t);
-  const path = join(directory, "local.json");
-  writeFileSync(
-    path,
-    JSON.stringify({ database_url: "postgres://remote/shared" }),
-  );
-  writeFileSync(join(directory, ".env"), `CONFIG="${path}"\n`);
-  const prepared = prepareApiEnvironment(Api.Delcore, handoff, directory);
-  prepared.cleanup();
-  assert.throws(
-    () =>
-      prepareApiEnvironment(
-        Api.Delcore,
-        { ...handoff, CONFIG: join(directory, "missing.json") },
-        directory,
-      ),
-    /ENOENT/,
-  );
+  writeFileSync(join(directory, ".env"), "LISTEN=0.0.0.0:9999\n");
+  for (const compose of [false, true]) {
+    for (const injected of ["127.0.0.1:8080", "127.0.0.1:46321", ""]) {
+      const source = { ...(compose ? handoff : {}), LISTEN: injected };
+      assert.equal(
+        prepareApiEnvironment(Api.Delcore, source).env.LISTEN,
+        "127.0.0.1:8080",
+      );
+      assert.equal(
+        prepareApiEnvironment(Api.GitTracker, source).env.LISTEN,
+        "127.0.0.1:46321",
+      );
+    }
+  }
 });
 
 test("direct API development preserves existing environment without a Compose handoff", () => {
   for (const api of Object.values(Api)) {
     const source = {
-      CONFIG: "/operator/config.json",
+      ISSUER: "https://fixture.invalid",
       DATABASE_URL: "postgres://remote/shared",
     };
-    assert.deepEqual(prepareApiEnvironment(api, source).env, source);
+    assert.deepEqual(prepareApiEnvironment(api, source).env, {
+      ...source,
+      LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+    });
   }
   assert.throws(
     () => prepareApiEnvironment(Api.GitTracker, { [databaseHandoff]: "{}" }),
@@ -184,20 +177,17 @@ test(
 );
 
 test(
-  "API launcher removes the private config after Air failure or handled termination",
+  "API launcher passes Compose environment and forwards Air failure or termination",
   { skip: process.platform === "win32", timeout: 15000 },
   async (t) => {
     const directory = fixture(t);
-    const path = join(directory, "source.json");
-    const output = join(directory, "config-path");
-    writeFileSync(
-      path,
-      JSON.stringify({ database_url: "postgres://remote/shared" }),
-    );
+    const path = join(directory, ".env");
+    const output = join(directory, "database-url");
+    writeFileSync(path, "DATABASE_URL=postgres://local/shared\n");
     const go = join(directory, "go");
     writeFileSync(
       go,
-      `#!${process.execPath}\nimport('node:fs').then(({writeFileSync}) => { writeFileSync(process.env.FIXTURE_OUTPUT, process.env.CONFIG); if (process.env.FIXTURE_WAIT) { process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 100); } else process.exit(9); });\n`,
+      `#!${process.execPath}\nimport('node:fs').then(({writeFileSync}) => { writeFileSync(process.env.FIXTURE_OUTPUT, process.env.DATABASE_URL); if (process.env.FIXTURE_WAIT) { process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 100); } else process.exit(9); });\n`,
       { mode: 0o755 },
     );
     for (const wait of [false, true]) {
@@ -206,10 +196,11 @@ test(
         process.execPath,
         [fileURLToPath(new URL("./dev-api.mjs", import.meta.url)), Api.Delcore],
         {
+          cwd: directory,
           env: {
             ...process.env,
             ...handoff,
-            CONFIG: path,
+            DATABASE_URL: "postgres://remote/shared",
             PATH: `${directory}${delimiter}${process.env.PATH}`,
             FIXTURE_OUTPUT: output,
             FIXTURE_WAIT: wait ? "1" : "",
@@ -230,8 +221,7 @@ test(
       const [code, signal] = await completion;
       if (wait) assert.equal(signal, "SIGTERM");
       else assert.equal(code, 9);
-      const temporary = readFileSync(output, "utf8");
-      assert.equal(existsSync(temporary), false);
+      assert.equal(readFileSync(output, "utf8"), urls[Api.Delcore]);
       assert.equal(existsSync(path), true);
     }
   },

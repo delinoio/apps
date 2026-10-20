@@ -5,7 +5,7 @@
   "license": "FSL-1.1-ALv2",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. -- node ../../scripts/dev-api.mjs delcore",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/delcore-api -- node ../../scripts/dev-api.mjs delcore",
     "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/delcore-api",
     "ci:vet": "go vet ./...",
     "ci:build": "go build ./cmd/delcore-api",
