@@ -29,6 +29,16 @@ enum BlockReason {
   BLOCK_REASON_BALANCE = 5;
   BLOCK_REASON_DELETING = 6;
 }
+// TenantState is the billing-independent lifecycle state of a tenant. The
+// server never returns TENANT_STATE_UNSPECIFIED.
+enum TenantState {
+  TENANT_STATE_UNSPECIFIED = 0;
+  TENANT_STATE_ACTIVE = 1;
+  TENANT_STATE_BLOCKED = 2;
+  TENANT_STATE_DELETING = 3;
+  TENANT_STATE_DELETED = 4;
+  TENANT_STATE_UNKNOWN = 5;
+}
 enum ErrorReason {
   ERROR_REASON_UNSPECIFIED = 0;
   ERROR_REASON_INVALID_INPUT = 1;
@@ -372,6 +382,20 @@ message CheckTenantLifecycleResponse {
   Metadata metadata = 1;
   repeated string finalized_tenant_ids = 2;
 }
+// Service-scoped state checks expose only operator blocking and deletion
+// progress, never billing eligibility or personal data.
+message GetTenantStatesRequest {
+  repeated string tenant_ids = 1;
+}
+message TenantStateEntry {
+  string tenant_id = 1;
+  TenantState state = 2;
+}
+message GetTenantStatesResponse {
+  Metadata metadata = 1;
+  // One entry per requested tenant ID, in request order.
+  repeated TenantStateEntry states = 2;
+}
 message ReportUsageRequest {
   string request_key = 1;
   Usage usage = 2;
@@ -524,6 +548,7 @@ service DelcoreService {
   rpc CreatePrice(CreatePriceRequest) returns (CreatePriceResponse);
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
   rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);
+  rpc GetTenantStates(GetTenantStatesRequest) returns (GetTenantStatesResponse);
   rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
   rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse);
   rpc ListUsage(ListUsageRequest) returns (ListUsageResponse);

@@ -48,6 +48,12 @@ func (verifier) Verify(_ context.Context, h string) (auth.Identity, error) {
 		return auth.Identity{SubjectHash: "member", Email: "member@example.test"}, nil
 	case "Bearer stranger":
 		return auth.Identity{SubjectHash: "stranger", Email: "stranger@example.test"}, nil
+	case "Bearer ghost":
+		return auth.Identity{ClientID: "ghost", Scopes: []string{"authorize"}}, nil
+	case "Bearer noscope":
+		return auth.Identity{ClientID: "service", Scopes: []string{"usage:write"}}, nil
+	case "Bearer limited":
+		return auth.Identity{ClientID: "limited", Scopes: []string{"authorize"}}, nil
 	case "Bearer service":
 		return auth.Identity{ClientID: "service", Scopes: []string{"authorize", "usage:write", "usage:read"}}, nil
 	default:

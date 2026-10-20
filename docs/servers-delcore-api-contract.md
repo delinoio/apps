@@ -205,7 +205,11 @@ Update the [project index](project-delcore.md) and [protocol contract](protos-de
 
 ### Consumer deletion synchronization
 
-Registered services with the `authorize` scope can check final deletion for 1 to 100 known tenant IDs with `CheckTenantLifecycle`. Return only IDs with `deleted_at` set. Pending deletion and unknown IDs do not authorize consumer cleanup. Never return tenant names or personal details through this service interface.
+Registered services with the `authorize` scope can read billing-independent tenant state for 1 to 100 known tenant IDs with `GetTenantStates`. The handler reads only `operator_block`, `deleting_at` and `deleted_at` from `tenants` in one transaction and applies the precedence `DELETED`, `DELETING`, `BLOCKED`, `ACTIVE`; IDs without a row are `UNKNOWN`. It never reads plans, subscriptions, ledger, disputes or entitlements, never writes tenant or accounting state, and never calls a payment provider. It returns one entry per requested ID in request order and no tenant names, user details or billing data. A user token, an unregistered service, a registered service without the `authorize` scope or a token without that scope receives a forbidden result; invalid, expired or missing credentials are unauthenticated; invalid IDs or a batch outside 1 to 100 IDs are rejected as invalid input. Database failures return a typed dependency error with a correlation ID and never a state. The success log records the correlation ID, calling service ID, requested count and per-state counts only.
+
+Operate the interface fix-forward: correct a defect with a new release, and do not roll back to a prior image or reverse migrations. The interface adds no migration, feature flag or deployment unit. Consumers fail closed on errors and treat `UNKNOWN` as neither access nor cleanup permission; only `DELETED` permits automatic cleanup of retained tenant data. Automated checks use disposable PostgreSQL with mocked providers and cover all states, overlapping conditions, billing conditions that must not block, batch bounds, malformed and unknown IDs, authorization failures, dependency failure and correlation metadata.
+
+Registered services with the `authorize` scope can also check final deletion for 1 to 100 known tenant IDs with `CheckTenantLifecycle`. Return only IDs with `deleted_at` set. Pending deletion and unknown IDs do not authorize consumer cleanup. Never return tenant names or personal details through this service interface.
 
 ## DeliTools consumer integration
 
