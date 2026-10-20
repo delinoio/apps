@@ -286,3 +286,32 @@ func TestProjectCreationForTenantWithoutProjectsRechecksTheState(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+// The second tenant-state read is an external call. It must not run while the request holds a
+// database transaction, or a slow Delcore would pin pool connections and tenant locks.
+func TestProjectCreationStateRecheckHoldsNoDatabaseConnection(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	hook, client := hooked(t, f)
+	tenant, owner, _ := f.tenant()
+	reads, held := 0, -1
+	var sample func()
+	sample = func() {
+		reads++
+		if reads == 2 {
+			held = int(f.db.Pool.Stat().AcquiredConns())
+			return
+		}
+		hook.arm(sample)
+	}
+	hook.arm(sample)
+	if _, e := client.CreateProject(ctx, as(login(owner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: tenant, Name: "Unpinned"})); e != nil {
+		t.Fatal(e)
+	}
+	if reads != 2 {
+		t.Fatal("expected one authorization read and one recheck, got", reads)
+	}
+	if held != 0 {
+		t.Fatalf("the recheck ran while %d database connections were held", held)
+	}
+}

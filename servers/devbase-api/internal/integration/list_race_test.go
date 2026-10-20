@@ -41,11 +41,9 @@ func (h *hookedAuthority) TenantStates(ctx context.Context, tenants []string) (m
 	return h.Authority.TenantStates(ctx, tenants)
 }
 
-// A project deleted after authorization but before the query cascades away every user. The
-// empty page must not look like a live empty directory, for login tokens and keys alike.
-func TestListEndUsersReportsAProjectDeletedAfterAuthorization(t *testing.T) {
-	f := setup(t)
-	ctx := context.Background()
+// hooked serves the fixture's database through an authority whose tenant-state reads can run a hook.
+func hooked(t *testing.T, f *fixture) (*hookedAuthority, devbasev1connect.DevBaseServiceClient) {
+	t.Helper()
 	hook := &hookedAuthority{Authority: f.fake}
 	server := api.New(f.db.Pool, hook, f.limits, slog.New(slog.NewTextHandler(logSink(), nil)), f.metrics, f.clock.now)
 	path, handler := server.Handler()
@@ -53,7 +51,15 @@ func TestListEndUsersReportsAProjectDeletedAfterAuthorization(t *testing.T) {
 	mux.Handle(path, handler)
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	client := devbasev1connect.NewDevBaseServiceClient(ts.Client(), ts.URL)
+	return hook, devbasev1connect.NewDevBaseServiceClient(ts.Client(), ts.URL)
+}
+
+// A project deleted after authorization but before the query cascades away every user. The
+// empty page must not look like a live empty directory, for login tokens and keys alike.
+func TestListEndUsersReportsAProjectDeletedAfterAuthorization(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	hook, client := hooked(t, f)
 
 	tenant, owner, _ := f.tenant()
 	empty := f.project(login(owner), tenant, "Empty")

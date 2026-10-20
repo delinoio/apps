@@ -48,7 +48,24 @@ func projectTarget(id string) func() (Target, error) {
 
 func (s *Server) CreateProject(ctx context.Context, r *connect.Request[pb.CreateProjectRequest]) (*connect.Response[pb.CreateProjectResponse], error) {
 	q, out := r.Msg, &pb.CreateProjectResponse{}
-	return handle(s, ctx, r, opCreateProject, out, tenantTarget(q.TenantId), func() error { return projectName(q.Name) }, func(c *Call) error {
+	return handle(s, ctx, r, opCreateProject, out, tenantTarget(q.TenantId), func() error {
+		if e := projectName(q.Name); e != nil {
+			return e
+		}
+		// Maintenance finds tenants through their project rows, so it can never record a tenant
+		// that has none. Read the state again right before the transaction instead of trusting
+		// the read that authorized the request. It runs here because an external call must not
+		// hold a database transaction and its tenant lock. A deletion that finalizes after this
+		// read leaves the new project to the next maintenance cycle.
+		state, e := s.tenantState(ctx, q.TenantId)
+		if e != nil {
+			return e
+		}
+		if state != delcore.StateActive {
+			return denied("the tenant state does not permit project creation")
+		}
+		return nil
+	}, func(c *Call) error {
 		// A tenant-scoped lock makes the count and insert atomic for concurrent creators.
 		if _, e := c.DB.Exec(c.Ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "projects:"+q.TenantId); e != nil {
 			return e
@@ -60,17 +77,6 @@ func (s *Server) CreateProject(ctx context.Context, r *connect.Request[pb.Create
 		if cleaned {
 			// Authorization used a state read from before the permanent deletion finished.
 			return denied("the tenant was permanently deleted")
-		}
-		// Maintenance finds tenants through their project rows, so it can never record a
-		// tenant that has none. Read the state again under the lock, right before the insert,
-		// instead of trusting the read that authorized the request. A deletion that finalizes
-		// after this read is cleaned up by the next maintenance cycle.
-		state, e := s.tenantState(c.Ctx, q.TenantId)
-		if e != nil {
-			return e
-		}
-		if state != delcore.StateActive {
-			return denied("the tenant state does not permit project creation")
 		}
 		var count int64
 		if e := c.DB.QueryRow(c.Ctx, "SELECT count(*) FROM projects WHERE tenant_id=$1", q.TenantId).Scan(&count); e != nil {
