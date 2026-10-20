@@ -242,10 +242,6 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
           },
     [history.data, history.isError],
   );
-  useEffect(() => {
-    if (history.hasNextPage && !history.isFetching)
-      void history.fetchNextPage();
-  }, [history.hasNextPage, history.isFetching, history.fetchNextPage]);
   const details = useQuery(
     method.getExecution,
     { repositoryId: repository, executionId: execution },
@@ -557,7 +553,14 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
                 ))}
               </div>
               {history.hasNextPage && (
-                <p role="status">Loading more history…</p>
+                <button
+                  disabled={history.isFetching}
+                  onClick={() => void history.fetchNextPage()}
+                >
+                  {history.isFetchingNextPage
+                    ? "Loading more history…"
+                    : "Load more history"}
+                </button>
               )}
             </section>
             {execution && (
