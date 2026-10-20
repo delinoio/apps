@@ -4,6 +4,6 @@ export default defineConfig({
   plugins: [pluginReact()],
   source: { entry: { index: "./src/main.tsx" } },
   html: { title: "FixKey" },
-  server: { host: "127.0.0.1", port: 46321, strictPort: true, cors: false },
+  server: { host: "127.0.0.1", port: 46316, strictPort: true, cors: false },
   output: { sourceMap: false },
 });

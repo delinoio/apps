@@ -60,3 +60,21 @@ enum ProjectId {
 ## Existing project choices
 
 Delcore uses Go, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port.
+
+## Development server ports
+
+All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on port conflicts. Native shells use the same frontend address as their app's `pnpm dev` command.
+
+| Component            | Port    | Configuration                                                                           | Owning contract                                        |
+| -------------------- | ------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| DeliDev frontend     | `46311` | `apps/delidev/rsbuild.config.ts`                                                        | [Desktop shell](apps-delidev-desktop-contract.md)      |
+| DeliTools frontend   | `46312` | `apps/delitools/rsbuild.config.ts`                                                      | [Application foundation](apps-delitools-foundation.md) |
+| DevBase frontend     | `46313` | `apps/devbase/rsbuild.config.ts`                                                        | [Web application](apps-devbase-web-contract.md)        |
+| Delino Site frontend | `46314` | `apps/delino-site/rsbuild.config.ts`                                                    | [Web application](apps-delino-site-web-contract.md)    |
+| Delino Docs frontend | `46315` | `apps/delino-docs/rspress.config.ts`                                                    | [Documentation app](apps-delino-docs-web-contract.md)  |
+| FixKey frontend      | `46316` | `apps/fixkey-app/rsbuild.config.ts`                                                     | [Desktop application](apps-fixkey-desktop-contract.md) |
+| Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                                    | [Web application](apps-git-tracker-web-contract.md)    |
+| Git Tracker API      | `46321` | `GIT_TRACKER_LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches | [Server](servers-git-tracker-api-contract.md)          |
+| Delcore API          | `8080`  | `listen` in `servers/delcore-api/config.example.json`; explicit configuration required  | [Server](servers-delcore-api-contract.md)              |
+
+Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.
