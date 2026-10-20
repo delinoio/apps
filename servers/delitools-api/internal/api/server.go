@@ -279,12 +279,8 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		if !result.Transient || attempt >= settings.GetMaxAiRetries() {
 			return result, fault(pb.ErrorReason_ERROR_REASON_PROVIDER, x.id)
 		}
-		timer := time.NewTimer(time.Duration(settings.DeliveryRetrySeconds) * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+		// AI retries are bounded by max_ai_retries and the execution context.
+		// Background usage-delivery timing must not consume that request budget.
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return result, fault(pb.ErrorReason_ERROR_REASON_TIMEOUT, x.id)

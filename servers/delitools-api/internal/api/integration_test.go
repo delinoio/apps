@@ -9,6 +9,7 @@ import (
 	"errors"
 	core "github.com/delinoio/apps/protos/delcore/v1"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"io"
 	"log/slog"
@@ -588,6 +589,32 @@ func TestFirstAttemptInsertFailureReleasesClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	if g.calls != 1 {
+		t.Fatal(g.calls)
+	}
+}
+
+func TestAIRetryDoesNotWaitForDeliveryInterval(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	v := testSettings()
+	v.DeliveryRetrySeconds = 3600
+	v.MaxBackoffSeconds = 3600
+	raw, _ := protojson.Marshal(v)
+	if _, err := s.DB.Pool.Exec(ctx, "UPDATE settings SET value=$1", raw); err != nil {
+		t.Fatal(err)
+	}
+	g.run = func(_ context.Context, n int, _ func(string) error) (Result, error) {
+		if n == 1 {
+			return Result{Transient: true, Usage: &Counts{}}, errors.New("transient")
+		}
+		return Result{Content: `{"success":true,"texts":["a","b"]}`, Usage: &Counts{}}, nil
+	}
+	call, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	if _, err := s.TranslateTextArray(call, request(translate(tenant, "retry"), "Bearer user")); err != nil {
+		t.Fatal(err)
+	}
+	if g.calls != 2 {
 		t.Fatal(g.calls)
 	}
 }
