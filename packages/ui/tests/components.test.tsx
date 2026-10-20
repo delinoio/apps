@@ -3,6 +3,8 @@ import { createRef } from "react";
 import { describe, expect, it } from "@rstest/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Button } from "@delino/ui/components/button";
+import { Card } from "@delino/ui/components/card";
+import { NativeSelect } from "@delino/ui/components/native-select";
 import { Input } from "@delino/ui/components/input";
 import { Label } from "@delino/ui/components/label";
 import { Checkbox } from "@delino/ui/components/checkbox";
@@ -37,11 +39,27 @@ describe("shared UI consumer contracts", () => {
     expect(ref.current?.getAttribute("href")).toBe("/settings");
   });
 
+  it("preserves consumer card landmarks", () => {
+    render(
+      <Card asChild>
+        <section aria-label="Preferences">Settings</section>
+      </Card>,
+    );
+    expect(screen.getByRole("region", { name: "Preferences" }).tagName).toBe(
+      "SECTION",
+    );
+  });
+
   it("preserves native form semantics and accessible labels", () => {
     render(
       <form aria-label="Settings">
         <Label htmlFor="name">Name</Label>
         <Input id="name" name="name" defaultValue="Delino" />
+        <Label htmlFor="language">Language</Label>
+        <NativeSelect id="language" name="language" defaultValue="ko">
+          <option value="en">English</option>
+          <option value="ko">한국어</option>
+        </NativeSelect>
         <Button type="submit" disabled>
           Save
         </Button>
@@ -50,6 +68,8 @@ describe("shared UI consumer contracts", () => {
     expect(screen.getByLabelText("Name").tagName).toBe("INPUT");
     const form = screen.getByRole("form") as HTMLFormElement;
     expect(new FormData(form).get("name")).toBe("Delino");
+    expect(new FormData(form).get("language")).toBe("ko");
+    expect(screen.getByLabelText("Language").tagName).toBe("SELECT");
     expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(
       true,
     );

@@ -110,7 +110,7 @@ The pinned standard license texts in `src-tauri/licenses` must retain their upst
 
 ## Dependencies and Integrations
 
-`@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
+`@delino/ui` supplies shared components, styles and PostCSS configuration. Shared buttons, cards, checkboxes, labels, shortcut input, native selects and dialogs render settings and candidate controls. App styles retain product layout and light, dark and system themes. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
 - `crates/fixkey-core` for all correction behavior.
 - Tauri 2, React and Rsbuild, pinned with recorded sources, hashes, licenses and notices.

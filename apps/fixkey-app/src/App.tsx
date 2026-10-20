@@ -1,3 +1,15 @@
+import { Button } from "@delino/ui/components/button";
+import { Card } from "@delino/ui/components/card";
+import { Checkbox } from "@delino/ui/components/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@delino/ui/components/dialog";
+import { Input } from "@delino/ui/components/input";
+import { Label } from "@delino/ui/components/label";
+import { NativeSelect } from "@delino/ui/components/native-select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,25 +32,51 @@ enum Section {
 
 function Modal({
   title,
+  description,
   children,
   onClose,
 }: {
   title: string;
+  description: string;
   children: ReactNode;
   onClose(): void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current!;
-    dialog.showModal();
-    dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-    return () => dialog.close();
-  }, []);
+  const previousFocus = useRef(document.activeElement);
   return (
-    <dialog ref={ref} aria-label={title} onCancel={onClose} onClose={onClose}>
-      <h2>{title}</h2>
-      {children}
-    </dialog>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        className="settings-dialog"
+        showCloseButton={false}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={(event) => {
+          const target = event.currentTarget as HTMLElement;
+          const control = target.querySelector<HTMLElement>(
+            "[data-autofocus], [autofocus]",
+          );
+          if (control && !control.matches(":disabled")) {
+            event.preventDefault();
+            control.focus();
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (
+            previousFocus.current instanceof HTMLElement &&
+            previousFocus.current.isConnected
+          )
+            previousFocus.current.focus();
+        }}
+      >
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -124,7 +162,9 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
         <h1>FixKey</h1>
         <p role="status">{query.isError ? t.connection : t.loading}</p>
         {query.isError && (
-          <button onClick={() => void query.refetch()}>{t.retry}</button>
+          <Button variant="outline" onClick={() => void query.refetch()}>
+            {t.retry}
+          </Button>
         )}
       </main>
     );
@@ -161,15 +201,15 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
     </div>
   );
   const toggle = (label: string, checked: boolean, field: keyof Settings) => (
-    <label className="row">
+    <Label className="row" htmlFor={field}>
       <span>{label}</span>
-      <input
-        type="checkbox"
+      <Checkbox
+        id={field}
         checked={checked}
         disabled={busy}
-        onChange={(e) => change({ [field]: e.target.checked })}
+        onCheckedChange={(checked) => change({ [field]: checked === true })}
       />
-    </label>
+    </Label>
   );
   const select = (
     label: string,
@@ -177,9 +217,9 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
     field: "theme" | "uiLanguage",
     options: [string, string][],
   ) => (
-    <label className="row">
+    <Label className="row">
       <span>{label}</span>
-      <select
+      <NativeSelect
         aria-label={label}
         value={value}
         disabled={busy}
@@ -190,8 +230,8 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
             {name}
           </option>
         ))}
-      </select>
-    </label>
+      </NativeSelect>
+    </Label>
   );
   return (
     <div className="shell">
@@ -200,13 +240,14 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
         <p className="tagline">{t.tagline}</p>
         <nav aria-label="FixKey">
           {Object.values(Section).map((key) => (
-            <button
+            <Button
+              variant="outline"
               key={key}
               aria-current={section === key ? "page" : undefined}
               onClick={() => setSection(key)}
             >
               {t[key]}
-            </button>
+            </Button>
           ))}
         </nav>
         <p className="version">v{data.version}</p>
@@ -237,12 +278,13 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
               <code>{error ?? data.settingsError ?? "log-write-failed"}</code>
             </p>
             {data.settingsError && (
-              <button
+              <Button
+                variant="outline"
                 disabled={busy}
                 onClick={() => action.mutate("restore-backup")}
               >
                 {t.restore}
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -254,196 +296,240 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
         <fieldset disabled={busy} className="controls">
           {section === Section.General && (
             <>
-              <section className="card">
-                {row(
-                  t.correction,
-                  <button
-                    className="primary"
-                    onClick={() => change({ paused: !settings.paused })}
-                  >
-                    {settings.paused ? t.resume : t.pause}
-                  </button>,
-                )}
-                <p>{t.local}</p>
-                <button
-                  onClick={() => {
-                    setPermissionDismissed(false);
-                    action.mutate("recheck");
-                  }}
-                >
-                  {t.recheck}
-                </button>
-                {data.platform === "macos-arm64" && (
-                  <button
+              <Card asChild>
+                <section className="card">
+                  {row(
+                    t.correction,
+                    <Button
+                      variant="default"
+                      className="primary"
+                      onClick={() => change({ paused: !settings.paused })}
+                    >
+                      {settings.paused ? t.resume : t.pause}
+                    </Button>,
+                  )}
+                  <p>{t.local}</p>
+                  <Button
+                    variant="outline"
                     onClick={() => {
-                      setInputSetupOpen(true);
                       setPermissionDismissed(false);
+                      action.mutate("recheck");
                     }}
                   >
-                    {t.inputPermissionSetup}
-                  </button>
-                )}
-              </section>
-              <section className="card">
-                <h3>{t.languages}</h3>
-                {toggle(t.korean, settings.koreanEnabled, "koreanEnabled")}
-                {toggle(t.english, settings.englishEnabled, "englishEnabled")}
-              </section>
-              <section className="card">
-                {toggle(t.startup, settings.loginStartup, "loginStartup")}
-                {select(t.uiLanguage, settings.uiLanguage, "uiLanguage", [
-                  ["system", t.system],
-                  ["en", "English"],
-                  ["ko", "한국어"],
-                ])}
-                {select(t.theme, settings.theme, "theme", [
-                  ["system", t.system],
-                  ["light", t.light],
-                  ["dark", t.dark],
-                ])}
-              </section>
+                    {t.recheck}
+                  </Button>
+                  {data.platform === "macos-arm64" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setInputSetupOpen(true);
+                        setPermissionDismissed(false);
+                      }}
+                    >
+                      {t.inputPermissionSetup}
+                    </Button>
+                  )}
+                </section>
+              </Card>
+              <Card asChild>
+                <section className="card">
+                  <h3>{t.languages}</h3>
+                  {toggle(t.korean, settings.koreanEnabled, "koreanEnabled")}
+                  {toggle(t.english, settings.englishEnabled, "englishEnabled")}
+                </section>
+              </Card>
+              <Card asChild>
+                <section className="card">
+                  {toggle(t.startup, settings.loginStartup, "loginStartup")}
+                  {select(t.uiLanguage, settings.uiLanguage, "uiLanguage", [
+                    ["system", t.system],
+                    ["en", "English"],
+                    ["ko", "한국어"],
+                  ])}
+                  {select(t.theme, settings.theme, "theme", [
+                    ["system", t.system],
+                    ["light", t.light],
+                    ["dark", t.dark],
+                  ])}
+                </section>
+              </Card>
             </>
           )}
           {section === Section.Exclusions && (
-            <section className="card">
-              <div className="row">
-                <h3>{t.exclusions}</h3>
-                <button onClick={() => void chooseApp()}>{t.add}</button>
-              </div>
-              {settings.excludedApps.length === 0 ? (
-                <div className="empty">
-                  <h3>{t.empty}</h3>
-                  <p>{t.emptyDetail}</p>
+            <Card asChild>
+              <section className="card">
+                <div className="row">
+                  <h3>{t.exclusions}</h3>
+                  <Button variant="outline" onClick={() => void chooseApp()}>
+                    {t.add}
+                  </Button>
                 </div>
-              ) : (
-                <ul className="apps">
-                  {settings.excludedApps.map((app, index) => (
-                    <li key={JSON.stringify(app.identity)}>
-                      <div>
-                        <strong>{app.displayName}</strong>
-                        {data.unresolvedApps.includes(index) && (
-                          <p>{t.unresolved}</p>
-                        )}
-                      </div>
-                      <button
-                        aria-label={`${t.remove} ${app.displayName}`}
-                        onClick={() =>
-                          change({
-                            excludedApps: settings.excludedApps.filter(
-                              (_, i) => i !== index,
-                            ),
-                          })
-                        }
-                      >
-                        {t.remove}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+                {settings.excludedApps.length === 0 ? (
+                  <div className="empty">
+                    <h3>{t.empty}</h3>
+                    <p>{t.emptyDetail}</p>
+                  </div>
+                ) : (
+                  <ul className="apps">
+                    {settings.excludedApps.map((app, index) => (
+                      <li key={JSON.stringify(app.identity)}>
+                        <div>
+                          <strong>{app.displayName}</strong>
+                          {data.unresolvedApps.includes(index) && (
+                            <p>{t.unresolved}</p>
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          aria-label={`${t.remove} ${app.displayName}`}
+                          onClick={() =>
+                            change({
+                              excludedApps: settings.excludedApps.filter(
+                                (_, i) => i !== index,
+                              ),
+                            })
+                          }
+                        >
+                          {t.remove}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </Card>
           )}
           {section === Section.Shortcuts && (
-            <section className="card">
-              {row(t.shortcut, <kbd>{settings.shortcut ?? t.unassigned}</kbd>)}
-              <div className="actions">
-                <button onClick={() => setCapture(true)}>{t.capture}</button>
-                <button
-                  disabled={!settings.shortcut}
-                  onClick={() => change({ shortcut: null })}
-                >
-                  {t.clear}
-                </button>
-              </div>
-            </section>
+            <Card asChild>
+              <section className="card">
+                {row(
+                  t.shortcut,
+                  <kbd>{settings.shortcut ?? t.unassigned}</kbd>,
+                )}
+                <div className="actions">
+                  <Button variant="outline" onClick={() => setCapture(true)}>
+                    {t.capture}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={!settings.shortcut}
+                    onClick={() => change({ shortcut: null })}
+                  >
+                    {t.clear}
+                  </Button>
+                </div>
+              </section>
+            </Card>
           )}
           {section === Section.Updates && (
-            <section className="card">
-              {row(t.currentVersion, <span>{data.version}</span>)}
-              <p>{t.updateHelp}</p>
-              <p role="status">
-                <code>{data.update.phase}</code>
-                {data.update.version && ` · ${data.update.version}`}
-              </p>
-              {data.update.error && (
-                <p role="alert">
-                  {t.reason}: <code>{data.update.error}</code>
+            <Card asChild>
+              <section className="card">
+                {row(t.currentVersion, <span>{data.version}</span>)}
+                <p>{t.updateHelp}</p>
+                <p role="status">
+                  <code>{data.update.phase}</code>
+                  {data.update.version && ` · ${data.update.version}`}
                 </p>
-              )}
-              {data.update.phase === "downloading" && (
-                <>
-                  <progress
-                    aria-label={t.updateConsent}
-                    max={100}
-                    value={data.update.progress ?? undefined}
-                  />
-                  <span>
-                    {data.update.progress == null
-                      ? "…"
-                      : `${Math.round(data.update.progress)}%`}
-                  </span>
-                </>
-              )}
-              <div className="actions">
-                <button
-                  disabled={["checking", "downloading", "installing"].includes(
-                    data.update.phase,
-                  )}
-                  onClick={() => action.mutate("check-update")}
-                >
-                  {t.checkUpdate}
-                </button>
-                {data.update.phase === "available" && (
-                  <button
-                    className="primary"
-                    onClick={() => action.mutate("install-update")}
-                  >
-                    {t.updateConsent}
-                  </button>
+                {data.update.error && (
+                  <p role="alert">
+                    {t.reason}: <code>{data.update.error}</code>
+                  </p>
                 )}
-              </div>
-              <p>{t.recovery}</p>
-            </section>
+                {data.update.phase === "downloading" && (
+                  <>
+                    <progress
+                      aria-label={t.updateConsent}
+                      max={100}
+                      value={data.update.progress ?? undefined}
+                    />
+                    <span>
+                      {data.update.progress == null
+                        ? "…"
+                        : `${Math.round(data.update.progress)}%`}
+                    </span>
+                  </>
+                )}
+                <div className="actions">
+                  <Button
+                    variant="outline"
+                    disabled={[
+                      "checking",
+                      "downloading",
+                      "installing",
+                    ].includes(data.update.phase)}
+                    onClick={() => action.mutate("check-update")}
+                  >
+                    {t.checkUpdate}
+                  </Button>
+                  {data.update.phase === "available" && (
+                    <Button
+                      variant="default"
+                      className="primary"
+                      onClick={() => action.mutate("install-update")}
+                    >
+                      {t.updateConsent}
+                    </Button>
+                  )}
+                </div>
+                <p>{t.recovery}</p>
+              </section>
+            </Card>
           )}
           {section === Section.Diagnostics && (
             <>
-              <section className="card">
-                {row(t.reason, <code>{data.status}</code>)}
-                <p>{t.logHelp}</p>
-                <div className="actions">
-                  <button onClick={() => action.mutate("open-logs")}>
-                    {t.openLogs}
-                  </button>
-                  <button onClick={() => action.mutate("delete-logs")}>
-                    {t.deleteLogs}
-                  </button>
-                  <button onClick={() => action.mutate("support")}>
-                    {t.support}
-                  </button>
-                </div>
-              </section>
-              <section className="card">
-                <h3>{t.help}</h3>
-                {t.helpTopics.map(([title, body]) => (
-                  <details key={title}>
-                    <summary>{title}</summary>
-                    <p>{body}</p>
-                  </details>
-                ))}
-              </section>
+              <Card asChild>
+                <section className="card">
+                  {row(t.reason, <code>{data.status}</code>)}
+                  <p>{t.logHelp}</p>
+                  <div className="actions">
+                    <Button
+                      variant="outline"
+                      onClick={() => action.mutate("open-logs")}
+                    >
+                      {t.openLogs}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => action.mutate("delete-logs")}
+                    >
+                      {t.deleteLogs}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => action.mutate("support")}
+                    >
+                      {t.support}
+                    </Button>
+                  </div>
+                </section>
+              </Card>
+              <Card asChild>
+                <section className="card">
+                  <h3>{t.help}</h3>
+                  {t.helpTopics.map(([title, body]) => (
+                    <details key={title}>
+                      <summary>{title}</summary>
+                      <p>{body}</p>
+                    </details>
+                  ))}
+                </section>
+              </Card>
             </>
           )}
         </fieldset>
       </main>
       {(permissionNeeded || inputSetupOpen) && !permissionDismissed && (
-        <Modal title={permissionTitle} onClose={closePermission}>
-          <p>
-            {inputSetupOpen
+        <Modal
+          title={permissionTitle}
+          description={
+            inputSetupOpen
               ? t.inputPermissionListHelp
               : inputPermissionNeeded
                 ? t.inputPermissionHelp
-                : t.permissionHelp}
-          </p>
+                : t.permissionHelp
+          }
+          onClose={closePermission}
+        >
           {data.status === "input-permission-missing" && (
             <p className="permission-granted">{t.accessibilityGranted}</p>
           )}
@@ -467,7 +553,8 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
             </p>
           )}
           <div className="actions">
-            <button
+            <Button
+              variant="default"
               className="primary"
               data-autofocus
               disabled={busy}
@@ -476,26 +563,36 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
               {data.platform === "macos-arm64"
                 ? permissionRequestLabel
                 : t.openSettings}
-            </button>
+            </Button>
             {data.platform === "macos-arm64" && (
-              <button
+              <Button
+                variant="outline"
                 disabled={busy}
                 onClick={() => action.mutate("permission-settings")}
               >
                 {t.openSettings}
-              </button>
+              </Button>
             )}
-            <button disabled={busy} onClick={() => action.mutate("recheck")}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => action.mutate("recheck")}
+            >
               {t.recheck}
-            </button>
-            <button onClick={closePermission}>{t.later}</button>
+            </Button>
+            <Button variant="outline" onClick={closePermission}>
+              {t.later}
+            </Button>
           </div>
         </Modal>
       )}
       {capture && (
-        <Modal title={t.capture} onClose={() => setCapture(false)}>
-          <p>{t.captureHelp}</p>
-          <input
+        <Modal
+          title={t.capture}
+          description={t.captureHelp}
+          onClose={() => setCapture(false)}
+        >
+          <Input
             autoFocus
             readOnly
             aria-label={t.capture}
@@ -530,14 +627,20 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
               setCapture(false);
             }}
           />
-          <button onClick={() => setCapture(false)}>{t.cancel}</button>
+          <Button variant="outline" onClick={() => setCapture(false)}>
+            {t.cancel}
+          </Button>
         </Modal>
       )}
       {choosing && (
-        <Modal title={t.choose} onClose={() => setChoosing(false)}>
+        <Modal
+          title={t.choose}
+          description={t.exclusions}
+          onClose={() => setChoosing(false)}
+        >
           {apps.length ? (
             <>
-              <select
+              <NativeSelect
                 autoFocus
                 aria-label={t.choose}
                 value={appIndex}
@@ -548,8 +651,9 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
                     {app.displayName}
                   </option>
                 ))}
-              </select>
-              <button
+              </NativeSelect>
+              <Button
+                variant="default"
                 className="primary"
                 onClick={() => {
                   const app = apps[appIndex];
@@ -565,12 +669,14 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
                 }}
               >
                 {t.add}
-              </button>
+              </Button>
             </>
           ) : (
             <p>{t.noApps}</p>
           )}
-          <button onClick={() => setChoosing(false)}>{t.cancel}</button>
+          <Button variant="outline" onClick={() => setChoosing(false)}>
+            {t.cancel}
+          </Button>
         </Modal>
       )}
     </div>
@@ -652,7 +758,8 @@ export function CandidatePicker({
       {state.items.length ? (
         <div role="listbox" aria-label={t.candidates}>
           {state.items.map((item, i) => (
-            <button
+            <Button
+              variant="outline"
               key={`${item.language}-${i}`}
               role="option"
               aria-selected={state.selected === i}
@@ -669,7 +776,7 @@ export function CandidatePicker({
                     ? t.notRecognized
                     : t.unchecked}
               </small>
-            </button>
+            </Button>
           ))}
         </div>
       ) : (

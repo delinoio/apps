@@ -14,7 +14,7 @@ Application developers compose shared primitives into product screens.
 
 ## Interfaces and Contracts
 
-Import components through `@delino/ui/components/<name>` and `cn` through `@delino/ui/lib/utils`. Initial components are button, badge, card, input, textarea, label, separator, checkbox, switch and dialog. `components.json` routes shadcn additions into this package with the `new-york` style and neutral tokens.
+Import components through `@delino/ui/components/<name>` and `cn` through `@delino/ui/lib/utils`. Components are button, badge, card, input, textarea, native-select, label, separator, checkbox, switch and dialog. `NativeSelect` preserves native option, change-event, keyboard and form behavior. `Card` supports `asChild` to preserve consumer section and article semantics. `components.json` routes shadcn additions into this package with the `new-york` style and neutral tokens.
 
 Every app has a workspace dependency and a PostCSS configuration. Styles remain opt-in: import `@delino/ui/styles.css` once in the application entry, or in the Rspress custom theme entry. The stylesheet includes Tailwind Preflight, light/dark semantic tokens and component utilities. Review existing app styles before enabling this reset. Add `.dark` to the document root for dark mode. Apps own theme preference and persistence.
 
@@ -56,7 +56,7 @@ Run `pnpm test` in `packages/ui` for type checks, interaction tests and CSS comp
 
 ## Dependencies and Integrations
 
-React and React DOM are peer dependencies. Radix UI provides accessible interaction primitives; Tailwind CSS, class-variance-authority, clsx, tailwind-merge, lucide-react and tw-animate-css provide styling and icons. `@delino/ui/postcss` exports the shared Tailwind PostCSS configuration. All consumers use source exports through bundler module resolution.
+React and React DOM are peer dependencies. Radix UI provides accessible interaction primitives; Tailwind CSS, class-variance-authority, clsx, tailwind-merge, lucide-react and tw-animate-css provide styling and icons. `@delino/ui/postcss` exports the shared Tailwind PostCSS configuration. All consumers use source exports through bundler module resolution. The `@delino/ui/package.json` export supports build-time dependency and license inventory collection.
 
 Imported shadcn/ui component code retains its MIT license in `packages/ui/LICENSE.shadcn`; repository additions use Apache-2.0. Preserve both licenses in distributions that include the components.
 

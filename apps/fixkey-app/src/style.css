@@ -1,3 +1,24 @@
+@import "@delino/ui/styles.css";
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+}
+p {
+  margin-bottom: 1em;
+}
+ul,
+ol {
+  padding-left: 40px;
+}
+ul {
+  list-style: disc;
+}
+ol {
+  list-style: decimal;
+}
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #202632;
@@ -10,6 +31,7 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
+  --foreground: #edf0f6;
   color: #edf0f6;
   background: #171b23;
   --surface: #242a35;
@@ -21,6 +43,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --foreground: #edf0f6;
     color: #edf0f6;
     background: #171b23;
     --surface: #242a35;
@@ -65,7 +88,7 @@ button:disabled {
   outline: 3px solid var(--blue);
   outline-offset: 3px;
 }
-input[type="checkbox"] {
+[data-slot="checkbox"] {
   width: 21px;
   height: 21px;
   accent-color: var(--blue);
@@ -251,7 +274,7 @@ summary {
 details p {
   padding-top: 10px;
 }
-dialog {
+.settings-dialog {
   color: inherit;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -261,11 +284,9 @@ dialog {
   max-height: 90svh;
   overflow: auto;
 }
-dialog::backdrop {
-  background: #10172677;
-}
-dialog input,
-dialog select {
+
+.settings-dialog input,
+.settings-dialog select {
   display: block;
   width: 100%;
   margin: 16px 0;
@@ -349,4 +370,43 @@ progress {
 
 .permission-granted {
   font-weight: 600;
+}
+
+:root {
+  --background: var(--surface);
+  --foreground: #202632;
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --primary: var(--blue);
+  --primary-foreground: var(--surface);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--blue);
+  --accent: var(--soft);
+  --accent-foreground: var(--blue);
+}
+.card {
+  display: block;
+}
+nav button,
+.picker button {
+  height: auto;
+  justify-content: start;
+  white-space: normal;
+}
+.settings-dialog {
+  display: block;
+}
+[data-slot="checkbox"] {
+  padding: 0;
+  border-radius: 4px;
+}
+[data-slot="checkbox"][data-state="checked"] {
+  background: var(--blue);
+  color: var(--surface);
+}
+
+body {
+  background: transparent;
+  color: inherit;
 }

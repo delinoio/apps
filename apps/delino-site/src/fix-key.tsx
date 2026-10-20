@@ -1,3 +1,5 @@
+import { Button } from "@delino/ui/components/button";
+import { Card } from "@delino/ui/components/card";
 import type source from "../i18n/messages/en.json";
 
 export function FixKey({ messages: m }: { messages: typeof source }) {
@@ -13,15 +15,19 @@ export function FixKey({ messages: m }: { messages: typeof source }) {
         </h1>
         <p className="hero-body">{m["fixkey.heroBody"]}</p>
         <div className="actions">
-          <a className="button primary" href={releases}>
-            {m["fixkey.releases"]} <span aria-hidden="true">↗</span>
-          </a>
-          <a className="button secondary" href="#how-it-works">
-            {m["fixkey.seeHow"]} <span aria-hidden="true">↓</span>
-          </a>
+          <Button asChild>
+            <a className="button primary" href={releases}>
+              {m["fixkey.releases"]} <span aria-hidden="true">↗</span>
+            </a>
+          </Button>
+          <Button asChild variant="secondary">
+            <a className="button secondary" href="#how-it-works">
+              {m["fixkey.seeHow"]} <span aria-hidden="true">↓</span>
+            </a>
+          </Button>
         </div>
         <p className="hero-note">{m["fixkey.heroNote"]}</p>
-        <div className="demo">
+        <Card className="demo">
           <div className="demo-bar">
             <span className="window-dots" aria-hidden="true">
               <i />
@@ -50,7 +56,7 @@ export function FixKey({ messages: m }: { messages: typeof source }) {
             </div>
           </div>
           <p className="demo-note">{m["fixkey.demoNote"]}</p>
-        </div>
+        </Card>
       </section>
       <section
         id="features"
@@ -66,13 +72,15 @@ export function FixKey({ messages: m }: { messages: typeof source }) {
             ["↳", m["fixkey.featureTwoTitle"], m["fixkey.featureTwoBody"]],
             ["⌫", m["fixkey.featureThreeTitle"], m["fixkey.featureThreeBody"]],
           ].map(([icon, title, body]) => (
-            <article className="feature" key={title}>
-              <span className="feature-icon" aria-hidden="true">
-                {icon}
-              </span>
-              <h3>{title}</h3>
-              <p>{body}</p>
-            </article>
+            <Card asChild key={title}>
+              <article className="feature">
+                <span className="feature-icon" aria-hidden="true">
+                  {icon}
+                </span>
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </article>
+            </Card>
           ))}
         </div>
       </section>
@@ -121,9 +129,11 @@ export function FixKey({ messages: m }: { messages: typeof source }) {
         </span>
         <h2>{m["fixkey.closingTitle"]}</h2>
         <p>{m["fixkey.closingBody"]}</p>
-        <a className="button primary" href={releases}>
-          {m["fixkey.releases"]} <span aria-hidden="true">↗</span>
-        </a>
+        <Button asChild>
+          <a className="button primary" href={releases}>
+            {m["fixkey.releases"]} <span aria-hidden="true">↗</span>
+          </a>
+        </Button>
       </section>
     </>
   );

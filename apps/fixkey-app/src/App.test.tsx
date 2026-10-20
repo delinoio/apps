@@ -71,10 +71,10 @@ describe("settings desktop contract", () => {
     rs.mocked(api.save).mockRejectedValue("settings-save-failed");
     mount(api);
     const checkbox = await screen.findByLabelText("Start at login");
-    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(checkbox);
     await screen.findByText("settings-save-failed");
-    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
   });
   it("persists immediately and switches language and theme from the returned settings", async () => {
     const { api } = fixture();
@@ -141,12 +141,21 @@ describe("settings desktop contract", () => {
     const { api } = fixture();
     mount(api);
     fireEvent.click(await screen.findByRole("button", { name: "Shortcuts" }));
+    screen.getByRole("button", { name: "Set shortcut" }).focus();
     fireEvent.click(screen.getByRole("button", { name: "Set shortcut" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("textbox")),
+    );
     fireEvent.keyDown(screen.getByRole("textbox"), {
       key: "Escape",
       code: "Escape",
     });
     expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Set shortcut" }),
+      ),
+    );
     expect(api.save).not.toHaveBeenCalled();
     rs.mocked(api.save).mockRejectedValue("shortcut-conflict");
     fireEvent.click(screen.getByRole("button", { name: "Set shortcut" }));
@@ -303,10 +312,7 @@ describe("settings desktop contract", () => {
       expect(api.save).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole("button", { name: setup }));
       const reopened = await screen.findByRole("dialog", { name: setup });
-      fireEvent(
-        reopened,
-        new Event("cancel", { bubbles: true, cancelable: true }),
-      );
+      fireEvent.keyDown(reopened, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     },
   );
@@ -365,7 +371,7 @@ describe("settings desktop contract", () => {
     expect(
       screen.getByText(/Also enable FixKey in Input Monitoring/),
     ).toBeTruthy();
-    fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
+    fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("Correction is inactive")).toBeTruthy();
   });

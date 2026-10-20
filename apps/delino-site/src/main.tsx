@@ -1,3 +1,5 @@
+import { Label } from "@delino/ui/components/label";
+import { NativeSelect } from "@delino/ui/components/native-select";
 import { createRoot } from "react-dom/client";
 import registry from "../i18n/locales.json";
 import type source from "../i18n/messages/en.json";
@@ -31,9 +33,9 @@ async function main() {
             <a href="#how-it-works">{messages["fixkey.howItWorks"]}</a>
           </nav>
         )}
-        <label>
+        <Label>
           {messages["common.language"]}
-          <select
+          <NativeSelect
             value={lang}
             onChange={(event) => {
               const selected = event.target.value;
@@ -49,8 +51,8 @@ async function main() {
                 {label}
               </option>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Label>
       </header>
       <main id="content">
         {isProduct ? (
