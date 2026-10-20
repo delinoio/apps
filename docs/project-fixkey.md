@@ -12,10 +12,10 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 
 ## Domain Ownership Map
 
-`crates/fixkey-core` and `apps/fixkey/src-tauri` are explicit Rust workspace members. `apps/fixkey` owns the desktop shell and frontend.
+`crates/fixkey-core` and `apps/fixkey-app/src-tauri` are explicit Rust workspace members. `apps/fixkey-app` owns the desktop shell and frontend.
 
 - `crates/fixkey-core` (`core`): Rust engine for layout reconstruction, language validation, correction and undo state, and platform accessibility adapters. It has no UI dependency.
-- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`. This component also owns `.github/workflows/release-fixkey.yml` and the `scripts/release/fixkey*` artifact, license and release-contract helpers.
+- `apps/fixkey-app` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey-app/src-tauri`. This component also owns `.github/workflows/release-fixkey.yml` and the `scripts/release/fixkey*` artifact, license and release-contract helpers.
 
 ## Domain Contract Documents
 

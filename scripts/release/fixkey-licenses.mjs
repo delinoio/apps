@@ -14,12 +14,12 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const output = path.join(root, "apps/fixkey/src-tauri/gen/licenses");
+const output = path.join(root, "apps/fixkey-app/src-tauri/gen/licenses");
 rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 const standardSources = JSON.parse(
   readFileSync(
-    path.join(root, "apps/fixkey/src-tauri/licenses/sources.json"),
+    path.join(root, "apps/fixkey-app/src-tauri/licenses/sources.json"),
     "utf8",
   ),
 );
@@ -27,7 +27,7 @@ for (const [name, record] of Object.entries(standardSources).filter(
   ([name]) => name !== "schemaVersion",
 )) {
   const bytes = readFileSync(
-    path.join(root, `apps/fixkey/src-tauri/licenses/${name}.txt`),
+    path.join(root, `apps/fixkey-app/src-tauri/licenses/${name}.txt`),
   );
   if (createHash("sha256").update(bytes).digest("hex") !== record.sha256)
     throw new Error("fixkey-standard-license-checksum-mismatch");
@@ -115,12 +115,14 @@ function notices(directory, explicit, owner, pkg) {
   // author attribution in the inventory and reproduce the
   // pinned standard text. Never substitute the repository license for MIT.
   if (!candidates.length && standardLicense(pkg, "MIT"))
-    candidates = [path.join(root, "apps/fixkey/src-tauri/licenses/MIT.txt")];
+    candidates = [
+      path.join(root, "apps/fixkey-app/src-tauri/licenses/MIT.txt"),
+    ];
   if (!candidates.length && standardLicense(pkg, "Apache-2.0"))
     candidates = [path.join(root, "LICENSE")];
   if (!candidates.length && pkg?.license === "MPL-2.0")
     candidates = [
-      path.join(root, "apps/fixkey/src-tauri/licenses/MPL-2.0.txt"),
+      path.join(root, "apps/fixkey-app/src-tauri/licenses/MPL-2.0.txt"),
     ];
   if (!candidates.length)
     throw new Error("fixkey-dependency-license-text-missing");
@@ -225,7 +227,7 @@ function nodePackage(file) {
     nodePackage(manifest);
   }
 }
-const appManifest = path.join(root, "apps/fixkey/package.json"),
+const appManifest = path.join(root, "apps/fixkey-app/package.json"),
   app = JSON.parse(readFileSync(appManifest, "utf8")),
   require = createRequire(appManifest);
 for (const name of Object.keys(app.dependencies))

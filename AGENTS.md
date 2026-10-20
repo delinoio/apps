@@ -59,7 +59,7 @@
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
-- `apps/fixkey`: Standalone FixKey desktop product and native shell.
+- `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go messages and Connect bindings.
 - `scripts/`: Shared build and development support.

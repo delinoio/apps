@@ -64,8 +64,8 @@ export function version(value) {
 export function validateSource(directory, selected) {
   version(selected);
   for (const file of [
-    "apps/fixkey/package.json",
-    "apps/fixkey/src-tauri/tauri.conf.json",
+    "apps/fixkey-app/package.json",
+    "apps/fixkey-app/src-tauri/tauri.conf.json",
   ]) {
     requireValue(
       JSON.parse(readFileSync(path.join(directory, file), "utf8")).version ===
@@ -74,7 +74,7 @@ export function validateSource(directory, selected) {
     );
   }
   const manifest = readFileSync(
-    path.join(directory, "apps/fixkey/src-tauri/Cargo.toml"),
+    path.join(directory, "apps/fixkey-app/src-tauri/Cargo.toml"),
     "utf8",
   );
   requireValue(

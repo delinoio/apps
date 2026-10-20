@@ -70,7 +70,7 @@ test("consumer examples select protocol validation without native runners", () =
 });
 
 for (const path of [
-  "apps/fixkey/src/App.tsx",
+  "apps/fixkey-app/src/App.tsx",
   "crates/fixkey-core/src/lib.rs",
   "scripts/release/fixkey.mjs",
   ".github/workflows/release-fixkey.yml",

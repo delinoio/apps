@@ -53,7 +53,7 @@ export function releaseTag(project, version) {
 function releaseApps(project) {
   return project === Project.Delino
     ? ["delino-site", "delino-docs"]
-    : [project];
+    : [project === Project.Fixkey ? "fixkey-app" : project];
 }
 export function versionChanges(project, bump, read) {
   requireProject(project);
@@ -92,8 +92,8 @@ export function versionChanges(project, bump, read) {
   }
   const native = nativePackages[project];
   if (native) {
-    replaceJson(`apps/${project}/src-tauri/tauri.conf.json`);
-    const file = `apps/${project}/src-tauri/Cargo.toml`;
+    replaceJson(`apps/${apps[0]}/src-tauri/tauri.conf.json`);
+    const file = `apps/${apps[0]}/src-tauri/Cargo.toml`;
     const content = read(file);
     const section = content.match(
       /^\[package\]\n[\s\S]*?(?=^\[|$(?![\s\S]))/mu,

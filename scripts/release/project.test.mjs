@@ -47,12 +47,14 @@ test("stable bumps reset lower components and reject malformed or overflowing ve
 for (const project of Object.values(Project)) {
   test(`${project} changes only its synchronized source versions`, () => {
     const plan = versionChanges(project, Bump.Patch, read);
+    const app =
+      project === Project.Delino
+        ? "delino-site"
+        : project === Project.Fixkey
+          ? "fixkey-app"
+          : project;
     assert.equal(
-      JSON.parse(
-        plan.changes[
-          `apps/${project === Project.Delino ? "delino-site" : project}/package.json`
-        ],
-      ).version,
+      JSON.parse(plan.changes[`apps/${app}/package.json`]).version,
       plan.version,
     );
     const native = [Project.Delitools, Project.Fixkey].includes(project);
@@ -62,7 +64,7 @@ for (const project of Object.values(Project)) {
     );
     if (native) {
       assert.equal(
-        JSON.parse(plan.changes[`apps/${project}/src-tauri/tauri.conf.json`])
+        JSON.parse(plan.changes[`apps/${app}/src-tauri/tauri.conf.json`])
           .version,
         plan.version,
       );
@@ -224,7 +226,13 @@ for (const project of [Project.Devbase, Project.Delino, Project.Fixkey]) {
       /Tag and source version disagree/u,
     );
     git(options.directory, "checkout", "-b", "unmerged");
-    const file = `apps/${project === Project.Delino ? "delino-site" : project}/package.json`;
+    const app =
+      project === Project.Delino
+        ? "delino-site"
+        : project === Project.Fixkey
+          ? "fixkey-app"
+          : project;
+    const file = `apps/${app}/package.json`;
     const manifest = JSON.parse(
       readFileSync(join(options.directory, file), "utf8"),
     );
