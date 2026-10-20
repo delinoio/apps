@@ -28,6 +28,7 @@ func TestKeyFormatRoundTripAndRejection(t *testing.T) {
 		"long":      raw + "a",
 		"separator": raw[:36] + "-" + raw[37:],
 		"id":        "dbk_" + strings.Repeat("z", 32) + raw[36:],
+		"uppercase": "dbk_" + strings.ToUpper(raw[4:36]) + raw[36:],
 		"secret":    raw[:37] + strings.Repeat("!", 43),
 		"version":   "dbk_" + strings.Repeat("0", 32) + raw[36:],
 	} {

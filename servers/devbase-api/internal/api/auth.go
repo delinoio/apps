@@ -65,6 +65,13 @@ func ParseKey(raw string) (id, secret string, ok bool) {
 	if !found || len(rest) != 32+1+43 || rest[32] != '_' {
 		return "", "", false
 	}
+	// uuid.Parse accepts uppercase hexadecimal and the canonical form normalizes it back,
+	// so check the credential's own text: the format allows lowercase hexadecimal only.
+	for _, c := range []byte(rest[:32]) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", "", false
+		}
+	}
 	u, e := uuid.Parse(rest[:32])
 	if e != nil || u.Version() != 7 {
 		return "", "", false
