@@ -7,9 +7,93 @@ import (
 	"context"
 	"encoding/json"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"sort"
 )
+
+func validateCatalogMeter(m *pb.Meter) error {
+	aggregation := metering.Count
+	switch m.Aggregation {
+	case pb.MeterAggregation_METER_AGGREGATION_COUNT:
+		aggregation = metering.Count
+	case pb.MeterAggregation_METER_AGGREGATION_SUM:
+		aggregation = metering.Sum
+	case pb.MeterAggregation_METER_AGGREGATION_MIN:
+		aggregation = metering.Min
+	case pb.MeterAggregation_METER_AGGREGATION_MAX:
+		aggregation = metering.Max
+	case pb.MeterAggregation_METER_AGGREGATION_AVG:
+		aggregation = metering.Avg
+	case pb.MeterAggregation_METER_AGGREGATION_UNIQUE_COUNT:
+		aggregation = metering.UniqueCount
+	default:
+		return invalid("unknown meter aggregation")
+	}
+	definition := metering.Definition{Key: m.Name, EventType: m.EventType, Aggregation: aggregation, ValueAttribute: m.ValueAttribute, GroupBy: m.GroupBy}
+	for _, filter := range m.Filters {
+		if filter == nil {
+			return invalid("invalid meter filter")
+		}
+		item := metering.Filter{Attribute: filter.Attribute}
+		switch filter.Operator {
+		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL:
+			if len(filter.Values) != 1 {
+				return invalid("equal meter filters require one value")
+			}
+			item.Operator, item.Value = metering.Equal, metering.String(filter.Values[0])
+		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_NOT_EQUAL:
+			if len(filter.Values) != 1 {
+				return invalid("not-equal meter filters require one value")
+			}
+			item.Operator, item.Value = metering.NotEqual, metering.String(filter.Values[0])
+		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN:
+			if len(filter.Values) == 0 {
+				return invalid("in meter filters require values")
+			}
+			item.Operator = metering.In
+			item.Values = make([]metering.Value, 0, len(filter.Values))
+			for _, value := range filter.Values {
+				item.Values = append(item.Values, metering.String(value))
+			}
+		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER,
+			pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL,
+			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS,
+			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS_OR_EQUAL:
+			if len(filter.Values) != 1 {
+				return invalid("numeric meter filters require one value")
+			}
+			value, err := metering.Number(filter.Values[0])
+			if err != nil {
+				return invalid("numeric meter filter requires a decimal value")
+			}
+			item.Value = value
+			switch filter.Operator {
+			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER:
+				item.Operator = metering.GreaterThan
+			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL:
+				item.Operator = metering.GreaterThanOrEqual
+			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS:
+				item.Operator = metering.LessThan
+			default:
+				item.Operator = metering.LessThanOrEqual
+			}
+		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS:
+			if len(filter.Values) != 1 || (filter.Values[0] != "true" && filter.Values[0] != "false") {
+				return invalid("exists meter filters require one boolean value")
+			}
+			item.Operator = metering.Exists
+			item.Value = metering.Boolean(filter.Values[0] == "true")
+		default:
+			return invalid("unknown meter filter operator")
+		}
+		definition.Filters = append(definition.Filters, item)
+	}
+	if err := definition.Validate(); err != nil {
+		return invalid(err.Error())
+	}
+	return nil
+}
 
 func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterRequest]) (*connect.Response[pb.PutMeterResponse], error) {
 	o := &pb.PutMeterResponse{}
@@ -28,6 +112,7 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 		if m.Id != "" && !canonical(m.Id) {
 			return invalid("invalid meter ID")
 		}
+		legacy := m.EventType == "" && m.Aggregation == pb.MeterAggregation_METER_AGGREGATION_UNSPECIFIED && m.ValueAttribute == "" && len(m.Filters) == 0 && len(m.GroupBy) == 0
 		var e error
 		m.Key, e = c.catalogKey(m.Id, m.Key, m.Name)
 		if e != nil {
@@ -48,6 +133,11 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 		}
 		if len(m.EventType) > 100 || len(m.ValueAttribute) > 100 || len(m.Filters) > 100 || len(m.GroupBy) > 20 {
 			return invalid("meter definition exceeds catalog limits")
+		}
+		if !legacy {
+			if e = validateCatalogMeter(m); e != nil {
+				return e
+			}
 		}
 		filters := make([]*pb.MeterFilter, 0, len(m.Filters))
 		for _, filter := range m.Filters {
@@ -83,16 +173,18 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 			Filters        []*pb.MeterFilter   `json:"filters"`
 			GroupBy        []string            `json:"group_by"`
 		}{m.Name, m.EventType, m.Aggregation, m.ValueAttribute, filters, groups}
-		previous, e := postgres.ActiveCatalogVersion(c.ctx, c.tx, "meter", m.Id)
-		if e != nil {
-			return e
-		}
-		version, _, e := postgres.SelectCatalogVersion(c.ctx, c.tx, m.Id, definition)
-		if e != nil {
-			return e
-		}
-		if previous != "" && previous != version {
-			return invalid("meter definition is immutable for its key")
+		if !legacy {
+			previous, e := postgres.ActiveCatalogVersion(c.ctx, c.tx, "meter", m.Id)
+			if e != nil {
+				return e
+			}
+			version, _, e := postgres.SelectCatalogVersion(c.ctx, c.tx, m.Id, definition)
+			if e != nil {
+				return e
+			}
+			if previous != "" && previous != version {
+				return invalid("meter definition is immutable for its key")
+			}
 		}
 		var count int
 		if e := c.tx.QueryRow(c.ctx, "SELECT count(*) FROM meters WHERE service_id=$1 AND name<>$2", m.ServiceId, m.Name).Scan(&count); e != nil {
