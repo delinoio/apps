@@ -18,6 +18,23 @@ services:
       retries: 30
       start_period: 10s
 
+  devbase-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: devbase
+      POSTGRES_PASSWORD: local-devbase
+      POSTGRES_DB: devbase
+    ports:
+      - "127.0.0.1:${DEVBASE_POSTGRES_PORT:-55433}:5432"
+    volumes:
+      - devbase-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U devbase -d devbase"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
   git-tracker-postgres:
     image: postgres:17
     environment:
@@ -38,4 +55,5 @@ services:
 
 volumes:
   delcore-postgres-data:
+  devbase-postgres-data:
   git-tracker-postgres-data:

@@ -11,7 +11,11 @@ export function prepareApiEnvironment(api, source = process.env) {
     ...source,
     // Development listeners are fixed per service, including when a shared
     // parent shell or Infisical value supplies LISTEN.
-    LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+    LISTEN: {
+      [Api.Delcore]: "127.0.0.1:8080",
+      [Api.DevBase]: "127.0.0.1:46317",
+      [Api.GitTracker]: "127.0.0.1:46321",
+    }[api],
   };
   delete env[databaseHandoff];
   if (source[databaseHandoff]) {

@@ -6,57 +6,59 @@ Root `pnpm dev` reads the resolved Compose configuration, runs `docker compose u
 
 ## Local development databases
 
-Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore and Git Tracker, matching the major version used by server integration CI. The frontends, native shells and Air-managed APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Root `pnpm dev` starts these databases automatically and waits for their healthchecks before launching Turborepo. Existing containers and volumes are reused. `Ctrl+C` stops the development tasks and leaves the databases running for the next session. To start or inspect databases separately, run these commands from the repository root:
+Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore, DevBase and Git Tracker, matching the major version used by server integration CI. The frontends, native shells and Air-managed APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Root `pnpm dev` starts these databases automatically and waits for their healthchecks before launching Turborepo. Existing containers and volumes are reused. `Ctrl+C` stops the development tasks and leaves the databases running for the next session. To start or inspect databases separately, run these commands from the repository root:
 
 ```sh
 docker compose up -d --wait
 docker compose ps
 ```
 
-`--wait` waits for both database healthchecks to accept TCP connections. The probes use `127.0.0.1` inside each container so the PostgreSQL image's temporary socket-only initialization server cannot report readiness. To start only one database, append `delcore-postgres` or `git-tracker-postgres` to the `up` command. Both databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
+`--wait` waits for every database healthcheck to accept TCP connections. The probes use `127.0.0.1` inside each container so the PostgreSQL image's temporary socket-only initialization server cannot report readiness. To start only one database, append `delcore-postgres`, `devbase-postgres` or `git-tracker-postgres` to the `up` command. All databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
 
 - Delcore: `postgres://delcore:local-delcore@127.0.0.1:5432/delcore?sslmode=disable`
 - Git Tracker: `postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable`
 
-`scripts/dev.mjs` owns root Compose orchestration and URL resolution; `scripts/dev-api.mjs` owns the API environment overrides. Root `pnpm dev` derives these URLs from the resolved Compose service credentials, database names and published host ports. After Infisical injection, both API launchers receive `DATABASE_URL` with the owning Compose URL. Delcore's Go configuration loader reads its service-local `.env` with lower priority than injected/process variables. The Node launcher leaves the file to that loader so Air and direct startup use the same dotenv expansion semantics. The launcher preserves all other settings and does not edit the local file.
+`scripts/dev.mjs` owns root Compose orchestration and URL resolution; `scripts/dev-api.mjs` owns the API environment overrides. Root `pnpm dev` derives these URLs from the resolved Compose service credentials, database names and published host ports. After Infisical injection, every API launcher receives `DATABASE_URL` with the owning Compose URL. Delcore's Go configuration loader reads its service-local `.env` with lower priority than injected/process variables. The Node launcher leaves the file to that loader so Air and direct startup use the same dotenv expansion semantics. The launcher preserves all other settings and does not edit the local file.
 
-For direct service-local or Portless development, set each API's `DATABASE_URL` to its corresponding local URL yourself. Keep the remaining provider and authentication configuration under the owning [Delcore](servers-delcore-api-contract.md#local-development) and [Git Tracker](servers-git-tracker-api-contract.md#local-development) contracts. Compose does not provision Logto, Paddle, GitHub or email provider accounts. Configure Infisical as described in the [environment contract](repository-environment-contract.md#local-development-injection); Delcore also supports its ignored service-local `.env`.
+For direct service-local or Portless development, set each API's `DATABASE_URL` to its corresponding local URL yourself. Keep the remaining provider and authentication configuration under the owning [Delcore](servers-delcore-api-contract.md#local-development), [DevBase](servers-devbase-api-contract.md#local-development) and [Git Tracker](servers-git-tracker-api-contract.md#local-development) contracts. Compose does not provision Logto, Paddle, GitHub or email provider accounts. Configure Infisical as described in the [environment contract](repository-environment-contract.md#local-development-injection); Delcore also supports its ignored service-local `.env`.
 
 Initialize each empty database explicitly before the first API start. From the repository root, with Delcore settings in its service-local `.env` and `DATABASE_URL` pointing to the local database, run:
 
 ```sh
 (cd "servers/delcore-api" && go run ./cmd/delcore-api -migrate)
+DATABASE_URL='postgres://devbase:local-devbase@127.0.0.1:55433/devbase?sslmode=disable' go run ./servers/devbase-api/cmd/devbase-api migrate
 DATABASE_URL='postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable' go run ./servers/git-tracker-api/cmd/git-tracker-api migrate
 pnpm dev
 ```
 
-Delcore tracks migration versions and checksums; rerun its migration command after schema changes. Git Tracker currently embeds a single bootstrap SQL script with unconditional table and index creation. Run its migration command only once against an empty database. Do not rerun it on a retained volume after restarts or schema changes. Until upgrade migrations are supported, use a fresh disposable Git Tracker database for a changed schema; preserve any needed data before resetting its volume.
+Delcore and DevBase track migration versions and checksums; rerun their migration commands after schema changes. Git Tracker currently embeds a single bootstrap SQL script with unconditional table and index creation. Run its migration command only once against an empty database. Do not rerun it on a retained volume after restarts or schema changes. Until upgrade migrations are supported, use a fresh disposable Git Tracker database for a changed schema; preserve any needed data before resetting its volume.
 
 Database health does not establish schema readiness. Compose and root `pnpm dev` do not apply application migrations. Root `pnpm dev:portless` and service-local `pnpm dev` can also use these databases; start Compose separately before using those commands.
 
-Inspect logs with `docker compose logs -f delcore-postgres git-tracker-postgres`. Open a SQL session with either command:
+Inspect logs with `docker compose logs -f delcore-postgres devbase-postgres git-tracker-postgres`. Open a SQL session with one of these commands:
 
 ```sh
 docker compose exec delcore-postgres psql -U delcore -d delcore
+docker compose exec devbase-postgres psql -U devbase -d devbase
 docker compose exec git-tracker-postgres psql -U git_tracker -d git_tracker
 ```
 
-Stop and remove containers with `docker compose down`; the data volumes remain. `docker compose down --volumes` also deletes both local databases. After deleting volumes, start Compose and reapply the migrations.
+Stop and remove containers with `docker compose down`; the data volumes remain. `docker compose down --volumes` also deletes all local databases. After deleting volumes, start Compose and reapply the migrations.
 
 For another checkout or occupied database ports, select an explicit project name and host ports on every Compose command. For example:
 
 ```sh
-DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 docker compose -p apps-local-second up -d --wait
-DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 docker compose -p apps-local-second down
+DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 DEVBASE_POSTGRES_PORT=15434 docker compose -p apps-local-second up -d --wait
+DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 DEVBASE_POSTGRES_PORT=15434 docker compose -p apps-local-second down
 ```
 
-When starting root development with that project, run `COMPOSE_PROJECT_NAME=apps-local-second DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 pnpm dev`. Root development derives the API database URLs from these ports automatically. Update the database URLs used by explicit migration commands and direct service-local or Portless development to the selected host ports. Each Compose project has its own data volumes. These overrides affect database ports only; application listeners retain their fixed ports, so concurrent worktrees cannot serve the same application on the host. PostgreSQL integration tests require separate disposable test databases through `TEST_DATABASE_URL`; do not point tests at databases containing development data.
+When starting root development with that project, run `COMPOSE_PROJECT_NAME=apps-local-second DELCORE_POSTGRES_PORT=15432 GIT_TRACKER_POSTGRES_PORT=15433 DEVBASE_POSTGRES_PORT=15434 pnpm dev`. Root development derives the API database URLs from these ports automatically. Update the database URLs used by explicit migration commands and direct service-local or Portless development to the selected host ports. Each Compose project has its own data volumes. These overrides affect database ports only; application listeners retain their fixed ports, so concurrent worktrees cannot serve the same application on the host. PostgreSQL integration tests require separate disposable test databases through `TEST_DATABASE_URL`; do not point tests at databases containing development data.
 
 See the Docker references for [Compose startup and healthchecks](https://docs.docker.com/compose/how-tos/startup-order/) and [PostgreSQL image storage and initialization](https://hub.docker.com/_/postgres).
 
 ## Named local development URLs
 
-The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends and both Go APIs through the existing Turbo `dev` tasks and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server and Air-managed APIs. Portless does not change the servers' listeners: keep Delcore configured on `127.0.0.1:8080` and Git Tracker on `127.0.0.1:46321`. Prepare each API's database, schema and provider configuration before starting, as for root `pnpm dev`. Each task retains its Infisical injection and the API environment allowlists. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
+The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends and the three Go APIs through the existing Turbo `dev` tasks and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server and Air-managed APIs. Portless does not change the servers' listeners: keep Delcore configured on `127.0.0.1:8080`, DevBase on `127.0.0.1:46317` and Git Tracker on `127.0.0.1:46321`. Prepare each API's database, schema and provider configuration before starting, as for root `pnpm dev`. Each task retains its Infisical injection and the API environment allowlists. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
 
 | Application     | Main-checkout URL                   | Upstream          |
 | --------------- | ----------------------------------- | ----------------- |

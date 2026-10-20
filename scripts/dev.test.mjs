@@ -19,8 +19,15 @@ import { prepareApiEnvironment } from "./dev-api.mjs";
 const urls = {
   [Api.Delcore]:
     "postgres://delcore:fixture@127.0.0.1:15432/delcore?sslmode=disable",
+  [Api.DevBase]:
+    "postgres://devbase:fixture@127.0.0.1:15434/devbase?sslmode=disable",
   [Api.GitTracker]:
     "postgres://git_tracker:fixture@127.0.0.1:15433/git_tracker?sslmode=disable",
+};
+const listeners = {
+  [Api.Delcore]: "127.0.0.1:8080",
+  [Api.DevBase]: "127.0.0.1:46317",
+  [Api.GitTracker]: "127.0.0.1:46321",
 };
 const handoff = { [databaseHandoff]: JSON.stringify(urls) };
 const fixture = (t) => {
@@ -70,6 +77,20 @@ test("Git Tracker overrides injected DATABASE_URL while preserving provider sett
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
+test("DevBase overrides injected DATABASE_URL while preserving its provider settings", () => {
+  const prepared = prepareApiEnvironment(Api.DevBase, {
+    ...handoff,
+    DATABASE_URL: "postgres://remote/shared",
+    CLIENT_SECRET: "fixture-provider",
+    DELCORE_URL: "https://delcore.example.test",
+  });
+  assert.equal(prepared.env.DATABASE_URL, urls[Api.DevBase]);
+  assert.equal(prepared.env.CLIENT_SECRET, "fixture-provider");
+  assert.equal(prepared.env.DELCORE_URL, "https://delcore.example.test");
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:46317");
+  assert.equal(prepared.env[databaseHandoff], undefined);
+});
+
 test("Delcore leaves dotenv parsing to Go while preserving injected and Compose values", (t) => {
   const directory = fixture(t);
   const path = join(directory, ".env");
@@ -110,6 +131,10 @@ test("API development listeners stay distinct despite shared and local LISTEN va
         prepareApiEnvironment(Api.GitTracker, source).env.LISTEN,
         "127.0.0.1:46321",
       );
+      assert.equal(
+        prepareApiEnvironment(Api.DevBase, source).env.LISTEN,
+        "127.0.0.1:46317",
+      );
     }
   }
 });
@@ -122,7 +147,7 @@ test("direct API development preserves existing environment without a Compose ha
     };
     assert.deepEqual(prepareApiEnvironment(api, source).env, {
       ...source,
-      LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+      LISTEN: listeners[api],
     });
   }
   assert.throws(

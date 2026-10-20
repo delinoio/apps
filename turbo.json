@@ -89,7 +89,8 @@
         "REQUEST_TIMEOUT",
         "CLEANUP_INTERVAL",
         "OTEL_*",
-        "NO_COLOR"
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS"
       ]
     },
     "@delinoio/git-tracker-api#dev": {
