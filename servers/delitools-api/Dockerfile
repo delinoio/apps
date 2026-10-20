@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-FROM golang:1.26.8-bookworm AS build
+# Docker Hub has not published the repository Go 1.27.3 image yet.
+# Bootstrap with 1.27.2 and let go.mod select the exact toolchain.
+# Remove this override when the matching image is available.
+FROM golang:1.27.2-bookworm AS build
+ENV GOTOOLCHAIN=auto
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go version && go mod download
 COPY protos ./protos
 COPY servers/delitools-api ./servers/delitools-api
 RUN CGO_ENABLED=0 go build -trimpath -o /out/delitools-api ./servers/delitools-api/cmd/delitools-api
