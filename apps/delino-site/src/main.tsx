@@ -5,6 +5,7 @@ import registry from "../i18n/locales.json";
 import type source from "../i18n/messages/en.json";
 import "./style.css";
 import { FixKey } from "./fix-key";
+import { Home } from "./home";
 
 const catalogs = import.meta.webpackContext("../i18n/messages", {
   regExp: /\.json$/,
@@ -23,7 +24,7 @@ async function main() {
       <a className="skip-link" href="#content">
         {messages["common.skipContent"]}
       </a>
-      <header className="site-header">
+      <header className={`site-header${isProduct ? "" : " company-header"}`}>
         <a className="brand" href={prefix}>
           delino<span className="brand-dot">.</span>
         </a>
@@ -31,6 +32,16 @@ async function main() {
           <nav aria-label="FixKey">
             <a href="#features">{messages["fixkey.features"]}</a>
             <a href="#how-it-works">{messages["fixkey.howItWorks"]}</a>
+          </nav>
+        )}
+        {!isProduct && (
+          <nav
+            className="company-nav"
+            aria-label={messages["delino.navigation"]}
+          >
+            <a href="#about">{messages["delino.navAbout"]}</a>
+            <a href="#products">{messages["delino.navProducts"]}</a>
+            <a href="#approach">{messages["delino.navApproach"]}</a>
           </nav>
         )}
         <Label>
@@ -58,14 +69,20 @@ async function main() {
         {isProduct ? (
           <FixKey messages={messages} />
         ) : (
-          <div className="home">
-            <h1>Delino</h1>
-            <a href={`/${lang}/products/fix-key/`}>FixKey →</a>
-          </div>
+          <Home messages={messages} lang={lang} prefix={prefix} />
         )}
       </main>
-      <footer>
-        <span>{messages["common.footerNote"]}</span>
+      <footer className={isProduct ? undefined : "company-footer"}>
+        {isProduct ? (
+          <span>{messages["common.footerNote"]}</span>
+        ) : (
+          <div className="company-footer-brand">
+            <a className="brand" href={prefix}>
+              delino<span className="brand-dot">.</span>
+            </a>
+            <span>{messages["delino.footerTagline"]}</span>
+          </div>
+        )}
         <div>
           <a href={`https://docs.delino.io${prefix}`}>
             {messages["common.documentation"]}
@@ -74,6 +91,7 @@ async function main() {
             {messages["common.sourceCode"]}
           </a>
         </div>
+        {!isProduct && <small>{messages["common.footerNote"]}</small>}
       </footer>
     </>,
   );
@@ -86,4 +104,22 @@ main().catch(() => {
       language: document.documentElement.lang,
     }),
   );
+  const root = document.getElementById("root");
+  if (root) {
+    // Keep recovery independent of the catalog chunk that failed to load.
+    root.replaceChildren();
+    const panel = document.createElement("main");
+    panel.className = "locale-error";
+    panel.lang = "en";
+    const title = document.createElement("h1");
+    title.textContent = "This page could not load.";
+    const message = document.createElement("p");
+    message.textContent = "Please reload to try again.";
+    const reload = document.createElement("button");
+    reload.className = "button primary";
+    reload.textContent = "Reload";
+    reload.addEventListener("click", () => window.location.reload());
+    panel.append(title, message, reload);
+    root.append(panel);
+  }
 });

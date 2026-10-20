@@ -2,7 +2,7 @@
 
 ## Goal
 
-Provide the Delino marketing website.
+Provide the Delino company and product website, centered on software that helps developers focus on their work.
 
 ## Project ID
 
