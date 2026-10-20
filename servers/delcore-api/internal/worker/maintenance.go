@@ -19,10 +19,10 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 		}
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		// Free plans use calendar months even when their tenant was created mid-month.
-		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND p.free AND t.external_subscription_id='' AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
+		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND "+postgres.SelectedPlanBoolSQL("t", "p", "free")+" AND t.external_subscription_id='' AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
 			return e
 		}
-		freeRows, e := tx.Query(ctx, "SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE p.free AND t.external_subscription_id='' AND t.deleted_at IS NULL")
+		freeRows, e := tx.Query(ctx, "SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE "+postgres.SelectedPlanBoolSQL("t", "p", "free")+" AND t.external_subscription_id='' AND t.deleted_at IS NULL")
 		if e != nil {
 			return e
 		}
@@ -227,13 +227,17 @@ func (w *Worker) freePlanChanges(ctx context.Context, tx pgx.Tx, now time.Time) 
 	}
 	for _, c := range changes {
 		var p struct {
-			Plan   string   `json:"plan_id"`
-			Prices []string `json:"price_ids"`
+			Plan     string   `json:"plan_id"`
+			Prices   []string `json:"price_ids"`
+			Versions []string `json:"version_ids"`
 		}
 		if e = json.Unmarshal(c.payload, &p); e != nil {
 			return e
 		}
 		if _, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", c.tenant, p.Plan); e != nil {
+			return e
+		}
+		if e = postgres.ReplaceTenantSelections(ctx, tx, c.tenant, p.Versions, c.at); e != nil {
 			return e
 		}
 		if _, e = tx.Exec(ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", c.tenant, c.at); e != nil {

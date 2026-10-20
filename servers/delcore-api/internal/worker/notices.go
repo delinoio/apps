@@ -18,7 +18,7 @@ func (w *Worker) notices(ctx context.Context, tx pgx.Tx, now time.Time) error {
  NOT t.renewal_failed AND `+postgres.PeriodExpiredSQL("t", "p", "$1")+`,
  EXISTS(SELECT 1 FROM disputes d WHERE d.tenant_id=t.id AND active),
  COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<0,
- (NOT p.postpaid AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)=0),t.period_start,t.period_end
+ (NOT `+postgres.SelectedPlanBoolSQL("t", "p", "postpaid")+` AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)=0),t.period_start,t.period_end
  FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.deleted_at IS NULL`, now)
 	if e != nil {
 		return e

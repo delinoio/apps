@@ -161,6 +161,7 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		MinorUnits     string   `json:"minor_units"`
 		PlanID         string   `json:"plan_id"`
 		PriceIDs       []string `json:"price_ids"`
+		VersionIDs     []string `json:"version_ids"`
 		ExternalPrices []string `json:"external_price_ids"`
 	}
 	if e = json.Unmarshal(j.Payload, &p); e != nil {
@@ -228,7 +229,10 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		if e != nil {
 			return e
 		}
-		_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT t.id,$2,$3,p.postpaid FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", j.Tenant, periodStart, periodEnd)
+		if e = postgres.ReplaceTenantSelections(ctx, tx, j.Tenant, p.VersionIDs, at); e != nil {
+			return e
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT t.id,$2,$3,"+postgres.SelectedPlanBoolSQL("t", "p", "postpaid")+" FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", j.Tenant, periodStart, periodEnd)
 		if e != nil {
 			return e
 		}
