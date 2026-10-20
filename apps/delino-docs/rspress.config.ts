@@ -25,7 +25,13 @@ export default defineConfig({
         },
       ],
       "/services/": [
-        { text: "Services", items: [{ text: "Overview", link: "/services/" }] },
+        {
+          text: "Services",
+          items: [
+            { text: "Overview", link: "/services/" },
+            { text: "Git Tracker", link: "/services/git-tracker/" },
+          ],
+        },
       ],
     },
   },

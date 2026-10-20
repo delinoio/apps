@@ -138,3 +138,7 @@ Update the project index and affected protocol/client/server contracts when beha
 
 - [Project](project-git-tracker.md)
 - [Defaults](repository-defaults.md)
+
+## Development interface
+
+The web app uses React, Rsbuild, Logto React, React Query and `@connectrpc/connect-query`. Run `pnpm dev` from `apps/git-tracker` on fixed loopback port 46320. Generate app-local TypeScript bindings with `pnpm exec buf generate`; this is not a published SDK. Public configuration names are listed in the app-local `.env.example`. Only public Logto identifiers and API origins belong in the browser bundle. The API listener defaults to loopback port 46321 in the owning server contract.

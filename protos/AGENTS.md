@@ -17,3 +17,4 @@
 - [project-delcore](../docs/project-delcore.md)
 - [protos-delcore-v1-contract](../docs/protos-delcore-v1-contract.md)
 - Private reference for maintainers with servers access; external contributors use the local protocol contract above: [servers-delcore-api-contract](https://github.com/delinoio/servers/blob/main/docs/servers-delcore-api-contract.md)
+- [Git Tracker protocol](../docs/protos-git-tracker-v1-contract.md)

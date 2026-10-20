@@ -16,7 +16,7 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 
 - `/` introduces Delino Docs.
 - `/guide/getting-started` explains how to browse the documentation.
-- `/services/` is the service documentation directory. The scaffold has no service-specific guides.
+- `/services/` is the service documentation directory. Git Tracker publishes a guide under `/services/git-tracker/`.
 - Future service pages use `/services/<service-id>/` with stable lowercase kebab-case service IDs and separate navigation sections.
 
 Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.

@@ -1,0 +1,36 @@
+name: Git Tracker
+description: Upload exact numeric measurements or explicitly complete a shared execution.
+inputs:
+  operation:
+    description: upload or complete
+    default: upload
+  repository-id:
+    description: Git Tracker repository connection ID returned when connecting the repository
+    required: true
+  execution-id:
+    description: Shared execution ID (defaults to repository_id/run_id/run_attempt)
+  configuration:
+    description: Path to the dataset YAML file
+  measurements:
+    description: Path to the JSON rows file
+  token:
+    description: Repository API token; omitted uses GitHub Actions OIDC
+  api-url:
+    description: API origin
+    default: https://git-tracker.api.delino.io
+  baseline:
+    description: Optional explicit baseline commit SHA (not available to fork OIDC uploads)
+  fail-on-regression:
+    description: Fail this upload job if its rows regress
+    default: "false"
+  warn-on-api-error:
+    description: Warn and pass after API failure instead of failing
+    default: "false"
+outputs:
+  execution-id:
+    description: Shared execution identity
+  details-url:
+    description: Web execution link
+runs:
+  using: node24
+  main: action.cjs

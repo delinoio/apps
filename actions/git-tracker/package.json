@@ -1,0 +1,17 @@
+{
+  "name": "git-tracker-action",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild main.mjs --bundle --platform=node --target=node24 --format=cjs --outfile=action.cjs",
+    "test": "node --test *.test.mjs",
+    "ci:checks": "pnpm test && pnpm build && git diff --exit-code -- action.cjs"
+  },
+  "dependencies": {
+    "js-yaml": "4.3.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

@@ -138,3 +138,7 @@ Update the project index and affected protocol/client/server contracts when beha
 
 - [Project](project-git-tracker.md)
 - [Defaults](repository-defaults.md)
+
+## Distribution interface
+
+`actions/git-tracker/action.yml` runs `action.cjs` with Node.js 24. The bundle is generated from `main.mjs` by the package-local build command and committed outside any `dist` directory. Preserve dependency license notices. CI checks source tests and bundle freshness. Inputs are operation, repository-id, execution-id, configuration, measurements, token, api-url, baseline, fail-on-regression and warn-on-api-error. The default OIDC execution ID is `repository_id/run_id/run_attempt`; custom identities require repository tokens.

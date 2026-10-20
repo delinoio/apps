@@ -4,6 +4,7 @@ import { select } from "./plan.mjs";
 
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
+    git_tracker: false,
     fixkey: false,
     devbase: false,
     delino_site: false,
@@ -13,6 +14,7 @@ test("isolated projects select only their validation", () => {
     protocol: false,
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
+    git_tracker: true,
     fixkey: false,
     devbase: false,
     delino_site: false,
@@ -22,6 +24,7 @@ test("isolated projects select only their validation", () => {
     protocol: true,
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
+    git_tracker: true,
     fixkey: true,
     devbase: true,
     delino_site: true,
@@ -45,6 +48,7 @@ for (const [project, key] of [
       `docs/apps-${project}-web-contract.md`,
     ]) {
       assert.deepEqual(select([path]), {
+        git_tracker: false,
         fixkey: false,
         devbase: key === "devbase",
         delino_site: key === "delino_site",
@@ -59,6 +63,7 @@ for (const [project, key] of [
 
 test("consumer examples select protocol validation without native runners", () => {
   assert.deepEqual(select(["examples/delcore-client/main.go"]), {
+    git_tracker: false,
     fixkey: false,
     devbase: false,
     delino_site: false,
@@ -78,6 +83,7 @@ for (const path of [
 ]) {
   test(`standalone FixKey ownership: ${path}`, () => {
     assert.deepEqual(select([path]), {
+      git_tracker: false,
       fixkey: true,
       devbase: false,
       delino_site: false,
@@ -88,3 +94,16 @@ for (const path of [
     });
   });
 }
+
+test("Git Tracker clients and Action avoid unrelated runners", () => {
+  for (const path of [
+    "apps/git-tracker/src/main.tsx",
+    "actions/git-tracker/main.mjs",
+    "docs/project-git-tracker.md",
+  ]) {
+    const selection = select([path]);
+    assert.equal(selection.git_tracker, true);
+    assert.equal(selection.fixkey, false);
+    assert.equal(selection.protocol, false);
+  }
+});

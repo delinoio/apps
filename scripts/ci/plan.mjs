@@ -6,12 +6,19 @@ import { fileURLToPath } from "node:url";
 export function select(paths) {
   const shared = paths.some(
     (path) =>
-      !/^(apps|protos|examples|docs)\//u.test(path) &&
+      !/^(apps|actions|protos|examples|docs)\//u.test(path) &&
       !/^(crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$)/u.test(
         path,
       ),
   );
   return {
+    git_tracker:
+      shared ||
+      paths.some((path) =>
+        /^(apps\/git-tracker\/|actions\/git-tracker\/|protos\/|docs\/.*git-tracker)/u.test(
+          path,
+        ),
+      ),
     fixkey:
       shared ||
       paths.some((path) =>

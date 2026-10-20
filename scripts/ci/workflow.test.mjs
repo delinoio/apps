@@ -129,6 +129,7 @@ test("validation evidence and main-only cache saves survive the job split", () =
   for (const id of [
     "validate",
     "check-formatting",
+    "git-tracker-clients",
     "devbase-frontend",
     "delino-site-frontend",
     "delino-docs-frontend",
@@ -172,6 +173,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   needs.changes.outputs = {
     rust_clippy: '["fixkey-core"]',
     rust_test: '["fixkey-core", "fixkey"]',
+    git_tracker: "true",
     fixkey: "true",
     devbase: "true",
     delino_site: "true",
@@ -191,6 +193,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   needs.changes.outputs = {
     rust_clippy: "[]",
     rust_test: "[]",
+    git_tracker: "false",
     fixkey: "false",
     devbase: "false",
     delino_site: "false",
@@ -200,6 +203,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     protocol: "true",
   };
   for (const id of [
+    "git-tracker-clients",
     "devbase-frontend",
     "delino-site-frontend",
     "delino-docs-frontend",

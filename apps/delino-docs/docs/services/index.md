@@ -1,6 +1,5 @@
 # Services
 
-This directory will provide guides and reference material for Delino services.
-Service documentation is not available yet.
+- [Git Tracker](/services/git-tracker/): track commit measurements and regressions.
 
 See [Getting started](/guide/getting-started) for an introduction to the documentation site.

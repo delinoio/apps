@@ -29,3 +29,4 @@
 
 - [FixKey product](../docs/project-fixkey.md)
 - [FixKey desktop](../docs/apps-fixkey-desktop-contract.md)
+- [Git Tracker web](../docs/apps-git-tracker-web-contract.md)
