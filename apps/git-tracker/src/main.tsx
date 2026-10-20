@@ -25,7 +25,7 @@ import {
   type Dataset,
 } from "./gen/gittracker/v1/gittracker_pb";
 import { DelcoreService } from "./gen/delcore/v1/delcore_pb";
-import { points, readable, graphValue } from "./history.mjs";
+import { points, readable, graphValue, representatives } from "./history.mjs";
 import "./style.css";
 
 const api =
@@ -279,16 +279,20 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       ),
     },
   );
+  const graphExecutions = useMemo<Execution[]>(
+    () => [...representatives(historyData?.executions || []).values()],
+    [historyData],
+  );
   const datasets = useMemo(() => {
     const latest = new Map<string, Dataset>();
-    for (const execution of historyData?.executions || []) {
+    for (const execution of graphExecutions) {
       for (const measurement of execution.measurements) {
         if (measurement.dataset && !latest.has(measurement.dataset.id))
           latest.set(measurement.dataset.id, measurement.dataset);
       }
     }
     return latest;
-  }, [historyData]);
+  }, [graphExecutions]);
   const activeDataset = datasets.get(dataset) || datasets.values().next().value;
   const activeColumn =
     activeDataset?.columns.find((c) => c.id === column) ||
@@ -296,14 +300,14 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
   const rows = useMemo(
     () => [
       ...new Set(
-        (historyData?.executions || []).flatMap((e) =>
+        graphExecutions.flatMap((e) =>
           e.measurements
             .filter((m) => m.dataset?.id === activeDataset?.id)
             .flatMap((m) => m.rows.map((r) => r.id)),
         ),
       ),
     ],
-    [historyData, activeDataset],
+    [graphExecutions, activeDataset],
   );
   const activeRows =
     selected !== null
