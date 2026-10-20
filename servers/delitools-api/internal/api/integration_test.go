@@ -891,3 +891,33 @@ func TestOperationalEventQueueIsBounded(t *testing.T) {
 		t.Fatal("unexpected queue bound", len(s.eventQueue()))
 	}
 }
+
+func TestRecoveryReleasesClaimsWithoutAttempts(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	for _, key := range []string{"before-attempt", "after-attempt"} {
+		x := &execution{id: ID(), tenant: tenant, cap: pb.Capability_CAPABILITY_TRANSLATOR, model: ExtractionModel, key: key, started: s.now()}
+		if err := s.claim(ctx, x, []byte("fixture")); err != nil {
+			t.Fatal(err)
+		}
+		if key == "after-attempt" {
+			if _, err := s.DB.Pool.Exec(ctx, "INSERT INTO attempts(id,request_id,tenant_id,capability,model,price,price_effective_at,occurred_at,created_at,retry_at) VALUES($1,$2,$3,$4,$5,'{}',$6,$6,$6,$6)", ID(), x.id, tenant, x.cap, x.model, x.started); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := s.DB.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count, state int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM requests WHERE dedup_key='before-attempt'").Scan(&count); err != nil || count != 0 {
+		t.Fatal("unexecuted claim retained", count, err)
+	}
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT state FROM requests WHERE dedup_key='after-attempt'").Scan(&state); err != nil || state != int(pb.RequestState_REQUEST_STATE_UNKNOWN) {
+		t.Fatal("attempt ambiguity lost", state, err)
+	}
+	_, err := s.TranslateTextArray(ctx, request(translate(tenant, "before-attempt"), "Bearer user"))
+	if err != nil {
+		t.Fatal("released key cannot execute", err)
+	}
+}

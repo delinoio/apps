@@ -129,8 +129,14 @@ func (s *Store) BootstrapSettings(ctx context.Context, v *pb.Settings) error {
 	return e
 }
 func (s *Store) Recover(ctx context.Context) error {
-	_, e := s.Pool.Exec(ctx, "UPDATE requests SET state=$1 WHERE state=$2", pb.RequestState_REQUEST_STATE_UNKNOWN, pb.RequestState_REQUEST_STATE_PROCESSING)
-	return e
+	return begin(ctx, s, func(tx pgx.Tx) error {
+		// No provider execution is possible before a durable attempt exists.
+		if _, e := tx.Exec(ctx, "DELETE FROM requests WHERE state=$1 AND NOT EXISTS(SELECT 1 FROM attempts WHERE request_id=requests.id)", pb.RequestState_REQUEST_STATE_PROCESSING); e != nil {
+			return e
+		}
+		_, e := tx.Exec(ctx, "UPDATE requests SET state=$1 WHERE state=$2", pb.RequestState_REQUEST_STATE_UNKNOWN, pb.RequestState_REQUEST_STATE_PROCESSING)
+		return e
+	})
 }
 func (s *Store) Expire(ctx context.Context, now time.Time) error {
 	tx, e := s.Pool.Begin(ctx)
