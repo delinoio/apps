@@ -816,3 +816,36 @@ func TestOversizedGenerationIDRetainsUnknownAttempt(t *testing.T) {
 		t.Fatal("lost or unsafe reconciliation metadata", requestID, attemptID, state, generation, known)
 	}
 }
+
+func TestRequestInspectionIndex(t *testing.T) {
+	s, _, _, _ := setupAPI(t)
+	ctx := context.Background()
+	tx, err := s.DB.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	// Force index planning on this small fixture; production cardinality is not simulated.
+	if _, err := tx.Exec(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.Query(ctx, "EXPLAIN SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,attempts.id", ID(), s.now().Add(-Retention))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(line + "\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.String(), "attempts_request_order") || strings.Contains(plan.String(), "Sort") {
+		t.Fatal("inspection must use the request index in order:", plan.String())
+	}
+}

@@ -202,7 +202,7 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 	}
 	out.CreatedAt = timestamppb.New(created)
-	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,id", r.Msg.RequestId, s.now().Add(-Retention))
+	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,attempts.id", r.Msg.RequestId, s.now().Add(-Retention))
 	if e != nil {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
