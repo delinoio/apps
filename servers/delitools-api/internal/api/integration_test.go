@@ -646,7 +646,7 @@ func TestRetryUsageUsesAttemptOccurrence(t *testing.T) {
 			t.Fatal("frozen price time changed")
 		}
 	}
-	if len(a.reports) != 2 || !seen[first] || !seen[first.Add(31*24*time.Hour)] {
+	if len(a.reports) != 2 || !seen[first] || !seen[first.Add(2*time.Second)] {
 		t.Fatal("incorrect attempt attribution", seen)
 	}
 }
