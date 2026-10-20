@@ -329,6 +329,43 @@ func TestCatalogReadMarksActivePriceVersion(t *testing.T) {
 	}
 }
 
+func TestMeterCatalogRejectsInvalidDefinitions(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare meter validation service", Service: &pb.Service{Key: "meter-validation-service", Name: "Meter Validation Service", ClientId: "meter-validation", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	cases := []struct {
+		name   string
+		meter  *pb.Meter
+		legacy bool
+	}{
+		{name: "sum without value", meter: &pb.Meter{ServiceId: serviceID, Name: "sum-without-value", EventType: "usage", Aggregation: pb.MeterAggregation_METER_AGGREGATION_SUM}},
+		{name: "count with value", meter: &pb.Meter{ServiceId: serviceID, Name: "count-with-value", EventType: "usage", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT, ValueAttribute: "value"}},
+		{name: "empty event type", meter: &pb.Meter{ServiceId: serviceID, Name: "empty-event", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT}},
+		{name: "empty membership filter", meter: &pb.Meter{ServiceId: serviceID, Name: "empty-in", EventType: "usage", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT, Filters: []*pb.MeterFilter{{Attribute: "region", Operator: pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN}}}},
+		{name: "legacy meter", meter: &pb.Meter{ServiceId: serviceID, Name: "legacy-meter"}, legacy: true},
+	}
+	for _, tc := range cases {
+		_, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "validate " + tc.name, Meter: tc.meter}, "owner"))
+		if tc.legacy {
+			if err != nil {
+				t.Fatalf("legacy meter rejected: %v", err)
+			}
+			continue
+		}
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("%s was not rejected as invalid input: %v", tc.name, err)
+		}
+	}
+	valid, err := client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "accept valid meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "valid-meter", EventType: "usage", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT, Filters: []*pb.MeterFilter{{Attribute: "region", Operator: pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL, Values: []string{"us"}}}}}, "owner"))
+	if err != nil || valid.Msg.Meter.Id == "" {
+		t.Fatalf("valid meter rejected: %v", err)
+	}
+}
+
 func TestLegacyPlanMutationSnapshotsTenants(t *testing.T) {
 	db, client, _ := setup(t)
 	ctx := context.Background()
