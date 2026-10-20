@@ -1392,14 +1392,15 @@ func (x *InspectRequestRequest) GetRequestId() string {
 }
 
 type Attempt struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	GenerationId  string                 `protobuf:"bytes,2,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
-	UsageKnown    bool                   `protobuf:"varint,3,opt,name=usage_known,json=usageKnown,proto3" json:"usage_known,omitempty"`
-	Delivered     bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	GenerationId     string                 `protobuf:"bytes,2,opt,name=generation_id,json=generationId,proto3" json:"generation_id,omitempty"`
+	UsageKnown       bool                   `protobuf:"varint,3,opt,name=usage_known,json=usageKnown,proto3" json:"usage_known,omitempty"`
+	Delivered        bool                   `protobuf:"varint,4,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	PriceEffectiveAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=price_effective_at,json=priceEffectiveAt,proto3" json:"price_effective_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Attempt) Reset() {
@@ -1463,6 +1464,13 @@ func (x *Attempt) GetDelivered() bool {
 func (x *Attempt) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Attempt) GetPriceEffectiveAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PriceEffectiveAt
 	}
 	return nil
 }
@@ -1672,7 +1680,7 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"6\n" +
 	"\x15InspectRequestRequest\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"\xb8\x01\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\x82\x02\n" +
 	"\aAttempt\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rgeneration_id\x18\x02 \x01(\tR\fgenerationId\x12\x1f\n" +
@@ -1680,7 +1688,8 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"usageKnown\x12\x1c\n" +
 	"\tdelivered\x18\x04 \x01(\bR\tdelivered\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb4\x03\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12H\n" +
+	"\x12price_effective_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x10priceEffectiveAt\"\xb4\x03\n" +
 	"\x16InspectRequestResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
@@ -1796,32 +1805,33 @@ var file_delitools_v1_delitools_proto_depIdxs = []int32{
 	16, // 11: delitools.v1.GetSettingsResponse.settings:type_name -> delitools.v1.Settings
 	16, // 12: delitools.v1.UpdateSettingsRequest.settings:type_name -> delitools.v1.Settings
 	24, // 13: delitools.v1.Attempt.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 14: delitools.v1.InspectRequestResponse.capability:type_name -> delitools.v1.Capability
-	2,  // 15: delitools.v1.InspectRequestResponse.state:type_name -> delitools.v1.RequestState
-	24, // 16: delitools.v1.InspectRequestResponse.created_at:type_name -> google.protobuf.Timestamp
-	22, // 17: delitools.v1.InspectRequestResponse.attempts:type_name -> delitools.v1.Attempt
-	3,  // 18: delitools.v1.InspectRequestResponse.error_reason:type_name -> delitools.v1.ErrorReason
-	5,  // 19: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
-	7,  // 20: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
-	10, // 21: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
-	12, // 22: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
-	14, // 23: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
-	17, // 24: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
-	19, // 25: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
-	21, // 26: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
-	6,  // 27: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
-	8,  // 28: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
-	11, // 29: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
-	13, // 30: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
-	15, // 31: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
-	18, // 32: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
-	20, // 33: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
-	23, // 34: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
-	27, // [27:35] is the sub-list for method output_type
-	19, // [19:27] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	24, // 14: delitools.v1.Attempt.price_effective_at:type_name -> google.protobuf.Timestamp
+	0,  // 15: delitools.v1.InspectRequestResponse.capability:type_name -> delitools.v1.Capability
+	2,  // 16: delitools.v1.InspectRequestResponse.state:type_name -> delitools.v1.RequestState
+	24, // 17: delitools.v1.InspectRequestResponse.created_at:type_name -> google.protobuf.Timestamp
+	22, // 18: delitools.v1.InspectRequestResponse.attempts:type_name -> delitools.v1.Attempt
+	3,  // 19: delitools.v1.InspectRequestResponse.error_reason:type_name -> delitools.v1.ErrorReason
+	5,  // 20: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
+	7,  // 21: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
+	10, // 22: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
+	12, // 23: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
+	14, // 24: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
+	17, // 25: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
+	19, // 26: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
+	21, // 27: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
+	6,  // 28: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
+	8,  // 29: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
+	11, // 30: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
+	13, // 31: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
+	15, // 32: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
+	18, // 33: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
+	20, // 34: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
+	23, // 35: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
+	28, // [28:36] is the sub-list for method output_type
+	20, // [20:28] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_delitools_v1_delitools_proto_init() }

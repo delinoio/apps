@@ -142,6 +142,7 @@ message Attempt {
   bool usage_known = 3;
   bool delivered = 4;
   google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp price_effective_at = 11;
 }
 message InspectRequestResponse {
   string request_id = 1;

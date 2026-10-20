@@ -24,7 +24,7 @@ Operator settings are mandatory and validated, including explicit AI retry count
 
 ## Storage
 
-Wire messages are not persistence objects. Never persist source, schema or result messages. State inspection contains only safe state, usage attribution, pricing and attempt metadata. Completed execution failures retain a safe `error_reason`; unspecified means success or a record created before failure reasons were retained. Unknown execution remains distinct from a definitive failure. Deduplication is guaranteed for 30 days from creation, across credentials within tenant and method; expiry permits a fresh execution.
+Wire messages are not persistence objects. Never persist source, schema or result messages. State inspection contains only safe state, usage attribution, pricing and attempt metadata. Each attempt exposes its frozen catalog pricing and the snapshot effective time. Completed execution failures retain a safe `error_reason`; unspecified means success or a record created before failure reasons were retained. Unknown execution remains distinct from a definitive failure. Deduplication is guaranteed for 30 days from creation, across credentials within tenant and method; expiry permits a fresh execution.
 
 ## Security
 
