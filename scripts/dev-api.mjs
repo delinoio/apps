@@ -23,7 +23,13 @@ export function prepareApiEnvironment(
       if (error.code !== "ENOENT") throw error;
     }
   }
-  const env = { ...local, ...source };
+  const env = {
+    ...local,
+    ...source,
+    // Development listeners are fixed per service, including when a shared
+    // parent shell or Infisical value supplies LISTEN.
+    LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+  };
   delete env[databaseHandoff];
   if (source[databaseHandoff]) {
     const url = JSON.parse(source[databaseHandoff])[api];

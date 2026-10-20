@@ -101,13 +101,34 @@ test("Delcore loads local settings with injected and Compose values taking prior
   );
 });
 
+test("API development listeners stay distinct despite shared and local LISTEN values", (t) => {
+  const directory = fixture(t);
+  writeFileSync(join(directory, ".env"), "LISTEN=0.0.0.0:9999\n");
+  for (const compose of [false, true]) {
+    for (const injected of ["127.0.0.1:8080", "127.0.0.1:46321", ""]) {
+      const source = { ...(compose ? handoff : {}), LISTEN: injected };
+      assert.equal(
+        prepareApiEnvironment(Api.Delcore, source, directory).env.LISTEN,
+        "127.0.0.1:8080",
+      );
+      assert.equal(
+        prepareApiEnvironment(Api.GitTracker, source, directory).env.LISTEN,
+        "127.0.0.1:46321",
+      );
+    }
+  }
+});
+
 test("direct API development preserves existing environment without a Compose handoff", () => {
   for (const api of Object.values(Api)) {
     const source = {
       ISSUER: "https://fixture.invalid",
       DATABASE_URL: "postgres://remote/shared",
     };
-    assert.deepEqual(prepareApiEnvironment(api, source).env, source);
+    assert.deepEqual(prepareApiEnvironment(api, source).env, {
+      ...source,
+      LISTEN: api === Api.Delcore ? "127.0.0.1:8080" : "127.0.0.1:46321",
+    });
   }
   assert.throws(
     () => prepareApiEnvironment(Api.GitTracker, { [databaseHandoff]: "{}" }),
