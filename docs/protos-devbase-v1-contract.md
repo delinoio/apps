@@ -26,7 +26,7 @@ Conventions:
 - Every mutation request has `idempotency_key`. Replays within 24 hours return the original result; the same key with different input fails with `already_exists`.
 - Entity IDs are UUID v7 strings. Timestamps use `google.protobuf.Timestamp`. Versions are `int64` values that start at 1; update and delete requests carry the current version and a stale value fails with `aborted`.
 - Lists use `page_size` (default 50, maximum 100), an opaque `page_token` and `next_page_token`. No response carries a total count.
-- `EndUser.metadata` is a `google.protobuf.Struct` and therefore always a JSON object. `UpdateEndUserRequest.update_mask` selects `external_id`, `name`, `email` and `metadata`.
+- `EndUser.metadata` is a `google.protobuf.Struct`, so a present value is always a JSON object. An absent `metadata` field is the same as an empty object: on create it stores `{}`, and in an update whose `update_mask` contains `metadata` it clears the metadata. An absent field and an explicitly empty object mean the same, but they are different wire messages and therefore have different idempotency fingerprints; reusing one idempotency key for both returns `already_exists`. `UpdateEndUserRequest.update_mask` selects `external_id`, `name`, `email` and `metadata`.
 - `IssueApiKeyResponse.secret` is set only by the initial issuance.
 - Every response carries `Metadata.trace_id`. Every error carries an `ErrorDetail` with `ErrorReason`, the trace ID and, for rate limits, `retry_after`.
 - Connect codes: `unauthenticated`, `permission_denied`, `not_found`, `invalid_argument`, `already_exists`, `aborted`, `resource_exhausted` and `unavailable`.
