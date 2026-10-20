@@ -1295,3 +1295,30 @@ func TestUnauthenticatedFailuresDoNotPersistLogs(t *testing.T) {
 		t.Fatalf("failure accounting: rows %d -> %d auth %d rpc %d", before, after, s.authorizationFailures.Load(), s.rpcFailures.Load())
 	}
 }
+
+func TestAlertCooldownSurvivesRestart(t *testing.T) {
+	s, _, _, _ := setupAPI(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	s.Now = func() time.Time { return now }
+	for i := 0; i < 100; i++ {
+		if err := s.alertEvent(ctx, "backlog_alert"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restarted := &Server{DB: s.DB, Now: s.Now}
+	if err := restarted.alertEvent(ctx, "backlog_alert"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category='backlog_alert'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("cooldown count %d: %v", count, err)
+	}
+	now = now.Add(time.Hour)
+	if err := restarted.alertEvent(ctx, "backlog_alert"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category='backlog_alert'").Scan(&count); err != nil || count != 2 {
+		t.Fatalf("renewed alert count %d: %v", count, err)
+	}
+}

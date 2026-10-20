@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
+	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
@@ -99,10 +100,35 @@ func (s *Server) Alerts(ctx context.Context) error {
 		return e
 	}
 	if backlog >= int(v.AlertBacklog) {
-		s.event("backlog_alert", ID())
+		if err := s.alertEvent(ctx, "backlog_alert"); err != nil {
+			return err
+		}
 	}
 	if expiring > 0 {
-		s.event("expiry_alert", ID())
+		if err := s.alertEvent(ctx, "expiry_alert"); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// The cooldown survives process restarts. Alert rows retain the normal 30-day TTL.
+func (s *Server) alertEvent(ctx context.Context, category string) error {
+	now := s.now()
+	id := ID()
+	inserted := false
+	err := begin(ctx, s.DB, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(41824704)"); err != nil {
+			return err
+		}
+		result, err := tx.Exec(ctx, "INSERT INTO operational_logs SELECT $1,$2,$3,$4 WHERE NOT EXISTS(SELECT 1 FROM operational_logs WHERE category=$2 AND created_at>$5)", ID(), category, id, now, now.Add(-time.Hour))
+		if err == nil {
+			inserted = result.RowsAffected() == 1
+		}
+		return err
+	})
+	if err == nil && inserted && s.Log != nil {
+		s.Log.Warn("DeliTools alert", "category", category, "request_id", id)
+	}
+	return err
 }
