@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# Run from the repository root so changes in the shared Go module are watched.
-root = "."
+# Resolve the repository root from the service workspace to watch shared Go files.
+root = "../.."
 tmp_dir = "tmp/git-tracker-api"
 env_files = ["servers/git-tracker-api/.env"]
 
 [build]
-cmd = 'go build -o "./tmp/git-tracker-api/server" "./servers/git-tracker-api/cmd/git-tracker-api"'
+cmd = 'go build -o "../../tmp/git-tracker-api/server" "./cmd/git-tracker-api"'
 entrypoint = ["./tmp/git-tracker-api/server"]
 include_dir = ["servers/git-tracker-api", "protos"]
 include_file = ["go.mod", "go.sum"]
@@ -18,7 +18,7 @@ send_interrupt = true
 kill_delay = "5s"
 
 [build.windows]
-cmd = 'go build -o "./tmp/git-tracker-api/server.exe" "./servers/git-tracker-api/cmd/git-tracker-api"'
+cmd = 'go build -o "../../tmp/git-tracker-api/server.exe" "./cmd/git-tracker-api"'
 entrypoint = ["tmp\\git-tracker-api\\server.exe"]
 
 [log]
