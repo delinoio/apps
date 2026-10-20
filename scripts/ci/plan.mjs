@@ -2,8 +2,21 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lockfilePaths } from "./lockfile-paths.mjs";
 
-export function select(paths) {
+export function select(paths, { baseLockfile, headLockfile } = {}) {
+  if (paths.includes("pnpm-lock.yaml")) {
+    const affected = lockfilePaths(baseLockfile, headLockfile);
+    // Unknown ownership must retain global validation instead of skipping jobs.
+    if (
+      !affected.includes("pnpm-lock.yaml") &&
+      affected.every((path) => Object.values(select([path])).some(Boolean))
+    ) {
+      paths = paths
+        .filter((path) => path !== "pnpm-lock.yaml")
+        .concat(affected);
+    }
+  }
   const shared = paths.some(
     (path) =>
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
@@ -87,7 +100,10 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const git = (...args) =>
-    execFileSync("git", args, { encoding: "utf8" }).trim();
+    execFileSync("git", args, {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    }).trim();
   const head = git("rev-parse", "HEAD");
   const event = process.env.GITHUB_EVENT_NAME;
   let base = process.env.COMPARISON_BASE;
@@ -104,7 +120,23 @@ if (
   const paths = git("diff", "--name-only", base, head)
     .split("\n")
     .filter(Boolean);
-  const selected = select(paths);
+  let lockfiles;
+  if (paths.includes("pnpm-lock.yaml")) {
+    try {
+      lockfiles = {
+        baseLockfile: git("show", `${base}:pnpm-lock.yaml`),
+        headLockfile: git("show", `${head}:pnpm-lock.yaml`),
+      };
+    } catch {
+      console.warn(
+        JSON.stringify({
+          event: "ci_lockfile_fallback",
+          reason: "comparison_unavailable",
+        }),
+      );
+    }
+  }
+  const selected = select(paths, lockfiles);
   console.log(JSON.stringify({ event: "ci_selection", base, head, selected }));
   appendFileSync(
     process.env.GITHUB_OUTPUT,
