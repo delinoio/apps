@@ -1,6 +1,6 @@
 module github.com/delinoio/apps
 
-go 1.26.8
+go 1.27.3
 
 require (
 	connectrpc.com/connect v1.20.0
