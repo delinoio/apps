@@ -26,6 +26,8 @@ Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/u
 
 The documentation app serves multiple services. Each service owns a section under `/services/<service-id>/`. Service IDs use stable lowercase kebab-case values. The scaffold does not select which services publish documentation.
 
+FixKey's desktop user guide uses the `fixkey` section. It covers installation, permissions, correction and undo, manual candidates, settings, privacy, updates and troubleshooting. Product behavior remains owned by the [FixKey contracts](project-fixkey.md).
+
 English routes have no language prefix; Korean and future languages use `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.

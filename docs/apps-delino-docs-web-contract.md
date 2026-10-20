@@ -16,7 +16,7 @@ Visitors browse documentation for Delino services. Maintainers curate public pag
 
 - `/` introduces Delino Docs.
 - `/guide/getting-started` explains how to browse the documentation.
-- `/services/` is the service documentation directory. Delcore publishes its service-developer tenant state guide under `/services/delcore/`, DevBase publishes its end-user directory API guide under `/services/devbase/`, and Git Tracker publishes a guide under `/services/git-tracker/`.
+- `/services/` is the service documentation directory. Delcore publishes its service-developer tenant state guide under `/services/delcore/`, DevBase publishes its end-user directory API guide under `/services/devbase/`, Git Tracker publishes a guide under `/services/git-tracker/`, and FixKey publishes its desktop user guide under `/services/fixkey/`.
 - Future service pages use `/services/<service-id>/` with stable lowercase kebab-case service IDs and separate navigation sections.
 
 Use Rspress navigation and sidebars to keep service documentation separate. The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
