@@ -103,7 +103,15 @@ function Shell(session: Session) {
     </QueryClientProvider>
   );
 }
-function Failure({ error, retry }: { error: unknown; retry: () => void }) {
+function Failure({
+  error,
+  retry,
+  actionLabel = "Retry",
+}: {
+  error: unknown;
+  retry: () => void;
+  actionLabel?: string;
+}) {
   const e = ConnectError.from(error);
   const denied =
     e.code === Code.PermissionDenied || e.code === Code.Unauthenticated;
@@ -119,7 +127,7 @@ function Failure({ error, retry }: { error: unknown; retry: () => void }) {
           ? "Sign in with an account that has access to this space."
           : `Try again. Correlation ID: ${e.metadata.get("X-Correlation-Id") || "unavailable"}`}
       </p>
-      <button onClick={retry}>Retry</button>
+      <button onClick={retry}>{actionLabel}</button>
     </div>
   );
 }
@@ -995,7 +1003,12 @@ function Management({
         </>
       )}
       {errors.map((m, i) => (
-        <Failure key={i} error={m.error} retry={() => m.reset()} />
+        <Failure
+          key={i}
+          error={m.error}
+          retry={() => m.reset()}
+          actionLabel="Dismiss"
+        />
       ))}
     </dialog>
   );
