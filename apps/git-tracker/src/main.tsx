@@ -220,7 +220,7 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
       branch,
       datasetId: "",
       since: since ? `${since}T00:00:00Z` : "",
-      until: until ? `${until}T23:59:59Z` : "",
+      until: until ? `${until}T23:59:59.999999999Z` : "",
       fromCommit,
       toCommit,
     },
