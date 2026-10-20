@@ -1,0 +1,16 @@
+{
+  "name": "@delinoio/devbase-api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- go run github.com/air-verse/air@v1.67.4 -c \".air.toml\"",
+    "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/devbase-api",
+    "ci:vet": "go vet ./...",
+    "ci:build": "go build ./cmd/devbase-api",
+    "ci:unit": "go test -count=1 ./...",
+    "ci:integration": "go test -count=1 -race -tags=integration ./...",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration"
+  }
+}

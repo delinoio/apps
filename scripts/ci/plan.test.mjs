@@ -5,6 +5,7 @@ import { select } from "./plan.mjs";
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
     delcore_api: false,
+    devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
     fixkey: false,
@@ -17,6 +18,7 @@ test("isolated projects select only their validation", () => {
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
     delcore_api: true,
+    devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
     fixkey: false,
@@ -29,6 +31,7 @@ test("isolated projects select only their validation", () => {
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
     delcore_api: true,
+    devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
     fixkey: true,
@@ -55,6 +58,7 @@ for (const [project, key] of [
     ]) {
       assert.deepEqual(select([path]), {
         delcore_api: false,
+        devbase_api: key === "devbase" && path === "docs/project-devbase.md",
         git_tracker_api: false,
         git_tracker: false,
         fixkey: false,
@@ -72,6 +76,7 @@ for (const [project, key] of [
 test("consumer examples select protocol validation without native runners", () => {
   assert.deepEqual(select(["examples/delcore-client/main.go"]), {
     delcore_api: false,
+    devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
     fixkey: false,
@@ -94,6 +99,7 @@ for (const path of [
   test(`standalone FixKey ownership: ${path}`, () => {
     assert.deepEqual(select([path]), {
       delcore_api: false,
+      devbase_api: false,
       git_tracker_api: false,
       git_tracker: false,
       fixkey: true,
@@ -122,6 +128,7 @@ test("Git Tracker clients and Action avoid unrelated runners", () => {
 
 for (const [service, key] of [
   ["delcore-api", "delcore_api"],
+  ["devbase-api", "devbase_api"],
   ["git-tracker-api", "git_tracker_api"],
 ]) {
   test(`${service} changes select only the owning server`, () => {
@@ -131,10 +138,8 @@ for (const [service, key] of [
     ]) {
       const selection = select([path]);
       assert.equal(selection[key], true);
-      assert.equal(
-        selection[key === "delcore_api" ? "git_tracker_api" : "delcore_api"],
-        false,
-      );
+      for (const other of ["delcore_api", "devbase_api", "git_tracker_api"])
+        if (other !== key) assert.equal(selection[other], false, path);
       for (const frontend of [
         "fixkey",
         "devbase",
@@ -147,7 +152,7 @@ for (const [service, key] of [
     }
   });
 }
-test("server-wide license and instructions select both servers", () => {
+test("server-wide license and instructions select every server", () => {
   for (const path of [
     "servers/LICENSE",
     "servers/AGENTS.md",
@@ -155,6 +160,7 @@ test("server-wide license and instructions select both servers", () => {
   ]) {
     const selection = select([path]);
     assert.equal(selection.delcore_api, true);
+    assert.equal(selection.devbase_api, true);
     assert.equal(selection.git_tracker_api, true);
     assert.equal(selection.fixkey, false);
   }
@@ -163,6 +169,7 @@ test("server-wide license and instructions select both servers", () => {
 test("protocol contract changes select their owning server", () => {
   for (const [path, owner, other] of [
     ["docs/protos-delcore-v1-contract.md", "delcore_api", "git_tracker_api"],
+    ["docs/protos-devbase-v1-contract.md", "devbase_api", "delcore_api"],
     [
       "docs/protos-git-tracker-v1-contract.md",
       "git_tracker_api",

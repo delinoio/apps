@@ -22,6 +22,7 @@ jobs:
       delino_site: ${{ steps.plan.outputs.delino_site }}
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
       delcore_api: ${{ steps.plan.outputs.delcore_api }}
+      devbase_api: ${{ steps.plan.outputs.devbase_api }}
       git_tracker_api: ${{ steps.plan.outputs.git_tracker_api }}
       protocol: ${{ steps.plan.outputs.protocol }}
       fixkey: ${{ steps.plan.outputs.fixkey }}
@@ -67,7 +68,7 @@ jobs:
           toolchain: nightly-2026-09-28
           components: rustfmt
       - uses: actions/setup-go@v6
-        if: needs.changes.outputs.protocol == 'true' || needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
+        if: needs.changes.outputs.protocol == 'true' || needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -81,7 +82,7 @@ jobs:
         if: needs.changes.outputs.protocol == 'true'
         run: node scripts/ci/check-go-format.mjs protos examples
       - id: server-gofmt
-        if: needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
+        if: needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         run: node scripts/ci/check-go-format.mjs servers
       - id: protobuf-format
         if: needs.changes.outputs.protocol == 'true'
@@ -743,6 +744,76 @@ jobs:
       - name: Remove integration database
         if: ${{ always() }}
         run: docker rm --force delcore-postgres >/dev/null 2>&1 || true
+  devbase-api:
+    needs: changes
+    if: needs.changes.outputs.devbase_api == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate DevBase with local protocol packages
+        run: |
+          go vet ./servers/devbase-api/...
+          go build ./servers/devbase-api/cmd/...
+          go test -race ./servers/devbase-api/...
+        id: unit
+      - name: Start integration database
+        run: |
+          # Interrupted jobs can leave this container on a persistent runner.
+          docker rm --force devbase-postgres >/dev/null 2>&1 || true
+          docker run --detach --name devbase-postgres -p 127.0.0.1:55433:5432 -e POSTGRES_USER=devbase -e POSTGRES_PASSWORD=devbase -e POSTGRES_DB=devbase_api_test --health-cmd 'pg_isready -U devbase -d devbase_api_test' --health-interval 2s --health-retries 30 postgres:17
+          for attempt in $(seq 1 60); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' devbase-postgres)" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs devbase-postgres
+          exit 1
+        id: postgres
+      - name: Integration and OCI tests
+        env:
+          TEST_DATABASE_URL: postgres://devbase:devbase@127.0.0.1:55433/devbase_api_test?sslmode=disable
+        run: |
+          pnpm --filter @delinoio/devbase-api ci:integration
+          pnpm --filter @delinoio/devbase-api ci:oci
+        id: integration-oci
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: devbase-api
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-devbase-api-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove integration database
+        if: ${{ always() }}
+        run: docker rm --force devbase-postgres >/dev/null 2>&1 || true
   git-tracker-api:
     needs: changes
     if: needs.changes.outputs.git_tracker_api == 'true'
@@ -830,6 +901,7 @@ jobs:
       - rust-test
       - protocol
       - delcore-api
+      - devbase-api
       - git-tracker-api
     runs-on: ubuntu-latest
     steps:
@@ -841,7 +913,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'delcore-api': selection.delcore_api === 'true', 'git-tracker-api': selection.git_tracker_api === 'true', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'delcore-api': selection.delcore_api === 'true', 'devbase-api': selection.devbase_api === 'true', 'git-tracker-api': selection.git_tracker_api === 'true', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

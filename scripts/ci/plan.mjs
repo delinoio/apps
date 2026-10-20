@@ -21,6 +21,14 @@ export function select(paths) {
           path,
         ),
       ),
+    devbase_api:
+      shared ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/devbase-api\/|protos\/|examples\/devbase|docs\/(?:project-devbase|servers-devbase|protos-devbase-v1-contract\.md$))/u.test(
+          path,
+        ),
+      ),
     git_tracker_api:
       shared ||
       serverShared ||
@@ -45,7 +53,9 @@ export function select(paths) {
       ),
     devbase:
       shared ||
-      paths.some((path) => /^(apps\/devbase\/|docs\/.*devbase)/u.test(path)),
+      paths.some((path) =>
+        /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
+      ),
     delino_site:
       shared ||
       paths.some((path) =>
@@ -67,7 +77,7 @@ export function select(paths) {
     protocol:
       shared ||
       paths.some((path) =>
-        /^(protos\/|examples\/|docs\/.*delcore)/u.test(path),
+        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1))/u.test(path),
       ),
   };
 }

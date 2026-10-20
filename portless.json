@@ -24,6 +24,11 @@
       "appPort": 8080,
       "proxy": true
     },
+    "servers/devbase-api": {
+      "name": "devbase-api",
+      "appPort": 46317,
+      "proxy": true
+    },
     "servers/git-tracker-api": {
       "name": "git-tracker-api",
       "appPort": 46321,

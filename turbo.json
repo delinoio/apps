@@ -67,6 +67,31 @@
         "DEV_COMPOSE_DATABASE_URLS"
       ]
     },
+    "@delinoio/devbase-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "LISTEN",
+        "DELCORE_URL",
+        "DELCORE_RESOURCE",
+        "LOGTO_TOKEN_URL",
+        "CLIENT_ID",
+        "CLIENT_SECRET",
+        "MAX_PROJECTS_PER_TENANT",
+        "MAX_USERS_PER_PROJECT",
+        "MAX_ACTIVE_KEYS_PER_PROJECT",
+        "USER_RATE_PER_SECOND",
+        "USER_RATE_BURST",
+        "MANAGEMENT_RATE_PER_SECOND",
+        "MANAGEMENT_RATE_BURST",
+        "DEPENDENCY_TIMEOUT",
+        "REQUEST_TIMEOUT",
+        "CLEANUP_INTERVAL",
+        "OTEL_*",
+        "NO_COLOR"
+      ]
+    },
     "@delinoio/git-tracker-api#dev": {
       "cache": false,
       "persistent": true,
