@@ -110,3 +110,24 @@ func TestNumericEnumCharacterBudget(t *testing.T) {
 		t.Fatal("numeric enums incorrectly use the string-only limit")
 	}
 }
+
+func TestNumericExponentsDoNotExpand(t *testing.T) {
+	for _, tc := range []struct {
+		a, b    string
+		integer bool
+	}{
+		{"1e1000000", "10e999999", true},
+		{"1e-1000000", "0.1e-999999", false},
+		{"1e99999999999999999999", "10e99999999999999999998", true},
+		{"-0e-99999999999999999999", "0", true},
+	} {
+		for i := 0; i < 1000; i++ {
+			if !matchesType("number", json.Number(tc.a)) || matchesType("integer", json.Number(tc.a)) != tc.integer || !enumEqual(json.Number(tc.a), json.Number(tc.b)) {
+				t.Fatal(tc)
+			}
+		}
+	}
+	if enumEqual(json.Number("1e1000000"), json.Number("2e1000000")) {
+		t.Fatal("unequal decimals matched")
+	}
+}

@@ -134,3 +134,5 @@ When Delcore serves DeliTools, operators must configure both `USAGE_LATENESS_SEC
 Catalog synchronization retains immutable model/price/effective-time versions. Admission selects the latest version effective at the initial request start, including when authorization overlaps a synchronization. Forward migrations preserve existing catalog rows.
 
 Inspection retains a bounded terminal error reason after output validation, distinguishing failed completed executions from successes without storing output. Pre-upgrade records retain an unspecified reason. Duplicate requests never overwrite the original reason.
+
+Numeric schema enums and output validation compare exact decimal digits with symbolic exponents. Large exponents never allocate a power-of-ten integer; validation work depends on the encoded number length.

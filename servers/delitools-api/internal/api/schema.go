@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"reflect"
 	"slices"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -148,8 +149,8 @@ func matchesType(typ string, v any) bool {
 		if !ok {
 			return false
 		}
-		r, ok := new(big.Rat).SetString(string(n))
-		return ok && (typ == "number" || r.IsInt())
+		digits, exponent, ok := exactDecimal(n)
+		return ok && (typ == "number" || digits == "0" || exponent.Sign() >= 0)
 	}
 	return false
 }
@@ -243,12 +244,47 @@ func enumEqual(a, b any) bool {
 		if !xok || !yok {
 			return false
 		}
-		xr, ok := new(big.Rat).SetString(string(x))
+		xd, xe, ok := exactDecimal(x)
 		if !ok {
 			return false
 		}
-		yr, ok := new(big.Rat).SetString(string(y))
-		return ok && xr.Cmp(yr) == 0
+		yd, ye, ok := exactDecimal(y)
+		return ok && xd == yd && xe.Cmp(ye) == 0
 	}
 	return reflect.DeepEqual(a, b)
+}
+
+// Normalize decimal digits and a symbolic exponent without constructing 10^exponent.
+// Untrusted enum and output numbers can contain very large positive or negative
+// exponents; storage and work must depend on their spelling, not their magnitude.
+func exactDecimal(n json.Number) (string, *big.Int, bool) {
+	raw := string(n)
+	if raw == "" || (raw[0] != '-' && (raw[0] < '0' || raw[0] > '9')) || !json.Valid([]byte(raw)) {
+		return "", nil, false
+	}
+	coefficient, exponentText := raw, "0"
+	if i := strings.IndexAny(raw, "eE"); i >= 0 {
+		coefficient, exponentText = raw[:i], raw[i+1:]
+	}
+	exponent, ok := new(big.Int).SetString(exponentText, 10)
+	if !ok {
+		return "", nil, false
+	}
+	negative := strings.HasPrefix(coefficient, "-")
+	coefficient = strings.TrimPrefix(coefficient, "-")
+	fractional := 0
+	if i := strings.IndexByte(coefficient, '.'); i >= 0 {
+		fractional = len(coefficient) - i - 1
+		coefficient = coefficient[:i] + coefficient[i+1:]
+	}
+	coefficient = strings.TrimLeft(coefficient, "0")
+	if coefficient == "" {
+		return "0", new(big.Int), true
+	}
+	digits := strings.TrimRight(coefficient, "0")
+	exponent.Add(exponent, big.NewInt(int64(len(coefficient)-len(digits)-fractional)))
+	if negative {
+		digits = "-" + digits
+	}
+	return digits, exponent, true
 }
