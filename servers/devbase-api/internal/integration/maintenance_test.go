@@ -315,3 +315,39 @@ func TestProjectCreationStateRecheckHoldsNoDatabaseConnection(t *testing.T) {
 		t.Fatalf("the recheck ran while %d database connections were held", held)
 	}
 }
+
+// Tenant cleanup scrubs the replay records of every project of the tenant, selected by project ID,
+// and leaves other tenants' records and delete records alone.
+func TestCleanupScrubsEveryProjectOfTheTenantOnly(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	other, otherOwner, _ := f.tenant()
+	var projects []string
+	for _, name := range []string{"one", "two", "three"} {
+		p := f.project(login(owner), tenant, name)
+		f.user(login(owner), p.Id, "user-"+name)
+		projects = append(projects, p.Id)
+	}
+	kept := f.project(login(otherOwner), other, "kept")
+	f.user(login(otherOwner), kept.Id, "user-kept")
+	// A delete record is never scrubbed; this one must survive tenant cleanup too.
+	if _, e := f.client.DeleteEndUser(ctx, as(login(owner), &pb.DeleteEndUserRequest{IdempotencyKey: idem(), ProjectId: projects[0], EndUserId: f.user(login(owner), projects[0], "doomed").Id, Version: 1})); e != nil {
+		t.Fatal(e)
+	}
+	live := "tenant_id=$1 AND NOT scrubbed AND operation NOT LIKE 'Delete%'"
+	if f.count("SELECT count(*) FROM replays WHERE "+live, tenant) == 0 {
+		t.Fatal("test setup produced no replay records to scrub")
+	}
+	f.fake.setState(tenant, delcore.StateDeleted)
+	f.worker().Cycle(ctx)
+	if n := f.count("SELECT count(*) FROM replays WHERE "+live, tenant); n != 0 {
+		t.Fatal("unscrubbed replay records remain for the cleaned tenant", n)
+	}
+	if f.count("SELECT count(*) FROM replays WHERE tenant_id=$1 AND operation LIKE 'Delete%'", tenant) != 1 {
+		t.Fatal("the delete record was scrubbed or removed")
+	}
+	if f.count("SELECT count(*) FROM replays WHERE tenant_id=$1 AND scrubbed", other) != 0 {
+		t.Fatal("another tenant's replay records were scrubbed")
+	}
+}

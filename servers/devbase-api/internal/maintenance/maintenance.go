@@ -194,7 +194,7 @@ func (w *Worker) deleteTenant(ctx context.Context, tenant, trace string) (int, e
 	// Scrub only after the cascade. An already authorized child mutation holds its row
 	// lock without the project lock, so the cascade waits for it to commit. A scrub that
 	// ran earlier would miss the replay record that mutation inserts.
-	if e = api.ScrubTenant(ctx, tx, tenant); e != nil {
+	if e = api.ScrubProjects(ctx, tx, ids); e != nil {
 		return 0, e
 	}
 	return len(ids), tx.Commit(ctx)

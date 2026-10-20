@@ -126,8 +126,8 @@ func (s *Server) mutate(ctx context.Context, c *Call, op Op, who identity, msg, 
 
 // scrubReplays removes stored responses for deleted data. Delete operations
 // carry no personal data and keep their record so a repeated delete stays idempotent.
-func scrubReplays(ctx context.Context, q Querier, where string, id string) error {
-	_, e := q.Exec(ctx, "UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea WHERE "+where+" AND NOT scrubbed AND operation NOT LIKE 'Delete%'", id)
+func scrubReplays(ctx context.Context, q Querier, where string, arg any) error {
+	_, e := q.Exec(ctx, "UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea WHERE "+where+" AND NOT scrubbed AND operation NOT LIKE 'Delete%'", arg)
 	return e
 }
 
@@ -141,7 +141,9 @@ func ScrubUser(ctx context.Context, q Querier, user string) error {
 	return scrubReplays(ctx, q, "target_user_id=$1", user)
 }
 
-// ScrubTenant scrubs every replay record of a tenant whose data is being cleaned up.
-func ScrubTenant(ctx context.Context, q Querier, tenant string) error {
-	return scrubReplays(ctx, q, "tenant_id=$1", tenant)
+// ScrubProjects scrubs every replay record of the given projects, for tenant cleanup. It selects
+// by project ID so the update uses the replays_project index; the table has no tenant index,
+// and filtering by tenant would scan every replay record once per deleted tenant.
+func ScrubProjects(ctx context.Context, q Querier, projects []string) error {
+	return scrubReplays(ctx, q, "project_id=ANY($1::uuid[])", projects)
 }
