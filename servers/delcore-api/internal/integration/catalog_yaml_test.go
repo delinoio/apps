@@ -250,3 +250,30 @@ func TestDevelopmentCatalogPriceOnlyRebuildsOmittedOwner(t *testing.T) {
 		t.Fatal("omitted plan data changed", err)
 	}
 }
+
+func TestDevelopmentCatalogCannotMutateOmittedDefaultPlan(t *testing.T) {
+	db, _, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	originalID, originalVersion := catalogIdentity(t, db, "plan", "", "example-free")
+	other := t.TempDir()
+	setCatalogText(t, other, "replacement.yaml", "kind: plan\nkey: replacement\nname: Replacement\nrank: 1\nfree: true\ndefault_free: true\n")
+	if err := catalog.Sync(ctx, db, other, logger); err == nil {
+		t.Fatal("omitted default plan was silently changed")
+	}
+	var isDefault bool
+	if err := db.Pool.QueryRow(ctx, "SELECT is_default FROM plans WHERE id=$1", originalID).Scan(&isDefault); err != nil || !isDefault {
+		t.Fatal("omitted default plan changed", err)
+	}
+	if _, version := catalogIdentity(t, db, "plan", "", "example-free"); version != originalVersion {
+		t.Fatal("omitted plan version changed")
+	}
+	var count int
+	if err := db.Pool.QueryRow(ctx, "SELECT count(*) FROM plans WHERE name='Replacement'").Scan(&count); err != nil || count != 0 {
+		t.Fatal("rejected catalog partially applied", err)
+	}
+}
