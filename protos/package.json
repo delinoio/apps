@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./delcore/v1/delcore_pb": "./delcore/v1/delcore_pb.ts",
+    "./devbase/v1/devbase_pb": "./devbase/v1/devbase_pb.ts",
     "./gittracker/v1/gittracker_pb": "./gittracker/v1/gittracker_pb.ts"
   },
   "dependencies": {

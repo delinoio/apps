@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package devbase.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/devbase/v1;devbasev1";
+
+// ApiKeyPermission is the typed permission of a project API key. Keys never
+// grant project or key management.
+enum ApiKeyPermission {
+  API_KEY_PERMISSION_UNSPECIFIED = 0;
+  // READ_ONLY permits end-user lookup and listing.
+  API_KEY_PERMISSION_READ_ONLY = 1;
+  // CRUD additionally permits end-user creation, update and deletion.
+  API_KEY_PERMISSION_CRUD = 2;
+}
+
+// ErrorReason refines the Connect error code carried by every failure.
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_INPUT = 1;
+  ERROR_REASON_UNAUTHENTICATED = 2;
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  ERROR_REASON_NOT_FOUND = 4;
+  ERROR_REASON_ALREADY_EXISTS = 5;
+  ERROR_REASON_VERSION_CONFLICT = 6;
+  ERROR_REASON_RATE_LIMITED = 7;
+  ERROR_REASON_QUOTA_EXHAUSTED = 8;
+  ERROR_REASON_DEPENDENCY_UNAVAILABLE = 9;
+  ERROR_REASON_IDEMPOTENCY_CONFLICT = 10;
+}
+
+// ErrorDetail is attached to every Connect error. The trace ID is a safe
+// correlation identifier that operators can use to find the request in logs.
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string trace_id = 2;
+  // retry_after is set for rate-limit rejections.
+  google.protobuf.Duration retry_after = 3;
+}
+
+message Metadata {
+  string trace_id = 1;
+}
+
+message Project {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  google.protobuf.Timestamp create_time = 4;
+  google.protobuf.Timestamp update_time = 5;
+  int64 version = 6;
+}
+
+message ApiKey {
+  string id = 1;
+  string project_id = 2;
+  ApiKeyPermission permission = 3;
+  google.protobuf.Timestamp create_time = 4;
+  // expire_time is unset when the key never expires automatically.
+  google.protobuf.Timestamp expire_time = 5;
+  // revoke_time is unset while the key has not been revoked.
+  google.protobuf.Timestamp revoke_time = 6;
+}
+
+message EndUser {
+  // id is the stable internal UUID v7 that developers pass to other services.
+  string id = 1;
+  string project_id = 2;
+  // external_id is the developer-owned identifier. It is case-sensitive,
+  // unique within the project and can change without changing id.
+  string external_id = 3;
+  string name = 4;
+  string email = 5;
+  google.protobuf.Struct metadata = 6;
+  google.protobuf.Timestamp create_time = 7;
+  google.protobuf.Timestamp update_time = 8;
+  int64 version = 9;
+}
+
+message CreateProjectRequest {
+  string idempotency_key = 1;
+  string tenant_id = 2;
+  string name = 3;
+}
+
+message CreateProjectResponse {
+  Metadata metadata = 1;
+  Project project = 2;
+}
+
+message GetProjectRequest {
+  string project_id = 1;
+}
+
+message GetProjectResponse {
+  Metadata metadata = 1;
+  Project project = 2;
+}
+
+message ListProjectsRequest {
+  string tenant_id = 1;
+  // page_size defaults to 50 and is at most 100.
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListProjectsResponse {
+  Metadata metadata = 1;
+  repeated Project projects = 2;
+  string next_page_token = 3;
+}
+
+message UpdateProjectRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  string name = 3;
+  int64 version = 4;
+}
+
+message UpdateProjectResponse {
+  Metadata metadata = 1;
+  Project project = 2;
+}
+
+message DeleteProjectRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  int64 version = 3;
+}
+
+message DeleteProjectResponse {
+  Metadata metadata = 1;
+}
+
+message IssueApiKeyRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  ApiKeyPermission permission = 3;
+  // expire_time is optional. Omitting it means no automatic expiry.
+  google.protobuf.Timestamp expire_time = 4;
+}
+
+message IssueApiKeyResponse {
+  Metadata metadata = 1;
+  ApiKey api_key = 2;
+  // secret is returned only by the initial issuance. A replay returns an empty
+  // secret; revoke the key and issue another when the response was lost.
+  string secret = 3;
+}
+
+message GetApiKeyRequest {
+  string project_id = 1;
+  string api_key_id = 2;
+}
+
+message GetApiKeyResponse {
+  Metadata metadata = 1;
+  ApiKey api_key = 2;
+}
+
+message ListApiKeysRequest {
+  string project_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListApiKeysResponse {
+  Metadata metadata = 1;
+  repeated ApiKey api_keys = 2;
+  string next_page_token = 3;
+}
+
+message RevokeApiKeyRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  string api_key_id = 3;
+}
+
+message RevokeApiKeyResponse {
+  Metadata metadata = 1;
+  ApiKey api_key = 2;
+}
+
+message CreateEndUserRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  string external_id = 3;
+  string name = 4;
+  string email = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message CreateEndUserResponse {
+  Metadata metadata = 1;
+  EndUser end_user = 2;
+}
+
+message GetEndUserRequest {
+  string project_id = 1;
+  string end_user_id = 2;
+}
+
+message GetEndUserResponse {
+  Metadata metadata = 1;
+  EndUser end_user = 2;
+}
+
+message LookupEndUserRequest {
+  string project_id = 1;
+  string external_id = 2;
+}
+
+message LookupEndUserResponse {
+  Metadata metadata = 1;
+  EndUser end_user = 2;
+}
+
+message ListEndUsersRequest {
+  string project_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListEndUsersResponse {
+  Metadata metadata = 1;
+  repeated EndUser end_users = 2;
+  string next_page_token = 3;
+}
+
+message UpdateEndUserRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  string end_user_id = 3;
+  string external_id = 4;
+  string name = 5;
+  string email = 6;
+  google.protobuf.Struct metadata = 7;
+  // update_mask lists the fields to change: external_id, name, email and
+  // metadata. A masked name or email with an empty value is cleared; masked
+  // metadata replaces the whole object and an empty object clears it.
+  google.protobuf.FieldMask update_mask = 8;
+  int64 version = 9;
+}
+
+message UpdateEndUserResponse {
+  Metadata metadata = 1;
+  EndUser end_user = 2;
+}
+
+message DeleteEndUserRequest {
+  string idempotency_key = 1;
+  string project_id = 2;
+  string end_user_id = 3;
+  int64 version = 4;
+}
+
+message DeleteEndUserResponse {
+  Metadata metadata = 1;
+}
+
+service DevBaseService {
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  rpc IssueApiKey(IssueApiKeyRequest) returns (IssueApiKeyResponse);
+  rpc GetApiKey(GetApiKeyRequest) returns (GetApiKeyResponse);
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse);
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (RevokeApiKeyResponse);
+  rpc CreateEndUser(CreateEndUserRequest) returns (CreateEndUserResponse);
+  rpc GetEndUser(GetEndUserRequest) returns (GetEndUserResponse);
+  rpc LookupEndUser(LookupEndUserRequest) returns (LookupEndUserResponse);
+  rpc ListEndUsers(ListEndUsersRequest) returns (ListEndUsersResponse);
+  rpc UpdateEndUser(UpdateEndUserRequest) returns (UpdateEndUserResponse);
+  rpc DeleteEndUser(DeleteEndUserRequest) returns (DeleteEndUserResponse);
+}

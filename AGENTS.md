@@ -55,10 +55,10 @@
 
 ## Monorepo Structure Map
 
-- `servers/`: Delcore and Git Tracker services, migrations and OCI packaging; follow `servers/AGENTS.md`.
+- `servers/`: Delcore, DevBase and Git Tracker services, migrations and OCI packaging; follow `servers/AGENTS.md`.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.
-- `apps/devbase`: DevBase web application.
+- `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.
 - `apps/delino-site`: Delino web application.
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
@@ -66,10 +66,12 @@
 - `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
+- `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
 - `scripts/ci/`: Affected selection, validation and evidence tooling.
 - `examples/delcore-client`: Go consumer example.
+- `examples/devbase-client` and `examples/devbase-client-ts`: DevBase Go and TypeScript consumer examples.
 - `.github/`: CI actions and workflows, including mobile release automation.
 
 ## Canonical Directory Map

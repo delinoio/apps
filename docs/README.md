@@ -66,6 +66,8 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [Project index](project-devbase.md)
 - [Web application](apps-devbase-web-contract.md)
+- [API server](servers-devbase-api-contract.md)
+- [Connect protocol](protos-devbase-v1-contract.md)
 
 ### delino-site
 

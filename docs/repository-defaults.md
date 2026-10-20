@@ -59,7 +59,7 @@ enum ProjectId {
 
 ## Existing project choices
 
-Delcore uses Go, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run root `pnpm dev` for all workspace development servers, or run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port. See the [workflow contract](repository-workflow-contract.md) for participants and separate server startup.
+Delcore and the DevBase API use Go, Connect RPC and PostgreSQL. DeliDev and DeliTools use React/Rsbuild and the pinned Rust Tauri runtime as specified by their project contracts. Node.js 24 is selected by `.nvmrc`; Go and Rust versions are selected by `go.mod` and `rust-toolchain`. Run root `pnpm dev` for all workspace development servers, or run `pnpm dev` and `pnpm dev:desktop` in the owning app, on its documented fixed port. See the [workflow contract](repository-workflow-contract.md) for participants and separate server startup.
 
 ## Development server ports
 
@@ -73,6 +73,7 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | Delino Site frontend | `46314` | `apps/delino-site/rsbuild.config.ts`                                                   | [Web application](apps-delino-site-web-contract.md)    |
 | Delino Docs frontend | `46315` | `apps/delino-docs/rspress.config.ts`                                                   | [Documentation app](apps-delino-docs-web-contract.md)  |
 | FixKey frontend      | `46316` | `apps/fixkey-app/rsbuild.config.ts`                                                    | [Desktop application](apps-fixkey-desktop-contract.md) |
+| DevBase API          | `46317` | `LISTEN` in `servers/devbase-api/.env.example`; runtime default matches                | [Server](servers-devbase-api-contract.md)              |
 | Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                                   | [Web application](apps-git-tracker-web-contract.md)    |
 | Git Tracker API      | `46321` | `LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches            | [Server](servers-git-tracker-api-contract.md)          |
 | Delcore API          | `8080`  | `listen` in `servers/delcore-api/config.example.json`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
