@@ -16,7 +16,7 @@ import (
 func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 	db, c, _ := setup(t)
 	ctx := context.Background()
-	service, err := c.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register DeliTools", Service: &pb.Service{Name: "delitools", ClientId: "service", Capabilities: []string{"translator", "extractor"}, Scopes: []string{"authorize", "usage:write"}}}, "owner"))
+	service, err := c.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register DeliTools", Service: &pb.Service{Name: "delitools", ClientId: "service", Capabilities: []string{"translator", "extractor"}, Scopes: []string{"authorize", "usage:write", "usage:read"}}}, "owner"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +63,22 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		replay, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
 		if err != nil || replay.Msg.UsageId != r.Msg.UsageId {
 			t.Fatal("duplicate effect", err)
+		}
+		listed, listErr := c.ListUsage(ctx, req(&pb.ListUsageRequest{TenantId: tenant}, "service"))
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		found := false
+		for _, event := range listed.Msg.Events {
+			if event.Id == r.Msg.UsageId {
+				found = true
+				if !proto.Equal(event.AiUsage, u.AiUsage) {
+					t.Fatal("listed AI evidence differs")
+				}
+			}
+		}
+		if !found {
+			t.Fatal("accepted event missing from list")
 		}
 		correction := proto.Clone(u).(*pb.Usage)
 		correction.EventKey = key()

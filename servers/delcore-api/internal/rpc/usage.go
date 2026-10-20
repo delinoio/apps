@@ -287,16 +287,23 @@ func (s *Server) ListUsage(ctx context.Context, r *connect.Request[pb.ListUsageR
 		if e != nil {
 			return e
 		}
-		rows, e := c.tx.Query(c.ctx, "SELECT id::text,tenant_id::text,service_id::text,event_key,meter,quantity::text,occurred_at,COALESCE(correction_of::text,'') FROM usage_events WHERE tenant_id=$1 AND id>$2 AND ($4='' OR service_id::text=$4) ORDER BY id LIMIT $3", r.Msg.TenantId, after, n+1, c.service)
+		rows, e := c.tx.Query(c.ctx, "SELECT u.id::text,u.tenant_id::text,u.service_id::text,u.event_key,u.meter,u.quantity::text,u.occurred_at,COALESCE(u.correction_of::text,''),a.details FROM usage_events u LEFT JOIN ai_usage_prices a ON a.usage_id=u.id WHERE u.tenant_id=$1 AND u.id>$2 AND ($4='' OR u.service_id::text=$4) ORDER BY u.id LIMIT $3", r.Msg.TenantId, after, n+1, c.service)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
 			u := &pb.Usage{}
+			var details []byte
 			var at time.Time
-			if e = rows.Scan(&u.Id, &u.TenantId, &u.ServiceId, &u.EventKey, &u.Meter, &u.Quantity, &at, &u.CorrectionOf); e != nil {
+			if e = rows.Scan(&u.Id, &u.TenantId, &u.ServiceId, &u.EventKey, &u.Meter, &u.Quantity, &at, &u.CorrectionOf, &details); e != nil {
 				return e
+			}
+			if len(details) > 0 {
+				u.AiUsage = &pb.AiUsage{}
+				if e = json.Unmarshal(details, u.AiUsage); e != nil {
+					return e
+				}
 			}
 			u.OccurredAt = timestamppb.New(at)
 			o.Events = append(o.Events, u)
