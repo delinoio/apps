@@ -24,6 +24,22 @@ Before the first session, run `pnpm exec portless proxy start` from an interacti
 
 `Ctrl+C` stops the app session and removes its routes. The shared proxy remains available for other sessions. Inspect it with `pnpm exec portless list` or `pnpm exec portless doctor`; stop it with `pnpm exec portless proxy stop` when no session needs it. Portless keeps machine state outside the repository and can synchronize local host entries for browsers that need them. See the [upstream usage guide](https://github.com/vercel-labs/portless#readme) for trust and DNS troubleshooting. Go APIs retain their separate startup commands, origins and authentication configuration.
 
+### Git Tracker API configuration
+
+The Git Tracker frontend also needs an API URL with the proxy's scheme and an exact matching allowed web origin. The direct-loopback values in the app and server `.env.example` files apply to direct development, not the Portless URLs. An HTTPS page cannot call the HTTP loopback API, and an HTTP Portless page still needs its own allowed origin.
+
+After starting the proxy, register the separately started API's fixed loopback listener from the repository root:
+
+```sh
+pnpm exec portless alias git-tracker-api 46321
+```
+
+For the default HTTPS proxy in the main checkout, set `PUBLIC_GIT_TRACKER_API_URL=https://git-tracker-api.localhost` in the uncommitted `apps/git-tracker/.env.local`. Set `GIT_TRACKER_WEB_ORIGIN=https://git-tracker.localhost` in the API process environment, then start the API with its other required settings under the [server contract](servers-git-tracker-api-contract.md). Restart the frontend and API after changing their settings. Root `pnpm dev:portless` starts the frontend; it does not start the API or supply its credentials.
+
+In a linked worktree, set `GIT_TRACKER_WEB_ORIGIN` to the exact frontend origin printed by Portless, including its branch prefix. The explicit `git-tracker-api` alias has no automatic worktree prefix. With the HTTP proxy on port 1355, use `PUBLIC_GIT_TRACKER_API_URL=http://git-tracker-api.localhost:1355` and set `GIT_TRACKER_WEB_ORIGIN` to the printed `http://<frontend-host>:1355` origin. Include the scheme and any non-default proxy port, with no path or trailing slash. Register the frontend's `/callback` URL and sign-out origin in the development Logto application for the selected origin; authentication still requires its normal public application configuration.
+
+The API alias persists after the frontend session stops. Remove it with `pnpm exec portless alias --remove git-tracker-api` when finished. The alias and API listener are shared by these instructions; fixed upstream ports still permit only one local instance. Restore direct-loopback API and allowed-origin settings before returning to direct frontend development.
+
 ## Validation
 
 The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the same version and a version-specific store cache. Dependency overrides and build-script decisions are configured in `pnpm-workspace.yaml`, because pnpm 12 does not read the `pnpm` field in `package.json`.
