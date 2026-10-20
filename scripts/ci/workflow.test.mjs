@@ -77,7 +77,10 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
         build.if,
         `contains(fromJSON(needs.changes.outputs.rust_${check}), '${pkg}')`,
       );
-      assert.match(build.run, /build:frontend$/u);
+      assert.equal(
+        build.run,
+        `pnpm exec turbo run build:frontend --filter=${owner === "fixkey" ? "fixkey-desktop" : owner === "delitools" ? "delitools" : "delidev-desktop"}`,
+      );
       assert.ok(steps.indexOf(build) < steps.indexOf(command));
     }
   }
@@ -86,6 +89,23 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
   assert.equal(planner.env.TURBO_SCM_BASE, "${{ steps.plan.outputs.base }}");
   assert.equal(planner.env.TURBO_SCM_HEAD, "${{ steps.plan.outputs.head }}");
   assert.ok(steps.some((step) => step.with?.tool === "cargo-mono@0.6.9"));
+});
+
+test("remote caching is limited to frontend builds with main-push writes", () => {
+  for (const id of ["fixkey-desktop", "rust-clippy", "rust-test"]) {
+    const job = workflow.jobs[id];
+    assert.equal(job.env.TURBO_TEAM, "${{ vars.TURBO_TEAM }}");
+    assert.equal(job.env.TURBO_TOKEN, "${{ secrets.TURBO_TOKEN }}");
+    assert.equal(
+      job.env.TURBO_CACHE,
+      "${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}",
+    );
+  }
+  assert.equal(workflow.permissions["id-token"], undefined);
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (["fixkey-desktop", "rust-clippy", "rust-test"].includes(id)) continue;
+    assert.equal(job.env?.TURBO_TOKEN, undefined, id);
+  }
 });
 
 test("all CI formatting checks belong to Check Formatting", () => {

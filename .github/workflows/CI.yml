@@ -211,6 +211,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-2022]
     env:
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      # Only main pushes publish artifacts; missing credentials use local caching.
+      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
@@ -235,7 +239,7 @@ jobs:
       - id: frontend
         shell: bash
         run: |
-          pnpm --filter fixkey-desktop build:frontend
+          pnpm exec turbo run build:frontend --filter=fixkey-desktop
           cargo test --locked -p fixkey-core
           pnpm --filter fixkey-desktop ci:desktop
       - name: Save pnpm cache after successful main validation
@@ -534,6 +538,10 @@ jobs:
     if: needs.changes.outputs.rust_clippy != '[]'
     runs-on: ubuntu-latest
     env:
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      # Only main pushes publish artifacts; missing credentials use local caching.
+      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       RUST_PACKAGES: ${{ needs.changes.outputs.rust_clippy }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
@@ -562,13 +570,13 @@ jobs:
           cache-on-failure: false
       - id: delidev-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delidev-desktop')
-        run: pnpm --filter delidev-desktop build:frontend
+        run: pnpm exec turbo run build:frontend --filter=delidev-desktop
       - id: delitools-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'delitools-shell')
-        run: pnpm --filter delitools build:frontend
+        run: pnpm exec turbo run build:frontend --filter=delitools
       - id: fixkey-build
         if: contains(fromJSON(needs.changes.outputs.rust_clippy), 'fixkey')
-        run: pnpm --filter fixkey-desktop build:frontend
+        run: pnpm exec turbo run build:frontend --filter=fixkey-desktop
       - id: clippy
         run: node scripts/ci/rust-check.mjs clippy
       - name: Save pnpm cache after successful main validation
@@ -601,6 +609,10 @@ jobs:
     if: needs.changes.outputs.rust_test != '[]'
     runs-on: ubuntu-latest
     env:
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      # Only main pushes publish artifacts; missing credentials use local caching.
+      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       RUST_PACKAGES: ${{ needs.changes.outputs.rust_test }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
@@ -628,13 +640,13 @@ jobs:
           cache-on-failure: false
       - id: delidev-build
         if: contains(fromJSON(needs.changes.outputs.rust_test), 'delidev-desktop')
-        run: pnpm --filter delidev-desktop build:frontend
+        run: pnpm exec turbo run build:frontend --filter=delidev-desktop
       - id: delitools-build
         if: contains(fromJSON(needs.changes.outputs.rust_test), 'delitools-shell')
-        run: pnpm --filter delitools build:frontend
+        run: pnpm exec turbo run build:frontend --filter=delitools
       - id: fixkey-build
         if: contains(fromJSON(needs.changes.outputs.rust_test), 'fixkey')
-        run: pnpm --filter fixkey-desktop build:frontend
+        run: pnpm exec turbo run build:frontend --filter=fixkey-desktop
       - id: test
         run: node scripts/ci/rust-check.mjs test
       - name: Save pnpm cache after successful main validation

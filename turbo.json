@@ -1,16 +1,28 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["go.mod", "go.sum", "protos/**"],
+  "globalDependencies": [
+    "go.mod",
+    "go.sum",
+    "protos/**",
+    ".nvmrc",
+    "pnpm-workspace.yaml",
+    "packages/ui/**",
+    "scripts/localization/**",
+    "LICENSE",
+    "NOTICE"
+  ],
   "tasks": {
     "dev": {
       "cache": false,
       "persistent": true
     },
     "build": {
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
     },
     "build:frontend": {
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
     },
     "test": {
       "cache": false
@@ -24,6 +36,10 @@
       "cache": false,
       "persistent": true,
       "passThroughEnv": ["GIT_TRACKER_*", "OTEL_*", "NO_COLOR"]
+    },
+    "fixkey-desktop#build": {
+      "cache": false
     }
-  }
+  },
+  "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"]
 }
