@@ -109,7 +109,7 @@ Recheck authorization before duplicate disclosure and each AI attempt. Keep cred
 
 ## Logging
 
-Use structured slog events, bounded metric dimensions and OpenTelemetry. Persist safe operational event categories and correlation IDs for 30 days; operators must apply the same TTL to exported telemetry. Never log upstream bodies, inputs, results or secrets.
+Use structured slog events, bounded metric dimensions and OpenTelemetry. Persist safe operational event categories and correlation IDs for 30 days. RPC events enter a nonblocking in-memory queue of at most 128 entries, drained by the background worker with a five-second batch deadline. These best-effort diagnostics can be dropped when the queue is full, storage fails, or the process exits; durable request and attempt records remain the recovery source of truth. Events retain their creation timestamp for expiration; operators must apply the same TTL to exported telemetry. Never log upstream bodies, inputs, results or secrets.
 
 ## Build and Test
 

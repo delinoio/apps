@@ -121,6 +121,7 @@ func (s *Server) Background(ctx context.Context) error {
 		if e = s.Deliver(ctx, v); e != nil {
 			s.event("delivery_failure", ID())
 		}
+		s.flushEvents(ctx)
 		timer := time.NewTimer(time.Duration(v.DeliveryRetrySeconds) * time.Second)
 		select {
 		case <-ctx.Done():

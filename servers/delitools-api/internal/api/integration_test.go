@@ -849,3 +849,45 @@ func TestRequestInspectionIndex(t *testing.T) {
 		t.Fatal("inspection must use the request index in order:", plan.String())
 	}
 }
+
+func TestOperationalLogLockDoesNotDelayResponse(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	tx, err := s.DB.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "LOCK TABLE operational_logs IN ACCESS EXCLUSIVE MODE"); err != nil {
+		t.Fatal(err)
+	}
+	call, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	started := time.Now()
+	_, err = s.TranslateTextArray(call, request(translate(tenant, "log-contention"), "Bearer user"))
+	elapsed := time.Since(started)
+	if err != nil || elapsed >= time.Second {
+		t.Fatalf("logging delayed completed RPC: %v, %v", elapsed, err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.flushEvents(ctx)
+	var count int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category=$1", pb.RequestState_REQUEST_STATE_COMPLETED.String()).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatal("completed event was not drained", count)
+	}
+}
+
+func TestOperationalEventQueueIsBounded(t *testing.T) {
+	s := &Server{}
+	for i := 0; i < 1000; i++ {
+		s.enqueueEvent("fixture", "safe-id")
+	}
+	if len(s.eventQueue()) != 128 {
+		t.Fatal("unexpected queue bound", len(s.eventQueue()))
+	}
+}

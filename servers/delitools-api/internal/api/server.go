@@ -32,6 +32,8 @@ type Server struct {
 	Now       func() time.Time
 	mu        sync.Mutex
 	limits    map[string]*limit
+	eventOnce sync.Once
+	events    chan operationalEvent
 }
 type limit struct {
 	minute        int64
@@ -47,6 +49,46 @@ func (s *Server) now() time.Time {
 func (s *Server) Handler(maxBytes int) (string, http.Handler) {
 	return delitoolsv1connect.NewDeliToolsServiceHandler(s, connect.WithReadMaxBytes(maxBytes))
 }
+
+type operationalEvent struct {
+	category, id string
+	created      time.Time
+}
+
+func (s *Server) eventQueue() chan operationalEvent {
+	s.eventOnce.Do(func() { s.events = make(chan operationalEvent, 128) })
+	return s.events
+}
+
+func (s *Server) enqueueEvent(category, id string) {
+	// Best-effort diagnostics must not wait on storage or grow without a bound.
+	// Durable request and attempt records remain the recovery source of truth.
+	select {
+	case s.eventQueue() <- operationalEvent{category, id, s.now()}:
+	default:
+	}
+}
+
+func (s *Server) flushEvents(ctx context.Context) {
+	queue := s.eventQueue()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for remaining := len(queue); remaining > 0; remaining-- {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case event := <-queue:
+			if s.Log != nil {
+				s.Log.Info("DeliTools event", "category", event.category, "request_id", event.id)
+			}
+			s.DB.Log(ctx, event.category, event.id, event.created)
+		default:
+			return
+		}
+	}
+}
+
 func (s *Server) event(category, id string) {
 	if s.Log != nil {
 		s.Log.Info("DeliTools event", "category", category, "request_id", id)
@@ -284,7 +326,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		if err == nil {
 			return result, nil
 		}
-		s.event("provider_failure", x.id)
+		s.enqueueEvent("provider_failure", x.id)
 		if result.Unknown {
 			return result, fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
 		}
@@ -447,5 +489,5 @@ func (s *Server) finishRequest(x *execution, settings *pb.Settings, err *error) 
 		*err = fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
 		return
 	}
-	s.event(x.state.String(), x.id)
+	s.enqueueEvent(x.state.String(), x.id)
 }
