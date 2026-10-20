@@ -43,3 +43,14 @@ func TestConfigValidation(t *testing.T) {
 		t.Fatal("redirect allowlist bypass")
 	}
 }
+
+func TestExampleCoversDeliToolsDeliveryWindow(t *testing.T) {
+	c, err := Load("../../config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const retention = 30 * 24 * 60 * 60
+	if c.UsageLatenessSeconds < retention || c.ReportingGraceSeconds < retention {
+		t.Fatal("example must accept all unexpired DeliTools attempts, including during tenant deletion")
+	}
+}

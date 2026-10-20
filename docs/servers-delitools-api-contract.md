@@ -128,3 +128,5 @@ Update the project index, protocol and delcore contracts with boundary changes. 
 - [Project](project-delitools.md)
 - [Repository defaults](repository-defaults.md)
 - [Gateway REST API](https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api)
+
+When Delcore serves DeliTools, operators must configure both `usage_lateness_seconds` and `reporting_grace_seconds` to at least 2592000 (30 days). Keep raw usage and webhook retention at least as long as their corresponding reporting windows, as required by Delcore configuration validation. The shared configuration example uses these DeliTools-compatible windows. Verify these settings before enabling paid DeliTools traffic and after configuration changes; shorter windows are supported only for installations that do not serve DeliTools. Do not shorten them while DeliTools attempts remain eligible for delivery.
