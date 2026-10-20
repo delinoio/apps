@@ -264,9 +264,32 @@ test("web workflows validate main ancestry before allocating protected deploymen
     const job = workflow.jobs.deploy;
     assert.equal(job.needs, "source");
     if (project === Project.Delino) {
-      assert.deepEqual(job.strategy.matrix.app, ["delino-site", "delino-docs"]);
+      assert.deepEqual(job.strategy.matrix.include, [
+        {
+          app: "delino-site",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_SITE",
+        },
+        {
+          app: "delino-docs",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DOCS",
+        },
+      ]);
       assert.equal(job.strategy["fail-fast"], false);
-      assert.equal(job.environment, "${{ matrix.app }}-production");
+      assert.equal(job.environment, "delino-site-production");
+      const configuration = job.steps.find(
+        (step) => step.name === "Validate deployment configuration",
+      );
+      assert.equal(
+        configuration.env.CLOUDFLARE_PAGES_PROJECT,
+        "${{ vars[matrix.pages_project_variable] }}",
+      );
+      const upload = job.steps.find((step) =>
+        step.uses?.startsWith("cloudflare/wrangler-action@"),
+      );
+      assert.match(
+        upload.with.command,
+        /--project-name=\$\{\{ vars\[matrix\.pages_project_variable\] \}\}/u,
+      );
       assert.equal(
         job.steps.find((step) => step.run === "pnpm test")["working-directory"],
         "apps/${{ matrix.app }}",
