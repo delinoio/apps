@@ -273,7 +273,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, plan.Msg.Plan.Id, servic
 		t.Fatal(err)
 	}
 	var raw []byte
-	if err = db.Pool.QueryRow(ctx, "SELECT definition FROM catalog_versions WHERE id=$1", price.Msg.Price.Id).Scan(&raw); err != nil {
+	if err = db.Pool.QueryRow(ctx, "SELECT definition FROM catalog_versions WHERE id=(SELECT active_version_id FROM catalog_entities WHERE id=$1)", plan.Msg.Plan.Id).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var definition struct {
@@ -381,9 +381,6 @@ func TestLegacyPlanMutationSnapshotsTenants(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, `INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1,$2,$3,$4,$5,$6)`, legacyPlanID, "Legacy Plan", 100, true, false, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Pool.Exec(ctx, `INSERT INTO catalog_entities(id,kind,scope,key) VALUES($1,'plan','',$2)`, legacyPlanID, "legacy-plan"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err = db.Pool.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", tenantID, legacyPlanID); err != nil {
 		t.Fatal(err)
 	}
@@ -405,6 +402,9 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, le
 func TestSubscriptionRejectsPartialActivePriceSet(t *testing.T) {
 	_, client, cfg := setup(t)
 	ctx := context.Background()
+	if _, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare default subscription plan", Plan: &pb.Plan{Key: "subscription-default", Name: "Subscription Default", Free: true, DefaultFree: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
 	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare subscription service", Service: &pb.Service{Key: "subscription-service", Name: "Subscription Service", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
 	if err != nil {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestSubscriptionRejectsPartialActivePriceSet(t *testing.T) {
 	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare subscription meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "requests", Key: "requests"}}, "owner")); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare subscription plan", Plan: &pb.Plan{Key: "partial-price-plan", Name: "Partial Price Plan", Free: true}}, "owner"))
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare subscription plan", Plan: &pb.Plan{Key: "partial-price-plan", Name: "Partial Price Plan", Rank: 1, Free: true}}, "owner"))
 	if err != nil {
 		t.Fatal(err)
 	}
