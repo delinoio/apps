@@ -30,4 +30,4 @@ TEST_DATABASE_URL=postgres://... go test -race -tags=integration ./servers/devba
 pnpm --filter @delinoio/devbase-api ci:oci
 ```
 
-Integration tests reset the `public` schema of the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. Delcore is mocked, so these checks do not establish live-account or production acceptance. Operator logs use ANSI color by default; set `NO_COLOR=1` for plain structured key/value output.
+Integration tests reset the `public` schema of the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. Delcore is mocked, so these checks do not establish live-account or production acceptance. Operator logs use ANSI color by default; set `NO_COLOR=1` for plain structured key/value output, or `LOG_FORMAT=json` for one JSON object per record.

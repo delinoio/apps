@@ -34,8 +34,26 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 
+// newLogger builds the process logger. The default is colored key/value text for
+// operators; NO_COLOR disables color, and LOG_FORMAT=json emits one JSON object per
+// record for log ingestion.
+func newLogger(format string, noColor bool, out io.Writer) (*slog.Logger, error) {
+	switch format {
+	case "", "text":
+		return slog.New(slog.NewTextHandler(terminalWriter{writer: out, color: !noColor}, nil)), nil
+	case "json":
+		return slog.New(slog.NewJSONHandler(out, nil)), nil
+	}
+	return nil, fmt.Errorf("LOG_FORMAT must be text or json")
+}
+
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(terminalWriter{writer: os.Stderr, color: os.Getenv("NO_COLOR") == ""}, nil)))
+	logger, e := newLogger(os.Getenv("LOG_FORMAT"), os.Getenv("NO_COLOR") != "", os.Stderr)
+	if e != nil {
+		fmt.Fprintln(os.Stderr, e)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 	if e := run(os.Args[1:]); e != nil {
 		slog.Error("devbase-api stopped", "error", e.Error())
 		os.Exit(1)
