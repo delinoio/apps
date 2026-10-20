@@ -158,13 +158,19 @@ func validateDatabase(ctx context.Context, tx pgx.Tx, items []definition) error 
 			}
 		}
 	}
-	var currentDefault string
-	if err := tx.QueryRow(ctx, "SELECT COALESCE((SELECT ce.key FROM plans p JOIN catalog_entities ce ON ce.id=p.id WHERE p.is_default),'')").Scan(&currentDefault); err != nil {
+	var currentDefaultID, currentDefaultKey string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT p.id::text FROM plans p WHERE p.is_default),''),
+ COALESCE((SELECT ce.key FROM plans p LEFT JOIN catalog_entities ce ON ce.id=p.id WHERE p.is_default),'')`).Scan(&currentDefaultID, &currentDefaultKey); err != nil {
 		return err
 	}
-	if currentDefault != "" && newDefault == "" {
-		if item, ok := plans[currentDefault]; ok && (item.DefaultFree == nil || !*item.DefaultFree) {
-			return errors.New("cannot clear the default free plan without a replacement")
+	if currentDefaultID != "" {
+		if newDefault != "" && newDefault != currentDefaultKey && plans[currentDefaultKey].Kind == "" {
+			return errors.New("cannot replace an omitted default free plan")
+		}
+		if newDefault == "" {
+			if item, ok := plans[currentDefaultKey]; ok && (item.DefaultFree == nil || !*item.DefaultFree) {
+				return errors.New("cannot clear the default free plan without a replacement")
+			}
 		}
 	}
 	for key, item := range plans {
