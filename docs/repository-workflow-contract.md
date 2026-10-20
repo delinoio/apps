@@ -13,7 +13,7 @@ docker compose up -d --wait
 docker compose ps
 ```
 
-`--wait` waits for both database healthchecks. To start only one database, append `delcore-postgres` or `git-tracker-postgres` to the `up` command. Both databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
+`--wait` waits for both database healthchecks to accept TCP connections. The probes use `127.0.0.1` inside each container so the PostgreSQL image's temporary socket-only initialization server cannot report readiness. To start only one database, append `delcore-postgres` or `git-tracker-postgres` to the `up` command. Both databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
 
 - Delcore: `postgres://delcore:local-delcore@127.0.0.1:5432/delcore?sslmode=disable`
 - Git Tracker: `postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable`
