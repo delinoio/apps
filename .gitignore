@@ -212,6 +212,7 @@ tmp/
 
 # Repository development environment (always local and never committed)
 /.infisical.json
+/.infisical.yaml
 /.dev-environment/
 
 .ci-evidence/

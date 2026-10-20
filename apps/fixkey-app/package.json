@@ -5,9 +5,9 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "rsbuild dev",
-    "dev:desktop": "tauri dev --features desktop",
-    "dev:frontend": "rsbuild dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- tauri dev --features desktop",
+    "dev:frontend": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
     "build": "tauri build --features desktop",
     "build:frontend": "tsc --noEmit && rsbuild build",
     "typecheck": "tsc --noEmit",

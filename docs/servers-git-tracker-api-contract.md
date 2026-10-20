@@ -149,6 +149,8 @@ PR execution measurements remain available in execution history and explicit com
 
 ## Local development
 
+The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
+
 Run `pnpm dev` at the repository root for all development servers, or from `servers/git-tracker-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` to watch the repository root while build and run commands execute from the service workspace. Configure the existing environment variables in the shell or the ignored `servers/git-tracker-api/.env`, using the service-local `.env.example` as a guide. Prepare PostgreSQL, the schema and required provider configuration before starting. Air does not provision dependencies or bypass startup checks.
 
 Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; Air sends an interrupt before terminating the server after five seconds. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.

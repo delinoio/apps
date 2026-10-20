@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "rsbuild dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
     "build": "rsbuild build",
     "typecheck": "tsc --noEmit",
     "test": "pnpm typecheck && pnpm build",
