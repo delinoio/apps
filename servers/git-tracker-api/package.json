@@ -4,7 +4,7 @@
   "private": true,
   "license": "FSL-1.1-ALv2",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. -- go run github.com/air-verse/air@v1.67.4 -c \".air.toml\"",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/git-tracker-api -- node ../../scripts/dev-api.mjs git-tracker",
     "ci:checks": "go test -race ./...",
     "build": "go build ./cmd/git-tracker-api"
   }

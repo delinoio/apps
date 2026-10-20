@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Disposable local development dependencies. Never use these credentials in production.
+services:
+  delcore-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: delcore
+      POSTGRES_PASSWORD: local-delcore
+      POSTGRES_DB: delcore
+    ports:
+      - "127.0.0.1:${DELCORE_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - delcore-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U delcore -d delcore"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  git-tracker-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: git_tracker
+      POSTGRES_PASSWORD: local-git-tracker
+      POSTGRES_DB: git_tracker
+    ports:
+      - "127.0.0.1:${GIT_TRACKER_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - git-tracker-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U git_tracker -d git_tracker"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  delcore-postgres-data:
+  git-tracker-postgres-data:

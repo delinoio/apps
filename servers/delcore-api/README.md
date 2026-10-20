@@ -15,35 +15,35 @@ The [project index](../../docs/project-delcore.md), [server contract](../../docs
 
 ## Configuration and startup
 
-Copy `config.example.json` outside the checkout, replace every placeholder, restrict file permissions and choose policy limits for your deployment. The example retention periods are examples, not a statement of legal requirements. Keep the identity key stable across updates: it derives the stored identity reference. Loss or unplanned rotation prevents identity matching.
+Copy `.env.example` to an uncommitted `.env` in the service working directory, replace every placeholder, restrict file permissions and choose policy limits for your deployment. The example retention periods are examples, not a statement of legal requirements. Keep the identity key stable across updates: it derives the stored identity reference. Loss or unplanned rotation prevents identity matching.
 
 ```sh
-go run ./servers/delcore-api/cmd/delcore-api -config "/secure/delcore.json" -migrate
-go run ./servers/delcore-api/cmd/delcore-api -config "/secure/delcore.json"
+go run ./cmd/delcore-api -migrate
+go run ./cmd/delcore-api
 ```
 
-Run commands from the repository root. Migrations are explicit and transactional. Normal startup checks schema compatibility; it does not apply migrations. A database session lock rejects a second running instance. The service stops if it loses that lock connection.
+Run these commands from `servers/delcore-api`. Migrations are explicit and transactional. Normal startup checks schema compatibility; it does not apply migrations. A database session lock rejects a second running instance. The service stops if it loses that lock connection.
 
 Bootstrap the service catalog and default free plan with a user token carrying the dedicated operator role. Create registered meters before creating usage prices. Register all prices before marking the free plan as the default. Price versions are immutable. Existing entitlements refer to their chosen price version. Keep fixed recurring prices separate from usage prices.
 
 | Settings                                                      | Purpose                                                |
 | ------------------------------------------------------------- | ------------------------------------------------------ |
-| `listen`, `database_url`                                      | HTTP listener and authoritative PostgreSQL connection  |
-| `issuer`, `audience`, `operator_role`, `identity_key`         | Authentication and stable identity matching            |
-| `paddle_*`                                                    | Billing API, credit product and webhook authentication |
-| `email_*`                                                     | Cloudflare REST account, sender and authentication     |
-| `return_urls`                                                 | Exact consumer URL allowlist                           |
-| `timeout_seconds`, `max_payload_bytes`, `requests_per_minute` | Bounded HTTP and provider work                         |
-| `retry_limit`, `retry_seconds`                                | Durable retry limits and delay                         |
-| `invitation_seconds`, `usage_lateness_seconds`                | Invitation expiry and accepted reporting lateness      |
-| `reporting_grace_seconds`, `deletion_grace_seconds`           | Final reporting and deletion delays                    |
-| `*_retention_seconds`                                         | Explicit retention policy inputs                       |
-| `backlog_alert`, `settlement_alert_seconds`                   | Operational alert thresholds                           |
-| `development`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
+| `LISTEN`, `DATABASE_URL`                                      | HTTP listener and authoritative PostgreSQL connection  |
+| `ISSUER`, `AUDIENCE`, `OPERATOR_ROLE`, `IDENTITY_KEY`         | Authentication and stable identity matching            |
+| `PADDLE_*`                                                    | Billing API, credit product and webhook authentication |
+| `EMAIL_*`                                                     | Cloudflare REST account, sender and authentication     |
+| `RETURN_URLS`                                                 | Exact consumer URL allowlist                           |
+| `TIMEOUT_SECONDS`, `MAX_PAYLOAD_BYTES`, `REQUESTS_PER_MINUTE` | Bounded HTTP and provider work                         |
+| `RETRY_LIMIT`, `RETRY_SECONDS`                                | Durable retry limits and delay                         |
+| `INVITATION_SECONDS`, `USAGE_LATENESS_SECONDS`                | Invitation expiry and accepted reporting lateness      |
+| `REPORTING_GRACE_SECONDS`, `DELETION_GRACE_SECONDS`           | Final reporting and deletion delays                    |
+| `*_RETENTION_SECONDS`                                         | Explicit retention policy inputs                       |
+| `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                   | Operational alert thresholds                           |
+| `DEVELOPMENT`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
 
 All billing uses USD with two decimal places for currency minor units. Currency and minor-unit precision are fixed and have no configuration settings.
 
-The JSON loader rejects unknown fields and contradictory required policies. Secrets are read from the operator-owned file. Optional standard OTLP environment variables configure tracing.
+The server reads individual environment variables, with process variables taking priority over the optional working-directory `.env`, including explicitly empty values. `RETURN_URLS` is a JSON array of exact URL strings. Integer settings use base-10 values. `DEVELOPMENT` accepts Go boolean values and defaults to false. The loader rejects invalid values, missing required settings and contradictory policies. The `CONFIG` variable and `-config` flag are no longer supported. Optional standard OTLP environment variables configure tracing.
 
 ## Consumer API
 

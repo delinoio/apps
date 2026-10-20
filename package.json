@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh",
-    "dev": "turbo run dev",
+    "dev": "node scripts/dev.mjs",
     "dev:portless": "portless",
     "build": "turbo run build",
     "test": "turbo run test",

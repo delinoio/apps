@@ -5,7 +5,6 @@
 package integration
 
 import (
-	"encoding/json"
 	"github.com/delinoio/apps/servers/delcore-api/migrations"
 	"os"
 	"os/exec"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func TestOCI(t *testing.T) {
@@ -68,28 +69,29 @@ func TestOCI(t *testing.T) {
 	}
 	run("cp", binary, name+":/tmp/provider")
 	run("exec", "-d", name, "/tmp/provider")
-	raw, e := os.ReadFile(filepath.Join(root, "servers/delcore-api/config.example.json"))
+	cfg, e := godotenv.Read(filepath.Join(root, "servers/delcore-api/.env.example"))
 	if e != nil {
 		t.Fatal(e)
 	}
-	var cfg map[string]any
-	if e = json.Unmarshal(raw, &cfg); e != nil {
-		t.Fatal(e)
+	cfg["DATABASE_URL"] = "postgres://postgres:fixture-only@127.0.0.1:5432/delcore?sslmode=disable"
+	cfg["ISSUER"] = "http://127.0.0.1:8099"
+	cfg["PADDLE_URL"] = "http://127.0.0.1:8099"
+	cfg["LISTEN"] = "127.0.0.1:8080"
+	cfg["TIMEOUT_SECONDS"] = "5"
+	configPath := filepath.Join(dir, "fixture.env")
+	writeEnvironment := func() {
+		t.Helper()
+		// Docker --env-file does not remove quotes; emit the parsed values directly.
+		var lines []string
+		for key, value := range cfg {
+			lines = append(lines, key+"="+value)
+		}
+		if e := os.WriteFile(configPath, []byte(strings.Join(lines, "\n")+"\n"), 0600); e != nil {
+			t.Fatal(e)
+		}
 	}
-	cfg["database_url"] = "postgres://postgres:fixture-only@127.0.0.1:5432/delcore?sslmode=disable"
-	cfg["issuer"] = "http://127.0.0.1:8099"
-	cfg["paddle_url"] = "http://127.0.0.1:8099"
-	cfg["listen"] = "127.0.0.1:8080"
-	cfg["timeout_seconds"] = 5
-	raw, e = json.Marshal(cfg)
-	if e != nil {
-		t.Fatal(e)
-	}
-	configPath := filepath.Join(dir, "config.json")
-	if e = os.WriteFile(configPath, raw, 0644); e != nil {
-		t.Fatal(e)
-	}
-	args := []string{"run", "--rm", "--network", "container:" + name, "-v", dir + ":/fixture:ro", image, "-config", "/fixture/config.json"}
+	writeEnvironment()
+	args := []string{"run", "--rm", "--network", "container:" + name, "--env-file", configPath, image}
 	mustFail("run", "--rm", image) // Missing configuration.
 	mustFail(args...)              // Empty schema must never be migrated by normal startup.
 	run(append(args, "-migrate")...)
@@ -98,7 +100,7 @@ func TestOCI(t *testing.T) {
 	mustFail(append(args, "-migrate")...)
 	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version="+strconv.Itoa(migrations.Version)+" WHERE version=999")
 	app := name + "-app"
-	run("run", "-d", "--name", app, "--network", "container:"+name, "-v", dir+":/fixture:ro", image, "-config", "/fixture/config.json")
+	run("run", "-d", "--name", app, "--network", "container:"+name, "--env-file", configPath, image)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", app).Run() })
 	started := false
 	for i := 0; i < 30; i++ {
@@ -157,14 +159,8 @@ INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,upd
 	run("exec", name, "pg_dump", "-U", "postgres", "-d", "delcore", "-Fc", "-f", "/tmp/backup.dump")
 	run("exec", name, "createdb", "-U", "postgres", "restored")
 	run("exec", name, "pg_restore", "-U", "postgres", "-d", "restored", "/tmp/backup.dump")
-	cfg["database_url"] = "postgres://postgres:fixture-only@127.0.0.1:5432/restored?sslmode=disable"
-	raw, e = json.Marshal(cfg)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = os.WriteFile(configPath, raw, 0644); e != nil {
-		t.Fatal(e)
-	}
+	cfg["DATABASE_URL"] = "postgres://postgres:fixture-only@127.0.0.1:5432/restored?sslmode=disable"
+	writeEnvironment()
 	run(append(args, "-migrate")...)
 	if version := run("exec", name, "psql", "-U", "postgres", "-d", "restored", "-Atc", "SELECT max(version) FROM delcore_schema"); version != strconv.Itoa(migrations.Version) {
 		t.Fatal("restored schema", version)
