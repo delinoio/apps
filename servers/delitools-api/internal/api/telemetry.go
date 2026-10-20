@@ -36,16 +36,16 @@ func (s *Server) interceptor() connect.Interceptor {
 							if typed, ok := value.(*pb.ErrorDetail); ok {
 								switch typed.Reason {
 								case pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE:
-									s.event("price_missing", id)
+									s.missingPrices.Add(1)
 								case pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED, pb.ErrorReason_ERROR_REASON_FORBIDDEN, pb.ErrorReason_ERROR_REASON_BILLING_BLOCKED:
-									s.event("authorization_failure", id)
+									s.authorizationFailures.Add(1)
 								}
 							}
 						}
 					}
 				}
 				span.SetAttributes(attribute.String("request.id", id))
-				s.event("rpc_"+connect.CodeOf(e).String(), id)
+				s.rpcFailures.Add(1)
 			} else {
 				span.SetAttributes(attribute.String("rpc.outcome", "ok"))
 				if response, ok := out.Any().(interface{ GetRequestId() string }); ok {
@@ -58,7 +58,12 @@ func (s *Server) interceptor() connect.Interceptor {
 }
 func (s *Server) Metrics() http.Handler {
 	registry := prometheus.NewRegistry()
-	for _, item := range []struct{ name, help, query string }{{"pending_usage", "Undelivered usage attempts.", "SELECT count(*) FROM attempts WHERE NOT delivered"}, {"unknown_usage", "Attempts with unknown measured usage.", "SELECT count(*) FROM attempts WHERE usage IS NULL"}, {"unknown_requests", "Requests with unknown execution state.", "SELECT count(*) FROM requests WHERE state=3"}, {"provider_failures", "Provider failures within retained operational history.", "SELECT count(*) FROM operational_logs WHERE category='provider_failure'"}, {"authorization_failures", "Rejected permission or credential checks.", "SELECT count(*) FROM operational_logs WHERE category='authorization_failure'"}, {"price_sync_failures", "Catalog synchronization failures within retained history.", "SELECT count(*) FROM operational_logs WHERE category='price_sync_failure'"}, {"missing_prices", "Requests rejected without a catalog price.", "SELECT count(*) FROM operational_logs WHERE category='price_missing'"}} {
+	// Public RPC failures never write retained rows. Fixed process counters bound
+	// memory and avoid letting unauthenticated traffic amplify database writes.
+	registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "delitools_authorization_failures", Help: "Rejected credential, permission and billing checks since process start."}, func() float64 { return float64(s.authorizationFailures.Load()) }))
+	registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "delitools_missing_prices", Help: "Requests rejected without prices since process start."}, func() float64 { return float64(s.missingPrices.Load()) }))
+	registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "delitools_rpc_failures", Help: "Failed RPCs since process start."}, func() float64 { return float64(s.rpcFailures.Load()) }))
+	for _, item := range []struct{ name, help, query string }{{"pending_usage", "Undelivered usage attempts.", "SELECT count(*) FROM attempts WHERE NOT delivered"}, {"unknown_usage", "Attempts with unknown measured usage.", "SELECT count(*) FROM attempts WHERE usage IS NULL"}, {"unknown_requests", "Requests with unknown execution state.", "SELECT count(*) FROM requests WHERE state=3"}, {"provider_failures", "Provider failures within retained operational history.", "SELECT count(*) FROM operational_logs WHERE category='provider_failure'"}, {"price_sync_failures", "Catalog synchronization failures within retained history.", "SELECT count(*) FROM operational_logs WHERE category='price_sync_failure'"}} {
 		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "delitools_" + item.name, Help: item.help}, func() float64 {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()

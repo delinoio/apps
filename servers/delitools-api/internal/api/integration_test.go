@@ -1272,3 +1272,26 @@ func TestAuthorizationMetricUsesStableReasons(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+func TestUnauthenticatedFailuresDoNotPersistLogs(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	_, h := s.Handler(100000)
+	server := httptest.NewServer(h)
+	defer server.Close()
+	c := delitoolsv1connect.NewDeliToolsServiceClient(server.Client(), server.URL)
+	ctx := context.Background()
+	var before, after int
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		_, err := c.TranslateTextArray(ctx, request(translate(tenant, ""), ""))
+		reason(t, err, pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED)
+	}
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs").Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if before != after || s.authorizationFailures.Load() != 100 || s.rpcFailures.Load() != 100 {
+		t.Fatalf("failure accounting: rows %d -> %d auth %d rpc %d", before, after, s.authorizationFailures.Load(), s.rpcFailures.Load())
+	}
+}

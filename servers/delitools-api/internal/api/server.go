@@ -19,21 +19,25 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Server struct {
 	delitoolsv1connect.UnimplementedDeliToolsServiceHandler
-	DB        *Store
-	Auth      Authority
-	Gateway   Gateway
-	ServiceID string
-	Log       *slog.Logger
-	Now       func() time.Time
-	mu        sync.Mutex
-	limits    map[string]*limit
-	eventOnce sync.Once
-	events    chan operationalEvent
+	DB                    *Store
+	Auth                  Authority
+	Gateway               Gateway
+	ServiceID             string
+	Log                   *slog.Logger
+	Now                   func() time.Time
+	mu                    sync.Mutex
+	authorizationFailures atomic.Uint64
+	missingPrices         atomic.Uint64
+	rpcFailures           atomic.Uint64
+	limits                map[string]*limit
+	eventOnce             sync.Once
+	events                chan operationalEvent
 }
 type limit struct {
 	minute        int64
