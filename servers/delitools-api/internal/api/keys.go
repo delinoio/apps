@@ -203,7 +203,10 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 	out := &pb.InspectRequestResponse{RequestId: id, InspectedRequestId: r.Msg.RequestId}
 	var created time.Time
 	if e := s.DB.Pool.QueryRow(ctx, "SELECT tenant_id::text,capability,state,model,created_at,error_reason FROM requests WHERE id=$1 AND created_at>$2", r.Msg.RequestId, s.now().Add(-Retention)).Scan(&out.TenantId, &out.Capability, &out.State, &out.Model, &created, &out.ErrorReason); e != nil {
-		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
+		}
+		return nil, storageFault(e, id)
 	}
 	out.CreatedAt = timestamppb.New(created)
 	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,attempts.id", r.Msg.RequestId, s.now().Add(-Retention))
