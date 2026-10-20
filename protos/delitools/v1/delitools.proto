@@ -152,6 +152,8 @@ message InspectRequestResponse {
   string model = 6;
   google.protobuf.Timestamp created_at = 7;
   repeated Attempt attempts = 8;
+  // Safe terminal failure reason; unspecified for success or pre-upgrade records.
+  ErrorReason error_reason = 9;
 }
 service DeliToolsService {
   rpc TranslateTextArray(TranslateTextArrayRequest) returns (TranslateTextArrayResponse);

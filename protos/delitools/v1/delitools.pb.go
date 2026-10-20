@@ -1477,8 +1477,10 @@ type InspectRequestResponse struct {
 	Model              string                 `protobuf:"bytes,6,opt,name=model,proto3" json:"model,omitempty"`
 	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Attempts           []*Attempt             `protobuf:"bytes,8,rep,name=attempts,proto3" json:"attempts,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Safe terminal failure reason; unspecified for success or pre-upgrade records.
+	ErrorReason   ErrorReason `protobuf:"varint,9,opt,name=error_reason,json=errorReason,proto3,enum=delitools.v1.ErrorReason" json:"error_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InspectRequestResponse) Reset() {
@@ -1565,6 +1567,13 @@ func (x *InspectRequestResponse) GetAttempts() []*Attempt {
 		return x.Attempts
 	}
 	return nil
+}
+
+func (x *InspectRequestResponse) GetErrorReason() ErrorReason {
+	if x != nil {
+		return x.ErrorReason
+	}
+	return ErrorReason_ERROR_REASON_UNSPECIFIED
 }
 
 var File_delitools_v1_delitools_proto protoreflect.FileDescriptor
@@ -1671,7 +1680,7 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"usageKnown\x12\x1c\n" +
 	"\tdelivered\x18\x04 \x01(\bR\tdelivered\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf6\x02\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb4\x03\n" +
 	"\x16InspectRequestResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
@@ -1684,7 +1693,8 @@ const file_delitools_v1_delitools_proto_rawDesc = "" +
 	"\x05model\x18\x06 \x01(\tR\x05model\x129\n" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x121\n" +
-	"\battempts\x18\b \x03(\v2\x15.delitools.v1.AttemptR\battempts*]\n" +
+	"\battempts\x18\b \x03(\v2\x15.delitools.v1.AttemptR\battempts\x12<\n" +
+	"\ferror_reason\x18\t \x01(\x0e2\x19.delitools.v1.ErrorReasonR\verrorReason*]\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -1790,27 +1800,28 @@ var file_delitools_v1_delitools_proto_depIdxs = []int32{
 	2,  // 15: delitools.v1.InspectRequestResponse.state:type_name -> delitools.v1.RequestState
 	24, // 16: delitools.v1.InspectRequestResponse.created_at:type_name -> google.protobuf.Timestamp
 	22, // 17: delitools.v1.InspectRequestResponse.attempts:type_name -> delitools.v1.Attempt
-	5,  // 18: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
-	7,  // 19: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
-	10, // 20: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
-	12, // 21: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
-	14, // 22: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
-	17, // 23: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
-	19, // 24: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
-	21, // 25: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
-	6,  // 26: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
-	8,  // 27: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
-	11, // 28: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
-	13, // 29: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
-	15, // 30: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
-	18, // 31: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
-	20, // 32: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
-	23, // 33: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
-	26, // [26:34] is the sub-list for method output_type
-	18, // [18:26] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	3,  // 18: delitools.v1.InspectRequestResponse.error_reason:type_name -> delitools.v1.ErrorReason
+	5,  // 19: delitools.v1.DeliToolsService.TranslateTextArray:input_type -> delitools.v1.TranslateTextArrayRequest
+	7,  // 20: delitools.v1.DeliToolsService.ExtractDataFromText:input_type -> delitools.v1.ExtractDataFromTextRequest
+	10, // 21: delitools.v1.DeliToolsService.CreateKey:input_type -> delitools.v1.CreateKeyRequest
+	12, // 22: delitools.v1.DeliToolsService.ListKeys:input_type -> delitools.v1.ListKeysRequest
+	14, // 23: delitools.v1.DeliToolsService.RevokeKey:input_type -> delitools.v1.RevokeKeyRequest
+	17, // 24: delitools.v1.DeliToolsService.GetSettings:input_type -> delitools.v1.GetSettingsRequest
+	19, // 25: delitools.v1.DeliToolsService.UpdateSettings:input_type -> delitools.v1.UpdateSettingsRequest
+	21, // 26: delitools.v1.DeliToolsService.InspectRequest:input_type -> delitools.v1.InspectRequestRequest
+	6,  // 27: delitools.v1.DeliToolsService.TranslateTextArray:output_type -> delitools.v1.TranslateTextArrayResponse
+	8,  // 28: delitools.v1.DeliToolsService.ExtractDataFromText:output_type -> delitools.v1.ExtractDataFromTextResponse
+	11, // 29: delitools.v1.DeliToolsService.CreateKey:output_type -> delitools.v1.CreateKeyResponse
+	13, // 30: delitools.v1.DeliToolsService.ListKeys:output_type -> delitools.v1.ListKeysResponse
+	15, // 31: delitools.v1.DeliToolsService.RevokeKey:output_type -> delitools.v1.RevokeKeyResponse
+	18, // 32: delitools.v1.DeliToolsService.GetSettings:output_type -> delitools.v1.GetSettingsResponse
+	20, // 33: delitools.v1.DeliToolsService.UpdateSettings:output_type -> delitools.v1.UpdateSettingsResponse
+	23, // 34: delitools.v1.DeliToolsService.InspectRequest:output_type -> delitools.v1.InspectRequestResponse
+	27, // [27:35] is the sub-list for method output_type
+	19, // [19:27] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_delitools_v1_delitools_proto_init() }
