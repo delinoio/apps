@@ -142,3 +142,5 @@ Update the project index and affected protocol/client/server contracts when beha
 Repository connection IDs are UUID v7 values. `github_repository_id` retains GitHub’s numeric external identifier. Reconnecting within a space preserves its connection ID and history. A disconnected repository can be connected to a different authorized space with a distinct connection ID; retained history does not cross spaces. History responses identify globally representative completed executions so date filtering cannot promote an older run. Deletion tombstones prevent delayed retries from recreating deleted executions or datasets within the same execution.
 
 PR execution measurements remain inspectable, but do not supply upstream branch graph points or automatic baselines. This prevents fork measurements from replacing baseline-branch data or configuration for a shared commit SHA.
+
+Comparison responses preserve the original baseline value and `baseline_unit`; deltas use the target unit. Clients must display both units when they differ.

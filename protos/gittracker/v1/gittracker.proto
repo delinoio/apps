@@ -84,6 +84,7 @@ message Comparison {
   string baseline_commit = 9;
   string baseline_execution_id = 10;
   string unit = 11;
+  string baseline_unit = 12;
 }
 enum ComparisonStatus {
   COMPARISON_STATUS_UNSPECIFIED = 0;

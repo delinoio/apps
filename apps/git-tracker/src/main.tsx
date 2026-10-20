@@ -159,7 +159,7 @@ function ComparisonTable({ values }: { values: Comparison[] }) {
                 {v.value} {v.unit}
               </td>
               <td>
-                {v.baselineValue || "—"}
+                {v.baselineValue || "—"} {v.baselineUnit}
                 <small>
                   {v.baselineCommit.slice(0, 8)} {v.baselineExecutionId}
                 </small>
