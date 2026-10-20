@@ -35,11 +35,26 @@ func (w colorWriter) Write(b []byte) (int, error) {
 }
 func main() {
 	if e := run(); e != nil {
-		slog.Error("DeliTools stopped", "category", "startup_or_runtime_failure")
+		slog.Error("DeliTools stopped", "category", "startup_or_runtime_failure", "cause", e.Error())
 		os.Exit(1)
 	}
 }
-func run() error {
+
+// Diagnostics expose a fixed stage, never dependency errors that may contain secrets.
+type stageFailure struct {
+	stage string
+	cause error
+}
+
+func (e *stageFailure) Error() string { return e.stage }
+func (e *stageFailure) Unwrap() error { return e.cause }
+func run() (err error) {
+	stage := "configuration"
+	defer func() {
+		if err != nil {
+			err = &stageFailure{stage: stage, cause: err}
+		}
+	}()
 	path := flag.String("config", "", "operator-owned JSON configuration")
 	migrate := flag.Bool("migrate", false, "apply forward migrations and exit")
 	jsonLogs := flag.Bool("log-json", false, "emit uncolored structured JSON")
@@ -64,6 +79,7 @@ func run() error {
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
+	stage = "database_connect"
 	startup, done := context.WithTimeout(ctx, timeout)
 	db, e := api.Open(startup, c.DatabaseURL)
 	done()
@@ -71,28 +87,35 @@ func run() error {
 		return e
 	}
 	defer db.Pool.Close()
+	stage = "database_migration"
 	if *migrate {
 		return db.Migrate(ctx)
 	}
+	stage = "schema_check"
 	if e = db.CheckSchema(ctx); e != nil {
 		return e
 	}
+	stage = "instance_lock"
 	lock, e := db.AcquireInstance(ctx)
 	if e != nil {
 		return e
 	}
 	defer func() { lock.Conn().Close(context.Background()); lock.Release() }()
+	stage = "settings_bootstrap"
 	if e = db.BootstrapSettings(ctx, c.Settings); e != nil {
 		return e
 	}
+	stage = "settings_read"
 	if _, e = db.Settings(ctx); e != nil {
 		return e
 	}
+	stage = "request_recovery"
 	if e = db.Recover(ctx); e != nil {
 		return e
 	}
 	client := &http.Client{Timeout: timeout}
 	oidcCtx := oidc.ClientContext(ctx, client)
+	stage = "oidc_discovery"
 	provider, e := oidc.NewProvider(oidcCtx, c.Issuer)
 	if e != nil {
 		return e
@@ -100,6 +123,7 @@ func run() error {
 	tokenCtx := context.WithValue(ctx, oauth2.HTTPClient, client)
 	credentials := clientcredentials.Config{ClientID: c.ClientID, ClientSecret: c.ClientSecret, TokenURL: c.TokenURL, Scopes: []string{"authorize", "usage:write"}, EndpointParams: url.Values{"resource": {c.Audience}}}
 	auth := &api.Delcore{Client: delcorev1connect.NewDelcoreServiceClient(client, c.DelcoreURL), Tokens: credentials.TokenSource(tokenCtx), OperatorVerifier: provider.Verifier(&oidc.Config{ClientID: c.Audience, SupportedSigningAlgs: []string{"RS256", "ES256"}}), OperatorRole: c.OperatorRole}
+	stage = "trace_exporter"
 	tp := trace.NewTracerProvider()
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" {
 		exporter, e := otlptracehttp.New(ctx)
@@ -155,6 +179,7 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case failure = <-errorsCh:
+			stage = "http_or_background_worker"
 			break loop
 		case <-ticker.C:
 			check, stop := context.WithTimeout(ctx, timeout)
@@ -162,6 +187,7 @@ loop:
 			stop()
 			if e != nil {
 				failure = e
+				stage = "instance_lock_lost"
 				break loop
 			}
 		}

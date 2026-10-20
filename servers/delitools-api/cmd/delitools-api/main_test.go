@@ -2,7 +2,9 @@
 package main
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,5 +23,16 @@ func TestGatewayTransportUsesEnvironmentProxy(t *testing.T) {
 	}
 	if transport == http.DefaultTransport {
 		t.Fatal("shared default transport mutated")
+	}
+}
+
+func TestStageFailureDoesNotExposeDependencySecrets(t *testing.T) {
+	cause := errors.New("postgres://user:secret@host/database")
+	err := &stageFailure{stage: "database_connect", cause: cause}
+	if err.Error() != "database_connect" || strings.Contains(err.Error(), "secret") {
+		t.Fatal("unsafe diagnostic")
+	}
+	if !errors.Is(err, cause) {
+		t.Fatal("lost error identity")
 	}
 }
