@@ -78,9 +78,16 @@ func TestOCI(t *testing.T) {
 	cfg["PADDLE_URL"] = "http://127.0.0.1:8099"
 	cfg["LISTEN"] = "127.0.0.1:8080"
 	cfg["TIMEOUT_SECONDS"] = "5"
-	// This OCI check exercises production startup; development catalog files
-	// are intentionally not bundled into the runtime image.
-	cfg["DEVELOPMENT"] = "false"
+	// Keep the loopback provider fixture in development mode. Mount a minimal
+	// catalog explicitly because production images do not bundle local files.
+	catalogDir := filepath.Join(dir, "catalog")
+	if e = os.Mkdir(catalogDir, 0755); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(catalogDir, "service.yaml"), []byte("kind: service\nkey: oci-fixture\nname: OCI Fixture\nclient_id: oci-fixture\ncapabilities: [execute]\nscopes: [authorize]\n"), 0644); e != nil {
+		t.Fatal(e)
+	}
+	cfg["CATALOG_DIR"] = "/catalog"
 	configPath := filepath.Join(dir, "fixture.env")
 	writeEnvironment := func() {
 		t.Helper()
@@ -94,7 +101,8 @@ func TestOCI(t *testing.T) {
 		}
 	}
 	writeEnvironment()
-	args := []string{"run", "--rm", "--network", "container:" + name, "--env-file", configPath, image}
+	mount := "type=bind,src=" + catalogDir + ",dst=/catalog,readonly"
+	args := []string{"run", "--rm", "--network", "container:" + name, "--mount", mount, "--env-file", configPath, image}
 	mustFail("run", "--rm", image) // Missing configuration.
 	mustFail(args...)              // Empty schema must never be migrated by normal startup.
 	run(append(args, "-migrate")...)
@@ -103,7 +111,7 @@ func TestOCI(t *testing.T) {
 	mustFail(append(args, "-migrate")...)
 	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-c", "UPDATE delcore_schema SET version="+strconv.Itoa(migrations.Version)+" WHERE version=999")
 	app := name + "-app"
-	run("run", "-d", "--name", app, "--network", "container:"+name, "--env-file", configPath, image)
+	run("run", "-d", "--name", app, "--network", "container:"+name, "--mount", mount, "--env-file", configPath, image)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", app).Run() })
 	started := false
 	for i := 0; i < 30; i++ {
