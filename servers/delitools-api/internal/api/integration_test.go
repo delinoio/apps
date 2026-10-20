@@ -10,6 +10,7 @@ import (
 	core "github.com/delinoio/apps/protos/delcore/v1"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
 	"github.com/delinoio/apps/protos/delitools/v1/delitoolsv1connect"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"io"
@@ -138,10 +139,11 @@ func setupAPI(t *testing.T) (*Server, *fakeAuthority, *fakeGateway, string) {
 	a := &fakeAuthority{user: ID(), reports: map[string]*core.Usage{}}
 	g := &fakeGateway{price: Price{Input: "0.001", Output: "0.002"}}
 	g.run = func(_ context.Context, _ int, capture func(string) error) (Result, error) {
-		if e := capture("gen_fixture"); e != nil {
+		generation := "gen_" + ID()
+		if e := capture(generation); e != nil {
 			return Result{}, e
 		}
-		return Result{Content: `{"success":true,"texts":["안녕","世界"]}`, Usage: &Counts{Input: 10, Output: 2}, GenerationID: "gen_fixture"}, nil
+		return Result{Content: `{"success":true,"texts":["안녕","世界"]}`, Usage: &Counts{Input: 10, Output: 2}, GenerationID: generation}, nil
 	}
 	s := &Server{DB: db, Auth: a, Gateway: g, ServiceID: ID(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if e = s.SyncPrices(ctx); e != nil {
@@ -1339,4 +1341,47 @@ func TestAssociationLookupPreservesStorageFailure(t *testing.T) {
 	s.DB.Pool.Close()
 	_, err = s.AssociateGeneration(ctx, request(q, "Bearer operator"))
 	reason(t, err, pb.ErrorReason_ERROR_REASON_INTERNAL)
+}
+
+func TestGenerationAssignmentIsUniqueAcrossWriters(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	g.run = func(context.Context, int, func(string) error) (Result, error) {
+		return Result{Unknown: true}, errors.New("lost response")
+	}
+	ids := []string{}
+	for _, key := range []string{"first", "second"} {
+		_, err := s.TranslateTextArray(ctx, request(translate(tenant, key), "Bearer user"))
+		reason(t, err, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+		var id string
+		if err := s.DB.Pool.QueryRow(ctx, "SELECT a.id::text FROM attempts a JOIN requests r ON r.id=a.request_id WHERE r.dedup_key=$1", key).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, id := range ids {
+		go func() {
+			<-start
+			_, err := s.DB.Pool.Exec(ctx, "UPDATE attempts SET generation_id='gen_shared' WHERE id=$1", id)
+			results <- err
+		}()
+	}
+	close(start)
+	success, conflict := 0, 0
+	for range ids {
+		err := <-results
+		var pgerr *pgconn.PgError
+		if err == nil {
+			success++
+		} else if errors.As(err, &pgerr) && pgerr.Code == "23505" && pgerr.ConstraintName == "attempts_generation_unique" {
+			conflict++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatal("generation assigned more than once", success, conflict)
+	}
 }

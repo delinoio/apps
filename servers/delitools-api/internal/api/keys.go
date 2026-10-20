@@ -11,6 +11,7 @@ import (
 	core "github.com/delinoio/apps/protos/delcore/v1"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"strings"
@@ -283,6 +284,10 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 		return e
 	})
 	if e != nil {
+		var databaseError *pgconn.PgError
+		if errors.As(e, &databaseError) && databaseError.Code == "23505" && databaseError.ConstraintName == "attempts_generation_unique" {
+			return nil, fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
+		}
 		var conflict *connect.Error
 		if errors.As(e, &conflict) {
 			return nil, conflict

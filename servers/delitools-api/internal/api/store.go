@@ -47,7 +47,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if version > migrations.Version {
 		return errors.New("schema is newer than binary")
 	}
-	for i, name := range []string{"001_initial.sql", "002_catalog_history.sql", "003_retention_indexes.sql", "004_request_failure.sql", "005_request_attempt_index.sql"} {
+	for i, name := range []string{"001_initial.sql", "002_catalog_history.sql", "003_retention_indexes.sql", "004_request_failure.sql", "005_request_attempt_index.sql", "006_unique_generation.sql"} {
 		revision := i + 1
 		data, err := migrations.Files.ReadFile(name)
 		if err != nil {
