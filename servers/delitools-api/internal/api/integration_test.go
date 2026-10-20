@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -787,5 +789,30 @@ func TestCatalogLookupErrorsRemainDistinct(t *testing.T) {
 				t.Fatal("lookup failure executed provider")
 			}
 		})
+	}
+}
+
+func TestOversizedGenerationIDRetainsUnknownAttempt(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, `data: {"id":"gen_`+strings.Repeat("x", 201)+`","choices":[]}`+"\n\n")
+	}))
+	defer upstream.Close()
+	s.Gateway = &HTTPGateway{Client: upstream.Client(), BaseURL: upstream.URL, MaxResponseBytes: 10000}
+	ctx := context.Background()
+	if _, err := s.DB.Pool.Exec(ctx, `UPDATE catalog SET price=jsonb_set(price, '{provider}', '"openai"')`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.TranslateTextArray(ctx, request(translate(tenant, "oversized-generation"), "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+	var requestID, attemptID, generation string
+	var state pb.RequestState
+	var known bool
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT r.id::text,a.id::text,r.state,a.generation_id,a.usage IS NOT NULL FROM requests r JOIN attempts a ON a.request_id=r.id WHERE r.dedup_key=$1", "oversized-generation").Scan(&requestID, &attemptID, &state, &generation, &known); err != nil {
+		t.Fatal(err)
+	}
+	if !validID(requestID) || !validID(attemptID) || state != pb.RequestState_REQUEST_STATE_UNKNOWN || generation != "" || known {
+		t.Fatal("lost or unsafe reconciliation metadata", requestID, attemptID, state, generation, known)
 	}
 }

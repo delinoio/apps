@@ -210,6 +210,9 @@ func (g *HTTPGateway) Execute(ctx context.Context, model, prompt string, schema 
 		}
 		if c.ID != "" && result.GenerationID == "" {
 			if len(c.ID) > 200 {
+				// Execution has started, but this untrusted identifier cannot be retained.
+				// The durable attempt and request IDs remain available for operator reconciliation.
+				result.Unknown = true
 				return result, errors.New("invalid generation identifier")
 			}
 			result.GenerationID = c.ID
