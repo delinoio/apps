@@ -116,7 +116,8 @@ func TestPublishedJSONRequests(t *testing.T) {
 	field := func(body, name string) string {
 		var parsed map[string]any
 		if e := json.Unmarshal([]byte(body), &parsed); e != nil {
-			t.Fatal(e, body)
+			// The body can hold a one-time key secret, so never print it.
+			t.Fatal("the response is not a JSON object:", e)
 		}
 		return fmt.Sprint(find(parsed, name))
 	}
@@ -126,8 +127,10 @@ func TestPublishedJSONRequests(t *testing.T) {
 	}
 	project := field(body, "id")
 	status, body = post("IssueApiKey", login(owner), `{"idempotencyKey":"8c2b7a60-91a0-4a53-a9c3-6f7f0b2f1e02","projectId":"`+project+`","permission":"API_KEY_PERMISSION_CRUD"}`)
+	// The response carries the one-time key secret, so a failure reports only the status and
+	// whether the secret has the documented prefix, never the body.
 	if status != 200 || !strings.HasPrefix(field(body, "secret"), "dbk_") {
-		t.Fatal(status, body)
+		t.Fatalf("issuing a key returned status %d or a secret without the dbk_ prefix", status)
 	}
 	secret := field(body, "secret")
 	status, body = post("CreateEndUser", secret, `{"idempotencyKey":"d5f0c3a2-2b1e-4f59-8f0a-5b7c9e4d3a03","projectId":"`+project+`","externalId":"user-1001","email":"ada@example.com","metadata":{"plan":"pro"}}`)
