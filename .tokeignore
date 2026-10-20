@@ -1,0 +1,4 @@
+# Exclude generated protobuf and Connect bindings from code statistics.
+/protos/**/*.pb.go
+/protos/**/*.connect.go
+/protos/**/*_pb.ts

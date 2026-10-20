@@ -1,5 +1,7 @@
 # Repository workflow contract
 
+Generated protobuf and Connect bindings under `protos/` (`*.pb.go`, `*.connect.go` and `*_pb.ts`) are excluded from tokei counts through `.tokeignore` and from GitHub language statistics through `.gitattributes`. Schemas and hand-written files remain eligible for counting.
+
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
 CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the FixKey release workflow for tags verified to belong to main. Protocol validation includes Go vet, unit tests and consumer example build; the dedicated formatting job checks Go formatting. Real PostgreSQL integration and OCI checks belong to servers. Protocol changes require lint, format, regeneration freshness and FILE breaking checks against the comparison revision.

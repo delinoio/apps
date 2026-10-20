@@ -1,6 +1,11 @@
 apps/delidev/src-tauri/Cargo.toml text eol=lf
 apps/delitools/src-tauri/Cargo.toml text eol=lf
 
+# Exclude generated protobuf and Connect bindings from GitHub language statistics.
+protos/**/*.pb.go linguist-generated=true
+protos/**/*.connect.go linguist-generated=true
+protos/**/*_pb.ts linguist-generated=true
+
 # Preserve upstream resource bytes for the pinned SHA-256 checks on every OS.
 apps/fixkey-app/src-tauri/licenses/MIT.txt -text
 apps/fixkey-app/src-tauri/licenses/MPL-2.0.txt -text
