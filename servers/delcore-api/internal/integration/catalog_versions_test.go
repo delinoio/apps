@@ -6,6 +6,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -245,6 +246,44 @@ func TestScheduledFreeDowngradeKeepsRequestedVersion(t *testing.T) {
 	}
 	if selected != requestedVersion || entitled != prices[1] {
 		t.Fatalf("scheduled change drifted: got %s/%s", selected, entitled)
+	}
+}
+
+func TestCatalogPriceReplacesLegacyTuple(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare legacy price service", Service: &pb.Service{Key: "legacy-price-service", Name: "Legacy Price Service", ClientId: "legacy-price", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare legacy price plan", Plan: &pb.Plan{Key: "legacy-price-plan", Name: "Legacy Price Plan", Free: true, DefaultFree: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare legacy price meter", Meter: &pb.Meter{ServiceId: service.Msg.Service.Id, Name: "requests"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	legacyPriceID := key()
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, plan.Msg.Plan.Id, service.Msg.Service.Id, "requests", "1", "0", "USD", "", time.Now().UTC(), 1); err != nil {
+		t.Fatal(err)
+	}
+	price, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "replace legacy price", Price: &pb.Price{Key: "requests-catalog", PlanId: plan.Msg.Plan.Id, ServiceId: service.Msg.Service.Id, Meter: "requests", UnitPrice: "2", Included: "0", Currency: "USD"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw []byte
+	if err = db.Pool.QueryRow(ctx, "SELECT definition FROM catalog_versions WHERE id=$1", price.Msg.Price.Id).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var definition struct {
+		Prices []string `json:"prices"`
+	}
+	if err = json.Unmarshal(raw, &definition); err != nil {
+		t.Fatal(err)
+	}
+	if len(definition.Prices) != 1 || definition.Prices[0] != price.Msg.Price.Id {
+		t.Fatalf("legacy price remained active: prices=%v legacy=%s", definition.Prices, legacyPriceID)
 	}
 }
 
