@@ -260,6 +260,7 @@ func (s *Server) claim(ctx context.Context, x *execution, input []byte) error {
 }
 func (s *Server) execute(ctx context.Context, header string, x *execution, input []byte, prompt string, schema map[string]any, settings *pb.Settings) (result Result, err error) {
 	if err = s.authorize(ctx, header, x.tenant, x.cap, x.id); err != nil {
+		s.enqueueEvent("authorization_failure", x.id)
 		return result, err
 	}
 	if len(x.key) > 200 {
@@ -290,6 +291,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 			break
 		}
 		if e := s.authorize(ctx, header, x.tenant, x.cap, x.id); e != nil {
+			s.enqueueEvent("authorization_failure", x.id)
 			return result, e
 		}
 		attemptID := ID()

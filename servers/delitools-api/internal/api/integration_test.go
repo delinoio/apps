@@ -1025,3 +1025,27 @@ func TestInspectionLookupErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionAuthorizationDiagnostics(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		s, a, g, tenant := setupAPI(t)
+		ctx := context.Background()
+		if retry {
+			g.run = func(context.Context, int, func(string) error) (Result, error) {
+				a.mu.Lock()
+				a.blocked = true
+				a.mu.Unlock()
+				return Result{Transient: true, Usage: &Counts{}}, errors.New("transient rejection")
+			}
+		} else {
+			a.blocked = true
+		}
+		_, err := s.TranslateTextArray(ctx, request(translate(tenant, "auth-diagnostic"), "Bearer user"))
+		reason(t, err, pb.ErrorReason_ERROR_REASON_BILLING_BLOCKED)
+		s.flushEvents(ctx)
+		var count int
+		if err := s.DB.Pool.QueryRow(ctx, "SELECT count(*) FROM operational_logs WHERE category='authorization_failure'").Scan(&count); err != nil || count != 1 {
+			t.Fatal("missing bounded authorization diagnostic", count, err)
+		}
+	}
+}
