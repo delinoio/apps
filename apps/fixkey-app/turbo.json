@@ -13,7 +13,7 @@
       "cache": true,
       "dependsOn": [],
       "inputs": [
-        "$TURBO_DEFAULT$",
+        "$TURBO_EXTENDS$",
         "$TURBO_ROOT$/pnpm-lock.yaml",
         "$TURBO_ROOT$/.nvmrc"
       ],

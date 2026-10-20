@@ -1,3 +1,26 @@
+Repository licensing scope
+==========================
+
+This repository contains components under different licenses. Apache-2.0
+does not apply to the entire repository.
+
+- All repository-owned files under servers/ and its descendants use the
+  Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2).
+  See servers/LICENSE for the complete terms and servers/NOTICE for attribution.
+  This applies even when a server file has no individual license header.
+  FSL is source-available. The Apache-2.0 terms below do not grant an immediate
+  Apache-2.0 license to these files. For each server version, the additional
+  Apache-2.0 grant takes effect on the second anniversary of the date Delino
+  makes that version available under FSL, as specified in servers/LICENSE.
+- Repository-owned files outside servers/ use Apache-2.0, reproduced below.
+  See the root NOTICE for attribution.
+- Imported third-party code and bundled fonts retain their original licenses
+  and copyright notices. Neither repository license replaces those terms.
+
+Including components in one distribution does not change their licenses.
+
+Apache-2.0 terms for repository-owned files outside servers/
+==========================================================
 
                                  Apache License
                            Version 2.0, January 2004

@@ -15,7 +15,7 @@ runs:
   steps:
     - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       with:
-        version: 10.26.2
+        version: 12.14.0
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
       id: node
       with:
@@ -29,6 +29,6 @@ runs:
       id: restore
       with:
         path: ${{ steps.store.outputs.path }}
-        key: ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm10.26.2-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+        key: ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm12.14.0-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
         restore-keys: |
-          ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm10.26.2-
+          ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm12.14.0-

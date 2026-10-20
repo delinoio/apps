@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import yaml from "js-yaml";
 
 const workflow = yaml.load(
@@ -77,7 +78,10 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
         build.if,
         `contains(fromJSON(needs.changes.outputs.rust_${check}), '${pkg}')`,
       );
-      assert.match(build.run, /build:frontend$/u);
+      assert.equal(
+        build.run,
+        `pnpm exec turbo run build:frontend --filter=${owner === "fixkey" ? "fixkey-desktop" : owner === "delitools" ? "delitools" : "delidev-desktop"}`,
+      );
       assert.ok(steps.indexOf(build) < steps.indexOf(command));
     }
   }
@@ -86,6 +90,82 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
   assert.equal(planner.env.TURBO_SCM_BASE, "${{ steps.plan.outputs.base }}");
   assert.equal(planner.env.TURBO_SCM_HEAD, "${{ steps.plan.outputs.head }}");
   assert.ok(steps.some((step) => step.with?.tool === "cargo-mono@0.6.9"));
+});
+
+test("write-capable remote cache credentials stay in trusted main jobs", () => {
+  const scenarios = [
+    {
+      event: "pull_request",
+      ref: "refs/pull/61/merge",
+      cache: "local:rw",
+      token: "",
+    },
+    {
+      event: "pull_request",
+      ref: "refs/heads/main",
+      cache: "local:rw",
+      token: "",
+    },
+    {
+      event: "push",
+      ref: "refs/heads/main",
+      cache: "local:rw,remote:rw",
+      token: "write-token",
+    },
+    { event: "push", ref: "refs/heads/feature", cache: "local:rw", token: "" },
+    {
+      event: "workflow_dispatch",
+      ref: "refs/heads/main",
+      cache: "local:rw,remote:r",
+      token: "write-token",
+    },
+    {
+      event: "workflow_dispatch",
+      ref: "refs/heads/feature",
+      cache: "local:rw",
+      token: "",
+    },
+    {
+      event: "pull_request_target",
+      ref: "refs/heads/main",
+      cache: "local:rw",
+      token: "",
+    },
+  ];
+  const evaluate = (expression, context) =>
+    runInNewContext(expression.slice(3, -2).trim(), context);
+  for (const id of ["fixkey-desktop", "rust-clippy", "rust-test"]) {
+    const job = workflow.jobs[id];
+    for (const scenario of scenarios) {
+      const context = {
+        github: { event_name: scenario.event, ref: scenario.ref },
+        vars: { TURBO_TEAM: "delino" },
+        secrets: { TURBO_TOKEN: "write-token" },
+      };
+      assert.equal(
+        evaluate(job.env.TURBO_TOKEN, context),
+        scenario.token,
+        `${id}: ${scenario.event} ${scenario.ref}`,
+      );
+      assert.equal(
+        evaluate(job.env.TURBO_CACHE, context),
+        scenario.cache,
+        `${id}: ${scenario.event} ${scenario.ref}`,
+      );
+    }
+    for (const missing of ["team", "token"]) {
+      const context = {
+        github: { event_name: "push", ref: "refs/heads/main" },
+        vars: { TURBO_TEAM: missing === "team" ? "" : "delino" },
+        secrets: { TURBO_TOKEN: missing === "token" ? "" : "write-token" },
+      };
+      assert.equal(evaluate(job.env.TURBO_CACHE, context), "local:rw");
+    }
+  }
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (["fixkey-desktop", "rust-clippy", "rust-test"].includes(id)) continue;
+    assert.equal(job.env?.TURBO_TOKEN, undefined, id);
+  }
 });
 
 test("all CI formatting checks belong to Check Formatting", () => {

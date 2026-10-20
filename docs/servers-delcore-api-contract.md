@@ -6,7 +6,9 @@
 
 ## Runtime and Language
 
-Use the root Go module and pinned toolchain. Run one process against PostgreSQL. Do not change root development commands.
+Use the root Go module and pinned toolchain. Run one process against PostgreSQL. Root `pnpm dev` includes this service through its workspace script.
+
+Until the official Go 1.27.3 Bookworm image is published, the OCI build stage bootstraps from `golang:1.27.2-bookworm` with `GOTOOLCHAIN=auto`. After copying `go.mod`, Go selects and downloads the required 1.27.3 toolchain before downloading dependencies or compiling the server. Restore the matching image and remove the override when it becomes available.
 
 ## Users and Operators
 
@@ -212,3 +214,11 @@ The registered service named `delitools` uses call-time public Gateway prices fo
 DeliTools may authorize tenant-owned service keys independently of the issuing member. Personal-key management requires current membership; service-key management requires current Owner/Admin. User execution still requires the requested capability. These modes are restricted to the registered DeliTools service and do not grant platform authority.
 
 DeliTools deletes pending delivery and unknown-usage records 30 days after their first creation, regardless of state. This explicit exception permits permanent loss of unreported charges; it never deletes delcore's accepted events, replay protection or ledger entries. Other consumers retain pending reports under their existing contracts.
+
+## Local development
+
+The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
+
+Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` to watch the repository root while build and run commands execute from the service workspace. Set `DELCORE_CONFIG` to the absolute path of an operator-owned JSON configuration outside the checkout, either in the shell environment or in the ignored `servers/delcore-api/.env`. The service-local `.env.example` lists this variable. Use `config.example.json` as the configuration template, replace placeholders, and keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.
+
+Prepare PostgreSQL and apply the existing explicit migration command before starting. Air does not bypass configuration validation, authentication or schema compatibility checks. Stop with `Ctrl+C`; Air sends an interrupt before terminating the server after five seconds. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.

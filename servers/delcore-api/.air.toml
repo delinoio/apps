@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Resolve the repository root from the service workspace to watch shared Go files.
+root = "../.."
+tmp_dir = "tmp/delcore-api"
+env_files = ["servers/delcore-api/.env"]
+
+[build]
+cmd = 'go build -o "../../tmp/delcore-api/server" "./cmd/delcore-api"'
+entrypoint = ["./tmp/delcore-api/server"]
+full_bin = '"../../tmp/delcore-api/server" -config "$DELCORE_CONFIG"'
+include_dir = ["servers/delcore-api", "protos"]
+include_file = ["go.mod", "go.sum"]
+include_ext = ["go", "sql"]
+exclude_dir = ["tmp", "node_modules", ".git"]
+exclude_regex = ["_test\\.go"]
+delay = 300
+stop_on_error = true
+send_interrupt = true
+kill_delay = "5s"
+
+[build.windows]
+cmd = 'go build -o "../../tmp/delcore-api/server.exe" "./cmd/delcore-api"'
+entrypoint = ["tmp\\delcore-api\\server.exe"]
+full_bin = '"..\..\tmp\delcore-api\server.exe" -config "%DELCORE_CONFIG%"'
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true

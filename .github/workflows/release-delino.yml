@@ -89,6 +89,11 @@ jobs:
           retention-days: 7
       - name: Deploy the tagged build to Cloudflare Pages production
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        env:
+          # pnpm 12 reads pnpm_config_* rather than npm_config_* settings.
+          # The action installs Wrangler with `pnpm add` at the workspace root.
+          # Remove this step-local exception when it supports `--workspace-root`.
+          pnpm_config_ignore_workspace_root_check: "true"
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
