@@ -6,6 +6,8 @@
 
 ## Development and validation
 
+- `protos/scripts/` owns shared Buf entry resolution and breaking checks; follow the [repository workflow](../docs/repository-workflow-contract.md).
+
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
 - Use local contracts and checks. Update affected server contracts and run server integration validation in this checkout under the [repository boundary contract](../docs/repository-boundary-contract.md).

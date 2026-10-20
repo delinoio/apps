@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: FSL-1.1-ALv2
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Api, databaseHandoff } from "./dev.mjs";
-import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
+import { Api, databaseHandoff } from "../../scripts/dev.mjs";
+import {
+  exitLikeChild,
+  spawnDevServer,
+} from "../../scripts/spawn-dev-server.mjs";
 
 export function prepareApiEnvironment(api, source = process.env) {
   if (!Object.values(Api).includes(api))

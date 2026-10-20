@@ -152,9 +152,10 @@ for (const [service, key] of [
     }
   });
 }
-test("server-wide license and instructions select every server", () => {
+test("server-wide license, instructions and helpers select every server", () => {
   for (const path of [
     "servers/LICENSE",
+    "servers/scripts/dev-api.mjs",
     "servers/AGENTS.md",
     "servers/NOTICE",
   ]) {

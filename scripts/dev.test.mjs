@@ -14,7 +14,7 @@ import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Api, composeDatabaseUrls, databaseHandoff } from "./dev.mjs";
-import { prepareApiEnvironment } from "./dev-api.mjs";
+import { prepareApiEnvironment } from "../servers/scripts/dev-api.mjs";
 
 const urls = {
   [Api.Delcore]:
@@ -219,7 +219,12 @@ test(
       rmSync(output, { force: true });
       const child = spawn(
         process.execPath,
-        [fileURLToPath(new URL("./dev-api.mjs", import.meta.url)), Api.Delcore],
+        [
+          fileURLToPath(
+            new URL("../servers/scripts/dev-api.mjs", import.meta.url),
+          ),
+          Api.Delcore,
+        ],
         {
           cwd: directory,
           env: {

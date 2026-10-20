@@ -17,7 +17,7 @@ import {
   completedText,
   validateCallback,
   verifyIdentity,
-} from "./localization/chatgpt.mjs";
+} from "./chatgpt.mjs";
 import {
   fingerprint,
   generate,
@@ -26,7 +26,7 @@ import {
   localizeLinks,
   validateTranslation,
   writeJson,
-} from "./localization/catalog.mjs";
+} from "./catalog.mjs";
 
 async function temporary(t) {
   const directory = await mkdtemp(join(tmpdir(), "delino-localization-"));

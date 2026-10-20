@@ -124,6 +124,8 @@ Use correlation IDs and bounded error categories. Server logs use log/slog; Acti
 
 ## Build and Test
 
+`protos/scripts/` owns shared Buf entry resolution and comparison-revision breaking checks under the [repository workflow](repository-workflow-contract.md).
+
 Run the owning repository format checks, Go tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
 
 ## Dependencies and Integrations

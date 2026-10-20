@@ -31,7 +31,9 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         path,
       ),
   );
-  const serverShared = paths.some((path) => /^servers\/[^/]+$/u.test(path));
+  const serverShared = paths.some((path) =>
+    /^servers\/(?:[^/]+$|scripts\/)/u.test(path),
+  );
   return {
     delcore_api:
       shared ||

@@ -219,6 +219,8 @@ PostgreSQL integration tests use `TEST_DATABASE_URL`. Service-prefixed aliases a
 
 ## Local development
 
+`servers/scripts/dev-api.mjs` owns the development launcher shared by the Go APIs. Its environment handoff follows the [repository workflow](repository-workflow-contract.md#local-development-databases).
+
 The root [development Compose procedure](repository-workflow-contract.md#local-development-databases) provides a local PostgreSQL instance and explicit migration commands. Root `pnpm dev` applies the resolved Compose database URL after Infisical injection through the shared API launcher. The launcher sets `DATABASE_URL` with higher priority than injected/process variables and the service-local `.env`; it preserves the local file and all other settings. Direct service-local development has no Compose override. Follow the [environment contract](repository-environment-contract.md#local-development-injection) for environment precedence and secret boundaries.
 
 The development command first injects Infisical `dev` variables from `/delcore-api` using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).

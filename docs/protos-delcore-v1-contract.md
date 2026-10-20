@@ -46,6 +46,8 @@ Correlate responses and logs without exposing credentials or raw provider payloa
 
 ## Build and Test
 
+`protos/scripts/` owns shared Buf entry resolution and comparison-revision breaking checks under the [repository workflow](repository-workflow-contract.md).
+
 Use the root Buf generation, lint, formatting, breaking and freshness checks. Generation must preserve schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The consumer example lives in `examples/delcore-client`; run `go test ./...` and `go build ./examples/delcore-client` here. Connect service contract tests against real PostgreSQL and mocked external services live under `servers/` in this checkout. Run affected server integration checks and report any unperformed checks in the pull request. Root `pnpm proto:generate` also generates TypeScript bindings beside the schemas. Git Tracker consumes them through the private `@delino/protos` workspace; do not publish a separate TypeScript SDK.
 
 ## Dependencies and Integrations

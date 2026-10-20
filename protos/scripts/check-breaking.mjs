@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBufEntry } from "./ci/buf-entry.mjs";
+import { resolveBufEntry } from "./buf-entry.mjs";
 
-const buf = resolveBufEntry(fileURLToPath(new URL("../", import.meta.url)));
+const buf = resolveBufEntry(fileURLToPath(new URL("../../", import.meta.url)));
 const revision = execFileSync(
   "git",
   ["rev-parse", "--verify", "--end-of-options", `${process.argv[2]}^{commit}`],
