@@ -192,9 +192,9 @@ func TestCatalogPinsMatchingProviderPrices(t *testing.T) {
 		case "/models/openai/gpt-6-luna/endpoints":
 			extra := ""
 			if ambiguous {
-				extra = `,{"provider_name":"openai","pricing":{"prompt":"0.003","completion":"0.002"}}`
+				extra = `,{"status":0,"provider_name":"openai","pricing":{"prompt":"0.003","completion":"0.002"}}`
 			}
-			fmt.Fprintf(w, `{"data":{"endpoints":[{"provider_name":"other","pricing":{"prompt":"0.009","completion":"0.002"}},{"provider_name":"openai","pricing":{"prompt":"0.001","completion":"0.002"}}%s]}}`, extra)
+			fmt.Fprintf(w, `{"data":{"endpoints":[{"status":0,"provider_name":"other","pricing":{"prompt":"0.009","completion":"0.002"}},{"status":0,"provider_name":"openai","pricing":{"prompt":"0.001","completion":"0.002"}}%s]}}`, extra)
 		case "/chat/completions":
 			var body struct {
 				ProviderOptions struct {
@@ -232,5 +232,27 @@ func TestCatalogPinsMatchingProviderPrices(t *testing.T) {
 	}
 	if _, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return nil }); err == nil {
 		t.Fatal("unpriced route accepted")
+	}
+}
+
+func TestFrozenRoutesRequireActiveEndpoints(t *testing.T) {
+	for _, tc := range []struct{ name, endpoints, want string }{
+		{"inactive first", `{"provider_name":"aaa","status":1,"pricing":{"prompt":"1","completion":"2"}},{"provider_name":"bbb","status":0,"pricing":{"prompt":"1","completion":"2"}}`, "bbb"},
+		{"inactive only", `{"provider_name":"aaa","status":1,"pricing":{"prompt":"1","completion":"2"}}`, ""},
+		{"unknown status", `{"provider_name":"aaa","status":99,"pricing":{"prompt":"1","completion":"2"}}`, ""},
+		{"missing status", `{"provider_name":"aaa","pricing":{"prompt":"1","completion":"2"}}`, ""},
+		{"null status", `{"provider_name":"aaa","status":null,"pricing":{"prompt":"1","completion":"2"}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"data":{"endpoints":[%s]}}`, tc.endpoints)
+			}))
+			defer h.Close()
+			g := &HTTPGateway{Client: h.Client(), BaseURL: h.URL, MaxResponseBytes: 10000}
+			p, err := g.routePrice(context.Background(), ExtractionModel, Price{Input: "1", Output: "2"})
+			if err != nil || p.Provider != tc.want {
+				t.Fatal(p, err)
+			}
+		})
 	}
 }

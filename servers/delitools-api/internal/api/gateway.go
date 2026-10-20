@@ -341,7 +341,11 @@ func usage(tenant, service, id, model string, meter string, n Counts, p Price, e
 	return &core.Usage{TenantId: tenant, ServiceId: service, EventKey: id, Meter: meter, Quantity: "1", OccurredAt: timestamppb.New(occurred), AiUsage: &core.AiUsage{Model: model, PriceEffectiveAt: timestamppb.New(effective), Tokens: tokens}}, nil
 }
 
-// Restrict execution to a provider whose endpoints all match the frozen public
+type endpointStatus int
+
+const endpointActive endpointStatus = 0
+
+// Restrict execution to a provider whose active endpoints all match the frozen public
 // model price. Reject ambiguous regional prices rather than select an unpriced route.
 func (g *HTTPGateway) routePrice(ctx context.Context, model string, price Price) (Price, error) {
 	if !regexp.MustCompile(`^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$`).MatchString(model) {
@@ -354,7 +358,8 @@ func (g *HTTPGateway) routePrice(ctx context.Context, model string, price Price)
 	var v struct {
 		Data struct {
 			Endpoints []struct {
-				Provider string `json:"provider_name"`
+				Provider string          `json:"provider_name"`
+				Status   *endpointStatus `json:"status"`
 				Pricing  struct {
 					Price
 					Prompt          string `json:"prompt"`
@@ -370,7 +375,7 @@ func (g *HTTPGateway) routePrice(ctx context.Context, model string, price Price)
 	}
 	candidates := map[string]bool{}
 	for _, endpoint := range v.Data.Endpoints {
-		if endpoint.Provider == "" {
+		if endpoint.Provider == "" || endpoint.Status == nil || *endpoint.Status != endpointActive {
 			continue
 		}
 		p := endpoint.Pricing.Price

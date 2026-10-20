@@ -27,7 +27,7 @@ func main() {
 	})
 	http.HandleFunc("/v1/models/openai/gpt-6-luna/endpoints", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"data":{"endpoints":[{"provider_name":"openai","pricing":{"prompt":"0.001","completion":"0.002"}}]}}`)
+		io.WriteString(w, `{"data":{"endpoints":[{"status":0,"provider_name":"openai","pricing":{"prompt":"0.001","completion":"0.002"}}]}}`)
 	})
 	var mu sync.Mutex
 	transactions := []map[string]any{}
