@@ -142,6 +142,10 @@ func (s *Server) ListApiKeys(ctx context.Context, r *connect.Request[pb.ListApiK
 			out.ApiKeys = out.ApiKeys[:size]
 			out.NextPageToken = encodeCursor(created[size-1], out.ApiKeys[size-1].Id)
 		}
+		if len(out.ApiKeys) == 0 {
+			rows.Close()
+			return requireProject(c, q.ProjectId)
+		}
 		return nil
 	})
 }

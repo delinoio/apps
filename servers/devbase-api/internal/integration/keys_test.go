@@ -189,3 +189,30 @@ func TestKeyIssuanceReplayAfterRequestedExpiry(t *testing.T) {
 		t.Fatal("unexpected key count")
 	}
 }
+
+// A project deleted after authorization but before the query leaves no keys; the empty page
+// must not look like a live project without keys.
+func TestListApiKeysReportsAProjectDeletedAfterAuthorization(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	p := f.project(login(owner), tenant, "Racing")
+	f.key(login(owner), p.Id, pb.ApiKeyPermission_API_KEY_PERMISSION_CRUD)
+	if list, e := f.client.ListApiKeys(ctx, as(login(owner), &pb.ListApiKeysRequest{ProjectId: p.Id})); e != nil || len(list.Msg.ApiKeys) != 1 {
+		t.Fatal("the live project did not list its key", e)
+	}
+	empty := f.project(login(owner), tenant, "Empty")
+	if list, e := f.client.ListApiKeys(ctx, as(login(owner), &pb.ListApiKeysRequest{ProjectId: empty.Id})); e != nil || len(list.Msg.ApiKeys) != 0 {
+		t.Fatal("a live project without keys must list successfully", e)
+	}
+	f.fake.mu.Lock()
+	f.fake.beforeStates = func() {
+		if _, e := f.db.Pool.Exec(ctx, "DELETE FROM projects WHERE id=$1", p.Id); e != nil {
+			t.Error(e)
+		}
+	}
+	f.fake.mu.Unlock()
+	if _, e := f.client.ListApiKeys(ctx, as(login(owner), &pb.ListApiKeysRequest{ProjectId: p.Id})); code(e) != connect.CodeNotFound {
+		t.Fatal("a project deleted after authorization listed as empty", e)
+	}
+}

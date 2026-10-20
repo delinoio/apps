@@ -73,6 +73,20 @@ func (s *Server) CreateProject(ctx context.Context, r *connect.Request[pb.Create
 	})
 }
 
+// requireProject reports a project that was deleted after the request was authorized.
+// A list query returns no rows both for a live empty project and for one whose cascade
+// already removed every child, so an empty page must check the parent before it succeeds.
+func requireProject(c *Call, id string) error {
+	var exists bool
+	if e := c.DB.QueryRow(c.Ctx, "SELECT EXISTS(SELECT 1 FROM projects WHERE id=$1)", id).Scan(&exists); e != nil {
+		return e
+	}
+	if !exists {
+		return notFound()
+	}
+	return nil
+}
+
 func (s *Server) GetProject(ctx context.Context, r *connect.Request[pb.GetProjectRequest]) (*connect.Response[pb.GetProjectResponse], error) {
 	q, out := r.Msg, &pb.GetProjectResponse{}
 	return handle(s, ctx, r, opGetProject, out, projectTarget(q.ProjectId), func() error { return nil }, func(c *Call) error {

@@ -37,6 +37,10 @@ type fakeDelcore struct {
 	fail     error // returned by every call when set
 	stateErr error
 	calls    int
+	// beforeStates runs once at the start of the next tenant-state read. Authorization reads
+	// the state after it resolved the project and before the operation runs, so a hook can
+	// delete the project in exactly that window.
+	beforeStates func()
 }
 
 func newFake() *fakeDelcore {
@@ -93,6 +97,13 @@ func (f *fakeDelcore) RequireManager(ctx context.Context, authorization, tenant 
 }
 
 func (f *fakeDelcore) TenantStates(ctx context.Context, tenants []string) (map[string]delcore.State, error) {
+	f.mu.Lock()
+	hook := f.beforeStates
+	f.beforeStates = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
