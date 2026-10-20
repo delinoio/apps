@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// Cursor timestamps are creation times the service itself issued. Bound them to the Unix epoch
+// and the end of year 9999, which PostgreSQL timestamptz and time.UnixMicro both represent
+// exactly, so an arbitrary int64 cannot overflow into a successful but wrong empty page.
+var (
+	minCursor = time.Unix(0, 0).UTC()
+	maxCursor = time.Date(9999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+)
+
 // cursor is the keyset position after the last returned row.
 type cursor struct {
 	At time.Time
@@ -41,6 +49,9 @@ func decodeCursor(token string) (*cursor, error) {
 	micro, id, ok := strings.Cut(string(raw), ".")
 	n, e := strconv.ParseInt(micro, 10, 64)
 	if !ok || e != nil || !canonicalUUID(id) {
+		return nil, invalid("page_token is invalid")
+	}
+	if n < minCursor.UnixMicro() || n > maxCursor.UnixMicro() {
 		return nil, invalid("page_token is invalid")
 	}
 	return &cursor{At: time.UnixMicro(n).UTC(), ID: id}, nil

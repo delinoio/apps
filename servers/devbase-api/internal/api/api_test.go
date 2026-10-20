@@ -3,7 +3,10 @@
 package api
 
 import (
+	"encoding/base64"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +137,19 @@ func TestCursorRoundTrip(t *testing.T) {
 	}
 	if c, e = decodeCursor(""); c != nil || e != nil {
 		t.Fatal("empty token")
+	}
+	// Tokens whose timestamp the service could never have issued are malformed, including the
+	// int64 extremes that overflow PostgreSQL's epoch conversion.
+	for _, micro := range []int64{math.MinInt64, math.MinInt64 + 1, -1, maxCursor.UnixMicro() + 1, math.MaxInt64} {
+		forged := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(micro, 10) + "." + id))
+		if _, e = decodeCursor(forged); e == nil {
+			t.Errorf("timestamp %d accepted", micro)
+		}
+	}
+	for _, edge := range []time.Time{minCursor, maxCursor} {
+		if _, e = decodeCursor(encodeCursor(edge, id)); e != nil {
+			t.Errorf("edge %v rejected: %v", edge, e)
+		}
 	}
 	for _, bad := range []string{"%%%", "MTIz", encodeCursor(at, "not-a-uuid")} {
 		if _, e = decodeCursor(bad); e == nil {
