@@ -666,3 +666,23 @@ func TestPriceSyncReportsDatabaseFailure(t *testing.T) {
 		t.Fatalf("failure logs %d %v", count, err)
 	}
 }
+
+func TestInspectFrozenPriceTimestamp(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	result, err := s.TranslateTextArray(ctx, request(translate(tenant, "inspect-price"), "Bearer user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspect, err := s.InspectRequest(ctx, request(&pb.InspectRequestRequest{RequestId: result.Msg.RequestId}, "Bearer operator"))
+	if err != nil || len(inspect.Msg.Attempts) != 1 || inspect.Msg.Attempts[0].PriceEffectiveAt == nil {
+		t.Fatal(inspect, err)
+	}
+	var effective time.Time
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT price_effective_at FROM attempts WHERE id=$1", inspect.Msg.Attempts[0].Id).Scan(&effective); err != nil {
+		t.Fatal(err)
+	}
+	if !inspect.Msg.Attempts[0].PriceEffectiveAt.AsTime().Equal(effective) {
+		t.Fatal("incorrect frozen price timestamp")
+	}
+}

@@ -202,18 +202,19 @@ func (s *Server) InspectRequest(ctx context.Context, r *connect.Request[pb.Inspe
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INVALID_INPUT, id)
 	}
 	out.CreatedAt = timestamppb.New(created)
-	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,id", r.Msg.RequestId, s.now().Add(-Retention))
+	rows, e := s.DB.Pool.Query(ctx, "SELECT id::text,generation_id,usage IS NOT NULL,delivered,created_at,price_effective_at FROM attempts WHERE request_id=$1 AND created_at>$2 ORDER BY created_at,id", r.Msg.RequestId, s.now().Add(-Retention))
 	if e != nil {
 		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		a := &pb.Attempt{}
-		var at time.Time
-		if e = rows.Scan(&a.Id, &a.GenerationId, &a.UsageKnown, &a.Delivered, &at); e != nil {
+		var at, effective time.Time
+		if e = rows.Scan(&a.Id, &a.GenerationId, &a.UsageKnown, &a.Delivered, &at, &effective); e != nil {
 			return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 		}
 		a.CreatedAt = timestamppb.New(at)
+		a.PriceEffectiveAt = timestamppb.New(effective)
 		out.Attempts = append(out.Attempts, a)
 	}
 	if rows.Err() != nil {
