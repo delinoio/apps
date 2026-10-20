@@ -42,6 +42,8 @@ Production publication uses `.github/workflows/release-devbase.yml` after `relea
 
 ## Dependencies and Integrations
 
+`@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
+
 Use the repository-pinned React, Rsbuild and TypeScript versions. Delcore owns billing for the separate DevBase API services; no live integration is part of the scaffold.
 
 ## Change Triggers

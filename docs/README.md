@@ -98,3 +98,8 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Web application](apps-git-tracker-web-contract.md)
 - [GitHub Action](packages-git-tracker-action-contract.md)
 - [Connect protocol](protos-git-tracker-v1-contract.md)
+
+### ui
+
+- [Project index](project-ui.md)
+- [Shared UI foundation](packages-ui-foundation.md)

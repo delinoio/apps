@@ -44,6 +44,8 @@ Production publication uses `.github/workflows/release-delino.yml` after `releas
 
 ## Dependencies and Integrations
 
+`@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
+
 Use the repository-pinned React, Rsbuild and TypeScript versions. The marketing site is independent of application runtime and billing services.
 
 ## Change Triggers

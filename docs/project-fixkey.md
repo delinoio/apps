@@ -24,6 +24,8 @@ FixKey is a standalone local desktop product owned by `https://github.com/delino
 
 ## Cross-Domain Invariants
 
+Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
+
 - Component identifiers remain stable: `core`, `desktop`.
 - Supported language identifiers remain stable: `ko-dubeolsik`, `en-us-qwerty`.
 - Target platform identifiers remain stable: `macos-arm64`, `windows-x64`, `windows-arm64`, `linux-x11-x64`, `linux-x11-arm64`.

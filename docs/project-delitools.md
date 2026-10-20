@@ -20,6 +20,8 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 
 ## Cross-Domain Invariants
 
+Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
+
 All hosts render an empty root with the `DeliTools` application name and `io.delino.delitools` identifier. The scaffold has no product backend, account access, RPC or product storage. Future tools use delcore for usage-based billing; clients do not own billing or service credentials. The web build targets Cloudflare Pages. DeliDev remains a separate application. React, Rsbuild and Rust follow the existing DeliDev shell instead of the default new-project Go language. Mobile uses system webviews; CEF is desktop-only.
 
 ## Change Policy

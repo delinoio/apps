@@ -45,6 +45,7 @@ enum ProjectId {
   DeliDev = "delidev",
   DeliTools = "delitools",
   FixKey = "fixkey",
+  Ui = "ui",
 }
 ```
 

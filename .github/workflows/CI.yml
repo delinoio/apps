@@ -126,6 +126,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: tooling
         run: pnpm test:tooling
+      - id: shared-ui
+        run: pnpm --filter @delino/ui test
       - id: workflows
         run: go tool actionlint -shellcheck=''
       - name: Save pnpm cache after successful main validation

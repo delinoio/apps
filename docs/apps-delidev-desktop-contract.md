@@ -12,6 +12,8 @@ Keep the `io.delino.delidev` application identifier, React/Rsbuild frontend, pin
 
 There is no CLI, server, Worker, mobile application, RPC schema, API client, sidecar, tray, widget, notification, account access, updater or product data migration. The shell does not inspect or erase previous user data or credentials. CEF infrastructure processes are part of rendering, not product Workers.
 
+Shared UI primitives and PostCSS configuration are available through `@delino/ui`; follow [the shared UI contract](packages-ui-foundation.md). The initial root remains empty.
+
 ## Development
 
 From `apps/delidev`, run `pnpm dev:desktop` to start the native shell and its frontend. `pnpm dev` serves the frontend at `http://127.0.0.1:46311`; port conflicts fail. The shared pinned Tauri CLI owns native setup and helper assembly. No Go binary or signing credentials are required for the shell.
