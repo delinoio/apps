@@ -4,6 +4,28 @@ Generated protobuf and Connect bindings under `protos/` (`*.pb.go`, `*.connect.g
 
 Root `pnpm dev` runs every workspace `dev` script concurrently through Turborepo. The `dev` task is persistent and uncached. The current participants are DeliDev, DeliTools, DevBase, Delino Site, Delino Docs, FixKey and Git Tracker frontends. Each retains its documented fixed loopback port and fails on conflicts. Stop the development session with `Ctrl+C`. App-local `pnpm dev` and `pnpm dev:desktop` remain available for individual frontend and native development. Go APIs have no workspace `dev` script and retain their separately configured startup commands in the owning server documentation.
 
+## Named local development URLs
+
+The root pins Portless as a development dependency. Run `pnpm dev:portless` from the repository root to start all seven frontends through the existing Turbo `dev` task and register their local URLs. Root `portless.json` owns app names and upstream ports, including the Rspress documentation server. Run Portless from the root so it reads this configuration. App-local `pnpm dev` and native development commands retain their direct loopback addresses.
+
+| Application | Main-checkout URL               | Upstream          |
+| ----------- | ------------------------------- | ----------------- |
+| DeliDev     | `https://delidev.localhost`     | `127.0.0.1:46311` |
+| DeliTools   | `https://delitools.localhost`   | `127.0.0.1:46312` |
+| DevBase     | `https://devbase.localhost`     | `127.0.0.1:46313` |
+| Delino Site | `https://delino-site.localhost` | `127.0.0.1:46314` |
+| Delino Docs | `https://delino-docs.localhost` | `127.0.0.1:46315` |
+| FixKey      | `https://fixkey.localhost`      | `127.0.0.1:46316` |
+| Git Tracker | `https://git-tracker.localhost` | `127.0.0.1:46320` |
+
+Portless prefixes names with the branch in linked Git worktrees. Use the URLs printed at startup. Upstream ports remain fixed to preserve native shell development URLs and strict conflict handling; different worktrees cannot serve the same app concurrently on those ports.
+
+Before the first session, run `pnpm exec portless proxy start` from an interactive terminal. Portless defaults to HTTPS on port 443, creates a local certificate authority, and can request administrator access to trust it and bind the port. This setup is local to the machine and is not an install hook. Non-interactive sessions must use an already prepared proxy. For HTTP without certificate setup or a privileged port, run `pnpm exec portless proxy start --no-tls --port 1355`; subsequent app commands reuse that proxy configuration and print URLs such as `http://devbase.localhost:1355`.
+
+`Ctrl+C` stops the app session and removes its routes. The shared proxy remains available for other sessions. Inspect it with `pnpm exec portless list` or `pnpm exec portless doctor`; stop it with `pnpm exec portless proxy stop` when no session needs it. Portless keeps machine state outside the repository and can synchronize local host entries for browsers that need them. See the [upstream usage guide](https://github.com/vercel-labs/portless#readme) for trust and DNS troubleshooting. Go APIs retain their separate startup commands, origins and authentication configuration.
+
+## Validation
+
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
 CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the FixKey release workflow for tags verified to belong to main. Protocol validation includes Go vet, unit tests and consumer example build; the dedicated formatting job checks Go formatting. Real PostgreSQL integration and OCI checks run for the affected services under `servers/`. Protocol changes require lint, format, regeneration freshness and FILE breaking checks against the comparison revision.

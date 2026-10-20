@@ -1,0 +1,23 @@
+{
+  "apps": {
+    "apps/delidev": { "name": "delidev", "appPort": 46311, "proxy": true },
+    "apps/delitools": { "name": "delitools", "appPort": 46312, "proxy": true },
+    "apps/devbase": { "name": "devbase", "appPort": 46313, "proxy": true },
+    "apps/delino-site": {
+      "name": "delino-site",
+      "appPort": 46314,
+      "proxy": true
+    },
+    "apps/delino-docs": {
+      "name": "delino-docs",
+      "appPort": 46315,
+      "proxy": true
+    },
+    "apps/fixkey-app": { "name": "fixkey", "appPort": 46316, "proxy": true },
+    "apps/git-tracker": {
+      "name": "git-tracker",
+      "appPort": 46320,
+      "proxy": true
+    }
+  }
+}
