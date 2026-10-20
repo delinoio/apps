@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/devbase/v1"
 	"github.com/delinoio/apps/servers/devbase-api/internal/delcore"
 	"github.com/delinoio/apps/servers/devbase-api/internal/maintenance"
@@ -219,4 +220,38 @@ func TestCleanupScrubsReplaysCommittedByRacingMutations(t *testing.T) {
 	if n := f.count("SELECT count(*) FROM replays WHERE idempotency_key='racing-key-0001' AND scrubbed AND response IS NULL AND length(fingerprint)=0"); n != 1 {
 		t.Fatal("a replay committed during cleanup kept the deleted user's response")
 	}
+}
+
+// A request authorized while the tenant was active can reach the database after cleanup
+// finished. The cleanup record must stop it from recreating tenant data.
+func TestStaleProjectCreationAfterTenantCleanup(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, project := f.seed("cleaned")
+	_ = project
+	owner := ""
+	f.fake.mu.Lock()
+	for key := range f.fake.roles {
+		if strings.HasSuffix(key, "|"+tenant) && strings.HasPrefix(key, "owner-") {
+			owner = strings.TrimSuffix(key, "|"+tenant)
+		}
+	}
+	f.fake.mu.Unlock()
+	f.fake.setState(tenant, delcore.StateDeleted)
+	f.worker().Cycle(ctx)
+	if f.count("SELECT count(*) FROM projects WHERE tenant_id=$1", tenant) != 0 || f.count("SELECT count(*) FROM deleted_tenants WHERE tenant_id=$1", tenant) != 1 {
+		t.Fatal("cleanup did not finish")
+	}
+	// Delcore still answers ACTIVE for the stale caller, as when the state was read earlier.
+	f.fake.setState(tenant, delcore.StateActive)
+	_, e := f.client.CreateProject(ctx, as(login(owner), &pb.CreateProjectRequest{IdempotencyKey: idem(), TenantId: tenant, Name: "Resurrected"}))
+	if code(e) != connect.CodePermissionDenied {
+		t.Fatal("a stale creator recreated data for a cleaned tenant", e)
+	}
+	if f.count("SELECT count(*) FROM projects WHERE tenant_id=$1", tenant) != 0 {
+		t.Fatal("project created after cleanup")
+	}
+	// Repeating the cleanup is harmless.
+	f.fake.setState(tenant, delcore.StateDeleted)
+	f.worker().Cycle(ctx)
 }

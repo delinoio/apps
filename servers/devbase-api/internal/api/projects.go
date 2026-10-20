@@ -52,6 +52,14 @@ func (s *Server) CreateProject(ctx context.Context, r *connect.Request[pb.Create
 		if _, e := c.DB.Exec(c.Ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "projects:"+q.TenantId); e != nil {
 			return e
 		}
+		var cleaned bool
+		if e := c.DB.QueryRow(c.Ctx, "SELECT EXISTS(SELECT 1 FROM deleted_tenants WHERE tenant_id=$1)", q.TenantId).Scan(&cleaned); e != nil {
+			return e
+		}
+		if cleaned {
+			// Authorization used a state read from before the permanent deletion finished.
+			return denied("the tenant was permanently deleted")
+		}
 		var count int64
 		if e := c.DB.QueryRow(c.Ctx, "SELECT count(*) FROM projects WHERE tenant_id=$1", q.TenantId).Scan(&count); e != nil {
 			return e

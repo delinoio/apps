@@ -133,7 +133,7 @@ Error codes: `unauthenticated` for invalid authentication, `permission_denied` f
 
 ## Storage
 
-PostgreSQL is authoritative. Tables: `projects`, `api_keys`, `end_users`, `replays`, `audit_events` and `devbase_schema`. The migrations require PostgreSQL built with ICU for the project-name collation. Entity IDs are UUID v7. Foreign keys cascade project deletion to keys and users. The database enforces unique `(tenant_id, name)` under the `project_name_ci` collation for projects and unique `(project_id, external_id)` for users.
+PostgreSQL is authoritative. Tables: `projects`, `api_keys`, `end_users`, `replays`, `audit_events`, `deleted_tenants` and `devbase_schema`. `deleted_tenants` holds only the tenant IDs whose cleanup finished. Project creation checks it under the tenant lock, so a request that was authorized before the permanent deletion cannot recreate data afterward. The migrations require PostgreSQL built with ICU for the project-name collation. Entity IDs are UUID v7. Foreign keys cascade project deletion to keys and users. The database enforces unique `(tenant_id, name)` under the `project_name_ci` collation for projects and unique `(project_id, external_id)` for users.
 
 Migrations are explicit, ordered and immutable SQL files embedded in the binary. `devbase-api migrate` applies them under an advisory lock and records a version and SHA-256 digest per file. The server refuses to start and reports unready when the recorded schema differs from the binary's expected version or digests. `devbase-api check-schema` performs the same check without serving. Recovery is fix-forward: correct a defect with a new migration and release. Do not roll back to a prior image or write reverse migrations.
 

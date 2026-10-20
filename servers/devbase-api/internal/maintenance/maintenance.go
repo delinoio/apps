@@ -183,6 +183,11 @@ func (w *Worker) deleteTenant(ctx context.Context, tenant, trace string) (int, e
 	if _, e = tx.Exec(ctx, "DELETE FROM projects WHERE tenant_id=$1", tenant); e != nil {
 		return 0, e
 	}
+	// Record the cleanup under the tenant lock. CreateProject checks this row under the same
+	// lock, so a request authorized before the tenant was deleted cannot recreate data.
+	if _, e = tx.Exec(ctx, "INSERT INTO deleted_tenants(tenant_id,deleted_at) VALUES($1,$2) ON CONFLICT DO NOTHING", tenant, now); e != nil {
+		return 0, e
+	}
 	// Scrub only after the cascade. An already authorized child mutation holds its row
 	// lock without the project lock, so the cascade waits for it to commit. A scrub that
 	// ran earlier would miss the replay record that mutation inserts.
