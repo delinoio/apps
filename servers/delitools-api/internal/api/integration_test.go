@@ -618,3 +618,35 @@ func TestAIRetryDoesNotWaitForDeliveryInterval(t *testing.T) {
 		t.Fatal(g.calls)
 	}
 }
+
+func TestRetryUsageUsesAttemptOccurrence(t *testing.T) {
+	s, a, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	now := time.Date(clock.Year(), clock.Month()+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+	first := now
+	s.Now = func() time.Time { return now }
+	g.run = func(_ context.Context, n int, _ func(string) error) (Result, error) {
+		if n == 1 {
+			now = now.Add(2 * time.Second)
+			return Result{Usage: &Counts{Input: 1}, Transient: true}, errors.New("retry")
+		}
+		return Result{Content: `{"success":true,"texts":["a","b"]}`, Usage: &Counts{Input: 1}}, nil
+	}
+	if _, err := s.TranslateTextArray(ctx, request(translate(tenant, "retry-time"), "Bearer user")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Deliver(ctx, testSettings()); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[time.Time]bool{}
+	for _, u := range a.reports {
+		seen[u.OccurredAt.AsTime()] = true
+		if !u.AiUsage.PriceEffectiveAt.AsTime().Before(first) {
+			t.Fatal("frozen price time changed")
+		}
+	}
+	if len(a.reports) != 2 || !seen[first] || !seen[first.Add(31*24*time.Hour)] {
+		t.Fatal("incorrect attempt attribution", seen)
+	}
+}

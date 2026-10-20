@@ -241,7 +241,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		attemptID := ID()
 		created := s.now()
 		price, _ := json.Marshal(x.price)
-		if _, e := s.DB.Pool.Exec(ctx, `INSERT INTO attempts(id,request_id,tenant_id,capability,model,price,price_effective_at,occurred_at,created_at,retry_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`, attemptID, x.id, x.tenant, x.cap, x.model, price, x.effective, x.started, created); e != nil {
+		if _, e := s.DB.Pool.Exec(ctx, `INSERT INTO attempts(id,request_id,tenant_id,capability,model,price,price_effective_at,occurred_at,created_at,retry_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`, attemptID, x.id, x.tenant, x.cap, x.model, price, x.effective, created, created); e != nil {
 			return result, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, x.id)
 		}
 		capture := func(generation string) error {
