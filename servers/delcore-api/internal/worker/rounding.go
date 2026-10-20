@@ -14,7 +14,8 @@ import (
 // already consumed from purchased credits. Never round individual usage events.
 func (w *Worker) roundUsage(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	rows, e := tx.Query(ctx, `SELECT DISTINCT u.tenant_id::text,u.service_id::text,u.meter,u.period_start,u.period_end,
- COALESCE((SELECT b.postpaid FROM billing_periods b WHERE b.tenant_id=u.tenant_id AND b.starts_at=u.period_start),p.postpaid)
+ COALESCE((SELECT b.postpaid FROM billing_periods b WHERE b.tenant_id=u.tenant_id AND b.starts_at=u.period_start),
+ (SELECT (cv.definition->>'postpaid')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=u.tenant_id AND cs.product_id=pr.plan_id AND cs.starts_at<=u.occurred_at AND (cs.ends_at IS NULL OR cs.ends_at>u.occurred_at) LIMIT 1),p.postpaid)
  FROM usage_events u JOIN tenants t ON t.id=u.tenant_id JOIN prices pr ON pr.id=u.price_id LEFT JOIN plans p ON p.id=pr.plan_id
  WHERE u.period_end<=$1 OR t.deleting_at<$2`, now, now.Add(-time.Duration(w.Config.ReportingGraceSeconds)*time.Second))
 	if e != nil {

@@ -50,7 +50,7 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 			e = c.tx.QueryRow(c.ctx, `SELECT t.operator_block,(t.renewal_failed OR `+postgres.PeriodExpiredSQL("t", "p", "$3")+`),t.deleting_at IS NOT NULL,
    EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active),
    COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<0,
-   (NOT p.postpaid AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<=0),
+   (NOT `+postgres.SelectedPlanBoolSQL("t", "p", "postpaid")+` AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<=0),
    EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.service_id=$2 AND en.starts_at<=$3 AND (en.ends_at IS NULL OR en.ends_at>$3))
    FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1`, q.TenantId, c.service, c.now).Scan(&operator, &renewal, &deleting, &dispute, &negative, &depleted, &entitled)
 			if e != nil {
@@ -134,7 +134,7 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 	}
 	var free, postpaid bool
 	var deleting *time.Time
-	e = c.tx.QueryRow(c.ctx, "SELECT p.free,p.postpaid,t.deleting_at FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 AND t.deleted_at IS NULL", u.TenantId).Scan(&free, &postpaid, &deleting)
+	e = c.tx.QueryRow(c.ctx, "SELECT "+postgres.SelectedPlanBoolSQL("t", "p", "free")+","+postgres.SelectedPlanBoolSQL("t", "p", "postpaid")+",t.deleting_at FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 AND t.deleted_at IS NULL", u.TenantId).Scan(&free, &postpaid, &deleting)
 	if e != nil {
 		return "", forbidden()
 	}
@@ -156,7 +156,10 @@ func (c *call) report(u *pb.Usage, correction bool) (string, error) {
 
 	if !historicalPaid {
 		var historicFree bool
-		if e = c.tx.QueryRow(c.ctx, "SELECT p.free,p.postpaid FROM prices pr JOIN plans p ON p.id=pr.plan_id WHERE pr.id=$1", price).Scan(&historicFree, &postpaid); e != nil || !historicFree {
+		if e = c.tx.QueryRow(c.ctx, `SELECT
+ COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=$2 AND cs.product_id=pr.plan_id AND cs.starts_at<=$3 AND (cs.ends_at IS NULL OR cs.ends_at>$3) LIMIT 1),p.free),
+ COALESCE((SELECT (cv.definition->>'postpaid')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=$2 AND cs.product_id=pr.plan_id AND cs.starts_at<=$3 AND (cs.ends_at IS NULL OR cs.ends_at>$3) LIMIT 1),p.postpaid)
+ FROM prices pr JOIN plans p ON p.id=pr.plan_id WHERE pr.id=$1`, price, u.TenantId, occurred).Scan(&historicFree, &postpaid); e != nil || !historicFree {
 			return "", precondition("historical billing period unavailable")
 		}
 	}

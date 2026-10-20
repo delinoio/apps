@@ -16,24 +16,22 @@ func (w *Worker) activateFree(ctx context.Context, tx pgx.Tx, tenant string, at 
 	if e != nil {
 		return e
 	}
-	if _, e = tx.Exec(ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", tenant, at); e != nil {
+	var plan string
+	if e = tx.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&plan); e != nil {
 		return e
 	}
-	rows, e := tx.Query(ctx, "SELECT DISTINCT ON(p.service_id,p.meter,p.kind) p.id::text FROM prices p JOIN tenants t ON t.plan_id=p.plan_id WHERE t.id=$1 ORDER BY p.service_id,p.meter,p.kind,p.created_at DESC,p.id DESC", tenant)
+	version, e := postgres.ActiveCatalogVersion(ctx, tx, "plan", plan)
 	if e != nil {
 		return e
 	}
-	var prices []string
-	for rows.Next() {
-		var price string
-		if e = rows.Scan(&price); e != nil {
-			rows.Close()
-			return e
-		}
-		prices = append(prices, price)
+	if e = postgres.ReplaceTenantSelections(ctx, tx, tenant, []string{version}, at); e != nil {
+		return e
 	}
-	rows.Close()
-	if e = rows.Err(); e != nil {
+	if _, e = tx.Exec(ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", tenant, at); e != nil {
+		return e
+	}
+	prices, e := postgres.ActiveProductPrices(ctx, tx, "plan", plan)
+	if e != nil {
 		return e
 	}
 	for _, price := range prices {

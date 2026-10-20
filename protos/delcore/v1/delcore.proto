@@ -68,6 +68,7 @@ message Tenant {
   bool blocked = 6;
   bool deleting = 7;
   string credit_balance = 8;
+  string plan_version_id = 9;
 }
 message Member {
   string user_id = 1;
@@ -89,6 +90,7 @@ message Service {
   string client_id = 3;
   repeated string capabilities = 4;
   repeated string scopes = 5;
+  string key = 6;
 }
 message Plan {
   string id = 1;
@@ -97,6 +99,9 @@ message Plan {
   bool free = 4;
   bool default_free = 5;
   bool postpaid = 6;
+  string key = 7;
+  string active_version_id = 8;
+  repeated FeatureValue feature_values = 9;
 }
 enum PriceKind {
   PRICE_KIND_UNSPECIFIED = 0;
@@ -106,11 +111,21 @@ enum PriceKind {
 message Meter {
   string service_id = 1;
   string name = 2;
+  string id = 3;
+  string key = 4;
+  string event_type = 5;
+  MeterAggregation aggregation = 6;
+  string value_attribute = 7;
+  repeated MeterFilter filters = 8;
+  repeated string group_by = 9;
 }
 message AddOn {
   string id = 1;
   string service_id = 2;
   string name = 3;
+  string key = 4;
+  string active_version_id = 5;
+  repeated FeatureValue feature_values = 6;
 }
 message Price {
   string id = 1;
@@ -123,6 +138,74 @@ message Price {
   string external_price_id = 8;
   string add_on_id = 9;
   PriceKind kind = 10;
+  string key = 11;
+  string stable_id = 12;
+}
+enum MeterAggregation {
+  METER_AGGREGATION_UNSPECIFIED = 0;
+  METER_AGGREGATION_COUNT = 1;
+  METER_AGGREGATION_SUM = 2;
+  METER_AGGREGATION_MIN = 3;
+  METER_AGGREGATION_MAX = 4;
+  METER_AGGREGATION_AVG = 5;
+  METER_AGGREGATION_UNIQUE_COUNT = 6;
+}
+enum MeterFilterOperator {
+  METER_FILTER_OPERATOR_UNSPECIFIED = 0;
+  METER_FILTER_OPERATOR_EQUAL = 1;
+  METER_FILTER_OPERATOR_NOT_EQUAL = 2;
+  METER_FILTER_OPERATOR_IN = 3;
+  METER_FILTER_OPERATOR_GREATER = 4;
+  METER_FILTER_OPERATOR_GREATER_OR_EQUAL = 5;
+  METER_FILTER_OPERATOR_LESS = 6;
+  METER_FILTER_OPERATOR_LESS_OR_EQUAL = 7;
+  METER_FILTER_OPERATOR_EXISTS = 8;
+}
+message MeterFilter {
+  string attribute = 1;
+  MeterFilterOperator operator = 2;
+  repeated string values = 3;
+}
+enum FeatureKind {
+  FEATURE_KIND_UNSPECIFIED = 0;
+  FEATURE_KIND_ACCESS = 1;
+  FEATURE_KIND_METERED = 2;
+  FEATURE_KIND_CONFIGURATION = 3;
+}
+enum ConfigurationValueType {
+  CONFIGURATION_VALUE_TYPE_UNSPECIFIED = 0;
+  CONFIGURATION_VALUE_TYPE_BOOLEAN = 1;
+  CONFIGURATION_VALUE_TYPE_INTEGER = 2;
+  CONFIGURATION_VALUE_TYPE_DECIMAL = 3;
+  CONFIGURATION_VALUE_TYPE_STRING = 4;
+  CONFIGURATION_VALUE_TYPE_STRING_LIST = 5;
+}
+message Feature {
+  string id = 1;
+  string service_id = 2;
+  string key = 3;
+  string name = 4;
+  FeatureKind kind = 5;
+  ConfigurationValueType value_type = 6;
+  string meter_key = 7;
+}
+message StringList {
+  repeated string values = 1;
+}
+message ConfigurationValue {
+  oneof value {
+    bool boolean = 1;
+    int64 integer = 2;
+    string decimal = 3;
+    string text = 4;
+    StringList string_list = 5;
+  }
+}
+message FeatureValue {
+  string feature_id = 1;
+  optional bool enabled = 2;
+  string limit = 3;
+  ConfigurationValue configuration = 4;
 }
 message Usage {
   string id = 1;
@@ -279,6 +362,7 @@ message GetCatalogResponse {
   repeated Price prices = 4;
   repeated AddOn add_ons = 6;
   repeated Meter meters = 7;
+  repeated Feature features = 8;
   string next_after_id = 5;
 }
 message PutMeterRequest {
@@ -290,10 +374,20 @@ message PutMeterResponse {
   Metadata metadata = 1;
   Meter meter = 2;
 }
+message PutFeatureRequest {
+  string request_key = 1;
+  Feature feature = 2;
+  string reason = 3;
+}
+message PutFeatureResponse {
+  Metadata metadata = 1;
+  Feature feature = 2;
+}
 message PutAddOnRequest {
   string request_key = 1;
   AddOn add_on = 2;
   string reason = 3;
+  bool replace_feature_values = 4;
 }
 message PutAddOnResponse {
   Metadata metadata = 1;
@@ -321,6 +415,7 @@ message PutPlanRequest {
   string request_key = 1;
   Plan plan = 2;
   string reason = 3;
+  bool replace_feature_values = 4;
 }
 message PutPlanResponse {
   Metadata metadata = 1;
@@ -499,6 +594,7 @@ message DeleteGroupResponse {
 service DelcoreService {
   rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse);
   rpc PutMeter(PutMeterRequest) returns (PutMeterResponse);
+  rpc PutFeature(PutFeatureRequest) returns (PutFeatureResponse);
   rpc PutAddOn(PutAddOnRequest) returns (PutAddOnResponse);
   rpc ListBillingHistory(ListBillingHistoryRequest) returns (ListBillingHistoryResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);

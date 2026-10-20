@@ -40,6 +40,9 @@ const (
 	DelcoreServiceDeleteGroupProcedure = "/delcore.v1.DelcoreService/DeleteGroup"
 	// DelcoreServicePutMeterProcedure is the fully-qualified name of the DelcoreService's PutMeter RPC.
 	DelcoreServicePutMeterProcedure = "/delcore.v1.DelcoreService/PutMeter"
+	// DelcoreServicePutFeatureProcedure is the fully-qualified name of the DelcoreService's PutFeature
+	// RPC.
+	DelcoreServicePutFeatureProcedure = "/delcore.v1.DelcoreService/PutFeature"
 	// DelcoreServicePutAddOnProcedure is the fully-qualified name of the DelcoreService's PutAddOn RPC.
 	DelcoreServicePutAddOnProcedure = "/delcore.v1.DelcoreService/PutAddOn"
 	// DelcoreServiceListBillingHistoryProcedure is the fully-qualified name of the DelcoreService's
@@ -148,6 +151,7 @@ const (
 type DelcoreServiceClient interface {
 	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 	PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error)
+	PutFeature(context.Context, *connect.Request[v1.PutFeatureRequest]) (*connect.Response[v1.PutFeatureResponse], error)
 	PutAddOn(context.Context, *connect.Request[v1.PutAddOnRequest]) (*connect.Response[v1.PutAddOnResponse], error)
 	ListBillingHistory(context.Context, *connect.Request[v1.ListBillingHistoryRequest]) (*connect.Response[v1.ListBillingHistoryResponse], error)
 	GetCurrentUser(context.Context, *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error)
@@ -207,6 +211,12 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+DelcoreServicePutMeterProcedure,
 			connect.WithSchema(delcoreServiceMethods.ByName("PutMeter")),
+			connect.WithClientOptions(opts...),
+		),
+		putFeature: connect.NewClient[v1.PutFeatureRequest, v1.PutFeatureResponse](
+			httpClient,
+			baseURL+DelcoreServicePutFeatureProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("PutFeature")),
 			connect.WithClientOptions(opts...),
 		),
 		putAddOn: connect.NewClient[v1.PutAddOnRequest, v1.PutAddOnResponse](
@@ -432,6 +442,7 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type delcoreServiceClient struct {
 	deleteGroup          *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
 	putMeter             *connect.Client[v1.PutMeterRequest, v1.PutMeterResponse]
+	putFeature           *connect.Client[v1.PutFeatureRequest, v1.PutFeatureResponse]
 	putAddOn             *connect.Client[v1.PutAddOnRequest, v1.PutAddOnResponse]
 	listBillingHistory   *connect.Client[v1.ListBillingHistoryRequest, v1.ListBillingHistoryResponse]
 	getCurrentUser       *connect.Client[v1.GetCurrentUserRequest, v1.GetCurrentUserResponse]
@@ -478,6 +489,11 @@ func (c *delcoreServiceClient) DeleteGroup(ctx context.Context, req *connect.Req
 // PutMeter calls delcore.v1.DelcoreService.PutMeter.
 func (c *delcoreServiceClient) PutMeter(ctx context.Context, req *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error) {
 	return c.putMeter.CallUnary(ctx, req)
+}
+
+// PutFeature calls delcore.v1.DelcoreService.PutFeature.
+func (c *delcoreServiceClient) PutFeature(ctx context.Context, req *connect.Request[v1.PutFeatureRequest]) (*connect.Response[v1.PutFeatureResponse], error) {
+	return c.putFeature.CallUnary(ctx, req)
 }
 
 // PutAddOn calls delcore.v1.DelcoreService.PutAddOn.
@@ -664,6 +680,7 @@ func (c *delcoreServiceClient) ListAudit(ctx context.Context, req *connect.Reque
 type DelcoreServiceHandler interface {
 	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 	PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error)
+	PutFeature(context.Context, *connect.Request[v1.PutFeatureRequest]) (*connect.Response[v1.PutFeatureResponse], error)
 	PutAddOn(context.Context, *connect.Request[v1.PutAddOnRequest]) (*connect.Response[v1.PutAddOnResponse], error)
 	ListBillingHistory(context.Context, *connect.Request[v1.ListBillingHistoryRequest]) (*connect.Response[v1.ListBillingHistoryResponse], error)
 	GetCurrentUser(context.Context, *connect.Request[v1.GetCurrentUserRequest]) (*connect.Response[v1.GetCurrentUserResponse], error)
@@ -719,6 +736,12 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		DelcoreServicePutMeterProcedure,
 		svc.PutMeter,
 		connect.WithSchema(delcoreServiceMethods.ByName("PutMeter")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServicePutFeatureHandler := connect.NewUnaryHandler(
+		DelcoreServicePutFeatureProcedure,
+		svc.PutFeature,
+		connect.WithSchema(delcoreServiceMethods.ByName("PutFeature")),
 		connect.WithHandlerOptions(opts...),
 	)
 	delcoreServicePutAddOnHandler := connect.NewUnaryHandler(
@@ -943,6 +966,8 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceDeleteGroupHandler.ServeHTTP(w, r)
 		case DelcoreServicePutMeterProcedure:
 			delcoreServicePutMeterHandler.ServeHTTP(w, r)
+		case DelcoreServicePutFeatureProcedure:
+			delcoreServicePutFeatureHandler.ServeHTTP(w, r)
 		case DelcoreServicePutAddOnProcedure:
 			delcoreServicePutAddOnHandler.ServeHTTP(w, r)
 		case DelcoreServiceListBillingHistoryProcedure:
@@ -1030,6 +1055,10 @@ func (UnimplementedDelcoreServiceHandler) DeleteGroup(context.Context, *connect.
 
 func (UnimplementedDelcoreServiceHandler) PutMeter(context.Context, *connect.Request[v1.PutMeterRequest]) (*connect.Response[v1.PutMeterResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.PutMeter is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) PutFeature(context.Context, *connect.Request[v1.PutFeatureRequest]) (*connect.Response[v1.PutFeatureResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.PutFeature is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) PutAddOn(context.Context, *connect.Request[v1.PutAddOnRequest]) (*connect.Response[v1.PutAddOnResponse], error) {

@@ -24,8 +24,9 @@ func (c *call) tenant(id string) (*pb.Tenant, error) {
 	t := &pb.Tenant{}
 	e := c.tx.QueryRow(c.ctx, `SELECT t.id::text,t.name,t.personal,t.owner_id::text,t.plan_id::text,
  (t.operator_block OR t.renewal_failed OR `+postgres.PeriodExpiredSQL("t", "p", "$2")+` OR EXISTS(SELECT 1 FROM disputes d WHERE d.tenant_id=t.id AND active)),
- t.deleting_at IS NOT NULL,COALESCE((SELECT sum(amount)::text FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),'0')
- FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 AND t.deleted_at IS NULL`, id, c.now).Scan(&t.Id, &t.Name, &t.Personal, &t.OwnerId, &t.PlanId, &t.Blocked, &t.Deleting, &t.CreditBalance)
+ t.deleting_at IS NOT NULL,COALESCE((SELECT sum(amount)::text FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),'0'),
+ COALESCE((SELECT version_id::text FROM tenant_catalog_selections WHERE tenant_id=t.id AND product_id=t.plan_id AND ends_at IS NULL LIMIT 1),'')
+ FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 AND t.deleted_at IS NULL`, id, c.now).Scan(&t.Id, &t.Name, &t.Personal, &t.OwnerId, &t.PlanId, &t.Blocked, &t.Deleting, &t.CreditBalance, &t.PlanVersionId)
 	return t, e
 }
 func (c *call) createTenant(name string, personal bool) (*pb.Tenant, error) {
@@ -44,24 +45,18 @@ func (c *call) createTenant(name string, personal bool) (*pb.Tenant, error) {
 	if _, e := c.tx.Exec(c.ctx, `INSERT INTO tenants(id,name,personal,owner_id,plan_id,period_start,period_end) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, name, personal, c.user, plan, start, start.AddDate(0, 1, 0)); e != nil {
 		return nil, e
 	}
-	if _, e := c.tx.Exec(c.ctx, "INSERT INTO members VALUES($1,$2,ARRAY[1])", id, c.user); e != nil {
-		return nil, e
-	}
-	rows, e := c.tx.Query(c.ctx, `SELECT DISTINCT ON(service_id,meter,kind) id::text FROM prices WHERE plan_id=$1 ORDER BY service_id,meter,kind,created_at DESC,id DESC`, plan)
+	version, e := postgres.ActiveCatalogVersion(c.ctx, c.tx, "plan", plan)
 	if e != nil {
 		return nil, e
 	}
-	var priceIDs []string
-	for rows.Next() {
-		var price string
-		if e = rows.Scan(&price); e != nil {
-			rows.Close()
-			return nil, e
-		}
-		priceIDs = append(priceIDs, price)
+	if e = postgres.ReplaceTenantSelections(c.ctx, c.tx, id, []string{version}, c.now); e != nil {
+		return nil, e
 	}
-	rows.Close()
-	if e = rows.Err(); e != nil {
+	if _, e := c.tx.Exec(c.ctx, "INSERT INTO members VALUES($1,$2,ARRAY[1])", id, c.user); e != nil {
+		return nil, e
+	}
+	priceIDs, e := postgres.ActiveProductPrices(c.ctx, c.tx, "plan", plan)
+	if e != nil {
 		return nil, e
 	}
 	for _, price := range priceIDs {

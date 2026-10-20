@@ -55,6 +55,7 @@ func (w *Worker) renew(ctx context.Context, tx pgx.Tx, t provider.Transaction, a
 		var p struct {
 			PlanID         string   `json:"plan_id"`
 			PriceIDs       []string `json:"price_ids"`
+			VersionIDs     []string `json:"version_ids"`
 			ExternalPrices []string `json:"external_price_ids"`
 		}
 		if e = json.Unmarshal(payload, &p); e != nil {
@@ -73,6 +74,9 @@ func (w *Worker) renew(ctx context.Context, tx pgx.Tx, t provider.Transaction, a
 			}
 		}
 		if _, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", tenant, p.PlanID); e != nil {
+			return e
+		}
+		if e = postgres.ReplaceTenantSelections(ctx, tx, tenant, p.VersionIDs, t.BillingPeriod.StartsAt); e != nil {
 			return e
 		}
 		if _, e = tx.Exec(ctx, "UPDATE jobs SET state='done',external_id=$2,error_category='',updated_at=now() WHERE id=$1", changeID, t.ID); e != nil {
@@ -112,6 +116,6 @@ func (w *Worker) renew(ctx context.Context, tx pgx.Tx, t provider.Transaction, a
 	if e = postgres.GrantAllowances(ctx, tx, tenant, t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt, t.BillingPeriod.StartsAt, "renewal:"+t.ID, nil); e != nil {
 		return e
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT t.id,$2,$3,p.postpaid FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", tenant, t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt)
+	_, e = tx.Exec(ctx, "INSERT INTO billing_periods SELECT t.id,$2,$3,"+postgres.SelectedPlanBoolSQL("t", "p", "postpaid")+" FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1 ON CONFLICT DO NOTHING", tenant, t.BillingPeriod.StartsAt, t.BillingPeriod.EndsAt)
 	return e
 }

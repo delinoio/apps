@@ -5,9 +5,14 @@ package rpc
 import (
 	"connectrpc.com/connect"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -41,12 +46,19 @@ func (s *Server) PutService(ctx context.Context, r *connect.Request[pb.PutServic
 				return invalid("unknown service scope")
 			}
 		}
-		if v.Id == "" {
-			v.Id = ID()
-		} else if !canonical(v.Id) {
+		if v.Id != "" && !canonical(v.Id) {
 			return invalid("invalid service ID")
 		}
-		_, e := c.tx.Exec(c.ctx, `INSERT INTO services VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,client_id=EXCLUDED.client_id,capabilities=EXCLUDED.capabilities,scopes=EXCLUDED.scopes`, v.Id, v.Name, v.ClientId, v.Capabilities, v.Scopes)
+		var e error
+		v.Key, e = c.catalogKey(v.Id, v.Key, v.Name)
+		if e != nil {
+			return e
+		}
+		v.Id, e = c.catalogEntity("service", "", v.Key, v.Id)
+		if e != nil {
+			return e
+		}
+		_, e = c.tx.Exec(c.ctx, `INSERT INTO services VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,client_id=EXCLUDED.client_id,capabilities=EXCLUDED.capabilities,scopes=EXCLUDED.scopes`, v.Id, v.Name, v.ClientId, v.Capabilities, v.Scopes)
 		if e != nil {
 			return e
 		}
@@ -75,10 +87,17 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 			c.s.Log.WarnContext(c.ctx, "rejected free postpaid plan", "correlation_id", c.correlation, "plan_id", v.Id, "default_free", v.DefaultFree)
 			return invalid("free plans cannot enable postpaid continuation")
 		}
-		if v.Id == "" {
-			v.Id = ID()
-		} else if !canonical(v.Id) {
+		if v.Id != "" && !canonical(v.Id) {
 			return invalid("invalid plan ID")
+		}
+		var e error
+		v.Key, e = c.catalogKey(v.Id, v.Key, v.Name)
+		if e != nil {
+			return e
+		}
+		v.Id, e = c.catalogEntity("plan", "", v.Key, v.Id)
+		if e != nil {
+			return e
 		}
 		if !v.DefaultFree {
 			var currentDefault bool
@@ -94,12 +113,16 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 				return e
 			}
 		}
-		tag, e := c.tx.Exec(c.ctx, `INSERT INTO plans VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,is_default=EXCLUDED.is_default WHERE plans.rank=EXCLUDED.rank AND plans.free=EXCLUDED.free AND plans.postpaid=EXCLUDED.postpaid`, v.Id, v.Name, v.Rank, v.Free, v.DefaultFree, v.Postpaid)
+		_, e = c.tx.Exec(c.ctx, `INSERT INTO plans VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,rank=EXCLUDED.rank,free=EXCLUDED.free,is_default=EXCLUDED.is_default,postpaid=EXCLUDED.postpaid`, v.Id, v.Name, v.Rank, v.Free, v.DefaultFree, v.Postpaid)
 		if e != nil {
 			return e
 		}
-		if tag.RowsAffected() != 1 {
-			return precondition("plan billing policy is immutable; create a new plan")
+		if e = c.replaceProductFeatures(v.Id, v.FeatureValues, q.ReplaceFeatureValues, ""); e != nil {
+			return e
+		}
+		v.ActiveVersionId, e = postgres.RebuildProductVersion(c.ctx, c.tx, "plan", v.Id)
+		if e != nil {
+			return e
 		}
 		o.Plan = v
 		return c.audit("", "catalog.plan", q.Reason)
@@ -125,7 +148,9 @@ func (s *Server) CreatePrice(ctx context.Context, r *connect.Request[pb.CreatePr
 		if e := nonempty(v.Meter, 100); e != nil {
 			return e
 		}
-		v.Id = ID()
+		unit, _ := accounting.Parse(v.UnitPrice)
+		included, _ := accounting.Parse(v.Included)
+		v.UnitPrice, v.Included = unit.String(), included.String()
 		var planID, addonID any
 		if v.PlanId != "" {
 			planID = v.PlanId
@@ -164,8 +189,46 @@ func (s *Server) CreatePrice(ctx context.Context, r *connect.Request[pb.CreatePr
 				return invalid("add-on belongs to another service")
 			}
 		}
-		_, e := c.tx.Exec(c.ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,addon_id,kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, v.Id, planID, v.ServiceId, v.Meter, v.UnitPrice, v.Included, v.Currency, v.ExternalPriceId, c.now, addonID, int32(v.Kind))
+		ownerKind, ownerID := "plan", v.PlanId
+		if v.AddOnId != "" {
+			ownerKind, ownerID = "addon", v.AddOnId
+		}
+		if v.Key == "" {
+			sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", v.ServiceId, v.Meter, v.Kind)))
+			v.Key = "price-" + hex.EncodeToString(sum[:8])
+		}
+		if !catalogKeyPattern.MatchString(v.Key) {
+			return invalid("invalid price key")
+		}
+		if v.StableId != "" && !canonical(v.StableId) {
+			return invalid("invalid stable price ID")
+		}
+		var e error
+		v.StableId, e = c.catalogEntity("price", ownerKind+":"+ownerID, v.Key, v.StableId)
 		if e != nil {
+			return e
+		}
+		definition := struct {
+			Service       string `json:"service"`
+			Meter         string `json:"meter"`
+			UnitPrice     string `json:"unit_price"`
+			Included      string `json:"included"`
+			Currency      string `json:"currency"`
+			ExternalPrice string `json:"external_price"`
+			Kind          int32  `json:"kind"`
+		}{v.ServiceId, v.Meter, v.UnitPrice, v.Included, v.Currency, v.ExternalPriceId, int32(v.Kind)}
+		var created bool
+		v.Id, created, e = postgres.SelectCatalogVersion(c.ctx, c.tx, v.StableId, definition)
+		if e != nil {
+			return e
+		}
+		if created {
+			_, e = c.tx.Exec(c.ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,addon_id,kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, v.Id, planID, v.ServiceId, v.Meter, v.UnitPrice, v.Included, v.Currency, v.ExternalPriceId, c.now, addonID, int32(v.Kind))
+			if e != nil {
+				return e
+			}
+		}
+		if _, e = postgres.RebuildProductVersion(c.ctx, c.tx, ownerKind, ownerID); e != nil {
 			return e
 		}
 		o.Price = v
@@ -179,13 +242,13 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if e != nil {
 			return e
 		}
-		rows, e := c.tx.Query(c.ctx, "SELECT id::text,name,client_id,capabilities,scopes FROM services WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		rows, e := c.tx.Query(c.ctx, "SELECT s.id::text,s.name,s.client_id,s.capabilities,s.scopes,COALESCE(ce.key,'') FROM services s LEFT JOIN catalog_entities ce ON ce.id=s.id WHERE s.id>$1 ORDER BY s.id LIMIT $2", after, n+1)
 		if e != nil {
 			return e
 		}
 		for rows.Next() {
 			v := &pb.Service{}
-			if e = rows.Scan(&v.Id, &v.Name, &v.ClientId, &v.Capabilities, &v.Scopes); e != nil {
+			if e = rows.Scan(&v.Id, &v.Name, &v.ClientId, &v.Capabilities, &v.Scopes, &v.Key); e != nil {
 				rows.Close()
 				return e
 			}
@@ -199,13 +262,13 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if e = rows.Err(); e != nil {
 			return e
 		}
-		rows, e = c.tx.Query(c.ctx, "SELECT id::text,name,rank,free,is_default,postpaid FROM plans WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		rows, e = c.tx.Query(c.ctx, "SELECT p.id::text,p.name,p.rank,p.free,p.is_default,p.postpaid,COALESCE(ce.key,''),COALESCE(ce.active_version_id::text,'') FROM plans p LEFT JOIN catalog_entities ce ON ce.id=p.id WHERE p.id>$1 ORDER BY p.id LIMIT $2", after, n+1)
 		if e != nil {
 			return e
 		}
 		for rows.Next() {
 			v := &pb.Plan{}
-			if e = rows.Scan(&v.Id, &v.Name, &v.Rank, &v.Free, &v.DefaultFree, &v.Postpaid); e != nil {
+			if e = rows.Scan(&v.Id, &v.Name, &v.Rank, &v.Free, &v.DefaultFree, &v.Postpaid, &v.Key, &v.ActiveVersionId); e != nil {
 				rows.Close()
 				return e
 			}
@@ -215,14 +278,14 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if e = rows.Err(); e != nil {
 			return e
 		}
-		rows, e = c.tx.Query(c.ctx, "SELECT id::text,COALESCE(plan_id::text,''),service_id::text,meter,unit_price::text,included::text,currency,external_price_id,COALESCE(addon_id::text,''),kind FROM prices WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		rows, e = c.tx.Query(c.ctx, "SELECT p.id::text,COALESCE(p.plan_id::text,''),p.service_id::text,p.meter,p.unit_price::text,p.included::text,p.currency,p.external_price_id,COALESCE(p.addon_id::text,''),p.kind,COALESCE(ce.key,''),COALESCE(ce.id::text,'') FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id LEFT JOIN catalog_entities ce ON ce.id=cv.entity_id WHERE p.id>$1 ORDER BY p.id LIMIT $2", after, n+1)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
 			v := &pb.Price{}
-			if e = rows.Scan(&v.Id, &v.PlanId, &v.ServiceId, &v.Meter, &v.UnitPrice, &v.Included, &v.Currency, &v.ExternalPriceId, &v.AddOnId, &v.Kind); e != nil {
+			if e = rows.Scan(&v.Id, &v.PlanId, &v.ServiceId, &v.Meter, &v.UnitPrice, &v.Included, &v.Currency, &v.ExternalPriceId, &v.AddOnId, &v.Kind, &v.Key, &v.StableId); e != nil {
 				return e
 			}
 			o.Prices = append(o.Prices, v)
@@ -231,17 +294,33 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if e = rows.Err(); e != nil {
 			return e
 		}
-		rows, e = c.tx.Query(c.ctx, "SELECT id::text,service_id::text,name FROM addons WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		rows, e = c.tx.Query(c.ctx, "SELECT a.id::text,a.service_id::text,a.name,COALESCE(ce.key,''),COALESCE(ce.active_version_id::text,'') FROM addons a LEFT JOIN catalog_entities ce ON ce.id=a.id WHERE a.id>$1 ORDER BY a.id LIMIT $2", after, n+1)
 		if e != nil {
 			return e
 		}
 		for rows.Next() {
 			v := &pb.AddOn{}
-			if e = rows.Scan(&v.Id, &v.ServiceId, &v.Name); e != nil {
+			if e = rows.Scan(&v.Id, &v.ServiceId, &v.Name, &v.Key, &v.ActiveVersionId); e != nil {
 				rows.Close()
 				return e
 			}
 			o.AddOns = append(o.AddOns, v)
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return e
+		}
+		rows, e = c.tx.Query(c.ctx, "SELECT id::text,service_id::text,key,name,kind,value_type,meter_key FROM features WHERE id>$1 ORDER BY id LIMIT $2", after, n+1)
+		if e != nil {
+			return e
+		}
+		for rows.Next() {
+			v := &pb.Feature{}
+			if e = rows.Scan(&v.Id, &v.ServiceId, &v.Key, &v.Name, &v.Kind, &v.ValueType, &v.MeterKey); e != nil {
+				rows.Close()
+				return e
+			}
+			o.Features = append(o.Features, v)
 		}
 		rows.Close()
 		if e = rows.Err(); e != nil {
@@ -261,7 +340,13 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if len(o.AddOns) > n && (boundary == "" || o.AddOns[n-1].Id < boundary) {
 			boundary = o.AddOns[n-1].Id
 		}
+		if len(o.Features) > n && (boundary == "" || o.Features[n-1].Id < boundary) {
+			boundary = o.Features[n-1].Id
+		}
 		if boundary != "" {
+			for len(o.Features) > 0 && o.Features[len(o.Features)-1].Id > boundary {
+				o.Features = o.Features[:len(o.Features)-1]
+			}
 			for len(o.AddOns) > 0 && o.AddOns[len(o.AddOns)-1].Id > boundary {
 				o.AddOns = o.AddOns[:len(o.AddOns)-1]
 			}
@@ -278,13 +363,22 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		}
 		// Meters travel with their service; service registration bounds each set.
 		for _, service := range o.Services {
-			rows, e = c.tx.Query(c.ctx, "SELECT service_id::text,name FROM meters WHERE service_id=$1 ORDER BY name", service.Id)
+			rows, e = c.tx.Query(c.ctx, `SELECT m.service_id::text,m.name,COALESCE(ce.id::text,''),COALESCE(ce.key,''),COALESCE(cv.definition,'{}'::jsonb) FROM meters m
+ LEFT JOIN catalog_entities ce ON ce.kind='meter' AND ce.scope=m.service_id::text
+ AND EXISTS (SELECT 1 FROM catalog_versions cv WHERE cv.id=ce.active_version_id AND cv.definition->>'name'=m.name)
+ LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id
+ WHERE m.service_id=$1 ORDER BY m.name`, service.Id)
 			if e != nil {
 				return e
 			}
 			for rows.Next() {
 				v := &pb.Meter{}
-				if e = rows.Scan(&v.ServiceId, &v.Name); e != nil {
+				var definition []byte
+				if e = rows.Scan(&v.ServiceId, &v.Name, &v.Id, &v.Key, &definition); e != nil {
+					rows.Close()
+					return e
+				}
+				if e = json.Unmarshal(definition, v); e != nil {
 					rows.Close()
 					return e
 				}
@@ -292,6 +386,18 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 			}
 			rows.Close()
 			if e = rows.Err(); e != nil {
+				return e
+			}
+		}
+		for _, plan := range o.Plans {
+			plan.FeatureValues, e = c.catalogFeatureValues(plan.ActiveVersionId)
+			if e != nil {
+				return e
+			}
+		}
+		for _, addon := range o.AddOns {
+			addon.FeatureValues, e = c.catalogFeatureValues(addon.ActiveVersionId)
+			if e != nil {
 				return e
 			}
 		}

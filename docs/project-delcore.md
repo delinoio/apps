@@ -29,6 +29,8 @@ See the [repository boundary contract](repository-boundary-contract.md) for coor
 
 PostgreSQL is authoritative. Logto owns identities; delcore owns tenant authorization. Paddle owns payment execution; delcore owns usage rating and credits. Purchased credits pay usage only. Paid periods follow Paddle renewal periods, and paid authorization ends at the confirmed period end until a renewal advances it; free periods use UTC calendar months. Consumers fail closed for new paid execution when authorization cannot be checked and retain pending usage reports. Registered services read billing-independent tenant state (`ACTIVE`, `BLOCKED`, `DELETING`, `DELETED`, `UNKNOWN`) through `GetTenantStates`; only `DELETED` permits consumer cleanup of retained tenant data. Server files use FSL-1.1-ALv2; protocol and consumer files use Apache-2.0.
 
+Catalog entities use stable, scoped keys and UUID v7 identities. Billing and feature definitions have immutable semantic versions. A tenant selects versions when its subscription changes; a renewal retains those selections. The [server contract](servers-delcore-api-contract.md) owns catalog selection and payment-confirmation rules, and the [protocol contract](protos-delcore-v1-contract.md) owns the public types.
+
 ## Change Policy
 
 When the boundary changes, update the local protocol and server contracts and this project index in the same change. Describe interface effects and client/server integration validation in the pull request. Update instruction files only for ownership or development-rule changes. Record validation and remaining limits in PRs, issues or CI artifacts.

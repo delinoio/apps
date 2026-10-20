@@ -314,6 +314,7 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	paidVersion := activeVersion(t, ctx, db.Pool, paid.Msg.Plan.Id)
 	me, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
 	if e != nil {
 		t.Fatal(e)
@@ -330,6 +331,10 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	if before == paid.Msg.Plan.Id {
 		t.Fatal("checkout intent activated paid plan")
 	}
+	var selectedBefore string
+	if e = db.Pool.QueryRow(ctx, "SELECT version_id::text FROM tenant_catalog_selections WHERE tenant_id=$1 AND ends_at IS NULL", tenant).Scan(&selectedBefore); e != nil || selectedBefore == paidVersion {
+		t.Fatal("checkout intent activated paid feature snapshot", e)
+	}
 	now := time.Now().UTC()
 	payload := fmt.Sprintf(`{"id":"txn_initial","status":"completed","currency_code":"USD","customer_id":"ctm_fixture","subscription_id":"sub_fixture","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"items":[{"price":{"id":"pri_base"},"quantity":1}],"billing_period":{"starts_at":%q,"ends_at":%q}}`, change.Msg.JobId, tenant, now.Format(time.RFC3339Nano), now.AddDate(0, 1, 0).Format(time.RFC3339Nano))
 	var transaction provider.Transaction
@@ -343,6 +348,10 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	var active string
 	if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&active); e != nil || active != paid.Msg.Plan.Id {
 		t.Fatal("paid activation", active, e)
+	}
+	var selectedPaid string
+	if e = db.Pool.QueryRow(ctx, "SELECT version_id::text FROM tenant_catalog_selections WHERE tenant_id=$1 AND ends_at IS NULL", tenant).Scan(&selectedPaid); e != nil || selectedPaid != paidVersion {
+		t.Fatal("confirmed payment did not activate selected catalog version", e)
 	}
 	if _, e = db.Pool.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant); e != nil {
 		t.Fatal(e)
@@ -360,6 +369,12 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	if e = db.Pool.QueryRow(ctx, "SELECT renewal_failed FROM tenants WHERE id=$1", tenant).Scan(&stillBlocked); e != nil || !stillBlocked {
 		t.Fatal("unrelated payment cleared renewal failure", e)
 	}
+	if _, e = client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "publish newer paid catalog version", Price: &pb.Price{PlanId: paid.Msg.Plan.Id, ServiceId: svc.Msg.Service.Id, Meter: "base", UnitPrice: "20", Included: "0", Currency: "USD", ExternalPriceId: "pri_base", Kind: pb.PriceKind_PRICE_KIND_RECURRING}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	if activeVersion(t, ctx, db.Pool, paid.Msg.Plan.Id) == paidVersion {
+		t.Fatal("paid catalog did not version")
+	}
 	transaction.ID = "txn_renewal"
 	transaction.Origin = "subscription_recurring"
 	transaction.BillingPeriod.StartsAt = transaction.BillingPeriod.EndsAt
@@ -370,6 +385,9 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	var blocked bool
 	if e = db.Pool.QueryRow(ctx, "SELECT renewal_failed FROM tenants WHERE id=$1", tenant).Scan(&blocked); e != nil || blocked {
 		t.Fatal("renewal did not recover", e)
+	}
+	if e = db.Pool.QueryRow(ctx, "SELECT version_id::text FROM tenant_catalog_selections WHERE tenant_id=$1 AND ends_at IS NULL", tenant).Scan(&selectedPaid); e != nil || selectedPaid != paidVersion {
+		t.Fatal("renewal silently upgraded catalog selection", e)
 	}
 	cancel, e := client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: tenant}, "owner"))
 	if e != nil {
@@ -390,6 +408,10 @@ func TestPaidActivationAndRenewal(t *testing.T) {
 	var state string
 	if e = db.Pool.QueryRow(ctx, "SELECT p.free,j.state FROM tenants t JOIN plans p ON p.id=t.plan_id JOIN jobs j ON j.id=$2 WHERE t.id=$1", tenant, cancel.Msg.JobId).Scan(&free, &state); e != nil || !free || state != "done" {
 		t.Fatal("renewal cancellation", free, state, e)
+	}
+	var selectedFree, activeFree string
+	if e = db.Pool.QueryRow(ctx, "SELECT cs.version_id::text,ce.active_version_id::text FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN plans p ON p.id=ce.id WHERE cs.tenant_id=$1 AND cs.ends_at IS NULL AND p.is_default", tenant).Scan(&selectedFree, &activeFree); e != nil || selectedFree != activeFree {
+		t.Fatal("cancellation did not select default free version", e)
 	}
 }
 
