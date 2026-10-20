@@ -212,9 +212,9 @@ jobs:
         os: [ubuntu-latest, windows-2022]
     env:
       TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      # Only main pushes publish artifacts; missing credentials use local caching.
-      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
+      TURBO_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && secrets.TURBO_TOKEN || '' }}
+      # Withhold the write-capable token from PRs and non-main manual runs.
+      TURBO_CACHE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
@@ -539,9 +539,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      # Only main pushes publish artifacts; missing credentials use local caching.
-      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
+      TURBO_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && secrets.TURBO_TOKEN || '' }}
+      # Withhold the write-capable token from PRs and non-main manual runs.
+      TURBO_CACHE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       RUST_PACKAGES: ${{ needs.changes.outputs.rust_clippy }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
@@ -610,9 +610,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      # Only main pushes publish artifacts; missing credentials use local caching.
-      TURBO_CACHE: ${{ vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
+      TURBO_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && secrets.TURBO_TOKEN || '' }}
+      # Withhold the write-capable token from PRs and non-main manual runs.
+      TURBO_CACHE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
       RUST_PACKAGES: ${{ needs.changes.outputs.rust_test }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
