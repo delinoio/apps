@@ -202,6 +202,17 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		}
 		return result, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, x.id)
 	}
+	if !s.acquire(x.tenant, settings) {
+		// Admission rejected before any attempt exists. Release the claim so the
+		// caller may retry the same key when capacity becomes available.
+		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
+		defer cancel()
+		if _, e := s.DB.Pool.Exec(bg, "DELETE FROM requests WHERE id=$1", x.id); e != nil {
+			return result, fault(pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME, x.id)
+		}
+		return result, fault(pb.ErrorReason_ERROR_REASON_LIMIT, x.id)
+	}
+	defer s.release(x.tenant)
 	state := pb.RequestState_REQUEST_STATE_COMPLETED
 	defer func() {
 		bg, cancel := context.WithTimeout(context.Background(), time.Duration(settings.ExecutionTimeoutSeconds)*time.Second)
@@ -211,10 +222,6 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		}
 		s.event(state.String(), x.id)
 	}()
-	if !s.acquire(x.tenant, settings) {
-		return result, fault(pb.ErrorReason_ERROR_REASON_LIMIT, x.id)
-	}
-	defer s.release(x.tenant)
 	for attempt := uint32(0); ; attempt++ {
 		if ctx.Err() != nil {
 			break

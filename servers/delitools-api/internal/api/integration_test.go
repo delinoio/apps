@@ -516,3 +516,28 @@ func TestSchemaAndSingleInstance(t *testing.T) {
 		t.Fatal("incompatible schema accepted")
 	}
 }
+
+func TestAdmissionRejectionDoesNotConsumeKey(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	v := testSettings()
+	v.TenantConcurrency = 1
+	_, err := s.UpdateSettings(context.Background(), request(&pb.UpdateSettingsRequest{Settings: v, Reason: "test admission"}, "Bearer operator"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.acquire(tenant, v) {
+		t.Fatal("fixture admission failed")
+	}
+	q := &pb.TranslateTextArrayRequest{TenantId: tenant, IdempotencyKey: "retry-after-capacity", OutputLanguage: "ko", Model: ExtractionModel, Texts: []string{"hello", "world"}}
+	_, err = s.TranslateTextArray(context.Background(), request(q, "Bearer user"))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted || g.calls != 0 {
+		t.Fatal("admission rejection", err, g.calls)
+	}
+	s.release(tenant)
+	if _, err = s.TranslateTextArray(context.Background(), request(q, "Bearer user")); err != nil {
+		t.Fatal("rejected key could not retry", err)
+	}
+	if g.calls != 1 {
+		t.Fatal("unexpected AI attempts", g.calls)
+	}
+}
