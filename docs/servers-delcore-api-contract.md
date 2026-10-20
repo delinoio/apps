@@ -70,6 +70,9 @@ The official API server base URL is `https://delcore.api.delino.io`.
 
 **Metering, credits, and settlement**
 
+- Meter definitions match an event type and AND-combined scalar attribute filters. Filters support equality, inequality, membership, numeric comparisons, and existence. Group keys include sorted attribute names, scalar types, and canonical values so equivalent flat events select the same group without key collisions.
+- For each matched meter and group, compute count, sum, min, max, average, or exact unique count. Retain the exact sum and count for averages; round the exposed average to six decimal places using half-up rounding, with negative ties rounded away from zero. Negative numeric inputs remain valid. Replacing or cancelling an event recomputes affected groups and removes empty groups.
+- Check group and distinct-value cardinality against the complete accepted event state, including events awaiting aggregate materialization. Apply the admission decision to the whole event when multiple meters match.
 - Services report measured usage after execution. Delcore calculates charges using its price contracts.
 - Preserve usage event identity, service and tenant attribution, occurrence time, and applicable price history.
 - Deduplicate accepted usage durably. A service may correct its own prior event through a referenced correction API.
