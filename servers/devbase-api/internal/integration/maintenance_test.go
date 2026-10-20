@@ -177,3 +177,46 @@ func (f *fixture) counter(t *testing.T, name string) float64 {
 	}
 	return 0
 }
+
+// An already authorized UpdateEndUser holds the user row without the project lock. Cleanup
+// must wait for it and still scrub the replay record that update inserts.
+func TestCleanupScrubsReplaysCommittedByRacingMutations(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, project := f.seed("racing")
+	var user string
+	if e := f.db.Pool.QueryRow(ctx, "SELECT id::text FROM end_users WHERE project_id=$1", project).Scan(&user); e != nil {
+		t.Fatal(e)
+	}
+	f.fake.setState(tenant, delcore.StateDeleted)
+	tx, e := f.db.Pool.Begin(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, "SELECT id FROM end_users WHERE id=$1 FOR UPDATE", user); e != nil {
+		t.Fatal(e)
+	}
+	done := make(chan struct{})
+	go func() { f.worker().Cycle(ctx); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("cleanup did not wait for the in-flight mutation")
+	case <-time.After(500 * time.Millisecond):
+	}
+	// The in-flight update records its replay and commits after cleanup started.
+	if _, e = tx.Exec(ctx, `INSERT INTO replays(principal,idempotency_key,operation,tenant_id,project_id,target_user_id,fingerprint,response,created_at,expires_at)
+ VALUES('user:racer','racing-key-0001','UpdateEndUser',$1,$2,$3,'\x01','\x02',now(),now()+interval '1 day')`, tenant, project, user); e != nil {
+		t.Fatal(e)
+	}
+	if e = tx.Commit(ctx); e != nil {
+		t.Fatal(e)
+	}
+	<-done
+	if f.count("SELECT count(*) FROM projects WHERE tenant_id=$1", tenant) != 0 {
+		t.Fatal("cleanup did not finish")
+	}
+	if n := f.count("SELECT count(*) FROM replays WHERE idempotency_key='racing-key-0001' AND scrubbed AND response IS NULL AND length(fingerprint)=0"); n != 1 {
+		t.Fatal("a replay committed during cleanup kept the deleted user's response")
+	}
+}

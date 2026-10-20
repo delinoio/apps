@@ -174,9 +174,6 @@ func (w *Worker) deleteTenant(ctx context.Context, tenant, trace string) (int, e
 	if e = rows.Err(); e != nil {
 		return 0, e
 	}
-	if e = api.ScrubTenant(ctx, tx, tenant); e != nil {
-		return 0, e
-	}
 	now := w.now().Truncate(time.Microsecond)
 	for _, id := range ids {
 		if _, e = tx.Exec(ctx, "INSERT INTO audit_events(id,occurred_at,action,actor,target_id,trace_id) VALUES($1,$2,'tenant.cleanup','system:cleanup',$3,$4)", uuid.Must(uuid.NewV7()).String(), now, id, trace); e != nil {
@@ -184,6 +181,12 @@ func (w *Worker) deleteTenant(ctx context.Context, tenant, trace string) (int, e
 		}
 	}
 	if _, e = tx.Exec(ctx, "DELETE FROM projects WHERE tenant_id=$1", tenant); e != nil {
+		return 0, e
+	}
+	// Scrub only after the cascade. An already authorized child mutation holds its row
+	// lock without the project lock, so the cascade waits for it to commit. A scrub that
+	// ran earlier would miss the replay record that mutation inserts.
+	if e = api.ScrubTenant(ctx, tx, tenant); e != nil {
 		return 0, e
 	}
 	return len(ids), tx.Commit(ctx)
