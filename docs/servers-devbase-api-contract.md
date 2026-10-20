@@ -178,7 +178,7 @@ Server environment variables have no service-name prefix. Required: `DATABASE_UR
 
 ## Local development
 
-The development command first injects Infisical `dev` variables using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
+The development command first injects the Infisical `dev` variables of the `/devbase-api` folder using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 
 Run `pnpm dev` at the repository root for all development servers, or from `servers/devbase-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` and loads the optional ignored `servers/devbase-api/.env`; use `.env.example` as a guide. Root `pnpm dev` starts the local `devbase-postgres` Compose database and applies its URL as `DATABASE_URL` through the shared API launcher after Infisical injection; follow the [development database procedure](repository-workflow-contract.md#local-development-databases) and the [environment contract](repository-environment-contract.md#local-development-injection). Direct service-local development sets `DATABASE_URL` itself. Run `devbase-api migrate` before starting; Air does not provision dependencies, apply migrations or bypass configuration and schema checks. Keep the local API listener at `127.0.0.1:46317`. A port conflict fails startup; no alternate port is selected. See the [workflow contract](repository-workflow-contract.md) for watcher scope.
 
