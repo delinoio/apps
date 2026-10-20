@@ -50,8 +50,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [delino-site, delino-docs]
-    environment: ${{ matrix.app }}-production
+        include:
+          - app: delino-site
+            pages_project_variable: CLOUDFLARE_PAGES_PROJECT_SITE
+          - app: delino-docs
+            pages_project_variable: CLOUDFLARE_PAGES_PROJECT_DOCS
+    environment: delino-production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -63,7 +67,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.pages_project_variable] }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
@@ -89,7 +93,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.151.1"
-          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.source.outputs.revision }}
+          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ vars[matrix.pages_project_variable] }} --branch=main --commit-hash=${{ needs.source.outputs.revision }}
       - name: Remove generated frontend output
         if: always()
         run: rm -rf "apps/${{ matrix.app }}/dist"
