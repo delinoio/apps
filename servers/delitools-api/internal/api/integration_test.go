@@ -509,7 +509,7 @@ func TestSchemaAndSingleInstance(t *testing.T) {
 		other.Release()
 		t.Fatal("second instance accepted")
 	}
-	if _, e = s.DB.Pool.Exec(ctx, "UPDATE delitools_schema SET version=2"); e != nil {
+	if _, e = s.DB.Pool.Exec(ctx, "UPDATE delitools_schema SET version=version+99"); e != nil {
 		t.Fatal(e)
 	}
 	if s.DB.CheckSchema(ctx) == nil {
@@ -539,5 +539,28 @@ func TestAdmissionRejectionDoesNotConsumeKey(t *testing.T) {
 	}
 	if g.calls != 1 {
 		t.Fatal("unexpected AI attempts", g.calls)
+	}
+}
+
+func TestPriceSyncPreservesRequestStartSnapshot(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	start := s.now()
+	s.Now = func() time.Time { return start.Add(time.Second) }
+	g.price.Input = "0.009"
+	if err := s.SyncPrices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		at    time.Time
+		price string
+	}{{start, "0.001"}, {start.Add(time.Second), "0.009"}} {
+		x := &execution{id: ID(), tenant: tenant, model: ExtractionModel, cap: pb.Capability_CAPABILITY_TRANSLATOR, started: tc.at}
+		if err := s.claim(ctx, x, []byte("fixture")); err != nil {
+			t.Fatal(err)
+		}
+		if x.price.Input != tc.price {
+			t.Fatal("wrong request-start price", x.price.Input, tc.price)
+		}
 	}
 }

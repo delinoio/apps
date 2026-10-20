@@ -174,7 +174,7 @@ func (s *Server) claim(ctx context.Context, x *execution, input []byte) error {
 			}
 		}
 		var raw []byte
-		if e := tx.QueryRow(ctx, "SELECT price,effective_at FROM catalog WHERE model=$1 AND effective_at<=$2", x.model, x.started).Scan(&raw, &x.effective); e != nil {
+		if e := tx.QueryRow(ctx, "SELECT price,effective_at FROM catalog WHERE model=$1 AND effective_at<=$2 ORDER BY effective_at DESC LIMIT 1", x.model, x.started).Scan(&raw, &x.effective); e != nil {
 			return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
 		}
 		if e := json.Unmarshal(raw, &x.price); e != nil || !x.price.Valid() {

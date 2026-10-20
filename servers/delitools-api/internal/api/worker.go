@@ -22,7 +22,7 @@ func (s *Server) SyncPrices(ctx context.Context) error {
 				continue
 			}
 			raw, _ := json.Marshal(p)
-			if _, e := tx.Exec(ctx, `INSERT INTO catalog VALUES($1,$2,$3) ON CONFLICT(model) DO UPDATE SET price=EXCLUDED.price,effective_at=EXCLUDED.effective_at WHERE catalog.price<>EXCLUDED.price`, model, raw, now); e != nil {
+			if _, e := tx.Exec(ctx, `INSERT INTO catalog SELECT $1,$2::jsonb,$3 WHERE $2::jsonb IS DISTINCT FROM (SELECT price FROM catalog WHERE model=$1 ORDER BY effective_at DESC LIMIT 1) ON CONFLICT(model,effective_at) DO NOTHING`, model, raw, now); e != nil {
 				return e
 			}
 		}

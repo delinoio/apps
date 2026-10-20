@@ -47,23 +47,29 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if version > migrations.Version {
 		return errors.New("schema is newer than binary")
 	}
-	data, _ := migrations.Files.ReadFile("001_initial.sql")
-	sum := sha256.Sum256(data)
-	digest := hex.EncodeToString(sum[:])
-	if version == 1 {
-		var old string
-		if e = tx.QueryRow(ctx, "SELECT digest FROM delitools_schema WHERE version=1").Scan(&old); e != nil {
-			return e
+	for i, name := range []string{"001_initial.sql", "002_catalog_history.sql"} {
+		revision := i + 1
+		data, err := migrations.Files.ReadFile(name)
+		if err != nil {
+			return err
 		}
-		if old != digest {
-			return errors.New("migration checksum mismatch")
-		}
-	} else {
-		if _, e = tx.Exec(ctx, string(data)); e != nil {
-			return e
-		}
-		if _, e = tx.Exec(ctx, "INSERT INTO delitools_schema VALUES(1,$1)", digest); e != nil {
-			return e
+		sum := sha256.Sum256(data)
+		digest := hex.EncodeToString(sum[:])
+		if revision <= version {
+			var old string
+			if e = tx.QueryRow(ctx, "SELECT digest FROM delitools_schema WHERE version=$1", revision).Scan(&old); e != nil {
+				return e
+			}
+			if old != digest {
+				return errors.New("migration checksum mismatch")
+			}
+		} else {
+			if _, e = tx.Exec(ctx, string(data)); e != nil {
+				return e
+			}
+			if _, e = tx.Exec(ctx, "INSERT INTO delitools_schema VALUES($1,$2)", revision, digest); e != nil {
+				return e
+			}
 		}
 	}
 	return tx.Commit(ctx)
