@@ -26,7 +26,7 @@ End users never sign in to DevBase. Their records do not give them access to Del
 4. **Look users up.** Use `GetEndUser` with the internal ID or `LookupEndUser` with the external ID.
 5. **Change or delete users.** Use `UpdateEndUser` and `DeleteEndUser` with the current `version`.
 
-All procedures are on `devbase.v1.DevBaseService`. Use any Connect client, or send plain JSON over HTTP. Set `DEVBASE_URL` to the base URL of your DevBase API server, for example `http://127.0.0.1:46317` for a local server.
+All procedures are on `devbase.v1.DevBaseService`. Call DevBase from server-side code or the command line, with any Connect client or plain JSON over HTTP. Do not call it from a browser or put a project key in frontend code: DevBase rejects every browser origin except its own console. Set `DEVBASE_URL` to the base URL of your DevBase API server, for example `http://127.0.0.1:46317` for a local server.
 
 ```sh
 # Create a project with your Delino login token.

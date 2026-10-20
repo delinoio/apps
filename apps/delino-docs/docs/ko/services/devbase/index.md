@@ -26,7 +26,7 @@ DevBase는 애플리케이션의 최종 사용자를 모아 두는 무료 디렉
 4. **사용자를 조회합니다.** 내부 ID로 `GetEndUser`를 쓰거나 외부 ID로 `LookupEndUser`를 씁니다.
 5. **사용자를 변경하거나 삭제합니다.** 현재 `version`으로 `UpdateEndUser`와 `DeleteEndUser`를 씁니다.
 
-모든 프로시저는 `devbase.v1.DevBaseService`에 있습니다. 어떤 Connect 클라이언트든 쓸 수 있으며, HTTP로 일반 JSON을 보내도 됩니다. `DEVBASE_URL`을 DevBase API 서버의 기본 URL로 설정하세요. 로컬 서버라면 `http://127.0.0.1:46317`입니다.
+모든 프로시저는 `devbase.v1.DevBaseService`에 있습니다. 서버 측 코드나 명령줄에서 아무 Connect 클라이언트나 HTTP의 일반 JSON으로 호출하세요. 브라우저에서 호출하거나 프로젝트 키를 프런트엔드 코드에 넣지 마세요. DevBase는 자체 콘솔을 제외한 모든 브라우저 출처를 거부합니다. `DEVBASE_URL`을 DevBase API 서버의 기본 URL로 설정하세요. 로컬 서버라면 `http://127.0.0.1:46317`입니다.
 
 ```sh
 # Create a project with your Delino login token.
