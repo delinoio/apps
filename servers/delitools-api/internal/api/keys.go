@@ -280,7 +280,11 @@ func (s *Server) AssociateGeneration(ctx context.Context, r *connect.Request[pb.
 		return e
 	})
 	if e != nil {
-		return nil, fault(pb.ErrorReason_ERROR_REASON_INPUT_CONFLICT, id)
+		var conflict *connect.Error
+		if errors.As(e, &conflict) {
+			return nil, conflict
+		}
+		return nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
 	}
 	return connect.NewResponse(&pb.AssociateGenerationResponse{RequestId: id}), nil
 }

@@ -1177,3 +1177,28 @@ func TestConnectWireAndTelemetry(t *testing.T) {
 		t.Fatal("unsafe logs")
 	}
 }
+
+func TestAssociationStorageFailureIsInternal(t *testing.T) {
+	s, _, g, tenant := setupAPI(t)
+	ctx := context.Background()
+	g.run = func(context.Context, int, func(string) error) (Result, error) {
+		return Result{Unknown: true}, errors.New("lost")
+	}
+	_, err := s.TranslateTextArray(ctx, request(translate(tenant, "unknown"), "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_UNKNOWN_OUTCOME)
+	var id string
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT id::text FROM attempts").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	g.lookup = &Counts{Input: 1}
+	// Force an audit write failure after the attempt update; the transaction must roll back.
+	if _, err := s.DB.Pool.Exec(ctx, "ALTER TABLE audit ADD CONSTRAINT reject_audit CHECK(false)"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.AssociateGeneration(ctx, request(&pb.AssociateGenerationRequest{AttemptId: id, GenerationId: "gen_verified", Reason: "verified reference"}, "Bearer operator"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_INTERNAL)
+	var generation string
+	if err := s.DB.Pool.QueryRow(ctx, "SELECT generation_id FROM attempts WHERE id=$1", id).Scan(&generation); err != nil || generation != "" {
+		t.Fatalf("partial association: %q %v", generation, err)
+	}
+}
