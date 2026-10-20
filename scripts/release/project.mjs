@@ -70,10 +70,6 @@ export function versionChanges(project, bump, read) {
   const changes = {};
   const replaceJson = (file) => {
     const content = read(file);
-    requireValue(
-      JSON.parse(content).version === previous,
-      "Source versions disagree",
-    );
     const matches = [...content.matchAll(/^  "version": "([^"]+)"/gmu)];
     requireValue(matches.length === 1, "Ambiguous JSON version field");
     changes[file] = content.replace(
@@ -92,7 +88,12 @@ export function versionChanges(project, bump, read) {
   }
   const native = nativePackages[project];
   if (native) {
-    replaceJson(`apps/${apps[0]}/src-tauri/tauri.conf.json`);
+    const configFile = `apps/${apps[0]}/src-tauri/tauri.conf.json`;
+    requireValue(
+      JSON.parse(read(configFile)).version === previous,
+      "Source versions disagree",
+    );
+    replaceJson(configFile);
     const file = `apps/${apps[0]}/src-tauri/Cargo.toml`;
     const content = read(file);
     const section = content.match(

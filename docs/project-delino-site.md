@@ -11,7 +11,7 @@ Provide the Delino marketing website.
 ## Domain Ownership Map
 
 - `apps/delino-site`: independently built web application served at `https://delino.io`.
-- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-docs`. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-docs`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 
@@ -24,7 +24,7 @@ This project owns the marketing website. DevBase and DeliTools remain separate a
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
 
-`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; Korean uses `/ko/`. Other registered languages use the same prefixed route convention.
+`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; Korean uses `/ko/`. Other registered languages use the same prefixed route convention. FixKey marketing pages use `/{locale}/products/fix-key/`, including an explicit English entry, and provide `/products/fix-key/` as an English alias. The web contract owns product content and navigation behavior.
 
 ## Change Policy
 

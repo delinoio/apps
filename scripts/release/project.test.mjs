@@ -264,9 +264,32 @@ test("web workflows validate main ancestry before allocating protected deploymen
     const job = workflow.jobs.deploy;
     assert.equal(job.needs, "source");
     if (project === Project.Delino) {
-      assert.deepEqual(job.strategy.matrix.app, ["delino-site", "delino-docs"]);
+      assert.deepEqual(job.strategy.matrix.include, [
+        {
+          app: "delino-site",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_SITE",
+        },
+        {
+          app: "delino-docs",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DOCS",
+        },
+      ]);
       assert.equal(job.strategy["fail-fast"], false);
-      assert.equal(job.environment, "${{ matrix.app }}-production");
+      assert.equal(job.environment, "delino-site-production");
+      const configuration = job.steps.find(
+        (step) => step.name === "Validate deployment configuration",
+      );
+      assert.equal(
+        configuration.env.CLOUDFLARE_PAGES_PROJECT,
+        "${{ vars[matrix.pages_project_variable] }}",
+      );
+      const upload = job.steps.find((step) =>
+        step.uses?.startsWith("cloudflare/wrangler-action@"),
+      );
+      assert.match(
+        upload.with.command,
+        /--project-name=\$\{\{ vars\[matrix\.pages_project_variable\] \}\}/u,
+      );
       assert.equal(
         job.steps.find((step) => step.run === "pnpm test")["working-directory"],
         "apps/${{ matrix.app }}",
@@ -287,8 +310,20 @@ test("web workflows validate main ancestry before allocating protected deploymen
   }
 });
 
-test("Delino preparation synchronizes both apps and rejects divergent versions", () => {
-  const plan = versionChanges(Project.Delino, Bump.Minor, read);
+test("Delino preparation synchronizes both apps even when their versions differ", () => {
+  const plan = versionChanges(Project.Delino, Bump.Minor, (file) => {
+    if (file !== "apps/delino-docs/package.json") return read(file);
+    const manifest = JSON.parse(read(file));
+    manifest.version = "9.9.9";
+    return JSON.stringify(manifest, null, 2) + "\n";
+  });
+  assert.equal(
+    plan.version,
+    bumpVersion(
+      JSON.parse(read("apps/delino-site/package.json")).version,
+      Bump.Minor,
+    ),
+  );
   assert.deepEqual(Object.keys(plan.changes).sort(), [
     "apps/delino-docs/package.json",
     "apps/delino-site/package.json",
@@ -296,15 +331,6 @@ test("Delino preparation synchronizes both apps and rejects divergent versions",
   for (const content of Object.values(plan.changes)) {
     assert.equal(JSON.parse(content).version, plan.version);
   }
-  assert.throws(
-    () =>
-      versionChanges(Project.Delino, Bump.Patch, (file) =>
-        file === "apps/delino-docs/package.json"
-          ? read(file).replace('"version": "0.1.0"', '"version": "9.9.9"')
-          : read(file),
-      ),
-    /Source versions disagree/u,
-  );
 });
 
 test("Delino source validation checks the docs version at the immutable tag", (t) => {

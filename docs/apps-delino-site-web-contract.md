@@ -14,7 +14,9 @@ Visitors learn about Delino through the marketing website. Maintainers build and
 
 ## Interfaces and Contracts
 
-The root route `/` has the title `Delino`. The minimal page provides a language selector and a link to documentation in the selected language. English uses `/`; Korean uses `/ko/`. Each registered language has an independent static HTML entry with matching `lang` metadata. Product screens and API clients require subsequent implementation. Follow the [localization contract](apps-delino-site-localization-contract.md) for catalogs and automated generation.
+The root route `/` has the title `Delino`. The minimal page provides a language selector and a link to documentation in the selected language. English uses `/`; Korean uses `/ko/`. Each registered language has an independent static HTML entry with matching `lang` metadata. The home page links to the FixKey product landing page. API clients require subsequent implementation. Follow the [localization contract](apps-delino-site-localization-contract.md) for catalogs and automated generation.
+
+FixKey has a localized landing page at `/{locale}/products/fix-key/` for every registered language, including `/en/products/fix-key/`. `/products/fix-key/` also serves English to preserve the source-language route convention. Each entry has localized title, description and HTML language metadata. Language selection retains the product path, query and fragment. The page explains Korean Dubeolsik and US English QWERTY correction, local processing, setup, undo and exclusions. Its correction example is illustrative, not an executable engine or compatibility claim. Release links use the repository release list filtered to FixKey; they do not promise an available package or verified native compatibility. FixKey text uses the `fixkey.*` catalog namespace; site-wide language selection, skip navigation and footer text use `common.*`. Product behavior follows the [FixKey project](project-fixkey.md) and its owning contracts.
 
 This project owns the marketing website. DevBase and DeliTools remain separate applications with their own domains and contracts.
 
@@ -38,7 +40,7 @@ Run `pnpm test` in this directory for offline translation validation, TypeScript
 
 Cloudflare Pages builds the `delino-site` workspace from the repository root with `pnpm --filter delino-site build` and publishes `apps/delino-site/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
-Production publication uses `.github/workflows/release-delino.yml` after `release-project.yml` commits both Delino app versions and creates the shared `delino@vMAJOR.MINOR.PATCH` tag. Both apps deploy from the same source revision. The owning `delino-site-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
+Production publication uses `.github/workflows/release-delino.yml` after `release-project.yml` commits both Delino app versions and creates the shared `delino@vMAJOR.MINOR.PATCH` tag. Both apps deploy from the same source revision. The shared `delino-site-production` environment supplies the deployment token and account ID. `CLOUDFLARE_PAGES_PROJECT_SITE` selects this app’s Pages project; `CLOUDFLARE_PAGES_PROJECT_DOCS` selects the documentation app’s project. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
 
 ## Dependencies and Integrations
 

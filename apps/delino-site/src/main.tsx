@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import registry from "../i18n/locales.json";
 import type source from "../i18n/messages/en.json";
 import "./style.css";
+import { FixKey } from "./fix-key";
 
 const catalogs = import.meta.webpackContext("../i18n/messages", {
   regExp: /\.json$/,
@@ -14,12 +15,24 @@ async function main() {
       ?.lang ?? registry.sourceLang;
   const messages = (await catalogs(`./${lang}.json`)) as typeof source;
   const prefix = lang === registry.sourceLang ? "/" : `/${lang}/`;
+  const isProduct = /\/products\/fix-key\/?$/.test(window.location.pathname);
   createRoot(document.getElementById("root")!).render(
-    <main>
-      <header>
-        <h1>Delino</h1>
+    <>
+      <a className="skip-link" href="#content">
+        {messages["common.skipContent"]}
+      </a>
+      <header className="site-header">
+        <a className="brand" href={prefix}>
+          delino<span className="brand-dot">.</span>
+        </a>
+        {isProduct && (
+          <nav aria-label="FixKey">
+            <a href="#features">{messages["fixkey.features"]}</a>
+            <a href="#how-it-works">{messages["fixkey.howItWorks"]}</a>
+          </nav>
+        )}
         <label>
-          {messages.language}
+          {messages["common.language"]}
           <select
             value={lang}
             onChange={(event) => {
@@ -27,7 +40,7 @@ async function main() {
               const path =
                 selected === registry.sourceLang ? "/" : `/${selected}/`;
               window.location.assign(
-                `${path}${window.location.search}${window.location.hash}`,
+                `${isProduct ? `/${selected}/products/fix-key/` : path}${window.location.search}${window.location.hash}`,
               );
             }}
           >
@@ -39,8 +52,28 @@ async function main() {
           </select>
         </label>
       </header>
-      <a href={`https://docs.delino.io${prefix}`}>{messages.documentation}</a>
-    </main>,
+      <main id="content">
+        {isProduct ? (
+          <FixKey messages={messages} />
+        ) : (
+          <div className="home">
+            <h1>Delino</h1>
+            <a href={`/${lang}/products/fix-key/`}>FixKey →</a>
+          </div>
+        )}
+      </main>
+      <footer>
+        <span>{messages["common.footerNote"]}</span>
+        <div>
+          <a href={`https://docs.delino.io${prefix}`}>
+            {messages["common.documentation"]}
+          </a>
+          <a href="https://github.com/delinoio/apps">
+            {messages["common.sourceCode"]}
+          </a>
+        </div>
+      </footer>
+    </>,
   );
 }
 
