@@ -23,7 +23,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 - Use the root Go toolchain and module. Run the API and background settlement, retry, notification, and retention jobs in one server process.
 - Use PostgreSQL for authoritative data, accounting records, and durable jobs.
 - Support one running instance in v1. Provide an OCI image, configuration documentation, explicit database migrations, startup compatibility checks, and backup/update/recovery procedures.
-- Do not provision deployment infrastructure or publish an image as part of this requirement.
+- Do not provision deployment infrastructure as part of this requirement. The `delino` release workflow publishes and deploys the image as described in the [workflow contract](repository-workflow-contract.md#server-deployment).
 - Follow repository environment and secret ownership rules. Commit placeholders and safe examples only; require operator-owned credentials for real integrations.
 
 **Identity, tenancy, and authorization**

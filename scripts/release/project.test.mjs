@@ -262,7 +262,12 @@ test("web workflows validate main ancestry before allocating protected deploymen
     assert.deepEqual(workflow.on.push.tags, [`${project}@v*`]);
     assert.equal(workflow.jobs.source.environment, undefined);
     const job = workflow.jobs.deploy;
-    assert.equal(job.needs, "source");
+    assert.deepEqual(
+      job.needs,
+      project === Project.Delino
+        ? ["source", "deploy-delcore-api", "deploy-dependent-servers"]
+        : "source",
+    );
     if (project === Project.Delino) {
       assert.deepEqual(job.strategy.matrix.include, [
         {
@@ -272,6 +277,14 @@ test("web workflows validate main ancestry before allocating protected deploymen
         {
           app: "delino-docs",
           pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DOCS",
+        },
+        {
+          app: "devbase",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DEVBASE",
+        },
+        {
+          app: "git-tracker",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER",
         },
       ]);
       assert.equal(job.strategy["fail-fast"], false);
@@ -307,6 +320,51 @@ test("web workflows validate main ancestry before allocating protected deploymen
     assert.ok(upload >= 0 && upload < deploy);
     assert.match(job.steps[deploy].with.command, /--branch=main/u);
     assert.equal(job.steps.at(-1).if, "always()");
+  }
+});
+
+test("Delino releases deploy servers in dependency order before web applications", () => {
+  const workflow = yaml.load(read(".github/workflows/release-delino.yml"));
+  const { jobs } = workflow;
+  assert.equal(jobs.source.environment, undefined);
+  assert.equal(workflow.permissions.packages, undefined);
+  assert.deepEqual(jobs.images.permissions, {
+    contents: "read",
+    packages: "write",
+  });
+  assert.equal(jobs.images.needs, "source");
+  assert.deepEqual(jobs.images.strategy.matrix.server, [
+    "delcore-api",
+    "devbase-api",
+    "git-tracker-api",
+  ]);
+  assert.deepEqual(jobs["deploy-delcore-api"].needs, ["source", "images"]);
+  assert.deepEqual(jobs["deploy-dependent-servers"].needs, [
+    "source",
+    "images",
+    "deploy-delcore-api",
+  ]);
+  assert.deepEqual(
+    jobs["deploy-dependent-servers"].strategy.matrix.include.map(
+      (entry) => entry.server,
+    ),
+    ["devbase-api", "git-tracker-api"],
+  );
+  for (const name of ["deploy-delcore-api", "deploy-dependent-servers"]) {
+    assert.equal(jobs[name].environment, "delino-servers-production");
+    assert.equal(
+      jobs[name].steps[0].with.ref,
+      "${{ needs.source.outputs.revision }}",
+    );
+    const step = jobs[name].steps.at(-1);
+    assert.equal(
+      step.env.RAILWAY_PROJECT_TOKEN,
+      "${{ secrets.RAILWAY_PROJECT_TOKEN }}",
+    );
+    assert.match(
+      step.env.RELEASE_IMAGE,
+      /^ghcr\.io\/\$\{\{ github\.repository_owner \}\}\//u,
+    );
   }
 });
 

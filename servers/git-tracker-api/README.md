@@ -27,3 +27,5 @@ Generate Prometheus rules with `go run ./servers/git-tracker-api/cmd/git-tracker
 Run `GOWORK=off go test ./...` and `GOWORK=off go vet ./...` from the root. Set `TEST_DATABASE_URL` to a dedicated disposable PostgreSQL database and run `GOWORK=off go test -race ./servers/git-tracker-api/...`. Integration tests reset Git Tracker tables in that test database. CI runs these tests on an isolated PostgreSQL container. External integrations are mocked in automated tests; they do not establish live-account or deployment acceptance.
 
 Operator logs use ANSI color by default. Set `NO_COLOR=1` for uncolored structured key/value output.
+
+Build the OCI image from the repository root with `docker build -f servers/git-tracker-api/Dockerfile -t git-tracker-api:local .`. The image runs as a non-root user and listens on the address in `LISTEN`; set it to a non-loopback address inside a container. The `delino` release publishes this image to GitHub Container Registry; see the [workflow contract](../../docs/repository-workflow-contract.md#server-deployment). The release does not run `migrate`, which creates the initial schema once and cannot be repeated.

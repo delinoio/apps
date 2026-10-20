@@ -43,8 +43,118 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: node "scripts/release/project.mjs" validate-web
 
-  deploy:
+  images:
     needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [delcore-api, devbase-api, git-tracker-api]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - name: Sign in to GitHub Container Registry
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Build and publish the immutable server image
+        env:
+          SERVER: ${{ matrix.server }}
+          VERSION: ${{ needs.source.outputs.version }}
+          REVISION: ${{ needs.source.outputs.revision }}
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER}/${SERVER}:${VERSION}"
+          # A release tag never moves, so a retry reuses the published image.
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "Reusing the published image for this release"
+          else
+            docker build \
+              --file "servers/${SERVER}/Dockerfile" \
+              --label "org.opencontainers.image.source=https://github.com/${REPOSITORY}" \
+              --label "org.opencontainers.image.version=${VERSION}" \
+              --label "org.opencontainers.image.revision=${REVISION}" \
+              --label "org.opencontainers.image.licenses=FSL-1.1-ALv2" \
+              --tag "$image" .
+            docker push "$image"
+          fi
+          printf 'Image: %s\n' "$image" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign out of GitHub Container Registry
+        if: always()
+        run: docker logout ghcr.io
+
+  # Delcore owns tenants and authorization for the other servers, so it is
+  # deployed first and must report success before they start.
+  deploy-delcore-api:
+    needs: [source, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: delino-servers-production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Deploy the tagged image to Railway
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID_DELCORE_API }}
+          RELEASE_IMAGE: ghcr.io/${{ github.repository_owner }}/delcore-api:${{ needs.source.outputs.version }}
+          RAILWAY_PRE_DEPLOY_COMMAND: '["/delcore-api -migrate"]'
+        run: node "scripts/release/railway-deploy.mjs"
+
+  deploy-dependent-servers:
+    needs: [source, images, deploy-delcore-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: delino-servers-production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - server: devbase-api
+            service_variable: RAILWAY_SERVICE_ID_DEVBASE_API
+            pre_deploy_command: '["/devbase-api migrate"]'
+          # The Git Tracker migration is a one-time initial schema that cannot
+          # be repeated, so the operator applies it manually before first use.
+          - server: git-tracker-api
+            service_variable: RAILWAY_SERVICE_ID_GIT_TRACKER_API
+            pre_deploy_command: ""
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Deploy the tagged image to Railway
+        env:
+          RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_PROJECT_TOKEN }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ vars[matrix.service_variable] }}
+          RELEASE_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.server }}:${{ needs.source.outputs.version }}
+          RAILWAY_PRE_DEPLOY_COMMAND: ${{ matrix.pre_deploy_command }}
+        run: node "scripts/release/railway-deploy.mjs"
+
+  # Web applications call the servers, so they publish after every server succeeds.
+  deploy:
+    needs: [source, deploy-delcore-api, deploy-dependent-servers]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -55,6 +165,10 @@ jobs:
             pages_project_variable: CLOUDFLARE_PAGES_PROJECT_SITE
           - app: delino-docs
             pages_project_variable: CLOUDFLARE_PAGES_PROJECT_DOCS
+          - app: devbase
+            pages_project_variable: CLOUDFLARE_PAGES_PROJECT_DEVBASE
+          - app: git-tracker
+            pages_project_variable: CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER
     environment: delino-site-production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -73,9 +187,22 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-f0-9]{32}$ ]]
           [[ "$CLOUDFLARE_PAGES_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,57}$ ]]
+      - name: Validate Git Tracker public build settings
+        if: matrix.app == 'git-tracker'
+        env:
+          PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+          PUBLIC_LOGTO_APP_ID: ${{ vars.PUBLIC_LOGTO_APP_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$PUBLIC_LOGTO_ENDPOINT" =~ ^https://[^[:space:]]+$ ]]
+          test -n "$PUBLIC_LOGTO_APP_ID"
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test and build the selected web application
+        env:
+          # Public browser identifiers only; Git Tracker is the only consumer.
+          PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+          PUBLIC_LOGTO_APP_ID: ${{ vars.PUBLIC_LOGTO_APP_ID }}
         working-directory: apps/${{ matrix.app }}
         run: pnpm test
       - name: Include distribution notices

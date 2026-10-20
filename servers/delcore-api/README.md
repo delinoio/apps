@@ -100,6 +100,6 @@ pnpm --filter @delinoio/delcore-api ci:oci
 docker build -f "servers/delcore-api/Dockerfile" -t delcore-api:local .
 ```
 
-Integration tests require `TEST_DATABASE_URL` and fail if it is absent. They create isolated schemas in a disposable test database. Never point them at production. Provider fixtures and OCI builds do not establish live Logto, Paddle or Cloudflare account acceptance. No deployment infrastructure or image publication is included.
+Integration tests require `TEST_DATABASE_URL` and fail if it is absent. They create isolated schemas in a disposable test database. Never point them at production. Provider fixtures and OCI builds do not establish live Logto, Paddle or Cloudflare account acceptance. The `delino` release publishes this image to GitHub Container Registry and deploys it; see the [workflow contract](../../docs/repository-workflow-contract.md#server-deployment). Deployment infrastructure is not included.
 
 Automatic top-ups require an active Paddle subscription. Tenants without a subscription use manual top-ups. Cancellation suspends automatic top-ups; payment recovery remains available through manual checkout.

@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/git-tracker-api` owns this component. See the [project index](project-git-tracker.md) for boundaries. Deployment, provisioning, Runbooks, billing, exports, non-GitHub hosting and native clients are excluded.
+`servers/git-tracker-api` owns this component. See the [project index](project-git-tracker.md) for boundaries. Infrastructure provisioning, Runbooks, billing, exports, non-GitHub hosting and native clients are excluded.
 
 ## Runtime and Language
 
@@ -101,7 +101,7 @@ External individuals and organizations, CI jobs and service operators.
 - Supply Prometheus alert rules for API server error rate, upload/completion persistence failures, GitHub integration failures, and automatically interrupted executions. Require operator-defined thresholds and observation windows. Operators connect receiving routes through Alertmanager or equivalent; the service does not send alert messages itself.
 - Implement a threat model and automated security tests for tenancy, OIDC/token validation, fork PR restrictions, webhook verification, visibility changes, and secret redaction. Follow repository secret/configuration rules; never commit credentials or expose them in telemetry.
 - No feature flag is required because this is a new independent service. Authorization and data-access rules remain enforced independently.
-- Deployment, deployment rollback, infrastructure provisioning, and Runbooks are outside this PRD. These exclusions do not remove the in-scope runtime state, retention, telemetry, and alert-rule behavior described above.
+- `servers/git-tracker-api/Dockerfile` packages the server as a distroless OCI image that includes the server and protocol licenses, listens on port 46321 through `LISTEN` and is published by the `delino` release (see the [workflow contract](repository-workflow-contract.md#server-deployment)). The release does not run the one-time `migrate` command; apply it manually before first use. Deployment rollback, infrastructure provisioning, and Runbooks are outside this PRD. These exclusions do not remove the in-scope runtime state, retention, telemetry, and alert-rule behavior described above.
 
 ### Documentation and support
 
