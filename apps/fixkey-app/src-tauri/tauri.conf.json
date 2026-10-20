@@ -5,7 +5,7 @@
   "identifier": "io.delino.fixkey",
   "build": {
     "beforeDevCommand": "pnpm dev:frontend",
-    "beforeBuildCommand": "node ../../scripts/release/fixkey-licenses.mjs && pnpm build:frontend",
+    "beforeBuildCommand": "node scripts/release/fixkey-licenses.mjs && pnpm build:frontend",
     "devUrl": "http://127.0.0.1:46316",
     "frontendDist": "../dist"
   },

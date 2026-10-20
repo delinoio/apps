@@ -19,7 +19,7 @@
     "format:check": "node scripts/ci/format-changed.mjs",
     "proto:generate": "buf generate",
     "proto:lint": "buf lint && buf format --diff --exit-code",
-    "test:tooling": "node --test scripts/*.test.mjs scripts/ci/*.test.mjs scripts/release/*.test.mjs"
+    "test:tooling": "node --test scripts/*.test.mjs scripts/ci/*.test.mjs scripts/release/*.test.mjs apps/fixkey-app/scripts/release/*.test.mjs apps/delitools/scripts/mobile-workflow.test.mjs"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.72.0",

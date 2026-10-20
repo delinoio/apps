@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
-const root = new URL("../../", import.meta.url);
+const root = new URL("../../../", import.meta.url);
 const workflow = yaml.load(
   readFileSync(
     new URL(".github/workflows/release-delitools-mobile.yml", root),

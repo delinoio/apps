@@ -27,7 +27,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         path,
       ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
-      !/^(crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$)/u.test(
+      !/^(crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$)/u.test(
         path,
       ),
   );
@@ -71,7 +71,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       shared ||
       nativeLock ||
       paths.some((path) =>
-        /^(apps\/fixkey-app\/|crates\/fixkey-core\/|scripts\/release\/fixkey|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
+        /^(apps\/fixkey-app\/|crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
           path,
         ),
       ),

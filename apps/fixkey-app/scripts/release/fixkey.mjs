@@ -49,7 +49,7 @@ export const platforms = Object.freeze({
     package: ".AppImage",
   },
 });
-const root = fileURLToPath(new URL("../..", import.meta.url));
+const root = fileURLToPath(new URL("../../../..", import.meta.url));
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 function requireValue(condition, code) {
   if (!condition) throw new Error(code);

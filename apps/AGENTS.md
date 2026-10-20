@@ -12,6 +12,8 @@
 
 - Write all source and comments in English.
 
+- Project-specific scripts and their tests live under the owning app’s `scripts/` directory. FixKey release helpers live in `fixkey-app/scripts/release/`; shared repository helpers remain in root `scripts/`.
+
 ## Owning contracts
 
 - [project-delidev](../docs/project-delidev.md)

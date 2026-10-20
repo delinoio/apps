@@ -34,7 +34,7 @@ test("pinned standard licenses retain their checksums in Windows checkouts", (t)
   const sources = JSON.parse(
     readFileSync(
       new URL(
-        "../../apps/fixkey-app/src-tauri/licenses/sources.json",
+        "../../../../apps/fixkey-app/src-tauri/licenses/sources.json",
         import.meta.url,
       ),
       "utf8",
@@ -46,7 +46,7 @@ test("pinned standard licenses retain their checksums in Windows checkouts", (t)
   git(["config", "core.autocrlf", "true"]);
   writeFileSync(
     path.join(dir, ".gitattributes"),
-    readFileSync(new URL("../../.gitattributes", import.meta.url)),
+    readFileSync(new URL("../../../../.gitattributes", import.meta.url)),
   );
   const relativeDirectory = "apps/fixkey-app/src-tauri/licenses";
   mkdirSync(path.join(dir, relativeDirectory), { recursive: true });
@@ -57,7 +57,10 @@ test("pinned standard licenses retain their checksums in Windows checkouts", (t)
     writeFileSync(
       path.join(dir, relativeDirectory, `${name}.txt`),
       readFileSync(
-        new URL(`../../${relativeDirectory}/${name}.txt`, import.meta.url),
+        new URL(
+          `../../../../${relativeDirectory}/${name}.txt`,
+          import.meta.url,
+        ),
       ),
     );
   }
@@ -114,7 +117,7 @@ test("all platforms require updater signatures without a Windows code-signing id
   const config = JSON.parse(
     readFileSync(
       new URL(
-        "../../apps/fixkey-app/src-tauri/tauri.conf.json",
+        "../../../../apps/fixkey-app/src-tauri/tauri.conf.json",
         import.meta.url,
       ),
       "utf8",
@@ -183,13 +186,16 @@ test("ARM64 updater payloads remain separate from x64 payloads", (t) => {
 test("ARM64 release jobs use native hosts and the pinned CLI", () => {
   const workflow = yaml.load(
     readFileSync(
-      new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
+      new URL(
+        "../../../../.github/workflows/release-fixkey.yml",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );
   const lock = JSON.parse(
     readFileSync(
-      new URL("../../prebuilt-dependencies.lock.json", import.meta.url),
+      new URL("../../../../prebuilt-dependencies.lock.json", import.meta.url),
       "utf8",
     ),
   );
@@ -275,7 +281,7 @@ test("staging ignores unpacked application trees but rejects artifact symlinks",
   }
 });
 test("source versions stay synchronized", () => {
-  const root = path.resolve(import.meta.dirname, "../..");
+  const root = path.resolve(import.meta.dirname, "../../../..");
   const selected = JSON.parse(
     readFileSync(path.join(root, "apps/fixkey-app/package.json"), "utf8"),
   ).version;
@@ -315,7 +321,10 @@ test("source validation accepts Windows checkout line endings and rejects versio
 test("tagged releases validate main ancestry before signing and publication", () => {
   const workflow = yaml.load(
     readFileSync(
-      new URL("../../.github/workflows/release-fixkey.yml", import.meta.url),
+      new URL(
+        "../../../../.github/workflows/release-fixkey.yml",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );
