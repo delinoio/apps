@@ -14,15 +14,22 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 - `.github/workflows/release-delitools.yml`: tagged Cloudflare Pages web publication. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 - `.github/workflows/release-delitools-mobile.yml`: signed Android internal testing and iOS TestFlight uploads.
 
+- `servers/delitools-api`: independent public Connect API, PostgreSQL migrations and OCI packaging.
+- `protos/delitools/v1`: schemas and generated Go/TypeScript bindings.
+- `examples/delitools-client`: Go consumer example.
+- `apps/delino-docs`: public API usage documentation.
+
 ## Domain Contract Documents
 
 - [Application foundation](apps-delitools-foundation.md)
+- [API server](servers-delitools-api-contract.md)
+- [API protocol](protos-delitools-v1-contract.md)
 
 ## Cross-Domain Invariants
 
 Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
 
-All hosts render an empty root with the `DeliTools` application name and `io.delino.delitools` identifier. The scaffold has no product backend, account access, RPC or product storage. Future tools use delcore for usage-based billing; clients do not own billing or service credentials. The web build targets Cloudflare Pages. DeliDev remains a separate application. React, Rsbuild and Rust follow the existing DeliDev shell instead of the default new-project Go language. Mobile uses system webviews; CEF is desktop-only.
+All hosts render an empty root with the `DeliTools` application name and `io.delino.delitools` identifier. The application scaffold has no account access, RPC or product storage. The independent API does not add application integration. Future tools use delcore for usage-based billing; clients do not own billing or service credentials. The web build targets Cloudflare Pages. DeliDev remains a separate application. React, Rsbuild and Rust follow the existing DeliDev shell instead of the default new-project Go language. Mobile uses system webviews; CEF is desktop-only.
 
 ## Change Policy
 

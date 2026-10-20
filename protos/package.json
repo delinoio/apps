@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     "./delcore/v1/delcore_pb": "./delcore/v1/delcore_pb.ts",
-    "./gittracker/v1/gittracker_pb": "./gittracker/v1/gittracker_pb.ts"
+    "./gittracker/v1/gittracker_pb": "./gittracker/v1/gittracker_pb.ts",
+    "./delitools/v1/delitools_pb": "./delitools/v1/delitools_pb.ts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0"

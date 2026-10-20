@@ -59,6 +59,9 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ### delitools
 
+- [API server](servers-delitools-api-contract.md)
+- [API protocol](protos-delitools-v1-contract.md)
+
 - [Project index](project-delitools.md)
 - [Application and mobile distribution](apps-delitools-foundation.md)
 

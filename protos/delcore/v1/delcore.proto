@@ -123,6 +123,31 @@ message Usage {
   string quantity = 6;
   google.protobuf.Timestamp occurred_at = 7;
   string correction_of = 8;
+  AiUsage ai_usage = 9;
+}
+// Trusted DeliTools reports use USD public catalog prices, never provider charges.
+message AiUsage {
+  string model = 1;
+  google.protobuf.Timestamp price_effective_at = 2;
+  repeated AiTokenUsage tokens = 3;
+}
+enum AiTokenKind {
+  AI_TOKEN_KIND_UNSPECIFIED = 0;
+  AI_TOKEN_KIND_INPUT = 1;
+  AI_TOKEN_KIND_OUTPUT = 2;
+  AI_TOKEN_KIND_CACHE_READ = 3;
+  AI_TOKEN_KIND_CACHE_WRITE = 4;
+}
+message AiTokenUsage {
+  AiTokenKind kind = 1;
+  uint64 tokens = 2;
+  string usd_per_token = 3;
+}
+enum ConsumerAuthorization {
+  CONSUMER_AUTHORIZATION_UNSPECIFIED = 0;
+  CONSUMER_AUTHORIZATION_TENANT_KEY = 1;
+  CONSUMER_AUTHORIZATION_PERSONAL_KEYS = 2;
+  CONSUMER_AUTHORIZATION_SERVICE_KEYS = 3;
 }
 message LedgerEntry {
   string id = 1;
@@ -330,6 +355,7 @@ message AuthorizeRequest {
   string user_id = 2;
   string capability = 3;
   bool paid = 4;
+  ConsumerAuthorization consumer_authorization = 5;
 }
 message AuthorizeResponse {
   Metadata metadata = 1;

@@ -22,3 +22,5 @@
 - [Git Tracker project](../docs/project-git-tracker.md)
 - [Git Tracker server](../docs/servers-git-tracker-api-contract.md)
 - [Git Tracker threat model](../docs/servers-git-tracker-threat-model.md)
+
+- [DeliTools API](../docs/servers-delitools-api-contract.md)
