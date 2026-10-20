@@ -200,7 +200,10 @@ func (s *Server) claim(ctx context.Context, x *execution, input []byte) error {
 		}
 		var raw []byte
 		if e := tx.QueryRow(ctx, "SELECT price,effective_at FROM catalog WHERE model=$1 AND effective_at<=$2 ORDER BY effective_at DESC LIMIT 1", x.model, x.started).Scan(&raw, &x.effective); e != nil {
-			return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
+			if errors.Is(e, pgx.ErrNoRows) {
+				return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
+			}
+			return storageFault(e, x.id)
 		}
 		if e := json.Unmarshal(raw, &x.price); e != nil || !x.price.Valid() {
 			return fault(pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE, x.id)
@@ -225,7 +228,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 		if errors.As(err, &ce) {
 			return result, err
 		}
-		return result, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, x.id)
+		return result, storageFault(err, x.id)
 	}
 	if !s.acquire(x.tenant, settings) {
 		// Admission rejected before any attempt exists. Release the claim so the

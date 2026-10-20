@@ -744,3 +744,48 @@ func TestKeyLookupFailureIsNotInvalidCredential(t *testing.T) {
 	s.DB.Pool.Close()
 	reason(t, s.authorize(ctx, "Bearer dt_missing", tenant, pb.Capability_CAPABILITY_TRANSLATOR, ID()), pb.ErrorReason_ERROR_REASON_INTERNAL)
 }
+
+func TestCatalogLookupErrorsRemainDistinct(t *testing.T) {
+	for _, mode := range []string{"missing", "storage", "deadline", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, g, tenant := setupAPI(t)
+			ctx := context.Background()
+			want := pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE
+			switch mode {
+			case "missing":
+				if _, err := s.DB.Pool.Exec(ctx, "DELETE FROM catalog"); err != nil {
+					t.Fatal(err)
+				}
+			case "storage":
+				if _, err := s.DB.Pool.Exec(ctx, "ALTER TABLE catalog RENAME TO unavailable_catalog"); err != nil {
+					t.Fatal(err)
+				}
+				want = pb.ErrorReason_ERROR_REASON_INTERNAL
+			case "deadline":
+				tx, err := s.DB.Pool.Begin(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback(context.Background())
+				if _, err := tx.Exec(ctx, "LOCK TABLE catalog IN ACCESS EXCLUSIVE MODE"); err != nil {
+					t.Fatal(err)
+				}
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				want = pb.ErrorReason_ERROR_REASON_TIMEOUT
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+				want = pb.ErrorReason_ERROR_REASON_CANCELED
+			}
+			x := &execution{id: ID(), tenant: tenant, model: ExtractionModel, cap: pb.Capability_CAPABILITY_TRANSLATOR, started: s.now()}
+			_, err := s.execute(ctx, "Bearer user", x, []byte("fixture"), "fixture", nil, testSettings())
+			reason(t, err, want)
+			if g.calls != 0 {
+				t.Fatal("lookup failure executed provider")
+			}
+		})
+	}
+}

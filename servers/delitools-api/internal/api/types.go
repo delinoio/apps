@@ -64,6 +64,17 @@ func fault(reason pb.ErrorReason, id string) error {
 	return e
 }
 
+func storageFault(err error, id string) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return fault(pb.ErrorReason_ERROR_REASON_CANCELED, id)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fault(pb.ErrorReason_ERROR_REASON_TIMEOUT, id)
+	default:
+		return fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
+	}
+}
+
 type Authority interface {
 	User(context.Context, string) (string, error)
 	Operator(context.Context, string) (string, error)
