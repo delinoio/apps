@@ -158,6 +158,8 @@ Required deployment fields are `listen`, `issuer`, `audience`, `operator_role`, 
 | `alertExpirySeconds`      | Warning window before the 30-day expiration boundary.                                |
 | `translationModels`       | Explicit model allowlist; catalog synchronization never extends it.                  |
 
+The RPC transport cap is ten times `maxInputBytes` plus 64 KiB for bounded metadata and JSON/protobuf encoding. Paid methods independently enforce the decoded input limit.
+
 All size/count/interval/alert fields must be positive. The expiry warning window must be shorter than 30 days. Safe example values are illustrative choices, not defaults. Configure `max_gateway_response_bytes` for catalog and streaming response limits. Public catalog decimal prices are retained without using Gateway charge totals. Cache read/write counts are separated from uncached input; input/output tiers use total prompt context. Missing applicable price categories keep measured usage pending rather than estimating a charge.
 
 Configure Logto user tokens for the shared delcore resource audience. Delcore validates the token and resolves the current user; DeliTools uses its separate M2M token to check that user's current tenant permissions. Personal key management checks membership; service key management checks Owner/Admin. The dedicated operator role is verified against signed OIDC claims and never inferred from tenant roles. Register both capabilities and both USD usage meters in delcore and provision entitlements. DeliTools ignores subscription unit rates and unit allowances for AI usage; keep delcore's reporting lateness and deletion grace compatible with the 30-day delivery window.

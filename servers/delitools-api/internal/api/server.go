@@ -47,7 +47,7 @@ func (s *Server) now() time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond)
 }
 func (s *Server) Handler(maxBytes int) (string, http.Handler) {
-	return delitoolsv1connect.NewDeliToolsServiceHandler(s, connect.WithReadMaxBytes(maxBytes), connect.WithInterceptors(s.interceptor()))
+	return delitoolsv1connect.NewDeliToolsServiceHandler(s, connect.WithReadMaxBytes(transportReadLimit(maxBytes)), connect.WithInterceptors(s.interceptor()))
 }
 
 type operationalEvent struct {
@@ -492,4 +492,14 @@ func (s *Server) finishRequest(x *execution, settings *pb.Settings, err *error) 
 		return
 	}
 	s.enqueueEvent(x.state.String(), x.id)
+}
+
+// Standard JSON can expand a byte to six escape characters, plus array syntax.
+// Reserve bounded metadata space; paid methods still enforce decoded input limits.
+func transportReadLimit(decoded int) int {
+	maxInt := int(^uint(0) >> 1)
+	if decoded > (maxInt-65536)/10 {
+		return maxInt
+	}
+	return decoded*10 + 65536
 }

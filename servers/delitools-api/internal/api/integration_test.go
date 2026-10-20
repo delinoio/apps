@@ -1222,3 +1222,28 @@ func TestReadinessRequiresInitialCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTransportAllowsEscapedInputAtDecodedLimit(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	settings, err := s.DB.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, h := s.Handler(int(settings.MaxInputBytes))
+	server := httptest.NewServer(h)
+	defer server.Close()
+	for _, options := range [][]connect.ClientOption{nil, {connect.WithProtoJSON()}} {
+		client := delitoolsv1connect.NewDeliToolsServiceClient(server.Client(), server.URL, options...)
+		q := translate(tenant, ID())
+		overhead := len(q.Model) + len(q.OutputLanguage) + 1
+		q.Texts = []string{strings.Repeat("\x01", int(settings.MaxInputBytes)-overhead), "a"}
+		if _, err := client.TranslateTextArray(ctx, request(q, "Bearer user")); err != nil {
+			t.Fatalf("valid decoded limit rejected: %v", err)
+		}
+		q.IdempotencyKey = ID()
+		q.Texts[0] += "x"
+		_, err := client.TranslateTextArray(ctx, request(q, "Bearer user"))
+		reason(t, err, pb.ErrorReason_ERROR_REASON_LIMIT)
+	}
+}
