@@ -163,16 +163,17 @@ func (f *fakeDelcore) TenantStates(ctx context.Context, tenants []string) (map[s
 }
 
 type fixture struct {
-	t       *testing.T
-	db      *store.Store
-	fake    *fakeDelcore
-	server  *api.Server
-	client  devbasev1connect.DevBaseServiceClient
-	limits  config.Limits
-	clock   *clock
-	metrics *metrics.Metrics
-	gather  prometheus.Gatherer
-	logs    *syncBuffer
+	t         *testing.T
+	db        *store.Store
+	fake      *fakeDelcore
+	server    *api.Server
+	authority delcore.Authority
+	client    devbasev1connect.DevBaseServiceClient
+	limits    config.Limits
+	clock     *clock
+	metrics   *metrics.Metrics
+	gather    prometheus.Gatherer
+	logs      *syncBuffer
 }
 
 // syncBuffer collects server logs so tests can assert that nothing sensitive is logged.
@@ -205,6 +206,12 @@ func newID() string { return uuid.Must(uuid.NewV7()).String() }
 // setup returns a fixture with a clean migrated schema.
 func setup(t *testing.T, mutate ...func(*config.Limits)) *fixture {
 	t.Helper()
+	return setupWith(t, nil, mutate...)
+}
+
+// setupWith builds a fixture with a given Delcore authority; nil selects the mocked Delcore.
+func setupWith(t *testing.T, authority delcore.Authority, mutate ...func(*config.Limits)) *fixture {
+	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL is required for PostgreSQL integration tests")
@@ -229,7 +236,11 @@ func setup(t *testing.T, mutate ...func(*config.Limits)) *fixture {
 	registry := prometheus.NewRegistry()
 	f.metrics, f.gather = metrics.New(registry), registry
 	f.logs = &syncBuffer{}
-	f.server = api.New(db.Pool, f.fake, limits, slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), f.metrics, f.clock.now)
+	if authority == nil {
+		authority = f.fake
+	}
+	f.authority = authority
+	f.server = api.New(db.Pool, authority, limits, slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), f.metrics, f.clock.now)
 	path, handler := f.server.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
@@ -310,7 +321,7 @@ func logSink() io.Writer {
 }
 
 func (f *fixture) worker() *maintenance.Worker {
-	return &maintenance.Worker{Pool: f.db.Pool, Authority: f.fake, Log: slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), Metrics: f.metrics, Now: f.clock.now, Interval: time.Minute}
+	return &maintenance.Worker{Pool: f.db.Pool, Authority: f.authority, Log: slog.New(slog.NewTextHandler(io.MultiWriter(logSink(), f.logs), nil)), Metrics: f.metrics, Now: f.clock.now, Interval: time.Minute}
 }
 
 // user creates an end user through the login Owner token.
