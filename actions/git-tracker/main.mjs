@@ -91,13 +91,20 @@ export async function rpc(
       throw new ApiFailure("API network failure after three retries");
     }
     if (!response.ok) {
-      if ((response.status >= 500 || response.status === 429) && attempt < 3) {
+      if (
+        (response.status >= 500 ||
+          response.status === 408 ||
+          response.status === 429) &&
+        attempt < 3
+      ) {
         await sleep(500 * 2 ** attempt);
         continue;
       }
       throw new ApiFailure(
         `API failed (${response.status}); correlation ID: ${response.headers.get("X-Correlation-Id") ?? "unavailable"}`,
-        response.status >= 500 || response.status === 429,
+        response.status >= 500 ||
+          response.status === 408 ||
+          response.status === 429,
       );
     }
     return response.json();

@@ -69,3 +69,18 @@ test("RPC origin trailing slashes preserve POST endpoint and body", async () => 
     );
   }
 });
+
+test("HTTP 408 retries and remains a transient failure", async () => {
+  let calls = 0;
+  await assert.rejects(
+    rpc("https://example.test", "Upload", {}, "secret", {
+      request: async () => {
+        calls++;
+        return new Response("{}", { status: 408 });
+      },
+      sleep: async () => {},
+    }),
+    (error) => error.transient === true,
+  );
+  assert.equal(calls, 4);
+});
