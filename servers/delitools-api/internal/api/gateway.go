@@ -11,9 +11,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"math"
-	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -78,12 +78,12 @@ func (g *HTTPGateway) Catalog(ctx context.Context) (map[string]Price, error) {
 	}
 	return out, nil
 }
+
+// Match the unsigned subset of Delcore's settlement decimal grammar.
+var priceDecimalPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
+
 func decimal(s string) bool {
-	if len(s) == 0 || len(s) > 64 || strings.ContainsAny(s, "eE/+-") {
-		return false
-	}
-	r, ok := new(big.Rat).SetString(s)
-	return ok && r.Sign() >= 0
+	return len(s) <= 64 && priceDecimalPattern.MatchString(s)
 }
 func (p Price) Valid() bool {
 	if !decimal(p.Input) || !decimal(p.Output) {

@@ -60,3 +60,29 @@ func TestGatewayAmbiguityAndReconciliation(t *testing.T) {
 		t.Fatal(n, e)
 	}
 }
+
+func TestPriceSettlementGrammar(t *testing.T) {
+	for _, value := range []string{"0", "1", "0.1", "1.00", strings.Repeat("9", 64)} {
+		if !decimal(value) {
+			t.Errorf("rejected valid price %q", value)
+		}
+	}
+	for _, value := range []string{"", ".1", "01", "1.", "-0", "+1", "1e2", "1/2", " 1", "1\n", strings.Repeat("9", 65)} {
+		for _, price := range []Price{
+			{Input: value, Output: "0"}, {Input: "0", Output: value},
+			{Input: "0", Output: "0", CacheRead: value, CacheWrite: value},
+			{Input: "0", Output: "0", InputTiers: []Tier{{Cost: value}}},
+			{Input: "0", Output: "0", OutputTiers: []Tier{{Cost: value}}},
+			{Input: "0", Output: "0", CacheReadTiers: []Tier{{Cost: value}}},
+			{Input: "0", Output: "0", CacheWriteTiers: []Tier{{Cost: value}}},
+		} {
+			// Empty optional flat cache prices mean unsupported, not a numeric value.
+			if value == "" && price.Input == "0" && price.Output == "0" && len(price.InputTiers)+len(price.OutputTiers)+len(price.CacheReadTiers)+len(price.CacheWriteTiers) == 0 {
+				continue
+			}
+			if price.Valid() {
+				t.Errorf("accepted invalid price %q: %+v", value, price)
+			}
+		}
+	}
+}
