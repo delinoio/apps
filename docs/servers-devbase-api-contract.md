@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/devbase-api` owns one independent Go server, its PostgreSQL migrations, maintenance jobs and OCI packaging. The schemas and generated bindings live in root `protos/devbase/v1` and the consumer examples in `examples/`. Status: the server package and its workspace registration exist; the examples are `planned` in the project index until they are added. The server provides the free, project-scoped end-user directory that developers manage for their own applications. It has no web console, REST endpoint, handwritten SDK or published client package. Production deployment, backup infrastructure and live-account acceptance are outside this contract.
+`servers/devbase-api` owns one independent Go server, its PostgreSQL migrations, maintenance jobs and OCI packaging. The schemas and generated bindings live in root `protos/devbase/v1` and the consumer examples in `examples/`. The server provides the free, project-scoped end-user directory that developers manage for their own applications. It has no web console, REST endpoint, handwritten SDK or published client package. Production deployment, backup infrastructure and live-account acceptance are outside this contract.
 
 ## Runtime and Language
 
