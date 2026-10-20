@@ -310,8 +310,20 @@ test("web workflows validate main ancestry before allocating protected deploymen
   }
 });
 
-test("Delino preparation synchronizes both apps and rejects divergent versions", () => {
-  const plan = versionChanges(Project.Delino, Bump.Minor, read);
+test("Delino preparation synchronizes both apps even when their versions differ", () => {
+  const plan = versionChanges(Project.Delino, Bump.Minor, (file) => {
+    if (file !== "apps/delino-docs/package.json") return read(file);
+    const manifest = JSON.parse(read(file));
+    manifest.version = "9.9.9";
+    return JSON.stringify(manifest, null, 2) + "\n";
+  });
+  assert.equal(
+    plan.version,
+    bumpVersion(
+      JSON.parse(read("apps/delino-site/package.json")).version,
+      Bump.Minor,
+    ),
+  );
   assert.deepEqual(Object.keys(plan.changes).sort(), [
     "apps/delino-docs/package.json",
     "apps/delino-site/package.json",
@@ -319,15 +331,6 @@ test("Delino preparation synchronizes both apps and rejects divergent versions",
   for (const content of Object.values(plan.changes)) {
     assert.equal(JSON.parse(content).version, plan.version);
   }
-  assert.throws(
-    () =>
-      versionChanges(Project.Delino, Bump.Patch, (file) =>
-        file === "apps/delino-docs/package.json"
-          ? read(file).replace('"version": "0.1.0"', '"version": "9.9.9"')
-          : read(file),
-      ),
-    /Source versions disagree/u,
-  );
 });
 
 test("Delino source validation checks the docs version at the immutable tag", (t) => {
