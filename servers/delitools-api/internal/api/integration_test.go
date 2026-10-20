@@ -921,3 +921,37 @@ func TestRecoveryReleasesClaimsWithoutAttempts(t *testing.T) {
 		t.Fatal("released key cannot execute", err)
 	}
 }
+
+func TestSettingsLookupContextErrors(t *testing.T) {
+	for _, mode := range []string{"canceled", "deadline", "storage"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, _, tenant := setupAPI(t)
+			ctx := context.Background()
+			want := pb.ErrorReason_ERROR_REASON_INTERNAL
+			if mode == "storage" {
+				s.DB.Pool.Close()
+			} else {
+				tx, err := s.DB.Pool.Begin(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback(context.Background())
+				if _, err := tx.Exec(ctx, "LOCK TABLE settings IN ACCESS EXCLUSIVE MODE"); err != nil {
+					t.Fatal(err)
+				}
+				var cancel context.CancelFunc
+				if mode == "canceled" {
+					ctx, cancel = context.WithCancel(ctx)
+					cancel()
+					want = pb.ErrorReason_ERROR_REASON_CANCELED
+				} else {
+					ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+					defer cancel()
+					want = pb.ErrorReason_ERROR_REASON_TIMEOUT
+				}
+			}
+			_, err := s.TranslateTextArray(ctx, request(translate(tenant, "settings-error"), "Bearer user"))
+			reason(t, err, want)
+		})
+	}
+}

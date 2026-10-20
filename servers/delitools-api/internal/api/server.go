@@ -344,7 +344,7 @@ func (s *Server) execute(ctx context.Context, header string, x *execution, input
 func settingsContext(ctx context.Context, s *Server, id string) (context.Context, context.CancelFunc, *pb.Settings, error) {
 	v, e := s.DB.Settings(ctx)
 	if e != nil {
-		return ctx, func() {}, nil, fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
+		return ctx, func() {}, nil, storageFault(e, id)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(v.ExecutionTimeoutSeconds)*time.Second)
 	return ctx, cancel, v, nil
