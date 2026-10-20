@@ -35,14 +35,13 @@ func main() {
 	}
 }
 func execute() error {
-	path := flag.String("config", "", "operator-owned JSON configuration path")
 	migrate := flag.Bool("migrate", false, "apply explicit database migrations and exit")
 	flag.Parse()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
-	c, e := config.Load(*path)
+	c, e := config.Load()
 	if e != nil {
-		logger.Error("configuration rejected", "category", "invalid_configuration")
+		logger.Error("configuration rejected", "category", "invalid_configuration", "error", e.Error())
 		return e
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

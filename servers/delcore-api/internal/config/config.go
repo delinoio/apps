@@ -6,61 +6,118 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	PaddleCreditProductID      string   `json:"paddle_credit_product_id"`
-	Listen                     string   `json:"listen"`
-	DatabaseURL                string   `json:"database_url"`
-	Issuer                     string   `json:"issuer"`
-	Audience                   string   `json:"audience"`
-	OperatorRole               string   `json:"operator_role"`
-	IdentityKey                string   `json:"identity_key"`
-	PaddleURL                  string   `json:"paddle_url"`
-	PaddleToken                string   `json:"paddle_token"`
-	PaddleWebhookSecret        string   `json:"paddle_webhook_secret"`
-	EmailURL                   string   `json:"email_url"`
-	EmailToken                 string   `json:"email_token"`
-	EmailAccount               string   `json:"email_account"`
-	EmailSender                string   `json:"email_sender"`
-	ReturnURLs                 []string `json:"return_urls"`
-	TimeoutSeconds             int      `json:"timeout_seconds"`
-	RetryLimit                 int      `json:"retry_limit"`
-	RetrySeconds               int      `json:"retry_seconds"`
-	MaxPayloadBytes            int64    `json:"max_payload_bytes"`
-	RequestsPerMinute          int      `json:"requests_per_minute"`
-	InvitationSeconds          int      `json:"invitation_seconds"`
-	UsageLatenessSeconds       int      `json:"usage_lateness_seconds"`
-	ReportingGraceSeconds      int      `json:"reporting_grace_seconds"`
-	DeletionGraceSeconds       int      `json:"deletion_grace_seconds"`
-	RawUsageRetentionSeconds   int      `json:"raw_usage_retention_seconds"`
-	AccountingRetentionSeconds int      `json:"accounting_retention_seconds"`
-	AuditRetentionSeconds      int      `json:"audit_retention_seconds"`
-	WebhookRetentionSeconds    int      `json:"webhook_retention_seconds"`
-	BacklogAlert               int      `json:"backlog_alert"`
-	SettlementAlertSeconds     int      `json:"settlement_alert_seconds"`
-	Development                bool     `json:"development"`
+	PaddleCreditProductID      string
+	Listen                     string
+	DatabaseURL                string
+	Issuer                     string
+	Audience                   string
+	OperatorRole               string
+	IdentityKey                string
+	PaddleURL                  string
+	PaddleToken                string
+	PaddleWebhookSecret        string
+	EmailURL                   string
+	EmailToken                 string
+	EmailAccount               string
+	EmailSender                string
+	ReturnURLs                 []string
+	TimeoutSeconds             int
+	RetryLimit                 int
+	RetrySeconds               int
+	MaxPayloadBytes            int64
+	RequestsPerMinute          int
+	InvitationSeconds          int
+	UsageLatenessSeconds       int
+	ReportingGraceSeconds      int
+	DeletionGraceSeconds       int
+	RawUsageRetentionSeconds   int
+	AccountingRetentionSeconds int
+	AuditRetentionSeconds      int
+	WebhookRetentionSeconds    int
+	BacklogAlert               int
+	SettlementAlertSeconds     int
+	Development                bool
 }
 
-func Load(path string) (Config, error) {
+// Load reads .env from the working directory. Process variables take precedence,
+// including explicitly empty values, so a file cannot restore a cleared secret.
+func Load() (Config, error) {
+	local, err := godotenv.Read(".env")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Config{}, errors.New("could not read .env configuration")
+	}
+	return load(func(key string) string {
+		if value, ok := os.LookupEnv(key); ok {
+			return value
+		}
+		return local[key]
+	})
+}
+
+func load(getenv func(string) string) (Config, error) {
 	var c Config
-	f, e := os.Open(path)
-	if e != nil {
-		return c, e
+	c.PaddleCreditProductID = getenv("PADDLE_CREDIT_PRODUCT_ID")
+	c.Listen = getenv("LISTEN")
+	c.DatabaseURL = getenv("DATABASE_URL")
+	c.Issuer = getenv("ISSUER")
+	c.Audience = getenv("AUDIENCE")
+	c.OperatorRole = getenv("OPERATOR_ROLE")
+	c.IdentityKey = getenv("IDENTITY_KEY")
+	c.PaddleURL = getenv("PADDLE_URL")
+	c.PaddleToken = getenv("PADDLE_TOKEN")
+	c.PaddleWebhookSecret = getenv("PADDLE_WEBHOOK_SECRET")
+	c.EmailURL = getenv("EMAIL_URL")
+	c.EmailToken = getenv("EMAIL_TOKEN")
+	c.EmailAccount = getenv("EMAIL_ACCOUNT")
+	c.EmailSender = getenv("EMAIL_SENDER")
+	if err := json.Unmarshal([]byte(getenv("RETURN_URLS")), &c.ReturnURLs); err != nil {
+		return c, errors.New("RETURN_URLS must be a JSON array of strings")
 	}
-	defer f.Close()
-	d := json.NewDecoder(f)
-	d.DisallowUnknownFields()
-	if e = d.Decode(&c); e != nil {
-		return c, e
+	for _, setting := range []struct {
+		name   string
+		target *int
+	}{
+		{"TIMEOUT_SECONDS", &c.TimeoutSeconds},
+		{"RETRY_LIMIT", &c.RetryLimit},
+		{"RETRY_SECONDS", &c.RetrySeconds},
+		{"REQUESTS_PER_MINUTE", &c.RequestsPerMinute},
+		{"INVITATION_SECONDS", &c.InvitationSeconds},
+		{"USAGE_LATENESS_SECONDS", &c.UsageLatenessSeconds},
+		{"REPORTING_GRACE_SECONDS", &c.ReportingGraceSeconds},
+		{"DELETION_GRACE_SECONDS", &c.DeletionGraceSeconds},
+		{"RAW_USAGE_RETENTION_SECONDS", &c.RawUsageRetentionSeconds},
+		{"ACCOUNTING_RETENTION_SECONDS", &c.AccountingRetentionSeconds},
+		{"AUDIT_RETENTION_SECONDS", &c.AuditRetentionSeconds},
+		{"WEBHOOK_RETENTION_SECONDS", &c.WebhookRetentionSeconds},
+		{"BACKLOG_ALERT", &c.BacklogAlert},
+		{"SETTLEMENT_ALERT_SECONDS", &c.SettlementAlertSeconds},
+	} {
+		value, err := strconv.Atoi(getenv(setting.name))
+		if err != nil {
+			return c, fmt.Errorf("%s must be a base-10 integer", setting.name)
+		}
+		*setting.target = value
 	}
-	var extra any
-	if e = d.Decode(&extra); e != io.EOF {
-		return c, errors.New("configuration must contain one JSON object")
+	payloadBytes, err := strconv.ParseInt(getenv("MAX_PAYLOAD_BYTES"), 10, 64)
+	if err != nil {
+		return c, errors.New("MAX_PAYLOAD_BYTES must be a base-10 integer")
+	}
+	c.MaxPayloadBytes = payloadBytes
+	if value := getenv("DEVELOPMENT"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return c, errors.New("DEVELOPMENT has an invalid bool value")
+		}
+		c.Development = parsed
 	}
 	return c, c.Validate()
 }

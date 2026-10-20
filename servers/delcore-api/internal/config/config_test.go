@@ -3,23 +3,81 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/joho/godotenv"
 )
 
-func TestLoadWithoutCurrencySettings(t *testing.T) {
-	body, err := json.Marshal(valid())
+func TestLoadEnvironment(t *testing.T) {
+	values, err := godotenv.Read("../../.env.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, body, 0600); err != nil {
+	c, err := load(func(key string) string { return values[key] })
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path); err != nil {
+	if c.Listen != "127.0.0.1:8080" || c.RetryLimit != 8 || c.MaxPayloadBytes != 1048576 || !c.Development || len(c.ReturnURLs) != 1 {
+		t.Fatalf("environment fields were not loaded: listener=%s retries=%d", c.Listen, c.RetryLimit)
+	}
+	for _, key := range []string{"RETRY_LIMIT", "MAX_PAYLOAD_BYTES", "DEVELOPMENT", "RETURN_URLS"} {
+		t.Run(key, func(t *testing.T) {
+			values[key] = "invalid-secret-value"
+			_, err := load(func(key string) string { return values[key] })
+			if err == nil || !strings.Contains(err.Error(), key) || strings.Contains(err.Error(), values[key]) {
+				t.Fatalf("expected a safe field-specific parse error, got %v", err)
+			}
+			values, _ = godotenv.Read("../../.env.example")
+		})
+	}
+	delete(values, "TIMEOUT_SECONDS")
+	if _, err := load(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("missing policy accepted")
+	}
+}
+
+func TestLoadDotEnvPrecedence(t *testing.T) {
+	body, err := os.ReadFile("../../.env.example")
+	if err != nil {
 		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(".env", body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LISTEN", "127.0.0.1:18080")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Listen != "127.0.0.1:18080" {
+		t.Fatal("process environment must override .env")
+	}
+	t.Setenv("IDENTITY_KEY", "")
+	if _, err := Load(); err == nil {
+		t.Fatal(".env restored an explicitly cleared secret")
+	}
+}
+
+func TestLoadWithoutDotEnv(t *testing.T) {
+	values, err := godotenv.Read("../../.env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range values {
+		t.Setenv(key, value)
+	}
+	t.Chdir(t.TempDir())
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".env", []byte("IDENTITY_KEY=\"unterminated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil {
+		t.Fatal("malformed .env accepted")
 	}
 }
 

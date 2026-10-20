@@ -12,9 +12,7 @@ Every app-local `dev` and `dev:*` script and Go API `dev` script wraps its devel
 
 Root `pnpm dev` resolves the local database URLs from `docker compose config --format json`, waits for Compose, then delegates to the workspace scripts through Turborepo. The reserved `DEV_COMPOSE_DATABASE_URLS` handoff is passed only to the two API development tasks; do not define it in Infisical or service environment files. Each workspace still fetches its Infisical variables after Turborepo starts its task.
 
-After injection, the API development launcher applies the owning Compose database URL with higher priority than Infisical, the parent shell and the service-local `.env`. Git Tracker receives `DATABASE_URL`. Delcore receives `CONFIG` pointing to a private temporary copy of its existing JSON configuration with only `database_url` replaced. The source `CONFIG` is read from the injected/process environment, falling back to the service-local `.env`. The original JSON file is never changed.
-
-Temporary configuration uses an owner-only directory and file outside the checkout and is removed on normal exit, startup failure or handled termination. A force-killed launcher cannot clean up; remove its temporary directory manually. Database URLs and configuration contents must not be logged.
+After injection, the API development launcher applies the owning Compose database URL through `DATABASE_URL` with higher priority than Infisical, the parent shell and the service-local `.env`. Delcore loads its service-local `.env` before Air starts; injected/process variables, including explicitly empty values, take precedence. The launcher preserves all non-database settings and leaves the local file unchanged. No temporary JSON configuration is created. Database URLs and configuration contents must not be logged.
 
 Root database port overrides are resolved before Infisical injection, so remote database settings cannot redirect this local workflow. Direct service-local development and root `pnpm dev:portless` have no handoff and retain their existing configuration behavior.
 
