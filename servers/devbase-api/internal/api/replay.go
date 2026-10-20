@@ -46,6 +46,16 @@ func (s *Server) mutate(ctx context.Context, c *Call, op Op, who identity, msg, 
 		return e
 	}
 	if who.keyID != "" {
+		// Lock order is project, then key, then children, the same direction as DeleteProject
+		// and tenant cleanup. Taking the key lock first can deadlock with their cascade.
+		var project string
+		e := tx.QueryRow(ctx, "SELECT id::text FROM projects WHERE id=$1 FOR KEY SHARE", who.projectID).Scan(&project)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return unauthenticated()
+		}
+		if e != nil {
+			return e
+		}
 		// A shared row lock makes revocation wait for in-flight work and makes later
 		// work observe a committed revocation.
 		k, e := s.loadKey(ctx, tx, who.keyID, " FOR SHARE OF k")

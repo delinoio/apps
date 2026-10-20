@@ -6,6 +6,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -848,3 +849,82 @@ func (f *fixture) metricsText(t *testing.T, name string) string {
 }
 
 func canonical(id string) bool { return len(id) == 36 && id[14] == '7' }
+
+// Deleting users while their project is deleted must serialize without a database deadlock,
+// which would surface as an unavailable error.
+func TestUserDeletionRacesWithProjectDeletion(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	for round := 0; round < 6; round++ {
+		p := f.project(login(owner), tenant, fmt.Sprintf("Race %d", round))
+		var ids []string
+		for i := 0; i < 12; i++ {
+			ids = append(ids, f.user(login(owner), p.Id, fmt.Sprintf("u%d", i)).Id)
+		}
+		var wg sync.WaitGroup
+		results := make(chan error, len(ids)+1)
+		for _, id := range ids {
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				_, e := f.client.DeleteEndUser(ctx, as(login(owner), &pb.DeleteEndUserRequest{IdempotencyKey: idem(), ProjectId: p.Id, EndUserId: id, Version: 1}))
+				results <- e
+			}(id)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, e := f.client.DeleteProject(ctx, as(login(owner), &pb.DeleteProjectRequest{IdempotencyKey: idem(), ProjectId: p.Id, Version: 1}))
+			results <- e
+		}()
+		wg.Wait()
+		close(results)
+		for e := range results {
+			if c := code(e); c != 0 && c != connect.CodeNotFound {
+				t.Fatalf("round %d: unexpected outcome %v", round, e)
+			}
+		}
+		if f.count("SELECT count(*) FROM projects WHERE id=$1", p.Id) != 0 || f.count("SELECT count(*) FROM end_users WHERE project_id=$1", p.Id) != 0 {
+			t.Fatalf("round %d: data survived", round)
+		}
+	}
+}
+
+// Key-authenticated work holds a shared lock on the key row. It must not deadlock with a
+// project deletion that cascades to the same key.
+func TestKeyWorkRacesWithProjectDeletion(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	tenant, owner, _ := f.tenant()
+	for round := 0; round < 6; round++ {
+		p := f.project(login(owner), tenant, fmt.Sprintf("Key race %d", round))
+		secret, _ := f.key(login(owner), p.Id, crud)
+		var wg sync.WaitGroup
+		results := make(chan error, 25)
+		for i := 0; i < 24; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, e := f.client.CreateEndUser(ctx, as(secret, &pb.CreateEndUserRequest{IdempotencyKey: idem(), ProjectId: p.Id, ExternalId: "k" + newID()}))
+				results <- e
+			}()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, e := f.client.DeleteProject(ctx, as(login(owner), &pb.DeleteProjectRequest{IdempotencyKey: idem(), ProjectId: p.Id, Version: 1}))
+			results <- e
+		}()
+		wg.Wait()
+		close(results)
+		for e := range results {
+			if c := code(e); c != 0 && c != connect.CodeNotFound && c != connect.CodeUnauthenticated {
+				t.Fatalf("round %d: unexpected outcome %v", round, e)
+			}
+		}
+		if f.count("SELECT count(*) FROM end_users WHERE project_id=$1", p.Id) != 0 {
+			t.Fatalf("round %d: users survived", round)
+		}
+	}
+}

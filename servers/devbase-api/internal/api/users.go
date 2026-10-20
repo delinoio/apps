@@ -238,6 +238,14 @@ func (s *Server) UpdateEndUser(ctx context.Context, r *connect.Request[pb.Update
 func (s *Server) DeleteEndUser(ctx context.Context, r *connect.Request[pb.DeleteEndUserRequest]) (*connect.Response[pb.DeleteEndUserResponse], error) {
 	q, out := r.Msg, &pb.DeleteEndUserResponse{}
 	return handle(s, ctx, r, opDeleteEndUser, out, projectTarget(q.ProjectId), func() error { return requireID(q.EndUserId, "end_user_id") }, func(c *Call) error {
+		// Lock the project before the user. DeleteProject and tenant cleanup lock the parent
+		// first and then cascade to the children, so any other order can deadlock.
+		var locked string
+		if e := c.DB.QueryRow(c.Ctx, "SELECT id::text FROM projects WHERE id=$1 FOR NO KEY UPDATE", q.ProjectId).Scan(&locked); errors.Is(e, pgx.ErrNoRows) {
+			return notFound()
+		} else if e != nil {
+			return e
+		}
 		tag, e := c.DB.Exec(c.Ctx, "DELETE FROM end_users WHERE id=$1 AND project_id=$2 AND version=$3", q.EndUserId, q.ProjectId, q.Version)
 		if e != nil {
 			return e
