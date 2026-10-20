@@ -1432,6 +1432,7 @@ type Price struct {
 	Kind            PriceKind              `protobuf:"varint,10,opt,name=kind,proto3,enum=delcore.v1.PriceKind" json:"kind,omitempty"`
 	Key             string                 `protobuf:"bytes,11,opt,name=key,proto3" json:"key,omitempty"`
 	StableId        string                 `protobuf:"bytes,12,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
+	Active          bool                   `protobuf:"varint,13,opt,name=active,proto3" json:"active,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1548,6 +1549,13 @@ func (x *Price) GetStableId() string {
 		return x.StableId
 	}
 	return ""
+}
+
+func (x *Price) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
 }
 
 type MeterFilter struct {
@@ -6723,7 +6731,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x10\n" +
 	"\x03key\x18\x04 \x01(\tR\x03key\x12*\n" +
 	"\x11active_version_id\x18\x05 \x01(\tR\x0factiveVersionId\x12?\n" +
-	"\x0efeature_values\x18\x06 \x03(\v2\x18.delcore.v1.FeatureValueR\rfeatureValues\"\xde\x02\n" +
+	"\x0efeature_values\x18\x06 \x03(\v2\x18.delcore.v1.FeatureValueR\rfeatureValues\"\xf6\x02\n" +
 	"\x05Price\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\aplan_id\x18\x02 \x01(\tR\x06planId\x12\x1d\n" +
@@ -6739,7 +6747,8 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x04kind\x18\n" +
 	" \x01(\x0e2\x15.delcore.v1.PriceKindR\x04kind\x12\x10\n" +
 	"\x03key\x18\v \x01(\tR\x03key\x12\x1b\n" +
-	"\tstable_id\x18\f \x01(\tR\bstableId\"\x80\x01\n" +
+	"\tstable_id\x18\f \x01(\tR\bstableId\x12\x16\n" +
+	"\x06active\x18\r \x01(\bR\x06active\"\x80\x01\n" +
 	"\vMeterFilter\x12\x1c\n" +
 	"\tattribute\x18\x01 \x01(\tR\tattribute\x12;\n" +
 	"\boperator\x18\x02 \x01(\x0e2\x1f.delcore.v1.MeterFilterOperatorR\boperator\x12\x16\n" +

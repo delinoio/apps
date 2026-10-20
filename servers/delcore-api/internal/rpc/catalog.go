@@ -287,14 +287,18 @@ func (s *Server) GetCatalog(ctx context.Context, r *connect.Request[pb.GetCatalo
 		if e = rows.Err(); e != nil {
 			return e
 		}
-		rows, e = c.tx.Query(c.ctx, "SELECT p.id::text,COALESCE(p.plan_id::text,''),p.service_id::text,p.meter,p.unit_price::text,p.included::text,p.currency,p.external_price_id,COALESCE(p.addon_id::text,''),p.kind,COALESCE(ce.key,''),COALESCE(ce.id::text,'') FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id LEFT JOIN catalog_entities ce ON ce.id=cv.entity_id WHERE p.id>$1 ORDER BY p.id LIMIT $2", after, n+1)
+		rows, e = c.tx.Query(c.ctx, `SELECT p.id::text,COALESCE(p.plan_id::text,''),p.service_id::text,p.meter,p.unit_price::text,p.included::text,p.currency,p.external_price_id,COALESCE(p.addon_id::text,''),p.kind,COALESCE(ce.key,''),COALESCE(ce.id::text,''),
+CASE WHEN ce.id IS NOT NULL THEN COALESCE(ce.active_version_id=p.id,false)
+ ELSE NOT EXISTS (SELECT 1 FROM prices newer WHERE newer.plan_id IS NOT DISTINCT FROM p.plan_id AND newer.addon_id IS NOT DISTINCT FROM p.addon_id AND newer.service_id=p.service_id AND newer.meter=p.meter AND newer.kind=p.kind AND (newer.created_at,newer.id)>(p.created_at,p.id)) END
+FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id LEFT JOIN catalog_entities ce ON ce.id=cv.entity_id
+WHERE p.id>$1 ORDER BY p.id LIMIT $2`, after, n+1)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
 			v := &pb.Price{}
-			if e = rows.Scan(&v.Id, &v.PlanId, &v.ServiceId, &v.Meter, &v.UnitPrice, &v.Included, &v.Currency, &v.ExternalPriceId, &v.AddOnId, &v.Kind, &v.Key, &v.StableId); e != nil {
+			if e = rows.Scan(&v.Id, &v.PlanId, &v.ServiceId, &v.Meter, &v.UnitPrice, &v.Included, &v.Currency, &v.ExternalPriceId, &v.AddOnId, &v.Kind, &v.Key, &v.StableId, &v.Active); e != nil {
 				return e
 			}
 			o.Prices = append(o.Prices, v)
