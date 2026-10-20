@@ -218,6 +218,12 @@ func schemaBudget(root map[string]any) bool {
 			for _, v := range values {
 				if text, ok := v.(string); ok {
 					size += utf8.RuneCountInString(text)
+				} else {
+					encoded, err := json.Marshal(v)
+					if err != nil {
+						return false
+					}
+					chars += len(encoded)
 				}
 			}
 			chars += size

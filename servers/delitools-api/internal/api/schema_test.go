@@ -2,8 +2,10 @@
 package api
 
 import (
+	"encoding/json"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
 	"google.golang.org/protobuf/proto"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,22 @@ func TestCachedTokenPriceTiers(t *testing.T) {
 	tokens, err = p.Tokens(Counts{Input: 69, CacheRead: 20, CacheWrite: 10})
 	if err != nil || tokens[2].UsdPerToken != "2" || tokens[3].UsdPerToken != "3" {
 		t.Fatal(tokens, err)
+	}
+}
+
+func TestNumericEnumCharacterBudget(t *testing.T) {
+	values := make([]any, 1000)
+	for i := range values {
+		values[i] = json.Number(strings.Repeat("1", 121))
+	}
+	schema := map[string]any{"enum": values}
+	if schemaBudget(schema) {
+		t.Fatal("oversized numeric enums accepted")
+	}
+	for i := range values {
+		values[i] = json.Number("12345678901234567890")
+	}
+	if !schemaBudget(schema) {
+		t.Fatal("numeric enums incorrectly use the string-only limit")
 	}
 }
