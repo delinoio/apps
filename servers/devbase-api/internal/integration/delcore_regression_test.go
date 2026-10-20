@@ -257,9 +257,19 @@ func TestRealDelcoreRegression(t *testing.T) {
 			t.Fatalf("%s was not denied: %v", user, e)
 		}
 	}
-	for name, token := range map[string]string{"garbage": "garbage", "expired": d.token("sub-owner", jwt.MapClaims{"exp": time.Now().Add(-time.Hour).Unix(), "email": "owner@example.test", "email_verified": true}), "service": d.service()} {
-		if _, e = f.client.GetProject(ctx, as(token, &pb.GetProjectRequest{ProjectId: p.Id})); code(e) != connect.CodeUnauthenticated && code(e) != connect.CodePermissionDenied {
-			t.Fatalf("%s token accepted: %v", name, e)
+	// Authentication and authorization failures stay distinct: credentials that are not a valid
+	// login are unauthenticated, and only a valid credential of the wrong kind is a permission failure.
+	expired := d.token("sub-owner", jwt.MapClaims{"exp": time.Now().Add(-time.Hour).Unix(), "email": "owner@example.test", "email_verified": true})
+	for _, tc := range []struct {
+		name, token string
+		want        connect.Code
+	}{
+		{"garbage", "garbage", connect.CodeUnauthenticated},
+		{"expired", expired, connect.CodeUnauthenticated},
+		{"service", d.service(), connect.CodePermissionDenied},
+	} {
+		if _, e = f.client.GetProject(ctx, as(tc.token, &pb.GetProjectRequest{ProjectId: p.Id})); code(e) != tc.want {
+			t.Fatalf("%s token: got %v, want %v", tc.name, code(e), tc.want)
 		}
 	}
 	// Unknown or other tenants are denied.
