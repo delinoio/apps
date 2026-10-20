@@ -1247,3 +1247,28 @@ func TestTransportAllowsEscapedInputAtDecodedLimit(t *testing.T) {
 		reason(t, err, pb.ErrorReason_ERROR_REASON_LIMIT)
 	}
 }
+
+func TestAuthorizationMetricUsesStableReasons(t *testing.T) {
+	s, a, _, tenant := setupAPI(t)
+	_, h := s.Handler(100000)
+	server := httptest.NewServer(h)
+	defer server.Close()
+	c := delitoolsv1connect.NewDeliToolsServiceClient(server.Client(), server.URL)
+	ctx := context.Background()
+	_, err := c.TranslateTextArray(ctx, request(translate(tenant, ""), ""))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED)
+	a.blocked = true
+	_, err = c.TranslateTextArray(ctx, request(translate(tenant, ""), "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_BILLING_BLOCKED)
+	a.blocked = false
+	if _, err := s.DB.Pool.Exec(ctx, "DELETE FROM catalog"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.TranslateTextArray(ctx, request(translate(tenant, ""), "Bearer user"))
+	reason(t, err, pb.ErrorReason_ERROR_REASON_PRICE_UNAVAILABLE)
+	w := httptest.NewRecorder()
+	s.Metrics().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	if !strings.Contains(w.Body.String(), "delitools_authorization_failures 2\n") {
+		t.Fatal(w.Body.String())
+	}
+}
