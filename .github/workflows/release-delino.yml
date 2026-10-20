@@ -128,6 +128,13 @@ jobs:
           [[ "$CLOUDFLARE_PAGES_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,57}$ ]]
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test and build the selected web application
+        env:
+          # Public browser identifiers only; Git Tracker is the only consumer.
+          PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+          PUBLIC_LOGTO_APP_ID: ${{ vars.PUBLIC_LOGTO_APP_ID }}
+        working-directory: apps/${{ matrix.app }}
+        run: pnpm test
       - name: Include distribution notices
         run: cp "LICENSE" "NOTICE" "apps/${{ matrix.app }}/dist/"
       - name: Preserve the deployment candidate
