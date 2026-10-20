@@ -76,7 +76,9 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		if _, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: invalid}, "service")); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal("price after stored occurrence accepted", err)
 		}
-		r, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: u}, "service"))
+		initial := proto.Clone(u).(*pb.Usage)
+		initial.AiUsage.Tokens[0].UsdPerToken += "00"
+		r, err := c.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: initial}, "service"))
 		if err != nil {
 			t.Fatalf("report %d: %v", i, err)
 		}
@@ -123,7 +125,7 @@ func TestDeliToolsPricesAndKeyAuthority(t *testing.T) {
 		if _, err = c.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: correction}, "service")); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal("correction repriced request", err)
 		}
-		correction.AiUsage.Tokens[0].UsdPerToken = tc.price
+		correction.AiUsage.Tokens[0].UsdPerToken = tc.price + "0"
 		if _, err = c.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: correction}, "service")); err != nil {
 			t.Fatal("unchanged snapshot rejected", err)
 		}

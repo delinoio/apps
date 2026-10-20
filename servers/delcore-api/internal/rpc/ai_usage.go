@@ -88,6 +88,8 @@ func rateAI(u *pb.Usage) (accounting.Decimal, error) {
 		if err != nil || price.Cmp(accounting.Zero()) < 0 {
 			return fail()
 		}
+		// Equivalent decimal spellings must share persisted evidence and replay identity.
+		token.UsdPerToken = price.String()
 		count, _ := accounting.Parse(strconv.FormatUint(token.Tokens, 10))
 		sum = sum.Add(price.Mul(count))
 	}
