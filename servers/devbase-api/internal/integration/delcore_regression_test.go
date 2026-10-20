@@ -113,24 +113,29 @@ func startDelcore(t *testing.T) *realDelcore {
 		}}})
 	})
 
-	// Dedicated database so Delcore's schema never mixes with DevBase's.
+	// Dedicated schema so Delcore's tables never mix with DevBase's. A schema needs only the
+	// privileges the other integration tests already require; a separate database would also
+	// need the cluster-wide CREATEDB privilege. Delcore's connection selects the schema through
+	// the search_path runtime parameter and every table it uses is created unqualified.
 	admin, e := pgx.Connect(context.Background(), dsn)
 	if e != nil {
 		t.Fatal(e)
 	}
 	name := "delcore_regression_" + strings.ReplaceAll(newID(), "-", "")[:16]
-	if _, e = admin.Exec(context.Background(), "CREATE DATABASE "+name); e != nil {
+	if _, e = admin.Exec(context.Background(), "CREATE SCHEMA "+name); e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() {
-		admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+name+" CASCADE")
 		admin.Close(context.Background())
 	})
 	parsed, e := url.Parse(dsn)
 	if e != nil {
 		t.Fatal(e)
 	}
-	parsed.Path = "/" + name
+	query := parsed.Query()
+	query.Set("search_path", name)
+	parsed.RawQuery = query.Encode()
 	if d.db, e = pgx.Connect(context.Background(), parsed.String()); e != nil {
 		t.Fatal(e)
 	}
