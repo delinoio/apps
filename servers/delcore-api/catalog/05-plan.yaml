@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: plan
+key: example-free
+name: Example Free
+rank: 0
+free: true
+default_free: true
+postpaid: false
+features:
+  - service: example-api
+    key: api-access
+    enabled: true
+  - service: example-api
+    key: monthly-requests
+    limit: "1000"

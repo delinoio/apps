@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: price
+key: priority-monthly
+add_on:
+  service: example-api
+  key: priority
+service: example-api
+meter: subscription
+price_kind: recurring
+unit_price: "5"
+included: "0"
+currency: USD
+external_price_id: pri_replace_for_local_paddle

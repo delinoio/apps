@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: price
+key: request-usd
+plan: example-free
+service: example-api
+meter: requests
+price_kind: usage
+unit_price: "0.01"
+included: "100"
+currency: USD

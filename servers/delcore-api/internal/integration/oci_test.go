@@ -78,6 +78,9 @@ func TestOCI(t *testing.T) {
 	cfg["PADDLE_URL"] = "http://127.0.0.1:8099"
 	cfg["LISTEN"] = "127.0.0.1:8080"
 	cfg["TIMEOUT_SECONDS"] = "5"
+	// This OCI check exercises production startup; development catalog files
+	// are intentionally not bundled into the runtime image.
+	cfg["DEVELOPMENT"] = "false"
 	configPath := filepath.Join(dir, "fixture.env")
 	writeEnvironment := func() {
 		t.Helper()

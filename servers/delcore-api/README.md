@@ -24,6 +24,10 @@ go run ./cmd/delcore-api
 
 Run these commands from `servers/delcore-api`. Migrations are explicit and transactional. Normal startup checks schema compatibility; it does not apply migrations. A database session lock rejects a second running instance. The service stops if it loses that lock connection.
 
+With `DEVELOPMENT=true`, normal startup reads the [split-file YAML catalog](catalog) after the schema check and instance lock, then reconciles declared entities in one transaction before serving requests or processing jobs. The default is `catalog` from this working directory. Set `CATALOG_DIR` to another existing directory to use your own declarations. It scans nested `.yaml` and `.yml` files, with one entity per file; absent, empty, malformed, or inconsistent catalogs stop startup without partial changes. The examples declare a service, meter, features, plan, add-on, and prices in separate files. Meters and features use service keys; add-on prices name both the owning service and add-on key. See the [development catalog contract](../../docs/servers-delcore-api-contract.md#development-catalog) for the full schema, literal semantics, and reference rules.
+
+Files restore declared fields changed through operator APIs. Omitted entities remain in the database. Unchanged content reuses stable IDs and versions, and returning from definition A to B to A reselects A for future subscriptions without moving existing subscriptions. To recover from invalid YAML or a catalog constraint, correct the files or conflicting declaration and restart. If PostgreSQL is unavailable, restore database service first. YAML edits alone do not trigger Air; restart the API task. Production startup and `-migrate` do not read the catalog. Keep real credentials out of catalog files.
+
 Bootstrap the service catalog and default free plan with a user token carrying the dedicated operator role. Create registered meters before creating usage prices. Register all prices before marking the free plan as the default. Price versions are immutable. Existing entitlements refer to their chosen price version. Keep fixed recurring prices separate from usage prices.
 
 | Settings                                                      | Purpose                                                |
@@ -40,6 +44,7 @@ Bootstrap the service catalog and default free plan with a user token carrying t
 | `*_RETENTION_SECONDS`                                         | Explicit retention policy inputs                       |
 | `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                   | Operational alert thresholds                           |
 | `DEVELOPMENT`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
+| `CATALOG_DIR`                                                 | Optional development YAML catalog directory            |
 
 All billing uses USD with two decimal places for currency minor units. Currency and minor-unit precision are fixed and have no configuration settings.
 

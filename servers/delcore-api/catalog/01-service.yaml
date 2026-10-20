@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: service
+key: example-api
+name: Example API
+client_id: example-api-local
+capabilities:
+  - execute
+scopes:
+  - authorize
+  - usage:write
+  - usage:read

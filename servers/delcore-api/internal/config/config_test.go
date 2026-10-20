@@ -28,6 +28,20 @@ func TestLoadEnvironment(t *testing.T) {
 	if c.Listen != "127.0.0.1:8080" || c.RetryLimit != 8 || c.MaxPayloadBytes != 1048576 || !c.Development || len(c.ReturnURLs) != 1 {
 		t.Fatalf("environment fields were not loaded: listener=%s retries=%d", c.Listen, c.RetryLimit)
 	}
+	if c.CatalogDir != "servers/delcore-api/catalog" {
+		t.Fatal("unexpected default catalog directory")
+	}
+	values["CATALOG_DIR"] = "local/catalog"
+	c, err = load(func(key string) string { return values[key] })
+	if err != nil || c.CatalogDir != "local/catalog" {
+		t.Fatal("catalog directory override was not loaded", err)
+	}
+	delete(values, "CATALOG_DIR")
+	values["CATALOG_DIR"] = "  "
+	if _, err := load(func(key string) string { return values[key] }); err == nil || !strings.Contains(err.Error(), "CATALOG_DIR") {
+		t.Fatal("invalid catalog directory override accepted")
+	}
+	delete(values, "CATALOG_DIR")
 	for _, key := range []string{"RETRY_LIMIT", "MAX_PAYLOAD_BYTES", "DEVELOPMENT", "RETURN_URLS"} {
 		t.Run(key, func(t *testing.T) {
 			values[key] = "invalid-secret-value"
@@ -50,16 +64,20 @@ func TestLoadDotEnvPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(t.TempDir())
-	if err := os.WriteFile(".env", body, 0600); err != nil {
+	if err := os.WriteFile(".env", append(body, []byte("\nCATALOG_DIR=from-file\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("LISTEN", "127.0.0.1:18080")
+	t.Setenv("CATALOG_DIR", "from-process")
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Listen != "127.0.0.1:18080" {
 		t.Fatal("process environment must override .env")
+	}
+	if c.CatalogDir != "from-process" {
+		t.Fatal("process catalog directory must override .env")
 	}
 	t.Setenv("IDENTITY_KEY", "")
 	if _, err := Load(); err == nil {

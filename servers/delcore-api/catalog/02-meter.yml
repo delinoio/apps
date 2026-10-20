@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: meter
+service: example-api
+key: requests
+aggregation: count
+event_type: request.completed
+filters:
+  - attribute: outcome
+    operator: in
+    values: ["success", "cached"]
+group_by:
+  - region

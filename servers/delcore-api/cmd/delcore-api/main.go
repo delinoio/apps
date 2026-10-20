@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/delinoio/apps/servers/delcore-api/internal/auth"
+	"github.com/delinoio/apps/servers/delcore-api/internal/catalog"
 	"github.com/delinoio/apps/servers/delcore-api/internal/config"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/apps/servers/delcore-api/internal/provider"
@@ -68,6 +69,12 @@ func execute() error {
 		return e
 	}
 	defer func() { lock.Conn().Close(context.Background()); lock.Release() }()
+	if c.Development {
+		if e = catalog.Sync(ctx, db, c.CatalogDir, logger); e != nil {
+			logger.Error("catalog synchronization rejected", "category", "catalog_reconciliation", "error", e.Error())
+			return e
+		}
+	}
 	verifier, e := auth.New(ctx, c)
 	if e != nil {
 		return e
