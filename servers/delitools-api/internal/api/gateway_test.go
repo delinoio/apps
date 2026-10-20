@@ -4,8 +4,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	core "github.com/delinoio/apps/protos/delcore/v1"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -131,6 +133,51 @@ func TestGatewayCacheCreationUsage(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("missing cache write billing")
+			}
+		})
+	}
+}
+
+func TestGatewayConnectionFailureClassification(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unavailable := "http://" + listener.Addr().String()
+	listener.Close()
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("untrusted TLS request executed") }))
+	defer tlsServer.Close()
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	}))
+	defer broken.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, unavailable, http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+	for _, tc := range []struct {
+		name, url string
+		known     bool
+	}{{"dns", "http://fixture.invalid", true}, {"dial", unavailable, true}, {"tls", tlsServer.URL, true}, {"after-connect", broken.URL, false}, {"redirect", redirect.URL, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := &http.Transport{}
+			if tc.name == "dns" {
+				resolver := &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+					return nil, errors.New("fixture DNS unavailable")
+				}}
+				transport.DialContext = (&net.Dialer{Resolver: resolver}).DialContext
+			}
+			client := &http.Client{Transport: transport}
+			defer client.CloseIdleConnections()
+			g := &HTTPGateway{Client: client, BaseURL: tc.url, MaxResponseBytes: 10000}
+			result, err := g.Execute(context.Background(), ExtractionModel, "fixture", nil, func(string) error { return errors.New("unexpected generation") })
+			if err == nil || result.Unknown == tc.known || result.Transient != tc.known || (result.Usage != nil) != tc.known {
+				t.Fatal(result, err)
 			}
 		})
 	}
