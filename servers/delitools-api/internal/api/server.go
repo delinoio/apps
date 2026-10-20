@@ -97,7 +97,19 @@ func (s *Server) authorize(ctx context.Context, header, tenant string, cap pb.Ca
 		var expires *time.Time
 		var revoked bool
 		e := s.DB.Pool.QueryRow(ctx, "SELECT user_id,kind,capabilities,expires_at,revoked FROM api_keys WHERE tenant_id=$1 AND secret_hash=$2", tenant, sum[:]).Scan(&user, &kind, &caps, &expires, &revoked)
-		if e != nil || revoked || (expires != nil && !expires.After(s.now())) {
+		if errors.Is(e, pgx.ErrNoRows) {
+			return fault(pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED, id)
+		}
+		if e != nil {
+			if errors.Is(e, context.Canceled) {
+				return fault(pb.ErrorReason_ERROR_REASON_CANCELED, id)
+			}
+			if errors.Is(e, context.DeadlineExceeded) {
+				return fault(pb.ErrorReason_ERROR_REASON_TIMEOUT, id)
+			}
+			return fault(pb.ErrorReason_ERROR_REASON_INTERNAL, id)
+		}
+		if revoked || (expires != nil && !expires.After(s.now())) {
 			return fault(pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED, id)
 		}
 		if !slices.Contains(caps, int32(cap)) {

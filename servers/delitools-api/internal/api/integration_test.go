@@ -730,3 +730,17 @@ func TestInspectionRetainsTerminalFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyLookupFailureIsNotInvalidCredential(t *testing.T) {
+	s, _, _, tenant := setupAPI(t)
+	ctx := context.Background()
+	reason(t, s.authorize(ctx, "Bearer dt_missing", tenant, pb.Capability_CAPABILITY_TRANSLATOR, ID()), pb.ErrorReason_ERROR_REASON_UNAUTHENTICATED)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	reason(t, s.authorize(canceled, "Bearer dt_missing", tenant, pb.Capability_CAPABILITY_TRANSLATOR, ID()), pb.ErrorReason_ERROR_REASON_CANCELED)
+	expired, stop := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	defer stop()
+	reason(t, s.authorize(expired, "Bearer dt_missing", tenant, pb.Capability_CAPABILITY_TRANSLATOR, ID()), pb.ErrorReason_ERROR_REASON_TIMEOUT)
+	s.DB.Pool.Close()
+	reason(t, s.authorize(ctx, "Bearer dt_missing", tenant, pb.Capability_CAPABILITY_TRANSLATOR, ID()), pb.ErrorReason_ERROR_REASON_INTERNAL)
+}
