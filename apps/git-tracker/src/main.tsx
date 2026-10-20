@@ -213,6 +213,11 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
     baselineCommit: "",
     targetCommit: "",
   });
+  const resetComparison = () => {
+    setBaseline("");
+    setTarget("");
+    setComparePair({ baselineCommit: "", targetCommit: "" });
+  };
   const [manage, setManage] = useState(false);
   const user = useQuery(
     DelcoreService.method.getCurrentUser,
@@ -346,6 +351,7 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
             <select
               value={space}
               onChange={(e) => {
+                resetComparison();
                 setSpace(e.target.value);
                 setRepository("");
                 setExecution("");
@@ -364,6 +370,7 @@ function App({ session, delcore }: { session: Session; delcore: Transport }) {
             <select
               value={repository}
               onChange={(e) => {
+                resetComparison();
                 setRepository(e.target.value);
                 setExecution("");
                 setSelected(null);
