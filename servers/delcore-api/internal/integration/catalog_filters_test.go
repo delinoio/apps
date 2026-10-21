@@ -105,7 +105,9 @@ filters:
 		_, err := client.IngestEvent(ctx, req(&pb.IngestEventRequest{RequestKey: key(), Event: &pb.Event{TenantId: tenant, ServiceId: serviceID, EventKey: eventKey, EventType: "job", OccurredAt: timestamppb.New(time.Now().UTC().Add(-time.Minute)), Attributes: attributes}}, "service"))
 		return err
 	}
-	flag := func(v bool) *pb.AttributeValue { return &pb.AttributeValue{Value: &pb.AttributeValue_Boolean{Boolean: v}} }
+	flag := func(v bool) *pb.AttributeValue {
+		return &pb.AttributeValue{Value: &pb.AttributeValue_Boolean{Boolean: v}}
+	}
 	matching := func() map[string]*pb.AttributeValue {
 		return map[string]*pb.AttributeValue{"priority": num("5"), "urgent": flag(true), "retried": flag(false), "trace": text("t")}
 	}

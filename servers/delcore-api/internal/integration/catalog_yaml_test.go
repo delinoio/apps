@@ -118,6 +118,7 @@ func TestCommittedSampleCatalogAppliesIdempotently(t *testing.T) {
 		t.Fatalf("sample configuration value types = %v", kinds)
 	}
 }
+
 // syncCatalog applies a development catalog without metrics.
 func syncCatalog(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logger) error {
 	_, err := catalog.Sync(ctx, db, dir, logger, nil)
