@@ -19,6 +19,10 @@ import (
 type meter struct {
 	ID         string
 	Definition metering.Definition
+	// Untyped reports that the stored definition has no event type, so
+	// Definition is the compatibility definition and the meter can still be
+	// typed until an accepted event evaluates it.
+	Untyped bool
 }
 
 // contribution is one matched meter group and value of one revision.
@@ -81,7 +85,7 @@ func Ingest(ctx context.Context, tx pgx.Tx, now time.Time, policy Policy, in Inp
 	if err != nil {
 		return Accepted{}, err
 	}
-	meters, err := loadMeters(ctx, tx, `ce.kind='meter' AND ce.scope=$1`, in.ServiceID)
+	meters, err := serviceMeters(ctx, tx, in.ServiceID)
 	if err != nil {
 		return Accepted{}, err
 	}
@@ -248,7 +252,7 @@ func tenantOpen(ctx context.Context, tx pgx.Tx, tenant string, occurred, now tim
 // loadMeters reads catalog meters. A meter without a typed definition uses
 // CompatibilityDefinition.
 func loadMeters(ctx context.Context, tx pgx.Tx, condition string, argument any) ([]meter, error) {
-	rows, err := tx.Query(ctx, `SELECT ce.id::text,ce.key,cv.definition FROM catalog_entities ce LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id
+	rows, err := tx.Query(ctx, `SELECT ce.id::text,ce.key,cv.definition,COALESCE(cv.definition->>'event_type','')='' FROM catalog_entities ce LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id
  WHERE `+condition+` AND ce.kind='meter' ORDER BY ce.key,ce.id`, argument)
 	if err != nil {
 		return nil, err
@@ -259,7 +263,7 @@ func loadMeters(ctx context.Context, tx pgx.Tx, condition string, argument any) 
 		var m meter
 		var key string
 		var raw []byte
-		if err = rows.Scan(&m.ID, &key, &raw); err != nil {
+		if err = rows.Scan(&m.ID, &key, &raw, &m.Untyped); err != nil {
 			return nil, err
 		}
 		if m.Definition, err = decodeMeter(key, raw); err != nil {
@@ -268,6 +272,41 @@ func loadMeters(ctx context.Context, tx pgx.Tx, condition string, argument any) 
 		meters = append(meters, m)
 	}
 	return meters, rows.Err()
+}
+
+// serviceMeters reads the meters an original event of a service evaluates.
+// PutMeter and catalog synchronization may still type an untyped meter while
+// no committed event evaluated it, and they decide that under the meter's
+// catalog entity row lock. Acceptance therefore share-locks every untyped
+// meter it evaluates and reads the definitions again: a typing transition
+// that committed first is read here, and one that starts later waits for this
+// event to commit and then sees it as in use. Typed definitions are immutable
+// and stay unlocked, so only the compatibility path pays for the lock.
+func serviceMeters(ctx context.Context, tx pgx.Tx, serviceID string) ([]meter, error) {
+	locked := map[string]bool{}
+	for {
+		meters, err := loadMeters(ctx, tx, `ce.kind='meter' AND ce.scope=$1`, serviceID)
+		if err != nil {
+			return nil, err
+		}
+		var pending []string
+		for _, m := range meters {
+			if m.Untyped && !locked[m.ID] {
+				pending = append(pending, m.ID)
+			}
+		}
+		if len(pending) == 0 {
+			return meters, nil
+		}
+		// Each pass locks at least one new meter of a bounded service meter
+		// set, so the loop ends.
+		if _, err = tx.Exec(ctx, "SELECT id FROM catalog_entities WHERE id=ANY($1::uuid[]) ORDER BY id FOR SHARE", pending); err != nil {
+			return nil, err
+		}
+		for _, id := range pending {
+			locked[id] = true
+		}
+	}
 }
 
 // attributePrices pins the usage price of every evaluated meter from the

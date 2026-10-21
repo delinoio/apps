@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
 	"github.com/delinoio/apps/servers/delcore-api/internal/config"
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
+	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/apps/servers/delcore-api/internal/worker"
 	"github.com/jackc/pgx/v5"
@@ -529,5 +530,82 @@ func TestUntypedMeterCompatibilityDefinitionIsImmutable(t *testing.T) {
 	// A non-numeric quantity is invalid for the compatibility definition.
 	if _, err := f.client.IngestEvent(ctx, req(&pb.IngestEventRequest{RequestKey: key(), Event: &pb.Event{TenantId: f.tenant, ServiceId: f.service, EventKey: "bad", EventType: "units", OccurredAt: timestamppb.New(now.Add(-time.Hour)), Attributes: map[string]*pb.AttributeValue{"quantity": text("2")}}}, "service")); reasonOf(err) != pb.ErrorReason_ERROR_REASON_INVALID_ATTRIBUTE {
 		t.Fatalf("non-numeric quantity accepted: %v", err)
+	}
+}
+
+func TestEventAcceptanceSerializesWithTypingAnUntypedMeter(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	f := newRatingFixture(t, now.Add(-12*time.Hour), now.Add(12*time.Hour), false)
+	ctx := context.Background()
+	units := meterID(t, f, "units")
+	// A typing transition that holds the meter's entity lock commits after
+	// ingestion started. Ingestion must evaluate the typed definition instead
+	// of committing a contribution of the compatibility definition it may have
+	// read before the transition committed.
+	typing, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer typing.Rollback(ctx)
+	if _, err = postgres.EnsureCatalogEntity(ctx, typing, "meter", f.service, "units", units); err != nil {
+		t.Fatal(err)
+	}
+	if used, err := events.UntypedMeterInUse(ctx, typing, units); err != nil || used {
+		t.Fatalf("untyped meter in use = %v (%v)", used, err)
+	}
+	typed := map[string]any{"name": "units", "event_type": "units", "aggregation": pb.MeterAggregation_METER_AGGREGATION_COUNT, "value_attribute": "", "filters": []any{}, "group_by": []any{}}
+	if _, _, err = postgres.SelectCatalogVersion(ctx, typing, units, typed); err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan string, 1)
+	go func() {
+		response, err := f.client.IngestEvent(ctx, req(quantityEvent(f.tenant, f.service, "units", "during-typing", "2", now.Add(-time.Hour)), "service"))
+		if err != nil {
+			t.Error(err)
+			accepted <- ""
+			return
+		}
+		accepted <- response.Msg.EventId
+	}()
+	time.Sleep(500 * time.Millisecond)
+	if err = typing.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	event := <-accepted
+	var aggregation string
+	if err = f.db.Pool.QueryRow(ctx, "SELECT aggregation FROM metering_contributions WHERE event_id=$1 AND meter_id=$2", event, units).Scan(&aggregation); err != nil || aggregation != "count" {
+		t.Fatalf("contribution aggregation = %q (%v), want the committed typed definition", aggregation, err)
+	}
+
+	// An uncommitted event that evaluated an untyped meter without matching it
+	// holds no contribution reference to the meter, yet a concurrent typing
+	// request must still wait for it and then see the meter in use.
+	tx, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err = f.client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "untyped", Meter: &pb.Meter{ServiceId: f.service, Name: "spare"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	policy := events.Policy{Lateness: 24 * time.Hour, ReportingGrace: 24 * time.Hour, Limits: metering.Limits{MaxGroupsPerMeter: 1000, MaxDistinctValuesPerGroup: 1000}}
+	if _, err = events.Ingest(ctx, tx, time.Now().UTC(), policy, events.Input{TenantID: f.tenant, ServiceID: f.service, Key: "racing", Type: "ping", OccurredAt: now.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "type racing meter", Meter: &pb.Meter{ServiceId: f.service, Name: "spare", EventType: "ping", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT}}, "owner"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("untyped meter was typed while an event that evaluated it was uncommitted: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("typing after the event committed = %v, want the immutable-definition rejection", err)
 	}
 }
