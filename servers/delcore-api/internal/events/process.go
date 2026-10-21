@@ -307,6 +307,24 @@ func changeValue(ctx context.Context, tx pgx.Tx, a Applied, meterID string, dige
 // tenants whose deletion finished before cutoff, after copying replay
 // identities. Tenants with unfinished metering work are skipped. The caller
 // enables the controlled retention setting in the same transaction.
+// RemoveAttributes clears the raw attribute maps of event revisions of
+// tenants whose deletion became final before cutoff, the raw-usage retention
+// boundary, and that have no unfinished metering work. Final deletion already
+// ended corrections and processing, so no remaining operation reads raw
+// attributes. Identities, fingerprints, contributions, price attributions, and
+// aggregates stay until Retain removes them at the accounting cutoff. It
+// requires controlled retention mode and returns the number of cleared
+// revisions.
+func RemoveAttributes(ctx context.Context, tx pgx.Tx, cutoff time.Time) (int64, error) {
+	tag, err := tx.Exec(ctx, `UPDATE metering_event_revisions r SET attributes='{}'::jsonb
+ WHERE r.attributes<>'{}'::jsonb AND r.tenant_id IN (SELECT t.id FROM tenants t WHERE t.deleted_at<$1
+  AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.tenant_id=t.id AND j.kind=$2 AND j.state<>'done'))`, cutoff, JobKind)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func Retain(ctx context.Context, tx pgx.Tx, cutoff time.Time) (int, error) {
 	rows, err := tx.Query(ctx, `SELECT t.id::text FROM tenants t WHERE t.deleted_at<$1
  AND EXISTS(SELECT 1 FROM metering_events e WHERE e.tenant_id=t.id)

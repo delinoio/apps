@@ -40,8 +40,17 @@ func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	if _, e := tx.Exec(ctx, "DELETE FROM settlements WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)", cutoff); e != nil {
 		return e
 	}
-	// Event bodies and revision history follow raw usage retention. Replay
-	// identities remain, and tenants with unfinished metering work are kept.
+	// Raw event attributes are not accounting evidence. Clear them at the
+	// raw-usage boundary after final deletion, before the accounting cutoff.
+	rawCutoff := now.Add(-time.Duration(w.Config.RawUsageRetentionSeconds) * time.Second)
+	if cleared, e := events.RemoveAttributes(ctx, tx, rawCutoff); e != nil {
+		return e
+	} else if cleared > 0 {
+		w.Log.InfoContext(ctx, "raw metering attributes removed", "category", "retention", "revisions", cleared)
+	}
+	// Event identities, revision history, and derived rows follow the later
+	// raw-usage and accounting cutoff. Replay identities remain, and tenants
+	// with unfinished metering work are kept.
 	if removed, e := events.Retain(ctx, tx, cutoff); e != nil {
 		return e
 	} else if removed > 0 {
