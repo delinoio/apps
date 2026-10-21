@@ -438,3 +438,31 @@ func TestCatalogReconciliationDetectsDelimiterShiftedChanges(t *testing.T) {
 		t.Fatalf("catalog audit rows = %d, want one per changing application", len(rows))
 	}
 }
+
+// TestMeteringClaimFailureSpanCarriesOutcome proves that a failure before any
+// job is claimed, such as a database outage, still annotates its span.
+func TestMeteringClaimFailureSpanCarriesOutcome(t *testing.T) {
+	o := observe(t)
+	f := newObservedMeterFixture(t, nil, o.logger, o.metrics)
+	f.db.Pool.Close()
+	if _, err := f.worker.ProcessMetering(context.Background(), 1); err == nil {
+		t.Fatal("processing succeeded without a database")
+	}
+	if got := o.spanCount(telemetry.SpanMeteringProcess, "failed"); got != 1 {
+		t.Fatalf("claim failure spans with a failed outcome = %d, want 1", got)
+	}
+	for _, span := range o.spans.Ended() {
+		if span.Name() != telemetry.SpanMeteringProcess {
+			continue
+		}
+		var category string
+		for _, attribute := range span.Attributes() {
+			if attribute.Key == "delcore.failure_category" {
+				category = attribute.Value.AsString()
+			}
+		}
+		if category != "database" {
+			t.Fatalf("claim failure category = %q, want database", category)
+		}
+	}
+}

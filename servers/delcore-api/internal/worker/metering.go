@@ -99,6 +99,10 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	if j.ID == "" {
+		// No job was claimed, for example during a database outage. Annotate the
+		// span with the same bounded attributes as the other failure paths so
+		// outcome-based trace queries still find it.
+		span.SetAttributes(attribute.String("delcore.outcome", string(telemetry.OutcomeFailed)), attribute.String("delcore.failure_category", "database"))
 		span.SetStatus(codes.Error, "database")
 		return false, err
 	}
