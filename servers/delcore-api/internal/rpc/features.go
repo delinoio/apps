@@ -5,6 +5,7 @@ package rpc
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
@@ -130,6 +131,19 @@ func (c *call) authorizeFeature(f *featureQuery, tenant string, o *pb.AuthorizeR
 	applied := accounting.Zero()
 	if len(grants) == 1 && f.kind == pb.FeatureKind_FEATURE_KIND_METERED {
 		start, end, err := postgres.BillingPeriod(c.ctx, c.tx, tenant, c.now)
+		if errors.Is(err, postgres.ErrPeriodUnavailable) {
+			// A paid plan whose confirmed period ended before a renewal was
+			// recorded has no current period, and ingestion rejects usage in it.
+			// The limit cannot be measured, so the feature fails closed with the
+			// renewal reason; a paid check that already reported it is unchanged.
+			result.Entitled, result.Limit = true, grants[0].Limit.String()
+			if !slices.Contains(o.Reasons, pb.BlockReason_BLOCK_REASON_RENEWAL) {
+				o.Reasons = append(o.Reasons, pb.BlockReason_BLOCK_REASON_RENEWAL)
+			}
+			o.Feature = result
+			c.s.Log.InfoContext(c.ctx, "feature authorization evaluated", "category", "feature_authorization", "correlation_id", c.correlation, "service_id", c.service, "feature_key", f.key, "feature_kind", f.kind.String(), "entitled", true, "reason", pb.BlockReason_BLOCK_REASON_RENEWAL.String(), "billing_period", "unavailable")
+			return nil
+		}
 		if err != nil {
 			return err
 		}

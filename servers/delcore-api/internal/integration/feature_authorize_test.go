@@ -527,6 +527,67 @@ func TestFeatureAuthorizationPaddlePeriodReset(t *testing.T) {
 	}
 }
 
+// A paid plan whose confirmed period ended before a renewal was recorded has
+// no current billing period. The metered feature then cannot be measured: it
+// fails closed with the renewal reason instead of an internal error, and the
+// paid billing result stays unchanged.
+func TestFeatureAuthorizationWithoutRecordedPaidPeriod(t *testing.T) {
+	f := newFeatureFixture(t)
+	ctx := context.Background()
+	paid, err := f.client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "paid plan with a metered feature", Plan: &pb.Plan{Key: "paid", Name: "paid", Rank: 10, FeatureValues: []*pb.FeatureValue{{FeatureId: f.features["calls-limit"], Limit: "5"}}}, ReplaceFeatureValues: true}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := f.now()
+	expiredStart, expiredEnd := now.AddDate(0, -1, 0).Add(-time.Hour), now.Add(-time.Hour)
+	tx, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	var version string
+	if err = tx.QueryRow(ctx, "SELECT active_version_id::text FROM catalog_entities WHERE id=$1", paid.Msg.Plan.Id).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2,period_start=$3,period_end=$4,external_subscription_id='sub_lapsed' WHERE id=$1", f.beta, paid.Msg.Plan.Id, expiredStart, expiredEnd); err != nil {
+		t.Fatal(err)
+	}
+	if err = postgres.ReplaceTenantSelections(ctx, tx, f.beta, []string{version}, expiredStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO billing_periods VALUES($1,$2,$3,false)", f.beta, expiredStart, expiredEnd); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	paidPlain, err := f.authorize(authorization{tenant: f.beta, paid: true})
+	if err != nil || paidPlain.Allowed || !hasReason(paidPlain.Reasons, pb.BlockReason_BLOCK_REASON_RENEWAL) {
+		t.Fatalf("lapsed paid period without a feature = %v %v", paidPlain, err)
+	}
+	unmeasured := func(label string, got *pb.AuthorizeResponse) {
+		t.Helper()
+		if got.Feature == nil || !got.Feature.Entitled || got.Feature.Kind != pb.FeatureKind_FEATURE_KIND_METERED || got.Feature.Limit != "5" || got.Feature.Usage != "" || got.Feature.PeriodStart != nil || got.Feature.PeriodEnd != nil {
+			t.Fatalf("%s: feature result = %v", label, got.Feature)
+		}
+	}
+	paidFeature, err := f.authorize(authorization{tenant: f.beta, paid: true, feature: "calls-limit", groups: model("a")})
+	if err != nil || paidFeature.Allowed || !slices.Equal(paidFeature.Reasons, paidPlain.Reasons) {
+		t.Fatalf("paid feature without a recorded period = %v %v, want reasons %v", paidFeature, err, paidPlain.Reasons)
+	}
+	unmeasured("paid", paidFeature)
+	plain, err := f.authorize(authorization{tenant: f.beta, feature: "calls-limit", groups: model("a")})
+	if err != nil || plain.Allowed || !slices.Equal(plain.Reasons, []pb.BlockReason{pb.BlockReason_BLOCK_REASON_RENEWAL}) {
+		t.Fatalf("non-paid feature without a recorded period = %v %v", plain, err)
+	}
+	unmeasured("non-paid", plain)
+	// Access features do not depend on the billing period.
+	if got, err := f.authorize(authorization{tenant: f.beta, feature: "api"}); err != nil || got.Allowed || !slices.Equal(got.Reasons, []pb.BlockReason{pb.BlockReason_BLOCK_REASON_FEATURE_NOT_ENTITLED}) {
+		t.Fatalf("ungranted access feature on the paid plan = %v %v", got, err)
+	}
+}
+
 func TestFeatureAuthorizationKeepsPermissionAndBillingChecks(t *testing.T) {
 	f := newFeatureFixture(t)
 	ctx := context.Background()
