@@ -276,7 +276,10 @@ func RebuildProductVersion(ctx context.Context, tx pgx.Tx, kind, productID strin
 // tenants created before catalog versioning. Call it before changing the plan
 // row so legacy tenants keep the policy they already use.
 func SnapshotLegacyPlanSelections(ctx context.Context, tx pgx.Tx, planID string, at time.Time) error {
-	return snapshotLegacySelections(ctx, tx, "plan", planID, at, `SELECT t.id::text
+	return snapshotLegacySelections(ctx, tx, "plan", planID, at, `LEAST(
+ (SELECT period_start FROM tenants WHERE id=$2::uuid),
+ (SELECT min(en.starts_at) FROM entitlements en JOIN prices p ON p.id=en.price_id
+  WHERE en.tenant_id=$2::uuid AND en.ends_at IS NULL AND p.plan_id=$3::uuid))`, `SELECT t.id::text
 FROM tenants t
 WHERE t.plan_id=$1
   AND NOT EXISTS (
@@ -290,7 +293,8 @@ FOR UPDATE`)
 // for tenants that held the add-on before catalog versioning. Call it before
 // changing the add-on so those tenants keep the definition they purchased.
 func SnapshotLegacyAddOnSelections(ctx context.Context, tx pgx.Tx, addonID string, at time.Time) error {
-	return snapshotLegacySelections(ctx, tx, "addon", addonID, at, `SELECT t.id::text
+	return snapshotLegacySelections(ctx, tx, "addon", addonID, at, `(SELECT min(en.starts_at) FROM entitlements en JOIN prices p ON p.id=en.price_id
+ WHERE en.tenant_id=$2::uuid AND en.ends_at IS NULL AND p.addon_id=$3::uuid)`, `SELECT t.id::text
 FROM tenants t
 WHERE EXISTS (
     SELECT 1 FROM entitlements en JOIN prices p ON p.id=en.price_id
@@ -303,7 +307,12 @@ WHERE EXISTS (
 FOR UPDATE`)
 }
 
-func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID string, at time.Time, tenantQuery string) error {
+// snapshotLegacySelections backdates each new selection to legacyStartSQL so
+// late usage that occurred earlier in the tenant's period or entitlement still
+// finds the preserved version. legacyStartSQL reads $2 as the tenant and $3 as
+// the product. The start never precedes an earlier selection of the same
+// product and never follows the mutation time.
+func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID string, at time.Time, legacyStartSQL, tenantQuery string) error {
 	version, err := RebuildProductVersion(ctx, tx, kind, productID)
 	if err != nil {
 		return err
@@ -327,7 +336,10 @@ func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID st
 	}
 	for _, tenantID := range tenantIDs {
 		if _, err = tx.Exec(ctx, `INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at)
-VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, catalogID(), tenantID, productID, version, at); err != nil {
+SELECT $1::uuid,$2::uuid,$3::uuid,$4::uuid,GREATEST(
+ LEAST($5::timestamptz,`+legacyStartSQL+`),
+ (SELECT max(ends_at) FROM tenant_catalog_selections WHERE tenant_id=$2::uuid AND product_id=$3::uuid AND ends_at<=$5::timestamptz))
+ON CONFLICT DO NOTHING`, catalogID(), tenantID, productID, version, at); err != nil {
 			return err
 		}
 	}

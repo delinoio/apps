@@ -405,6 +405,15 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, le
 	if selected == updated.Msg.Plan.ActiveVersionId || selectedFree != "true" {
 		t.Fatalf("legacy tenant did not retain old plan version: selected=%s free=%s active=%s", selected, selectedFree, updated.Msg.Plan.ActiveVersionId)
 	}
+	// Late usage from earlier in the period must still find the snapshot.
+	var startsAt, periodStart time.Time
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.starts_at,t.period_start FROM tenant_catalog_selections cs JOIN tenants t ON t.id=cs.tenant_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, legacyPlanID).Scan(&startsAt, &periodStart); err != nil {
+		t.Fatal(err)
+	}
+	if !startsAt.Equal(periodStart) {
+		t.Fatalf("legacy plan snapshot does not cover the billing period: starts=%s period=%s", startsAt, periodStart)
+	}
 }
 
 func TestSubscriptionRejectsPartialActivePriceSet(t *testing.T) {
@@ -536,6 +545,15 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, ad
 	}
 	if selected == updated.Msg.AddOn.ActiveVersionId || features != 0 || prices != 1 {
 		t.Fatalf("legacy tenant did not retain the pre-mutation add-on: selected=%s active=%s features=%d prices=%d", selected, updated.Msg.AddOn.ActiveVersionId, features, prices)
+	}
+	// Late usage from earlier in the entitlement must still find the snapshot.
+	var covered bool
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.starts_at=en.starts_at FROM tenant_catalog_selections cs JOIN entitlements en ON en.tenant_id=cs.tenant_id AND en.price_id=$3
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, addonID, priceID).Scan(&covered); err != nil {
+		t.Fatal(err)
+	}
+	if !covered {
+		t.Fatal("legacy add-on snapshot does not start with the add-on entitlement")
 	}
 }
 
