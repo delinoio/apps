@@ -231,6 +231,8 @@ func (s *Server) CreatePrice(ctx context.Context, r *connect.Request[pb.CreatePr
 		if e != nil {
 			return e
 		}
+		// SelectCatalogVersion made this version the active one for its key.
+		v.Active = true
 		if created {
 			_, e = c.tx.Exec(c.ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,addon_id,kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, v.Id, planID, v.ServiceId, v.Meter, v.UnitPrice, v.Included, v.Currency, v.ExternalPriceId, c.now, addonID, int32(v.Kind))
 			if e != nil {

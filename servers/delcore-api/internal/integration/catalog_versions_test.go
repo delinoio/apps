@@ -327,6 +327,14 @@ func TestCatalogReadMarksActivePriceVersion(t *testing.T) {
 	if firstActive || !secondActive {
 		t.Fatalf("catalog active markers were incorrect: first=%t second=%t", firstActive, secondActive)
 	}
+	priceInput.UnitPrice = "1"
+	restored, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "reselect first active price", Price: priceInput}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Msg.Price.Active || !second.Msg.Price.Active || restored.Msg.Price.Id != first.Msg.Price.Id || !restored.Msg.Price.Active {
+		t.Fatalf("mutation responses did not mark the selected version active: first=%t second=%t restored=%t", first.Msg.Price.Active, second.Msg.Price.Active, restored.Msg.Price.Active)
+	}
 }
 
 func TestMeterCatalogRejectsInvalidDefinitions(t *testing.T) {
