@@ -30,7 +30,7 @@ When a service is ported, its launcher must execute its compiled binary directly
 
 Run `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy --locked --manifest-path servers/Cargo.toml --workspace --all-targets -- -D warnings` and `cargo test --locked --manifest-path servers/Cargo.toml`. Run the PostgreSQL tests with a disposable `TEST_DATABASE_URL` and `cargo test --locked --manifest-path servers/Cargo.toml --workspace --test postgres -- --ignored`. Each Rust integration test creates and removes its own schema. Existing Go oracle tests retain their original database-reset requirements.
 
-The owning Linux API CI jobs run Rust checks, PostgreSQL fixtures and OCI builds. Changes in shared server crates select both Rust API jobs. Root client Cargo validation remains separate. Images compile the locked server workspace and package the Rust executable with server and protocol license notices. Never include local environment files, Cargo targets or credentials in the Docker context.
+The Linux `rust-servers` CI matrix runs Rust checks, retained Go compatibility checks and PostgreSQL fixtures for affected services. Changes in shared server crates select both Rust API entries. Ordinary CI omits OCI tests and image builds; explicit local packaging checks and release image publication remain separate. Root client Cargo validation remains separate. Images compile the locked server workspace and package the Rust executable with server and protocol license notices. Never include local environment files, Cargo targets or credentials in the Docker context.
 
 ## HTTP transport limits
 

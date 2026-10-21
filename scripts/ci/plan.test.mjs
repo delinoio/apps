@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { select } from "./plan.mjs";
+import { select, selectRustServers } from "./plan.mjs";
 
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
@@ -265,5 +265,25 @@ test("shared Rust server changes select both API validators", () => {
     const jobs = select([path]);
     assert.equal(jobs.devbase_api, true, path);
     assert.equal(jobs.git_tracker_api, true, path);
+  }
+});
+
+test("Rust server matrix selects only affected services", () => {
+  for (const [paths, expected] of [
+    [["apps/delitools/src/main.tsx"], []],
+    [["servers/delcore-api/main.go"], []],
+    [["servers/devbase-api/src/main.rs"], ["devbase-api"]],
+    [["servers/git-tracker-api/src/main.rs"], ["git-tracker-api"]],
+    [
+      ["servers/crates/server-common/src/lib.rs"],
+      ["devbase-api", "git-tracker-api"],
+    ],
+    [["protos/devbase/v1/devbase.proto"], ["devbase-api", "git-tracker-api"]],
+    [[".github/workflows/CI.yml"], ["devbase-api", "git-tracker-api"]],
+  ]) {
+    assert.deepEqual(
+      selectRustServers(select(paths)).map(({ service }) => service),
+      expected,
+    );
   }
 });

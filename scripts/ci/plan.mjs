@@ -116,6 +116,27 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
   };
 }
 
+export function selectRustServers(selected) {
+  return [
+    {
+      service: "devbase-api",
+      owner: "devbase_api",
+      port: 55433,
+      user: "devbase",
+      database: "devbase_api_test",
+    },
+    {
+      service: "git-tracker-api",
+      owner: "git_tracker_api",
+      port: 55432,
+      user: "delcore",
+      database: "delcore_api_test",
+    },
+  ]
+    .filter(({ owner }) => selected[owner])
+    .map(({ owner, ...entry }) => entry);
+}
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -161,7 +182,12 @@ if (
   console.log(JSON.stringify({ event: "ci_selection", base, head, selected }));
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    Object.entries({ base, head, ...selected })
+    Object.entries({
+      base,
+      head,
+      ...selected,
+      rust_servers: JSON.stringify(selectRustServers(selected)),
+    })
       .map(([key, value]) => `${key}=${value}\n`)
       .join(""),
   );

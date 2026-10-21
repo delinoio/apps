@@ -14,6 +14,9 @@ const record = {
   revision: process.env.GITHUB_SHA,
   job,
   result: process.env.VALIDATION_RESULT,
+  ...(process.env.VALIDATION_MATRIX
+    ? { matrix: JSON.parse(process.env.VALIDATION_MATRIX) }
+    : {}),
   comparison: {
     base: process.env.TURBO_SCM_BASE,
     head: process.env.TURBO_SCM_HEAD,
