@@ -75,6 +75,9 @@ func Ingest(ctx context.Context, tx pgx.Tx, now time.Time, policy Policy, in Inp
 		return Accepted{}, err
 	}
 	start, end, err := postgres.BillingPeriod(ctx, tx, in.TenantID, in.OccurredAt)
+	if errors.Is(err, postgres.ErrPeriodUnavailable) {
+		return Accepted{}, reject(ReasonPeriodUnavailable, "historical billing period unavailable")
+	}
 	if err != nil {
 		return Accepted{}, err
 	}

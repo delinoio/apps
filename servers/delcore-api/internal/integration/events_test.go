@@ -723,6 +723,67 @@ func TestEventCorrectionLatenessAndDeletionGrace(t *testing.T) {
 	}
 }
 
+// Paid usage never falls back to a calendar month: it waits for the recorded
+// Paddle period, because an accepted event's period is immutable.
+func TestEventPaidUsageWaitsForRecordedPeriod(t *testing.T) {
+	f := newMeterFixture(t, nil)
+	ctx := context.Background()
+	paid, err := f.client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "paid plan", Plan: &pb.Plan{Name: "paid", Rank: 10, Postpaid: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	tx, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version string
+	if err = tx.QueryRow(ctx, "SELECT active_version_id::text FROM catalog_entities WHERE id=$1", paid.Msg.Plan.Id).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", f.tenant, paid.Msg.Plan.Id); err != nil {
+		t.Fatal(err)
+	}
+	if err = postgres.ReplaceTenantSelections(ctx, tx, f.tenant, []string{version}, now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r := request{region: "eu", outcome: "success", user: "u1", bytes: "1", latency: "1"}
+	occurred := now.Add(-time.Hour)
+	rejected := func(label string) {
+		t.Helper()
+		_, err := f.ingest("service", "paid", "request", occurred, r.wire())
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || reasonOf(err) != pb.ErrorReason_ERROR_REASON_PRECONDITION {
+			t.Fatalf("%s: paid usage without a recorded period was not rejected: %v", label, err)
+		}
+		if n := f.count(t, "SELECT count(*) FROM metering_events WHERE tenant_id=$1", f.tenant); n != 0 {
+			t.Fatalf("%s: rejected paid usage stored %d events", label, n)
+		}
+	}
+	rejected("selected paid plan")
+	// A tenant without a recorded selection is judged by its current plan row.
+	if _, err = f.db.Pool.Exec(ctx, "DELETE FROM tenant_catalog_selections WHERE tenant_id=$1", f.tenant); err != nil {
+		t.Fatal(err)
+	}
+	rejected("legacy paid plan")
+	start := now.Add(-24 * time.Hour).Truncate(time.Second)
+	if _, err = f.db.Pool.Exec(ctx, "INSERT INTO billing_periods VALUES($1,$2,$3,true)", f.tenant, start, start.AddDate(0, 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.ingest("service", "paid", "request", occurred, r.wire()); err != nil {
+		t.Fatalf("paid usage inside a recorded period rejected: %v", err)
+	}
+	var stored time.Time
+	if err = f.db.Pool.QueryRow(ctx, "SELECT period_start FROM metering_events WHERE tenant_id=$1", f.tenant).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Equal(start) {
+		t.Fatalf("paid usage period starts at %s, want the recorded period %s", stored, start)
+	}
+}
+
 func TestMeteringWorkerCrashRetryAndOperatorRecovery(t *testing.T) {
 	f := newMeterFixture(t, nil)
 	ctx := context.Background()

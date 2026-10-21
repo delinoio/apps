@@ -34,6 +34,9 @@ const (
 	ReasonCancelled
 	ReasonWindowClosed
 	ReasonForbidden
+	// ReasonPeriodUnavailable rejects paid usage whose Paddle renewal period
+	// is not recorded yet; the caller retries after the period arrives.
+	ReasonPeriodUnavailable
 )
 
 // Error is a request rejection. Message never contains attribute values,

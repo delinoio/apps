@@ -47,6 +47,8 @@ func eventError(err error) error {
 		return reasoned(connect.CodeFailedPrecondition, pb.ErrorReason_ERROR_REASON_REPORTING_WINDOW_CLOSED, rejection.Message)
 	case events.ReasonForbidden:
 		return forbidden()
+	case events.ReasonPeriodUnavailable:
+		return precondition(rejection.Message)
 	default:
 		return invalid(rejection.Message)
 	}
