@@ -403,6 +403,16 @@ if (process.argv[2] === 'metadata') {
 );
 
 test("Rust API launchers execute shared build outputs without another Cargo process", () => {
+  const config = JSON.parse(
+    readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
+  );
+  for (const service of ["devbase", "git-tracker"]) {
+    assert.ok(
+      config.tasks[`@delinoio/${service}-api#dev`].passThroughEnv.includes(
+        "CARGO_TARGET_DIR",
+      ),
+    );
+  }
   const target = join(tmpdir(), "server-target-fixture");
   for (const [api, binary] of [
     [Api.DevBase, "devbase-api"],

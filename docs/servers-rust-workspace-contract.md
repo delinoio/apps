@@ -14,7 +14,7 @@ Each port must update its project index and domain contracts, add its explicit w
 
 ## Development execution
 
-Root `pnpm dev` uses process-compose to manage each API and the frontend task group. It retains workspace commands, Infisical injection, fixed loopback listeners and explicit migrations. Delcore retains Air; the two Rust launchers execute the binaries built by `server-build`. See the [workflow contract](repository-workflow-contract.md) and [environment contract](repository-environment-contract.md). For a service-local launch, first run `cargo build --manifest-path servers/Cargo.toml --workspace --bins` from the root. The launcher does not build or watch. Its internal `--dev-env` flag loads the service-local `.env` without overriding injected or explicitly empty process variables.
+Root `pnpm dev` uses process-compose to manage each API and the frontend task group. It retains workspace commands, Infisical injection, fixed loopback listeners and explicit migrations. Delcore retains Air; the two Rust launchers execute the binaries built by `server-build`. See the [workflow contract](repository-workflow-contract.md) and [environment contract](repository-environment-contract.md). For a service-local launch, first run `cargo build --manifest-path servers/Cargo.toml --workspace --bins` from the root. The launcher does not build or watch. Both Rust API Turbo tasks pass through `CARGO_TARGET_DIR` so they use the same output directory as the shared builder. Its internal `--dev-env` flag loads the service-local `.env` without overriding injected or explicitly empty process variables.
 
 ### Shared build process
 

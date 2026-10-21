@@ -94,7 +94,8 @@
         "LOG_FORMAT",
         "OTEL_*",
         "NO_COLOR",
-        "DEV_COMPOSE_DATABASE_URLS"
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
       ]
     },
     "@delinoio/git-tracker-api#dev": {
@@ -116,7 +117,8 @@
         "ALERT_*",
         "OTEL_*",
         "NO_COLOR",
-        "DEV_COMPOSE_DATABASE_URLS"
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
       ]
     },
     "fixkey-desktop#build": {
