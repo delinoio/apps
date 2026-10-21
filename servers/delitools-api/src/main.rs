@@ -50,7 +50,13 @@ fn command(args: impl Iterator<Item = String>) -> anyhow::Result<Command> {
 }
 
 async fn run() -> anyhow::Result<()> {
+    // Telemetry reads the process environment directly, so publish the optional `.env` first. A
+    // read error is reported once logging exists.
+    let local_environment = delitools_api::config::export_local_environment();
     let telemetry = server_common::telemetry::init()?;
+    local_environment.inspect_err(|error| {
+        tracing::error!(category = "invalid_configuration", %error, "configuration rejected");
+    })?;
     let command = command(std::env::args().skip(1))?;
     // The operator commands need only DATABASE_URL.
     if command != Command::Serve {

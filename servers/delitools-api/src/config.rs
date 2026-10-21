@@ -57,6 +57,20 @@ fn local_env() -> Result<HashMap<String, String>> {
     }
 }
 
+/// Publish the working-directory `.env` to the process environment without overriding a variable
+/// that is already set (an explicitly empty process value counts as set). Call it before the
+/// logging and tracing setup: `server_common::telemetry::init` reads `LOG_FORMAT`, `RUST_LOG` and
+/// the `OTEL_EXPORTER_OTLP_*` variables directly from the process environment, so values supplied
+/// only through `.env` would otherwise never take effect. Configuration parsing keeps its own
+/// process-first lookup, which this does not change. Only the exact working-directory file is read.
+pub fn export_local_environment() -> Result<()> {
+    match dotenvy::from_path(".env") {
+        Ok(()) => Ok(()),
+        Err(dotenvy::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => bail!("could not read .env configuration"),
+    }
+}
+
 fn getter(local: HashMap<String, String>) -> impl Fn(&str) -> String {
     move |key| {
         std::env::var(key)
