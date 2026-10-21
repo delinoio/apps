@@ -160,6 +160,42 @@ func TestRunAppliesTheTimeoutToEachCall(t *testing.T) {
 	}
 }
 
+func TestRunSelectsOneOperation(t *testing.T) {
+	for _, tc := range []struct {
+		op   operation
+		want string
+	}{
+		{operationTranslate, "TranslateTextArray"},
+		{operationExtract, "ExtractDataFromText"},
+		{operationAll, "TranslateTextArray,ExtractDataFromText"},
+	} {
+		fake := &fakeDeliTools{}
+		url := newServer(t, fake)
+		o := options{baseURL: url, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a", operation: tc.op}
+		client := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, url)
+		if e := run(context.Background(), client, o, &bytes.Buffer{}); e != nil {
+			t.Fatal(e)
+		}
+		if got := strings.Join(fake.calls, ","); got != tc.want {
+			t.Errorf("operation %d called %q, want %q", tc.op, got, tc.want)
+		}
+	}
+}
+
+func TestParseOperation(t *testing.T) {
+	for value, want := range map[string]operation{"all": operationAll, "translate": operationTranslate, "extract": operationExtract} {
+		if got, e := parseOperation(value); e != nil || got != want {
+			t.Errorf("parseOperation(%q) = %v, %v", value, got, e)
+		}
+	}
+	if _, e := parseOperation("both"); e == nil {
+		t.Fatal("an unknown operation must fail")
+	}
+	if operationExtract.translates() {
+		t.Fatal("the extract operation must not translate, so no model is needed")
+	}
+}
+
 func TestRunReportsTypedErrorWithoutContent(t *testing.T) {
 	url := newServer(t, &fakeDeliTools{failExtract: true})
 	o := options{baseURL: url, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a"}

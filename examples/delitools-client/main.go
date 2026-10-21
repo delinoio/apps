@@ -5,6 +5,12 @@
 // a sentence through the synchronous Connect methods TranslateTextArray and
 // ExtractDataFromText.
 //
+// The default operation, all, runs both calls and needs a key or token that
+// holds both the translator and the extractor capability; with a single
+// capability the first call succeeds and is billed, and the second one fails
+// with a permission error. Select -operation translate or -operation extract
+// to run one call with a single-capability key.
+//
 // Environment:
 //
 //	DELITOOLS_URL        API base URL, default http://127.0.0.1:46322
@@ -50,6 +56,33 @@ const extractionSchema = `{
   "additionalProperties": false
 }`
 
+// operation selects which of the two DeliTools calls an example run performs.
+type operation int
+
+const (
+	// operationAll runs the translation and then the extraction. The zero value
+	// keeps the default behavior.
+	operationAll operation = iota
+	operationTranslate
+	operationExtract
+)
+
+// parseOperation converts the -operation flag value.
+func parseOperation(value string) (operation, error) {
+	switch value {
+	case "all":
+		return operationAll, nil
+	case "translate":
+		return operationTranslate, nil
+	case "extract":
+		return operationExtract, nil
+	}
+	return operationAll, fmt.Errorf("-operation must be all, translate or extract, not %q", value)
+}
+
+func (op operation) translates() bool { return op == operationAll || op == operationTranslate }
+func (op operation) extracts() bool   { return op == operationAll || op == operationExtract }
+
 // options configures one example run.
 type options struct {
 	baseURL    string
@@ -58,6 +91,7 @@ type options struct {
 	outputLang string
 	inputLang  string
 	model      string
+	operation  operation
 	// translateKey and extractKey are the per-operation idempotency keys. An
 	// empty key is replaced with a fresh UUID v7 for that run.
 	translateKey string
@@ -70,7 +104,8 @@ type options struct {
 func main() {
 	output := flag.String("to", "ko", "BCP 47 output language of the translation")
 	input := flag.String("from", "", "BCP 47 input language; omit to detect it")
-	model := flag.String("model", "", "translation model from the operator allowlist; required")
+	model := flag.String("model", "", "translation model from the operator allowlist; required for the translate and all operations")
+	operationName := flag.String("operation", "all", "call to run: all (needs both capabilities), translate or extract")
 	timeout := flag.Duration("timeout", defaultCallTimeout, "client deadline of each call; the operator's execution timeout can be up to an hour")
 	translateKey := flag.String("translate-key", "", "idempotency key of the translation; reuse it to retry an uncertain run")
 	extractKey := flag.String("extract-key", "", "idempotency key of the extraction; reuse it to retry an uncertain run")
@@ -82,8 +117,12 @@ func main() {
 	}
 	o.outputLang, o.inputLang, o.model = *output, *input, *model
 	o.translateKey, o.extractKey, o.timeout = *translateKey, *extractKey, *timeout
-	if o.model == "" {
-		fmt.Fprintln(os.Stderr, "DeliTools example failed: -model is required")
+	if o.operation, e = parseOperation(*operationName); e != nil {
+		fmt.Fprintln(os.Stderr, "DeliTools example failed:", e)
+		os.Exit(1)
+	}
+	if o.operation.translates() && o.model == "" {
+		fmt.Fprintln(os.Stderr, "DeliTools example failed: -model is required to translate")
 		os.Exit(1)
 	}
 	// Calls are synchronous and can take as long as the operator's execution
@@ -158,7 +197,23 @@ func keyOrNew(key string) string {
 }
 
 func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, o options, out io.Writer) error {
-	// 1. Translate. The idempotency key is optional. Reusing it for a retry of
+	if o.operation.translates() {
+		if e := translate(ctx, client, o, out); e != nil {
+			return e
+		}
+	}
+	if o.operation.extracts() {
+		if e := extract(ctx, client, o, out); e != nil {
+			return e
+		}
+	}
+	// Usage and charges are not part of the responses; inspect them through the
+	// billing interface.
+	return nil
+}
+
+func translate(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, o options, out io.Writer) error {
+	// Translate. The idempotency key is optional. Reusing it for a retry of
 	// the same input within 30 days prevents a second execution and charge, but
 	// a repeated call returns an error such as ALREADY_PROCESSED; the result is
 	// never replayed. Without a key every call is a new, billable execution.
@@ -183,8 +238,11 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 	// Results are application data. The example reports only content-free
 	// metadata; a real consumer hands the result to its own code instead.
 	fmt.Fprintf(out, "Translated %d texts (request %s)\n", len(translated.Msg.Texts), translated.Msg.RequestId)
+	return nil
+}
 
-	// 2. Extract data that the text states explicitly. The model is fixed by the
+func extract(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, o options, out io.Writer) error {
+	// Extract data that the text states explicitly. The model is fixed by the
 	// service. Information missing from the text returns EXTRACTION_IMPOSSIBLE.
 	extractKey := keyOrNew(o.extractKey)
 	fmt.Fprintf(out, "Extraction idempotency key: %s\n", extractKey)
@@ -200,7 +258,5 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 		return fmt.Errorf("extract: %w", e)
 	}
 	fmt.Fprintf(out, "Extracted %d bytes of JSON data (request %s)\n", len(extracted.Msg.JsonData), extracted.Msg.RequestId)
-	// Usage and charges are not part of the responses; inspect them through the
-	// billing interface.
 	return nil
 }
