@@ -126,7 +126,7 @@ Use correlation IDs and bounded error categories. Server logs use `tracing`; Act
 
 ## Build and Test
 
-Run the owning repository format checks, server Cargo tests, retained Go compatibility tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
+Run the owning repository format checks, server Cargo tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
 
 ## Dependencies and Integrations
 
@@ -165,4 +165,4 @@ Run `pnpm dev` at the repository root for all development servers, or from `serv
 
 Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; the launcher forwards the signal to the Rust server for graceful shutdown. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
 
-Rust validation, protocol generation ownership and the retained Go test-oracle boundary follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.
+Rust validation and protocol generation ownership follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.

@@ -25,13 +25,11 @@ Recovery is fix-forward: deploy a corrected image and, when data needs correctio
 Run these from the repository root:
 
 ```sh
-go vet ./servers/devbase-api/...
-go build ./servers/devbase-api/cmd/...
-go test -race ./servers/devbase-api/...
-TEST_DATABASE_URL=postgres://... go test -race -tags=integration ./servers/devbase-api/...
+cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api
+TEST_DATABASE_URL=postgres://... cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api --test postgres -- --ignored
 pnpm --filter @delinoio/devbase-api ci:oci
 ```
 
-Integration tests reset the `public` schema of the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. Delcore is mocked, so these checks do not establish live-account or production acceptance. Operator logs use ANSI color by default; set `NO_COLOR=1` for plain structured key/value output, or `LOG_FORMAT=json` for one JSON object per record.
+Rust PostgreSQL fixtures create and remove isolated schemas in the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. The `ci:oci` command builds the image only. Delcore is mocked, so these checks do not establish live-account or production acceptance. Operator logs use ANSI color by default; set `NO_COLOR=1` for plain structured key/value output, or `LOG_FORMAT=json` for one JSON object per record.
 
-Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. The Go checks above retain the original implementation as a compatibility oracle. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.
+Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.

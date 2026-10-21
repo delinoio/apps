@@ -26,10 +26,10 @@ Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. 
 
 ## Validation
 
-Run `GOWORK=off go test ./...` and `GOWORK=off go vet ./...` from the root. Set `TEST_DATABASE_URL` to a dedicated disposable PostgreSQL database and run `GOWORK=off go test -race ./servers/git-tracker-api/...`. Integration tests reset Git Tracker tables in that test database. CI runs these tests on an isolated PostgreSQL container. External integrations are mocked in automated tests; they do not establish live-account or deployment acceptance.
+Run `cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api` from the root. Set `TEST_DATABASE_URL` to a dedicated disposable PostgreSQL database and add `--test postgres -- --ignored` for fixtures that create and remove isolated schemas. CI runs these tests on an isolated PostgreSQL container. External integrations are mocked in automated tests; they do not establish live-account or deployment acceptance.
 
 Operator logs use ANSI color by default. Set `NO_COLOR=1` for uncolored structured key/value output.
 
 Build the OCI image from the repository root with `docker build -f servers/git-tracker-api/Dockerfile -t git-tracker-api:local .`. The image runs as a non-root user and listens on the address in `LISTEN`; set it to a non-loopback address inside a container. The `delino` release publishes this image to GitHub Container Registry; see the [workflow contract](../../docs/repository-workflow-contract.md#server-image-publication). The release does not deploy the image or run `migrate`, which creates the initial schema once and cannot be repeated.
 
-Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. The Go checks above retain the original implementation as a compatibility oracle. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.
+Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.

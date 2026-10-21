@@ -24,6 +24,8 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Rust runtime, migrations and persistence in this repository.
 
+The API directory contains Rust source and tests plus canonical SQL migrations. The retired Go implementation and Air configuration are removed; generated Go protocol bindings and Go consumer examples remain supported.
+
 ## Domain Contract Documents
 
 - [Server](servers-git-tracker-api-contract.md)

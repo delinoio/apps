@@ -6,7 +6,7 @@ This contract belongs to `delinoio/apps`. The schema and generated Go and TypeSc
 
 ## Runtime and Language
 
-Protobuf package `devbase.v1` with service `DevBaseService`. Generated Go clients and handlers use the root `github.com/delinoio/apps` module; local server packages consume them directly. TypeScript bindings are exported by the private `@delino/protos` workspace as `@delino/protos/devbase/v1/devbase_pb`. There is no REST surface, handwritten SDK or published client package.
+Protobuf package `devbase.v1` with service `DevBaseService`. Generated Go clients and handlers use the root `github.com/delinoio/apps` module; Go consumers use them directly. TypeScript bindings are exported by the private `@delino/protos` workspace as `@delino/protos/devbase/v1/devbase_pb`. There is no REST surface, handwritten SDK or published client package.
 
 ## Users and Operators
 
@@ -49,7 +49,7 @@ Correlate responses, errors and logs through the trace ID without exposing crede
 
 `protos/scripts/` owns shared Buf entry resolution and comparison-revision breaking checks under the [repository workflow](repository-workflow-contract.md).
 
-Use the root Buf generation, lint, formatting, breaking and freshness checks: `pnpm proto:generate`, `pnpm proto:lint` and `buf breaking` against the comparison revision. Generation preserves schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The examples in `examples/devbase-client` and `examples/devbase-client-ts` consume the generated bindings; build and type-check them after protocol changes with `go build ./examples/devbase-client` and `pnpm --filter devbase-client-ts typecheck`. The server integration tests execute both examples against a local server with a mocked Delcore. Server contract tests run against disposable PostgreSQL and a mocked Delcore.
+Use the root Buf generation, lint, formatting, breaking and freshness checks: `pnpm proto:generate`, `pnpm proto:lint` and `buf breaking` against the comparison revision. Generation preserves schemas and instruction files in the shared output tree. Remove obsolete generated files when deleting or renaming schemas. The examples in `examples/devbase-client` and `examples/devbase-client-ts` consume the generated bindings; build and type-check them after protocol changes with `go build ./examples/devbase-client` and `pnpm --filter devbase-client-ts typecheck`. Validate both examples against a local server with a mocked Delcore. Server contract tests run against disposable PostgreSQL and a mocked Delcore.
 
 ## Dependencies and Integrations
 

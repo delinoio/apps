@@ -156,11 +156,11 @@ Operational inspection starts from the trace ID in a failing response: search st
 
 ## Build and Test
 
-- Rust unit tests and retained Go compatibility tests for validation, pagination cursors, key parsing, rate limiting and configuration.
-- PostgreSQL integration tests (`TEST_DATABASE_URL`, build tag `integration`) with a mocked Delcore: complete Owner and Admin flows, rejected Member and Billing roles, invalid authentication, cross-tenant and cross-project access, unknown, expired and revoked keys, read-only writes, all tenant states and exceptions, dependency failure, validation boundaries, both lookups, cursors, masks, stale versions, concurrent duplicate creates, quota boundaries, same-key retries, differing-input retries, concurrent update and delete, concurrent revocation, project deletion races, lost responses, replay expiry, deleted-resource replay without personal data, one-time-secret replay, replay isolation, aggregated rate limits, timeouts, cleanup cycles including mixed states and retry, audit retention and the absence of secrets and personal fields from audit, replay markers and logs.
+- Rust unit tests for validation, pagination cursors, key parsing, rate limiting and configuration.
+- PostgreSQL integration tests (`TEST_DATABASE_URL`, Cargo `--test postgres -- --ignored`) with a mocked Delcore: complete Owner and Admin flows, rejected Member and Billing roles, invalid authentication, cross-tenant and cross-project access, unknown, expired and revoked keys, read-only writes, all tenant states and exceptions, dependency failure, validation boundaries, both lookups, cursors, masks, stale versions, concurrent duplicate creates, quota boundaries, same-key retries, differing-input retries, concurrent update and delete, concurrent revocation, project deletion races, lost responses, replay expiry, deleted-resource replay without personal data, one-time-secret replay, replay isolation, aggregated rate limits, timeouts, cleanup cycles including mixed states and retry, audit retention and the absence of secrets and personal fields from audit, replay markers and logs.
 - A regression test builds and starts the actual Delcore server binary against its own disposable database, with a local OpenID provider fixture that signs the tokens. It covers personal and organization tenants, invitations, Owner, Admin, Billing and Member roles, operator blocking, pending and final deletion, a billing condition that must not restrict DevBase, and a Delcore outage. It does not establish live Logto, Paddle or production acceptance.
 - Protocol lint, generation, freshness and FILE breaking checks from the repository root.
-- `go vet ./servers/...`, `go build` of every server command, and `go test -race ./servers/...`.
+- Server Cargo formatting, Clippy and tests under the server workspace contract; Go consumer builds remain separate.
 - OCI build, `migrate`, `check-schema` and startup checks against disposable PostgreSQL.
 - Execute the Go and TypeScript examples against a local server with mocked Delcore.
 
@@ -206,4 +206,4 @@ Lists are not snapshot-consistent. The key secret cannot be recovered. An extern
 - [Protocol contract](protos-devbase-v1-contract.md)
 - [Project index](project-devbase.md)
 
-Rust validation, protocol generation ownership and the retained Go test-oracle boundary follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.
+Rust validation and protocol generation ownership follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.

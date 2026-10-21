@@ -22,6 +22,8 @@ Provide a console and the API services of DevBase. The first API service is a fr
 - `examples/devbase-client` and `examples/devbase-client-ts`: Go and TypeScript consumer examples.
 - `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. The `delino` release also deploys this application and publishes the `devbase-api` image. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
+The API directory contains Rust source and tests plus canonical SQL migrations. The retired Go implementation and Air configuration are removed; generated Go protocol bindings and Go consumer examples remain supported.
+
 ## Domain Contract Documents
 
 - [Web application](apps-devbase-web-contract.md)

@@ -11,7 +11,7 @@
     "ci:build": "cargo build --locked --manifest-path ../Cargo.toml -p devbase-api",
     "ci:unit": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api",
     "ci:integration": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api --test postgres -- --ignored",
-    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation .",
     "build": "cargo build --locked --manifest-path ../Cargo.toml -p devbase-api",
     "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api"
   }
