@@ -1,0 +1,23 @@
+[package]
+name = "cf-clairic"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "Async Rust client for Cloudflare Workers AI Clairic structured extraction"
+license = "Apache-2.0"
+repository = "https://github.com/delinoio/apps"
+documentation = "https://docs.rs/cf-clairic"
+readme = "README.md"
+keywords = ["cloudflare", "workers-ai", "clairic", "extraction"]
+categories = ["api-bindings", "asynchronous"]
+include = ["src/**", "tests/**", "README.md", "LICENSE", "NOTICE", "Cargo.toml", "Cargo.lock"]
+
+[dependencies]
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }

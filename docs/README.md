@@ -107,3 +107,8 @@ Historical DeliDev validation describes the retired implementation and does not 
 
 - [Project index](project-ui.md)
 - [Shared UI foundation](packages-ui-foundation.md)
+
+### cf-clairic
+
+- [Project index](project-cf-clairic.md)
+- [Rust client](crates-cf-clairic-client-contract.md)

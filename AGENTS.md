@@ -64,6 +64,7 @@
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
 - `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
+- `crates/cf-clairic`: Publishable Cloudflare Clairic Rust client; follow `crates/AGENTS.md`.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.
