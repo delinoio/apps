@@ -12,7 +12,9 @@ The web origin is an exact CORS allowlist entry. The default listener is `127.0.
 
 ## Database and process
 
-Run `go run ./servers/git-tracker-api/cmd/git-tracker-api migrate` once against an empty Git Tracker database. Migration errors stop the command. Start the process with `go run ./servers/git-tracker-api/cmd/git-tracker-api`. The process handles graceful shutdown and runs interruption, finalized-space deletion and audit retention maintenance every minute.
+Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Cargo requires `protoc`. Root development builds both servers once through process-compose; service-local development runs the already built binary.
+
+Run `./servers/target/debug/git-tracker-api migrate` once against an empty Git Tracker database. Migration errors stop the command. Start the process with `./servers/target/debug/git-tracker-api`. The process handles graceful shutdown and runs interruption, finalized-space deletion and audit retention maintenance every minute.
 
 Repository rows serialize atomic uploads, completion, deletion and comment publication across service instances. JSONB stores decimal strings and frozen references; comparison uses exact rational arithmetic. Tokens are stored only as SHA-256 digests. Deleting a referenced baseline does not preserve its measurements in comparison caches.
 
@@ -20,7 +22,7 @@ Repository rows serialize atomic uploads, completion, deletion and comment publi
 
 ## Alert rules
 
-Generate Prometheus rules with `go run ./servers/git-tracker-api/cmd/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
+Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
 
 ## Validation
 
@@ -29,3 +31,5 @@ Run `GOWORK=off go test ./...` and `GOWORK=off go vet ./...` from the root. Set 
 Operator logs use ANSI color by default. Set `NO_COLOR=1` for uncolored structured key/value output.
 
 Build the OCI image from the repository root with `docker build -f servers/git-tracker-api/Dockerfile -t git-tracker-api:local .`. The image runs as a non-root user and listens on the address in `LISTEN`; set it to a non-loopback address inside a container. The `delino` release publishes this image to GitHub Container Registry; see the [workflow contract](../../docs/repository-workflow-contract.md#server-image-publication). The release does not deploy the image or run `migrate`, which creates the initial schema once and cannot be repeated.
+
+Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. The Go checks above retain the original implementation as a compatibility oracle. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.

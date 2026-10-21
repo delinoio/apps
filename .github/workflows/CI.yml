@@ -63,7 +63,7 @@ jobs:
       - uses: ./.github/actions/setup-ci-node
         id: node
       - uses: dtolnay/rust-toolchain@v1
-        if: needs.changes.outputs.rust_clippy != '[]'
+        if: needs.changes.outputs.rust_clippy != '[]' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         with:
           toolchain: nightly-2026-09-28
           components: rustfmt
@@ -78,6 +78,11 @@ jobs:
       - id: rustfmt
         if: needs.changes.outputs.rust_clippy != '[]'
         run: cargo fmt --all --check
+      - id: server-rustfmt
+        if: needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
+        run: |
+          cargo fmt --manifest-path servers/Cargo.toml --all --check
+          cargo fmt --manifest-path protos/rust/Cargo.toml --check
       - id: gofmt
         if: needs.changes.outputs.protocol == 'true'
         run: node scripts/ci/check-go-format.mjs protos examples
@@ -765,8 +770,17 @@ jobs:
           go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - name: Validate DevBase with local protocol packages
         run: |
+          cargo clippy --locked --manifest-path servers/Cargo.toml -p devbase-api --all-targets -- -D warnings
+          cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api
           go vet ./servers/devbase-api/...
           go build ./servers/devbase-api/cmd/...
           go test -race ./servers/devbase-api/...
@@ -835,8 +849,17 @@ jobs:
           go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - name: Validate Git Tracker with local protocol packages
         run: |
+          cargo clippy --locked --manifest-path servers/Cargo.toml -p git-tracker-api --all-targets -- -D warnings
+          cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api
           go vet ./servers/git-tracker-api/...
           go build ./servers/git-tracker-api/cmd/...
           go test -race ./servers/git-tracker-api/...
@@ -857,7 +880,9 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:55432/delcore_api_test?sslmode=disable
         run: |
+          cargo test --locked --manifest-path servers/Cargo.toml -p git-tracker-api --test postgres -- --ignored
           go test -race -count=1 ./servers/git-tracker-api/...
+          docker build -f servers/git-tracker-api/Dockerfile -t git-tracker-api:validation .
         id: integration
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}

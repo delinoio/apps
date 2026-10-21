@@ -10,13 +10,14 @@ Provide a console and the API services of DevBase. The first API service is a fr
 
 ## Domain Ownership Map
 
+- `protos/rust`: Apache-2.0 Rust bindings generated from the owning schemas at Cargo build time.
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
-- `servers/scripts/dev-api.mjs`: shared Go API development launcher.
+- `servers/scripts/dev-api.mjs`: shared API development launcher.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 
 - `apps/devbase`: independently built web application served at `https://devbase.delino.io`.
-- `servers/devbase-api`: independent Go API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
+- `servers/devbase-api`: independent Rust API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
 - `protos/devbase/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.
 - `examples/devbase-client` and `examples/devbase-client-ts`: Go and TypeScript consumer examples.
 - `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. The `delino` release also deploys this application and publishes the `devbase-api` image. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).

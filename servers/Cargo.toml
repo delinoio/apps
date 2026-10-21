@@ -1,9 +1,32 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 [workspace]
 resolver = "2"
-# Add explicit members as each server or shared crate is ported.
-members = []
+members = ["crates/server-common", "devbase-api", "git-tracker-api"]
 
 [workspace.package]
 license = "FSL-1.1-ALv2"
 publish = false
+edition = "2024"
+
+[workspace.dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
+buffa = "0.9"
+buffa-types = { version = "0.9", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }
+connectrpc = { version = "0.9.1", features = ["axum", "server"] }
+hex = "0.4"
+rand = "0.9"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+server-common = { path = "crates/server-common" }
+delino-protocol = { path = "../protos/rust" }

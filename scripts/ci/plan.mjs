@@ -34,6 +34,11 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
   const serverShared = paths.some((path) =>
     /^servers\/(?:[^/]+$|scripts\/)/u.test(path),
   );
+  const serverRust = paths.some((path) =>
+    /^(servers\/crates\/|servers\/Cargo\.(toml|lock)$|protos\/rust\/)/u.test(
+      path,
+    ),
+  );
   return {
     delcore_api:
       shared ||
@@ -45,6 +50,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         ),
       ),
     devbase_api:
+      serverRust ||
       shared ||
       goLock ||
       serverShared ||
@@ -54,6 +60,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         ),
       ),
     git_tracker_api:
+      serverRust ||
       shared ||
       goLock ||
       serverShared ||

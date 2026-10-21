@@ -146,3 +146,7 @@ Repository connection IDs are UUID v7 values. `github_repository_id` retains Git
 PR execution measurements remain inspectable, but do not supply upstream branch graph points or automatic baselines. This prevents fork measurements from replacing baseline-branch data or configuration for a shared commit SHA.
 
 Comparison responses preserve the original baseline value and `baseline_unit`; deltas use the target unit. Clients must display both units when they differ.
+
+## Rust bindings
+
+`protos/rust` owns the Apache-2.0 Rust protocol package. Its Cargo build script uses pinned `connectrpc-build` and the existing schemas with `protoc`; generated messages and service traits stay in its Cargo output directory. The schemas and checked-in Go/TypeScript bindings remain unchanged. Rust server crates depend on this local package. Cargo build and test checks compile these bindings; the existing Buf generation and freshness checks continue to own checked-in Go/TypeScript outputs.

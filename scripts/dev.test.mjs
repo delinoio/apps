@@ -14,7 +14,10 @@ import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Api, composeDatabaseUrls, databaseHandoff } from "./dev.mjs";
-import { prepareApiEnvironment } from "../servers/scripts/dev-api.mjs";
+import {
+  apiCommand,
+  prepareApiEnvironment,
+} from "../servers/scripts/dev-api.mjs";
 
 const urls = {
   [Api.Delcore]:
@@ -398,3 +401,23 @@ if (process.argv[2] === 'metadata') {
     }
   },
 );
+
+test("Rust API launchers execute shared build outputs without another Cargo process", () => {
+  const target = join(tmpdir(), "server-target-fixture");
+  for (const [api, binary] of [
+    [Api.DevBase, "devbase-api"],
+    [Api.GitTracker, "git-tracker-api"],
+  ]) {
+    const [command, args] = apiCommand(api, { CARGO_TARGET_DIR: target });
+    assert.equal(
+      command,
+      join(
+        target,
+        "debug",
+        `${binary}${process.platform === "win32" ? ".exe" : ""}`,
+      ),
+    );
+    assert.deepEqual(args, ["serve", "--dev-env"]);
+  }
+  assert.equal(apiCommand(Api.Delcore, {})[0], "go");
+});

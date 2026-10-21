@@ -1,14 +1,14 @@
 # DevBase API server contract
 
-Rust port preparation follows the [server Rust workspace contract](servers-rust-workspace-contract.md). This service remains implemented in Go until its individual port. Root development uses process-compose with the existing workspace launcher.
+The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses process-compose with one shared Cargo builder and direct binary launchers.
 
 ## Scope
 
-`servers/devbase-api` owns one independent Go server, its PostgreSQL migrations, maintenance jobs and OCI packaging. The schemas and generated bindings live in root `protos/devbase/v1` and the consumer examples in `examples/`. The server provides the free, project-scoped end-user directory that developers manage for their own applications. It has no web console, REST endpoint, handwritten SDK or published client package. Production deployment, backup infrastructure and live-account acceptance are outside this contract.
+`servers/devbase-api` owns one independent Rust server, its PostgreSQL migrations, maintenance jobs and OCI packaging. The schemas and generated bindings live in root `protos/devbase/v1` and the consumer examples in `examples/`. The server provides the free, project-scoped end-user directory that developers manage for their own applications. It has no web console, REST endpoint, handwritten SDK or published client package. Production deployment, backup infrastructure and live-account acceptance are outside this contract.
 
 ## Runtime and Language
 
-Use the root Go module and pinned toolchain, Connect RPC and PostgreSQL. Run one server process against one database. The process holds a PostgreSQL session lock so a second instance cannot start; request limits and the maintenance cycle therefore need no cross-instance coordination. Root `pnpm dev` includes the server through its workspace script.
+Use the independent server Cargo workspace, Connect RPC and PostgreSQL. Run one server process against one database. The process holds a PostgreSQL session lock so a second instance cannot start; request limits and the maintenance cycle therefore need no cross-instance coordination. Root `pnpm dev` includes the server through its workspace script.
 
 ## Users and Operators
 
@@ -150,13 +150,13 @@ Migrations are explicit, ordered and immutable SQL files embedded in the binary.
 
 ## Logging
 
-Use `log/slog` structured logs with trace IDs and bounded error categories. Operator logs are colored key/value text by default; `NO_COLOR` disables the color and `LOG_FORMAT=json` emits one JSON object per record for log ingestion. Any other `LOG_FORMAT` value stops startup. Expose Prometheus metrics for request count, error rate by Connect code, latency, limit rejection and maintenance cleanup failure, without tenant, project, user or key IDs in labels. Support OpenTelemetry through the standard `OTEL_*` variables. The server exposes `/healthz` and `/readyz`; readiness checks the database schema.
+Use `tracing` structured logs with trace IDs and bounded error categories. Operator logs are colored key/value text by default; `NO_COLOR` disables the color and `LOG_FORMAT=json` emits one JSON object per record for log ingestion. Any other `LOG_FORMAT` value stops startup. Expose Prometheus metrics for request count, error rate by Connect code, latency, limit rejection and maintenance cleanup failure, without tenant, project, user or key IDs in labels. Support OpenTelemetry through the standard `OTEL_*` variables. The server exposes `/healthz` and `/readyz`; readiness checks the database schema.
 
 Operational inspection starts from the trace ID in a failing response: search structured logs for it. Check `/metrics` for the rejection and cleanup counters, run `devbase-api check-schema` for schema questions, and query `audit_events` for change history. Numeric SLOs, dashboards and alert infrastructure are not part of this contract.
 
 ## Build and Test
 
-- Go unit tests for validation, pagination cursors, key parsing, rate limiting and configuration.
+- Rust unit tests and retained Go compatibility tests for validation, pagination cursors, key parsing, rate limiting and configuration.
 - PostgreSQL integration tests (`TEST_DATABASE_URL`, build tag `integration`) with a mocked Delcore: complete Owner and Admin flows, rejected Member and Billing roles, invalid authentication, cross-tenant and cross-project access, unknown, expired and revoked keys, read-only writes, all tenant states and exceptions, dependency failure, validation boundaries, both lookups, cursors, masks, stale versions, concurrent duplicate creates, quota boundaries, same-key retries, differing-input retries, concurrent update and delete, concurrent revocation, project deletion races, lost responses, replay expiry, deleted-resource replay without personal data, one-time-secret replay, replay isolation, aggregated rate limits, timeouts, cleanup cycles including mixed states and retry, audit retention and the absence of secrets and personal fields from audit, replay markers and logs.
 - A regression test builds and starts the actual Delcore server binary against its own disposable database, with a local OpenID provider fixture that signs the tokens. It covers personal and organization tenants, invitations, Owner, Admin, Billing and Member roles, operator blocking, pending and final deletion, a billing condition that must not restrict DevBase, and a Delcore outage. It does not establish live Logto, Paddle or production acceptance.
 - Protocol lint, generation, freshness and FILE breaking checks from the repository root.
@@ -168,7 +168,7 @@ Fixtures and builds do not establish live-account or production acceptance.
 
 ## Dependencies and Integrations
 
-Connect-Go, pgx, Prometheus client, OpenTelemetry and Delcore through its generated Connect client in `protos/delcore/v1`. Logto issues Delino login tokens and the service token.
+Connect Rust, SQLx, Prometheus, OpenTelemetry and Delcore through Connect RPC. Rust bindings are generated by `protos/rust` from the canonical schemas. Logto issues Delino login tokens and the service token.
 
 ## Change Triggers
 
@@ -180,11 +180,11 @@ Server environment variables have no service-name prefix. Required: `DATABASE_UR
 
 ## Local development
 
-`servers/scripts/dev-api.mjs` owns the development launcher shared by the Go APIs. Its environment handoff follows the [repository workflow](repository-workflow-contract.md#local-development-databases).
+`servers/scripts/dev-api.mjs` owns the development launcher shared by the APIs. Its environment handoff follows the [repository workflow](repository-workflow-contract.md#local-development-databases).
 
 The development command first injects the Infisical `dev` variables of the `/devbase-api` folder using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 
-Run `pnpm dev` at the repository root for all development servers, or from `servers/devbase-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` and loads the optional ignored `servers/devbase-api/.env`; use `.env.example` as a guide. Root `pnpm dev` starts the local `devbase-postgres` Compose database and applies its URL as `DATABASE_URL` through the shared API launcher after Infisical injection; follow the [development database procedure](repository-workflow-contract.md#local-development-databases) and the [environment contract](repository-environment-contract.md#local-development-injection). Direct service-local development sets `DATABASE_URL` itself. Run `devbase-api migrate` before starting; Air does not provision dependencies, apply migrations or bypass configuration and schema checks. Keep the local API listener at `127.0.0.1:46317`. A port conflict fails startup; no alternate port is selected. See the [workflow contract](repository-workflow-contract.md) for watcher scope.
+Run `pnpm dev` at the repository root for all development servers, or from `servers/devbase-api` for this API only. The script executes `servers/target/debug/devbase-api` after the shared builder completes and loads the optional ignored service-local `.env`; use `.env.example` as a guide. Build the server workspace first for service-local development. Root `pnpm dev` starts the local `devbase-postgres` Compose database and applies its URL as `DATABASE_URL` through the shared API launcher after Infisical injection; follow the [development database procedure](repository-workflow-contract.md#local-development-databases) and the [environment contract](repository-environment-contract.md#local-development-injection). Direct service-local development sets `DATABASE_URL` itself. Run `devbase-api migrate` before starting; The launcher does not provision dependencies, apply migrations or bypass configuration and schema checks. Keep the local API listener at `127.0.0.1:46317`. A port conflict fails startup; no alternate port is selected. See the [workflow contract](repository-workflow-contract.md) for watcher scope.
 
 ## Operator procedures
 
@@ -205,3 +205,5 @@ Lists are not snapshot-consistent. The key secret cannot be recovered. An extern
 - [Delcore server](servers-delcore-api-contract.md)
 - [Protocol contract](protos-devbase-v1-contract.md)
 - [Project index](project-devbase.md)
+
+Rust validation, protocol generation ownership and the retained Go test-oracle boundary follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.

@@ -254,3 +254,16 @@ test("dependency lock selection combines with other changes", () => {
     );
   }
 });
+
+test("shared Rust server changes select both API validators", () => {
+  for (const path of [
+    "servers/crates/server-common/src/auth.rs",
+    "servers/Cargo.toml",
+    "servers/Cargo.lock",
+    "protos/rust/build.rs",
+  ]) {
+    const jobs = select([path]);
+    assert.equal(jobs.devbase_api, true, path);
+    assert.equal(jobs.git_tracker_api, true, path);
+  }
+});

@@ -182,7 +182,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 
 ## Git Tracker ownership
 
-- `servers/git-tracker-api`: Go API, PostgreSQL persistence and background maintenance.
+- `servers/git-tracker-api`: Rust API, PostgreSQL persistence and background maintenance.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
 - `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.

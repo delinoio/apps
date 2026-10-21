@@ -8,10 +8,12 @@ Copy the names in `.env.example` into the operator's environment. No environment
 
 ## Database and process
 
+Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p devbase-api`. Cargo requires `protoc`. Root development builds both servers once through process-compose; service-local development runs the already built binary.
+
 ```sh
-go run ./servers/devbase-api/cmd/devbase-api migrate        # apply explicit migrations; safe to repeat
-go run ./servers/devbase-api/cmd/devbase-api check-schema   # fail unless the schema matches this binary
-go run ./servers/devbase-api/cmd/devbase-api                # serve
+./servers/target/debug/devbase-api migrate        # apply explicit migrations; safe to repeat
+./servers/target/debug/devbase-api check-schema   # fail unless the schema matches this binary
+./servers/target/debug/devbase-api                # serve
 ```
 
 Normal startup never migrates. It checks the schema version and digests, then takes a PostgreSQL session lock so only one instance serves one database. `/healthz` reports liveness, `/readyz` checks schema compatibility and `/metrics` exposes Prometheus counters and histograms with bounded labels. The default listener is `127.0.0.1:46317`. `WEB_ORIGIN` names the one exact browser origin, the DevBase console, that may call the API; requests from any other origin are rejected, and requests without an `Origin` header are unaffected.
@@ -31,3 +33,5 @@ pnpm --filter @delinoio/devbase-api ci:oci
 ```
 
 Integration tests reset the `public` schema of the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. Delcore is mocked, so these checks do not establish live-account or production acceptance. Operator logs use ANSI color by default; set `NO_COLOR=1` for plain structured key/value output, or `LOG_FORMAT=json` for one JSON object per record.
+
+Rust checks: `cargo test --locked --manifest-path servers/Cargo.toml -p devbase-api`. Set a disposable `TEST_DATABASE_URL` and add `--test postgres -- --ignored` for Rust PostgreSQL fixtures, which use an isolated schema. The Go checks above retain the original implementation as a compatibility oracle. Development mode loads an optional service-local `.env` without overriding injected variables. Production and operator commands do not load that file.

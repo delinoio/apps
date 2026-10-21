@@ -10,18 +10,19 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 ## Domain Ownership Map
 
+- `protos/rust`: Apache-2.0 Rust bindings generated from the owning schemas at Cargo build time.
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
-- `servers/scripts/dev-api.mjs`: shared Go API development launcher.
+- `servers/scripts/dev-api.mjs`: shared API development launcher.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 
-- `servers/git-tracker-api`: Go API, PostgreSQL persistence, background maintenance and OCI packaging.
+- `servers/git-tracker-api`: Rust API, PostgreSQL persistence, background maintenance and OCI packaging.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
 - `protos/package.json`: Internal `@delino/protos` workspace for generated TypeScript exports and runtime dependencies.
 - `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
-Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Go runtime, migrations and persistence in this repository.
+Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Rust runtime, migrations and persistence in this repository.
 
 ## Domain Contract Documents
 

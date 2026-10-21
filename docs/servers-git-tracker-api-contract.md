@@ -1,6 +1,6 @@
 # Git Tracker Server
 
-Rust port preparation follows the [server Rust workspace contract](servers-rust-workspace-contract.md). This service remains implemented in Go until its individual port. Root development uses process-compose with the existing workspace launcher.
+The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses process-compose with one shared Cargo builder and direct binary launchers.
 
 ## Scope
 
@@ -8,7 +8,7 @@ Rust port preparation follows the [server Rust workspace contract](servers-rust-
 
 ## Runtime and Language
 
-Root Go toolchain, Connect RPC and PostgreSQL.
+Rust in the independent server Cargo workspace, Connect RPC and PostgreSQL.
 
 ## Users and Operators
 
@@ -98,7 +98,7 @@ External individuals and organizations, CI jobs and service operators.
 
 - After confirmation, managers can permanently delete an entire repository's measurements, a dataset, or an execution. Preserve the baseline-deletion behavior above.
 - After Delcore finalizes space deletion, permanently delete that space's Git Tracker repository connections, tokens, configuration, and measurement history.
-- Provide structured Go `log/slog` logs, request/execution correlation, bounded error categories, health/readiness interfaces, Prometheus metrics, and OpenTelemetry traces.
+- Provide structured Rust `tracing` logs, request/execution correlation, bounded error categories, health/readiness interfaces, Prometheus metrics, and OpenTelemetry traces.
 - Audit authorization changes, repository connection changes, token issuance/revocation, and data deletion. Exclude secret values and raw measurements from audit payloads. Make audit retention an operator-required setting and delete expired audit records.
 - Supply Prometheus alert rules for API server error rate, upload/completion persistence failures, GitHub integration failures, and automatically interrupted executions. Require operator-defined thresholds and observation windows. Operators connect receiving routes through Alertmanager or equivalent; the service does not send alert messages itself.
 - Implement a threat model and automated security tests for tenancy, OIDC/token validation, fork PR restrictions, webhook verification, visibility changes, and secret redaction. Follow repository secret/configuration rules; never commit credentials or expose them in telemetry.
@@ -122,11 +122,11 @@ Check current space permissions on protected operations. Verify GitHub signature
 
 ## Logging
 
-Use correlation IDs and bounded error categories. Server logs use log/slog; Action logs and summaries describe failures without credentials.
+Use correlation IDs and bounded error categories. Server logs use `tracing`; Action logs and summaries describe failures without credentials.
 
 ## Build and Test
 
-Run the owning repository format checks, Go tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
+Run the owning repository format checks, server Cargo tests, retained Go compatibility tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
 
 ## Dependencies and Integrations
 
@@ -155,12 +155,14 @@ Server environment variables have no service-name prefix. Use `DATABASE_URL`, `L
 
 ## Local development
 
-`servers/scripts/dev-api.mjs` owns the development launcher shared by the Go APIs. Its environment handoff follows the [repository workflow](repository-workflow-contract.md#local-development-databases).
+`servers/scripts/dev-api.mjs` owns the development launcher shared by the APIs. Its environment handoff follows the [repository workflow](repository-workflow-contract.md#local-development-databases).
 
 The root [development Compose procedure](repository-workflow-contract.md#local-development-databases) provides a local PostgreSQL instance and explicit migration commands. Root `pnpm dev` applies the resolved Compose database URL after Infisical injection through the shared API launcher. The launcher overrides `DATABASE_URL` for its child process; other settings retain their existing sources. Direct service-local development has no Compose override. Follow the [environment contract](repository-environment-contract.md#local-development-injection) for precedence and temporary-file ownership.
 
 The development command first injects Infisical `dev` variables from `/git-tracker-api` using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 
-Run `pnpm dev` at the repository root for all development servers, or from `servers/git-tracker-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` to watch the repository root while build and run commands execute from the service workspace. Configure the existing environment variables in the shell or the ignored `servers/git-tracker-api/.env`, using the service-local `.env.example` as a guide. Prepare PostgreSQL, the schema and required provider configuration before starting. Air does not provision dependencies or bypass startup checks.
+Run `pnpm dev` at the repository root for all development servers, or from `servers/git-tracker-api` for this API only. The script executes `servers/target/debug/git-tracker-api` after the shared builder completes. Build the server workspace first for service-local development. Configure the existing environment variables in the shell or the ignored `servers/git-tracker-api/.env`, using the service-local `.env.example` as a guide. Prepare PostgreSQL, the schema and required provider configuration before starting. The launcher does not provision dependencies or bypass startup checks.
 
-Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; Air sends an interrupt before terminating the server after five seconds. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
+Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; the launcher forwards the signal to the Rust server for graceful shutdown. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
+
+Rust validation, protocol generation ownership and the retained Go test-oracle boundary follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.

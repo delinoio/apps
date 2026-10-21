@@ -30,6 +30,29 @@ export function prepareApiEnvironment(api, source = process.env) {
   return { env };
 }
 
+export function apiCommand(api, source = process.env) {
+  if (api === Api.Delcore)
+    return [
+      "go",
+      ["run", "github.com/air-verse/air@v1.67.4", "-c", ".air.toml"],
+    ];
+  const serverRoot = fileURLToPath(new URL("../", import.meta.url));
+  const target = resolve(serverRoot, source.CARGO_TARGET_DIR || "target");
+  const binary = {
+    [Api.DevBase]: "devbase-api",
+    [Api.GitTracker]: "git-tracker-api",
+  }[api];
+  if (!binary) throw new Error("Unknown development API");
+  return [
+    resolve(
+      target,
+      "debug",
+      `${binary}${process.platform === "win32" ? ".exe" : ""}`,
+    ),
+    ["serve", "--dev-env"],
+  ];
+}
+
 export async function main(api = process.argv[2]) {
   const prepared = prepareApiEnvironment(api);
   console.log(
@@ -39,9 +62,10 @@ export async function main(api = process.argv[2]) {
       compose: Boolean(process.env[databaseHandoff]),
     }),
   );
+  const [command, args] = apiCommand(api);
   return await spawnDevServer(
-    "go",
-    ["run", "github.com/air-verse/air@v1.67.4", "-c", ".air.toml"],
+    command,
+    args,
     {
       stdio: "inherit",
       env: prepared.env,
@@ -61,7 +85,7 @@ if (
       JSON.stringify({
         event: "dev_api_start_failed",
         message:
-          "Could not prepare API development. Check the service .env, Compose handoff and Go installation.",
+          "Could not prepare API development. Check the service .env, Compose handoff and compiled server binaries.",
       }),
     );
     process.exitCode = 1;

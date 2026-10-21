@@ -9,7 +9,10 @@
     "packages/ui/**",
     "scripts/localization/**",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "servers/Cargo.toml",
+    "servers/Cargo.lock",
+    "servers/crates/**"
   ],
   "tasks": {
     "dev": {

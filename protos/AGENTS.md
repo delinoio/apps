@@ -12,7 +12,7 @@
 
 - Use local contracts and checks. Update affected server contracts and run server integration validation in this checkout under the [repository boundary contract](../docs/repository-boundary-contract.md).
 - Write schemas and comments in English.
-- Keep all generated protobuf and Connect bindings under `protos/`, beside their owning schemas as defined in the protocol contracts. Run root `pnpm proto:generate` for all languages; generation must preserve schema and instruction files.
+- Keep checked-in generated protobuf and Connect bindings under `protos/`, beside their owning schemas as defined in the protocol contracts. The Rust package in `protos/rust` generates its bindings from those schemas into Cargo output during compilation; do not check those outputs in or copy them into server sources. Run root `pnpm proto:generate` for all languages; generation must preserve schema and instruction files.
 - The private `@delino/protos` workspace owns TypeScript exports and their protobuf runtime dependency; applications consume these exports instead of generating app-local copies.
 
 ## Owning contracts

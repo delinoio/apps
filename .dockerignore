@@ -1,0 +1,13 @@
+.git
+**/target
+**/node_modules
+**/dist
+**/tmp
+**/.env
+**/.env.*
+!**/.env.example
+.infisical.yaml
+.infisical.json
+.dev-environment
+.turbo
+.ci-evidence

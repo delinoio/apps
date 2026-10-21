@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "infisical run --env=dev --project-config-dir=../.. --path=/devbase-api -- node ../scripts/dev-api.mjs devbase",
-    "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/devbase-api",
-    "ci:vet": "go vet ./...",
-    "ci:build": "go build ./cmd/devbase-api",
-    "ci:unit": "go test -count=1 ./...",
-    "ci:integration": "go test -count=1 -race -p 1 -tags=integration ./...",
-    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration"
+    "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",
+    "ci:vet": "cargo clippy --locked --manifest-path ../Cargo.toml -p devbase-api --all-targets -- -D warnings",
+    "ci:build": "cargo build --locked --manifest-path ../Cargo.toml -p devbase-api",
+    "ci:unit": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api",
+    "ci:integration": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api --test postgres -- --ignored",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/devbase-api/Dockerfile -t devbase-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration",
+    "build": "cargo build --locked --manifest-path ../Cargo.toml -p devbase-api",
+    "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p devbase-api"
   }
 }

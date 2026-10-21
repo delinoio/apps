@@ -63,3 +63,7 @@ Update this contract, the [server contract](servers-devbase-api-contract.md) and
 
 - [Repository defaults](repository-defaults.md)
 - [Server contract](servers-devbase-api-contract.md)
+
+## Rust bindings
+
+`protos/rust` owns the Apache-2.0 Rust protocol package. Its Cargo build script uses pinned `connectrpc-build` and the existing schemas with `protoc`; generated messages and service traits stay in its Cargo output directory. The schemas and checked-in Go/TypeScript bindings remain unchanged. Rust server crates depend on this local package. Cargo build and test checks compile these bindings; the existing Buf generation and freshness checks continue to own checked-in Go/TypeScript outputs.
