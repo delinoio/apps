@@ -125,6 +125,16 @@ func retry[T any](ctx context.Context, o options, call func() (T, error)) (T, er
 	return result, err
 }
 
+// withOutcome copies complete event content and changes only its outcome.
+func withOutcome(attributes map[string]*pb.AttributeValue, outcome string) map[string]*pb.AttributeValue {
+	replacement := make(map[string]*pb.AttributeValue, len(attributes)+1)
+	for name, value := range attributes {
+		replacement[name] = value
+	}
+	replacement["outcome"] = &pb.AttributeValue{Value: &pb.AttributeValue_Text{Text: outcome}}
+	return replacement
+}
+
 func run(ctx context.Context, client delcorev1connect.DelcoreServiceClient, o options, out io.Writer) error {
 	if o.accessToken != "" {
 		me, e := client.GetCurrentUser(ctx, authorized(&pb.GetCurrentUserRequest{}, o.accessToken))
@@ -186,18 +196,15 @@ func run(ctx context.Context, client delcorev1connect.DelcoreServiceClient, o op
 
 	// 3. Correct the event by replacing its complete content. The expected
 	// revision prevents silent overwrites; after a stale revision, re-read the
-	// latest revision with GetEvent and decide again.
-	replacement := map[string]*pb.AttributeValue{}
-	for name, value := range event.Attributes {
-		replacement[name] = value
-	}
-	replacement["outcome"] = &pb.AttributeValue{Value: &pb.AttributeValue_Text{Text: "cached"}}
+	// latest content with GetEvent and apply the intended change to it again,
+	// so the retry keeps the attributes of the correction that won.
+	eventType, replacement := event.EventType, withOutcome(event.Attributes, "cached")
 	expected := accepted.Msg.Revision
 	var corrected *connect.Response[pb.CorrectEventResponse]
 	for range 2 {
 		correctionKey := newKey()
 		corrected, e = retry(ctx, o, func() (*connect.Response[pb.CorrectEventResponse], error) {
-			return client.CorrectEvent(ctx, authorized(&pb.CorrectEventRequest{RequestKey: correctionKey, TenantId: o.tenantID, EventKey: eventKey, ExpectedRevision: expected, Kind: pb.EventCorrectionKind_EVENT_CORRECTION_KIND_REPLACE, EventType: event.EventType, Attributes: replacement}, o.serviceToken))
+			return client.CorrectEvent(ctx, authorized(&pb.CorrectEventRequest{RequestKey: correctionKey, TenantId: o.tenantID, EventKey: eventKey, ExpectedRevision: expected, Kind: pb.EventCorrectionKind_EVENT_CORRECTION_KIND_REPLACE, EventType: eventType, Attributes: replacement}, o.serviceToken))
 		})
 		if reason(e) != pb.ErrorReason_ERROR_REASON_STALE_REVISION {
 			break
@@ -207,12 +214,22 @@ func run(ctx context.Context, client delcorev1connect.DelcoreServiceClient, o op
 			return err
 		}
 		fmt.Fprintf(out, "Stale revision %d; latest is %d\n", expected, latest.Msg.Revision)
+		if latest.Msg.Cancelled || latest.Msg.Event == nil {
+			// A cancelled event cannot be corrected again; replacing it would
+			// need a new decision, not a retry.
+			fmt.Fprintln(out, "The event was cancelled concurrently; no replacement is sent.")
+			corrected, e = nil, nil
+			break
+		}
 		expected = latest.Msg.Revision
+		eventType, replacement = latest.Msg.Event.EventType, withOutcome(latest.Msg.Event.Attributes, "cached")
 	}
 	if e != nil {
 		return e
 	}
-	fmt.Fprintf(out, "CorrectEvent accepted revision %d\n", corrected.Msg.Revision)
+	if corrected != nil {
+		fmt.Fprintf(out, "CorrectEvent accepted revision %d\n", corrected.Msg.Revision)
+	}
 
 	// 4. Read billing-period aggregates and processing status. The new revision
 	// may not be applied yet; compare the status with the aggregates instead of

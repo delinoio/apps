@@ -20,16 +20,22 @@ import (
 
 // fakeDelcore models the asynchronous contract: ingestion is acknowledged
 // before aggregates change, the first ingestion attempt is lost in transit,
-// and the first correction meets a concurrent correction.
+// and the first correction meets a concurrent correction that changes the
+// region, or cancels the event when concurrentCancel is set.
 type fakeDelcore struct {
 	delcorev1connect.UnimplementedDelcoreServiceHandler
-	mu            sync.Mutex
-	calls         []string
-	ingestKeys    map[string]int
-	eventKeys     map[string]bool
-	revision      int32
-	staleReturned bool
-	allowed       bool
+	mu               sync.Mutex
+	calls            []string
+	ingestKeys       map[string]int
+	eventKeys        map[string]bool
+	revision         int32
+	staleReturned    bool
+	allowed          bool
+	concurrentCancel bool
+	cancelled        bool
+	eventType        string
+	// attributes holds the latest accepted content of the event.
+	attributes map[string]*pb.AttributeValue
 }
 
 func (f *fakeDelcore) record(name string, h http.Header) error {
@@ -85,6 +91,7 @@ func (f *fakeDelcore) IngestEvent(_ context.Context, r *connect.Request[pb.Inges
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("lost in transit"))
 	}
 	f.revision = 1
+	f.eventType, f.attributes = r.Msg.Event.EventType, r.Msg.Event.Attributes
 	return connect.NewResponse(&pb.IngestEventResponse{EventId: "event-1", Revision: 1}), nil
 }
 
@@ -98,12 +105,26 @@ func (f *fakeDelcore) CorrectEvent(_ context.Context, r *connect.Request[pb.Corr
 		// Another correction of the same event won first.
 		f.staleReturned = true
 		f.revision = 2
+		if f.concurrentCancel {
+			f.cancelled, f.eventType, f.attributes = true, "", nil
+			return nil, stale()
+		}
+		concurrent := map[string]*pb.AttributeValue{}
+		for name, value := range f.attributes {
+			concurrent[name] = value
+		}
+		concurrent["region"] = &pb.AttributeValue{Value: &pb.AttributeValue_Text{Text: "eu-west"}}
+		f.attributes = concurrent
 		return nil, stale()
+	}
+	if f.cancelled {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("event was cancelled"))
 	}
 	if r.Msg.ExpectedRevision != f.revision || r.Msg.Attributes["outcome"].GetText() != "cached" {
 		return nil, stale()
 	}
 	f.revision++
+	f.eventType, f.attributes = r.Msg.EventType, r.Msg.Attributes
 	return connect.NewResponse(&pb.CorrectEventResponse{EventId: "event-1", Revision: f.revision}), nil
 }
 
@@ -113,7 +134,7 @@ func (f *fakeDelcore) GetEvent(_ context.Context, r *connect.Request[pb.GetEvent
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return connect.NewResponse(&pb.GetEventResponse{Revision: f.revision}), nil
+	return connect.NewResponse(&pb.GetEventResponse{Event: &pb.Event{EventKey: r.Msg.EventKey, EventType: f.eventType, Attributes: f.attributes}, Revision: f.revision, Cancelled: f.cancelled}), nil
 }
 
 func (f *fakeDelcore) ListMeterAggregates(_ context.Context, r *connect.Request[pb.ListMeterAggregatesRequest]) (*connect.Response[pb.ListMeterAggregatesResponse], error) {
@@ -163,6 +184,24 @@ func TestMeteringFlowRetriesWithStableKeysAndRereadsStaleRevisions(t *testing.T)
 	}
 	if strings.Contains(text, "secret") {
 		t.Fatal("output exposes a token")
+	}
+	// The retry rebuilds the replacement from the latest content, so the
+	// concurrent region change survives and only the outcome changes.
+	if fake.eventType != "request.completed" || fake.attributes["region"].GetText() != "eu-west" || fake.attributes["outcome"].GetText() != "cached" || fake.attributes["user"].GetText() != "user-1" || fake.attributes["status"].GetNumber() != "200" {
+		t.Fatalf("replacement overwrote the concurrent correction: %s %v", fake.eventType, fake.attributes)
+	}
+}
+
+func TestConcurrentCancellationStopsTheReplacement(t *testing.T) {
+	fake := &fakeDelcore{ingestKeys: map[string]int{}, eventKeys: map[string]bool{}, allowed: true, concurrentCancel: true}
+	var out bytes.Buffer
+	o := options{serviceToken: "service-secret", serviceID: "service-1", tenantID: "tenant-1", userID: "user-1", featureKey: "monthly-requests", meterKey: "requests", region: "us-east", attempts: 3, retryDelay: time.Millisecond}
+	if err := run(context.Background(), start(t, fake), o, &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	want := []string{"Authorize", "IngestEvent", "IngestEvent", "CorrectEvent", "GetEvent", "ListMeterAggregates", "GetMeteringStatus"}
+	if strings.Join(fake.calls, ",") != strings.Join(want, ",") || !strings.Contains(out.String(), "cancelled concurrently") {
+		t.Fatalf("calls = %v, want %v:\n%s", fake.calls, want, out.String())
 	}
 }
 
