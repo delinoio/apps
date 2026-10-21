@@ -10,7 +10,7 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 ## Domain Ownership Map
 
-- `protos/rust`: Apache-2.0 Rust bindings generated from the owning schemas at Cargo build time.
+- `servers/crates/delino-protos`: FSL-1.1-ALv2 Rust protocol crate that generates bindings from the owning schemas at Cargo build time.
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
 - `servers/scripts/dev-api.mjs`: shared API development launcher.

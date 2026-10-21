@@ -4,7 +4,7 @@
 
 This repository owns server runtimes, background workers, migrations, server configuration examples and OCI packaging under `servers/`, alongside web, desktop and mobile clients, protocols and consumer examples. Root `docs/` owns all project indexes and domain contracts. Server files use FSL-1.1-ALv2; other repository-owned files use Apache-2.0. Preserve third-party licenses and notices under the [license contract](repository-license-contract.md).
 
-The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1` and DevBase uses `protos/devbase/v1`. Go servers and compatibility tests consume these packages directly through the root `github.com/delinoio/apps` Go module. Rust servers consume the local Apache-2.0 `protos/rust` package, whose build script generates bindings from these same schemas. Do not vendor, duplicate or generate protocol source under `servers/`.
+The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1` and DevBase uses `protos/devbase/v1`. Go servers and compatibility tests consume these packages directly through the root `github.com/delinoio/apps` Go module. Rust servers consume the local FSL-1.1-ALv2 `servers/crates/delino-protos` package, whose build script generates bindings from these same schemas. Keep canonical schemas and checked-in Go/TypeScript bindings in `protos/`. Generate Rust bindings only into Cargo output; do not check generated Rust source into `servers/`.
 
 ## Contribution boundary
 

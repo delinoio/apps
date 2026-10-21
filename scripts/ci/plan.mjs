@@ -35,9 +35,7 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
     /^servers\/(?:[^/]+$|scripts\/)/u.test(path),
   );
   const serverRust = paths.some((path) =>
-    /^(servers\/crates\/|servers\/Cargo\.(toml|lock)$|protos\/rust\/)/u.test(
-      path,
-    ),
+    /^(servers\/crates\/|servers\/Cargo\.(toml|lock)$)/u.test(path),
   );
   return {
     delcore_api:

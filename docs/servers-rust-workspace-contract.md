@@ -8,9 +8,9 @@ Add explicit workspace members as each service or shared crate is implemented. E
 
 ## Incremental adoption
 
-The workspace contains `devbase-api`, `git-tracker-api` and `crates/server-common`. Shared authentication, configuration, HTTP policy, rate limits and telemetry belong to `server-common`. Delcore retains its Go runtime. The root Go module and generated Go clients remain available for consumers and compatibility tests. The existing Go service sources are retained as test oracles; development and OCI entrypoints for DevBase and Git Tracker use Rust only.
+The workspace contains `devbase-api`, `git-tracker-api`, `crates/server-common` and `crates/delino-protos`. Shared authentication, configuration, HTTP policy, rate limits and telemetry belong to `server-common`. Delcore retains its Go runtime. The root Go module and generated Go clients remain available for consumers and compatibility tests. The existing Go service sources are retained as test oracles; development and OCI entrypoints for DevBase and Git Tracker use Rust only.
 
-Each port must update its project index and domain contracts, add its explicit workspace member and applicable validation and packaging integration. Run server Cargo commands from the root with `--manifest-path servers/Cargo.toml`. Root Cargo commands continue to own client packages. Rust protocol bindings are owned by the independent Apache-2.0 package `protos/rust`. Its build script generates bindings from the existing schemas into Cargo output; no schema or generated source is copied into server source directories. Install `protoc` before compiling.
+Each port must update its project index and domain contracts, add its explicit workspace member and applicable validation and packaging integration. Run server Cargo commands from the root with `--manifest-path servers/Cargo.toml`. Root Cargo commands continue to own client packages. Rust protocol bindings are owned by the server workspace package `servers/crates/delino-protos`. Its build script generates bindings from the existing schemas into Cargo output; no schema or generated source is copied into server source directories. Install `protoc` before compiling.
 
 ## Development execution
 

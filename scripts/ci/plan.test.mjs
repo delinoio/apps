@@ -260,7 +260,7 @@ test("shared Rust server changes select both API validators", () => {
     "servers/crates/server-common/src/auth.rs",
     "servers/Cargo.toml",
     "servers/Cargo.lock",
-    "protos/rust/build.rs",
+    "servers/crates/delino-protos/build.rs",
   ]) {
     const jobs = select([path]);
     assert.equal(jobs.devbase_api, true, path);

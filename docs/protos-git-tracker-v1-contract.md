@@ -149,4 +149,4 @@ Comparison responses preserve the original baseline value and `baseline_unit`; d
 
 ## Rust bindings
 
-`protos/rust` owns the Apache-2.0 Rust protocol package. Its Cargo build script uses pinned `connectrpc-build` and the existing schemas with `protoc`; generated messages and service traits stay in its Cargo output directory. The schemas and checked-in Go/TypeScript bindings remain unchanged. Rust server crates depend on this local package. Cargo build and test checks compile these bindings; the existing Buf generation and freshness checks continue to own checked-in Go/TypeScript outputs.
+`servers/crates/delino-protos` owns the FSL-1.1-ALv2 Rust protocol package in the server workspace. Its Cargo build script uses pinned `connectrpc-build` and the existing schemas with `protoc`; generated messages and service traits stay in its Cargo output directory. The schemas and checked-in Go/TypeScript bindings remain unchanged. Rust server crates depend on this local package. Cargo build and test checks compile these bindings; the existing Buf generation and freshness checks continue to own checked-in Go/TypeScript outputs.

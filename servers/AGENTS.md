@@ -36,4 +36,4 @@
 - [Git Tracker server](../docs/servers-git-tracker-api-contract.md)
 - [Git Tracker threat model](../docs/servers-git-tracker-threat-model.md)
 
-- DevBase and Git Tracker production binaries and OCI images are Rust. Their existing Go sources remain compatibility test oracles; do not route production or development launchers through them. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `protos/rust` outside the server license boundary.
+- DevBase and Git Tracker production binaries and OCI images are Rust. Their existing Go sources remain compatibility test oracles; do not route production or development launchers through them. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.

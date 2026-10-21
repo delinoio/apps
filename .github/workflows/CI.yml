@@ -82,7 +82,6 @@ jobs:
         if: needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
-          cargo fmt --manifest-path protos/rust/Cargo.toml --check
       - id: gofmt
         if: needs.changes.outputs.protocol == 'true'
         run: node scripts/ci/check-go-format.mjs protos examples

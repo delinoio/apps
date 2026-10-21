@@ -1,12 +1,10 @@
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: FSL-1.1-ALv2
 [package]
 name = "delino-protocol"
 version = "0.1.0"
-edition = "2024"
-license = "Apache-2.0"
-publish = false
-
-[workspace]
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [dependencies]
 buffa = "0.9"
