@@ -74,12 +74,16 @@ CREATE TABLE metering_replay (
 -- Materialized group aggregates of applied revisions. Count, sum, and the
 -- distinct-value count are exact; value is the exposed result, with averages
 -- rounded half-up to six places. A group without contributions has no row.
+-- group_key keeps the canonical encoding, which can exceed the B-tree entry
+-- limit for several maximum-size group attributes, so keys and references
+-- use group_digest, the SHA-256 digest of group_key.
 CREATE TABLE metering_aggregates (
  tenant_id uuid NOT NULL REFERENCES tenants(id),
  meter_id uuid NOT NULL REFERENCES catalog_entities(id),
  period_start timestamptz NOT NULL,
  period_end timestamptz NOT NULL,
  group_key text NOT NULL,
+ group_digest bytea NOT NULL CHECK(octet_length(group_digest)=32),
  group_values jsonb NOT NULL,
  aggregation text NOT NULL CHECK(aggregation IN ('count','sum','min','max','avg','unique_count')),
  event_count bigint NOT NULL CHECK(event_count>0),
@@ -87,7 +91,7 @@ CREATE TABLE metering_aggregates (
  distinct_count bigint NOT NULL CHECK(distinct_count>=0),
  value numeric NOT NULL,
  updated_at timestamptz NOT NULL,
- PRIMARY KEY(tenant_id,meter_id,period_start,group_key),
+ PRIMARY KEY(tenant_id,meter_id,period_start,group_digest),
  CHECK(period_end>period_start)
 );
 -- Value multisets for minimum, maximum, and unique-count groups.
@@ -95,22 +99,23 @@ CREATE TABLE metering_aggregate_values (
  tenant_id uuid NOT NULL,
  meter_id uuid NOT NULL,
  period_start timestamptz NOT NULL,
- group_key text NOT NULL,
+ group_digest bytea NOT NULL,
  value_kind text NOT NULL CHECK(value_kind IN ('string','number','boolean')),
  value text NOT NULL,
  numeric_value numeric,
  events bigint NOT NULL CHECK(events>0),
- PRIMARY KEY(tenant_id,meter_id,period_start,group_key,value_kind,value),
- FOREIGN KEY(tenant_id,meter_id,period_start,group_key)
-  REFERENCES metering_aggregates(tenant_id,meter_id,period_start,group_key) DEFERRABLE INITIALLY DEFERRED,
+ PRIMARY KEY(tenant_id,meter_id,period_start,group_digest,value_kind,value),
+ FOREIGN KEY(tenant_id,meter_id,period_start,group_digest)
+  REFERENCES metering_aggregates(tenant_id,meter_id,period_start,group_digest) DEFERRABLE INITIALLY DEFERRED,
  CHECK((value_kind='number')=(numeric_value IS NOT NULL))
 );
-CREATE INDEX metering_aggregate_numbers ON metering_aggregate_values(tenant_id,meter_id,period_start,group_key,numeric_value)
+CREATE INDEX metering_aggregate_numbers ON metering_aggregate_values(tenant_id,meter_id,period_start,group_digest,numeric_value)
  WHERE value_kind='number';
 
 -- Admission accounting over the latest accepted revision of every event,
 -- including revisions that processing has not materialized yet. The period
--- row is locked before groups or values change.
+-- row is locked before groups or values change. Groups are identified by
+-- group_digest, the SHA-256 digest of the canonical group key.
 CREATE TABLE metering_admission_periods (
  tenant_id uuid NOT NULL REFERENCES tenants(id),
  meter_id uuid NOT NULL REFERENCES catalog_entities(id),
@@ -122,23 +127,23 @@ CREATE TABLE metering_admission_groups (
  tenant_id uuid NOT NULL,
  meter_id uuid NOT NULL,
  period_start timestamptz NOT NULL,
- group_key text NOT NULL,
+ group_digest bytea NOT NULL CHECK(octet_length(group_digest)=32),
  events bigint NOT NULL CHECK(events>0),
  distinct_values bigint NOT NULL CHECK(distinct_values>=0),
- PRIMARY KEY(tenant_id,meter_id,period_start,group_key),
+ PRIMARY KEY(tenant_id,meter_id,period_start,group_digest),
  FOREIGN KEY(tenant_id,meter_id,period_start) REFERENCES metering_admission_periods(tenant_id,meter_id,period_start)
 );
 CREATE TABLE metering_admission_values (
  tenant_id uuid NOT NULL,
  meter_id uuid NOT NULL,
  period_start timestamptz NOT NULL,
- group_key text NOT NULL,
+ group_digest bytea NOT NULL,
  value_kind text NOT NULL CHECK(value_kind IN ('string','number','boolean')),
  value text NOT NULL,
  events bigint NOT NULL CHECK(events>0),
- PRIMARY KEY(tenant_id,meter_id,period_start,group_key,value_kind,value),
- FOREIGN KEY(tenant_id,meter_id,period_start,group_key)
-  REFERENCES metering_admission_groups(tenant_id,meter_id,period_start,group_key) DEFERRABLE INITIALLY DEFERRED
+ PRIMARY KEY(tenant_id,meter_id,period_start,group_digest,value_kind,value),
+ FOREIGN KEY(tenant_id,meter_id,period_start,group_digest)
+  REFERENCES metering_admission_groups(tenant_id,meter_id,period_start,group_digest) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE INDEX jobs_metering_ready ON jobs(available_at,id) WHERE kind='metering' AND state='pending';

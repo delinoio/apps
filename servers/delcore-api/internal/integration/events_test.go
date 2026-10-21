@@ -967,3 +967,86 @@ func TestMeteringRetentionKeepsPendingWorkAndReplayIdentity(t *testing.T) {
 		t.Fatalf("conflict after retention accepted: %v", err)
 	}
 }
+
+// Group keys of several maximum-size attributes exceed the PostgreSQL B-tree
+// entry limit, so admission and aggregate rows must index a bounded digest.
+func TestEventOversizedGroupKeysUseBoundedIdentity(t *testing.T) {
+	f := newMeterFixture(t, nil)
+	ctx := context.Background()
+	for _, m := range []*pb.Meter{
+		{Name: "wide-max", EventType: "wide", Aggregation: pb.MeterAggregation_METER_AGGREGATION_MAX, ValueAttribute: "n", GroupBy: []string{"a", "b", "c"}},
+		{Name: "wide-users", EventType: "wide", Aggregation: pb.MeterAggregation_METER_AGGREGATION_UNIQUE_COUNT, ValueAttribute: "u", GroupBy: []string{"a", "b", "c"}},
+	} {
+		m.ServiceId, m.Key = f.service, m.Name
+		if _, err := f.client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare wide meter", Meter: m}, "owner")); err != nil {
+			t.Fatal(err)
+		}
+		definition, err := events.CatalogDefinition(m.Name, m.EventType, m.Aggregation, m.ValueAttribute, m.Filters, m.GroupBy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.definitions = append(f.definitions, definition)
+	}
+	// Random characters that JSON escapes keep the encoded key large and
+	// incompressible, well above the 2,704-byte B-tree entry limit.
+	random := rand.New(rand.NewSource(81))
+	const alphabet = `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<>&"\`
+	long := func() string {
+		b := make([]byte, events.MaxAttributeValueBytes)
+		for i := range b {
+			b[i] = alphabet[random.Intn(len(alphabet))]
+		}
+		return string(b)
+	}
+	group := func() map[string]string { return map[string]string{"a": long(), "b": long(), "c": long()} }
+	first, second := group(), group()
+	if groupKey, err := metering.GroupKey(map[string]metering.Value{"a": metering.String(first["a"]), "b": metering.String(first["b"]), "c": metering.String(first["c"])}); err != nil || len(groupKey) <= 2704 {
+		t.Fatalf("test group key has %d bytes: %v", len(groupKey), err)
+	}
+	now := time.Now().UTC().Add(-time.Minute)
+	active := map[string]metering.Event{}
+	wide := func(g map[string]string, n, user string) (map[string]*pb.AttributeValue, metering.Event) {
+		wire := map[string]*pb.AttributeValue{"a": text(g["a"]), "b": text(g["b"]), "c": text(g["c"]), "n": num(n), "u": text(user)}
+		attributes := map[string]metering.Value{"a": metering.String(g["a"]), "b": metering.String(g["b"]), "c": metering.String(g["c"]), "u": metering.String(user)}
+		number, err := metering.Number(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		attributes["n"] = number
+		return wire, metering.Event{Type: "wide", Attributes: attributes}
+	}
+	for i, value := range []struct{ n, user string }{{"5", long()}, {"7", long()}} {
+		wire, event := wide(first, value.n, value.user)
+		eventKey := fmt.Sprintf("wide-%d", i)
+		if _, err := f.ingest("service", eventKey, "wide", now, wire); err != nil {
+			t.Fatalf("event with an oversized group key rejected: %v", err)
+		}
+		active[eventKey] = event
+	}
+	f.process(t)
+	f.expect(t, active)
+	firstValues := map[string]metering.Value{"a": metering.String(first["a"]), "b": metering.String(first["b"]), "c": metering.String(first["c"])}
+	if f.value(t, "wide-max", firstValues) != "7" || f.value(t, "wide-users", firstValues) != "2" {
+		t.Fatal("oversized group aggregates are wrong")
+	}
+	// Moving and cancelling events releases admission and aggregate rows by the same identity.
+	wire, event := wide(second, "3", long())
+	if _, err := f.correct("wide-0", 1, pb.EventCorrectionKind_EVENT_CORRECTION_KIND_REPLACE, "wide", wire); err != nil {
+		t.Fatalf("move between oversized groups rejected: %v", err)
+	}
+	active["wide-0"] = event
+	f.process(t)
+	f.expect(t, active)
+	if _, err := f.correct("wide-1", 1, pb.EventCorrectionKind_EVENT_CORRECTION_KIND_CANCEL, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	delete(active, "wide-1")
+	f.process(t)
+	f.expect(t, active)
+	if f.value(t, "wide-max", firstValues) != "" {
+		t.Fatal("cancelled oversized group retained an aggregate")
+	}
+	if groups := f.count(t, "SELECT count(*) FROM metering_admission_groups a JOIN catalog_entities ce ON ce.id=a.meter_id WHERE ce.key IN ('wide-max','wide-users')"); groups != 2 {
+		t.Fatalf("admission groups = %d after moving and cancelling oversized groups", groups)
+	}
+}

@@ -208,7 +208,7 @@ Registered services report measured events with `IngestEvent` and correct them w
 
 ## Storage
 
-PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Migration 7 adds metering event identities, append-only revisions and contributions, replay identities, materialized group aggregates with value multisets, admission accounting, and a ready-work index for `metering` jobs. Catalog synchronization never applies it. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
+PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Migration 7 adds metering event identities, append-only revisions and contributions, replay identities, materialized group aggregates with value multisets, admission accounting, and a ready-work index for `metering` jobs. Aggregate and admission rows are keyed by the SHA-256 digest of the canonical group key, because a key of several maximum-size group attributes exceeds the PostgreSQL B-tree entry limit; aggregates also keep the full group key and group values. Catalog synchronization never applies it. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
 
 ## Security
 

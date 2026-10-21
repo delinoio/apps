@@ -149,12 +149,13 @@ func tracksSum(kind metering.Aggregation) bool {
 // aggregate before and after. A group without contributions is deleted.
 func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *contribution, groupKey string, values map[string]metering.Value, removes, adds []metering.Value) (*metering.Aggregate, *metering.Aggregate, error) {
 	kind := c.Aggregation
+	digest := GroupDigest(groupKey)
 	var before *metering.Aggregate
 	var rawValues []byte
 	var stored, sumText, valueText string
 	var count, distinct int64
 	err := tx.QueryRow(ctx, `SELECT group_values,aggregation,event_count,sum::text,distinct_count,value::text FROM metering_aggregates
- WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 FOR UPDATE`, a.TenantID, c.MeterID, a.PeriodStart, groupKey).Scan(&rawValues, &stored, &count, &sumText, &distinct, &valueText)
+ WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 FOR UPDATE`, a.TenantID, c.MeterID, a.PeriodStart, digest).Scan(&rawValues, &stored, &count, &sumText, &distinct, &valueText)
 	sum := accounting.Zero()
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -191,7 +192,7 @@ func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *con
 		if !metering.RetainsValues(kind) {
 			return nil
 		}
-		changed, err := changeValue(ctx, tx, a, c.MeterID, groupKey, v, delta)
+		changed, err := changeValue(ctx, tx, a, c.MeterID, digest, v, delta)
 		distinct += changed
 		return err
 	}
@@ -212,7 +213,7 @@ func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *con
 		if distinct != 0 {
 			return nil, nil, fmt.Errorf("%w: empty group retained values", ErrPermanent)
 		}
-		_, err = tx.Exec(ctx, "DELETE FROM metering_aggregates WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", a.TenantID, c.MeterID, a.PeriodStart, groupKey)
+		_, err = tx.Exec(ctx, "DELETE FROM metering_aggregates WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4", a.TenantID, c.MeterID, a.PeriodStart, digest)
 		return before, nil, err
 	}
 	var value accounting.Decimal
@@ -232,7 +233,7 @@ func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *con
 		}
 		var text *string
 		if err = tx.QueryRow(ctx, `SELECT `+function+`(numeric_value)::text FROM metering_aggregate_values
- WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind='number'`, a.TenantID, c.MeterID, a.PeriodStart, groupKey).Scan(&text); err != nil {
+ WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind='number'`, a.TenantID, c.MeterID, a.PeriodStart, digest).Scan(&text); err != nil {
 			return nil, nil, err
 		}
 		if text == nil {
@@ -248,10 +249,10 @@ func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *con
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO metering_aggregates(tenant_id,meter_id,period_start,period_end,group_key,group_values,aggregation,event_count,sum,distinct_count,value,updated_at)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::numeric,$10,$11::numeric,$12)
- ON CONFLICT(tenant_id,meter_id,period_start,group_key) DO UPDATE SET event_count=EXCLUDED.event_count,sum=EXCLUDED.sum,distinct_count=EXCLUDED.distinct_count,value=EXCLUDED.value,updated_at=EXCLUDED.updated_at`,
-		a.TenantID, c.MeterID, a.PeriodStart, a.PeriodEnd, groupKey, encoded, string(kind), count, sum.String(), distinct, value.String(), now); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO metering_aggregates(tenant_id,meter_id,period_start,period_end,group_key,group_digest,group_values,aggregation,event_count,sum,distinct_count,value,updated_at)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::numeric,$11,$12::numeric,$13)
+ ON CONFLICT(tenant_id,meter_id,period_start,group_digest) DO UPDATE SET event_count=EXCLUDED.event_count,sum=EXCLUDED.sum,distinct_count=EXCLUDED.distinct_count,value=EXCLUDED.value,updated_at=EXCLUDED.updated_at`,
+		a.TenantID, c.MeterID, a.PeriodStart, a.PeriodEnd, groupKey, digest, encoded, string(kind), count, sum.String(), distinct, value.String(), now); err != nil {
 		return nil, nil, err
 	}
 	after := &metering.Aggregate{MeterKey: c.MeterKey, GroupKey: groupKey, GroupValues: values, Kind: kind, Count: count, Sum: sum, Value: value, DistinctCount: distinct}
@@ -266,16 +267,16 @@ func applyGroup(ctx context.Context, tx pgx.Tx, now time.Time, a Applied, c *con
 
 // changeValue updates one retained value multiset entry and returns the change
 // in the group's distinct-value count.
-func changeValue(ctx context.Context, tx pgx.Tx, a Applied, meterID, groupKey string, v metering.Value, delta int64) (int64, error) {
+func changeValue(ctx context.Context, tx pgx.Tx, a Applied, meterID string, digest []byte, v metering.Value, delta int64) (int64, error) {
 	if delta > 0 {
 		var numeric *string
 		if v.Kind == metering.ValueNumber {
 			numeric = &v.Text
 		}
 		var events int64
-		if err := tx.QueryRow(ctx, `INSERT INTO metering_aggregate_values(tenant_id,meter_id,period_start,group_key,value_kind,value,numeric_value,events) VALUES($1,$2,$3,$4,$5,$6,$7::numeric,1)
- ON CONFLICT(tenant_id,meter_id,period_start,group_key,value_kind,value) DO UPDATE SET events=metering_aggregate_values.events+1 RETURNING events`,
-			a.TenantID, meterID, a.PeriodStart, groupKey, string(v.Kind), v.Text, numeric).Scan(&events); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO metering_aggregate_values(tenant_id,meter_id,period_start,group_digest,value_kind,value,numeric_value,events) VALUES($1,$2,$3,$4,$5,$6,$7::numeric,1)
+ ON CONFLICT(tenant_id,meter_id,period_start,group_digest,value_kind,value) DO UPDATE SET events=metering_aggregate_values.events+1 RETURNING events`,
+			a.TenantID, meterID, a.PeriodStart, digest, string(v.Kind), v.Text, numeric).Scan(&events); err != nil {
 			return 0, err
 		}
 		if events == 1 {
@@ -284,8 +285,8 @@ func changeValue(ctx context.Context, tx pgx.Tx, a Applied, meterID, groupKey st
 		return 0, nil
 	}
 	var events int64
-	err := tx.QueryRow(ctx, `SELECT events FROM metering_aggregate_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6 FOR UPDATE`,
-		a.TenantID, meterID, a.PeriodStart, groupKey, string(v.Kind), v.Text).Scan(&events)
+	err := tx.QueryRow(ctx, `SELECT events FROM metering_aggregate_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6 FOR UPDATE`,
+		a.TenantID, meterID, a.PeriodStart, digest, string(v.Kind), v.Text).Scan(&events)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("%w: retained value is missing", ErrPermanent)
 	}
@@ -293,12 +294,12 @@ func changeValue(ctx context.Context, tx pgx.Tx, a Applied, meterID, groupKey st
 		return 0, err
 	}
 	if events == 1 {
-		_, err = tx.Exec(ctx, `DELETE FROM metering_aggregate_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6`,
-			a.TenantID, meterID, a.PeriodStart, groupKey, string(v.Kind), v.Text)
+		_, err = tx.Exec(ctx, `DELETE FROM metering_aggregate_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6`,
+			a.TenantID, meterID, a.PeriodStart, digest, string(v.Kind), v.Text)
 		return -1, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE metering_aggregate_values SET events=events-1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6`,
-		a.TenantID, meterID, a.PeriodStart, groupKey, string(v.Kind), v.Text)
+	_, err = tx.Exec(ctx, `UPDATE metering_aggregate_values SET events=events-1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6`,
+		a.TenantID, meterID, a.PeriodStart, digest, string(v.Kind), v.Text)
 	return 0, err
 }
 

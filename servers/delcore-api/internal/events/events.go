@@ -64,6 +64,14 @@ const (
 	MaxNumberBytes         = 64
 )
 
+// GroupDigest returns the SHA-256 digest of a canonical group key. Admission
+// and aggregate rows are keyed by this bounded identity because a group key of
+// several maximum-size attributes exceeds the PostgreSQL B-tree entry limit.
+func GroupDigest(groupKey string) []byte {
+	sum := sha256.Sum256([]byte(groupKey))
+	return sum[:]
+}
+
 // JobKind is the durable job kind that materializes an event's latest revision.
 const JobKind = "metering"
 

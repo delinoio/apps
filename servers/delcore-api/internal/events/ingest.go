@@ -394,21 +394,22 @@ func admit(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, remo
 }
 
 func release(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, c contribution, groups map[string]int64) error {
+	digest := GroupDigest(c.GroupKey)
 	var events, distinct int64
-	if err := tx.QueryRow(ctx, "SELECT events,distinct_values FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 FOR UPDATE", tenant, c.MeterID, period, c.GroupKey).Scan(&events, &distinct); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT events,distinct_values FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 FOR UPDATE", tenant, c.MeterID, period, digest).Scan(&events, &distinct); err != nil {
 		return fmt.Errorf("admission group is missing: %w", err)
 	}
 	if metering.RetainsValues(c.Aggregation) {
 		var valueEvents int64
-		if err := tx.QueryRow(ctx, "SELECT events FROM metering_admission_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6 FOR UPDATE", tenant, c.MeterID, period, c.GroupKey, string(c.Value.Kind), c.Value.Text).Scan(&valueEvents); err != nil {
+		if err := tx.QueryRow(ctx, "SELECT events FROM metering_admission_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6 FOR UPDATE", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text).Scan(&valueEvents); err != nil {
 			return fmt.Errorf("admission value is missing: %w", err)
 		}
 		var err error
 		if valueEvents == 1 {
-			_, err = tx.Exec(ctx, "DELETE FROM metering_admission_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, c.GroupKey, string(c.Value.Kind), c.Value.Text)
+			_, err = tx.Exec(ctx, "DELETE FROM metering_admission_values WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text)
 			distinct--
 		} else {
-			_, err = tx.Exec(ctx, "UPDATE metering_admission_values SET events=events-1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, c.GroupKey, string(c.Value.Kind), c.Value.Text)
+			_, err = tx.Exec(ctx, "UPDATE metering_admission_values SET events=events-1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text)
 		}
 		if err != nil {
 			return err
@@ -416,46 +417,47 @@ func release(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, c 
 	}
 	var err error
 	if events == 1 {
-		_, err = tx.Exec(ctx, "DELETE FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", tenant, c.MeterID, period, c.GroupKey)
+		_, err = tx.Exec(ctx, "DELETE FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4", tenant, c.MeterID, period, digest)
 		groups[c.MeterID]--
 	} else {
-		_, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET events=events-1,distinct_values=$5 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", tenant, c.MeterID, period, c.GroupKey, distinct)
+		_, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET events=events-1,distinct_values=$5 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4", tenant, c.MeterID, period, digest, distinct)
 	}
 	return err
 }
 
 func acquire(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, c contribution, groups map[string]int64, limits metering.Limits) error {
+	digest := GroupDigest(c.GroupKey)
 	var distinct int64
-	err := tx.QueryRow(ctx, "SELECT distinct_values FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 FOR UPDATE", tenant, c.MeterID, period, c.GroupKey).Scan(&distinct)
+	err := tx.QueryRow(ctx, "SELECT distinct_values FROM metering_admission_groups WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 FOR UPDATE", tenant, c.MeterID, period, digest).Scan(&distinct)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if limits.MaxGroupsPerMeter > 0 && groups[c.MeterID]+1 > limits.MaxGroupsPerMeter {
 			return reject(ReasonCardinalityExceeded, fmt.Sprintf("meter %q reached its group limit for the billing period", c.MeterKey))
 		}
 		groups[c.MeterID]++
-		if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_groups(tenant_id,meter_id,period_start,group_key,events,distinct_values) VALUES($1,$2,$3,$4,1,0)", tenant, c.MeterID, period, c.GroupKey); err != nil {
+		if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_groups(tenant_id,meter_id,period_start,group_digest,events,distinct_values) VALUES($1,$2,$3,$4,1,0)", tenant, c.MeterID, period, digest); err != nil {
 			return err
 		}
 	case err != nil:
 		return err
 	default:
-		if _, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET events=events+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", tenant, c.MeterID, period, c.GroupKey); err != nil {
+		if _, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET events=events+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4", tenant, c.MeterID, period, digest); err != nil {
 			return err
 		}
 	}
 	if !metering.RetainsValues(c.Aggregation) {
 		return nil
 	}
-	tag, err := tx.Exec(ctx, "UPDATE metering_admission_values SET events=events+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, c.GroupKey, string(c.Value.Kind), c.Value.Text)
+	tag, err := tx.Exec(ctx, "UPDATE metering_admission_values SET events=events+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND value_kind=$5 AND value=$6", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text)
 	if err != nil || tag.RowsAffected() == 1 {
 		return err
 	}
 	if limits.MaxDistinctValuesPerGroup > 0 && distinct+1 > limits.MaxDistinctValuesPerGroup {
 		return reject(ReasonCardinalityExceeded, fmt.Sprintf("meter %q reached its distinct-value limit for a group", c.MeterKey))
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_values(tenant_id,meter_id,period_start,group_key,value_kind,value,events) VALUES($1,$2,$3,$4,$5,$6,1)", tenant, c.MeterID, period, c.GroupKey, string(c.Value.Kind), c.Value.Text); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_values(tenant_id,meter_id,period_start,group_digest,value_kind,value,events) VALUES($1,$2,$3,$4,$5,$6,1)", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET distinct_values=distinct_values+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", tenant, c.MeterID, period, c.GroupKey)
+	_, err = tx.Exec(ctx, "UPDATE metering_admission_groups SET distinct_values=distinct_values+1 WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4", tenant, c.MeterID, period, digest)
 	return err
 }
