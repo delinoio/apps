@@ -17,6 +17,7 @@ import (
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
+	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -154,6 +155,48 @@ func TestMeterAggregateQueries(t *testing.T) {
 	var ce *connect.Error
 	if !errors.As(err, &ce) || ce.Meta().Get("X-Delcore-Correlation-Id") == "" || typedReason(err) != pb.ErrorReason_ERROR_REASON_FORBIDDEN {
 		t.Fatalf("query errors lack typed correlation metadata: %v", err)
+	}
+}
+
+// A paid tenant has no calendar-month fallback, so a period_at outside every
+// recorded Paddle period is client input that names no billing period.
+func TestMeterAggregatesRejectUnrecordedPaidPeriod(t *testing.T) {
+	f := newFeatureFixture(t)
+	ctx := context.Background()
+	paid, err := f.client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "paid plan", Plan: &pb.Plan{Key: "paid", Name: "paid", Rank: 10}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	tx, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	var version string
+	if err = tx.QueryRow(ctx, "SELECT active_version_id::text FROM catalog_entities WHERE id=$1", paid.Msg.Plan.Id).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", f.beta, paid.Msg.Plan.Id); err != nil {
+		t.Fatal(err)
+	}
+	if err = postgres.ReplaceTenantSelections(ctx, tx, f.beta, []string{version}, now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.aggregates(aggregateQuery{token: "owner", tenant: f.beta, service: f.service, meter: "calls", at: timestamppb.New(now)}, "")
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || typedReason(err) != pb.ErrorReason_ERROR_REASON_INVALID_INPUT {
+		t.Fatalf("unrecorded paid period was not invalid input: %v", err)
+	}
+	start := now.Add(-24 * time.Hour).Truncate(time.Second)
+	if _, err = f.db.Pool.Exec(ctx, "INSERT INTO billing_periods VALUES($1,$2,$3,false)", f.beta, start, start.AddDate(0, 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := f.aggregates(aggregateQuery{token: "owner", tenant: f.beta, service: f.service, meter: "calls", at: timestamppb.New(now)}, "")
+	if err != nil || !recorded.PeriodStart.AsTime().Equal(start) {
+		t.Fatalf("recorded paid period = %v %v", recorded, err)
 	}
 }
 

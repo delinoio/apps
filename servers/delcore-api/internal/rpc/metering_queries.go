@@ -115,6 +115,11 @@ func (s *Server) ListMeterAggregates(ctx context.Context, r *connect.Request[pb.
 			o.Aggregation = events.CompatibilityAggregation
 		}
 		start, end, e := postgres.BillingPeriod(c.ctx, c.tx, q.TenantId, at)
+		if errors.Is(e, postgres.ErrPeriodUnavailable) {
+			// A paid instant outside every recorded Paddle period names no
+			// billing period, so the client-selected period is invalid.
+			return invalid("billing period unavailable")
+		}
 		if e != nil {
 			return e
 		}
