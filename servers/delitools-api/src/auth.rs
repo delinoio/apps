@@ -10,6 +10,7 @@ use crate::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
 use serde::Deserialize;
+use server_common::config::safe_url;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -69,6 +70,25 @@ struct Claims {
     roles: Vec<String>,
 }
 
+/// Validate a discovery document and return its key endpoint. The endpoint is held to the same
+/// rule as every configured URL: HTTPS, or HTTP only for a loopback fixture, without credentials.
+/// A plaintext key set could be replaced on the path and would let an attacker sign tokens that
+/// satisfy the configured issuer and audience.
+fn jwks_endpoint(discovery: &serde_json::Value, issuer: &str) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        discovery["issuer"].as_str() == Some(issuer),
+        "OIDC issuer mismatch"
+    );
+    let jwks_url = discovery["jwks_uri"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("missing OIDC key endpoint"))?;
+    anyhow::ensure!(
+        safe_url(jwks_url),
+        "OIDC key endpoint must be an https URL (loopback http is allowed for fixtures)"
+    );
+    Ok(jwks_url.to_owned())
+}
+
 pub struct Verifier {
     http: reqwest::Client,
     jwks_url: String,
@@ -100,14 +120,7 @@ impl Verifier {
             .error_for_status()?
             .json()
             .await?;
-        anyhow::ensure!(
-            discovery["issuer"].as_str() == Some(issuer),
-            "OIDC issuer mismatch"
-        );
-        let jwks_url = discovery["jwks_uri"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("missing OIDC key endpoint"))?
-            .to_owned();
+        let jwks_url = jwks_endpoint(&discovery, issuer)?;
         let keys = http
             .get(&jwks_url)
             .send()
@@ -238,6 +251,39 @@ mod tests {
             audience: "api".into(),
             operator_role: "operator".into(),
         }
+    }
+
+    #[test]
+    fn discovered_key_endpoints_must_be_secure() {
+        let issuer = "https://issuer.example/oidc";
+        let discovery = |uri: &str| json!({"issuer": issuer, "jwks_uri": uri});
+        for secure in [
+            "https://issuer.example/oidc/jwks",
+            "https://keys.example/jwks",
+            "http://127.0.0.1:9/jwks",
+            "http://localhost/jwks",
+        ] {
+            assert_eq!(
+                jwks_endpoint(&discovery(secure), issuer).unwrap(),
+                secure,
+                "{secure}"
+            );
+        }
+        for insecure in [
+            "http://keys.example/jwks",
+            "http://issuer.example/oidc/jwks",
+            "ftp://keys.example/jwks",
+            "https://user:pass@keys.example/jwks",
+            "not a url",
+            "",
+        ] {
+            assert!(
+                jwks_endpoint(&discovery(insecure), issuer).is_err(),
+                "{insecure}"
+            );
+        }
+        assert!(jwks_endpoint(&json!({"issuer": issuer}), issuer).is_err());
+        assert!(jwks_endpoint(&json!({"issuer": "https://other.example", "jwks_uri": "https://keys.example/jwks"}), issuer).is_err());
     }
 
     #[test]
