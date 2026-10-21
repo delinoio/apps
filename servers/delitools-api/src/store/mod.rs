@@ -12,9 +12,10 @@ pub mod recovery;
 pub mod retention;
 pub mod settings;
 
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("../../migrations/00001_foundation.sql"),
     include_str!("../../migrations/00002_execution.sql"),
+    include_str!("../../migrations/00003_audit_reason_characters.sql"),
 ];
 pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;
 /// Transaction-scoped lock serializing concurrent `--migrate` runs.

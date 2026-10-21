@@ -214,6 +214,56 @@ async fn settings_updates_require_a_reason_validate_and_write_an_audit_record() 
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn the_reason_limit_counts_characters_in_validation_and_storage() {
+    let f = Fixture::setup().await;
+    let operator = f.operator();
+    let current = f.ok(&operator, "GetSettings", json!({})).await;
+    let mut settings = current.body["settings"].clone();
+    settings["tenantConcurrency"] = json!(7);
+
+    // 1000 Korean characters occupy 3000 bytes. The documented limit counts characters, so the
+    // update must succeed and the audit record must keep the complete reason.
+    let long = "한".repeat(1000);
+    f.ok(
+        &operator,
+        "UpdateSettings",
+        json!({"settings": settings.clone(), "reason": long}),
+    )
+    .await;
+    assert_eq!(f.platform.settings().tenant_concurrency, 7);
+    let stored: String = sqlx::query_scalar("SELECT reason FROM audit_records")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored.chars().count(), 1000);
+
+    // One character more is rejected as invalid input before any storage write.
+    settings["tenantConcurrency"] = json!(8);
+    f.fails(
+        Some(&operator),
+        "UpdateSettings",
+        json!({"settings": settings, "reason": "한".repeat(1001)}),
+        "invalid_argument",
+        reason::INVALID_INPUT,
+    )
+    .await;
+    assert_eq!(f.platform.settings().tenant_concurrency, 7);
+
+    // The storage constraint is the second line of defense: it also counts characters.
+    let overlong = "한".repeat(1001);
+    let rejected = sqlx::query(
+        "INSERT INTO audit_records(id,actor,action,reason,request_id,details,created_at) VALUES($1,'operator:x','settings.update',$2,$1,'{}',now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(overlong)
+    .execute(&f.pool)
+    .await;
+    assert!(rejected.is_err());
+    f.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn request_inspection_exposes_only_safe_state_and_is_audited() {
     let f = Fixture::setup().await;
     let operator = f.operator();
