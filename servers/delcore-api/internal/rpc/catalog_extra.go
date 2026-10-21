@@ -334,6 +334,10 @@ func (s *Server) PutAddOn(ctx context.Context, r *connect.Request[pb.PutAddOnReq
 		if e != nil {
 			return e
 		}
+		// Report the selected version's values, including preserved assignments.
+		if a.FeatureValues, e = c.catalogFeatureValues(a.ActiveVersionId); e != nil {
+			return e
+		}
 		o.AddOn = a
 		return c.audit("", "catalog.addon", q.Reason)
 	})

@@ -584,6 +584,44 @@ func TestLegacyMeterRequestPersistsDefaultDefinition(t *testing.T) {
 	}
 }
 
+func TestProductMutationResponsesReportPreservedFeatures(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare preserved feature service", Service: &pb.Service{Key: "preserved-feature-service", Name: "Preserved Feature Service", ClientId: "preserved-feature", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	feature, err := client.PutFeature(ctx, req(&pb.PutFeatureRequest{RequestKey: key(), Reason: "declare preserved feature", Feature: &pb.Feature{ServiceId: serviceID, Key: "exports", Name: "Exports", Kind: pb.FeatureKind_FEATURE_KIND_ACCESS}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	values := []*pb.FeatureValue{{FeatureId: feature.Msg.Feature.Id, Enabled: &enabled}}
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare featured plan", Plan: &pb.Plan{Key: "featured-plan", Name: "Featured Plan", Free: true, DefaultFree: true, FeatureValues: values}, ReplaceFeatureValues: true}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamedPlan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "rename featured plan", Plan: &pb.Plan{Id: plan.Msg.Plan.Id, Name: "Renamed Featured Plan", Free: true, DefaultFree: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedPlan.Msg.Plan.ActiveVersionId != plan.Msg.Plan.ActiveVersionId || len(renamedPlan.Msg.Plan.FeatureValues) != 1 || renamedPlan.Msg.Plan.FeatureValues[0].FeatureId != feature.Msg.Feature.Id || !renamedPlan.Msg.Plan.FeatureValues[0].GetEnabled() {
+		t.Fatalf("plan response omitted preserved features: %+v", renamedPlan.Msg.Plan.FeatureValues)
+	}
+	addon, err := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "declare featured add-on", AddOn: &pb.AddOn{ServiceId: serviceID, Key: "featured-addon", Name: "Featured Add-on", FeatureValues: values}, ReplaceFeatureValues: true}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamedAddOn, err := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "rename featured add-on", AddOn: &pb.AddOn{Id: addon.Msg.AddOn.Id, ServiceId: serviceID, Name: "Renamed Featured Add-on"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamedAddOn.Msg.AddOn.ActiveVersionId != addon.Msg.AddOn.ActiveVersionId || len(renamedAddOn.Msg.AddOn.FeatureValues) != 1 || renamedAddOn.Msg.AddOn.FeatureValues[0].FeatureId != feature.Msg.Feature.Id || !renamedAddOn.Msg.AddOn.FeatureValues[0].GetEnabled() {
+		t.Fatalf("add-on response omitted preserved features: %+v", renamedAddOn.Msg.AddOn.FeatureValues)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string

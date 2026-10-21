@@ -133,6 +133,10 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 		if e != nil {
 			return e
 		}
+		// Report the selected version's values, including preserved assignments.
+		if v.FeatureValues, e = c.catalogFeatureValues(v.ActiveVersionId); e != nil {
+			return e
+		}
 		o.Plan = v
 		return c.audit("", "catalog.plan", q.Reason)
 	})
