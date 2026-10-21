@@ -6,7 +6,7 @@ Root `pnpm dev` reads the resolved Compose configuration, runs `docker compose u
 
 Shared protocol tooling lives in `protos/scripts/`: `check-breaking.mjs` runs FILE breaking checks against a comparison revision, and `buf-entry.mjs` resolves the installed Buf Node entry for that check and CI. Run `node protos/scripts/check-breaking.mjs "<comparison-revision>"` from the repository root. Localization fixture tests live beside their implementation in `scripts/localization/`; root `pnpm test:tooling` includes them.
 
-Changes under `servers/scripts/` select all three API entries in both server validation matrices.
+Changes under `servers/scripts/` select all four API entries in both server validation matrices.
 
 ## Process supervision
 
@@ -18,7 +18,7 @@ Root development disables the process-compose HTTP control server so it does not
 
 ## Local development databases
 
-Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore, DevBase and Git Tracker, matching the major version used by server integration CI. The frontends, native shells and Rust APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Root `pnpm dev` starts these databases automatically and waits for their healthchecks before launching process-compose. Existing containers and volumes are reused. `Ctrl+C` stops the development tasks and leaves the databases running for the next session. To start or inspect databases separately, run these commands from the repository root:
+Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore, DeliTools, DevBase and Git Tracker, matching the major version used by server integration CI. The frontends, native shells and Rust APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Root `pnpm dev` starts these databases automatically and waits for their healthchecks before launching process-compose. Existing containers and volumes are reused. `Ctrl+C` stops the development tasks and leaves the databases running for the next session. To start or inspect databases separately, run these commands from the repository root:
 
 ```sh
 docker compose up -d --wait
@@ -202,4 +202,4 @@ The DeliTools tag starts only its web publication. Dispatch `release-delitools-m
 
 Git Tracker client changes select `git-tracker-clients` on Ubuntu. The job checks the web app, Action tests/bundle freshness and shared generated bindings under `protos/`. Root `pnpm proto:generate` generates Go and TypeScript bindings together; both protocol and client freshness checks reject tracked and untracked changes in that tree. Protocol changes also select the client job because the web app consumes those schemas. Default manual validation remains affected-only.
 
-Delcore, DevBase and Git Tracker use the [server Rust workspace](servers-rust-workspace-contract.md). Their development launchers execute compiled binaries. Delcore retains optional working-directory `.env` loading for every invocation; DevBase and Git Tracker load it only with `--dev-env`. Shared crate changes select all three Rust API matrix entries. Their Go service implementations, Go test oracles and Air configurations are removed; the root Go module continues to own generated protocol bindings and Go consumers.
+Delcore, DeliTools, DevBase and Git Tracker use the [server Rust workspace](servers-rust-workspace-contract.md). Their development launchers execute compiled binaries. Delcore and DeliTools retain optional working-directory `.env` loading for every invocation; DevBase and Git Tracker load it only with `--dev-env`. Shared crate changes select all four Rust API matrix entries. Their Go service implementations, Go test oracles and Air configurations are removed; the root Go module continues to own generated protocol bindings and Go consumers.
