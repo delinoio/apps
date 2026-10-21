@@ -117,7 +117,7 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         dependency_timeout: Duration::from_secs(3),
         request_timeout: Duration::from_secs(10),
         cleanup_interval: Duration::from_secs(300),
-        origin: String::new(),
+        origin: "https://console.example".into(),
         listen: "127.0.0.1:0".into(),
     };
     let http = reqwest::Client::new();
@@ -130,18 +130,48 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         "fixture".into(),
     );
     let server = Arc::new(Server::new(db.clone(), authority, config));
-    let router = Router::new().fallback_service(
-        connectrpc::Router::new()
-            .add_service(server.clone())
-            .into_axum_service()
-            .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10)),
-    );
+    let router = devbase_api::http::router(server.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!(
         "http://{}/devbase.v1.DevBaseService",
         listener.local_addr().unwrap()
     );
     let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let root = base.strip_suffix("/devbase.v1.DevBaseService").unwrap();
+    for path in ["/healthz", "/readyz", "/metrics"] {
+        for origin in ["https://console.example", "https://other.example"] {
+            let response = http
+                .get(format!("{root}{path}"))
+                .header("Origin", origin)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                !response
+                    .headers()
+                    .contains_key("access-control-allow-origin")
+            );
+        }
+    }
+    let preflight = http
+        .request(reqwest::Method::OPTIONS, format!("{base}/GetProject"))
+        .header("Origin", "https://console.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        preflight.headers()["access-control-allow-origin"],
+        "https://console.example"
+    );
+    let rejected = http
+        .post(format!("{base}/GetProject"))
+        .header("Origin", "https://other.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
     async fn call(
         http: &reqwest::Client,
         base: &str,

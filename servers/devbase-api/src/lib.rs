@@ -2,6 +2,7 @@
 mod auth;
 pub mod config;
 mod fingerprint;
+pub mod http;
 pub mod maintenance;
 mod operations;
 pub mod store;
