@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use connectrpc::{ConnectError, ErrorCode};
 pub type Result<T> = std::result::Result<T, Fault>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FaultSource {
+    Application,
+    Persistence,
+}
 #[derive(Debug)]
 pub struct Fault {
+    pub source: FaultSource,
     pub code: ErrorCode,
     pub message: String,
     pub reason: i32,
@@ -11,6 +17,7 @@ pub struct Fault {
 impl Fault {
     pub fn new(code: ErrorCode, reason: i32, message: impl Into<String>) -> Self {
         Self {
+            source: FaultSource::Application,
             code,
             reason,
             message: message.into(),
@@ -73,7 +80,9 @@ impl From<sqlx::Error> for Fault {
             sqlx::Error::Database(ref d) if d.code().as_deref() == Some("23503") => Self::missing(),
             _ => {
                 tracing::error!(category = "persistence", "database operation failed");
-                Self::unavailable()
+                let mut fault = Self::unavailable();
+                fault.source = FaultSource::Persistence;
+                fault
             }
         }
     }

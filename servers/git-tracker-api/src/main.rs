@@ -120,18 +120,21 @@ async fn run() -> anyhow::Result<()> {
                         .unwrap_or("");
                     match server.webhook(event, signature, &body).await {
                         Ok(()) => StatusCode::NO_CONTENT,
-                        Err(f) => match f.code {
-                            connectrpc::ErrorCode::Unauthenticated => StatusCode::UNAUTHORIZED,
-                            connectrpc::ErrorCode::InvalidArgument => StatusCode::BAD_REQUEST,
-                            _ => {
-                                server
-                                    .metrics
-                                    .events
-                                    .with_label_values(&["github", "failure"])
-                                    .inc();
-                                StatusCode::SERVICE_UNAVAILABLE
+                        Err(f) => {
+                            server.record_failure(&f);
+                            match f.code {
+                                connectrpc::ErrorCode::Unauthenticated => StatusCode::UNAUTHORIZED,
+                                connectrpc::ErrorCode::InvalidArgument => StatusCode::BAD_REQUEST,
+                                _ => {
+                                    server
+                                        .metrics
+                                        .events
+                                        .with_label_values(&["github", "failure"])
+                                        .inc();
+                                    StatusCode::SERVICE_UNAVAILABLE
+                                }
                             }
-                        },
+                        }
                     }
                 }
             })
@@ -158,7 +161,8 @@ async fn run() -> anyhow::Result<()> {
         interval.tick().await;
         loop {
             interval.tick().await;
-            if server.maintain().await.is_err() {
+            if let Err(fault) = server.maintain().await {
+                server.record_failure(&fault);
                 tracing::error!(category = "persistence", "maintenance failed")
             }
         }

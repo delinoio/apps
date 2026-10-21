@@ -108,6 +108,14 @@ pub async fn audit(db: &mut PgConnection, space: &str, action: &str, trace: &str
     Ok(())
 }
 impl Server {
+    pub fn record_failure(&self, fault: &Fault) {
+        if fault.source == server_common::error::FaultSource::Persistence {
+            self.metrics
+                .events
+                .with_label_values(&["persistence", "failure"])
+                .inc();
+        }
+    }
     async fn handle<R: serde::de::DeserializeOwned>(
         &self,
         ctx: RequestContext,
@@ -127,6 +135,7 @@ impl Server {
             .with_header("X-Correlation-Id", trace)
             .with_header("Cache-Control", "no-store")),
             Err(f) => {
+                self.record_failure(&f);
                 tracing::warn!(correlation_id=%trace,category=?f.code,"request failed");
                 let mut headers = axum::http::HeaderMap::new();
                 headers.insert("X-Correlation-Id", trace.parse().unwrap());
@@ -293,7 +302,8 @@ impl Server {
         }
         if op.role() == Role::Edit {
             let c = context.as_ref().unwrap();
-            if self.publish(rid, &c.execution_id).await.is_err() {
+            if let Err(fault) = self.publish(rid, &c.execution_id).await {
+                self.record_failure(&fault);
                 out["warnings"] = json!(["PR comment could not be updated"])
             }
             tracing::info!(

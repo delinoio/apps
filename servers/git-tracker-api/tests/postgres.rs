@@ -265,6 +265,18 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+    let failures = server
+        .metrics
+        .events
+        .with_label_values(&["persistence", "failure"]);
+    let before = failures.get();
+    sqlx::query("DROP TABLE git_tracker_repositories CASCADE")
+        .execute(&db)
+        .await
+        .unwrap();
+    let (_, failed) = call(&http, &base, "ListRepositories", "", json!({})).await;
+    assert_eq!(failed["code"], "unavailable");
+    assert_eq!(failures.get(), before + 1);
     task.abort();
     mock_task.abort();
     drop(server);
