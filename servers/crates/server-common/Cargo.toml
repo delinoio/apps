@@ -13,6 +13,7 @@ base64.workspace = true
 buffa.workspace = true
 chrono.workspace = true
 connectrpc.workspace = true
+delino-protocol.workspace = true
 hex.workspace = true
 rand.workspace = true
 reqwest.workspace = true

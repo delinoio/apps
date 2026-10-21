@@ -2468,6 +2468,7 @@ dependencies = [
  "buffa",
  "chrono",
  "connectrpc",
+ "delino-protocol",
  "dotenvy",
  "hex",
  "opentelemetry",
