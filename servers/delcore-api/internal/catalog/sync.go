@@ -372,7 +372,18 @@ func applyMeter(ctx context.Context, tx pgx.Tx, d definition, id, serviceID stri
 	if err != nil {
 		return err
 	}
-	if previous == "" {
+	// A meter without a version, or whose stored version has no event type
+	// because a name-only PutMeter registered it, is untyped and may still be
+	// typed under the in-use rule below.
+	untyped := previous == ""
+	if previous != "" {
+		var eventType string
+		if err = tx.QueryRow(ctx, "SELECT COALESCE(definition->>'event_type','') FROM catalog_versions WHERE id=$1", previous).Scan(&eventType); err != nil {
+			return err
+		}
+		untyped = eventType == ""
+	}
+	if untyped {
 		// An untyped meter registered through the operator API already
 		// evaluated events under the compatibility definition; only that
 		// definition may type it.
@@ -392,7 +403,7 @@ func applyMeter(ctx context.Context, tx pgx.Tx, d definition, id, serviceID stri
 	if err != nil {
 		return err
 	}
-	if previous != "" && previous != version {
+	if previous != "" && previous != version && !untyped {
 		return errors.New("meter definition is immutable for its key")
 	}
 	var count int

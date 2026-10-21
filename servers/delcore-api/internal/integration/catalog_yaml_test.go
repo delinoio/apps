@@ -473,3 +473,49 @@ func TestDevelopmentCatalogStoresExistsFilterInCanonicalForm(t *testing.T) {
 		t.Fatal("synchronized meter cannot be submitted back through PutMeter: ", err)
 	}
 }
+
+func TestDevelopmentCatalogTypesNameOnlyMetersUnderTheInUseRule(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	f := newRatingFixture(t, now.Add(-12*time.Hour), now.Add(12*time.Hour), false)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// Name-only PutMeter calls store versions without an event type. The event
+	// evaluates "units" but precedes "spare", so only "units" is in use.
+	f.ingest(t, "compat", "units", now.Add(-time.Hour), map[string]*pb.AttributeValue{"quantity": num("2")})
+	if _, err := f.client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "untyped", Meter: &pb.Meter{ServiceId: f.service, Name: "spare"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	for _, meterKey := range []string{"units", "spare"} {
+		if _, version := catalogIdentity(t, f.db, "meter", f.service, meterKey); version == "" {
+			t.Fatalf("name-only meter %s has no stored version", meterKey)
+		}
+	}
+	root := t.TempDir()
+	setCatalogText(t, root, "service.yaml", "kind: service\nkey: rated\nname: rated\nclient_id: service\ncapabilities:\n  - execute\nscopes:\n  - authorize\n  - usage:write\n  - usage:read\n")
+	meter := func(key, body string) {
+		setCatalogText(t, root, key+".yaml", "kind: meter\nservice: rated\nkey: "+key+"\n"+body)
+	}
+	// An unused untyped meter accepts any typed declaration.
+	meter("spare", "aggregation: count\nevent_type: spare-event\n")
+	// A used untyped meter accepts only its compatibility definition.
+	meter("units", "aggregation: count\nevent_type: units\n")
+	if err := catalog.Sync(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("used untyped meter changed its definition: %v", err)
+	}
+	meter("units", "aggregation: sum\nevent_type: units\nvalue_attribute: quantity\n")
+	if err := catalog.Sync(ctx, f.db, root, logger); err != nil {
+		t.Fatal("name-only meters could not be typed: ", err)
+	}
+	for meterKey, eventType := range map[string]string{"spare": "spare-event", "units": "units"} {
+		_, version := catalogIdentity(t, f.db, "meter", f.service, meterKey)
+		var stored string
+		if err := f.db.Pool.QueryRow(ctx, "SELECT definition->>'event_type' FROM catalog_versions WHERE id=$1", version).Scan(&stored); err != nil || stored != eventType {
+			t.Fatalf("meter %s event type = %q (%v), want %q", meterKey, stored, err, eventType)
+		}
+	}
+	// Once typed, the declaration is immutable.
+	meter("spare", "aggregation: count\nevent_type: other-event\n")
+	if err := catalog.Sync(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("typed meter changed its definition: %v", err)
+	}
+}
