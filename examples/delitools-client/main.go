@@ -55,12 +55,18 @@ type options struct {
 	outputLang string
 	inputLang  string
 	model      string
+	// translateKey and extractKey are the per-operation idempotency keys. An
+	// empty key is replaced with a fresh UUID v7 for that run.
+	translateKey string
+	extractKey   string
 }
 
 func main() {
 	output := flag.String("to", "ko", "BCP 47 output language of the translation")
 	input := flag.String("from", "", "BCP 47 input language; omit to detect it")
 	model := flag.String("model", "", "translation model from the operator allowlist; required")
+	translateKey := flag.String("translate-key", "", "idempotency key of the translation; reuse it to retry an uncertain run")
+	extractKey := flag.String("extract-key", "", "idempotency key of the extraction; reuse it to retry an uncertain run")
 	flag.Parse()
 	o, e := optionsFromEnv(os.Getenv)
 	if e != nil {
@@ -68,6 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 	o.outputLang, o.inputLang, o.model = *output, *input, *model
+	o.translateKey, o.extractKey = *translateKey, *extractKey
 	if o.model == "" {
 		fmt.Fprintln(os.Stderr, "DeliTools example failed: -model is required")
 		os.Exit(1)
@@ -125,18 +132,32 @@ func describe(err error) string {
 	return fmt.Sprintf("code=%s reason=%s request_id=%s", ce.Code(), reason, requestID)
 }
 
+// keyOrNew returns the caller-supplied idempotency key, or a new UUID v7 when
+// the caller supplied none.
+func keyOrNew(key string) string {
+	if key != "" {
+		return key
+	}
+	return uuid.Must(uuid.NewV7()).String()
+}
+
 func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, o options, out io.Writer) error {
 	// 1. Translate. The idempotency key is optional. Reusing it for a retry of
 	// the same input within 30 days prevents a second execution and charge, but
 	// a repeated call returns an error such as ALREADY_PROCESSED; the result is
 	// never replayed. Without a key every call is a new, billable execution.
+	// The example always sends a key and prints it, so a run whose outcome is
+	// uncertain (timeout, dropped connection) can be repeated with the same
+	// key through -translate-key. A key is not a secret.
+	translateKey := keyOrNew(o.translateKey)
+	fmt.Fprintf(out, "Translation idempotency key: %s\n", translateKey)
 	translated, e := client.TranslateTextArray(ctx, authorized(o.credential, &pb.TranslateTextArrayRequest{
 		TenantId:       o.tenantID,
 		OutputLanguage: o.outputLang,
 		InputLanguage:  o.inputLang,
 		Model:          o.model,
 		Texts:          []string{"Good morning", "Where is the station?"},
-		IdempotencyKey: uuid.Must(uuid.NewV7()).String(),
+		IdempotencyKey: translateKey,
 	}))
 	if e != nil {
 		return fmt.Errorf("translate: %w", e)
@@ -147,11 +168,13 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 
 	// 2. Extract data that the text states explicitly. The model is fixed by the
 	// service. Information missing from the text returns EXTRACTION_IMPOSSIBLE.
+	extractKey := keyOrNew(o.extractKey)
+	fmt.Fprintf(out, "Extraction idempotency key: %s\n", extractKey)
 	extracted, e := client.ExtractDataFromText(ctx, authorized(o.credential, &pb.ExtractDataFromTextRequest{
 		TenantId:       o.tenantID,
 		Text:           "Ada Lovelace lives in London.",
 		JsonSchema:     extractionSchema,
-		IdempotencyKey: uuid.Must(uuid.NewV7()).String(),
+		IdempotencyKey: extractKey,
 	}))
 	if e != nil {
 		return fmt.Errorf("extract: %w", e)

@@ -113,6 +113,34 @@ func TestRunTranslatesAndExtracts(t *testing.T) {
 	}
 }
 
+func TestRunReusesCallerIdempotencyKeys(t *testing.T) {
+	fake := &fakeDeliTools{}
+	url := newServer(t, fake)
+	o := options{baseURL: url, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a", translateKey: "translate-retry-key", extractKey: "extract-retry-key"}
+	var out bytes.Buffer
+	client := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, url)
+	if e := run(context.Background(), client, o, &out); e != nil {
+		t.Fatal(e)
+	}
+	if fake.translate.IdempotencyKey != "translate-retry-key" || fake.extract.IdempotencyKey != "extract-retry-key" {
+		t.Fatalf("caller keys must be sent unchanged: %q %q", fake.translate.IdempotencyKey, fake.extract.IdempotencyKey)
+	}
+	// Generated keys are printed too, so an uncertain run can be repeated.
+	fake2 := &fakeDeliTools{}
+	url2 := newServer(t, fake2)
+	o2 := options{baseURL: url2, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a"}
+	var out2 bytes.Buffer
+	client2 := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, url2)
+	if e := run(context.Background(), client2, o2, &out2); e != nil {
+		t.Fatal(e)
+	}
+	for _, key := range []string{fake2.translate.IdempotencyKey, fake2.extract.IdempotencyKey} {
+		if !strings.Contains(out2.String(), key) {
+			t.Errorf("generated key %q must be printed:\n%s", key, out2.String())
+		}
+	}
+}
+
 func TestRunReportsTypedErrorWithoutContent(t *testing.T) {
 	url := newServer(t, &fakeDeliTools{failExtract: true})
 	o := options{baseURL: url, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a"}
