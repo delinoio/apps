@@ -335,3 +335,32 @@ func TestCatalogReconciliationTelemetryAndAudit(t *testing.T) {
 	}
 	o.assertBounded(t, nil, "example-api-local")
 }
+
+// TestCatalogReconciliationDetectsDelimiterShiftedChanges proves that the
+// change fingerprint keeps field boundaries: moving a comma between two
+// adjacent columns changes catalog state and must be reported and audited.
+func TestCatalogReconciliationDetectsDelimiterShiftedChanges(t *testing.T) {
+	o := observe(t)
+	db, _, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	setCatalogText(t, root, "01-service.yaml", strings.Replace(catalogText(t, root, "01-service.yaml"), "name: Example API", `name: "Example, API"`, 1))
+	if _, err := catalog.Sync(ctx, db, root, o.logger, o.metrics); err != nil {
+		t.Fatal(err)
+	}
+	// Drift whose delimiter-joined text equals the declared state.
+	if _, err := db.Pool.Exec(ctx, "UPDATE services SET name='Example',client_id=' API,example-api-local' WHERE client_id='example-api-local'"); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := catalog.Sync(ctx, db, root, o.logger, o.metrics)
+	if err != nil || !restored.Changed {
+		t.Fatalf("delimiter-shifted restoration = %+v, %v", restored, err)
+	}
+	var name string
+	if err = db.Pool.QueryRow(ctx, "SELECT name FROM services WHERE client_id='example-api-local'").Scan(&name); err != nil || name != "Example, API" {
+		t.Fatalf("restored service name = %q, %v", name, err)
+	}
+	if rows := auditRows(t, &meterFixture{db: db}, "SELECT actor_id,action,reason,COALESCE(tenant_id::text,'') FROM audit WHERE action='catalog.reconcile'"); len(rows) != 2 {
+		t.Fatalf("catalog audit rows = %d, want one per changing application", len(rows))
+	}
+}

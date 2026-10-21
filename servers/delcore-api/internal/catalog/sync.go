@@ -62,16 +62,19 @@ type Result struct {
 // catalogDigest fingerprints every catalog row that an application can write,
 // so an application that restores the declared state is distinguishable from
 // one that finds it unchanged. Development catalogs are small enough to hash.
-const catalogDigest = `SELECT md5(concat_ws('|',
- (SELECT string_agg(concat_ws(',',id,kind,scope,key,active_version_id),';' ORDER BY id) FROM catalog_entities),
- (SELECT string_agg(id::text,';' ORDER BY id) FROM catalog_versions),
- (SELECT string_agg(concat_ws(',',id,name,client_id,capabilities::text,scopes::text),';' ORDER BY id) FROM services),
- (SELECT string_agg(concat_ws(',',id,name,rank,free,is_default,postpaid),';' ORDER BY id) FROM plans),
- (SELECT string_agg(concat_ws(',',service_id,name),';' ORDER BY service_id,name) FROM meters),
- (SELECT string_agg(concat_ws(',',id,service_id,name),';' ORDER BY id) FROM addons),
- (SELECT string_agg(concat_ws(',',id,name),';' ORDER BY id) FROM features),
- (SELECT string_agg(id::text,';' ORDER BY id) FROM prices),
- (SELECT string_agg(concat_ws(',',product_id,feature_id,value::text),';' ORDER BY product_id,feature_id) FROM catalog_product_features))),
+// Rows are hashed as ordered JSON arrays rather than delimiter-joined text, so
+// values that contain delimiters or are NULL cannot make distinct catalogs
+// collide.
+const catalogDigest = `SELECT md5(jsonb_build_array(
+ (SELECT jsonb_agg(jsonb_build_array(id,kind,scope,key,active_version_id) ORDER BY id) FROM catalog_entities),
+ (SELECT jsonb_agg(id ORDER BY id) FROM catalog_versions),
+ (SELECT jsonb_agg(jsonb_build_array(id,name,client_id,capabilities,scopes) ORDER BY id) FROM services),
+ (SELECT jsonb_agg(jsonb_build_array(id,name,rank,free,is_default,postpaid) ORDER BY id) FROM plans),
+ (SELECT jsonb_agg(jsonb_build_array(service_id,name) ORDER BY service_id,name) FROM meters),
+ (SELECT jsonb_agg(jsonb_build_array(id,service_id,name) ORDER BY id) FROM addons),
+ (SELECT jsonb_agg(jsonb_build_array(id,name) ORDER BY id) FROM features),
+ (SELECT jsonb_agg(id ORDER BY id) FROM prices),
+ (SELECT jsonb_agg(jsonb_build_array(product_id,feature_id,value) ORDER BY product_id,feature_id) FROM catalog_product_features))::text),
  (SELECT count(*) FROM catalog_entities),(SELECT count(*) FROM catalog_versions)`
 
 type snapshot struct {
