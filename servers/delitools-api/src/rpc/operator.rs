@@ -62,6 +62,8 @@ impl Platform {
         let settings =
             Settings::from_proto(wire).map_err(|e| Fault::invalid_input(e.to_string()))?;
         let request_uuid = parse_request_id(request_id);
+        // Keep the commit and the live publication ordered across concurrent operators.
+        let ordered = self.settings_update_guard().await;
         let (previous, version) = store::settings::update(
             &self.store.pool,
             &settings,
@@ -79,6 +81,7 @@ impl Platform {
         .await?;
         let changed = previous.changed_fields(&settings);
         self.apply_settings(settings);
+        drop(ordered);
         tracing::info!(request_id, version, changed = ?changed, "operator settings updated");
         audit::record_event(
             &self.store.pool,

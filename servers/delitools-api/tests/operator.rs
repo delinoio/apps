@@ -212,6 +212,49 @@ async fn settings_updates_require_a_reason_validate_and_write_an_audit_record() 
     f.finish().await;
 }
 
+/// A settings commit and the publication of its snapshot form one ordered step. While another
+/// update holds the ordering guard, a second update must not commit, otherwise the two could
+/// publish out of order and leave a stale live snapshot over newer stored settings.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn settings_commit_and_publication_are_ordered_across_updates() {
+    let f = Arc::new(Fixture::setup().await);
+    let operator = f.operator();
+    let current = f.ok(&operator, "GetSettings", json!({})).await;
+    let mut settings = current.body["settings"].clone();
+    settings["tenantConcurrency"] = json!(11);
+    let version = |f: Arc<Fixture>| async move {
+        sqlx::query_scalar::<_, i64>("SELECT version FROM settings")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap()
+    };
+
+    let guard = f.platform.settings_update_guard().await;
+    let pending = tokio::spawn({
+        let (f, operator) = (f.clone(), operator.clone());
+        async move {
+            f.ok(
+                &operator,
+                "UpdateSettings",
+                json!({"settings": settings, "reason": "ordered update"}),
+            )
+            .await;
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(version(f.clone()).await, 1, "the update committed early");
+    assert_eq!(f.platform.settings().tenant_concurrency, 4);
+
+    drop(guard);
+    pending.await.unwrap();
+    assert_eq!(version(f.clone()).await, 2);
+    assert_eq!(f.platform.settings().tenant_concurrency, 11);
+    let stored = store::settings::load(&f.pool).await.unwrap();
+    assert_eq!(stored, *f.platform.settings());
+    Arc::into_inner(f).expect("update finished").finish().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn the_reason_limit_counts_characters_in_validation_and_storage() {

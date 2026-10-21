@@ -80,6 +80,8 @@ pub struct Platform {
     pub metrics: Arc<Metrics>,
     pub admission: Admission,
     settings: watch::Sender<Arc<Settings>>,
+    /// Orders settings commits with their live publication; see [`Platform::settings_update_guard`].
+    settings_updates: tokio::sync::Mutex<()>,
     readiness: std::sync::Mutex<Vec<Arc<dyn ReadinessCheck>>>,
 }
 
@@ -100,6 +102,7 @@ impl Platform {
             metrics: Arc::new(Metrics::new()),
             admission: Admission::new(),
             settings,
+            settings_updates: tokio::sync::Mutex::new(()),
             readiness: std::sync::Mutex::new(vec![
                 Arc::new(SchemaReadiness),
                 Arc::new(CatalogPriceReadiness),
@@ -111,7 +114,16 @@ impl Platform {
     pub fn settings(&self) -> Arc<Settings> {
         self.settings.borrow().clone()
     }
-    /// Publish settings that were just stored.
+    /// Serialize a settings commit with the publication of its snapshot. PostgreSQL orders the
+    /// transactions, but a request resumes after its own commit at an arbitrary time. Without this
+    /// guard an earlier transaction could publish after a later one and replace the newest live
+    /// settings with a stale snapshot. One process serves one database (instance lock), so a
+    /// process-wide guard gives the same order as the stored version.
+    pub async fn settings_update_guard(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.settings_updates.lock().await
+    }
+    /// Publish settings that were just stored. Hold [`Platform::settings_update_guard`] from
+    /// before the commit until this call returns.
     pub fn apply_settings(&self, settings: Settings) {
         self.settings.send_replace(Arc::new(settings));
     }
