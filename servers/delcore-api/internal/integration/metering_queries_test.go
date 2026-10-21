@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -144,10 +143,8 @@ func TestMeterAggregateQueries(t *testing.T) {
 			t.Fatalf("%s: %v", label, err)
 		}
 	}
-	// Cursors must decode to group-key text within the group-key bound: "AA"
-	// is a NUL byte and "_w" is invalid UTF-8, which PostgreSQL text cannot
-	// hold.
-	for _, cursor := range []string{"!!", base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("m", events.MaxGroupKeyBytes+1))), "AA", "_w", base64.RawURLEncoding.EncodeToString([]byte("m\x00"))} {
+	// Cursors must decode to exactly one SHA-256 group digest.
+	for _, cursor := range []string{"!!", "AA", base64.RawURLEncoding.EncodeToString(make([]byte, 31)), base64.RawURLEncoding.EncodeToString(make([]byte, 33)), base64.RawURLEncoding.EncodeToString([]byte(`[{"name":"model","kind":"string","value":"m"}]`))} {
 		if _, err := f.aggregates(aggregateQuery{token: "service", tenant: f.alpha, meter: "calls"}, cursor); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("cursor accepted: %v", err)
 		}

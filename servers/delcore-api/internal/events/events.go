@@ -76,14 +76,6 @@ func GroupDigest(groupKey string) []byte {
 	return sum[:]
 }
 
-// MaxGroupKeyBytes bounds the metering.GroupKey encoding of one event's group
-// values: a JSON array with one object per group-by field. encoding/json can
-// escape every name and string value byte as six bytes (for example U+0001 or
-// "<" as \u00XX), and each object adds its fixed field framing and at most the
-// longest kind name. Canonical numbers and booleans are shorter than string
-// values and never escape.
-const MaxGroupKeyBytes = len(`[]`) + MaxGroupAttributes*(len(`{"name":"","kind":"boolean","value":""}`)+6*(MaxAttributeNameBytes+MaxAttributeValueBytes)) + MaxGroupAttributes - 1
-
 // JobKind is the durable job kind that materializes an event's latest revision.
 const JobKind = "metering"
 

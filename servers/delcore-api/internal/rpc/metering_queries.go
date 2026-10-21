@@ -3,12 +3,11 @@
 package rpc
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"time"
-	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
@@ -21,9 +20,13 @@ import (
 )
 
 // aggregatePage applies the shared page size rules. Aggregates are keyed by
-// their group key rather than a UUID, so the cursor is an opaque base64url
-// encoding of the last returned group key.
-func aggregatePage(p *pb.Page) (int, string, error) {
+// the fixed-size SHA-256 digest of their group key rather than a UUID, so the
+// cursor is an opaque base64url encoding of the last returned group digest.
+// Group keys can exceed the PostgreSQL B-tree entry limit and are not indexed,
+// so paging by the digest lets each page read the aggregate primary key in
+// order instead of sorting every group of the period. The first page starts
+// after the empty digest, which precedes every stored digest.
+func aggregatePage(p *pb.Page) (int, []byte, error) {
 	n := 50
 	cursor := ""
 	if p != nil {
@@ -33,24 +36,22 @@ func aggregatePage(p *pb.Page) (int, string, error) {
 		cursor = p.AfterId
 	}
 	if n < 1 || n > 100 {
-		return 0, "", invalid("page size must be 1 to 100")
+		return 0, nil, invalid("page size must be 1 to 100")
 	}
 	if cursor == "" {
-		return n, "", nil
-	}
-	// Reject an oversized cursor before decoding it. Any stored group key,
-	// including one whose bytes JSON escaping expanded, fits the bound.
-	if base64.RawURLEncoding.DecodedLen(len(cursor)) > events.MaxGroupKeyBytes {
-		return 0, "", invalid("invalid cursor")
+		return n, []byte{}, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
-	// The decoded cursor is compared with text group keys, so it must be
-	// UTF-8 without NUL bytes, which PostgreSQL text cannot hold.
-	if err != nil || len(raw) == 0 || !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 {
-		return 0, "", invalid("invalid cursor")
+	if err != nil || len(raw) != sha256.Size {
+		return 0, nil, invalid("invalid cursor")
 	}
-	return n, string(raw), nil
+	return n, raw, nil
 }
+
+// aggregatePageQuery reads one page of a tenant meter period's aggregates in
+// group digest order through the metering_aggregates primary key.
+const aggregatePageQuery = `SELECT group_digest,group_values,value::text,event_count,sum::text,distinct_count,updated_at FROM metering_aggregates
+ WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest>$4 ORDER BY group_digest LIMIT $5`
 
 // ListMeterAggregates returns applied group aggregates of one tenant meter
 // billing period. Results come from asynchronous processing: a successful
@@ -125,16 +126,15 @@ func (s *Server) ListMeterAggregates(ctx context.Context, r *connect.Request[pb.
 			return e
 		}
 		o.PeriodStart, o.PeriodEnd = timestamppb.New(start), timestamppb.New(end)
-		rows, e := c.tx.Query(c.ctx, `SELECT group_key,group_values,value::text,event_count,sum::text,distinct_count,updated_at FROM metering_aggregates
- WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key>$4 ORDER BY group_key LIMIT $5`, q.TenantId, o.MeterId, start, after, n+1)
+		rows, e := c.tx.Query(c.ctx, aggregatePageQuery, q.TenantId, o.MeterId, start, after, n+1)
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
-		var last []string
+		var last [][]byte
 		for rows.Next() {
-			var group, value, sum string
-			var values []byte
+			var value, sum string
+			var group, values []byte
 			var updated time.Time
 			v := &pb.MeterAggregate{}
 			if e = rows.Scan(&group, &values, &value, &v.EventCount, &sum, &v.DistinctCount, &updated); e != nil {
@@ -159,7 +159,7 @@ func (s *Server) ListMeterAggregates(ctx context.Context, r *connect.Request[pb.
 		}
 		if len(o.Aggregates) > n {
 			o.Aggregates = o.Aggregates[:n]
-			o.NextAfterId = base64.RawURLEncoding.EncodeToString([]byte(last[n-1]))
+			o.NextAfterId = base64.RawURLEncoding.EncodeToString(last[n-1])
 		}
 		s.Log.InfoContext(c.ctx, "meter aggregates listed", "category", "metering_query", "correlation_id", c.correlation, "service_id", c.service, "meter_key", q.MeterKey, "aggregates", len(o.Aggregates))
 		return nil

@@ -108,3 +108,24 @@ func TestFeatureUsageQueryUsesGroupDigestIndex(t *testing.T) {
 		t.Fatalf("feature usage lookup does not use the group digest index condition: %+v", plan)
 	}
 }
+
+// An aggregate page, including a later cursor page, reads the aggregate primary
+// key in order and stops at the page limit instead of sorting every group of
+// the period by its unindexed group key.
+func TestAggregatePageQueryReadsGroupDigestIndexInOrder(t *testing.T) {
+	for label, after := range map[string][]byte{"first page": {}, "cursor page": events.GroupDigest("[]")} {
+		plan := explain(t, aggregatePageQuery, uuid.NewString(), uuid.NewString(), time.Now().UTC(), after, 51)
+		indexed, sorted := false, false
+		plan.walk(func(n planNode) {
+			if n.NodeType == "Sort" || n.NodeType == "Incremental Sort" {
+				sorted = true
+			}
+			if n.IndexName == "metering_aggregates_pkey" && strings.Contains(n.IndexCond, "group_digest") {
+				indexed = true
+			}
+		})
+		if sorted || !indexed {
+			t.Fatalf("%s does not page through the group digest index: %+v", label, plan)
+		}
+	}
+}
