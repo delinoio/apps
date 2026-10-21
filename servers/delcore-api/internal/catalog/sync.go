@@ -50,6 +50,9 @@ func Sync(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logg
 	}
 	counts := map[string]int{}
 	err = db.Transaction(ctx, func(tx pgx.Tx) error {
+		if err := snapshotLegacyPlans(ctx, tx, items); err != nil {
+			return err
+		}
 		if err := validateDatabase(ctx, tx, items); err != nil {
 			return err
 		}
@@ -126,6 +129,47 @@ func Sync(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logg
 		return err
 	}
 	logger.InfoContext(ctx, "catalog synchronized", "category", "catalog_reconciliation", "files", len(items), "services", counts["service"], "meters", counts["meter"], "features", counts["feature"], "plans", counts["plan"], "addons", counts["addon"], "prices", counts["price"])
+	return nil
+}
+
+// snapshotLegacyPlans keeps tenants that predate catalog versioning on their
+// current plan policy. Such tenants have no selection row and read free,
+// postpaid and rank from the mutable plan row, so each declared plan that
+// already exists, differs from its declaration and still has a legacy tenant
+// is snapshotted before validation or application changes the row. Unchanged
+// plans are skipped so reapplying the same files creates no extra version.
+func snapshotLegacyPlans(ctx context.Context, tx pgx.Tx, items []definition) error {
+	for _, item := range items {
+		if item.Kind != "plan" {
+			continue
+		}
+		var id string
+		err := tx.QueryRow(ctx, "SELECT id::text FROM catalog_entities WHERE kind='plan' AND scope='' AND key=$1", item.Key).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		defaultFree := item.DefaultFree != nil && *item.DefaultFree
+		postpaid := item.Postpaid != nil && *item.Postpaid
+		var needed bool
+		err = tx.QueryRow(ctx, `SELECT (p.name,p.rank,p.free,p.is_default,p.postpaid) IS DISTINCT FROM ($2::text,$3::integer,$4::boolean,$5::boolean,$6::boolean)
+ AND EXISTS(SELECT 1 FROM tenants t WHERE t.plan_id=p.id AND NOT EXISTS (
+   SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=t.id AND cs.product_id=t.plan_id AND cs.ends_at IS NULL))
+ FROM plans p WHERE p.id=$1`, id, item.Name, *item.Rank, *item.Free, defaultFree, postpaid).Scan(&needed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if needed {
+			if err = postgres.SnapshotLegacyPlanSelections(ctx, tx, id, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -265,18 +309,6 @@ func apply(ctx context.Context, tx pgx.Tx, d definition) error {
 	case "plan":
 		defaultFree := d.DefaultFree != nil && *d.DefaultFree
 		postpaid := d.Postpaid != nil && *d.Postpaid
-		// Tenants created before catalog versioning have no selection row and
-		// read policy from the mutable plan row. Snapshot them first, exactly
-		// like PutPlan, so a startup edit cannot change their billing policy.
-		var existing bool
-		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)", id).Scan(&existing); err != nil {
-			return err
-		}
-		if existing {
-			if err = postgres.SnapshotLegacyPlanSelections(ctx, tx, id, time.Now().UTC()); err != nil {
-				return err
-			}
-		}
 		_, err = tx.Exec(ctx, `INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1,$2,$3,$4,$5,$6)
  ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,rank=EXCLUDED.rank,free=EXCLUDED.free,is_default=EXCLUDED.is_default,postpaid=EXCLUDED.postpaid`, id, d.Name, *d.Rank, *d.Free, defaultFree, postpaid)
 	case "addon":
