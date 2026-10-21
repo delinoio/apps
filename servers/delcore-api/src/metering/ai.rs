@@ -57,6 +57,22 @@ fn number(attributes: &BTreeMap<String, Value>, name: &str) -> Result<Option<Dec
     Ok(Some(d))
 }
 
+/// Reject a noncanonical spelling of a numeric AI evidence attribute. `Value::number`
+/// rewrites its input to the canonical decimal, so this must see the text exactly as
+/// the reporter wrote it: "1.0" and "0.0100" are malformed evidence, not "1" and
+/// "0.01". Attributes that are not AI token or price evidence are not checked.
+pub fn check_numeric_spelling(name: &str, text: &str) -> Result<()> {
+    let evidence = TOKEN_CATEGORIES
+        .iter()
+        .any(|category| category.tokens == name || category.price == name);
+    if evidence && Value::number(text)?.text != text {
+        return Err(invalid(format!(
+            "attribute {name:?} must be a canonical decimal"
+        )));
+    }
+    Ok(())
+}
+
 /// The time at which the frozen price became effective, validated from the
 /// `price_effective_at` text attribute.
 pub fn price_effective_at(attributes: &BTreeMap<String, Value>) -> Result<DateTime<Utc>> {
@@ -368,6 +384,29 @@ mod tests {
             &"1".repeat(40),
         ] {
             assert!(parse_markup(bad).is_err(), "{bad}");
+        }
+    }
+    #[test]
+    fn numeric_evidence_must_keep_its_canonical_spelling() {
+        for (name, text) in [
+            ("input_tokens", "0"),
+            ("input_tokens", "1000"),
+            ("output_usd_per_token", "0.01"),
+            ("cache_read_usd_per_token", "0.0000005"),
+            // Other attributes are not AI evidence.
+            ("score", "1.0"),
+        ] {
+            assert!(check_numeric_spelling(name, text).is_ok(), "{name} {text}");
+        }
+        for (name, text) in [
+            ("input_tokens", "1.0"),
+            ("cache_write_tokens", "5.00"),
+            ("input_usd_per_token", "0.0100"),
+            ("output_usd_per_token", "2.0"),
+            ("input_tokens", "abc"),
+            ("input_tokens", "01"),
+        ] {
+            assert!(check_numeric_spelling(name, text).is_err(), "{name} {text}");
         }
     }
     #[test]

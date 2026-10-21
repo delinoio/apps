@@ -278,6 +278,9 @@ async fn missing_or_malformed_price_evidence_is_rejected_without_estimates() {
         attrs(["1.5", "", "", ""], ["1", "", "", ""], &ok_time),
         attrs(["-1", "", "", ""], ["1", "", "", ""], &ok_time),
         attrs(["1", "", "", ""], ["-1", "", "", ""], &ok_time),
+        // Noncanonical spellings are malformed, not normalized.
+        attrs(["1.0", "", "", ""], ["1", "", "", ""], &ok_time),
+        attrs(["1", "", "", ""], ["0.0100", "", "", ""], &ok_time),
     ];
     let mut wrong_type = attrs(["1", "", "", ""], ["1", "", "", ""], &ok_time);
     wrong_type["input_tokens"] = json!({"text":"1"});
