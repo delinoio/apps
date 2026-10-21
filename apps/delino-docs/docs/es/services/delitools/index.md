@@ -260,8 +260,10 @@ DeliTools almacena solo los datos que necesita para ejecutar el servicio y factu
 | Registros de idempotencia                                      | 30 días desde la primera creación                |
 | Registros de entrega y conciliación del uso                    | 30 días desde la primera creación                |
 | Registros de auditoría de la plataforma y registros operativos | 30 días desde la creación                        |
-| Claves de API                                                  | Hasta su caducidad o revocación                  |
+| Claves de API                                                  | No se eliminan con la retención de 30 días       |
 | Asientos contables aceptados en Delcore                        | Según las reglas de retención propias de Delcore |
+
+La retención de 30 días no se aplica a las claves de API. La limpieza de retención nunca las elimina. La caducidad y la revocación solo impiden que una clave se autentique, por lo que su hash de verificación y su atribución siguen almacenados.
 
 Los 30 días comienzan cuando el registro se crea por primera vez. Los reintentos y los cambios de estado no los amplían. DeliTools elimina un registro cuando caduca en cualquier estado, incluidas las solicitudes que no finalizaron y el uso que aún no se ha entregado. Aceptas dos riesgos:
 

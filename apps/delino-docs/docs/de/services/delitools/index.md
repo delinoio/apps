@@ -260,8 +260,10 @@ DeliTools speichert nur die Daten, die es benötigt, um den Dienst zu betreiben 
 | Idempotenzdatensätze                                 | 30 Tage ab der ersten Erstellung                 |
 | Datensätze zur Zustellung und Abstimmung der Nutzung | 30 Tage ab der ersten Erstellung                 |
 | Plattform-Auditdatensätze und Betriebslogs           | 30 Tage ab der Erstellung                        |
-| API-Schlüssel                                        | Bis zum Ablauf oder Widerruf                     |
+| API-Schlüssel                                        | Nicht durch die 30-Tage-Aufbewahrung gelöscht    |
 | Angenommene Buchungseinträge in Delcore              | Nach den eigenen Aufbewahrungsregeln von Delcore |
+
+Die 30-Tage-Aufbewahrung gilt nicht für API-Schlüssel. Die Aufbewahrungsbereinigung löscht sie nie. Ablauf und Widerruf verhindern nur, dass sich ein Schlüssel authentifiziert; sein Verifizierungs-Hash und seine Zuordnung bleiben gespeichert.
 
 Die 30 Tage beginnen, wenn der Datensatz erstmals erstellt wird. Wiederholungsversuche und Zustandsänderungen verlängern sie nicht. DeliTools löscht einen Datensatz, wenn er in jedem Zustand abläuft, einschließlich nicht abgeschlossener Anfragen und noch nicht zugestellter Nutzung. Sie akzeptieren zwei Risiken:
 
