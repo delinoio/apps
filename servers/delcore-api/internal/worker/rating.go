@@ -31,17 +31,6 @@ func rateMetering(ctx context.Context, tx pgx.Tx, now time.Time, a events.Applie
 		}
 		seen[change.MeterID] = true
 		p := postgres.MeterPeriod{TenantID: a.TenantID, ServiceID: a.ServiceID, MeterID: change.MeterID, MeterKey: change.MeterKey, Start: a.PeriodStart, End: a.PeriodEnd}
-		result, err := postgres.RateMeterPeriod(ctx, tx, p)
-		if errors.Is(err, rating.ErrInconsistent) {
-			return entries, fmt.Errorf("%w: %v", events.ErrPermanent, err)
-		}
-		if err != nil {
-			return entries, err
-		}
-		postpaid, err := postgres.PeriodPostpaid(ctx, tx, a.TenantID, a.PeriodStart)
-		if err != nil {
-			return entries, err
-		}
 		// An original event's charge is usage; any later revision, and every
 		// decrease, is a correction, as with quantity reporting.
 		kind := postgres.LedgerUsage
@@ -49,15 +38,15 @@ func rateMetering(ctx context.Context, tx pgx.Tx, now time.Time, a events.Applie
 			kind = postgres.LedgerCorrection
 		}
 		source := "rating:" + a.EventID + ":" + strconv.Itoa(int(a.ToRevision)) + ":" + change.MeterID
-		delta, err := postgres.AppendChargeDifference(ctx, tx, p, result.Charge, postpaid, kind, source, now)
+		delta, err := postgres.ReconcileMeterPeriod(ctx, tx, p, kind, source, now)
+		if errors.Is(err, rating.ErrInconsistent) {
+			return entries, fmt.Errorf("%w: %v", events.ErrPermanent, err)
+		}
 		if err != nil {
 			return entries, err
 		}
 		if delta.Cmp(accounting.Zero()) != 0 {
 			entries++
-		}
-		if err = postgres.RecordRating(ctx, tx, p, result, now); err != nil {
-			return entries, err
 		}
 	}
 	return entries, nil

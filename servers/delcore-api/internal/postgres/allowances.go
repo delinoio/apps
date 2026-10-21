@@ -58,9 +58,17 @@ func GrantAllowances(ctx context.Context, tx pgx.Tx, tenant string, start, end, 
 			}
 		}
 		parts := strings.SplitN(key, "\x00", 2)
-		_, e = tx.Exec(ctx, "INSERT INTO allowance_grants VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(source_key) DO NOTHING", uuid.Must(uuid.NewV7()).String(), tenant, parts[0], parts[1], amount.String(), start, end, at, source+":"+parts[0]+":"+parts[1])
+		grantID := uuid.Must(uuid.NewV7()).String()
+		tag, e := tx.Exec(ctx, "INSERT INTO allowance_grants VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(source_key) DO NOTHING", grantID, tenant, parts[0], parts[1], amount.String(), start, end, at, source+":"+parts[0]+":"+parts[1])
 		if e != nil {
 			return e
+		}
+		// A replayed grant changes nothing; a new one can lower the charge of
+		// usage that was already rated in its period.
+		if tag.RowsAffected() == 1 {
+			if e = reconcileGrantedPeriods(ctx, tx, grantID, tenant, parts[0], parts[1], start, time.Now().UTC()); e != nil {
+				return e
+			}
 		}
 	}
 	return nil

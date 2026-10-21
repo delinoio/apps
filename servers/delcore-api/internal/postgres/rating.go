@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
@@ -244,6 +245,68 @@ func appendLedger(ctx context.Context, tx pgx.Tx, p MeterPeriod, kind LedgerKind
 	_, err := tx.Exec(ctx, `INSERT INTO ledger(id,tenant_id,service_id,meter,kind,amount,period_start,period_end,source_key,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 		uuid.Must(uuid.NewV7()).String(), p.TenantID, p.ServiceID, p.MeterKey, string(kind), amount.String(), p.Start, p.End, sourceKey, now)
 	return err
+}
+
+// ReconcileMeterPeriod re-rates one tenant meter billing period, appends the
+// ledger difference from its charged amount, and records the exact rating. It
+// returns the applied difference. Rating errors, including
+// rating.ErrInconsistent, are returned before any write.
+func ReconcileMeterPeriod(ctx context.Context, tx pgx.Tx, p MeterPeriod, kind LedgerKind, sourceKey string, now time.Time) (accounting.Decimal, error) {
+	zero := accounting.Zero()
+	result, err := RateMeterPeriod(ctx, tx, p)
+	if err != nil {
+		return zero, err
+	}
+	postpaid, err := PeriodPostpaid(ctx, tx, p.TenantID, p.Start)
+	if err != nil {
+		return zero, err
+	}
+	delta, err := AppendChargeDifference(ctx, tx, p, result.Charge, postpaid, kind, sourceKey, now)
+	if err != nil {
+		return zero, err
+	}
+	return delta, RecordRating(ctx, tx, p, result, now)
+}
+
+// reconcileGrantedPeriods re-rates the rated periods of one service meter that
+// a new allowance grant joins. A grant applied at or before already rated
+// occurrences raises their allowance epoch, so their charge can change without
+// any new metering work; for example a delayed upgrade notification grants a
+// prorated allowance from the provider payment time. Each difference is a
+// correction whose source key names the grant and the meter. A period whose
+// stored metering state cannot be rated keeps its charge: the failed metering
+// work that owns that state rates it again when it is recovered, and final
+// rounding skips it the same way.
+func reconcileGrantedPeriods(ctx context.Context, tx pgx.Tx, grantID, tenant, service, meter string, start, now time.Time) error {
+	rows, err := tx.Query(ctx, "SELECT meter_id::text,period_end FROM metering_rated_periods WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 ORDER BY meter_id", tenant, service, meter, start)
+	if err != nil {
+		return err
+	}
+	var periods []MeterPeriod
+	for rows.Next() {
+		p := MeterPeriod{TenantID: tenant, ServiceID: service, MeterKey: meter, Start: start}
+		if err = rows.Scan(&p.MeterID, &p.End); err != nil {
+			rows.Close()
+			return err
+		}
+		periods = append(periods, p)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, p := range periods {
+		delta, err := ReconcileMeterPeriod(ctx, tx, p, LedgerCorrection, "allowance:"+grantID+":"+p.MeterID, now)
+		if errors.Is(err, rating.ErrInconsistent) {
+			slog.Default().ErrorContext(ctx, "rated period cannot be reconciled with an allowance grant", "category", "metering_invalid", "meter", meter)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		slog.Default().DebugContext(ctx, "rated period reconciled with an allowance grant", "category", "metering_processing", "meter", meter, "difference", delta.String())
+	}
+	return nil
 }
 
 // RecordRating stores the latest exact rating of a period so final currency

@@ -337,6 +337,46 @@ func TestRatingPinsPricesAcrossPlanChangesWithProratedAllowance(t *testing.T) {
 	expectEntries(t, f.entries(t, "units"), "usage:-6", "usage:-9.375", "correction:2", "usage:-1")
 }
 
+func TestRatingReconcilesRatedPeriodsWhenAllowanceGrantsArrive(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	f := newRatingFixture(t, now.Add(-12*time.Hour), now.Add(12*time.Hour), false)
+	ctx := context.Background()
+	f.price(t, "units", "1", "4", f.start)
+	f.grant(t, "units", "4", f.start)
+	f.ingest(t, "rated", "units", now.Add(-2*time.Hour), map[string]*pb.AttributeValue{"quantity": num("10")})
+	processMetering(t, f.w)
+	expectEntries(t, f.entries(t, "units"), "usage:-6")
+
+	// A delayed upgrade notification grants the prorated allowance from the
+	// payment three hours ago, before the rated event: 3 * 15h / 24h = 1.875.
+	// No metering work follows, yet the rated period must use the grant.
+	changed := now.Add(-3 * time.Hour)
+	previous, err := postgres.CurrentAllowances(ctx, mustTx(t, f.db), f.tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.price(t, "units", "3", "7", changed)
+	grant := func() {
+		t.Helper()
+		if err := f.db.Transaction(ctx, func(tx pgx.Tx) error {
+			return postgres.GrantAllowances(ctx, tx, f.tenant, f.start, f.end, changed, "upgrade:"+f.tenant, previous)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant()
+	expectEntries(t, f.entries(t, "units"), "usage:-6", "correction:1.875")
+	if got := f.decimal(t, "SELECT charge::text FROM metering_rated_periods WHERE tenant_id=$1 AND meter='units'", f.tenant); got != "4.125" {
+		t.Fatalf("rated charge = %s, want 4.125", got)
+	}
+	if n := f.count(t, "SELECT count(*) FROM ledger l JOIN allowance_grants g ON l.source_key='allowance:'||g.id::text||':'||$2 WHERE l.tenant_id=$1 AND g.source_key LIKE 'upgrade:%'", f.tenant, meterID(t, f, "units")); n != 1 {
+		t.Fatalf("grant reconciliation entries named by the grant and meter = %d", n)
+	}
+	// A replayed grant adds neither allowance nor ledger entries.
+	grant()
+	expectEntries(t, f.entries(t, "units"), "usage:-6", "correction:1.875")
+}
+
 func mustTx(t *testing.T, db *postgres.Store) pgx.Tx {
 	t.Helper()
 	tx, err := db.Pool.Begin(context.Background())
