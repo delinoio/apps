@@ -299,6 +299,15 @@ func (s *Server) PutAddOn(ctx context.Context, r *connect.Request[pb.PutAddOnReq
 		if e != nil {
 			return e
 		}
+		var existing bool
+		if e = c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM addons WHERE id=$1 AND service_id=$2)", a.Id, a.ServiceId).Scan(&existing); e != nil {
+			return e
+		}
+		if existing {
+			if e = postgres.SnapshotLegacyAddOnSelections(c.ctx, c.tx, a.Id, c.now); e != nil {
+				return e
+			}
+		}
 		tag, e := c.tx.Exec(c.ctx, "INSERT INTO addons VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name WHERE addons.service_id=EXCLUDED.service_id", a.Id, a.ServiceId, a.Name)
 		if e != nil {
 			return e

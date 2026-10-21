@@ -478,6 +478,59 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, plan.Msg.Plan.Id, servic
 	}
 }
 
+func TestLegacyAddOnMutationSnapshotsTenants(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	if _, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare default add-on plan", Plan: &pb.Plan{Key: "addon-default", Name: "Add-on Default", Free: true, DefaultFree: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare legacy add-on service", Service: &pb.Service{Key: "legacy-addon-service", Name: "Legacy Add-on Service", ClientId: "legacy-addon", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	feature, err := client.PutFeature(ctx, req(&pb.PutFeatureRequest{RequestKey: key(), Reason: "declare add-on feature", Feature: &pb.Feature{ServiceId: serviceID, Key: "priority", Name: "Priority", Kind: pb.FeatureKind_FEATURE_KIND_ACCESS}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil || len(me.Msg.Tenants) == 0 {
+		t.Fatal("personal tenant was not created", err)
+	}
+	tenantID := me.Msg.Tenants[0].Id
+	// Recreate the rows an upgraded database holds: migration 00006 backfills
+	// only the add-on identity, without a version or tenant selection.
+	addonID, priceID := key(), key()
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO addons(id,service_id,name) VALUES($1,$2,$3)", addonID, serviceID, "Legacy Add-on"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO catalog_entities(id,kind,scope,key) VALUES($1,'addon',$2,$3)", addonID, serviceID, "legacy-addon-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO prices(id,addon_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, priceID, addonID, serviceID, "base", "5", "0", "USD", "pri_legacy_addon", time.Now().UTC(), 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", key(), tenantID, priceID, time.Now().UTC().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	updated, err := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "mutate legacy add-on", AddOn: &pb.AddOn{Id: addonID, ServiceId: serviceID, Name: "Legacy Add-on", FeatureValues: []*pb.FeatureValue{{FeatureId: feature.Msg.Feature.Id, Enabled: &enabled}}}, ReplaceFeatureValues: true}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected string
+	var features, prices int
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.version_id::text,jsonb_array_length(cv.definition->'features'),jsonb_array_length(cv.definition->'prices')
+FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, addonID).Scan(&selected, &features, &prices); err != nil {
+		t.Fatal("legacy add-on tenant has no pinned add-on version", err)
+	}
+	if selected == updated.Msg.AddOn.ActiveVersionId || features != 0 || prices != 1 {
+		t.Fatalf("legacy tenant did not retain the pre-mutation add-on: selected=%s active=%s features=%d prices=%d", selected, updated.Msg.AddOn.ActiveVersionId, features, prices)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string
