@@ -2,7 +2,7 @@
 //! Deployment configuration from the environment. An optional working-directory `.env` supplies
 //! values that process variables do not define. Startup rejects missing or invalid values with
 //! messages that name the variable but never repeat its value. No defaults are invented.
-use crate::settings::Settings;
+use crate::settings::{MAX_EXECUTION_TIMEOUT_SECONDS, Settings};
 use anyhow::{Result, bail, ensure};
 use server_common::config::safe_url;
 use std::{collections::HashMap, time::Duration};
@@ -140,6 +140,15 @@ impl Config {
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_seconds)
     }
+
+    /// How long shutdown lets in-flight connections finish. Operators can raise
+    /// `executionTimeoutSeconds` while the process runs and requests are admitted under the new
+    /// value at once, so a value captured at startup could close a request before its deadline.
+    /// The ceiling covers every supported live value; idle connections still close immediately
+    /// and every request stays bounded by its own deadline.
+    pub fn drain_ceiling(&self) -> Duration {
+        self.timeout() + Duration::from_secs(u64::from(MAX_EXECUTION_TIMEOUT_SECONDS))
+    }
 }
 
 #[cfg(test)]
@@ -229,6 +238,22 @@ mod tests {
             values.insert(key.into(), "http://127.0.0.1:9/x".into());
         }
         assert!(load(&values).is_ok());
+    }
+
+    #[test]
+    fn the_drain_ceiling_covers_every_live_execution_timeout() {
+        let config = load(&example()).unwrap();
+        let mut settings = config.initial_settings.clone();
+        // An operator can raise the live timeout to the validated maximum after startup.
+        settings.execution_timeout_seconds = MAX_EXECUTION_TIMEOUT_SECONDS;
+        assert!(settings.validate().is_ok());
+        assert!(
+            config.drain_ceiling()
+                >= config.timeout()
+                    + Duration::from_secs(u64::from(settings.execution_timeout_seconds))
+        );
+        settings.execution_timeout_seconds = MAX_EXECUTION_TIMEOUT_SECONDS + 1;
+        assert!(settings.validate().is_err());
     }
 
     #[test]

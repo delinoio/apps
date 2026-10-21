@@ -14,6 +14,10 @@ pub const RETENTION_SECONDS: u32 = 30 * 24 * 60 * 60;
 pub const MAX_INPUT_BYTES_CEILING: u32 = 8 << 20;
 /// Envelope slack added to the input ceiling for the Connect message limit.
 pub const MESSAGE_OVERHEAD_BYTES: usize = 64 << 10;
+/// Hard ceiling for `executionTimeoutSeconds`. Operators can change the live value up to it, so
+/// anything sized for the longest execution (such as the connection drain) must use this ceiling
+/// rather than the value read at startup.
+pub const MAX_EXECUTION_TIMEOUT_SECONDS: u32 = 3600;
 const MAX_MODELS: usize = 1000;
 const MAX_MODEL_BYTES: usize = 128;
 
@@ -103,7 +107,7 @@ impl Settings {
             "executionTimeoutSeconds",
             self.execution_timeout_seconds,
             1,
-            3600,
+            MAX_EXECUTION_TIMEOUT_SECONDS,
         )?;
         range(
             "tenantRequestsPerMinute",

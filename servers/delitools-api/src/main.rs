@@ -189,8 +189,8 @@ async fn run() -> anyhow::Result<()> {
             header: config.timeout(),
             idle: Duration::from_secs(60),
             write: config.timeout(),
-            shutdown: config.timeout()
-                + Duration::from_secs(u64::from(platform.settings().execution_timeout_seconds)),
+            // Sized for the longest live execution timeout, not the startup value.
+            shutdown: config.drain_ceiling(),
         },
         shutdown,
     )
