@@ -39,6 +39,9 @@ pub struct Config {
     pub max_meter_group_values: i64,
     pub development: bool,
     pub catalog_dir: String,
+    /// Explicit switch for serving the DeliTools consumer. It requires 30-day
+    /// reporting windows because DeliTools keeps unconfirmed usage that long.
+    pub delitools_enabled: bool,
 }
 impl Config {
     pub fn load() -> Result<Self> {
@@ -62,6 +65,13 @@ impl Config {
             get(key)
                 .parse()
                 .map_err(|_| anyhow::anyhow!("{key} must be a base-10 integer"))
+        };
+        let boolean = |key: &str| -> Result<bool> {
+            match get(key).as_str() {
+                "" | "0" | "f" | "F" | "false" | "False" | "FALSE" => Ok(false),
+                "1" | "t" | "T" | "true" | "True" | "TRUE" => Ok(true),
+                _ => anyhow::bail!("{key} has an invalid bool value"),
+            }
         };
         let mut c = Self {
             paddle_credit_product_id: get("PADDLE_CREDIT_PRODUCT_ID"),
@@ -100,11 +110,8 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("MAX_PAYLOAD_BYTES must be a base-10 integer"))?,
             return_urls: serde_json::from_str(&get("RETURN_URLS"))
                 .map_err(|_| anyhow::anyhow!("RETURN_URLS must be a JSON array of strings"))?,
-            development: match get("DEVELOPMENT").as_str() {
-                "" | "0" | "f" | "F" | "false" | "False" | "FALSE" => false,
-                "1" | "t" | "T" | "true" | "True" | "TRUE" => true,
-                _ => anyhow::bail!("DEVELOPMENT has an invalid bool value"),
-            },
+            development: boolean("DEVELOPMENT")?,
+            delitools_enabled: boolean("DELITOOLS_ENABLED")?,
         };
         if c.catalog_dir.is_empty() {
             c.catalog_dir = "servers/delcore-api/catalog".into();
@@ -173,6 +180,19 @@ impl Config {
                 && self.webhook_retention_seconds >= self.reporting_grace_seconds,
             "contradictory retention or reporting policies"
         );
+        // DeliTools keeps unconfirmed usage reports for 30 days and may deliver them
+        // at the end of that period; shorter windows would reject them as late.
+        // Raw usage and webhook retention must cover the same windows.
+        if self.delitools_enabled {
+            ensure!(
+                self.usage_lateness_seconds >= crate::delitools::MIN_REPORTING_WINDOW_SECONDS
+                    && self.reporting_grace_seconds
+                        >= crate::delitools::MIN_REPORTING_WINDOW_SECONDS
+                    && self.raw_usage_retention_seconds >= self.usage_lateness_seconds
+                    && self.webhook_retention_seconds >= self.reporting_grace_seconds,
+                "DELITOOLS_ENABLED requires USAGE_LATENESS_SECONDS and REPORTING_GRACE_SECONDS of at least 2592000 with retention at least as long"
+            );
+        }
         for url in [&self.issuer, &self.paddle_url, &self.email_url]
             .into_iter()
             .chain(self.return_urls.iter())
@@ -278,6 +298,77 @@ mod tests {
                 "{key}"
             );
         }
+    }
+    fn with(overrides: &[(&str, &str)]) -> Result<Config> {
+        let mut base = values();
+        for (key, value) in overrides {
+            base.insert((*key).into(), (*value).into());
+        }
+        Config::from_getter(|k| base.get(k).cloned().unwrap_or_default())
+    }
+    #[test]
+    fn serving_delitools_requires_thirty_day_reporting_windows() {
+        let thirty_days = "2592000";
+        assert!(with(&[]).unwrap().delitools_enabled);
+        for (key, value) in [
+            ("USAGE_LATENESS_SECONDS", "2591999"),
+            ("REPORTING_GRACE_SECONDS", "2591999"),
+            ("USAGE_LATENESS_SECONDS", "604800"),
+            ("REPORTING_GRACE_SECONDS", "604800"),
+            // Raw usage and webhook retention must cover the windows.
+            ("RAW_USAGE_RETENTION_SECONDS", "2591999"),
+            ("WEBHOOK_RETENTION_SECONDS", "2591999"),
+        ] {
+            assert!(with(&[(key, value)]).is_err(), "{key}={value}");
+        }
+        // Exactly 30 days and longer windows are accepted when retention covers them.
+        assert!(
+            with(&[
+                ("USAGE_LATENESS_SECONDS", thirty_days),
+                ("REPORTING_GRACE_SECONDS", thirty_days)
+            ])
+            .is_ok()
+        );
+        assert!(
+            with(&[
+                ("USAGE_LATENESS_SECONDS", "5184000"),
+                ("REPORTING_GRACE_SECONDS", "7776000")
+            ])
+            .is_ok()
+        );
+        // The rule applies only when the explicit switch is on.
+        let short = [
+            ("USAGE_LATENESS_SECONDS", "604800"),
+            ("REPORTING_GRACE_SECONDS", "604800"),
+        ];
+        let mut off = vec![("DELITOOLS_ENABLED", "false")];
+        off.extend(short);
+        let config = with(&off).unwrap();
+        assert!(!config.delitools_enabled);
+        let omitted = {
+            let mut base = values();
+            base.remove("DELITOOLS_ENABLED");
+            base.insert("USAGE_LATENESS_SECONDS".into(), "604800".into());
+            base.insert("REPORTING_GRACE_SECONDS".into(), "604800".into());
+            Config::from_getter(|k| base.get(k).cloned().unwrap_or_default()).unwrap()
+        };
+        assert!(!omitted.delitools_enabled);
+        // The switch accepts only boolean spellings and never echoes the value.
+        let error = with(&[("DELITOOLS_ENABLED", "sensitive-invalid-value")])
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("DELITOOLS_ENABLED") && !error.contains("sensitive"));
+        // The committed example is a valid DeliTools installation.
+        assert!(config_example_serves_delitools());
+    }
+    fn config_example_serves_delitools() -> bool {
+        let c = with(&[]).unwrap();
+        c.delitools_enabled
+            && c.usage_lateness_seconds >= crate::delitools::MIN_REPORTING_WINDOW_SECONDS
+            && c.reporting_grace_seconds >= crate::delitools::MIN_REPORTING_WINDOW_SECONDS
+            && c.raw_usage_retention_seconds >= c.usage_lateness_seconds
+            && c.webhook_retention_seconds >= c.reporting_grace_seconds
     }
     #[test]
     fn development_urls_are_loopback_only() {

@@ -3,6 +3,7 @@ pub mod accounting;
 pub mod auth;
 pub mod catalog;
 pub mod config;
+pub mod delitools;
 pub mod events;
 pub mod features;
 mod fingerprint;

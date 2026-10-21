@@ -291,6 +291,14 @@ async fn apply_item(c: &mut PgConnection, d: &Definition) -> Result<()> {
         }
         scope = format!("{owner_kind}:{owner_id}");
     }
+    if d.kind == "service" {
+        // The reserved DeliTools key and name stay together; serving DeliTools
+        // needs the explicit switch, which startup verifies against the database.
+        ensure!(
+            crate::delitools::check_service_identity(None, &d.key, &d.name).is_ok(),
+            "the reserved delitools service key and name must be declared together"
+        );
+    }
     let id = db::ensure_catalog_entity(c, &d.kind, &scope, &d.key, "").await?;
     match d.kind.as_str() {
         "service" => {
@@ -325,7 +333,17 @@ async fn apply_meter(c: &mut PgConnection, d: &Definition, id: &str, service: &s
     let filters = crate::events::canonical_filters(&filters)?;
     let mut groups = d.group_by.clone();
     groups.sort();
-    let definition = json!({"name":d.key,"event_type":d.event_type,"aggregation":aggregation(&d.aggregation),"value_attribute":d.value_attribute,"filters":filters,"group_by":if groups.is_empty() {Value::Null} else {json!(groups)}});
+    let mut definition = json!({"name":d.key,"event_type":d.event_type,"aggregation":aggregation(&d.aggregation),"value_attribute":d.value_attribute,"filters":filters,"group_by":if groups.is_empty() {Value::Null} else {json!(groups)}});
+    if d.value_source == "ai_token_usd" {
+        // Only the call-time meters of the reserved service may compute AI USD
+        // values; earlier definitions keep their semantic hashes without the keys.
+        ensure!(
+            crate::delitools::is_delitools(c, service).await?,
+            "ai_token_usd meters belong to the delitools service"
+        );
+        definition["value_source"] = json!(crate::events::VALUE_SOURCE_AI_TOKEN_USD);
+        definition["markup"] = json!(decimal(&d.markup)?);
+    }
     let previous = db::active_catalog_version(c, "meter", id).await?;
     let untyped = if previous.is_empty() {
         true
@@ -341,6 +359,7 @@ async fn apply_meter(c: &mut PgConnection, d: &Definition, id: &str, service: &s
         .fetch_one(&mut *c)
         .await?;
         let compatible = d.event_type == d.key
+            && d.value_source != "ai_token_usd"
             && d.aggregation == "sum"
             && d.value_attribute == "quantity"
             && d.filters.is_empty()
@@ -415,6 +434,10 @@ async fn apply_price(
     }
     if d.price_kind == "usage" {
         resolve(c, "meter", &service, &d.meter).await?;
+        ensure!(
+            !crate::delitools::meter_key_is_call_time(c, &service, &d.meter).await?,
+            "the meter is priced at call time; usage prices do not apply"
+        );
     }
     let unit = decimal(&d.unit_price)?;
     let included = decimal(&d.included)?;

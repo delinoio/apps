@@ -240,6 +240,8 @@ pub fn compatibility_definition(key: &str) -> metering::Definition {
         value_attribute: COMPATIBILITY_ATTRIBUTE.into(),
         filters: vec![],
         group_by: vec![],
+        value_source: metering::ValueSource::Attribute,
+        markup: String::new(),
     }
 }
 pub fn is_compatibility_definition(d: &metering::Definition) -> bool {
@@ -248,6 +250,7 @@ pub fn is_compatibility_definition(d: &metering::Definition) -> bool {
         && d.value_attribute == COMPATIBILITY_ATTRIBUTE
         && d.filters.is_empty()
         && d.group_by.is_empty()
+        && d.value_source == metering::ValueSource::Attribute
 }
 pub async fn untyped_meter_in_use(tx: &mut sqlx::PgConnection, meter_id: &str) -> Result<bool> {
     Ok(sqlx::query_scalar(
@@ -276,6 +279,8 @@ pub fn decode_meter(key: &str, raw: &Json) -> Result<metering::Definition> {
                     .collect::<Vec<String>>()
             })
             .unwrap_or_default(),
+        raw["value_source"].as_i64().unwrap_or(0) as i32,
+        text("markup"),
     )
 }
 

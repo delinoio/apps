@@ -421,6 +421,64 @@ func (PriceKind) EnumDescriptor() ([]byte, []int) {
 	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{5}
 }
 
+// MeterValueSource selects how a meter computes the value of a matched event.
+type MeterValueSource int32
+
+const (
+	MeterValueSource_METER_VALUE_SOURCE_UNSPECIFIED MeterValueSource = 0
+	// The numeric value_attribute of the event (earlier behavior; the same as
+	// UNSPECIFIED).
+	MeterValueSource_METER_VALUE_SOURCE_ATTRIBUTE MeterValueSource = 1
+	// The exact USD charge of one AI usage report: the sum over the input,
+	// output, cache read and cache write categories of the measured token count
+	// times the USD price per token carried by the same event, multiplied by the
+	// meter markup. The meter must use SUM, no value_attribute, and belongs to
+	// the call-time priced service; its aggregate is rated at one USD per unit
+	// with no included usage and never uses plan-pinned prices.
+	MeterValueSource_METER_VALUE_SOURCE_AI_TOKEN_USD MeterValueSource = 2
+)
+
+// Enum value maps for MeterValueSource.
+var (
+	MeterValueSource_name = map[int32]string{
+		0: "METER_VALUE_SOURCE_UNSPECIFIED",
+		1: "METER_VALUE_SOURCE_ATTRIBUTE",
+		2: "METER_VALUE_SOURCE_AI_TOKEN_USD",
+	}
+	MeterValueSource_value = map[string]int32{
+		"METER_VALUE_SOURCE_UNSPECIFIED":  0,
+		"METER_VALUE_SOURCE_ATTRIBUTE":    1,
+		"METER_VALUE_SOURCE_AI_TOKEN_USD": 2,
+	}
+)
+
+func (x MeterValueSource) Enum() *MeterValueSource {
+	p := new(MeterValueSource)
+	*p = x
+	return p
+}
+
+func (x MeterValueSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MeterValueSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_delcore_v1_delcore_proto_enumTypes[6].Descriptor()
+}
+
+func (MeterValueSource) Type() protoreflect.EnumType {
+	return &file_delcore_v1_delcore_proto_enumTypes[6]
+}
+
+func (x MeterValueSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MeterValueSource.Descriptor instead.
+func (MeterValueSource) EnumDescriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{6}
+}
+
 type MeterAggregation int32
 
 const (
@@ -466,11 +524,11 @@ func (x MeterAggregation) String() string {
 }
 
 func (MeterAggregation) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[6].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[7].Descriptor()
 }
 
 func (MeterAggregation) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[6]
+	return &file_delcore_v1_delcore_proto_enumTypes[7]
 }
 
 func (x MeterAggregation) Number() protoreflect.EnumNumber {
@@ -479,7 +537,7 @@ func (x MeterAggregation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MeterAggregation.Descriptor instead.
 func (MeterAggregation) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{6}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{7}
 }
 
 type MeterFilterOperator int32
@@ -533,11 +591,11 @@ func (x MeterFilterOperator) String() string {
 }
 
 func (MeterFilterOperator) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[7].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[8].Descriptor()
 }
 
 func (MeterFilterOperator) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[7]
+	return &file_delcore_v1_delcore_proto_enumTypes[8]
 }
 
 func (x MeterFilterOperator) Number() protoreflect.EnumNumber {
@@ -546,7 +604,7 @@ func (x MeterFilterOperator) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MeterFilterOperator.Descriptor instead.
 func (MeterFilterOperator) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{7}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{8}
 }
 
 // MeterFilterValueKind is the scalar type of a typed filter operand. It uses
@@ -589,11 +647,11 @@ func (x MeterFilterValueKind) String() string {
 }
 
 func (MeterFilterValueKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[8].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[9].Descriptor()
 }
 
 func (MeterFilterValueKind) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[8]
+	return &file_delcore_v1_delcore_proto_enumTypes[9]
 }
 
 func (x MeterFilterValueKind) Number() protoreflect.EnumNumber {
@@ -602,7 +660,7 @@ func (x MeterFilterValueKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MeterFilterValueKind.Descriptor instead.
 func (MeterFilterValueKind) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{8}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{9}
 }
 
 type FeatureKind int32
@@ -641,11 +699,11 @@ func (x FeatureKind) String() string {
 }
 
 func (FeatureKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[9].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[10].Descriptor()
 }
 
 func (FeatureKind) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[9]
+	return &file_delcore_v1_delcore_proto_enumTypes[10]
 }
 
 func (x FeatureKind) Number() protoreflect.EnumNumber {
@@ -654,7 +712,7 @@ func (x FeatureKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FeatureKind.Descriptor instead.
 func (FeatureKind) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{9}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{10}
 }
 
 type ConfigurationValueType int32
@@ -699,11 +757,11 @@ func (x ConfigurationValueType) String() string {
 }
 
 func (ConfigurationValueType) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[10].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[11].Descriptor()
 }
 
 func (ConfigurationValueType) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[10]
+	return &file_delcore_v1_delcore_proto_enumTypes[11]
 }
 
 func (x ConfigurationValueType) Number() protoreflect.EnumNumber {
@@ -712,7 +770,7 @@ func (x ConfigurationValueType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConfigurationValueType.Descriptor instead.
 func (ConfigurationValueType) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{10}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{11}
 }
 
 type EventCorrectionKind int32
@@ -750,11 +808,11 @@ func (x EventCorrectionKind) String() string {
 }
 
 func (EventCorrectionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[11].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[12].Descriptor()
 }
 
 func (EventCorrectionKind) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[11]
+	return &file_delcore_v1_delcore_proto_enumTypes[12]
 }
 
 func (x EventCorrectionKind) Number() protoreflect.EnumNumber {
@@ -763,7 +821,68 @@ func (x EventCorrectionKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventCorrectionKind.Descriptor instead.
 func (EventCorrectionKind) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{11}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{12}
+}
+
+// ConsumerAuthorization selects how Authorize identifies the principal of a
+// DeliTools API key operation.
+type ConsumerAuthorization int32
+
+const (
+	ConsumerAuthorization_CONSUMER_AUTHORIZATION_UNSPECIFIED ConsumerAuthorization = 0
+	// A tenant-owned service key executes a capability for the tenant without any
+	// member. user_id must be empty; the capability must be registered by the
+	// calling service.
+	ConsumerAuthorization_CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY ConsumerAuthorization = 1
+	// Personal-key management: user_id must currently be a member of the tenant.
+	// capability must be empty and paid must be false.
+	ConsumerAuthorization_CONSUMER_AUTHORIZATION_PERSONAL_KEY_MANAGEMENT ConsumerAuthorization = 2
+	// Service-key management: user_id must currently hold the Owner or Admin role
+	// of the tenant. capability must be empty and paid must be false.
+	ConsumerAuthorization_CONSUMER_AUTHORIZATION_SERVICE_KEY_MANAGEMENT ConsumerAuthorization = 3
+)
+
+// Enum value maps for ConsumerAuthorization.
+var (
+	ConsumerAuthorization_name = map[int32]string{
+		0: "CONSUMER_AUTHORIZATION_UNSPECIFIED",
+		1: "CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY",
+		2: "CONSUMER_AUTHORIZATION_PERSONAL_KEY_MANAGEMENT",
+		3: "CONSUMER_AUTHORIZATION_SERVICE_KEY_MANAGEMENT",
+	}
+	ConsumerAuthorization_value = map[string]int32{
+		"CONSUMER_AUTHORIZATION_UNSPECIFIED":             0,
+		"CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY":      1,
+		"CONSUMER_AUTHORIZATION_PERSONAL_KEY_MANAGEMENT": 2,
+		"CONSUMER_AUTHORIZATION_SERVICE_KEY_MANAGEMENT":  3,
+	}
+)
+
+func (x ConsumerAuthorization) Enum() *ConsumerAuthorization {
+	p := new(ConsumerAuthorization)
+	*p = x
+	return p
+}
+
+func (x ConsumerAuthorization) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConsumerAuthorization) Descriptor() protoreflect.EnumDescriptor {
+	return file_delcore_v1_delcore_proto_enumTypes[13].Descriptor()
+}
+
+func (ConsumerAuthorization) Type() protoreflect.EnumType {
+	return &file_delcore_v1_delcore_proto_enumTypes[13]
+}
+
+func (x ConsumerAuthorization) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConsumerAuthorization.Descriptor instead.
+func (ConsumerAuthorization) EnumDescriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{13}
 }
 
 // MeteringFailureCategory classifies the last recorded failure of metering
@@ -811,11 +930,11 @@ func (x MeteringFailureCategory) String() string {
 }
 
 func (MeteringFailureCategory) Descriptor() protoreflect.EnumDescriptor {
-	return file_delcore_v1_delcore_proto_enumTypes[12].Descriptor()
+	return file_delcore_v1_delcore_proto_enumTypes[14].Descriptor()
 }
 
 func (MeteringFailureCategory) Type() protoreflect.EnumType {
-	return &file_delcore_v1_delcore_proto_enumTypes[12]
+	return &file_delcore_v1_delcore_proto_enumTypes[14]
 }
 
 func (x MeteringFailureCategory) Number() protoreflect.EnumNumber {
@@ -824,7 +943,7 @@ func (x MeteringFailureCategory) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MeteringFailureCategory.Descriptor instead.
 func (MeteringFailureCategory) EnumDescriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{12}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{14}
 }
 
 type ErrorDetail struct {
@@ -1458,8 +1577,17 @@ type Meter struct {
 	ValueAttribute string                 `protobuf:"bytes,7,opt,name=value_attribute,json=valueAttribute,proto3" json:"value_attribute,omitempty"`
 	Filters        []*MeterFilter         `protobuf:"bytes,8,rep,name=filters,proto3" json:"filters,omitempty"`
 	GroupBy        []string               `protobuf:"bytes,9,rep,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// How the meter obtains the numeric value of a matched event. Unspecified
+	// keeps the earlier behavior: the numeric value_attribute (or the event
+	// count) is the value. METER_VALUE_SOURCE_AI_TOKEN_USD is reserved for
+	// meters of the service registered with the key "delitools".
+	ValueSource MeterValueSource `protobuf:"varint,10,opt,name=value_source,json=valueSource,proto3,enum=delcore.v1.MeterValueSource" json:"value_source,omitempty"`
+	// Markup factor of an AI_TOKEN_USD meter as a canonical decimal of at least 1,
+	// for example "1.15". It is catalog configuration owned by delcore and is
+	// never supplied by event reporters. Empty for every other value source.
+	Markup        string `protobuf:"bytes,11,opt,name=markup,proto3" json:"markup,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Meter) Reset() {
@@ -1553,6 +1681,20 @@ func (x *Meter) GetGroupBy() []string {
 		return x.GroupBy
 	}
 	return nil
+}
+
+func (x *Meter) GetValueSource() MeterValueSource {
+	if x != nil {
+		return x.ValueSource
+	}
+	return MeterValueSource_METER_VALUE_SOURCE_UNSPECIFIED
+}
+
+func (x *Meter) GetMarkup() string {
+	if x != nil {
+		return x.Markup
+	}
+	return ""
 }
 
 type AddOn struct {
@@ -5158,9 +5300,14 @@ type AuthorizeRequest struct {
 	// Values that select one group of a metered feature's meter. Supply exactly
 	// the meter's group-by attributes with the scalar types used for ingestion.
 	// Access and configuration features take no group values.
-	GroupValues   map[string]*AttributeValue `protobuf:"bytes,6,rep,name=group_values,json=groupValues,proto3" json:"group_values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	GroupValues map[string]*AttributeValue `protobuf:"bytes,6,rep,name=group_values,json=groupValues,proto3" json:"group_values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Optional tenant-key authorization mode. Unspecified keeps the user-attributed
+	// check exactly as before. Other modes are accepted only from the service
+	// registered with the key "delitools", grant no platform authority, and leave
+	// the blocking, billing and lifecycle checks in force.
+	ConsumerAuthorization ConsumerAuthorization `protobuf:"varint,7,opt,name=consumer_authorization,json=consumerAuthorization,proto3,enum=delcore.v1.ConsumerAuthorization" json:"consumer_authorization,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *AuthorizeRequest) Reset() {
@@ -5233,6 +5380,13 @@ func (x *AuthorizeRequest) GetGroupValues() map[string]*AttributeValue {
 		return x.GroupValues
 	}
 	return nil
+}
+
+func (x *AuthorizeRequest) GetConsumerAuthorization() ConsumerAuthorization {
+	if x != nil {
+		return x.ConsumerAuthorization
+	}
+	return ConsumerAuthorization_CONSUMER_AUTHORIZATION_UNSPECIFIED
 }
 
 type AuthorizeResponse struct {
@@ -8232,7 +8386,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\bpostpaid\x18\x06 \x01(\bR\bpostpaid\x12\x10\n" +
 	"\x03key\x18\a \x01(\tR\x03key\x12*\n" +
 	"\x11active_version_id\x18\b \x01(\tR\x0factiveVersionId\x12?\n" +
-	"\x0efeature_values\x18\t \x03(\v2\x18.delcore.v1.FeatureValueR\rfeatureValues\"\xb2\x02\n" +
+	"\x0efeature_values\x18\t \x03(\v2\x18.delcore.v1.FeatureValueR\rfeatureValues\"\x8b\x03\n" +
 	"\x05Meter\x12\x1d\n" +
 	"\n" +
 	"service_id\x18\x01 \x01(\tR\tserviceId\x12\x12\n" +
@@ -8244,7 +8398,10 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\vaggregation\x18\x06 \x01(\x0e2\x1c.delcore.v1.MeterAggregationR\vaggregation\x12'\n" +
 	"\x0fvalue_attribute\x18\a \x01(\tR\x0evalueAttribute\x121\n" +
 	"\afilters\x18\b \x03(\v2\x17.delcore.v1.MeterFilterR\afilters\x12\x19\n" +
-	"\bgroup_by\x18\t \x03(\tR\agroupBy\"\xc9\x01\n" +
+	"\bgroup_by\x18\t \x03(\tR\agroupBy\x12?\n" +
+	"\fvalue_source\x18\n" +
+	" \x01(\x0e2\x1c.delcore.v1.MeterValueSourceR\vvalueSource\x12\x16\n" +
+	"\x06markup\x18\v \x01(\tR\x06markup\"\xc9\x01\n" +
 	"\x05AddOn\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -8527,7 +8684,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"p\n" +
 	"\x13CreatePriceResponse\x120\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x14.delcore.v1.MetadataR\bmetadata\x12'\n" +
-	"\x05price\x18\x02 \x01(\v2\x11.delcore.v1.PriceR\x05price\"\xcb\x02\n" +
+	"\x05price\x18\x02 \x01(\v2\x11.delcore.v1.PriceR\x05price\"\xa5\x03\n" +
 	"\x10AuthorizeRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1e\n" +
@@ -8537,7 +8694,8 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x04paid\x18\x04 \x01(\bR\x04paid\x12\x1f\n" +
 	"\vfeature_key\x18\x05 \x01(\tR\n" +
 	"featureKey\x12P\n" +
-	"\fgroup_values\x18\x06 \x03(\v2-.delcore.v1.AuthorizeRequest.GroupValuesEntryR\vgroupValues\x1aZ\n" +
+	"\fgroup_values\x18\x06 \x03(\v2-.delcore.v1.AuthorizeRequest.GroupValuesEntryR\vgroupValues\x12X\n" +
+	"\x16consumer_authorization\x18\a \x01(\x0e2!.delcore.v1.ConsumerAuthorizationR\x15consumerAuthorization\x1aZ\n" +
 	"\x10GroupValuesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
 	"\x05value\x18\x02 \x01(\v2\x1a.delcore.v1.AttributeValueR\x05value:\x028\x01\"\xce\x01\n" +
@@ -8820,7 +8978,11 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\tPriceKind\x12\x1a\n" +
 	"\x16PRICE_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10PRICE_KIND_USAGE\x10\x01\x12\x18\n" +
-	"\x14PRICE_KIND_RECURRING\x10\x02*\xe2\x01\n" +
+	"\x14PRICE_KIND_RECURRING\x10\x02*}\n" +
+	"\x10MeterValueSource\x12\"\n" +
+	"\x1eMETER_VALUE_SOURCE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cMETER_VALUE_SOURCE_ATTRIBUTE\x10\x01\x12#\n" +
+	"\x1fMETER_VALUE_SOURCE_AI_TOKEN_USD\x10\x02*\xe2\x01\n" +
 	"\x10MeterAggregation\x12!\n" +
 	"\x1dMETER_AGGREGATION_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17METER_AGGREGATION_COUNT\x10\x01\x12\x19\n" +
@@ -8859,7 +9021,12 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x13EventCorrectionKind\x12%\n" +
 	"!EVENT_CORRECTION_KIND_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEVENT_CORRECTION_KIND_REPLACE\x10\x01\x12 \n" +
-	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x02*\xf8\x01\n" +
+	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x02*\xd5\x01\n" +
+	"\x15ConsumerAuthorization\x12&\n" +
+	"\"CONSUMER_AUTHORIZATION_UNSPECIFIED\x10\x00\x12-\n" +
+	")CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY\x10\x01\x122\n" +
+	".CONSUMER_AUTHORIZATION_PERSONAL_KEY_MANAGEMENT\x10\x02\x121\n" +
+	"-CONSUMER_AUTHORIZATION_SERVICE_KEY_MANAGEMENT\x10\x03*\xf8\x01\n" +
 	"\x17MeteringFailureCategory\x12)\n" +
 	"%METERING_FAILURE_CATEGORY_UNSPECIFIED\x10\x00\x12'\n" +
 	"#METERING_FAILURE_CATEGORY_TRANSIENT\x10\x01\x12-\n" +
@@ -8929,7 +9096,7 @@ func file_delcore_v1_delcore_proto_rawDescGZIP() []byte {
 	return file_delcore_v1_delcore_proto_rawDescData
 }
 
-var file_delcore_v1_delcore_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
+var file_delcore_v1_delcore_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
 var file_delcore_v1_delcore_proto_msgTypes = make([]protoimpl.MessageInfo, 120)
 var file_delcore_v1_delcore_proto_goTypes = []any{
 	(Role)(0),                            // 0: delcore.v1.Role
@@ -8938,367 +9105,371 @@ var file_delcore_v1_delcore_proto_goTypes = []any{
 	(TenantState)(0),                     // 3: delcore.v1.TenantState
 	(ErrorReason)(0),                     // 4: delcore.v1.ErrorReason
 	(PriceKind)(0),                       // 5: delcore.v1.PriceKind
-	(MeterAggregation)(0),                // 6: delcore.v1.MeterAggregation
-	(MeterFilterOperator)(0),             // 7: delcore.v1.MeterFilterOperator
-	(MeterFilterValueKind)(0),            // 8: delcore.v1.MeterFilterValueKind
-	(FeatureKind)(0),                     // 9: delcore.v1.FeatureKind
-	(ConfigurationValueType)(0),          // 10: delcore.v1.ConfigurationValueType
-	(EventCorrectionKind)(0),             // 11: delcore.v1.EventCorrectionKind
-	(MeteringFailureCategory)(0),         // 12: delcore.v1.MeteringFailureCategory
-	(*ErrorDetail)(nil),                  // 13: delcore.v1.ErrorDetail
-	(*Metadata)(nil),                     // 14: delcore.v1.Metadata
-	(*Page)(nil),                         // 15: delcore.v1.Page
-	(*Tenant)(nil),                       // 16: delcore.v1.Tenant
-	(*Member)(nil),                       // 17: delcore.v1.Member
-	(*Group)(nil),                        // 18: delcore.v1.Group
-	(*Permission)(nil),                   // 19: delcore.v1.Permission
-	(*Service)(nil),                      // 20: delcore.v1.Service
-	(*Plan)(nil),                         // 21: delcore.v1.Plan
-	(*Meter)(nil),                        // 22: delcore.v1.Meter
-	(*AddOn)(nil),                        // 23: delcore.v1.AddOn
-	(*Price)(nil),                        // 24: delcore.v1.Price
-	(*MeterFilterValue)(nil),             // 25: delcore.v1.MeterFilterValue
-	(*MeterFilter)(nil),                  // 26: delcore.v1.MeterFilter
-	(*Feature)(nil),                      // 27: delcore.v1.Feature
-	(*StringList)(nil),                   // 28: delcore.v1.StringList
-	(*ConfigurationValue)(nil),           // 29: delcore.v1.ConfigurationValue
-	(*FeatureValue)(nil),                 // 30: delcore.v1.FeatureValue
-	(*Usage)(nil),                        // 31: delcore.v1.Usage
-	(*AttributeValue)(nil),               // 32: delcore.v1.AttributeValue
-	(*Event)(nil),                        // 33: delcore.v1.Event
-	(*LedgerEntry)(nil),                  // 34: delcore.v1.LedgerEntry
-	(*Job)(nil),                          // 35: delcore.v1.Job
-	(*AuditEntry)(nil),                   // 36: delcore.v1.AuditEntry
-	(*GetCurrentUserRequest)(nil),        // 37: delcore.v1.GetCurrentUserRequest
-	(*GetCurrentUserResponse)(nil),       // 38: delcore.v1.GetCurrentUserResponse
-	(*CreateTenantRequest)(nil),          // 39: delcore.v1.CreateTenantRequest
-	(*CreateTenantResponse)(nil),         // 40: delcore.v1.CreateTenantResponse
-	(*GetTenantRequest)(nil),             // 41: delcore.v1.GetTenantRequest
-	(*GetTenantResponse)(nil),            // 42: delcore.v1.GetTenantResponse
-	(*ListMembersRequest)(nil),           // 43: delcore.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),          // 44: delcore.v1.ListMembersResponse
-	(*SetMemberRolesRequest)(nil),        // 45: delcore.v1.SetMemberRolesRequest
-	(*SetMemberRolesResponse)(nil),       // 46: delcore.v1.SetMemberRolesResponse
-	(*RemoveMemberRequest)(nil),          // 47: delcore.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),         // 48: delcore.v1.RemoveMemberResponse
-	(*CreateInvitationRequest)(nil),      // 49: delcore.v1.CreateInvitationRequest
-	(*CreateInvitationResponse)(nil),     // 50: delcore.v1.CreateInvitationResponse
-	(*AcceptInvitationRequest)(nil),      // 51: delcore.v1.AcceptInvitationRequest
-	(*AcceptInvitationResponse)(nil),     // 52: delcore.v1.AcceptInvitationResponse
-	(*RevokeInvitationRequest)(nil),      // 53: delcore.v1.RevokeInvitationRequest
-	(*RevokeInvitationResponse)(nil),     // 54: delcore.v1.RevokeInvitationResponse
-	(*TransferOwnershipRequest)(nil),     // 55: delcore.v1.TransferOwnershipRequest
-	(*TransferOwnershipResponse)(nil),    // 56: delcore.v1.TransferOwnershipResponse
-	(*AcceptOwnershipRequest)(nil),       // 57: delcore.v1.AcceptOwnershipRequest
-	(*AcceptOwnershipResponse)(nil),      // 58: delcore.v1.AcceptOwnershipResponse
-	(*SetGroupRequest)(nil),              // 59: delcore.v1.SetGroupRequest
-	(*SetGroupResponse)(nil),             // 60: delcore.v1.SetGroupResponse
-	(*ListGroupsRequest)(nil),            // 61: delcore.v1.ListGroupsRequest
-	(*ListGroupsResponse)(nil),           // 62: delcore.v1.ListGroupsResponse
-	(*GetCatalogRequest)(nil),            // 63: delcore.v1.GetCatalogRequest
-	(*GetCatalogResponse)(nil),           // 64: delcore.v1.GetCatalogResponse
-	(*PutMeterRequest)(nil),              // 65: delcore.v1.PutMeterRequest
-	(*PutMeterResponse)(nil),             // 66: delcore.v1.PutMeterResponse
-	(*PutFeatureRequest)(nil),            // 67: delcore.v1.PutFeatureRequest
-	(*PutFeatureResponse)(nil),           // 68: delcore.v1.PutFeatureResponse
-	(*PutAddOnRequest)(nil),              // 69: delcore.v1.PutAddOnRequest
-	(*PutAddOnResponse)(nil),             // 70: delcore.v1.PutAddOnResponse
-	(*ListBillingHistoryRequest)(nil),    // 71: delcore.v1.ListBillingHistoryRequest
-	(*ListBillingHistoryResponse)(nil),   // 72: delcore.v1.ListBillingHistoryResponse
-	(*PutServiceRequest)(nil),            // 73: delcore.v1.PutServiceRequest
-	(*PutServiceResponse)(nil),           // 74: delcore.v1.PutServiceResponse
-	(*PutPlanRequest)(nil),               // 75: delcore.v1.PutPlanRequest
-	(*PutPlanResponse)(nil),              // 76: delcore.v1.PutPlanResponse
-	(*CreatePriceRequest)(nil),           // 77: delcore.v1.CreatePriceRequest
-	(*CreatePriceResponse)(nil),          // 78: delcore.v1.CreatePriceResponse
-	(*AuthorizeRequest)(nil),             // 79: delcore.v1.AuthorizeRequest
-	(*AuthorizeResponse)(nil),            // 80: delcore.v1.AuthorizeResponse
-	(*FeatureAuthorization)(nil),         // 81: delcore.v1.FeatureAuthorization
-	(*MeterAggregate)(nil),               // 82: delcore.v1.MeterAggregate
-	(*ListMeterAggregatesRequest)(nil),   // 83: delcore.v1.ListMeterAggregatesRequest
-	(*ListMeterAggregatesResponse)(nil),  // 84: delcore.v1.ListMeterAggregatesResponse
-	(*MeteringFailureCount)(nil),         // 85: delcore.v1.MeteringFailureCount
-	(*GetMeteringStatusRequest)(nil),     // 86: delcore.v1.GetMeteringStatusRequest
-	(*GetMeteringStatusResponse)(nil),    // 87: delcore.v1.GetMeteringStatusResponse
-	(*CheckTenantLifecycleRequest)(nil),  // 88: delcore.v1.CheckTenantLifecycleRequest
-	(*CheckTenantLifecycleResponse)(nil), // 89: delcore.v1.CheckTenantLifecycleResponse
-	(*GetTenantStatesRequest)(nil),       // 90: delcore.v1.GetTenantStatesRequest
-	(*TenantStateEntry)(nil),             // 91: delcore.v1.TenantStateEntry
-	(*GetTenantStatesResponse)(nil),      // 92: delcore.v1.GetTenantStatesResponse
-	(*ReportUsageRequest)(nil),           // 93: delcore.v1.ReportUsageRequest
-	(*ReportUsageResponse)(nil),          // 94: delcore.v1.ReportUsageResponse
-	(*CorrectUsageRequest)(nil),          // 95: delcore.v1.CorrectUsageRequest
-	(*CorrectUsageResponse)(nil),         // 96: delcore.v1.CorrectUsageResponse
-	(*IngestEventRequest)(nil),           // 97: delcore.v1.IngestEventRequest
-	(*IngestEventResponse)(nil),          // 98: delcore.v1.IngestEventResponse
-	(*CorrectEventRequest)(nil),          // 99: delcore.v1.CorrectEventRequest
-	(*CorrectEventResponse)(nil),         // 100: delcore.v1.CorrectEventResponse
-	(*GetEventRequest)(nil),              // 101: delcore.v1.GetEventRequest
-	(*GetEventResponse)(nil),             // 102: delcore.v1.GetEventResponse
-	(*ListUsageRequest)(nil),             // 103: delcore.v1.ListUsageRequest
-	(*ListUsageResponse)(nil),            // 104: delcore.v1.ListUsageResponse
-	(*ListLedgerRequest)(nil),            // 105: delcore.v1.ListLedgerRequest
-	(*ListLedgerResponse)(nil),           // 106: delcore.v1.ListLedgerResponse
-	(*RequestTopUpRequest)(nil),          // 107: delcore.v1.RequestTopUpRequest
-	(*RequestTopUpResponse)(nil),         // 108: delcore.v1.RequestTopUpResponse
-	(*SetAutoTopUpRequest)(nil),          // 109: delcore.v1.SetAutoTopUpRequest
-	(*SetAutoTopUpResponse)(nil),         // 110: delcore.v1.SetAutoTopUpResponse
-	(*ChangeSubscriptionRequest)(nil),    // 111: delcore.v1.ChangeSubscriptionRequest
-	(*ChangeSubscriptionResponse)(nil),   // 112: delcore.v1.ChangeSubscriptionResponse
-	(*CancelSubscriptionRequest)(nil),    // 113: delcore.v1.CancelSubscriptionRequest
-	(*CancelSubscriptionResponse)(nil),   // 114: delcore.v1.CancelSubscriptionResponse
-	(*DeleteTenantRequest)(nil),          // 115: delcore.v1.DeleteTenantRequest
-	(*DeleteTenantResponse)(nil),         // 116: delcore.v1.DeleteTenantResponse
-	(*WithdrawRequest)(nil),              // 117: delcore.v1.WithdrawRequest
-	(*WithdrawResponse)(nil),             // 118: delcore.v1.WithdrawResponse
-	(*SetTenantBlockedRequest)(nil),      // 119: delcore.v1.SetTenantBlockedRequest
-	(*SetTenantBlockedResponse)(nil),     // 120: delcore.v1.SetTenantBlockedResponse
-	(*ListJobsRequest)(nil),              // 121: delcore.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),             // 122: delcore.v1.ListJobsResponse
-	(*RetryJobRequest)(nil),              // 123: delcore.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),             // 124: delcore.v1.RetryJobResponse
-	(*ListAuditRequest)(nil),             // 125: delcore.v1.ListAuditRequest
-	(*ListAuditResponse)(nil),            // 126: delcore.v1.ListAuditResponse
-	(*DeleteGroupRequest)(nil),           // 127: delcore.v1.DeleteGroupRequest
-	(*DeleteGroupResponse)(nil),          // 128: delcore.v1.DeleteGroupResponse
-	nil,                                  // 129: delcore.v1.Event.AttributesEntry
-	nil,                                  // 130: delcore.v1.AuthorizeRequest.GroupValuesEntry
-	nil,                                  // 131: delcore.v1.MeterAggregate.GroupValuesEntry
-	nil,                                  // 132: delcore.v1.CorrectEventRequest.AttributesEntry
-	(*timestamppb.Timestamp)(nil),        // 133: google.protobuf.Timestamp
+	(MeterValueSource)(0),                // 6: delcore.v1.MeterValueSource
+	(MeterAggregation)(0),                // 7: delcore.v1.MeterAggregation
+	(MeterFilterOperator)(0),             // 8: delcore.v1.MeterFilterOperator
+	(MeterFilterValueKind)(0),            // 9: delcore.v1.MeterFilterValueKind
+	(FeatureKind)(0),                     // 10: delcore.v1.FeatureKind
+	(ConfigurationValueType)(0),          // 11: delcore.v1.ConfigurationValueType
+	(EventCorrectionKind)(0),             // 12: delcore.v1.EventCorrectionKind
+	(ConsumerAuthorization)(0),           // 13: delcore.v1.ConsumerAuthorization
+	(MeteringFailureCategory)(0),         // 14: delcore.v1.MeteringFailureCategory
+	(*ErrorDetail)(nil),                  // 15: delcore.v1.ErrorDetail
+	(*Metadata)(nil),                     // 16: delcore.v1.Metadata
+	(*Page)(nil),                         // 17: delcore.v1.Page
+	(*Tenant)(nil),                       // 18: delcore.v1.Tenant
+	(*Member)(nil),                       // 19: delcore.v1.Member
+	(*Group)(nil),                        // 20: delcore.v1.Group
+	(*Permission)(nil),                   // 21: delcore.v1.Permission
+	(*Service)(nil),                      // 22: delcore.v1.Service
+	(*Plan)(nil),                         // 23: delcore.v1.Plan
+	(*Meter)(nil),                        // 24: delcore.v1.Meter
+	(*AddOn)(nil),                        // 25: delcore.v1.AddOn
+	(*Price)(nil),                        // 26: delcore.v1.Price
+	(*MeterFilterValue)(nil),             // 27: delcore.v1.MeterFilterValue
+	(*MeterFilter)(nil),                  // 28: delcore.v1.MeterFilter
+	(*Feature)(nil),                      // 29: delcore.v1.Feature
+	(*StringList)(nil),                   // 30: delcore.v1.StringList
+	(*ConfigurationValue)(nil),           // 31: delcore.v1.ConfigurationValue
+	(*FeatureValue)(nil),                 // 32: delcore.v1.FeatureValue
+	(*Usage)(nil),                        // 33: delcore.v1.Usage
+	(*AttributeValue)(nil),               // 34: delcore.v1.AttributeValue
+	(*Event)(nil),                        // 35: delcore.v1.Event
+	(*LedgerEntry)(nil),                  // 36: delcore.v1.LedgerEntry
+	(*Job)(nil),                          // 37: delcore.v1.Job
+	(*AuditEntry)(nil),                   // 38: delcore.v1.AuditEntry
+	(*GetCurrentUserRequest)(nil),        // 39: delcore.v1.GetCurrentUserRequest
+	(*GetCurrentUserResponse)(nil),       // 40: delcore.v1.GetCurrentUserResponse
+	(*CreateTenantRequest)(nil),          // 41: delcore.v1.CreateTenantRequest
+	(*CreateTenantResponse)(nil),         // 42: delcore.v1.CreateTenantResponse
+	(*GetTenantRequest)(nil),             // 43: delcore.v1.GetTenantRequest
+	(*GetTenantResponse)(nil),            // 44: delcore.v1.GetTenantResponse
+	(*ListMembersRequest)(nil),           // 45: delcore.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),          // 46: delcore.v1.ListMembersResponse
+	(*SetMemberRolesRequest)(nil),        // 47: delcore.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),       // 48: delcore.v1.SetMemberRolesResponse
+	(*RemoveMemberRequest)(nil),          // 49: delcore.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),         // 50: delcore.v1.RemoveMemberResponse
+	(*CreateInvitationRequest)(nil),      // 51: delcore.v1.CreateInvitationRequest
+	(*CreateInvitationResponse)(nil),     // 52: delcore.v1.CreateInvitationResponse
+	(*AcceptInvitationRequest)(nil),      // 53: delcore.v1.AcceptInvitationRequest
+	(*AcceptInvitationResponse)(nil),     // 54: delcore.v1.AcceptInvitationResponse
+	(*RevokeInvitationRequest)(nil),      // 55: delcore.v1.RevokeInvitationRequest
+	(*RevokeInvitationResponse)(nil),     // 56: delcore.v1.RevokeInvitationResponse
+	(*TransferOwnershipRequest)(nil),     // 57: delcore.v1.TransferOwnershipRequest
+	(*TransferOwnershipResponse)(nil),    // 58: delcore.v1.TransferOwnershipResponse
+	(*AcceptOwnershipRequest)(nil),       // 59: delcore.v1.AcceptOwnershipRequest
+	(*AcceptOwnershipResponse)(nil),      // 60: delcore.v1.AcceptOwnershipResponse
+	(*SetGroupRequest)(nil),              // 61: delcore.v1.SetGroupRequest
+	(*SetGroupResponse)(nil),             // 62: delcore.v1.SetGroupResponse
+	(*ListGroupsRequest)(nil),            // 63: delcore.v1.ListGroupsRequest
+	(*ListGroupsResponse)(nil),           // 64: delcore.v1.ListGroupsResponse
+	(*GetCatalogRequest)(nil),            // 65: delcore.v1.GetCatalogRequest
+	(*GetCatalogResponse)(nil),           // 66: delcore.v1.GetCatalogResponse
+	(*PutMeterRequest)(nil),              // 67: delcore.v1.PutMeterRequest
+	(*PutMeterResponse)(nil),             // 68: delcore.v1.PutMeterResponse
+	(*PutFeatureRequest)(nil),            // 69: delcore.v1.PutFeatureRequest
+	(*PutFeatureResponse)(nil),           // 70: delcore.v1.PutFeatureResponse
+	(*PutAddOnRequest)(nil),              // 71: delcore.v1.PutAddOnRequest
+	(*PutAddOnResponse)(nil),             // 72: delcore.v1.PutAddOnResponse
+	(*ListBillingHistoryRequest)(nil),    // 73: delcore.v1.ListBillingHistoryRequest
+	(*ListBillingHistoryResponse)(nil),   // 74: delcore.v1.ListBillingHistoryResponse
+	(*PutServiceRequest)(nil),            // 75: delcore.v1.PutServiceRequest
+	(*PutServiceResponse)(nil),           // 76: delcore.v1.PutServiceResponse
+	(*PutPlanRequest)(nil),               // 77: delcore.v1.PutPlanRequest
+	(*PutPlanResponse)(nil),              // 78: delcore.v1.PutPlanResponse
+	(*CreatePriceRequest)(nil),           // 79: delcore.v1.CreatePriceRequest
+	(*CreatePriceResponse)(nil),          // 80: delcore.v1.CreatePriceResponse
+	(*AuthorizeRequest)(nil),             // 81: delcore.v1.AuthorizeRequest
+	(*AuthorizeResponse)(nil),            // 82: delcore.v1.AuthorizeResponse
+	(*FeatureAuthorization)(nil),         // 83: delcore.v1.FeatureAuthorization
+	(*MeterAggregate)(nil),               // 84: delcore.v1.MeterAggregate
+	(*ListMeterAggregatesRequest)(nil),   // 85: delcore.v1.ListMeterAggregatesRequest
+	(*ListMeterAggregatesResponse)(nil),  // 86: delcore.v1.ListMeterAggregatesResponse
+	(*MeteringFailureCount)(nil),         // 87: delcore.v1.MeteringFailureCount
+	(*GetMeteringStatusRequest)(nil),     // 88: delcore.v1.GetMeteringStatusRequest
+	(*GetMeteringStatusResponse)(nil),    // 89: delcore.v1.GetMeteringStatusResponse
+	(*CheckTenantLifecycleRequest)(nil),  // 90: delcore.v1.CheckTenantLifecycleRequest
+	(*CheckTenantLifecycleResponse)(nil), // 91: delcore.v1.CheckTenantLifecycleResponse
+	(*GetTenantStatesRequest)(nil),       // 92: delcore.v1.GetTenantStatesRequest
+	(*TenantStateEntry)(nil),             // 93: delcore.v1.TenantStateEntry
+	(*GetTenantStatesResponse)(nil),      // 94: delcore.v1.GetTenantStatesResponse
+	(*ReportUsageRequest)(nil),           // 95: delcore.v1.ReportUsageRequest
+	(*ReportUsageResponse)(nil),          // 96: delcore.v1.ReportUsageResponse
+	(*CorrectUsageRequest)(nil),          // 97: delcore.v1.CorrectUsageRequest
+	(*CorrectUsageResponse)(nil),         // 98: delcore.v1.CorrectUsageResponse
+	(*IngestEventRequest)(nil),           // 99: delcore.v1.IngestEventRequest
+	(*IngestEventResponse)(nil),          // 100: delcore.v1.IngestEventResponse
+	(*CorrectEventRequest)(nil),          // 101: delcore.v1.CorrectEventRequest
+	(*CorrectEventResponse)(nil),         // 102: delcore.v1.CorrectEventResponse
+	(*GetEventRequest)(nil),              // 103: delcore.v1.GetEventRequest
+	(*GetEventResponse)(nil),             // 104: delcore.v1.GetEventResponse
+	(*ListUsageRequest)(nil),             // 105: delcore.v1.ListUsageRequest
+	(*ListUsageResponse)(nil),            // 106: delcore.v1.ListUsageResponse
+	(*ListLedgerRequest)(nil),            // 107: delcore.v1.ListLedgerRequest
+	(*ListLedgerResponse)(nil),           // 108: delcore.v1.ListLedgerResponse
+	(*RequestTopUpRequest)(nil),          // 109: delcore.v1.RequestTopUpRequest
+	(*RequestTopUpResponse)(nil),         // 110: delcore.v1.RequestTopUpResponse
+	(*SetAutoTopUpRequest)(nil),          // 111: delcore.v1.SetAutoTopUpRequest
+	(*SetAutoTopUpResponse)(nil),         // 112: delcore.v1.SetAutoTopUpResponse
+	(*ChangeSubscriptionRequest)(nil),    // 113: delcore.v1.ChangeSubscriptionRequest
+	(*ChangeSubscriptionResponse)(nil),   // 114: delcore.v1.ChangeSubscriptionResponse
+	(*CancelSubscriptionRequest)(nil),    // 115: delcore.v1.CancelSubscriptionRequest
+	(*CancelSubscriptionResponse)(nil),   // 116: delcore.v1.CancelSubscriptionResponse
+	(*DeleteTenantRequest)(nil),          // 117: delcore.v1.DeleteTenantRequest
+	(*DeleteTenantResponse)(nil),         // 118: delcore.v1.DeleteTenantResponse
+	(*WithdrawRequest)(nil),              // 119: delcore.v1.WithdrawRequest
+	(*WithdrawResponse)(nil),             // 120: delcore.v1.WithdrawResponse
+	(*SetTenantBlockedRequest)(nil),      // 121: delcore.v1.SetTenantBlockedRequest
+	(*SetTenantBlockedResponse)(nil),     // 122: delcore.v1.SetTenantBlockedResponse
+	(*ListJobsRequest)(nil),              // 123: delcore.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),             // 124: delcore.v1.ListJobsResponse
+	(*RetryJobRequest)(nil),              // 125: delcore.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),             // 126: delcore.v1.RetryJobResponse
+	(*ListAuditRequest)(nil),             // 127: delcore.v1.ListAuditRequest
+	(*ListAuditResponse)(nil),            // 128: delcore.v1.ListAuditResponse
+	(*DeleteGroupRequest)(nil),           // 129: delcore.v1.DeleteGroupRequest
+	(*DeleteGroupResponse)(nil),          // 130: delcore.v1.DeleteGroupResponse
+	nil,                                  // 131: delcore.v1.Event.AttributesEntry
+	nil,                                  // 132: delcore.v1.AuthorizeRequest.GroupValuesEntry
+	nil,                                  // 133: delcore.v1.MeterAggregate.GroupValuesEntry
+	nil,                                  // 134: delcore.v1.CorrectEventRequest.AttributesEntry
+	(*timestamppb.Timestamp)(nil),        // 135: google.protobuf.Timestamp
 }
 var file_delcore_v1_delcore_proto_depIdxs = []int32{
 	4,   // 0: delcore.v1.ErrorDetail.reason:type_name -> delcore.v1.ErrorReason
 	0,   // 1: delcore.v1.Member.roles:type_name -> delcore.v1.Role
-	19,  // 2: delcore.v1.Group.permissions:type_name -> delcore.v1.Permission
-	30,  // 3: delcore.v1.Plan.feature_values:type_name -> delcore.v1.FeatureValue
-	6,   // 4: delcore.v1.Meter.aggregation:type_name -> delcore.v1.MeterAggregation
-	26,  // 5: delcore.v1.Meter.filters:type_name -> delcore.v1.MeterFilter
-	30,  // 6: delcore.v1.AddOn.feature_values:type_name -> delcore.v1.FeatureValue
-	5,   // 7: delcore.v1.Price.kind:type_name -> delcore.v1.PriceKind
-	8,   // 8: delcore.v1.MeterFilterValue.kind:type_name -> delcore.v1.MeterFilterValueKind
-	7,   // 9: delcore.v1.MeterFilter.operator:type_name -> delcore.v1.MeterFilterOperator
-	25,  // 10: delcore.v1.MeterFilter.typed_values:type_name -> delcore.v1.MeterFilterValue
-	9,   // 11: delcore.v1.Feature.kind:type_name -> delcore.v1.FeatureKind
-	10,  // 12: delcore.v1.Feature.value_type:type_name -> delcore.v1.ConfigurationValueType
-	28,  // 13: delcore.v1.ConfigurationValue.string_list:type_name -> delcore.v1.StringList
-	29,  // 14: delcore.v1.FeatureValue.configuration:type_name -> delcore.v1.ConfigurationValue
-	133, // 15: delcore.v1.Usage.occurred_at:type_name -> google.protobuf.Timestamp
-	133, // 16: delcore.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	129, // 17: delcore.v1.Event.attributes:type_name -> delcore.v1.Event.AttributesEntry
-	133, // 18: delcore.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
-	1,   // 19: delcore.v1.Job.state:type_name -> delcore.v1.JobState
-	133, // 20: delcore.v1.AuditEntry.created_at:type_name -> google.protobuf.Timestamp
-	15,  // 21: delcore.v1.GetCurrentUserRequest.page:type_name -> delcore.v1.Page
-	14,  // 22: delcore.v1.GetCurrentUserResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 23: delcore.v1.GetCurrentUserResponse.tenants:type_name -> delcore.v1.Tenant
-	14,  // 24: delcore.v1.CreateTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 25: delcore.v1.CreateTenantResponse.tenant:type_name -> delcore.v1.Tenant
-	14,  // 26: delcore.v1.GetTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 27: delcore.v1.GetTenantResponse.tenant:type_name -> delcore.v1.Tenant
-	15,  // 28: delcore.v1.ListMembersRequest.page:type_name -> delcore.v1.Page
-	14,  // 29: delcore.v1.ListMembersResponse.metadata:type_name -> delcore.v1.Metadata
-	17,  // 30: delcore.v1.ListMembersResponse.members:type_name -> delcore.v1.Member
-	0,   // 31: delcore.v1.SetMemberRolesRequest.roles:type_name -> delcore.v1.Role
-	14,  // 32: delcore.v1.SetMemberRolesResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 33: delcore.v1.RemoveMemberResponse.metadata:type_name -> delcore.v1.Metadata
-	0,   // 34: delcore.v1.CreateInvitationRequest.roles:type_name -> delcore.v1.Role
-	14,  // 35: delcore.v1.CreateInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 36: delcore.v1.AcceptInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 37: delcore.v1.RevokeInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 38: delcore.v1.TransferOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 39: delcore.v1.AcceptOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
-	18,  // 40: delcore.v1.SetGroupRequest.group:type_name -> delcore.v1.Group
-	14,  // 41: delcore.v1.SetGroupResponse.metadata:type_name -> delcore.v1.Metadata
-	18,  // 42: delcore.v1.SetGroupResponse.group:type_name -> delcore.v1.Group
-	15,  // 43: delcore.v1.ListGroupsRequest.page:type_name -> delcore.v1.Page
-	14,  // 44: delcore.v1.ListGroupsResponse.metadata:type_name -> delcore.v1.Metadata
-	18,  // 45: delcore.v1.ListGroupsResponse.groups:type_name -> delcore.v1.Group
-	15,  // 46: delcore.v1.GetCatalogRequest.page:type_name -> delcore.v1.Page
-	14,  // 47: delcore.v1.GetCatalogResponse.metadata:type_name -> delcore.v1.Metadata
-	20,  // 48: delcore.v1.GetCatalogResponse.services:type_name -> delcore.v1.Service
-	21,  // 49: delcore.v1.GetCatalogResponse.plans:type_name -> delcore.v1.Plan
-	24,  // 50: delcore.v1.GetCatalogResponse.prices:type_name -> delcore.v1.Price
-	23,  // 51: delcore.v1.GetCatalogResponse.add_ons:type_name -> delcore.v1.AddOn
-	22,  // 52: delcore.v1.GetCatalogResponse.meters:type_name -> delcore.v1.Meter
-	27,  // 53: delcore.v1.GetCatalogResponse.features:type_name -> delcore.v1.Feature
-	22,  // 54: delcore.v1.PutMeterRequest.meter:type_name -> delcore.v1.Meter
-	14,  // 55: delcore.v1.PutMeterResponse.metadata:type_name -> delcore.v1.Metadata
-	22,  // 56: delcore.v1.PutMeterResponse.meter:type_name -> delcore.v1.Meter
-	27,  // 57: delcore.v1.PutFeatureRequest.feature:type_name -> delcore.v1.Feature
-	14,  // 58: delcore.v1.PutFeatureResponse.metadata:type_name -> delcore.v1.Metadata
-	27,  // 59: delcore.v1.PutFeatureResponse.feature:type_name -> delcore.v1.Feature
-	23,  // 60: delcore.v1.PutAddOnRequest.add_on:type_name -> delcore.v1.AddOn
-	14,  // 61: delcore.v1.PutAddOnResponse.metadata:type_name -> delcore.v1.Metadata
-	23,  // 62: delcore.v1.PutAddOnResponse.add_on:type_name -> delcore.v1.AddOn
-	15,  // 63: delcore.v1.ListBillingHistoryRequest.page:type_name -> delcore.v1.Page
-	14,  // 64: delcore.v1.ListBillingHistoryResponse.metadata:type_name -> delcore.v1.Metadata
-	35,  // 65: delcore.v1.ListBillingHistoryResponse.jobs:type_name -> delcore.v1.Job
-	20,  // 66: delcore.v1.PutServiceRequest.service:type_name -> delcore.v1.Service
-	14,  // 67: delcore.v1.PutServiceResponse.metadata:type_name -> delcore.v1.Metadata
-	20,  // 68: delcore.v1.PutServiceResponse.service:type_name -> delcore.v1.Service
-	21,  // 69: delcore.v1.PutPlanRequest.plan:type_name -> delcore.v1.Plan
-	14,  // 70: delcore.v1.PutPlanResponse.metadata:type_name -> delcore.v1.Metadata
-	21,  // 71: delcore.v1.PutPlanResponse.plan:type_name -> delcore.v1.Plan
-	24,  // 72: delcore.v1.CreatePriceRequest.price:type_name -> delcore.v1.Price
-	14,  // 73: delcore.v1.CreatePriceResponse.metadata:type_name -> delcore.v1.Metadata
-	24,  // 74: delcore.v1.CreatePriceResponse.price:type_name -> delcore.v1.Price
-	130, // 75: delcore.v1.AuthorizeRequest.group_values:type_name -> delcore.v1.AuthorizeRequest.GroupValuesEntry
-	14,  // 76: delcore.v1.AuthorizeResponse.metadata:type_name -> delcore.v1.Metadata
-	2,   // 77: delcore.v1.AuthorizeResponse.reasons:type_name -> delcore.v1.BlockReason
-	81,  // 78: delcore.v1.AuthorizeResponse.feature:type_name -> delcore.v1.FeatureAuthorization
-	9,   // 79: delcore.v1.FeatureAuthorization.kind:type_name -> delcore.v1.FeatureKind
-	133, // 80: delcore.v1.FeatureAuthorization.period_start:type_name -> google.protobuf.Timestamp
-	133, // 81: delcore.v1.FeatureAuthorization.period_end:type_name -> google.protobuf.Timestamp
-	29,  // 82: delcore.v1.FeatureAuthorization.configuration:type_name -> delcore.v1.ConfigurationValue
-	131, // 83: delcore.v1.MeterAggregate.group_values:type_name -> delcore.v1.MeterAggregate.GroupValuesEntry
-	133, // 84: delcore.v1.MeterAggregate.updated_at:type_name -> google.protobuf.Timestamp
-	133, // 85: delcore.v1.ListMeterAggregatesRequest.period_at:type_name -> google.protobuf.Timestamp
-	15,  // 86: delcore.v1.ListMeterAggregatesRequest.page:type_name -> delcore.v1.Page
-	14,  // 87: delcore.v1.ListMeterAggregatesResponse.metadata:type_name -> delcore.v1.Metadata
-	6,   // 88: delcore.v1.ListMeterAggregatesResponse.aggregation:type_name -> delcore.v1.MeterAggregation
-	133, // 89: delcore.v1.ListMeterAggregatesResponse.period_start:type_name -> google.protobuf.Timestamp
-	133, // 90: delcore.v1.ListMeterAggregatesResponse.period_end:type_name -> google.protobuf.Timestamp
-	82,  // 91: delcore.v1.ListMeterAggregatesResponse.aggregates:type_name -> delcore.v1.MeterAggregate
-	12,  // 92: delcore.v1.MeteringFailureCount.category:type_name -> delcore.v1.MeteringFailureCategory
-	14,  // 93: delcore.v1.GetMeteringStatusResponse.metadata:type_name -> delcore.v1.Metadata
-	133, // 94: delcore.v1.GetMeteringStatusResponse.oldest_pending_at:type_name -> google.protobuf.Timestamp
-	85,  // 95: delcore.v1.GetMeteringStatusResponse.failures:type_name -> delcore.v1.MeteringFailureCount
-	133, // 96: delcore.v1.GetMeteringStatusResponse.last_failure_at:type_name -> google.protobuf.Timestamp
-	12,  // 97: delcore.v1.GetMeteringStatusResponse.last_failure_category:type_name -> delcore.v1.MeteringFailureCategory
-	14,  // 98: delcore.v1.CheckTenantLifecycleResponse.metadata:type_name -> delcore.v1.Metadata
-	3,   // 99: delcore.v1.TenantStateEntry.state:type_name -> delcore.v1.TenantState
-	14,  // 100: delcore.v1.GetTenantStatesResponse.metadata:type_name -> delcore.v1.Metadata
-	91,  // 101: delcore.v1.GetTenantStatesResponse.states:type_name -> delcore.v1.TenantStateEntry
-	31,  // 102: delcore.v1.ReportUsageRequest.usage:type_name -> delcore.v1.Usage
-	14,  // 103: delcore.v1.ReportUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	31,  // 104: delcore.v1.CorrectUsageRequest.usage:type_name -> delcore.v1.Usage
-	14,  // 105: delcore.v1.CorrectUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	33,  // 106: delcore.v1.IngestEventRequest.event:type_name -> delcore.v1.Event
-	14,  // 107: delcore.v1.IngestEventResponse.metadata:type_name -> delcore.v1.Metadata
-	11,  // 108: delcore.v1.CorrectEventRequest.kind:type_name -> delcore.v1.EventCorrectionKind
-	132, // 109: delcore.v1.CorrectEventRequest.attributes:type_name -> delcore.v1.CorrectEventRequest.AttributesEntry
-	14,  // 110: delcore.v1.CorrectEventResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 111: delcore.v1.GetEventResponse.metadata:type_name -> delcore.v1.Metadata
-	33,  // 112: delcore.v1.GetEventResponse.event:type_name -> delcore.v1.Event
-	15,  // 113: delcore.v1.ListUsageRequest.page:type_name -> delcore.v1.Page
-	14,  // 114: delcore.v1.ListUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	31,  // 115: delcore.v1.ListUsageResponse.events:type_name -> delcore.v1.Usage
-	15,  // 116: delcore.v1.ListLedgerRequest.page:type_name -> delcore.v1.Page
-	14,  // 117: delcore.v1.ListLedgerResponse.metadata:type_name -> delcore.v1.Metadata
-	34,  // 118: delcore.v1.ListLedgerResponse.entries:type_name -> delcore.v1.LedgerEntry
-	14,  // 119: delcore.v1.RequestTopUpResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 120: delcore.v1.SetAutoTopUpResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 121: delcore.v1.ChangeSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 122: delcore.v1.CancelSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 123: delcore.v1.DeleteTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 124: delcore.v1.WithdrawResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 125: delcore.v1.SetTenantBlockedResponse.metadata:type_name -> delcore.v1.Metadata
-	15,  // 126: delcore.v1.ListJobsRequest.page:type_name -> delcore.v1.Page
-	14,  // 127: delcore.v1.ListJobsResponse.metadata:type_name -> delcore.v1.Metadata
-	35,  // 128: delcore.v1.ListJobsResponse.jobs:type_name -> delcore.v1.Job
-	14,  // 129: delcore.v1.RetryJobResponse.metadata:type_name -> delcore.v1.Metadata
-	15,  // 130: delcore.v1.ListAuditRequest.page:type_name -> delcore.v1.Page
-	14,  // 131: delcore.v1.ListAuditResponse.metadata:type_name -> delcore.v1.Metadata
-	36,  // 132: delcore.v1.ListAuditResponse.entries:type_name -> delcore.v1.AuditEntry
-	14,  // 133: delcore.v1.DeleteGroupResponse.metadata:type_name -> delcore.v1.Metadata
-	32,  // 134: delcore.v1.Event.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
-	32,  // 135: delcore.v1.AuthorizeRequest.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
-	32,  // 136: delcore.v1.MeterAggregate.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
-	32,  // 137: delcore.v1.CorrectEventRequest.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
-	127, // 138: delcore.v1.DelcoreService.DeleteGroup:input_type -> delcore.v1.DeleteGroupRequest
-	65,  // 139: delcore.v1.DelcoreService.PutMeter:input_type -> delcore.v1.PutMeterRequest
-	67,  // 140: delcore.v1.DelcoreService.PutFeature:input_type -> delcore.v1.PutFeatureRequest
-	69,  // 141: delcore.v1.DelcoreService.PutAddOn:input_type -> delcore.v1.PutAddOnRequest
-	71,  // 142: delcore.v1.DelcoreService.ListBillingHistory:input_type -> delcore.v1.ListBillingHistoryRequest
-	37,  // 143: delcore.v1.DelcoreService.GetCurrentUser:input_type -> delcore.v1.GetCurrentUserRequest
-	39,  // 144: delcore.v1.DelcoreService.CreateTenant:input_type -> delcore.v1.CreateTenantRequest
-	41,  // 145: delcore.v1.DelcoreService.GetTenant:input_type -> delcore.v1.GetTenantRequest
-	43,  // 146: delcore.v1.DelcoreService.ListMembers:input_type -> delcore.v1.ListMembersRequest
-	45,  // 147: delcore.v1.DelcoreService.SetMemberRoles:input_type -> delcore.v1.SetMemberRolesRequest
-	47,  // 148: delcore.v1.DelcoreService.RemoveMember:input_type -> delcore.v1.RemoveMemberRequest
-	49,  // 149: delcore.v1.DelcoreService.CreateInvitation:input_type -> delcore.v1.CreateInvitationRequest
-	51,  // 150: delcore.v1.DelcoreService.AcceptInvitation:input_type -> delcore.v1.AcceptInvitationRequest
-	53,  // 151: delcore.v1.DelcoreService.RevokeInvitation:input_type -> delcore.v1.RevokeInvitationRequest
-	55,  // 152: delcore.v1.DelcoreService.TransferOwnership:input_type -> delcore.v1.TransferOwnershipRequest
-	57,  // 153: delcore.v1.DelcoreService.AcceptOwnership:input_type -> delcore.v1.AcceptOwnershipRequest
-	59,  // 154: delcore.v1.DelcoreService.SetGroup:input_type -> delcore.v1.SetGroupRequest
-	61,  // 155: delcore.v1.DelcoreService.ListGroups:input_type -> delcore.v1.ListGroupsRequest
-	63,  // 156: delcore.v1.DelcoreService.GetCatalog:input_type -> delcore.v1.GetCatalogRequest
-	73,  // 157: delcore.v1.DelcoreService.PutService:input_type -> delcore.v1.PutServiceRequest
-	75,  // 158: delcore.v1.DelcoreService.PutPlan:input_type -> delcore.v1.PutPlanRequest
-	77,  // 159: delcore.v1.DelcoreService.CreatePrice:input_type -> delcore.v1.CreatePriceRequest
-	79,  // 160: delcore.v1.DelcoreService.Authorize:input_type -> delcore.v1.AuthorizeRequest
-	83,  // 161: delcore.v1.DelcoreService.ListMeterAggregates:input_type -> delcore.v1.ListMeterAggregatesRequest
-	86,  // 162: delcore.v1.DelcoreService.GetMeteringStatus:input_type -> delcore.v1.GetMeteringStatusRequest
-	88,  // 163: delcore.v1.DelcoreService.CheckTenantLifecycle:input_type -> delcore.v1.CheckTenantLifecycleRequest
-	90,  // 164: delcore.v1.DelcoreService.GetTenantStates:input_type -> delcore.v1.GetTenantStatesRequest
-	93,  // 165: delcore.v1.DelcoreService.ReportUsage:input_type -> delcore.v1.ReportUsageRequest
-	95,  // 166: delcore.v1.DelcoreService.CorrectUsage:input_type -> delcore.v1.CorrectUsageRequest
-	103, // 167: delcore.v1.DelcoreService.ListUsage:input_type -> delcore.v1.ListUsageRequest
-	97,  // 168: delcore.v1.DelcoreService.IngestEvent:input_type -> delcore.v1.IngestEventRequest
-	99,  // 169: delcore.v1.DelcoreService.CorrectEvent:input_type -> delcore.v1.CorrectEventRequest
-	101, // 170: delcore.v1.DelcoreService.GetEvent:input_type -> delcore.v1.GetEventRequest
-	105, // 171: delcore.v1.DelcoreService.ListLedger:input_type -> delcore.v1.ListLedgerRequest
-	107, // 172: delcore.v1.DelcoreService.RequestTopUp:input_type -> delcore.v1.RequestTopUpRequest
-	109, // 173: delcore.v1.DelcoreService.SetAutoTopUp:input_type -> delcore.v1.SetAutoTopUpRequest
-	111, // 174: delcore.v1.DelcoreService.ChangeSubscription:input_type -> delcore.v1.ChangeSubscriptionRequest
-	113, // 175: delcore.v1.DelcoreService.CancelSubscription:input_type -> delcore.v1.CancelSubscriptionRequest
-	115, // 176: delcore.v1.DelcoreService.DeleteTenant:input_type -> delcore.v1.DeleteTenantRequest
-	117, // 177: delcore.v1.DelcoreService.Withdraw:input_type -> delcore.v1.WithdrawRequest
-	119, // 178: delcore.v1.DelcoreService.SetTenantBlocked:input_type -> delcore.v1.SetTenantBlockedRequest
-	121, // 179: delcore.v1.DelcoreService.ListJobs:input_type -> delcore.v1.ListJobsRequest
-	123, // 180: delcore.v1.DelcoreService.RetryJob:input_type -> delcore.v1.RetryJobRequest
-	125, // 181: delcore.v1.DelcoreService.ListAudit:input_type -> delcore.v1.ListAuditRequest
-	128, // 182: delcore.v1.DelcoreService.DeleteGroup:output_type -> delcore.v1.DeleteGroupResponse
-	66,  // 183: delcore.v1.DelcoreService.PutMeter:output_type -> delcore.v1.PutMeterResponse
-	68,  // 184: delcore.v1.DelcoreService.PutFeature:output_type -> delcore.v1.PutFeatureResponse
-	70,  // 185: delcore.v1.DelcoreService.PutAddOn:output_type -> delcore.v1.PutAddOnResponse
-	72,  // 186: delcore.v1.DelcoreService.ListBillingHistory:output_type -> delcore.v1.ListBillingHistoryResponse
-	38,  // 187: delcore.v1.DelcoreService.GetCurrentUser:output_type -> delcore.v1.GetCurrentUserResponse
-	40,  // 188: delcore.v1.DelcoreService.CreateTenant:output_type -> delcore.v1.CreateTenantResponse
-	42,  // 189: delcore.v1.DelcoreService.GetTenant:output_type -> delcore.v1.GetTenantResponse
-	44,  // 190: delcore.v1.DelcoreService.ListMembers:output_type -> delcore.v1.ListMembersResponse
-	46,  // 191: delcore.v1.DelcoreService.SetMemberRoles:output_type -> delcore.v1.SetMemberRolesResponse
-	48,  // 192: delcore.v1.DelcoreService.RemoveMember:output_type -> delcore.v1.RemoveMemberResponse
-	50,  // 193: delcore.v1.DelcoreService.CreateInvitation:output_type -> delcore.v1.CreateInvitationResponse
-	52,  // 194: delcore.v1.DelcoreService.AcceptInvitation:output_type -> delcore.v1.AcceptInvitationResponse
-	54,  // 195: delcore.v1.DelcoreService.RevokeInvitation:output_type -> delcore.v1.RevokeInvitationResponse
-	56,  // 196: delcore.v1.DelcoreService.TransferOwnership:output_type -> delcore.v1.TransferOwnershipResponse
-	58,  // 197: delcore.v1.DelcoreService.AcceptOwnership:output_type -> delcore.v1.AcceptOwnershipResponse
-	60,  // 198: delcore.v1.DelcoreService.SetGroup:output_type -> delcore.v1.SetGroupResponse
-	62,  // 199: delcore.v1.DelcoreService.ListGroups:output_type -> delcore.v1.ListGroupsResponse
-	64,  // 200: delcore.v1.DelcoreService.GetCatalog:output_type -> delcore.v1.GetCatalogResponse
-	74,  // 201: delcore.v1.DelcoreService.PutService:output_type -> delcore.v1.PutServiceResponse
-	76,  // 202: delcore.v1.DelcoreService.PutPlan:output_type -> delcore.v1.PutPlanResponse
-	78,  // 203: delcore.v1.DelcoreService.CreatePrice:output_type -> delcore.v1.CreatePriceResponse
-	80,  // 204: delcore.v1.DelcoreService.Authorize:output_type -> delcore.v1.AuthorizeResponse
-	84,  // 205: delcore.v1.DelcoreService.ListMeterAggregates:output_type -> delcore.v1.ListMeterAggregatesResponse
-	87,  // 206: delcore.v1.DelcoreService.GetMeteringStatus:output_type -> delcore.v1.GetMeteringStatusResponse
-	89,  // 207: delcore.v1.DelcoreService.CheckTenantLifecycle:output_type -> delcore.v1.CheckTenantLifecycleResponse
-	92,  // 208: delcore.v1.DelcoreService.GetTenantStates:output_type -> delcore.v1.GetTenantStatesResponse
-	94,  // 209: delcore.v1.DelcoreService.ReportUsage:output_type -> delcore.v1.ReportUsageResponse
-	96,  // 210: delcore.v1.DelcoreService.CorrectUsage:output_type -> delcore.v1.CorrectUsageResponse
-	104, // 211: delcore.v1.DelcoreService.ListUsage:output_type -> delcore.v1.ListUsageResponse
-	98,  // 212: delcore.v1.DelcoreService.IngestEvent:output_type -> delcore.v1.IngestEventResponse
-	100, // 213: delcore.v1.DelcoreService.CorrectEvent:output_type -> delcore.v1.CorrectEventResponse
-	102, // 214: delcore.v1.DelcoreService.GetEvent:output_type -> delcore.v1.GetEventResponse
-	106, // 215: delcore.v1.DelcoreService.ListLedger:output_type -> delcore.v1.ListLedgerResponse
-	108, // 216: delcore.v1.DelcoreService.RequestTopUp:output_type -> delcore.v1.RequestTopUpResponse
-	110, // 217: delcore.v1.DelcoreService.SetAutoTopUp:output_type -> delcore.v1.SetAutoTopUpResponse
-	112, // 218: delcore.v1.DelcoreService.ChangeSubscription:output_type -> delcore.v1.ChangeSubscriptionResponse
-	114, // 219: delcore.v1.DelcoreService.CancelSubscription:output_type -> delcore.v1.CancelSubscriptionResponse
-	116, // 220: delcore.v1.DelcoreService.DeleteTenant:output_type -> delcore.v1.DeleteTenantResponse
-	118, // 221: delcore.v1.DelcoreService.Withdraw:output_type -> delcore.v1.WithdrawResponse
-	120, // 222: delcore.v1.DelcoreService.SetTenantBlocked:output_type -> delcore.v1.SetTenantBlockedResponse
-	122, // 223: delcore.v1.DelcoreService.ListJobs:output_type -> delcore.v1.ListJobsResponse
-	124, // 224: delcore.v1.DelcoreService.RetryJob:output_type -> delcore.v1.RetryJobResponse
-	126, // 225: delcore.v1.DelcoreService.ListAudit:output_type -> delcore.v1.ListAuditResponse
-	182, // [182:226] is the sub-list for method output_type
-	138, // [138:182] is the sub-list for method input_type
-	138, // [138:138] is the sub-list for extension type_name
-	138, // [138:138] is the sub-list for extension extendee
-	0,   // [0:138] is the sub-list for field type_name
+	21,  // 2: delcore.v1.Group.permissions:type_name -> delcore.v1.Permission
+	32,  // 3: delcore.v1.Plan.feature_values:type_name -> delcore.v1.FeatureValue
+	7,   // 4: delcore.v1.Meter.aggregation:type_name -> delcore.v1.MeterAggregation
+	28,  // 5: delcore.v1.Meter.filters:type_name -> delcore.v1.MeterFilter
+	6,   // 6: delcore.v1.Meter.value_source:type_name -> delcore.v1.MeterValueSource
+	32,  // 7: delcore.v1.AddOn.feature_values:type_name -> delcore.v1.FeatureValue
+	5,   // 8: delcore.v1.Price.kind:type_name -> delcore.v1.PriceKind
+	9,   // 9: delcore.v1.MeterFilterValue.kind:type_name -> delcore.v1.MeterFilterValueKind
+	8,   // 10: delcore.v1.MeterFilter.operator:type_name -> delcore.v1.MeterFilterOperator
+	27,  // 11: delcore.v1.MeterFilter.typed_values:type_name -> delcore.v1.MeterFilterValue
+	10,  // 12: delcore.v1.Feature.kind:type_name -> delcore.v1.FeatureKind
+	11,  // 13: delcore.v1.Feature.value_type:type_name -> delcore.v1.ConfigurationValueType
+	30,  // 14: delcore.v1.ConfigurationValue.string_list:type_name -> delcore.v1.StringList
+	31,  // 15: delcore.v1.FeatureValue.configuration:type_name -> delcore.v1.ConfigurationValue
+	135, // 16: delcore.v1.Usage.occurred_at:type_name -> google.protobuf.Timestamp
+	135, // 17: delcore.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	131, // 18: delcore.v1.Event.attributes:type_name -> delcore.v1.Event.AttributesEntry
+	135, // 19: delcore.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
+	1,   // 20: delcore.v1.Job.state:type_name -> delcore.v1.JobState
+	135, // 21: delcore.v1.AuditEntry.created_at:type_name -> google.protobuf.Timestamp
+	17,  // 22: delcore.v1.GetCurrentUserRequest.page:type_name -> delcore.v1.Page
+	16,  // 23: delcore.v1.GetCurrentUserResponse.metadata:type_name -> delcore.v1.Metadata
+	18,  // 24: delcore.v1.GetCurrentUserResponse.tenants:type_name -> delcore.v1.Tenant
+	16,  // 25: delcore.v1.CreateTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	18,  // 26: delcore.v1.CreateTenantResponse.tenant:type_name -> delcore.v1.Tenant
+	16,  // 27: delcore.v1.GetTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	18,  // 28: delcore.v1.GetTenantResponse.tenant:type_name -> delcore.v1.Tenant
+	17,  // 29: delcore.v1.ListMembersRequest.page:type_name -> delcore.v1.Page
+	16,  // 30: delcore.v1.ListMembersResponse.metadata:type_name -> delcore.v1.Metadata
+	19,  // 31: delcore.v1.ListMembersResponse.members:type_name -> delcore.v1.Member
+	0,   // 32: delcore.v1.SetMemberRolesRequest.roles:type_name -> delcore.v1.Role
+	16,  // 33: delcore.v1.SetMemberRolesResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 34: delcore.v1.RemoveMemberResponse.metadata:type_name -> delcore.v1.Metadata
+	0,   // 35: delcore.v1.CreateInvitationRequest.roles:type_name -> delcore.v1.Role
+	16,  // 36: delcore.v1.CreateInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 37: delcore.v1.AcceptInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 38: delcore.v1.RevokeInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 39: delcore.v1.TransferOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 40: delcore.v1.AcceptOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
+	20,  // 41: delcore.v1.SetGroupRequest.group:type_name -> delcore.v1.Group
+	16,  // 42: delcore.v1.SetGroupResponse.metadata:type_name -> delcore.v1.Metadata
+	20,  // 43: delcore.v1.SetGroupResponse.group:type_name -> delcore.v1.Group
+	17,  // 44: delcore.v1.ListGroupsRequest.page:type_name -> delcore.v1.Page
+	16,  // 45: delcore.v1.ListGroupsResponse.metadata:type_name -> delcore.v1.Metadata
+	20,  // 46: delcore.v1.ListGroupsResponse.groups:type_name -> delcore.v1.Group
+	17,  // 47: delcore.v1.GetCatalogRequest.page:type_name -> delcore.v1.Page
+	16,  // 48: delcore.v1.GetCatalogResponse.metadata:type_name -> delcore.v1.Metadata
+	22,  // 49: delcore.v1.GetCatalogResponse.services:type_name -> delcore.v1.Service
+	23,  // 50: delcore.v1.GetCatalogResponse.plans:type_name -> delcore.v1.Plan
+	26,  // 51: delcore.v1.GetCatalogResponse.prices:type_name -> delcore.v1.Price
+	25,  // 52: delcore.v1.GetCatalogResponse.add_ons:type_name -> delcore.v1.AddOn
+	24,  // 53: delcore.v1.GetCatalogResponse.meters:type_name -> delcore.v1.Meter
+	29,  // 54: delcore.v1.GetCatalogResponse.features:type_name -> delcore.v1.Feature
+	24,  // 55: delcore.v1.PutMeterRequest.meter:type_name -> delcore.v1.Meter
+	16,  // 56: delcore.v1.PutMeterResponse.metadata:type_name -> delcore.v1.Metadata
+	24,  // 57: delcore.v1.PutMeterResponse.meter:type_name -> delcore.v1.Meter
+	29,  // 58: delcore.v1.PutFeatureRequest.feature:type_name -> delcore.v1.Feature
+	16,  // 59: delcore.v1.PutFeatureResponse.metadata:type_name -> delcore.v1.Metadata
+	29,  // 60: delcore.v1.PutFeatureResponse.feature:type_name -> delcore.v1.Feature
+	25,  // 61: delcore.v1.PutAddOnRequest.add_on:type_name -> delcore.v1.AddOn
+	16,  // 62: delcore.v1.PutAddOnResponse.metadata:type_name -> delcore.v1.Metadata
+	25,  // 63: delcore.v1.PutAddOnResponse.add_on:type_name -> delcore.v1.AddOn
+	17,  // 64: delcore.v1.ListBillingHistoryRequest.page:type_name -> delcore.v1.Page
+	16,  // 65: delcore.v1.ListBillingHistoryResponse.metadata:type_name -> delcore.v1.Metadata
+	37,  // 66: delcore.v1.ListBillingHistoryResponse.jobs:type_name -> delcore.v1.Job
+	22,  // 67: delcore.v1.PutServiceRequest.service:type_name -> delcore.v1.Service
+	16,  // 68: delcore.v1.PutServiceResponse.metadata:type_name -> delcore.v1.Metadata
+	22,  // 69: delcore.v1.PutServiceResponse.service:type_name -> delcore.v1.Service
+	23,  // 70: delcore.v1.PutPlanRequest.plan:type_name -> delcore.v1.Plan
+	16,  // 71: delcore.v1.PutPlanResponse.metadata:type_name -> delcore.v1.Metadata
+	23,  // 72: delcore.v1.PutPlanResponse.plan:type_name -> delcore.v1.Plan
+	26,  // 73: delcore.v1.CreatePriceRequest.price:type_name -> delcore.v1.Price
+	16,  // 74: delcore.v1.CreatePriceResponse.metadata:type_name -> delcore.v1.Metadata
+	26,  // 75: delcore.v1.CreatePriceResponse.price:type_name -> delcore.v1.Price
+	132, // 76: delcore.v1.AuthorizeRequest.group_values:type_name -> delcore.v1.AuthorizeRequest.GroupValuesEntry
+	13,  // 77: delcore.v1.AuthorizeRequest.consumer_authorization:type_name -> delcore.v1.ConsumerAuthorization
+	16,  // 78: delcore.v1.AuthorizeResponse.metadata:type_name -> delcore.v1.Metadata
+	2,   // 79: delcore.v1.AuthorizeResponse.reasons:type_name -> delcore.v1.BlockReason
+	83,  // 80: delcore.v1.AuthorizeResponse.feature:type_name -> delcore.v1.FeatureAuthorization
+	10,  // 81: delcore.v1.FeatureAuthorization.kind:type_name -> delcore.v1.FeatureKind
+	135, // 82: delcore.v1.FeatureAuthorization.period_start:type_name -> google.protobuf.Timestamp
+	135, // 83: delcore.v1.FeatureAuthorization.period_end:type_name -> google.protobuf.Timestamp
+	31,  // 84: delcore.v1.FeatureAuthorization.configuration:type_name -> delcore.v1.ConfigurationValue
+	133, // 85: delcore.v1.MeterAggregate.group_values:type_name -> delcore.v1.MeterAggregate.GroupValuesEntry
+	135, // 86: delcore.v1.MeterAggregate.updated_at:type_name -> google.protobuf.Timestamp
+	135, // 87: delcore.v1.ListMeterAggregatesRequest.period_at:type_name -> google.protobuf.Timestamp
+	17,  // 88: delcore.v1.ListMeterAggregatesRequest.page:type_name -> delcore.v1.Page
+	16,  // 89: delcore.v1.ListMeterAggregatesResponse.metadata:type_name -> delcore.v1.Metadata
+	7,   // 90: delcore.v1.ListMeterAggregatesResponse.aggregation:type_name -> delcore.v1.MeterAggregation
+	135, // 91: delcore.v1.ListMeterAggregatesResponse.period_start:type_name -> google.protobuf.Timestamp
+	135, // 92: delcore.v1.ListMeterAggregatesResponse.period_end:type_name -> google.protobuf.Timestamp
+	84,  // 93: delcore.v1.ListMeterAggregatesResponse.aggregates:type_name -> delcore.v1.MeterAggregate
+	14,  // 94: delcore.v1.MeteringFailureCount.category:type_name -> delcore.v1.MeteringFailureCategory
+	16,  // 95: delcore.v1.GetMeteringStatusResponse.metadata:type_name -> delcore.v1.Metadata
+	135, // 96: delcore.v1.GetMeteringStatusResponse.oldest_pending_at:type_name -> google.protobuf.Timestamp
+	87,  // 97: delcore.v1.GetMeteringStatusResponse.failures:type_name -> delcore.v1.MeteringFailureCount
+	135, // 98: delcore.v1.GetMeteringStatusResponse.last_failure_at:type_name -> google.protobuf.Timestamp
+	14,  // 99: delcore.v1.GetMeteringStatusResponse.last_failure_category:type_name -> delcore.v1.MeteringFailureCategory
+	16,  // 100: delcore.v1.CheckTenantLifecycleResponse.metadata:type_name -> delcore.v1.Metadata
+	3,   // 101: delcore.v1.TenantStateEntry.state:type_name -> delcore.v1.TenantState
+	16,  // 102: delcore.v1.GetTenantStatesResponse.metadata:type_name -> delcore.v1.Metadata
+	93,  // 103: delcore.v1.GetTenantStatesResponse.states:type_name -> delcore.v1.TenantStateEntry
+	33,  // 104: delcore.v1.ReportUsageRequest.usage:type_name -> delcore.v1.Usage
+	16,  // 105: delcore.v1.ReportUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	33,  // 106: delcore.v1.CorrectUsageRequest.usage:type_name -> delcore.v1.Usage
+	16,  // 107: delcore.v1.CorrectUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	35,  // 108: delcore.v1.IngestEventRequest.event:type_name -> delcore.v1.Event
+	16,  // 109: delcore.v1.IngestEventResponse.metadata:type_name -> delcore.v1.Metadata
+	12,  // 110: delcore.v1.CorrectEventRequest.kind:type_name -> delcore.v1.EventCorrectionKind
+	134, // 111: delcore.v1.CorrectEventRequest.attributes:type_name -> delcore.v1.CorrectEventRequest.AttributesEntry
+	16,  // 112: delcore.v1.CorrectEventResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 113: delcore.v1.GetEventResponse.metadata:type_name -> delcore.v1.Metadata
+	35,  // 114: delcore.v1.GetEventResponse.event:type_name -> delcore.v1.Event
+	17,  // 115: delcore.v1.ListUsageRequest.page:type_name -> delcore.v1.Page
+	16,  // 116: delcore.v1.ListUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	33,  // 117: delcore.v1.ListUsageResponse.events:type_name -> delcore.v1.Usage
+	17,  // 118: delcore.v1.ListLedgerRequest.page:type_name -> delcore.v1.Page
+	16,  // 119: delcore.v1.ListLedgerResponse.metadata:type_name -> delcore.v1.Metadata
+	36,  // 120: delcore.v1.ListLedgerResponse.entries:type_name -> delcore.v1.LedgerEntry
+	16,  // 121: delcore.v1.RequestTopUpResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 122: delcore.v1.SetAutoTopUpResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 123: delcore.v1.ChangeSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 124: delcore.v1.CancelSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 125: delcore.v1.DeleteTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 126: delcore.v1.WithdrawResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 127: delcore.v1.SetTenantBlockedResponse.metadata:type_name -> delcore.v1.Metadata
+	17,  // 128: delcore.v1.ListJobsRequest.page:type_name -> delcore.v1.Page
+	16,  // 129: delcore.v1.ListJobsResponse.metadata:type_name -> delcore.v1.Metadata
+	37,  // 130: delcore.v1.ListJobsResponse.jobs:type_name -> delcore.v1.Job
+	16,  // 131: delcore.v1.RetryJobResponse.metadata:type_name -> delcore.v1.Metadata
+	17,  // 132: delcore.v1.ListAuditRequest.page:type_name -> delcore.v1.Page
+	16,  // 133: delcore.v1.ListAuditResponse.metadata:type_name -> delcore.v1.Metadata
+	38,  // 134: delcore.v1.ListAuditResponse.entries:type_name -> delcore.v1.AuditEntry
+	16,  // 135: delcore.v1.DeleteGroupResponse.metadata:type_name -> delcore.v1.Metadata
+	34,  // 136: delcore.v1.Event.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
+	34,  // 137: delcore.v1.AuthorizeRequest.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
+	34,  // 138: delcore.v1.MeterAggregate.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
+	34,  // 139: delcore.v1.CorrectEventRequest.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
+	129, // 140: delcore.v1.DelcoreService.DeleteGroup:input_type -> delcore.v1.DeleteGroupRequest
+	67,  // 141: delcore.v1.DelcoreService.PutMeter:input_type -> delcore.v1.PutMeterRequest
+	69,  // 142: delcore.v1.DelcoreService.PutFeature:input_type -> delcore.v1.PutFeatureRequest
+	71,  // 143: delcore.v1.DelcoreService.PutAddOn:input_type -> delcore.v1.PutAddOnRequest
+	73,  // 144: delcore.v1.DelcoreService.ListBillingHistory:input_type -> delcore.v1.ListBillingHistoryRequest
+	39,  // 145: delcore.v1.DelcoreService.GetCurrentUser:input_type -> delcore.v1.GetCurrentUserRequest
+	41,  // 146: delcore.v1.DelcoreService.CreateTenant:input_type -> delcore.v1.CreateTenantRequest
+	43,  // 147: delcore.v1.DelcoreService.GetTenant:input_type -> delcore.v1.GetTenantRequest
+	45,  // 148: delcore.v1.DelcoreService.ListMembers:input_type -> delcore.v1.ListMembersRequest
+	47,  // 149: delcore.v1.DelcoreService.SetMemberRoles:input_type -> delcore.v1.SetMemberRolesRequest
+	49,  // 150: delcore.v1.DelcoreService.RemoveMember:input_type -> delcore.v1.RemoveMemberRequest
+	51,  // 151: delcore.v1.DelcoreService.CreateInvitation:input_type -> delcore.v1.CreateInvitationRequest
+	53,  // 152: delcore.v1.DelcoreService.AcceptInvitation:input_type -> delcore.v1.AcceptInvitationRequest
+	55,  // 153: delcore.v1.DelcoreService.RevokeInvitation:input_type -> delcore.v1.RevokeInvitationRequest
+	57,  // 154: delcore.v1.DelcoreService.TransferOwnership:input_type -> delcore.v1.TransferOwnershipRequest
+	59,  // 155: delcore.v1.DelcoreService.AcceptOwnership:input_type -> delcore.v1.AcceptOwnershipRequest
+	61,  // 156: delcore.v1.DelcoreService.SetGroup:input_type -> delcore.v1.SetGroupRequest
+	63,  // 157: delcore.v1.DelcoreService.ListGroups:input_type -> delcore.v1.ListGroupsRequest
+	65,  // 158: delcore.v1.DelcoreService.GetCatalog:input_type -> delcore.v1.GetCatalogRequest
+	75,  // 159: delcore.v1.DelcoreService.PutService:input_type -> delcore.v1.PutServiceRequest
+	77,  // 160: delcore.v1.DelcoreService.PutPlan:input_type -> delcore.v1.PutPlanRequest
+	79,  // 161: delcore.v1.DelcoreService.CreatePrice:input_type -> delcore.v1.CreatePriceRequest
+	81,  // 162: delcore.v1.DelcoreService.Authorize:input_type -> delcore.v1.AuthorizeRequest
+	85,  // 163: delcore.v1.DelcoreService.ListMeterAggregates:input_type -> delcore.v1.ListMeterAggregatesRequest
+	88,  // 164: delcore.v1.DelcoreService.GetMeteringStatus:input_type -> delcore.v1.GetMeteringStatusRequest
+	90,  // 165: delcore.v1.DelcoreService.CheckTenantLifecycle:input_type -> delcore.v1.CheckTenantLifecycleRequest
+	92,  // 166: delcore.v1.DelcoreService.GetTenantStates:input_type -> delcore.v1.GetTenantStatesRequest
+	95,  // 167: delcore.v1.DelcoreService.ReportUsage:input_type -> delcore.v1.ReportUsageRequest
+	97,  // 168: delcore.v1.DelcoreService.CorrectUsage:input_type -> delcore.v1.CorrectUsageRequest
+	105, // 169: delcore.v1.DelcoreService.ListUsage:input_type -> delcore.v1.ListUsageRequest
+	99,  // 170: delcore.v1.DelcoreService.IngestEvent:input_type -> delcore.v1.IngestEventRequest
+	101, // 171: delcore.v1.DelcoreService.CorrectEvent:input_type -> delcore.v1.CorrectEventRequest
+	103, // 172: delcore.v1.DelcoreService.GetEvent:input_type -> delcore.v1.GetEventRequest
+	107, // 173: delcore.v1.DelcoreService.ListLedger:input_type -> delcore.v1.ListLedgerRequest
+	109, // 174: delcore.v1.DelcoreService.RequestTopUp:input_type -> delcore.v1.RequestTopUpRequest
+	111, // 175: delcore.v1.DelcoreService.SetAutoTopUp:input_type -> delcore.v1.SetAutoTopUpRequest
+	113, // 176: delcore.v1.DelcoreService.ChangeSubscription:input_type -> delcore.v1.ChangeSubscriptionRequest
+	115, // 177: delcore.v1.DelcoreService.CancelSubscription:input_type -> delcore.v1.CancelSubscriptionRequest
+	117, // 178: delcore.v1.DelcoreService.DeleteTenant:input_type -> delcore.v1.DeleteTenantRequest
+	119, // 179: delcore.v1.DelcoreService.Withdraw:input_type -> delcore.v1.WithdrawRequest
+	121, // 180: delcore.v1.DelcoreService.SetTenantBlocked:input_type -> delcore.v1.SetTenantBlockedRequest
+	123, // 181: delcore.v1.DelcoreService.ListJobs:input_type -> delcore.v1.ListJobsRequest
+	125, // 182: delcore.v1.DelcoreService.RetryJob:input_type -> delcore.v1.RetryJobRequest
+	127, // 183: delcore.v1.DelcoreService.ListAudit:input_type -> delcore.v1.ListAuditRequest
+	130, // 184: delcore.v1.DelcoreService.DeleteGroup:output_type -> delcore.v1.DeleteGroupResponse
+	68,  // 185: delcore.v1.DelcoreService.PutMeter:output_type -> delcore.v1.PutMeterResponse
+	70,  // 186: delcore.v1.DelcoreService.PutFeature:output_type -> delcore.v1.PutFeatureResponse
+	72,  // 187: delcore.v1.DelcoreService.PutAddOn:output_type -> delcore.v1.PutAddOnResponse
+	74,  // 188: delcore.v1.DelcoreService.ListBillingHistory:output_type -> delcore.v1.ListBillingHistoryResponse
+	40,  // 189: delcore.v1.DelcoreService.GetCurrentUser:output_type -> delcore.v1.GetCurrentUserResponse
+	42,  // 190: delcore.v1.DelcoreService.CreateTenant:output_type -> delcore.v1.CreateTenantResponse
+	44,  // 191: delcore.v1.DelcoreService.GetTenant:output_type -> delcore.v1.GetTenantResponse
+	46,  // 192: delcore.v1.DelcoreService.ListMembers:output_type -> delcore.v1.ListMembersResponse
+	48,  // 193: delcore.v1.DelcoreService.SetMemberRoles:output_type -> delcore.v1.SetMemberRolesResponse
+	50,  // 194: delcore.v1.DelcoreService.RemoveMember:output_type -> delcore.v1.RemoveMemberResponse
+	52,  // 195: delcore.v1.DelcoreService.CreateInvitation:output_type -> delcore.v1.CreateInvitationResponse
+	54,  // 196: delcore.v1.DelcoreService.AcceptInvitation:output_type -> delcore.v1.AcceptInvitationResponse
+	56,  // 197: delcore.v1.DelcoreService.RevokeInvitation:output_type -> delcore.v1.RevokeInvitationResponse
+	58,  // 198: delcore.v1.DelcoreService.TransferOwnership:output_type -> delcore.v1.TransferOwnershipResponse
+	60,  // 199: delcore.v1.DelcoreService.AcceptOwnership:output_type -> delcore.v1.AcceptOwnershipResponse
+	62,  // 200: delcore.v1.DelcoreService.SetGroup:output_type -> delcore.v1.SetGroupResponse
+	64,  // 201: delcore.v1.DelcoreService.ListGroups:output_type -> delcore.v1.ListGroupsResponse
+	66,  // 202: delcore.v1.DelcoreService.GetCatalog:output_type -> delcore.v1.GetCatalogResponse
+	76,  // 203: delcore.v1.DelcoreService.PutService:output_type -> delcore.v1.PutServiceResponse
+	78,  // 204: delcore.v1.DelcoreService.PutPlan:output_type -> delcore.v1.PutPlanResponse
+	80,  // 205: delcore.v1.DelcoreService.CreatePrice:output_type -> delcore.v1.CreatePriceResponse
+	82,  // 206: delcore.v1.DelcoreService.Authorize:output_type -> delcore.v1.AuthorizeResponse
+	86,  // 207: delcore.v1.DelcoreService.ListMeterAggregates:output_type -> delcore.v1.ListMeterAggregatesResponse
+	89,  // 208: delcore.v1.DelcoreService.GetMeteringStatus:output_type -> delcore.v1.GetMeteringStatusResponse
+	91,  // 209: delcore.v1.DelcoreService.CheckTenantLifecycle:output_type -> delcore.v1.CheckTenantLifecycleResponse
+	94,  // 210: delcore.v1.DelcoreService.GetTenantStates:output_type -> delcore.v1.GetTenantStatesResponse
+	96,  // 211: delcore.v1.DelcoreService.ReportUsage:output_type -> delcore.v1.ReportUsageResponse
+	98,  // 212: delcore.v1.DelcoreService.CorrectUsage:output_type -> delcore.v1.CorrectUsageResponse
+	106, // 213: delcore.v1.DelcoreService.ListUsage:output_type -> delcore.v1.ListUsageResponse
+	100, // 214: delcore.v1.DelcoreService.IngestEvent:output_type -> delcore.v1.IngestEventResponse
+	102, // 215: delcore.v1.DelcoreService.CorrectEvent:output_type -> delcore.v1.CorrectEventResponse
+	104, // 216: delcore.v1.DelcoreService.GetEvent:output_type -> delcore.v1.GetEventResponse
+	108, // 217: delcore.v1.DelcoreService.ListLedger:output_type -> delcore.v1.ListLedgerResponse
+	110, // 218: delcore.v1.DelcoreService.RequestTopUp:output_type -> delcore.v1.RequestTopUpResponse
+	112, // 219: delcore.v1.DelcoreService.SetAutoTopUp:output_type -> delcore.v1.SetAutoTopUpResponse
+	114, // 220: delcore.v1.DelcoreService.ChangeSubscription:output_type -> delcore.v1.ChangeSubscriptionResponse
+	116, // 221: delcore.v1.DelcoreService.CancelSubscription:output_type -> delcore.v1.CancelSubscriptionResponse
+	118, // 222: delcore.v1.DelcoreService.DeleteTenant:output_type -> delcore.v1.DeleteTenantResponse
+	120, // 223: delcore.v1.DelcoreService.Withdraw:output_type -> delcore.v1.WithdrawResponse
+	122, // 224: delcore.v1.DelcoreService.SetTenantBlocked:output_type -> delcore.v1.SetTenantBlockedResponse
+	124, // 225: delcore.v1.DelcoreService.ListJobs:output_type -> delcore.v1.ListJobsResponse
+	126, // 226: delcore.v1.DelcoreService.RetryJob:output_type -> delcore.v1.RetryJobResponse
+	128, // 227: delcore.v1.DelcoreService.ListAudit:output_type -> delcore.v1.ListAuditResponse
+	184, // [184:228] is the sub-list for method output_type
+	140, // [140:184] is the sub-list for method input_type
+	140, // [140:140] is the sub-list for extension type_name
+	140, // [140:140] is the sub-list for extension extendee
+	0,   // [0:140] is the sub-list for field type_name
 }
 
 func init() { file_delcore_v1_delcore_proto_init() }
@@ -9324,7 +9495,7 @@ func file_delcore_v1_delcore_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delcore_v1_delcore_proto_rawDesc), len(file_delcore_v1_delcore_proto_rawDesc)),
-			NumEnums:      13,
+			NumEnums:      15,
 			NumMessages:   120,
 			NumExtensions: 0,
 			NumServices:   1,

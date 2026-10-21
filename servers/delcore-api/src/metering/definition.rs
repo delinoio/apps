@@ -97,6 +97,17 @@ pub struct Filter {
     #[serde(default)]
     pub values: Vec<Value>,
 }
+/// How a meter derives the numeric value of a matched event.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValueSource {
+    /// The numeric `value_attribute` (or the event count for `count`).
+    #[default]
+    Attribute,
+    /// The exact USD charge of an AI usage report: measured token counts times
+    /// the frozen USD price per token of the same event, times the meter markup.
+    AiTokenUsd,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Definition {
     pub key: String,
@@ -108,6 +119,11 @@ pub struct Definition {
     pub group_by: Vec<String>,
     #[serde(default)]
     pub filters: Vec<Filter>,
+    #[serde(default)]
+    pub value_source: ValueSource,
+    /// Canonical markup factor of an `AiTokenUsd` meter; empty otherwise.
+    #[serde(default)]
+    pub markup: String,
 }
 impl Definition {
     pub fn validate(&self) -> Result<()> {
@@ -115,8 +131,23 @@ impl Definition {
         if self.key.is_empty() || self.event_type.is_empty() {
             return Err(invalid("key and event type are required"));
         }
-        if (self.aggregation == Aggregation::Count) != self.value_attribute.is_empty() {
-            return Err(invalid("invalid value attribute for aggregation"));
+        match self.value_source {
+            ValueSource::Attribute => {
+                if !self.markup.is_empty() {
+                    return Err(invalid("markup requires the AI token USD value source"));
+                }
+                if (self.aggregation == Aggregation::Count) != self.value_attribute.is_empty() {
+                    return Err(invalid("invalid value attribute for aggregation"));
+                }
+            }
+            ValueSource::AiTokenUsd => {
+                if self.aggregation != Aggregation::Sum || !self.value_attribute.is_empty() {
+                    return Err(invalid(
+                        "the AI token USD value source needs a sum meter without a value attribute",
+                    ));
+                }
+                super::ai::parse_markup(&self.markup)?;
+            }
         }
         let mut seen = BTreeSet::new();
         for name in &self.group_by {
@@ -227,7 +258,12 @@ pub(super) fn match_validated(
             })?;
             group_values.insert(name.clone(), value.clone());
         }
-        let value = if d.aggregation == Aggregation::Count {
+        let value = if d.value_source == ValueSource::AiTokenUsd {
+            let markup = super::ai::parse_markup(&d.markup)?;
+            let charge = super::ai::usd_charge(&e.attributes, &markup)
+                .map_err(|err| MeteringError::Event(format!("meter {:?}: {err}", d.key)))?;
+            Some(Value::number(&charge.to_string())?)
+        } else if d.aggregation == Aggregation::Count {
             None
         } else {
             let value = e.attributes.get(&d.value_attribute).ok_or_else(|| {

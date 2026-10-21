@@ -161,6 +161,22 @@ pub fn canonical_filters(filters: &[Json]) -> Result<Vec<Json>> {
     out.sort_by_key(go_json);
     Ok(out)
 }
+/// Stored `value_source` numbers follow the protocol enum `MeterValueSource`.
+pub const VALUE_SOURCE_AI_TOKEN_USD: i32 = 2;
+pub fn value_source(number: i32) -> Result<metering::ValueSource> {
+    match number {
+        0 | 1 => Ok(metering::ValueSource::Attribute),
+        VALUE_SOURCE_AI_TOKEN_USD => Ok(metering::ValueSource::AiTokenUsd),
+        _ => Err(Fault::invalid("unknown meter value source")),
+    }
+}
+/// Canonical text of a catalog markup factor.
+pub fn canonical_markup(text: &str) -> Result<String> {
+    crate::accounting::Decimal::parse(text)
+        .map(|d| d.to_string())
+        .map_err(|_| Fault::invalid("markup must be a canonical decimal of at least 1"))
+}
+#[allow(clippy::too_many_arguments)]
 pub fn catalog_definition(
     key: &str,
     event_type: &str,
@@ -168,6 +184,8 @@ pub fn catalog_definition(
     value_attribute: &str,
     filters: &[Json],
     group_by: &[String],
+    value_source_number: i32,
+    markup: &str,
 ) -> Result<Definition> {
     let aggregation = match aggregation {
         1 => Aggregation::Count,
@@ -185,6 +203,8 @@ pub fn catalog_definition(
         value_attribute: value_attribute.into(),
         filters: filters.iter().map(domain_filter).collect::<Result<_>>()?,
         group_by: group_by.to_vec(),
+        value_source: value_source(value_source_number)?,
+        markup: markup.into(),
     };
     d.validate().map_err(|e| Fault::invalid(e.to_string()))?;
     Ok(d)

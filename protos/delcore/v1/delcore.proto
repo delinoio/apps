@@ -149,6 +149,29 @@ message Meter {
   string value_attribute = 7;
   repeated MeterFilter filters = 8;
   repeated string group_by = 9;
+  // How the meter obtains the numeric value of a matched event. Unspecified
+  // keeps the earlier behavior: the numeric value_attribute (or the event
+  // count) is the value. METER_VALUE_SOURCE_AI_TOKEN_USD is reserved for
+  // meters of the service registered with the key "delitools".
+  MeterValueSource value_source = 10;
+  // Markup factor of an AI_TOKEN_USD meter as a canonical decimal of at least 1,
+  // for example "1.15". It is catalog configuration owned by delcore and is
+  // never supplied by event reporters. Empty for every other value source.
+  string markup = 11;
+}
+// MeterValueSource selects how a meter computes the value of a matched event.
+enum MeterValueSource {
+  METER_VALUE_SOURCE_UNSPECIFIED = 0;
+  // The numeric value_attribute of the event (earlier behavior; the same as
+  // UNSPECIFIED).
+  METER_VALUE_SOURCE_ATTRIBUTE = 1;
+  // The exact USD charge of one AI usage report: the sum over the input,
+  // output, cache read and cache write categories of the measured token count
+  // times the USD price per token carried by the same event, multiplied by the
+  // meter markup. The meter must use SUM, no value_attribute, and belongs to
+  // the call-time priced service; its aggregate is rated at one USD per unit
+  // with no included usage and never uses plan-pinned prices.
+  METER_VALUE_SOURCE_AI_TOKEN_USD = 2;
 }
 message AddOn {
   string id = 1;
@@ -531,6 +554,26 @@ message AuthorizeRequest {
   // the meter's group-by attributes with the scalar types used for ingestion.
   // Access and configuration features take no group values.
   map<string, AttributeValue> group_values = 6;
+  // Optional tenant-key authorization mode. Unspecified keeps the user-attributed
+  // check exactly as before. Other modes are accepted only from the service
+  // registered with the key "delitools", grant no platform authority, and leave
+  // the blocking, billing and lifecycle checks in force.
+  ConsumerAuthorization consumer_authorization = 7;
+}
+// ConsumerAuthorization selects how Authorize identifies the principal of a
+// DeliTools API key operation.
+enum ConsumerAuthorization {
+  CONSUMER_AUTHORIZATION_UNSPECIFIED = 0;
+  // A tenant-owned service key executes a capability for the tenant without any
+  // member. user_id must be empty; the capability must be registered by the
+  // calling service.
+  CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY = 1;
+  // Personal-key management: user_id must currently be a member of the tenant.
+  // capability must be empty and paid must be false.
+  CONSUMER_AUTHORIZATION_PERSONAL_KEY_MANAGEMENT = 2;
+  // Service-key management: user_id must currently hold the Owner or Admin role
+  // of the tenant. capability must be empty and paid must be false.
+  CONSUMER_AUTHORIZATION_SERVICE_KEY_MANAGEMENT = 3;
 }
 message AuthorizeResponse {
   Metadata metadata = 1;

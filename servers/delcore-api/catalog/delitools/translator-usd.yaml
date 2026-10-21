@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Translator AI usage: the exact USD token cost of each report times the 15% markup.
+# Priced at call time for every tenant; no plan price applies to this meter.
+kind: meter
+service: delitools
+key: translator-usd
+event_type: translator.usage
+aggregation: sum
+value_source: ai_token_usd
+markup: "1.15"

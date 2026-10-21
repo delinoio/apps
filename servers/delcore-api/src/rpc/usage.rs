@@ -11,14 +11,22 @@ impl Call<'_> {
         match op {
             Op::Authorize => {
                 self.service_scope("authorize").await?;
-                if !canonical(tenant) || !canonical(string(q, "userId")) {
+                let mode = self.consumer_mode(q).await?;
+                // A tenant service key acts for the tenant, so it names no user.
+                let user_free = mode == super::consumer::Mode::TenantServiceKey;
+                if !canonical(tenant) || (!user_free && !canonical(string(q, "userId"))) {
                     return Err(invalid("invalid tenant or user ID"));
                 }
                 let tenant_id = uuid(tenant)?;
-                let user_id = uuid(string(q, "userId"))?;
                 let feature = self.feature_request(q).await?;
-                let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM members m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id JOIN services s ON s.id=$3 WHERE m.tenant_id=$1 AND m.user_id=$2 AND u.withdrawing_at IS NULL AND t.deleted_at IS NULL AND $4=ANY(s.capabilities) AND (1=ANY(m.roles) OR EXISTS(SELECT 1 FROM group_members gm JOIN group_permissions gp ON gp.group_id=gm.group_id WHERE gm.tenant_id=m.tenant_id AND gm.user_id=m.user_id AND gp.service_id=$3 AND gp.capability=$4)))")
-                    .bind(tenant_id).bind(user_id).bind(uuid(&self.service)?).bind(string(q,"capability")).fetch_one(&mut *self.tx).await?;
+                let allowed: bool = if mode == super::consumer::Mode::User {
+                    let user_id = uuid(string(q, "userId"))?;
+                    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM members m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id JOIN services s ON s.id=$3 WHERE m.tenant_id=$1 AND m.user_id=$2 AND u.withdrawing_at IS NULL AND t.deleted_at IS NULL AND $4=ANY(s.capabilities) AND (1=ANY(m.roles) OR EXISTS(SELECT 1 FROM group_members gm JOIN group_permissions gp ON gp.group_id=gm.group_id WHERE gm.tenant_id=m.tenant_id AND gm.user_id=m.user_id AND gp.service_id=$3 AND gp.capability=$4)))")
+                        .bind(tenant_id).bind(user_id).bind(uuid(&self.service)?).bind(string(q,"capability")).fetch_one(&mut *self.tx).await?
+                } else {
+                    self.consumer_allowed(mode, q).await?
+                };
+                tracing::debug!(category="authorization",correlation_id=%self.correlation,service_id=%self.service,mode=mode.as_str(),allowed,"authorization evaluated");
                 if !allowed {
                     return Ok(json!({"allowed":false,"reasons":[1]}));
                 }
@@ -35,6 +43,9 @@ impl Call<'_> {
                         .bind(self.now)
                         .fetch_one(&mut *self.tx)
                         .await?;
+                    // Call-time priced services bill every tenant from the report's own
+                    // prices, so no subscription price entitlement is required.
+                    let call_time = crate::delitools::is_delitools(self.tx, &self.service).await?;
                     let mut depleted: bool = row.try_get(5)?;
                     if depleted {
                         let start: DateTime<Utc> =
@@ -56,7 +67,7 @@ impl Call<'_> {
                         (row.try_get(2)?, 6),
                         (row.try_get(3)?, 4),
                         (row.try_get::<bool, _>(4)? || depleted, 5),
-                        (!row.try_get::<bool, _>(6)?, 1),
+                        (!call_time && !row.try_get::<bool, _>(6)?, 1),
                     ] {
                         if blocked {
                             reasons.push(reason);

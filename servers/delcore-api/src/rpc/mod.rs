@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 pub mod billing;
 pub mod catalog;
+pub mod consumer;
 pub mod events;
 pub mod features;
 pub mod metering_queries;

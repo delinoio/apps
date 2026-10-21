@@ -63,6 +63,73 @@ fn count_meter_rejects_value_attribute() {
     assert!(load(&d.0).is_ok());
 }
 #[test]
+fn ai_token_usd_meters_declare_a_catalog_owned_markup() {
+    let head =
+        "kind: meter\nservice: delitools\nkey: translator-usd\nevent_type: translator.usage\n";
+    for (body, valid) in [
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\n",
+            true,
+        ),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1.30\"\n",
+            true,
+        ),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: 1.15\n",
+            true,
+        ),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1\"\n",
+            true,
+        ),
+        (
+            "aggregation: sum\nvalue_source: attribute\nvalue_attribute: n\n",
+            true,
+        ),
+        // The markup is required, at least one, and canonical decimal math only.
+        ("aggregation: sum\nvalue_source: ai_token_usd\n", false),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"0.99\"\n",
+            false,
+        ),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1e1\"\n",
+            false,
+        ),
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"-1.15\"\n",
+            false,
+        ),
+        // The computed value replaces the value attribute and needs a sum.
+        (
+            "aggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\nvalue_attribute: n\n",
+            false,
+        ),
+        (
+            "aggregation: count\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\n",
+            false,
+        ),
+        (
+            "aggregation: max\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\n",
+            false,
+        ),
+        // A markup only belongs to the computed value source.
+        (
+            "aggregation: sum\nvalue_attribute: n\nmarkup: \"1.15\"\n",
+            false,
+        ),
+        (
+            "aggregation: sum\nvalue_source: surprise\nvalue_attribute: n\n",
+            false,
+        ),
+    ] {
+        let d = Directory::new();
+        d.put("meter.yaml", &format!("{head}{body}"));
+        assert_eq!(load(&d.0).is_ok(), valid, "{body}");
+    }
+}
+#[test]
 fn filter_literals_preserve_types_and_spelling() {
     for (operator, values, valid) in [
         ("equal", "[\"success\"]", true),
@@ -150,6 +217,9 @@ fn committed_example_covers_documented_format() {
         match d.kind.as_str() {
             "meter" => {
                 has.insert(format!("aggregation:{}", d.aggregation));
+                if d.value_source == "ai_token_usd" {
+                    has.insert(format!("ai-usd-markup:{}", decimal(&d.markup).unwrap()));
+                }
                 if d.aggregation == "sum" && !d.filters.is_empty() && !d.group_by.is_empty() {
                     has.insert("sum-with-filters-and-group-by".into());
                 }
@@ -198,6 +268,8 @@ fn committed_example_covers_documented_format() {
         "aggregation:sum",
         "aggregation:unique_count",
         "sum-with-filters-and-group-by",
+        "ai-usd-markup:1.15",
+        "ai-usd-markup:1.3",
         "operator:exists",
         "operator:in",
         "operator:not_equal",

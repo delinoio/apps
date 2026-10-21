@@ -10,6 +10,12 @@ struct Meter {
     definition: metering::Definition,
     untyped: bool,
 }
+impl Meter {
+    /// AI token meters are priced at call time from the event's own prices.
+    fn call_time(&self) -> bool {
+        self.definition.value_source == metering::ValueSource::AiTokenUsd
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct Contribution {
@@ -101,9 +107,16 @@ pub async fn ingest(
             attributes: input.attributes.clone(),
         },
     )?;
+    check_price_snapshots(&meters, &added, &input.attributes, input.occurred_at)?;
     admit(tx, &input.tenant_id, start, &[], &added, &policy.limits).await?;
     let id = new_id();
     let meter_ids: Vec<String> = meters.iter().map(|m| m.id.clone()).collect();
+    // Call-time meters never use plan-pinned prices, so they get no attribution.
+    let priced_ids: Vec<String> = meters
+        .iter()
+        .filter(|m| !m.call_time())
+        .map(|m| m.id.clone())
+        .collect();
     sqlx::query("INSERT INTO metering_events(id,tenant_id,service_id,event_key,fingerprint,occurred_at,accepted_at,period_start,period_end,meter_ids,latest_revision,applied_revision) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,$4,$5,$6,$7,$8,$9,$10::text[]::uuid[],1,0)")
         .bind(&id).bind(&input.tenant_id).bind(&input.service_id).bind(&input.key).bind(&digest).bind(input.occurred_at).bind(now).bind(start).bind(end).bind(&meter_ids).execute(&mut *tx).await?;
     attribute_prices(
@@ -112,7 +125,7 @@ pub async fn ingest(
         &input.tenant_id,
         &input.service_id,
         input.occurred_at,
-        &meter_ids,
+        &priced_ids,
     )
     .await?;
     record(
@@ -220,13 +233,15 @@ pub async fn correct(
     let added = if c.kind == metering::RevisionKind::Replace {
         // Keep the original evaluation set; later meters do not backfill events.
         let meters = load_meters(tx, None, Some(&meter_ids)).await?;
-        match_meters(
+        let added = match_meters(
             &meters,
             &metering::Event {
                 event_type: c.event_type.clone(),
                 attributes: c.attributes.clone(),
             },
-        )?
+        )?;
+        check_price_snapshots(&meters, &added, &c.attributes, occurred)?;
+        added
     } else {
         Vec::new()
     };
@@ -361,6 +376,34 @@ async fn attribute_prices(
     Ok(())
 }
 
+/// The frozen price of an AI usage report cannot become effective after the
+/// report occurred. Compare at the microsecond precision PostgreSQL stores.
+fn check_price_snapshots(
+    meters: &[Meter],
+    matched: &[Contribution],
+    attributes: &BTreeMap<String, metering::Value>,
+    occurred_at: DateTime<Utc>,
+) -> Result<()> {
+    if !matched
+        .iter()
+        .any(|c| meters.iter().any(|m| m.id == c.meter_id && m.call_time()))
+    {
+        return Ok(());
+    }
+    let effective = metering::ai::price_effective_at(attributes)
+        .map_err(|e| reject(Reason::InvalidAttribute, &e.to_string()))?;
+    let stored = occurred_at
+        .with_nanosecond(occurred_at.nanosecond() / 1000 * 1000)
+        .unwrap_or(occurred_at);
+    if effective > stored {
+        return Err(reject(
+            Reason::InvalidAttribute,
+            "price_effective_at is later than the event occurrence",
+        ));
+    }
+    Ok(())
+}
+
 fn match_meters(meters: &[Meter], event: &metering::Event) -> Result<Vec<Contribution>> {
     if meters.is_empty() {
         return Err(reject(
@@ -373,9 +416,12 @@ fn match_meters(meters: &[Meter], event: &metering::Event) -> Result<Vec<Contrib
         metering::MeteringError::NoMatch => {
             reject(Reason::NoMatchingMeter, "no meter matches the event")
         }
-        metering::MeteringError::Event(_) => reject(
+        // Event errors name meters and attributes, never attribute values.
+        metering::MeteringError::Event(detail) => reject(
             Reason::InvalidAttribute,
-            "a matched meter lacks a required attribute or receives an invalid type",
+            &format!(
+                "a matched meter lacks a required attribute or receives an invalid type: {detail}"
+            ),
         ),
         _ => permanent("stored meter definition is invalid"),
     })?;

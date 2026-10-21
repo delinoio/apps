@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+pub mod ai;
 mod definition;
 mod state;
 pub use definition::*;
@@ -42,6 +43,8 @@ mod tests {
             value_attribute: if kind == Aggregation::Count { "" } else { "n" }.into(),
             group_by: vec![],
             filters: vec![],
+            value_source: ValueSource::Attribute,
+            markup: String::new(),
         }
     }
     fn event(n: &str) -> Event {

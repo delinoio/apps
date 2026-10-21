@@ -44,6 +44,10 @@ pub struct Input {
     pub buckets: Vec<Bucket>,
     pub grants: Vec<Decimal>,
     pub prices: HashMap<String, Decimal>,
+    /// The meter's values are already exact USD charges (call-time priced AI
+    /// usage). Every contribution is charged one USD per unit, whatever its
+    /// attributed price; plan-pinned prices and included usage never apply.
+    pub call_time_usd: bool,
 }
 #[derive(Clone, Debug, Default)]
 pub struct Segment {
@@ -85,7 +89,13 @@ fn bucket_value(kind: Aggregation, bucket: &Bucket) -> Decimal {
 pub fn compute(input: &Input) -> std::result::Result<Result, Inconsistent> {
     let mut result = Result::default();
     let mut cumulative = vec![Decimal::zero()];
-    for grant in &input.grants {
+    // Call-time meters carry no included usage, so grants never enter the math.
+    let grants: &[Decimal] = if input.call_time_usd {
+        &[]
+    } else {
+        &input.grants
+    };
+    for grant in grants {
         if grant < &Decimal::zero() {
             return Err(Inconsistent("negative allowance grant"));
         }
@@ -99,10 +109,13 @@ pub fn compute(input: &Input) -> std::result::Result<Result, Inconsistent> {
     let mut first = HashMap::new();
     let mut by_group: HashMap<&str, Vec<&Bucket>> = HashMap::new();
     for bucket in &input.buckets {
-        if bucket.epoch > input.grants.len() || bucket.count <= 0 {
+        if bucket.epoch > grants.len() || bucket.count <= 0 {
             return Err(Inconsistent("invalid contribution bucket"));
         }
-        if !bucket.price_id.is_empty() && !input.prices.contains_key(&bucket.price_id) {
+        if !input.call_time_usd
+            && !bucket.price_id.is_empty()
+            && !input.prices.contains_key(&bucket.price_id)
+        {
             return Err(Inconsistent("attributed price is missing"));
         }
         first
@@ -185,7 +198,13 @@ pub fn compute(input: &Input) -> std::result::Result<Result, Inconsistent> {
             quantity,
             ..Default::default()
         };
-        if segment.price_id.is_empty() {
+        if input.call_time_usd {
+            // The quantity is the USD charge itself.
+            segment.billable = segment.quantity.clone();
+            segment.charge = segment.quantity.clone();
+            result.billable = result.billable.add(&segment.billable);
+            result.charge = result.charge.add(&segment.charge);
+        } else if segment.price_id.is_empty() {
             result.unrated = result.unrated.add(&segment.quantity);
         } else {
             let available = max_zero(cumulative[epoch].sub(&result.consumed));
@@ -244,6 +263,7 @@ mod tests {
             buckets,
             grants: grants.iter().map(|s| d(s)).collect(),
             prices: prices.iter().map(|(k, v)| ((*k).into(), d(v))).collect(),
+            call_time_usd: false,
         }
     }
     #[test]
@@ -423,6 +443,58 @@ mod tests {
         .unwrap();
         assert_eq!(r.charge, d("0.012"));
         assert_eq!(rounded_charge(&r.charge).unwrap(), d("0.01"));
+    }
+    #[test]
+    fn call_time_usd_charges_the_quantity_without_prices_or_allowance() {
+        // The quantity of a call-time meter is already a USD amount. Grants and
+        // attributed prices, even unknown ones, never change the charge.
+        let mut i = input(
+            &[("g", "0.0084525")],
+            vec![bucket("g", "", 0, 1, "0.0084525")],
+            &[],
+            &[],
+        );
+        i.call_time_usd = true;
+        let r = compute(&i).unwrap();
+        assert_eq!(r.charge, d("0.0084525"));
+        assert_eq!(r.billable, d("0.0084525"));
+        assert_eq!(r.consumed, d("0"));
+        assert_eq!(r.unrated, d("0"));
+        i.grants = vec![d("100")];
+        i.prices.insert("plan-price".into(), d("9"));
+        i.buckets[0].price_id = "plan-price".into();
+        let r = compute(&i).unwrap();
+        assert_eq!(r.charge, d("0.0084525"));
+        assert_eq!(r.granted, d("0"));
+        assert_eq!(r.remaining, d("0"));
+        // Groups sum exactly; a negative group never offsets another.
+        let mut i = input(
+            &[("a", "-2"), ("b", "0.1"), ("c", "0.2")],
+            vec![
+                bucket("a", "", 0, 1, "-2"),
+                bucket("b", "", 0, 2, "0.1"),
+                bucket("c", "", 0, 3, "0.2"),
+            ],
+            &[],
+            &[],
+        );
+        i.call_time_usd = true;
+        assert_eq!(compute(&i).unwrap().charge, d("0.3"));
+        // The same input is rated through plan prices when the flag is off.
+        i.call_time_usd = false;
+        assert_eq!(compute(&i).unwrap().unrated, d("0.3"));
+        // Reporting two events into one period stays exactly additive before the
+        // single period rounding.
+        let mut i = input(
+            &[("g", "0.0000115")],
+            vec![bucket("g", "", 0, 1, "0.0000115")],
+            &[],
+            &[],
+        );
+        i.call_time_usd = true;
+        let r = compute(&i).unwrap();
+        assert_eq!(rounded_charge(&r.charge).unwrap(), d("0"));
+        assert_eq!(rounded_charge(&d("0.005")).unwrap(), d("0.01"));
     }
     #[test]
     fn equal_occurrences_break_ties_by_epoch_then_price() {

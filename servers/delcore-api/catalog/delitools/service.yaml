@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# The reserved DeliTools service. Its key and name stay "delitools", and serving it
+# needs DELITOOLS_ENABLED=true with 30-day reporting windows. Replace the client ID
+# with the Logto M2M application of your DeliTools deployment.
+kind: service
+key: delitools
+name: delitools
+client_id: delitools-local
+capabilities:
+  - translator
+  - extractor
+scopes:
+  - authorize
+  - usage:write
+  - usage:read

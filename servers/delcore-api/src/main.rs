@@ -41,6 +41,12 @@ async fn run() -> anyhow::Result<()> {
         )
         .await?;
     }
+    // A registered DeliTools service needs the explicit switch and its reporting
+    // windows. Check after catalog synchronization, before serving.
+    {
+        let mut connection = store.pool.acquire().await?;
+        delcore_api::delitools::ensure_configured(&mut connection, &config).await?;
+    }
     let verifier = auth::Verifier::new(&config).await?;
     let mut server = Server::new(store.pool.clone(), verifier, config.clone());
     server.metrics = metrics.clone();

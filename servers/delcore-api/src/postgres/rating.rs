@@ -56,6 +56,10 @@ pub async fn rate_meter_period(
         buckets: Vec::new(),
         grants: Vec::new(),
         prices: std::collections::HashMap::new(),
+        // Call-time priced AI meters carry USD amounts and ignore plan prices.
+        call_time_usd: crate::delitools::meter_is_call_time(&mut *db, &p.meter_id)
+            .await
+            .map_err(|fault| anyhow::anyhow!("meter definition unavailable: {}", fault.message))?,
     };
     let rows = sqlx::query(ALLOWANCE_GRANTS_QUERY)
         .bind(tenant)
@@ -71,6 +75,11 @@ pub async fn rate_meter_period(
                 .map_err(|_| rating::Inconsistent("stored allowance grant"))?,
         );
         grant_times.push(row.try_get(1)?);
+    }
+    if input.call_time_usd {
+        // No allowance applies, and every epoch is zero.
+        input.grants.clear();
+        grant_times.clear();
     }
     if p.meter_id.is_empty() {
         return Ok(rating::compute(&input)?);

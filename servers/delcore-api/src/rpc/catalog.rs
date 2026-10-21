@@ -92,6 +92,10 @@ fn number(v: &Value, key: &str) -> i32 {
             ],
         ),
         (
+            "METER_VALUE_SOURCE_",
+            &["UNSPECIFIED", "ATTRIBUTE", "AI_TOKEN_USD"],
+        ),
+        (
             "METER_FILTER_OPERATOR_",
             &[
                 "UNSPECIFIED",
@@ -401,6 +405,9 @@ impl Call<'_> {
             } else {
                 ""
             };
+            if kind == "service" {
+                self.check_reserved_service(&v, &key).await?;
+            }
             let entity =
                 postgres::ensure_catalog_entity(self.tx, kind, scope, &key, string(&v, "id"))
                     .await?;
@@ -501,6 +508,34 @@ impl Call<'_> {
         self.audit("", &format!("catalog.{kind}"), reason).await?;
         Ok(json!({field:v}))
     }
+    /// Keep the reserved DeliTools identity bound to its service ID: it cannot be
+    /// renamed, and no other service can be renamed into its key or name. Serving
+    /// DeliTools also needs the explicit configuration switch.
+    async fn check_reserved_service(&mut self, v: &Value, key: &str) -> Result<()> {
+        let existing_key: Option<String> = if string(v, "id").is_empty() {
+            None
+        } else {
+            sqlx::query_scalar(
+                "SELECT key FROM catalog_entities WHERE id=$1 AND kind='service' AND scope=''",
+            )
+            .bind(uuid(string(v, "id"))?)
+            .fetch_optional(&mut *self.tx)
+            .await?
+        };
+        if crate::delitools::check_service_identity(existing_key.as_deref(), key, string(v, "name"))
+            .is_err()
+        {
+            return Err(precondition(
+                "the reserved DeliTools service identity is immutable and bound to its service ID",
+            ));
+        }
+        if key == crate::delitools::SERVICE_KEY && !self.config.delitools_enabled {
+            return Err(precondition(
+                "registering the DeliTools service requires DELITOOLS_ENABLED=true with 30-day reporting windows",
+            ));
+        }
+        Ok(())
+    }
     async fn put_catalog_feature(&mut self, v: &Value) -> Result<()> {
         let kind = number(v, "kind");
         let value_type = number(v, "value_type");
@@ -542,11 +577,28 @@ impl Call<'_> {
         }
         let filters = array(&v, "filters");
         let mut groups = strings(&v, "group_by");
+        let value_source = number(&v, "value_source");
+        let call_time = value_source == events::VALUE_SOURCE_AI_TOKEN_USD;
+        if !(0..=events::VALUE_SOURCE_AI_TOKEN_USD).contains(&value_source) {
+            return Err(invalid("unknown meter value source"));
+        }
+        let markup = if call_time {
+            events::canonical_markup(string(&v, "markup"))?
+        } else {
+            string(&v, "markup").to_owned()
+        };
+        if call_time && !crate::delitools::is_delitools(self.tx, &service).await? {
+            return Err(invalid(
+                "AI token USD meters belong to the delitools service",
+            ));
+        }
         let legacy = string(&v, "event_type").is_empty()
             && number(&v, "aggregation") == 0
             && string(&v, "value_attribute").is_empty()
             && filters.is_empty()
-            && groups.is_empty();
+            && groups.is_empty()
+            && value_source == 0
+            && markup.is_empty();
         if number(&v, "aggregation") == 0 {
             v["aggregation"] = json!(2);
         }
@@ -568,6 +620,8 @@ impl Call<'_> {
                 string(&v, "value_attribute"),
                 &filters,
                 &groups,
+                value_source,
+                &markup,
             )?;
         }
         for f in &filters {
@@ -586,7 +640,14 @@ impl Call<'_> {
                 return Err(invalid("repeated meter group attribute"));
             }
         }
-        let definition = json!({"name":string(&v,"name"),"event_type":string(&v,"event_type"),"aggregation":number(&v,"aggregation"),"value_attribute":string(&v,"value_attribute"),"filters":filters,"group_by":if groups.is_empty(){Value::Null}else{json!(groups)}});
+        let mut definition = json!({"name":string(&v,"name"),"event_type":string(&v,"event_type"),"aggregation":number(&v,"aggregation"),"value_attribute":string(&v,"value_attribute"),"filters":filters,"group_by":if groups.is_empty(){Value::Null}else{json!(groups)}});
+        if call_time {
+            // Added only for the call-time source so earlier definitions keep their
+            // semantic hashes and versions.
+            definition["value_source"] = json!(value_source);
+            definition["markup"] = json!(markup);
+            v["markup"] = json!(markup);
+        }
         let previous = postgres::active_catalog_version(self.tx, "meter", &entity).await?;
         let stored: Value = if previous.is_empty() {
             json!({})
@@ -610,6 +671,8 @@ impl Call<'_> {
                     string(&v, "value_attribute"),
                     &filters,
                     &groups,
+                    value_source,
+                    &markup,
                 )?;
                 if events::untyped_meter_in_use(self.tx, &entity).await?
                     && !events::is_compatibility_definition(&typed)
@@ -676,6 +739,14 @@ impl Call<'_> {
             .await?;
             if !exists {
                 return Err(invalid("unregistered meter"));
+            }
+            // Call-time priced AI usage never uses plan or add-on price versions.
+            if crate::delitools::meter_key_is_call_time(self.tx, &service, string(&v, "meter"))
+                .await?
+            {
+                return Err(invalid(
+                    "the meter is priced at call time; usage prices do not apply",
+                ));
             }
         }
         if !addon.is_empty() {

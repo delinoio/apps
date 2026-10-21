@@ -12,6 +12,7 @@ use std::{collections::HashMap, sync::Arc};
 pub mod billing_domain;
 pub mod billing_safeguards;
 pub mod catalog;
+pub mod delitools;
 pub mod metering;
 
 pub fn key() -> String {
@@ -31,6 +32,10 @@ pub struct Fixture {
 }
 impl Fixture {
     pub async fn setup() -> Self {
+        Self::setup_with(&[]).await
+    }
+    /// Start the fixture with `.env.example` values overridden by the pairs.
+    pub async fn setup_with(overrides: &[(&str, &str)]) -> Self {
         let _ = tracing_subscriber::fmt()
             .with_test_writer()
             .with_env_filter("delcore_api=debug")
@@ -82,6 +87,9 @@ impl Fixture {
                 .unwrap();
         values.insert("ISSUER".into(), issuer.clone());
         values.insert("REQUESTS_PER_MINUTE".into(), "100000".into());
+        for (key, value) in overrides {
+            values.insert((*key).into(), (*value).into());
+        }
         let config = Config::from_getter(|k| values.get(k).cloned().unwrap_or_default()).unwrap();
         let auth = Verifier::new(&config).await.unwrap();
         let server = Arc::new(Server::new(db.clone(), auth, config.clone()));

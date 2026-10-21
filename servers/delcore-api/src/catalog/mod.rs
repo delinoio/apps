@@ -42,6 +42,8 @@ struct Definition {
     event_type: String,
     aggregation: String,
     value_attribute: String,
+    value_source: String,
+    markup: String,
     filters: Vec<Filter>,
     group_by: Vec<String>,
     feature_type: String,
@@ -116,7 +118,9 @@ fn decode(node: &Node) -> Result<Definition> {
     let kind = string(m, "kind")?;
     let allowed = match kind.as_str() {
         "service" => "name client_id capabilities scopes",
-        "meter" => "service event_type aggregation value_attribute filters group_by",
+        "meter" => {
+            "service event_type aggregation value_attribute value_source markup filters group_by"
+        }
         "feature" => "service name type value_type meter",
         "plan" => "name rank free default_free postpaid features",
         "addon" => "service name features",
@@ -161,6 +165,8 @@ fn decode(node: &Node) -> Result<Definition> {
         event_type: string(m, "event_type")?,
         aggregation: string(m, "aggregation")?,
         value_attribute: string(m, "value_attribute")?,
+        value_source: string(m, "value_source")?,
+        markup: string(m, "markup")?,
         filters,
         group_by: strings(m, "group_by")?,
         feature_type: string(m, "type")?,
@@ -377,16 +383,34 @@ fn validate(d: &Definition) -> Result<()> {
                 aggregation(&d.aggregation) != 0,
                 "unknown meter aggregation"
             );
-            if d.aggregation == "count" {
+            ensure!(
+                matches!(d.value_source.as_str(), "" | "attribute" | "ai_token_usd"),
+                "unknown meter value source"
+            );
+            if d.value_source == "ai_token_usd" {
+                // Delcore owns the markup: the catalog declares it, reporters never send it.
                 ensure!(
-                    d.value_attribute.is_empty(),
-                    "count aggregation cannot have a value attribute"
+                    d.aggregation == "sum" && d.value_attribute.is_empty(),
+                    "ai_token_usd meters use sum aggregation without a value attribute"
                 );
+                crate::metering::ai::parse_markup(&decimal(&d.markup)?)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             } else {
                 ensure!(
-                    !d.value_attribute.is_empty(),
-                    "aggregation requires a value attribute"
+                    d.markup.is_empty(),
+                    "markup requires the ai_token_usd value source"
                 );
+                if d.aggregation == "count" {
+                    ensure!(
+                        d.value_attribute.is_empty(),
+                        "count aggregation cannot have a value attribute"
+                    );
+                } else {
+                    ensure!(
+                        !d.value_attribute.is_empty(),
+                        "aggregation requires a value attribute"
+                    );
+                }
             }
             let mut groups = BTreeSet::new();
             for g in &d.group_by {
