@@ -203,21 +203,22 @@ func (s *Server) GetMeteringStatus(ctx context.Context, r *connect.Request[pb.Ge
 			}
 			tenant = r.Msg.TenantId
 		}
-		// The payload comparison is textual so an unreadable payload cannot fail
-		// the cast; such jobs still count as failed work.
-		const work = `FROM jobs j LEFT JOIN metering_events e ON e.id::text=j.payload->>'event_id'
- WHERE j.kind=$1 AND j.state<>'done' AND ($2::uuid IS NULL OR j.tenant_id=$2) AND ($3::uuid IS NULL OR e.service_id=$3)`
+		// Unfinished metering jobs use the jobs_metering_unfinished index. The
+		// guarded cast lets the join use the event primary key while an
+		// unreadable payload joins no event and still counts as failed work.
+		const work = `FROM jobs j LEFT JOIN metering_events e ON e.id=CASE WHEN j.payload->>'event_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN (j.payload->>'event_id')::uuid END
+ WHERE j.kind='` + events.JobKind + `' AND j.state<>'done' AND ($1::uuid IS NULL OR j.tenant_id=$1) AND ($2::uuid IS NULL OR e.service_id=$2)`
 		var oldest *time.Time
 		if e := c.tx.QueryRow(c.ctx, `SELECT count(DISTINCT e.id) FILTER(WHERE e.applied_revision<e.latest_revision),
  count(*) FILTER(WHERE j.state IN ('pending','running')),min(j.created_at) FILTER(WHERE j.state IN ('pending','running')),
- count(*) FILTER(WHERE j.state='failed') `+work, events.JobKind, tenant, service).Scan(&o.UnappliedEvents, &o.PendingJobs, &oldest, &o.FailedJobs); e != nil {
+ count(*) FILTER(WHERE j.state='failed') `+work, tenant, service).Scan(&o.UnappliedEvents, &o.PendingJobs, &oldest, &o.FailedJobs); e != nil {
 			return e
 		}
 		if oldest != nil {
 			o.OldestPendingAt = timestamppb.New(*oldest)
 			o.LagSeconds = max(int64(c.now.Sub(*oldest)/time.Second), 0)
 		}
-		rows, e := c.tx.Query(c.ctx, `SELECT j.error_category,count(*),max(j.updated_at) `+work+` AND j.error_category<>'' GROUP BY j.error_category ORDER BY j.error_category`, events.JobKind, tenant, service)
+		rows, e := c.tx.Query(c.ctx, `SELECT j.error_category,count(*),max(j.updated_at) `+work+` AND j.error_category<>'' GROUP BY j.error_category ORDER BY j.error_category`, tenant, service)
 		if e != nil {
 			return e
 		}
