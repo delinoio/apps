@@ -13,7 +13,7 @@ use serde::Deserialize;
 use server_common::config::safe_url;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 /// Upper bound for a presented bearer token. Real Logto tokens are far smaller.
 const MAX_TOKEN_BYTES: usize = 8 << 10;
@@ -92,7 +92,13 @@ fn jwks_endpoint(discovery: &serde_json::Value, issuer: &str) -> anyhow::Result<
 pub struct Verifier {
     http: reqwest::Client,
     jwks_url: String,
-    keys: RwLock<(JwkSet, Instant)>,
+    /// The cached key set. Readers never wait for a network refresh: the write lock is taken only
+    /// to install a completed result.
+    keys: RwLock<JwkSet>,
+    /// Serializes refreshes and records when the key set was last fetched. It is held during the
+    /// identity-provider request, so only callers that could not verify against the cached keys
+    /// wait for it.
+    refresh: Mutex<Instant>,
     issuer: String,
     audience: String,
     operator_role: String,
@@ -131,7 +137,8 @@ impl Verifier {
         Ok(Self {
             http,
             jwks_url,
-            keys: RwLock::new((keys, Instant::now())),
+            keys: RwLock::new(keys),
+            refresh: Mutex::new(Instant::now()),
             issuer: issuer.to_owned(),
             audience: audience.to_owned(),
             operator_role: operator_role.to_owned(),
@@ -148,19 +155,25 @@ impl Verifier {
         validation.set_audience(&[&self.audience]);
         validation.leeway = 0;
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+        if let Some(claims) = self
+            .decode_cached(token, header.kid.as_deref(), &validation)
+            .await
         {
-            let cached = self.keys.read().await;
-            if let Ok(claims) = Self::decode(token, header.kid.as_deref(), &cached.0, &validation) {
-                return self.identity(claims);
-            }
-        }
-        // Refresh after a verification failure to support provider key rotation, including
-        // rotation that keeps the key ID. Serialize refreshes and throttle them.
-        let mut keys = self.keys.write().await;
-        if let Ok(claims) = Self::decode(token, header.kid.as_deref(), &keys.0, &validation) {
             return self.identity(claims);
         }
-        if keys.1.elapsed() < MIN_REFRESH {
+        // Refresh after a verification failure to support provider key rotation, including
+        // rotation that keeps the key ID. Serialize refreshes and throttle them. The cached key
+        // set stays readable while the identity provider answers, so tokens that verify against it
+        // never wait on a slow or unavailable provider.
+        let mut last_fetch = self.refresh.lock().await;
+        // A refresh that finished while this request waited may already hold the signing key.
+        if let Some(claims) = self
+            .decode_cached(token, header.kid.as_deref(), &validation)
+            .await
+        {
+            return self.identity(claims);
+        }
+        if last_fetch.elapsed() < MIN_REFRESH {
             return Err(Fault::unauthenticated());
         }
         let fetched = async {
@@ -173,20 +186,30 @@ impl Verifier {
                 .await
         }
         .await;
-        keys.1 = Instant::now();
+        *last_fetch = Instant::now();
         match fetched {
-            Ok(set) => keys.0 = set,
+            Ok(set) => *self.keys.write().await = set,
             Err(_) => {
                 tracing::warn!(category = "jwks_refresh", "identity key refresh failed");
                 return Err(Fault::unauthenticated());
             }
         }
-        self.identity(Self::decode(
-            token,
-            header.kid.as_deref(),
-            &keys.0,
-            &validation,
-        )?)
+        drop(last_fetch);
+        self.identity(
+            self.decode_cached(token, header.kid.as_deref(), &validation)
+                .await
+                .ok_or_else(Fault::unauthenticated)?,
+        )
+    }
+
+    async fn decode_cached(
+        &self,
+        raw: &str,
+        kid: Option<&str>,
+        validation: &Validation,
+    ) -> Option<Claims> {
+        let cached = self.keys.read().await;
+        Self::decode(raw, kid, &cached, validation).ok()
     }
 
     fn decode(
@@ -246,7 +269,8 @@ mod tests {
         Verifier {
             http: reqwest::Client::new(),
             jwks_url: "http://127.0.0.1:9/jwks".into(),
-            keys: RwLock::new((keys, Instant::now())),
+            keys: RwLock::new(keys),
+            refresh: Mutex::new(Instant::now()),
             issuer: "https://issuer.example".into(),
             audience: "api".into(),
             operator_role: "operator".into(),
@@ -284,6 +308,69 @@ mod tests {
         }
         assert!(jwks_endpoint(&json!({"issuer": issuer}), issuer).is_err());
         assert!(jwks_endpoint(&json!({"issuer": "https://other.example", "jwks_uri": "https://keys.example/jwks"}), issuer).is_err());
+    }
+
+    /// An unverifiable token triggers a refresh against a provider that never answers in time.
+    /// Tokens that verify against the cached keys must not wait for it.
+    #[tokio::test]
+    async fn a_slow_key_refresh_does_not_block_verification_against_cached_keys() {
+        use rsa::pkcs8::DecodePrivateKey;
+        let private =
+            RsaPrivateKey::from_pkcs8_pem(include_str!("../tests/support/oidc-test-key.pem"))
+                .unwrap();
+        let signing =
+            EncodingKey::from_rsa_pem(private.to_pkcs8_pem(Default::default()).unwrap().as_bytes())
+                .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let provider = tokio::spawn(async move {
+            let app = axum::Router::new().route(
+                "/jwks",
+                axum::routing::get(|| async {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    axum::Json(json!({"keys": []}))
+                }),
+            );
+            axum::serve(listener, app).await.unwrap()
+        });
+        let mut v = verifier(
+            serde_json::from_value(json!({"keys":[{
+                "kty":"RSA","kid":"cached","alg":"RS256","use":"sig",
+                "n":URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),
+                "e":URL_SAFE_NO_PAD.encode(private.e().to_bytes_be())
+            }]}))
+            .unwrap(),
+        );
+        v.jwks_url = format!("http://{address}/jwks");
+        // Make the next unverifiable token eligible for a refresh.
+        *v.refresh.lock().await = Instant::now()
+            .checked_sub(MIN_REFRESH * 2)
+            .expect("monotonic clock has run long enough");
+        let v = std::sync::Arc::new(v);
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({"iss":v.issuer,"aud":v.audience,"sub":"user","exp":now+3600});
+        let sign = |kid: &str| {
+            let mut header = Header::new(Algorithm::RS256);
+            header.kid = Some(kid.into());
+            jsonwebtoken::encode(&header, &claims, &signing).unwrap()
+        };
+
+        let rotating = tokio::spawn({
+            let (v, token) = (v.clone(), sign("rotated"));
+            async move { v.verify(&token).await }
+        });
+        // Let the refresh start and block on the provider.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let verified = tokio::time::timeout(Duration::from_secs(2), v.verify(&sign("cached")))
+            .await
+            .expect("verification against cached keys waited for the refresh");
+        assert!(verified.is_ok());
+        assert!(
+            !rotating.is_finished(),
+            "the refresh should still be waiting"
+        );
+        rotating.abort();
+        provider.abort();
     }
 
     #[test]
