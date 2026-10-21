@@ -29,3 +29,7 @@ When a service is ported, its launcher must execute its compiled binary directly
 Run `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy --locked --manifest-path servers/Cargo.toml --workspace --all-targets -- -D warnings` and `cargo test --locked --manifest-path servers/Cargo.toml`. Run the PostgreSQL tests with a disposable `TEST_DATABASE_URL` and `cargo test --locked --manifest-path servers/Cargo.toml --workspace --test postgres -- --ignored`. Each Rust integration test creates and removes its own schema. Existing Go oracle tests retain their original database-reset requirements.
 
 The owning Linux API CI jobs run Rust checks, PostgreSQL fixtures and OCI builds. Changes in shared server crates select both Rust API jobs. Root client Cargo validation remains separate. Images compile the locked server workspace and package the Rust executable with server and protocol license notices. Never include local environment files, Cargo targets or credentials in the Docker context.
+
+## HTTP transport limits
+
+The shared transport bounds header parsing before Axum middleware runs, idle socket reads and stalled writes. Header limits are 5 seconds for DevBase and 10 seconds for Git Tracker; idle reads are limited to 60 seconds. Stalled writes are limited to the DevBase request timeout plus 5 seconds, or 60 seconds for Git Tracker. Request middleware separately bounds complete body decoding and handler execution. Shutdown stops accepting connections and drains existing connections within the service shutdown deadline.

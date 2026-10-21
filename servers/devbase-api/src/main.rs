@@ -86,9 +86,18 @@ async fn run() -> anyhow::Result<()> {
     let shutdown = async move {
         tokio::select! {_=server_common::shutdown()=>{},_=stop_rx=>{lost_signal.store(true,std::sync::atomic::Ordering::Relaxed);tracing::error!("instance lock session lost");}}
     };
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await?;
+    server_common::transport::serve(
+        listener,
+        app,
+        server_common::transport::Limits {
+            header: Duration::from_secs(5),
+            idle: Duration::from_secs(60),
+            write: server.config.request_timeout + Duration::from_secs(5),
+            shutdown: server.config.request_timeout,
+        },
+        shutdown,
+    )
+    .await?;
     maintenance.abort();
     let _ = maintenance.await;
     monitor.abort();

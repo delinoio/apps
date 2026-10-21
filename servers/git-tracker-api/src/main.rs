@@ -160,9 +160,18 @@ async fn run() -> anyhow::Result<()> {
             }
         }
     });
-    axum::serve(listener, app)
-        .with_graceful_shutdown(server_common::shutdown())
-        .await?;
+    server_common::transport::serve(
+        listener,
+        app,
+        server_common::transport::Limits {
+            header: Duration::from_secs(10),
+            idle: Duration::from_secs(60),
+            write: Duration::from_secs(60),
+            shutdown: Duration::from_secs(60),
+        },
+        server_common::shutdown(),
+    )
+    .await?;
     maintenance.abort();
     let _ = maintenance.await;
     db.close().await;

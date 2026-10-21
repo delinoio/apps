@@ -31,3 +31,7 @@ opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
 tracing-opentelemetry = "0.32"
 dotenvy = "0.15"
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
+tower = { version = "0.5", features = ["util"] }
+tokio-io-timeout = "1.2"
