@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delitools/v1"
@@ -28,9 +29,12 @@ type fakeDeliTools struct {
 	translate   *pb.TranslateTextArrayRequest
 	extract     *pb.ExtractDataFromTextRequest
 	failExtract bool
+	// delay is how long each call takes before it answers.
+	delay time.Duration
 }
 
 func (f *fakeDeliTools) authorize(name string, h http.Header) error {
+	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, name)
@@ -138,6 +142,21 @@ func TestRunReusesCallerIdempotencyKeys(t *testing.T) {
 		if !strings.Contains(out2.String(), key) {
 			t.Errorf("generated key %q must be printed:\n%s", key, out2.String())
 		}
+	}
+}
+
+func TestRunAppliesTheTimeoutToEachCall(t *testing.T) {
+	// Each call takes 150 ms and the deadline is 250 ms: together they exceed
+	// one shared deadline, but each fits its own.
+	url := newServer(t, &fakeDeliTools{delay: 150 * time.Millisecond})
+	o := options{baseURL: url, credential: "test-key", tenantID: "tenant-1", outputLang: "ko", model: "model-a", timeout: 250 * time.Millisecond}
+	client := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, url)
+	if e := run(context.Background(), client, o, &bytes.Buffer{}); e != nil {
+		t.Fatalf("a per-call deadline must not span both calls: %v", e)
+	}
+	o.timeout = 50 * time.Millisecond
+	if e := run(context.Background(), client, o, &bytes.Buffer{}); connect.CodeOf(e) != connect.CodeDeadlineExceeded {
+		t.Fatalf("expected deadline_exceeded for a call over its own deadline, got %v", e)
 	}
 }
 

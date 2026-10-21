@@ -33,7 +33,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultURL = "http://127.0.0.1:46322"
+const (
+	defaultURL         = "http://127.0.0.1:46322"
+	defaultCallTimeout = 2 * time.Minute
+)
 
 // extractionSchema uses the supported schema subset: an object root, every
 // property required and additionalProperties set to false.
@@ -59,12 +62,16 @@ type options struct {
 	// empty key is replaced with a fresh UUID v7 for that run.
 	translateKey string
 	extractKey   string
+	// timeout bounds each synchronous call separately; zero or less means no
+	// client-side deadline.
+	timeout time.Duration
 }
 
 func main() {
 	output := flag.String("to", "ko", "BCP 47 output language of the translation")
 	input := flag.String("from", "", "BCP 47 input language; omit to detect it")
 	model := flag.String("model", "", "translation model from the operator allowlist; required")
+	timeout := flag.Duration("timeout", defaultCallTimeout, "client deadline of each call; the operator's execution timeout can be up to an hour")
 	translateKey := flag.String("translate-key", "", "idempotency key of the translation; reuse it to retry an uncertain run")
 	extractKey := flag.String("extract-key", "", "idempotency key of the extraction; reuse it to retry an uncertain run")
 	flag.Parse()
@@ -74,16 +81,15 @@ func main() {
 		os.Exit(1)
 	}
 	o.outputLang, o.inputLang, o.model = *output, *input, *model
-	o.translateKey, o.extractKey = *translateKey, *extractKey
+	o.translateKey, o.extractKey, o.timeout = *translateKey, *extractKey, *timeout
 	if o.model == "" {
 		fmt.Fprintln(os.Stderr, "DeliTools example failed: -model is required")
 		os.Exit(1)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	// Calls are synchronous and can take as long as the operator's execution
-	// timeout, so the HTTP client has no short overall timeout; the context
-	// bounds the run.
+	// timeout, so the HTTP client has no short overall timeout. run applies
+	// the -timeout deadline to each call separately.
+	ctx := context.Background()
 	client := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, o.baseURL)
 	if e := run(ctx, client, o, os.Stdout); e != nil {
 		fmt.Fprintln(os.Stderr, "DeliTools example failed:", describe(e))
@@ -132,6 +138,16 @@ func describe(err error) string {
 	return fmt.Sprintf("code=%s reason=%s request_id=%s", ce.Code(), reason, requestID)
 }
 
+// callContext derives the context of one call. Each paid call gets a fresh
+// deadline, so time spent in one call never cancels the next one; usage that a
+// canceled call already incurred is still billed.
+func callContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 // keyOrNew returns the caller-supplied idempotency key, or a new UUID v7 when
 // the caller supplied none.
 func keyOrNew(key string) string {
@@ -151,7 +167,9 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 	// key through -translate-key. A key is not a secret.
 	translateKey := keyOrNew(o.translateKey)
 	fmt.Fprintf(out, "Translation idempotency key: %s\n", translateKey)
-	translated, e := client.TranslateTextArray(ctx, authorized(o.credential, &pb.TranslateTextArrayRequest{
+	translateCtx, cancelTranslate := callContext(ctx, o.timeout)
+	defer cancelTranslate()
+	translated, e := client.TranslateTextArray(translateCtx, authorized(o.credential, &pb.TranslateTextArrayRequest{
 		TenantId:       o.tenantID,
 		OutputLanguage: o.outputLang,
 		InputLanguage:  o.inputLang,
@@ -170,7 +188,9 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 	// service. Information missing from the text returns EXTRACTION_IMPOSSIBLE.
 	extractKey := keyOrNew(o.extractKey)
 	fmt.Fprintf(out, "Extraction idempotency key: %s\n", extractKey)
-	extracted, e := client.ExtractDataFromText(ctx, authorized(o.credential, &pb.ExtractDataFromTextRequest{
+	extractCtx, cancelExtract := callContext(ctx, o.timeout)
+	defer cancelExtract()
+	extracted, e := client.ExtractDataFromText(extractCtx, authorized(o.credential, &pb.ExtractDataFromTextRequest{
 		TenantId:       o.tenantID,
 		Text:           "Ada Lovelace lives in London.",
 		JsonSchema:     extractionSchema,
