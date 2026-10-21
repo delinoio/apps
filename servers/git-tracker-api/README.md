@@ -12,7 +12,7 @@ The web origin is an exact CORS allowlist entry. The default listener is `127.0.
 
 ## Database and process
 
-Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Cargo requires `protoc`. Root development builds both servers once through process-compose; service-local development runs the already built binary.
+Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p git-tracker-api`. Cargo requires `protoc`. Root development builds all three servers once through process-compose; service-local development runs the already built binary.
 
 Run `./servers/target/debug/git-tracker-api migrate` once against an empty Git Tracker database. Migration errors stop the command. Start the process with `./servers/target/debug/git-tracker-api`. The process handles graceful shutdown and runs interruption, finalized-space deletion and audit retention maintenance every minute.
 

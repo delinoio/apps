@@ -133,7 +133,7 @@ for (const [service, key] of [
 ]) {
   test(`${service} changes select only the owning server`, () => {
     for (const path of [
-      `servers/${service}/cmd/main.go`,
+      `servers/${service}/src/main.rs`,
       `docs/servers-${service}-contract.md`,
     ]) {
       const selection = select([path]);
@@ -211,11 +211,11 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
   });
 }
 
-test("go.sum selects every Go runtime and consumer validation", () => {
+test("go.sum selects Go protocol and consumer validation only", () => {
   assert.deepEqual(select(["go.sum"]), {
-    delcore_api: true,
-    devbase_api: true,
-    git_tracker_api: true,
+    delcore_api: false,
+    devbase_api: false,
+    git_tracker_api: false,
     git_tracker: false,
     fixkey: false,
     devbase: false,
@@ -255,7 +255,7 @@ test("dependency lock selection combines with other changes", () => {
   }
 });
 
-test("shared Rust server changes select both API validators", () => {
+test("shared Rust server changes select all API validators", () => {
   for (const path of [
     "servers/crates/server-common/src/auth.rs",
     "servers/Cargo.toml",
@@ -263,6 +263,7 @@ test("shared Rust server changes select both API validators", () => {
     "servers/crates/delino-protos/build.rs",
   ]) {
     const jobs = select([path]);
+    assert.equal(jobs.delcore_api, true, path);
     assert.equal(jobs.devbase_api, true, path);
     assert.equal(jobs.git_tracker_api, true, path);
   }
@@ -271,15 +272,21 @@ test("shared Rust server changes select both API validators", () => {
 test("Rust server matrix selects only affected services", () => {
   for (const [paths, expected] of [
     [["apps/delitools/src/main.tsx"], []],
-    [["servers/delcore-api/main.go"], []],
+    [["servers/delcore-api/src/main.rs"], ["delcore-api"]],
     [["servers/devbase-api/src/main.rs"], ["devbase-api"]],
     [["servers/git-tracker-api/src/main.rs"], ["git-tracker-api"]],
     [
       ["servers/crates/server-common/src/lib.rs"],
-      ["devbase-api", "git-tracker-api"],
+      ["delcore-api", "devbase-api", "git-tracker-api"],
     ],
-    [["protos/devbase/v1/devbase.proto"], ["devbase-api", "git-tracker-api"]],
-    [[".github/workflows/CI.yml"], ["devbase-api", "git-tracker-api"]],
+    [
+      ["protos/devbase/v1/devbase.proto"],
+      ["delcore-api", "devbase-api", "git-tracker-api"],
+    ],
+    [
+      [".github/workflows/CI.yml"],
+      ["delcore-api", "devbase-api", "git-tracker-api"],
+    ],
   ]) {
     assert.deepEqual(
       selectRustServers(select(paths)).map(({ service }) => service),

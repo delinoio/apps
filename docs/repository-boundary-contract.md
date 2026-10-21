@@ -4,7 +4,7 @@
 
 This repository owns server runtimes, background workers, migrations, server configuration examples and OCI packaging under `servers/`, alongside web, desktop and mobile clients, protocols and consumer examples. Root `docs/` owns all project indexes and domain contracts. Server files use FSL-1.1-ALv2; other repository-owned files use Apache-2.0. Preserve third-party licenses and notices under the [license contract](repository-license-contract.md).
 
-The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1` and DevBase uses `protos/devbase/v1`. Go servers and compatibility tests consume these packages directly through the root `github.com/delinoio/apps` Go module. Rust servers consume the local FSL-1.1-ALv2 `servers/crates/delino-protos` package, whose build script generates bindings from these same schemas. Keep canonical schemas and checked-in Go/TypeScript bindings in `protos/`. Generate Rust bindings only into Cargo output; do not check generated Rust source into `servers/`.
+The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/delinoio/apps/protos/delcore/v1` and Connect bindings in `delcorev1connect`. Git Tracker uses `protos/gittracker/v1` and DevBase uses `protos/devbase/v1`. Go consumers and protocol tests consume these packages directly through the root `github.com/delinoio/apps` Go module. Rust servers consume the local FSL-1.1-ALv2 `servers/crates/delino-protos` package, whose build script generates bindings from these same schemas. Keep canonical schemas and checked-in Go/TypeScript bindings in `protos/`. Generate Rust bindings only into Cargo output; do not check generated Rust source into `servers/`.
 
 ## Contribution boundary
 
@@ -16,7 +16,7 @@ Read root and affected scoped instructions. Keep public client behavior and prot
 
 Update affected project, protocol, client and server contracts in the same change. Preserve protocol field numbers, enum values and wire behavior. Run protocol lint, generation, freshness and FILE breaking checks against the comparison revision. Run Go vet, tests and consumer builds from the root, plus applicable frontend tests from the owning app.
 
-Server changes require the owning server Cargo checks from the [server workspace contract](servers-rust-workspace-contract.md), plus applicable Delcore Go checks: `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL integration and the Delcore OCI tests and affected Rust server image builds against disposable databases and mocked providers. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
+Server changes require the owning server Cargo checks from the [server workspace contract](servers-rust-workspace-contract.md). Run the owning PostgreSQL integration tests against disposable databases and mocked providers, and build affected Rust server images for packaging validation. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
 
 Record the source revision, commands, results and unperformed platform/account checks in review or CI records. Builds and fixtures do not establish live provider, deployment or native acceptance. No credentials or account state move through Git.
 

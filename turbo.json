@@ -70,7 +70,8 @@
         "CATALOG_DIR",
         "OTEL_*",
         "NO_COLOR",
-        "DEV_COMPOSE_DATABASE_URLS"
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
       ]
     },
     "@delinoio/devbase-api#dev": {

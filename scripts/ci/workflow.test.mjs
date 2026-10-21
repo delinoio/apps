@@ -42,7 +42,6 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
-    ["delcore-api", "delcore_api"],
     ["fixkey-frontend", "fixkey"],
   ]) {
     assert.equal(
@@ -181,10 +180,10 @@ test("all CI formatting checks belong to Check Formatting", () => {
     "cargo fmt --all --check",
     "cargo fmt --manifest-path servers/Cargo.toml --all --check",
     "node scripts/ci/check-go-format.mjs protos examples",
-    "node scripts/ci/check-go-format.mjs servers",
     "pnpm exec buf format --diff --exit-code",
   ])
     assert.ok(commands.has(command), command);
+  assert.equal(workflow.jobs.changes.outputs.delcore_api, undefined);
   assert.equal(workflow.jobs.changes.outputs.devbase_api, undefined);
   assert.equal(workflow.jobs.changes.outputs.git_tracker_api, undefined);
   for (const [id, config] of Object.entries(workflow.jobs)) {
@@ -209,7 +208,6 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "validate",
     "check-formatting",
     "git-tracker-clients",
-    "delcore-api",
     "rust-servers",
     "rust-servers-clippy",
     "devbase-frontend",
@@ -253,7 +251,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     workflow.jobs["ci-result"].needs.map((id) => [id, { result: "success" }]),
   );
   needs.changes.outputs = {
-    rust_servers: '[{"service":"devbase-api"},{"service":"git-tracker-api"}]',
+    rust_servers:
+      '[{"service":"delcore-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
     rust_clippy: '["fixkey-core"]',
     rust_test: '["fixkey-core", "fixkey"]',
     git_tracker: "true",
@@ -263,9 +262,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "true",
     delidev: "true",
     delitools: "true",
-    delcore_api: "true",
-    devbase_api: "true",
-    git_tracker_api: "true",
     protocol: "true",
   };
   assert.equal(run(needs).status, 0);
@@ -284,7 +280,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     }
   }
   needs.changes.outputs = {
-    rust_servers: '[{"service":"devbase-api"},{"service":"git-tracker-api"}]',
+    rust_servers:
+      '[{"service":"delcore-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
     rust_clippy: "[]",
     rust_test: "[]",
     git_tracker: "false",
@@ -294,9 +291,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "false",
     delidev: "false",
     delitools: "false",
-    delcore_api: "true",
-    devbase_api: "true",
-    git_tracker_api: "true",
     protocol: "true",
   };
   for (const id of [
@@ -382,12 +376,11 @@ test("every prerequisite failure retains its command and outcome in evidence", (
 });
 
 test("server validation uses local protocols and PostgreSQL without OCI checks", () => {
-  for (const id of ["delcore-api", "rust-servers"]) {
+  for (const id of ["rust-servers"]) {
     const job = workflow.jobs[id];
     assert.equal(job["runs-on"], "ubuntu-latest");
     assert.ok(workflow.jobs["ci-result"].needs.includes(id));
     const commands = job.steps.map((step) => step.run ?? "").join("\n");
-    if (id === "delcore-api") assert.match(commands, /go vet \.\/servers\//u);
     assert.match(commands, /docker run.*postgres:17/u);
     assert.doesNotMatch(commands, /ci:oci|docker build/u);
     assert.doesNotMatch(commands, /go get|client:setup|delinoio\/servers/u);
@@ -446,12 +439,13 @@ test("Rust server matrix gates allocation and preserves independent evidence", (
   );
   const commands = job.steps.map((step) => step.run ?? "").join("\n");
   assert.doesNotMatch(commands, /cargo clippy/u);
-  assert.match(commands, /cargo test.*--test postgres -- --ignored/u);
+  assert.match(commands, /cargo test.*-p "\$SERVICE" -- --ignored/u);
   assert.doesNotMatch(commands, /\bgo (?:vet|build|test)\b/u);
   assert.ok(
     !job.steps.some((step) => step.uses?.startsWith("actions/setup-go@")),
   );
   assert.equal(job.env.GOWORK, undefined);
+  assert.ok(!workflow.jobs["delcore-api"]);
   assert.ok(!workflow.jobs["devbase-api"]);
   assert.ok(!workflow.jobs["git-tracker-api"]);
 });

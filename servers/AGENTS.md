@@ -18,9 +18,9 @@
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Run service-local `pnpm dev` for one API or root `pnpm dev` for process-compose to manage the full development session. Follow the owning server contract for required configuration and database preparation; the development launchers do not provision dependencies or run migrations. Root development passes Compose database URLs to the API launchers after Infisical injection; preserve the environment precedence and secret boundaries in the environment contract. Keep each API's Infisical development settings in its owning folder and select that folder explicitly in its development command.
-- Delcore development startup requires a valid YAML catalog after explicit migrations. Air does not restart for YAML-only edits; restart the API task to apply them. Follow the owning server contract for the file format and recovery procedure.
+- Delcore development startup requires a valid YAML catalog after explicit migrations. The shared builder does not restart for YAML-only edits; restart the API task to apply them. Follow the owning server contract for the file format and recovery procedure.
 - All repository-owned files under `servers/` use FSL-1.1-ALv2; preserve third-party licenses and notices. Include `servers/LICENSE` and `servers/NOTICE` in server distributions.
-- Run server checks from the repository root with `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL and OCI checks when affected. Protocol source remains in root `protos/`; do not duplicate it under servers.
+- Run server checks from the repository root with `cargo fmt --manifest-path servers/Cargo.toml --all --check`, `cargo clippy --locked --manifest-path servers/Cargo.toml --workspace --all-targets -- -D warnings` and `cargo test --locked --manifest-path servers/Cargo.toml`. Run the owning PostgreSQL and OCI checks when affected. Protocol source remains in root `protos/`; do not duplicate it under servers.
 
 - Write code and comments in English; use `log/slog` for Go and `tracing` for Rust. Never log secrets or sensitive payloads.
 
@@ -38,4 +38,4 @@
 - [Git Tracker server](../docs/servers-git-tracker-api-contract.md)
 - [Git Tracker threat model](../docs/servers-git-tracker-threat-model.md)
 
-- DevBase and Git Tracker production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.
+- Delcore, DevBase and Git Tracker production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.

@@ -16,10 +16,10 @@ The official API server base URL is `https://delcore.api.delino.io`.
 
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
-- `servers/scripts/dev-api.mjs`: shared Go API development launcher.
+- `servers/scripts/dev-api.mjs`: shared Rust API development launcher.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 
-- `servers/delcore-api`: one Go API and background worker process, migrations and OCI packaging. The `delino` release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
+- `servers/delcore-api`: one Rust API and background worker process, migrations and OCI packaging. The `delino` release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
 - `servers/delcore-api/catalog`: split-file development catalog examples; the server contract owns the file format and startup behavior.
 - `protos/delcore/v1`: Connect schemas, generated Go and TypeScript messages and Connect bindings.
 - `examples/delcore-client`: Go consumer example.

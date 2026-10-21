@@ -1,6 +1,6 @@
 # Delcore API
 
-Delcore owns shared personal and organization tenants, service authorization, usage accounting and tenant-wide billing. It runs a Connect API and durable background jobs in one Go process with PostgreSQL. It has no UI or separate SDK package.
+Delcore owns shared personal and organization tenants, service authorization, usage accounting and tenant-wide billing. It runs a Connect API and durable background jobs in one Rust process with PostgreSQL. It has no UI or separate SDK package.
 
 The [project index](../../docs/project-delcore.md), [server contract](../../docs/servers-delcore-api-contract.md) and [protocol contract](../../docs/protos-delcore-v1-contract.md) define the full behavior contract. Repository-owned files in `servers/` use [FSL-1.1-ALv2](../LICENSE).
 
@@ -9,7 +9,7 @@ The [project index](../../docs/project-delcore.md), [server contract](../../docs
 - A PostgreSQL database dedicated to this service, with a separate backup destination. Use a migration role that can create schema objects. Restrict application access to the owning database.
 - An operator-owned Logto issuer, API audience, dedicated operator role, and distinct M2M applications for each service. User access tokens must include a verified email claim. Never use an ID token as an API access token. Register each M2M client and its allowed scopes through the operator API.
 - A Paddle Billing account with monthly recurring prices, an appropriate product for purchased usage credits, an API token, and a signed notification destination at `/webhooks/paddle`. Subscribe to transaction completion/failure, subscription lifecycle and adjustment creation/update events. Use sandbox credentials for validation.
-- Cloudflare Email Sending enabled for the sender domain, an account-scoped sending token, and valid sender DNS configuration. Email Sending remains beta. A Workers Paid plan is required for arbitrary recipients; consult the [current setup guide](https://developers.cloudflare.com/email-service/get-started/). The Go server uses REST, not a Workers binding.
+- Cloudflare Email Sending enabled for the sender domain, an account-scoped sending token, and valid sender DNS configuration. Email Sending remains beta. A Workers Paid plan is required for arbitrary recipients; consult the [current setup guide](https://developers.cloudflare.com/email-service/get-started/). The server uses REST, not a Workers binding.
 - Consumer application pages for invitation acceptance and payment return. Register their exact URLs. Delcore does not supply these screens.
 - A TLS reverse proxy for public API access. Expose health and metrics endpoints only to trusted monitoring infrastructure. Do not publish PostgreSQL.
 
@@ -18,15 +18,15 @@ The [project index](../../docs/project-delcore.md), [server contract](../../docs
 Copy `.env.example` to an uncommitted `.env` in the service working directory, replace every placeholder, restrict file permissions and choose policy limits for your deployment. The example retention periods are examples, not a statement of legal requirements. Keep the identity key stable across updates: it derives the stored identity reference. Loss or unplanned rotation prevents identity matching.
 
 ```sh
-go run ./cmd/delcore-api -migrate
-go run ./cmd/delcore-api
+../target/debug/delcore-api migrate --dev-env
+../target/debug/delcore-api serve --dev-env
 ```
 
-Run these commands from `servers/delcore-api`. Migrations are explicit and transactional. Normal startup checks schema compatibility; it does not apply migrations. A database session lock rejects a second running instance. The service stops if it loses that lock connection.
+First build from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p delcore-api` (`protoc` is required). Run these commands from `servers/delcore-api`. Every invocation loads the optional working-directory `.env`; process variables, including explicitly empty values, take precedence. The shared development launcher passes the accepted `--dev-env` flag. Migrations are explicit and transactional. Normal startup checks schema compatibility; it does not apply migrations. A database session lock rejects a second running instance. The service stops if it loses that lock connection.
 
 With `DEVELOPMENT=true`, normal startup reads the [split-file YAML catalog](catalog) after the schema check and instance lock, then reconciles declared entities in one transaction before serving requests or processing jobs. The default is `catalog` from this working directory. Set `CATALOG_DIR` to another existing directory to use your own declarations. It scans nested `.yaml` and `.yml` files, with one entity per file; absent, empty, malformed, or inconsistent catalogs stop startup without partial changes. The examples declare a service, meter, features, plan, add-on, and prices in separate files. Meters and features use service keys; add-on prices name both the owning service and add-on key. See the [development catalog contract](../../docs/servers-delcore-api-contract.md#development-catalog) for the full schema, literal semantics, reference rules, constraints, and a [nested split-file example](../../docs/servers-delcore-api-contract.md#split-file-example).
 
-Files restore declared fields changed through operator APIs. Omitted entities remain in the database. Unchanged content reuses stable IDs and versions, and returning from definition A to B to A reselects A for future subscriptions without moving existing subscriptions. Meter definitions cannot change in place; declare a new meter key instead. See [catalog version pinning](../../docs/servers-delcore-api-contract.md#catalog-version-pinning). To recover from invalid YAML or a catalog constraint, correct the files or conflicting declaration and restart. If PostgreSQL is unavailable, restore database service first. YAML edits alone do not trigger Air; restart the API task. Production startup and `-migrate` do not read the catalog. Keep real credentials out of catalog files.
+Files restore declared fields changed through operator APIs. Omitted entities remain in the database. Unchanged content reuses stable IDs and versions, and returning from definition A to B to A reselects A for future subscriptions without moving existing subscriptions. Meter definitions cannot change in place; declare a new meter key instead. See [catalog version pinning](../../docs/servers-delcore-api-contract.md#catalog-version-pinning). To recover from invalid YAML or a catalog constraint, correct the files or conflicting declaration and restart. If PostgreSQL is unavailable, restore database service first. YAML edits alone do not restart the API; restart the API task. Production startup and `migrate` do not read the catalog. Keep real credentials out of catalog files.
 
 Outside development, bootstrap the service catalog and default free plan through the operator APIs with a user token carrying the dedicated operator role; production startup has no automatic catalog application and there are no standalone catalog commands. Create registered meters before creating usage prices. Register all prices before marking the free plan as the default. Price versions are immutable. Existing entitlements refer to their chosen price version. Keep fixed recurring prices separate from usage prices.
 
@@ -49,7 +49,7 @@ Outside development, bootstrap the service catalog and default free plan through
 
 All billing uses USD with two decimal places for currency minor units. Currency and minor-unit precision are fixed and have no configuration settings.
 
-The server reads individual environment variables, with process variables taking priority over the optional working-directory `.env`, including explicitly empty values. `RETURN_URLS` is a JSON array of exact URL strings. Integer settings use base-10 values. `DEVELOPMENT` accepts Go boolean values and defaults to false. The loader rejects invalid values, missing required settings and contradictory policies. The `CONFIG` variable and `-config` flag are no longer supported. Optional standard OTLP environment variables configure tracing.
+The server reads individual environment variables and the optional working-directory `.env`, with process variables taking priority, including explicitly empty values. `RETURN_URLS` is a JSON array of exact URL strings. Integer settings use base-10 values. `DEVELOPMENT` accepts boolean values and defaults to false. The loader rejects invalid values, missing required settings and contradictory policies. The `CONFIG` variable and `-config` flag are no longer supported. Optional standard OTLP environment variables configure tracing.
 
 ## Consumer API
 
@@ -90,7 +90,7 @@ Before an update:
 1. Stop new traffic and terminate the server gracefully.
 2. Create and verify a PostgreSQL backup using `pg_dump` and a disposable restore database. Protect the backup as sensitive data.
 3. Preserve the current image reference and matching configuration separately.
-4. Run the new image with `-migrate` and inspect the result.
+4. Run the new image with `migrate` and inspect the result.
 5. Start one new instance and verify readiness and operator access.
 
 Use an older image only if it accepts the installed schema version. Otherwise stop the service, restore the verified backup into a separate database, restore matching configuration, and restart the compatible image. There is no arbitrary schema downgrade command. Reconcile provider events that arrived after the backup before reopening paid execution.
@@ -104,9 +104,9 @@ A malicious authorized service can submit false usage for its own registered met
 ## Validation and packaging
 
 ```sh
-go test -count=1 ./servers/delcore-api/...
-go vet ./servers/delcore-api/...
-go test -count=1 -race -tags=integration ./servers/delcore-api/...
+cargo test --locked --manifest-path servers/Cargo.toml -p delcore-api
+cargo clippy --locked --manifest-path servers/Cargo.toml -p delcore-api --all-targets -- -D warnings
+cargo test --locked --manifest-path servers/Cargo.toml -p delcore-api -- --ignored
 pnpm proto:lint
 pnpm proto:generate
 node protos/scripts/check-breaking.mjs "<comparison-revision>"
@@ -114,6 +114,6 @@ pnpm --filter @delinoio/delcore-api ci:oci
 docker build -f "servers/delcore-api/Dockerfile" -t delcore-api:local .
 ```
 
-Integration tests require `TEST_DATABASE_URL` and fail if it is absent. They create isolated schemas in a disposable test database. Never point them at production. Provider fixtures and OCI builds do not establish live Logto, Paddle or Cloudflare account acceptance. The `delino` release publishes this image to GitHub Container Registry; see the [workflow contract](../../docs/repository-workflow-contract.md#server-image-publication). Deployment is not included.
+The `ci:oci` command builds the image and runs disposable PostgreSQL and provider fixtures for startup, schema rejection, instance locking, payment crash recovery, graceful shutdown and backup restoration. It requires Docker. Rust integration tests require `TEST_DATABASE_URL` and fail if it is absent. They create isolated schemas in a disposable test database. Never point them at production. Provider fixtures and OCI builds do not establish live Logto, Paddle or Cloudflare account acceptance. The `delino` release publishes this image to GitHub Container Registry; see the [workflow contract](../../docs/repository-workflow-contract.md#server-image-publication). Deployment is not included.
 
 Automatic top-ups require an active Paddle subscription. Tenants without a subscription use manual top-ups. Cancellation suspends automatic top-ups; payment recovery remains available through manual checkout.

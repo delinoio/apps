@@ -39,8 +39,8 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
   );
   return {
     delcore_api:
+      serverRust ||
       shared ||
-      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore|protos-delcore-v1-contract\.md$))/u.test(
@@ -50,7 +50,6 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
     devbase_api:
       serverRust ||
       shared ||
-      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/devbase-api\/|protos\/|examples\/devbase|docs\/(?:project-devbase|servers-devbase|protos-devbase-v1-contract\.md$))/u.test(
@@ -60,7 +59,6 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
     git_tracker_api:
       serverRust ||
       shared ||
-      goLock ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker|protos-git-tracker-v1-contract\.md$))/u.test(
@@ -118,6 +116,13 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
 
 export function selectRustServers(selected) {
   return [
+    {
+      service: "delcore-api",
+      owner: "delcore_api",
+      port: 55434,
+      user: "delcore",
+      database: "delcore_api_test",
+    },
     {
       service: "devbase-api",
       owner: "devbase_api",

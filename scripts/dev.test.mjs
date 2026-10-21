@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -94,7 +95,7 @@ test("DevBase overrides injected DATABASE_URL while preserving its provider sett
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
-test("Delcore leaves dotenv parsing to Go while preserving injected and Compose values", (t) => {
+test("Delcore leaves dotenv parsing to Rust while preserving injected and Compose values", (t) => {
   const directory = fixture(t);
   const path = join(directory, ".env");
   const original =
@@ -205,16 +206,17 @@ test(
 );
 
 test(
-  "API launcher passes Compose environment and forwards Air failure or termination",
+  "API launcher passes Compose environment and forwards binary failure or termination",
   { skip: process.platform === "win32", timeout: 15000 },
   async (t) => {
     const directory = fixture(t);
     const path = join(directory, ".env");
     const output = join(directory, "database-url");
     writeFileSync(path, "DATABASE_URL=postgres://local/shared\n");
-    const go = join(directory, "go");
+    mkdirSync(join(directory, "debug"));
+    const binary = join(directory, "debug", "delcore-api");
     writeFileSync(
-      go,
+      binary,
       `#!${process.execPath}\nimport('node:fs').then(({writeFileSync}) => { writeFileSync(process.env.FIXTURE_OUTPUT, process.env.DATABASE_URL); if (process.env.FIXTURE_WAIT) { process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 100); } else process.exit(9); });\n`,
       { mode: 0o755 },
     );
@@ -234,6 +236,7 @@ test(
             ...process.env,
             ...handoff,
             DATABASE_URL: "postgres://remote/shared",
+            CARGO_TARGET_DIR: directory,
             PATH: `${directory}${delimiter}${process.env.PATH}`,
             FIXTURE_OUTPUT: output,
             FIXTURE_WAIT: wait ? "1" : "",
@@ -406,7 +409,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   const config = JSON.parse(
     readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
   );
-  for (const service of ["devbase", "git-tracker"]) {
+  for (const service of ["delcore", "devbase", "git-tracker"]) {
     assert.ok(
       config.tasks[`@delinoio/${service}-api#dev`].passThroughEnv.includes(
         "CARGO_TARGET_DIR",
@@ -415,6 +418,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   }
   const target = join(tmpdir(), "server-target-fixture");
   for (const [api, binary] of [
+    [Api.Delcore, "delcore-api"],
     [Api.DevBase, "devbase-api"],
     [Api.GitTracker, "git-tracker-api"],
   ]) {
@@ -429,7 +433,6 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
     );
     assert.deepEqual(args, ["serve", "--dev-env"]);
   }
-  assert.equal(apiCommand(Api.Delcore, {})[0], "go");
 });
 
 test("root, service-local and Portless Delcore development share the catalog-applying launcher", () => {
@@ -451,7 +454,7 @@ test("root, service-local and Portless Delcore development share the catalog-app
     /delcore-api:[\s\S]*?command: pnpm exec turbo run dev --filter=@delinoio\/delcore-api/u,
   );
   // The service-local dev script injects Infisical values, then runs the
-  // shared launcher, which starts Air for the Delcore binary.
+  // shared launcher, which executes the compiled Delcore binary.
   assert.match(
     service.scripts.dev,
     /^infisical run .*--path=\/delcore-api -- node \.\.\/scripts\/dev-api\.mjs delcore$/u,
@@ -461,20 +464,11 @@ test("root, service-local and Portless Delcore development share the catalog-app
     portless.apps["servers/delcore-api"].appPort,
     Number(listen.split(":")[1]),
   );
-  // Air rebuilds for Go and SQL changes only; YAML-only edits never restart
-  // the server, and catalog application stays a startup step.
-  const air = read("../servers/delcore-api/.air.toml");
-  const extensions = JSON.parse(
-    air.match(/^include_ext = (\[.*\])$/mu)[1].replaceAll("'", '"'),
-  );
-  assert.deepEqual(extensions, ["go", "sql"]);
-  assert.match(air, /\.\/cmd\/delcore-api/u);
-  // The binary applies the catalog in development before the worker and the
-  // listener start.
-  const main = read("../servers/delcore-api/cmd/delcore-api/main.go");
-  const sync = main.indexOf("catalog.Sync(");
-  assert.ok(sync > main.indexOf("if c.Development {"));
-  assert.ok(sync > main.indexOf("db.AcquireInstance("));
-  assert.ok(sync < main.indexOf("w.Run(ctx)"));
-  assert.ok(sync < main.indexOf("server.ListenAndServe()"));
+  // The shared builder watches code and SQL, but catalog YAML edits still
+  // require an explicit API restart.
+  const processCompose = read("../process-compose.yaml");
+  assert.match(processCompose, /"\*\.rs"/u);
+  assert.match(processCompose, /"\*\.sql"/u);
+  assert.doesNotMatch(processCompose, /"\*\.ya?ml"/u);
+  assert.deepEqual(apiCommand(Api.Delcore, {})[1], ["serve", "--dev-env"]);
 });

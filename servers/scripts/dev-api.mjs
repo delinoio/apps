@@ -31,14 +31,10 @@ export function prepareApiEnvironment(api, source = process.env) {
 }
 
 export function apiCommand(api, source = process.env) {
-  if (api === Api.Delcore)
-    return [
-      "go",
-      ["run", "github.com/air-verse/air@v1.67.4", "-c", ".air.toml"],
-    ];
   const serverRoot = fileURLToPath(new URL("../", import.meta.url));
   const target = resolve(serverRoot, source.CARGO_TARGET_DIR || "target");
   const binary = {
+    [Api.Delcore]: "delcore-api",
     [Api.DevBase]: "devbase-api",
     [Api.GitTracker]: "git-tracker-api",
   }[api];

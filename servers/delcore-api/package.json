@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "infisical run --env=dev --project-config-dir=../.. --path=/delcore-api -- node ../scripts/dev-api.mjs delcore",
-    "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/delcore-api",
-    "ci:vet": "go vet ./...",
-    "ci:build": "go build ./cmd/delcore-api",
-    "ci:unit": "go test -count=1 ./...",
-    "ci:integration": "go test -count=1 -race -tags=integration ./...",
-    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/delcore-api/Dockerfile -t delcore-api:validation . && go test -count=1 -timeout=10m -tags=oci ./internal/integration"
+    "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",
+    "ci:vet": "cargo clippy --locked --manifest-path ../Cargo.toml -p delcore-api --all-targets -- -D warnings",
+    "ci:build": "cargo build --locked --manifest-path ../Cargo.toml -p delcore-api",
+    "ci:unit": "cargo test --locked --manifest-path ../Cargo.toml -p delcore-api",
+    "ci:integration": "cargo test --locked --manifest-path ../Cargo.toml -p delcore-api -- --ignored",
+    "ci:oci": "node scripts/oci-test.mjs",
+    "build": "cargo build --locked --manifest-path ../Cargo.toml -p delcore-api",
+    "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p delcore-api"
   }
 }

@@ -56,11 +56,14 @@ test("importer-only edits select their owner across pnpm documents", () => {
     select(["apps/delino-docs/package.json"]),
   );
   assert.deepEqual(
-    select(["pnpm-lock.yaml", "servers/delcore-api/main.go"], {
+    select(["pnpm-lock.yaml", "servers/delcore-api/src/main.rs"], {
       baseLockfile,
       headLockfile,
     }),
-    select(["apps/delino-docs/package.json", "servers/delcore-api/main.go"]),
+    select([
+      "apps/delino-docs/package.json",
+      "servers/delcore-api/src/main.rs",
+    ]),
   );
   assert.deepEqual(lockfilePaths(baseLockfile, baseLockfile), []);
 });
