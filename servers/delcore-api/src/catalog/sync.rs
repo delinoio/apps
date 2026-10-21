@@ -341,6 +341,10 @@ async fn apply_meter(c: &mut PgConnection, d: &Definition, id: &str, service: &s
             crate::delitools::is_delitools(c, service).await?,
             "ai_token_usd meters belong to the delitools service"
         );
+        ensure!(
+            !crate::delitools::meter_has_usage_prices(c, service, &d.key).await?,
+            "the meter has usage prices; a call-time meter cannot have usage prices"
+        );
         definition["value_source"] = json!(crate::events::VALUE_SOURCE_AI_TOKEN_USD);
         definition["markup"] = json!(decimal(&d.markup)?);
     }

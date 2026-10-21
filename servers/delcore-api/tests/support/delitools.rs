@@ -899,6 +899,46 @@ async fn call_time_meter_definitions_are_validated_and_immutable() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_meter_with_usage_prices_cannot_become_call_time() {
+    let f = Fixture::setup().await;
+    let s = register(&f).await;
+    let plan = f.rpc("owner", "GetCatalog", json!({})).await["plans"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // An untyped legacy meter can already carry a usage price.
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare legacy meter","meter":{"serviceId":s.service,"name":"legacy","key":"legacy"}})).await;
+    f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"plan price","price":{"planId":plan,"serviceId":s.service,"meter":"legacy","unitPrice":"1","included":"5","currency":"USD"}})).await;
+    let convert = json!({"requestKey":key(),"reason":"convert meter","meter":{"serviceId":s.service,"name":"legacy","key":"legacy","eventType":"legacy.usage","aggregation":"METER_AGGREGATION_SUM","valueSource":"METER_VALUE_SOURCE_AI_TOKEN_USD","markup":"1.15"}});
+    f.error("owner", "PutMeter", convert, "invalid_argument")
+        .await;
+    // A meter without usage prices still converts.
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare legacy meter","meter":{"serviceId":s.service,"name":"unpriced","key":"unpriced"}})).await;
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"convert meter","meter":{"serviceId":s.service,"name":"unpriced","key":"unpriced","eventType":"unpriced.usage","aggregation":"METER_AGGREGATION_SUM","valueSource":"METER_VALUE_SOURCE_AI_TOKEN_USD","markup":"1.15"}})).await;
+    // The development catalog applies the same rule.
+    let directory = std::env::temp_dir().join(format!("delcore-call-time-{}", key()));
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("service.yaml"), "kind: service\nkey: delitools\nname: delitools\nclient_id: service\ncapabilities: [translator, extractor]\nscopes: [authorize, usage:write, usage:read]\n").unwrap();
+    std::fs::write(directory.join("meter.yaml"), "kind: meter\nservice: delitools\nkey: legacy\nevent_type: legacy.usage\naggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\n").unwrap();
+    let metrics = delcore_api::telemetry::Metrics::default();
+    let result = delcore_api::catalog::sync(&f.db, &directory, &metrics).await;
+    std::fs::remove_dir_all(&directory).unwrap();
+    let error = format!(
+        "{:#}",
+        result.expect_err("a priced meter cannot become call-time")
+    );
+    assert!(error.contains("usage prices"), "{error}");
+    // sqlx queues the rollback of the rejected synchronization on its pooled
+    // connection until that connection is next used. End the leftover session so it
+    // cannot block the fixture's schema cleanup.
+    sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND pid<>pg_backend_pid()")
+        .execute(&f.db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn committed_sample_catalog_declares_the_delitools_meters() {
     let f = Fixture::setup().await;
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("catalog");

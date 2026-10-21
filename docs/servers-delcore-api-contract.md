@@ -168,7 +168,7 @@ A meter may also declare `value_source: ai_token_usd` with a `markup` decimal fo
 
 The loader and the transaction reject the complete set when any of these constraints fails:
 
-- An `ai_token_usd` meter does not use `sum` without a value attribute, lacks a valid markup, or belongs to a service other than `delitools`; a usage price names an `ai_token_usd` meter; a service declares the `delitools` key or name without the other.
+- An `ai_token_usd` meter does not use `sum` without a value attribute, lacks a valid markup, or belongs to a service other than `delitools`; a usage price names an `ai_token_usd` meter, or a meter that already has a usage price becomes an `ai_token_usd` meter; a service declares the `delitools` key or name without the other.
 - A meter definition differs from the active definition of its key, or a typed declaration changes an untyped meter that already evaluated events (see the [compatibility rule](#event-ingestion-and-asynchronous-metering)). A service has at most 100 meters.
 - A feature declaration changes the kind, configuration type, or meter key of its key. A metered feature names a meter that its service does not have.
 - A plan has a negative or duplicate rank, or reuses the rank of an omitted plan. More than one plan is the default free plan, the default is not free, a free plan enables `postpaid`, a declared default is cleared without a replacement, or a new default replaces an omitted default.

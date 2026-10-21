@@ -117,6 +117,22 @@ pub async fn meter_key_is_call_time(
     }
 }
 
+/// Whether any usage price version of the service names this meter key. Call-time
+/// meters never carry usage prices, so such a meter cannot become call-time.
+pub async fn meter_has_usage_prices(
+    db: &mut PgConnection,
+    service_id: &str,
+    meter_key: &str,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM prices WHERE service_id=$1::text::uuid AND meter=$2 AND kind=1)",
+    )
+    .bind(service_id)
+    .bind(meter_key)
+    .fetch_one(db)
+    .await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -592,6 +592,14 @@ impl Call<'_> {
                 "AI token USD meters belong to the delitools service",
             ));
         }
+        if call_time
+            && crate::delitools::meter_has_usage_prices(self.tx, &service, string(&v, "name"))
+                .await?
+        {
+            return Err(invalid(
+                "the meter has usage prices; a call-time meter cannot have usage prices",
+            ));
+        }
         let legacy = string(&v, "event_type").is_empty()
             && number(&v, "aggregation") == 0
             && string(&v, "value_attribute").is_empty()
