@@ -299,6 +299,12 @@ func applyMeter(ctx context.Context, tx pgx.Tx, d definition, id, serviceID stri
 		for _, value := range item.Values {
 			values = append(values, value.Value)
 		}
+		// YAML presence checks take no values, but the server represents an
+		// existence filter with exactly one boolean value; store that form so the
+		// definition validates through PutMeter and the metering engine.
+		if item.Operator == "exists" && len(values) == 0 {
+			values = []string{"true"}
+		}
 		if item.Operator == "in" {
 			sort.Strings(values)
 		}

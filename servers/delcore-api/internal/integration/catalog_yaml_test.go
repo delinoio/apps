@@ -319,3 +319,42 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, pl
 		t.Fatalf("legacy tenant did not keep its previous plan policy: selected=%s free=%s active=%s", selected, selectedFree, active)
 	}
 }
+
+func TestDevelopmentCatalogStoresExistsFilterInCanonicalForm(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	setCatalogText(t, root, "02-meter.yml", strings.Replace(catalogText(t, root, "02-meter.yml"), "filters:\n", "filters:\n  - attribute: trace\n    operator: exists\n", 1))
+	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meter *pb.Meter
+	for _, m := range got.Msg.Meters {
+		if m.Key == "requests" {
+			meter = m
+		}
+	}
+	if meter == nil {
+		t.Fatal("synchronized meter is missing from the catalog")
+	}
+	var found bool
+	for _, f := range meter.Filters {
+		if f.Operator == pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS {
+			found = true
+			if len(f.Values) != 1 || f.Values[0] != "true" {
+				t.Fatalf("existence filter values = %v, want [true]", f.Values)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("existence filter was not stored")
+	}
+	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "resubmit synchronized meter", Meter: meter}, "owner")); err != nil {
+		t.Fatal("synchronized meter cannot be submitted back through PutMeter: ", err)
+	}
+}
