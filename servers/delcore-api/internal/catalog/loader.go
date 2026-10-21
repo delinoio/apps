@@ -217,6 +217,11 @@ func validate(d definition) error {
 		if d.Aggregation != "count" && d.ValueAttribute == "" {
 			return errors.New("aggregation requires a value attribute")
 		}
+		// The metering engine rejects a count meter with a value attribute; refuse
+		// the same definition here so synchronization cannot store one.
+		if d.Aggregation == "count" && d.ValueAttribute != "" {
+			return errors.New("count aggregation cannot have a value attribute")
+		}
 		groups := map[string]bool{}
 		for _, group := range d.GroupBy {
 			if group == "" || len(group) > 100 || groups[group] {

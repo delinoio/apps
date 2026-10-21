@@ -56,6 +56,23 @@ func TestLoadCatalogFileSet(t *testing.T) {
 	}
 }
 
+func TestCountMeterRejectsValueAttribute(t *testing.T) {
+	dir := t.TempDir()
+	const head = "kind: meter\nservice: api\nkey: requests\nevent_type: request\n"
+	put(t, dir, "meter.yaml", head+"aggregation: count\nvalue_attribute: bytes\n")
+	if _, err := load(dir); err == nil || !strings.Contains(err.Error(), "count aggregation cannot have a value attribute") {
+		t.Fatalf("count meter with a value attribute accepted: %v", err)
+	}
+	put(t, dir, "meter.yaml", head+"aggregation: count\n")
+	if _, err := load(dir); err != nil {
+		t.Fatalf("count meter without a value attribute rejected: %v", err)
+	}
+	put(t, dir, "meter.yaml", head+"aggregation: sum\nvalue_attribute: bytes\n")
+	if _, err := load(dir); err != nil {
+		t.Fatalf("sum meter with a value attribute rejected: %v", err)
+	}
+}
+
 func TestFilterLiteralValidation(t *testing.T) {
 	cases := []struct {
 		name, body string
