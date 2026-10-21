@@ -111,7 +111,6 @@ func (s *Server) IngestEvent(ctx context.Context, r *connect.Request[pb.IngestEv
 	o := &pb.IngestEventResponse{}
 	var result eventResult
 	response, err := run(s, ctx, r, o, func(c *call) error {
-		result.correlation = c.correlation
 		if e := c.serviceScope("usage:write"); e != nil {
 			return e
 		}
@@ -133,6 +132,7 @@ func (s *Server) IngestEvent(ctx context.Context, r *connect.Request[pb.IngestEv
 		s.Log.InfoContext(c.ctx, "metering event accepted", "category", "event_ingestion", "correlation_id", c.correlation, "service_id", c.service, "revision", accepted.Revision, "replayed", accepted.Replayed, "matched_meters", accepted.Meters)
 		return nil
 	})
+	result.correlation = responseCorrelation(response, err)
 	outcome := result.outcome(err)
 	s.Metrics.EventIngested(outcome, err)
 	s.observeEvent(span, result, outcome, err)
@@ -149,7 +149,6 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 	var result eventResult
 	kind := telemetry.CorrectionInvalid
 	response, err := run(s, ctx, r, o, func(c *call) error {
-		result.correlation = c.correlation
 		if e := c.serviceScope("usage:write"); e != nil {
 			return e
 		}
@@ -188,6 +187,7 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 		s.Log.InfoContext(c.ctx, "metering correction accepted", "category", "event_correction", "correlation_id", c.correlation, "service_id", c.service, "kind", string(correction.Kind), "revision", accepted.Revision, "replayed", accepted.Replayed, "matched_meters", accepted.Meters)
 		return nil
 	})
+	result.correlation = responseCorrelation(response, err)
 	outcome := result.outcome(err)
 	s.Metrics.EventCorrected(kind, outcome, err)
 	span.SetAttributes(attribute.String("delcore.correction.kind", string(kind)))
@@ -202,6 +202,20 @@ type eventResult struct {
 	executed    bool
 	accepted    events.Accepted
 	rejection   *events.Error
+}
+
+// responseCorrelation reads the correlation ID that run attached to the
+// response or error. Request-key replays and early rejections never run the
+// handler, so the handler cannot capture it for them.
+func responseCorrelation[R any](response *connect.Response[R], err error) string {
+	if response != nil {
+		return response.Header().Get(correlationHeader)
+	}
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce.Meta().Get(correlationHeader)
+	}
+	return ""
 }
 
 func (r eventResult) outcome(err error) telemetry.Outcome {

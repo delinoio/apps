@@ -63,6 +63,10 @@ func canonical(s string) bool {
 func (s *Server) Handler() (string, http.Handler) {
 	return delcorev1connect.NewDelcoreServiceHandler(s, connect.WithReadMaxBytes(int(s.Config.MaxPayloadBytes)))
 }
+
+// correlationHeader carries the correlation ID of every response and error.
+const correlationHeader = "X-Delcore-Correlation-Id"
+
 func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], out *R, fn func(*call) error) (*connect.Response[R], error) {
 	correlation := ID()
 	id, e := s.Auth.Verify(ctx, req.Header().Get("Authorization"))
@@ -194,7 +198,7 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 	}
 	reflect.ValueOf(out).Elem().FieldByName("Metadata").Set(reflect.ValueOf(&pb.Metadata{CorrelationId: correlation}))
 	resp := connect.NewResponse(out)
-	resp.Header().Set("X-Delcore-Correlation-Id", correlation)
+	resp.Header().Set(correlationHeader, correlation)
 	return resp, nil
 }
 
@@ -241,7 +245,7 @@ func detailed(ce *connect.Error, reason pb.ErrorReason, id string) error {
 	if e == nil {
 		ce.AddDetail(d)
 	}
-	ce.Meta().Set("X-Delcore-Correlation-Id", id)
+	ce.Meta().Set(correlationHeader, id)
 	return ce
 }
 func (c *call) operator(reason string) error {

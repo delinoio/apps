@@ -7,6 +7,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/catalog"
 	"github.com/delinoio/apps/servers/delcore-api/internal/config"
@@ -27,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // lockedBuffer collects logs written concurrently by handlers and the worker.
@@ -334,6 +337,70 @@ func TestCatalogReconciliationTelemetryAndAudit(t *testing.T) {
 		t.Fatal("catalog log lacks its correlation ID")
 	}
 	o.assertBounded(t, nil, "example-api-local")
+}
+
+// spanCorrelations lists the correlation IDs of ended spans with this name
+// and outcome, in end order.
+func (o *observation) spanCorrelations(name, outcome string) []string {
+	var correlations []string
+	for _, span := range o.spans.Ended() {
+		if span.Name() != name {
+			continue
+		}
+		var correlation, got string
+		for _, attribute := range span.Attributes() {
+			switch attribute.Key {
+			case "delcore.correlation_id":
+				correlation = attribute.Value.AsString()
+			case "delcore.outcome":
+				got = attribute.Value.AsString()
+			}
+		}
+		if got == outcome {
+			correlations = append(correlations, correlation)
+		}
+	}
+	return correlations
+}
+
+// TestEventSpansCarryCorrelationOfEveryResponse covers responses produced
+// without running the handler: request-key replays and early rejections.
+func TestEventSpansCarryCorrelationOfEveryResponse(t *testing.T) {
+	o := observe(t)
+	f := newObservedMeterFixture(t, nil, o.logger, o.metrics)
+	ctx := context.Background()
+	attributes := request{region: "us", outcome: "success", user: "u1", bytes: "7", latency: "1"}.wire()
+	ingest := &pb.IngestEventRequest{RequestKey: key(), Event: &pb.Event{TenantId: f.tenant, ServiceId: f.service, EventKey: "replayed-event", EventType: "request", OccurredAt: timestamppb.New(time.Now().UTC().Add(-time.Minute)), Attributes: attributes}}
+	if _, err := f.client.IngestEvent(ctx, req(ingest, "service")); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := f.client.IngestEvent(ctx, req(ingest, "service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := o.spanCorrelations(telemetry.SpanEventIngest, "replayed"); len(got) != 1 || got[0] == "" || got[0] != replayed.Msg.GetMetadata().GetCorrelationId() {
+		t.Fatalf("ingestion replay span correlations = %q, response %q", got, replayed.Msg.GetMetadata().GetCorrelationId())
+	}
+	correction := &pb.CorrectEventRequest{RequestKey: key(), TenantId: f.tenant, EventKey: "replayed-event", ExpectedRevision: 1, Kind: pb.EventCorrectionKind_EVENT_CORRECTION_KIND_CANCEL}
+	if _, err = f.client.CorrectEvent(ctx, req(correction, "service")); err != nil {
+		t.Fatal(err)
+	}
+	corrected, err := f.client.CorrectEvent(ctx, req(correction, "service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := o.spanCorrelations(telemetry.SpanEventCorrect, "replayed"); len(got) != 1 || got[0] == "" || got[0] != corrected.Msg.GetMetadata().GetCorrelationId() {
+		t.Fatalf("correction replay span correlations = %q, response %q", got, corrected.Msg.GetMetadata().GetCorrelationId())
+	}
+	invalid := &pb.IngestEventRequest{RequestKey: "not-a-uuid", Event: ingest.Event}
+	_, err = f.client.IngestEvent(ctx, req(invalid, "service"))
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("invalid request key accepted: %v", err)
+	}
+	if got := o.spanCorrelations(telemetry.SpanEventIngest, "rejected"); len(got) != 1 || got[0] == "" || got[0] != ce.Meta().Get("X-Delcore-Correlation-Id") {
+		t.Fatalf("early rejection span correlations = %q, error %q", got, ce.Meta().Get("X-Delcore-Correlation-Id"))
+	}
 }
 
 // TestCatalogReconciliationDetectsDelimiterShiftedChanges proves that the
