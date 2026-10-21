@@ -101,6 +101,9 @@ func Ingest(ctx context.Context, tx pgx.Tx, now time.Time, policy Policy, in Inp
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::uuid[],1,0)`, id, in.TenantID, in.ServiceID, in.Key, digest, in.OccurredAt, now, start, end, meterIDs); err != nil {
 		return Accepted{}, err
 	}
+	if err = attributePrices(ctx, tx, id, in.TenantID, in.ServiceID, in.OccurredAt, meterIDs); err != nil {
+		return Accepted{}, err
+	}
 	if err = record(ctx, tx, id, in.TenantID, 1, metering.Insert, in.Type, in.Attributes, digest, added, now); err != nil {
 		return Accepted{}, err
 	}
@@ -242,11 +245,11 @@ func tenantOpen(ctx context.Context, tx pgx.Tx, tenant string, occurred, now tim
 	return nil
 }
 
-// loadMeters reads typed catalog meters. Legacy meters without a typed
-// definition never match events.
+// loadMeters reads catalog meters. A meter without a typed definition uses
+// CompatibilityDefinition.
 func loadMeters(ctx context.Context, tx pgx.Tx, condition string, argument any) ([]meter, error) {
-	rows, err := tx.Query(ctx, `SELECT ce.id::text,cv.definition FROM catalog_entities ce JOIN catalog_versions cv ON cv.id=ce.active_version_id
- WHERE `+condition+` AND ce.kind='meter' AND COALESCE(cv.definition->>'event_type','')<>'' ORDER BY ce.key,ce.id`, argument)
+	rows, err := tx.Query(ctx, `SELECT ce.id::text,ce.key,cv.definition FROM catalog_entities ce LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id
+ WHERE `+condition+` AND ce.kind='meter' ORDER BY ce.key,ce.id`, argument)
 	if err != nil {
 		return nil, err
 	}
@@ -254,16 +257,32 @@ func loadMeters(ctx context.Context, tx pgx.Tx, condition string, argument any) 
 	var meters []meter
 	for rows.Next() {
 		var m meter
+		var key string
 		var raw []byte
-		if err = rows.Scan(&m.ID, &raw); err != nil {
+		if err = rows.Scan(&m.ID, &key, &raw); err != nil {
 			return nil, err
 		}
-		if m.Definition, err = decodeMeter(raw); err != nil {
+		if m.Definition, err = decodeMeter(key, raw); err != nil {
 			return nil, fmt.Errorf("stored meter definition is invalid: %w", err)
 		}
 		meters = append(meters, m)
 	}
 	return meters, rows.Err()
+}
+
+// attributePrices pins the usage price of every evaluated meter from the
+// tenant's entitlements at the occurrence time. Corrections keep this
+// attribution, so later price or plan changes never reprice accepted usage.
+// When several usage entitlements of one meter overlap, the latest started
+// entitlement wins, as it did for quantity reporting.
+func attributePrices(ctx context.Context, tx pgx.Tx, eventID, tenant, service string, occurred time.Time, meterIDs []string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO metering_event_prices(event_id,tenant_id,meter_id,price_id)
+ SELECT $1,$2,ce.id,pr.id FROM catalog_entities ce CROSS JOIN LATERAL (
+  SELECT p.id FROM entitlements en JOIN prices p ON p.id=en.price_id
+  WHERE en.tenant_id=$2 AND p.service_id=$3 AND p.meter=ce.key AND p.kind=1 AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4)
+  ORDER BY en.starts_at DESC,en.id DESC LIMIT 1) pr
+ WHERE ce.id=ANY($5::uuid[]) AND ce.kind='meter' AND ce.scope=$3::text`, eventID, tenant, service, occurred, meterIDs)
+	return err
 }
 
 // match validates every matched meter before returning any contribution.

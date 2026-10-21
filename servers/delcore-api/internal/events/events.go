@@ -7,6 +7,7 @@
 package events
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
+	"github.com/jackc/pgx/v5"
 )
 
 // Reason classifies a rejected request so the API can return a typed error.
@@ -309,10 +311,49 @@ type storedMeter struct {
 	GroupBy        []string            `json:"group_by"`
 }
 
-func decodeMeter(raw []byte) (metering.Definition, error) {
+// CompatibilityAttribute is the value attribute of CompatibilityDefinition.
+const CompatibilityAttribute = "quantity"
+
+// CompatibilityDefinition is the catalog compatibility rule for a meter that
+// was registered without a typed definition, such as an operator PutMeter call
+// that names only a service and a key: the event type equals the meter key and
+// the meter sums the numeric "quantity" attribute without filters or group-by
+// fields. It is the effective, immutable definition of every untyped meter, so
+// a former quantity report of N units on meter M becomes an event of type M
+// with quantity N.
+func CompatibilityDefinition(key string) metering.Definition {
+	return metering.Definition{Key: key, EventType: key, Aggregation: metering.Sum, ValueAttribute: CompatibilityAttribute}
+}
+
+// IsCompatibilityDefinition reports whether a typed definition equals the
+// compatibility definition of its key.
+func IsCompatibilityDefinition(d metering.Definition) bool {
+	c := CompatibilityDefinition(d.Key)
+	return d.EventType == c.EventType && d.Aggregation == c.Aggregation && d.ValueAttribute == c.ValueAttribute && len(d.Filters) == 0 && len(d.GroupBy) == 0
+}
+
+// UntypedMeterInUse reports whether events were evaluated against an untyped
+// meter under its compatibility definition. Such a meter can later be declared
+// only with that same definition, which keeps the definition immutable for its
+// key.
+func UntypedMeterInUse(ctx context.Context, tx pgx.Tx, meterID string) (bool, error) {
+	var used bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM metering_events WHERE $1::uuid=ANY(meter_ids))`, meterID).Scan(&used)
+	return used, err
+}
+
+// decodeMeter reads a stored catalog meter definition. A meter without a
+// typed definition uses CompatibilityDefinition.
+func decodeMeter(key string, raw []byte) (metering.Definition, error) {
 	var stored storedMeter
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return metering.Definition{}, err
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &stored); err != nil {
+			return metering.Definition{}, err
+		}
+	}
+	if stored.EventType == "" {
+		definition := CompatibilityDefinition(key)
+		return definition, definition.Validate()
 	}
 	return CatalogDefinition(stored.Name, stored.EventType, stored.Aggregation, stored.ValueAttribute, stored.Filters, stored.GroupBy)
 }

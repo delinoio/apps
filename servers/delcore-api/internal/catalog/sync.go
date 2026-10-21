@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"go.yaml.in/yaml/v4"
@@ -370,6 +371,22 @@ func applyMeter(ctx context.Context, tx pgx.Tx, d definition, id, serviceID stri
 	previous, err := postgres.ActiveCatalogVersion(ctx, tx, "meter", id)
 	if err != nil {
 		return err
+	}
+	if previous == "" {
+		// An untyped meter registered through the operator API already
+		// evaluated events under the compatibility definition; only that
+		// definition may type it.
+		typed, err := events.CatalogDefinition(d.Key, d.EventType, aggregations[d.Aggregation], d.ValueAttribute, filters, groups)
+		if err != nil {
+			return err
+		}
+		used, err := events.UntypedMeterInUse(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if used && !events.IsCompatibilityDefinition(typed) {
+			return errors.New("meter definition is immutable for its key")
+		}
 	}
 	version, _, err := postgres.SelectCatalogVersion(ctx, tx, id, definition)
 	if err != nil {

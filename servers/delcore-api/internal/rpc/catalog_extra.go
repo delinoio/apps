@@ -116,24 +116,52 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 		if e != nil {
 			return e
 		}
-		if legacy && previous != "" {
-			// A name-only request registers an already defined meter; report
-			// the stored definition instead of the legacy default.
-			var stored []byte
+		// A name-only request stores the defaulted compatibility definition, which
+		// has no event type. Such a stored definition stays untyped: a typed
+		// definition may still replace it under the in-use rule below.
+		untyped := previous == ""
+		var stored []byte
+		if previous != "" {
 			if e = c.tx.QueryRow(c.ctx, "SELECT definition FROM catalog_versions WHERE id=$1", previous).Scan(&stored); e != nil {
 				return e
 			}
+			var head struct {
+				EventType string `json:"event_type"`
+			}
+			if e = json.Unmarshal(stored, &head); e != nil {
+				return e
+			}
+			untyped = head.EventType == ""
+		}
+		if legacy && previous != "" {
+			// A name-only request registers an already defined meter; report
+			// the stored definition instead of the legacy default.
 			if e = json.Unmarshal(stored, m); e != nil {
 				return e
 			}
 		} else {
 			// A first name-only request stores its defaulted definition so
 			// catalog reads return the identity and aggregation reported here.
+			if !legacy && untyped {
+				// An untyped meter already evaluated events under the
+				// compatibility definition; only that definition may type it.
+				typed, e := events.CatalogDefinition(m.Name, m.EventType, m.Aggregation, m.ValueAttribute, filters, groups)
+				if e != nil {
+					return invalid(e.Error())
+				}
+				used, e := events.UntypedMeterInUse(c.ctx, c.tx, m.Id)
+				if e != nil {
+					return e
+				}
+				if used && !events.IsCompatibilityDefinition(typed) {
+					return invalid("meter definition is immutable for its key")
+				}
+			}
 			version, _, e := postgres.SelectCatalogVersion(c.ctx, c.tx, m.Id, definition)
 			if e != nil {
 				return e
 			}
-			if previous != "" && previous != version {
+			if previous != "" && previous != version && !untyped {
 				return invalid("meter definition is immutable for its key")
 			}
 		}

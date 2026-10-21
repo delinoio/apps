@@ -117,7 +117,7 @@ func TestStoredCatalogMeterDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition, err := decodeMeter(raw)
+	definition, err := decodeMeter("requests", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +147,37 @@ func TestStoredCatalogMeterDefinitions(t *testing.T) {
 		{Name: "x", EventType: "e", Aggregation: pb.MeterAggregation_METER_AGGREGATION_SUM},
 	} {
 		raw, _ := json.Marshal(bad)
-		if _, err := decodeMeter(raw); err == nil {
+		if _, err := decodeMeter("x", raw); err == nil {
 			t.Fatalf("invalid stored meter accepted: %+v", bad)
 		}
+	}
+}
+
+func TestUntypedMetersUseTheCompatibilityDefinition(t *testing.T) {
+	for _, raw := range [][]byte{nil, []byte(`{"name":"units","event_type":"","aggregation":0}`)} {
+		definition, err := decodeMeter("units", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if definition.Key != "units" || definition.EventType != "units" || definition.Aggregation != metering.Sum || definition.ValueAttribute != CompatibilityAttribute || len(definition.Filters) != 0 || len(definition.GroupBy) != 0 {
+			t.Fatalf("compatibility definition = %+v", definition)
+		}
+		if !IsCompatibilityDefinition(definition) {
+			t.Fatal("compatibility definition is not recognized")
+		}
+		event := metering.Event{Type: "units", Attributes: map[string]metering.Value{CompatibilityAttribute: number(t, "4")}}
+		contributions, err := match([]meter{{ID: "m", Definition: definition}}, event)
+		if err != nil || len(contributions) != 1 || contributions[0].Value != number(t, "4") || contributions[0].GroupKey != "[]" {
+			t.Fatalf("compatibility event did not match: %+v %v", contributions, err)
+		}
+		event.Attributes[CompatibilityAttribute] = metering.String("4")
+		if _, err = match([]meter{{ID: "m", Definition: definition}}, event); reasonOf(err) != ReasonInvalidAttribute {
+			t.Fatalf("non-numeric quantity accepted: %v", err)
+		}
+	}
+	typed := CompatibilityDefinition("units")
+	typed.GroupBy = []string{"region"}
+	if IsCompatibilityDefinition(typed) {
+		t.Fatal("a grouped definition is not the compatibility definition")
 	}
 }

@@ -19,10 +19,12 @@ const MeteringBatch = 100
 var errNoMeteringWork = errors.New("no ready metering work")
 
 // ProcessMetering materializes up to limit ready metering jobs. Each job claims
-// its row, applies the event transition, runs the optional MeteringApplied hook,
-// and completes in one transaction, so a crash before commit leaves the job
-// pending and a crash after commit cannot apply it twice. A failed attempt is
-// recorded in a separate transaction with bounded retries.
+// its row, applies the event transition, rates the changed meter periods and
+// appends their ledger differences, runs the optional MeteringApplied hook, and
+// completes in one transaction, so a crash before commit leaves the job pending
+// with no aggregate or ledger effect and a crash after commit cannot apply or
+// rate it twice. A failed attempt is recorded in a separate transaction with
+// bounded retries.
 func (w *Worker) ProcessMetering(ctx context.Context, limit int) (int, error) {
 	processed := 0
 	for processed < limit {
@@ -38,6 +40,7 @@ func (w *Worker) ProcessMetering(ctx context.Context, limit int) (int, error) {
 func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	var j job
 	var applied events.Applied
+	var entries int
 	// Bound one transition; a timeout is a transient, retried failure.
 	jobCtx, cancelJob := context.WithTimeout(ctx, w.Config.Timeout())
 	defer cancelJob()
@@ -56,7 +59,11 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 		if json.Unmarshal(j.Payload, &p) != nil || p.EventID == "" {
 			return errInvalidMeteringPayload
 		}
-		if applied, e = events.Process(ctx, tx, time.Now().UTC(), p.EventID); e != nil {
+		now := time.Now().UTC()
+		if applied, e = events.Process(ctx, tx, now, p.EventID); e != nil {
+			return e
+		}
+		if entries, e = rateMetering(ctx, tx, now, applied); e != nil {
 			return e
 		}
 		if w.MeteringApplied != nil {
@@ -71,7 +78,7 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	if err == nil {
-		w.Log.DebugContext(ctx, "metering work applied", "category", "metering_processing", "job_id", j.ID, "from_revision", applied.FromRevision, "to_revision", applied.ToRevision, "changed_groups", len(applied.Changes))
+		w.Log.DebugContext(ctx, "metering work applied", "category", "metering_processing", "job_id", j.ID, "from_revision", applied.FromRevision, "to_revision", applied.ToRevision, "changed_groups", len(applied.Changes), "rating_differences", entries)
 		return true, nil
 	}
 	if j.ID == "" {

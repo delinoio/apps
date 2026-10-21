@@ -26,9 +26,11 @@ type Worker struct {
 	Provider *provider.Client
 	Config   config.Config
 	Log      *slog.Logger
-	// MeteringApplied runs inside the transaction that materializes an event
-	// transition and completes its job. Rating appends ledger differences here;
-	// an error rolls back the transition and retries the job.
+	// MeteringApplied optionally runs inside the transaction that materializes
+	// an event transition, after the built-in rating step has appended its
+	// ledger differences and before the job completes. An error rolls back the
+	// transition and its rating, and retries the job. Tests use it to simulate
+	// failures after rating.
 	MeteringApplied func(context.Context, pgx.Tx, events.Applied) error
 }
 type job struct {

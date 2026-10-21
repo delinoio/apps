@@ -202,14 +202,25 @@ func TestSampleClientAndAccounting(t *testing.T) {
 	if e != nil || !decision.Msg.Allowed {
 		t.Fatal("included usage denied", decision, e)
 	}
-	usage := &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: "event-1", Meter: "requests", Quantity: "4", OccurredAt: timestamppb.New(time.Now().UTC())}
+	// The retired quantity call no longer bills and names its replacement.
+	occurred := time.Now().UTC()
+	_, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: "legacy-1", Meter: "requests", Quantity: "4", OccurredAt: timestamppb.New(occurred)}}, "service"))
+	if connect.CodeOf(e) != connect.CodeFailedPrecondition || reasonOf(e) != pb.ErrorReason_ERROR_REASON_PRECONDITION || !strings.Contains(e.Error(), "IngestEvent") {
+		t.Fatal("retired usage report was not rejected", e)
+	}
+	if _, e = client.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: "legacy-2", Meter: "requests", Quantity: "1", OccurredAt: timestamppb.New(occurred), CorrectionOf: key()}}, "service")); connect.CodeOf(e) != connect.CodeFailedPrecondition || !strings.Contains(e.Error(), "CorrectEvent") {
+		t.Fatal("retired usage correction was not rejected", e)
+	}
+	// An untyped meter accepts the former quantity report as an event of the
+	// meter's type with a quantity attribute.
+	usage := quantityEvent(tenant, service.Msg.Service.Id, "requests", "event-1", "4", occurred)
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, e := client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: usage}, "service"))
+			_, e := client.IngestEvent(ctx, req(&pb.IngestEventRequest{RequestKey: key(), Event: usage.Event}, "service"))
 			errs <- e
 		}()
 	}
@@ -220,6 +231,8 @@ func TestSampleClientAndAccounting(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	processMetering(t, w)
 	var count int
 	var balance string
 	if e = db.Pool.QueryRow(ctx, "SELECT count(*),sum(amount)::text FROM ledger WHERE tenant_id=$1", tenant).Scan(&count, &balance); e != nil || count != 1 || balance != "-0.25" {
@@ -237,7 +250,6 @@ func TestSampleClientAndAccounting(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	transaction := provider.Transaction{ID: "txn_test", Status: "completed", Currency: "USD"}
 	transaction.Custom.JobID = topup.Msg.JobId
 	transaction.Custom.TenantID = tenant
@@ -260,19 +272,18 @@ func TestSampleClientAndAccounting(t *testing.T) {
 	if _, e = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan.Msg.Plan.Id, PriceIds: []string{newPrice.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner")); e != nil {
 		t.Fatal("explicit free price refresh", e)
 	}
-	var originalID string
-	if e = db.Pool.QueryRow(ctx, "SELECT id::text FROM usage_events WHERE event_key='event-1'").Scan(&originalID); e != nil {
+	if _, e = client.CorrectEvent(ctx, req(&pb.CorrectEventRequest{RequestKey: key(), TenantId: tenant, EventKey: "event-1", ExpectedRevision: 1, Kind: pb.EventCorrectionKind_EVENT_CORRECTION_KIND_REPLACE, EventType: "requests", Attributes: map[string]*pb.AttributeValue{"quantity": num("1")}}, "service")); e != nil {
 		t.Fatal(e)
 	}
-	correction := &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: "correction-1", Meter: "requests", Quantity: "1", OccurredAt: usage.OccurredAt, CorrectionOf: originalID}
-	if _, e = client.CorrectUsage(ctx, req(&pb.CorrectUsageRequest{RequestKey: key(), Usage: correction}, "service")); e != nil {
-		t.Fatal(e)
-	}
+	processMetering(t, w)
 	if e = db.Pool.QueryRow(ctx, "SELECT sum(amount)::text FROM ledger WHERE tenant_id=$1 AND kind IN ('credit','usage','refund','correction')", tenant).Scan(&balance); e != nil || balance != "10.000" && balance != "10.00" && balance != "10" {
 		t.Fatal("correction repriced historical usage", balance, e)
 	}
-	if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: usage}, "owner")); connect.CodeOf(e) != connect.CodePermissionDenied {
+	if _, e = client.IngestEvent(ctx, req(usage, "owner")); connect.CodeOf(e) != connect.CodePermissionDenied {
 		t.Fatal("user impersonated service", e)
+	}
+	if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: service.Msg.Service.Id, EventKey: "legacy-3", Meter: "requests", Quantity: "4", OccurredAt: timestamppb.New(occurred)}}, "owner")); connect.CodeOf(e) != connect.CodePermissionDenied {
+		t.Fatal("user reached retired service usage call", e)
 	}
 	_, e = client.SetMemberRoles(ctx, req(&pb.SetMemberRolesRequest{RequestKey: key(), TenantId: tenant, UserId: member.Msg.UserId, Roles: []pb.Role{pb.Role_ROLE_ADMIN}}, "owner"))
 	if e != nil {
@@ -880,9 +891,10 @@ func TestMonthlyRoundingIncludesPurchasedCredits(t *testing.T) {
 	closeAt := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second)
 	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	for i := 0; i < 2; i++ {
-		if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.New(now)}}, "service")); e != nil {
+		if _, e = client.IngestEvent(ctx, req(quantityEvent(tenant, svc.Msg.Service.Id, "units", key(), "1", now), "service")); e != nil {
 			t.Fatal(e)
 		}
+		processMetering(t, w)
 		if e = w.Maintain(ctx, closeAt); e != nil {
 			t.Fatal(e)
 		}
@@ -920,7 +932,7 @@ func TestRetentionPreservesReplayTombstones(t *testing.T) {
 		t.Fatal(e)
 	}
 	tenant := org.Msg.Tenant.Id
-	report, e := client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.Now()}}, "service"))
+	report, e := client.IngestEvent(ctx, req(quantityEvent(tenant, svc.Msg.Service.Id, "units", key(), "1", time.Now().UTC()), "service"))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -932,21 +944,29 @@ func TestRetentionPreservesReplayTombstones(t *testing.T) {
 	cfg.AccountingRetentionSeconds = 3600
 	cfg.AuditRetentionSeconds = 3600
 	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	processMetering(t, w)
 	future := time.Now().UTC().Add(48 * time.Hour)
 	if e = w.Maintain(ctx, future); e != nil {
 		t.Fatal(e)
 	}
 	var count int
-	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_events WHERE id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 1 {
+	for _, table := range []string{"metering_event_prices", "metering_rated_periods"} {
+		if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE tenant_id=$1", tenant).Scan(&count); e != nil || count != 1 {
+			t.Fatal("accounting retention removed rating evidence early", table, count, e)
+		}
+	}
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM metering_events WHERE id=$1", report.Msg.EventId).Scan(&count); e != nil || count != 1 {
 		t.Fatal("accounting retention removed evidence early", count, e)
 	}
 	if e = w.Maintain(ctx, future.Add(2*time.Hour)); e != nil {
 		t.Fatal(e)
 	}
-	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_events WHERE id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 0 {
-		t.Fatal("expired usage not removed", count, e)
+	for _, table := range []string{"metering_events", "metering_event_prices", "metering_rated_periods"} {
+		if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE tenant_id=$1", tenant).Scan(&count); e != nil || count != 0 {
+			t.Fatal("expired usage not removed", table, count, e)
+		}
 	}
-	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_replay WHERE event_id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 1 {
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM metering_replay WHERE event_id=$1", report.Msg.EventId).Scan(&count); e != nil || count != 1 {
 		t.Fatal("replay identity lost", count, e)
 	}
 }
@@ -1571,7 +1591,7 @@ func TestZeroBalanceNoticeMatchesAllowanceExhaustion(t *testing.T) {
 	if _, e = db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", key(), tenant, price.Msg.Price.Id, start); e != nil {
 		t.Fatal(e)
 	}
-	w := &worker.Worker{DB: db, Config: cfg}
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	check := func(want bool) {
 		t.Helper()
 		if e = w.Maintain(ctx, time.Now()); e != nil {
@@ -1587,9 +1607,12 @@ func TestZeroBalanceNoticeMatchesAllowanceExhaustion(t *testing.T) {
 		}
 	}
 	check(true)
-	if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.Now()}}, "service")); e != nil {
+	if _, e = client.IngestEvent(ctx, req(quantityEvent(tenant, svc.Msg.Service.Id, "units", key(), "1", time.Now().UTC()), "service")); e != nil {
 		t.Fatal(e)
 	}
+	// Accepted but unprocessed usage does not consume the allowance yet.
+	check(true)
+	processMetering(t, w)
 	check(false)
 	check(false)
 	var count int

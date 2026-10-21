@@ -334,6 +334,8 @@ func Retain(ctx context.Context, tx pgx.Tx, cutoff time.Time) (int, error) {
 		"DELETE FROM metering_admission_values WHERE tenant_id=ANY($1::uuid[])",
 		"DELETE FROM metering_admission_groups WHERE tenant_id=ANY($1::uuid[])",
 		"DELETE FROM metering_admission_periods WHERE tenant_id=ANY($1::uuid[])",
+		"DELETE FROM metering_rated_periods WHERE tenant_id=ANY($1::uuid[])",
+		"DELETE FROM metering_event_prices WHERE tenant_id=ANY($1::uuid[])",
 		"DELETE FROM metering_contributions WHERE tenant_id=ANY($1::uuid[])",
 		"DELETE FROM metering_event_revisions WHERE tenant_id=ANY($1::uuid[])",
 		"DELETE FROM metering_events WHERE tenant_id=ANY($1::uuid[])",
