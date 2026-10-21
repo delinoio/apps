@@ -249,6 +249,60 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     )
     .await;
     assert_eq!(private["code"], "unauthenticated");
+    // Only committed transitions contribute to interruption alerts.
+    let events = server
+        .metrics
+        .events
+        .with_label_values(&["execution", "interrupted"]);
+    let before = events.get();
+    let state: Value =
+        sqlx::query_scalar("SELECT state FROM git_tracker_repositories WHERE id::text=$1")
+            .bind(&rid)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let mut stale = state["records"]["run"].clone();
+    stale["execution"]["state"] = json!(1);
+    stale["execution"]["context"]["execution_id"] = json!("stale-rpc");
+    stale["lastData"] = json!((chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339());
+    sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-rpc'],$2) WHERE id::text=$1")
+        .bind(&rid).bind(&stale).execute(&db).await.unwrap();
+    sqlx::query("ALTER TABLE git_tracker_repositories ADD CONSTRAINT reject_interruption CHECK ((state #>> '{records,stale-rpc,execution,state}')::int <> 3)")
+        .execute(&db).await.unwrap();
+    let query = json!({"repositoryId":rid,"executionId":"run"});
+    let (_, failed) = call(
+        &http,
+        &base,
+        "GetExecution",
+        "Bearer manager",
+        query.clone(),
+    )
+    .await;
+    assert_eq!(failed["code"], "unavailable");
+    assert_eq!(events.get(), before);
+    sqlx::query("ALTER TABLE git_tracker_repositories DROP CONSTRAINT reject_interruption")
+        .execute(&db)
+        .await
+        .unwrap();
+    let (status, _) = call(
+        &http,
+        &base,
+        "GetExecution",
+        "Bearer manager",
+        query.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(events.get(), before + 1);
+    call(&http, &base, "GetExecution", "Bearer manager", query).await;
+    assert_eq!(events.get(), before + 1);
+    stale["execution"]["context"]["execution_id"] = json!("stale-maintenance");
+    sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-maintenance'],$2) WHERE id::text=$1")
+        .bind(&rid).bind(&stale).execute(&db).await.unwrap();
+    server.maintain().await.unwrap();
+    assert_eq!(events.get(), before + 2);
+    server.maintain().await.unwrap();
+    assert_eq!(events.get(), before + 2);
     let (status, _) = call(
         &http,
         &base,

@@ -298,6 +298,10 @@ impl Server {
             .await?;
         tx.commit().await?;
         if interrupted > 0 {
+            self.metrics
+                .events
+                .with_label_values(&["execution", "interrupted"])
+                .inc_by(interrupted as u64);
             tracing::info!(count = interrupted, "executions interrupted")
         }
         if op.role() == Role::Edit {

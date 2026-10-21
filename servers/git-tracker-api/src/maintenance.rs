@@ -67,9 +67,15 @@ impl Server {
                     .bind(serde_json::to_value(state)?)
                     .execute(&mut *tx)
                     .await?;
-                tracing::info!(count, "executions interrupted");
             }
             tx.commit().await?;
+            if count > 0 {
+                self.metrics
+                    .events
+                    .with_label_values(&["execution", "interrupted"])
+                    .inc_by(count as u64);
+                tracing::info!(count, "executions interrupted");
+            }
         }
         sqlx::query("DELETE FROM git_tracker_audit WHERE created_at<$1")
             .bind(now() - self.audit_retention)
