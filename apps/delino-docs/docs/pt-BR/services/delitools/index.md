@@ -186,8 +186,8 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
 ```
 
 - **Segredo de uso único.** A resposta de `CreateKey` contém o `secret` uma única vez. O DeliTools armazena apenas um hash de verificação e não pode mostrar o segredo novamente. Se você perder uma chave, crie uma nova. Mantenha o segredo em um gerenciador de segredos.
-- **Expiração.** `expiresAt` é opcional. Uma chave sem expiração permanece válida até você revogá-la, desde que o proprietário dela ainda esteja autorizado.
-- **Revogação.** Depois que você revoga uma chave, ou depois que um usuário perde a permissão, novas solicitações são rejeitadas e uma chamada em andamento não faz mais tentativas de IA. Uma chamada que já está em andamento pode terminar. Seu uso é faturado.
+- **Expiração.** `expiresAt` é opcional. Uma chave sem expiração permanece válida até você revogá-la. Uma chave pessoal também exige que o proprietário dela mantenha o acesso ao tenant. Uma chave de serviço não depende do usuário que a criou, portanto remover esse usuário não a interrompe: revogue a chave de serviço ou defina uma expiração para ela.
+- **Revogação.** Depois que você revoga uma chave, ou depois que o usuário de uma chave pessoal ou de um token de login perde a permissão, novas solicitações são rejeitadas e uma chamada em andamento não faz mais tentativas de IA. Uma chamada que já está em andamento pode terminar. Seu uso é faturado.
 
 ## Faturamento
 
