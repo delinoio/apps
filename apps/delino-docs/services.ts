@@ -4,6 +4,7 @@ export enum ServiceId {
   DevBase = "devbase",
   GitTracker = "git-tracker",
   FixKey = "fixkey",
+  DeliTools = "delitools",
 }
 
 export const services = [
@@ -11,4 +12,5 @@ export const services = [
   { id: ServiceId.DevBase, name: "DevBase" },
   { id: ServiceId.GitTracker, name: "Git Tracker" },
   { id: ServiceId.FixKey, name: "FixKey" },
+  { id: ServiceId.DeliTools, name: "DeliTools" },
 ] as const;

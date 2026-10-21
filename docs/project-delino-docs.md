@@ -30,6 +30,8 @@ The documentation app serves multiple services. Each service owns a section unde
 
 FixKey's desktop user guide uses the `fixkey` section. It covers installation, permissions, correction and undo, manual candidates, settings, privacy, updates and troubleshooting. Product behavior remains owned by the [FixKey contracts](project-fixkey.md).
 
+The DeliTools API guide uses the `delitools` section. It covers API use, authentication and keys, billing, error semantics, idempotency, retention, external provider data handling and limits as user-facing behavior. Operator configuration, diagnostics and recovery stay in the [DeliTools server contract](servers-delitools-api-contract.md).
+
 English routes have no language prefix; every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.
