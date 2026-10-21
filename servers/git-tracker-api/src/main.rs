@@ -125,14 +125,7 @@ async fn run() -> anyhow::Result<()> {
                             match f.code {
                                 connectrpc::ErrorCode::Unauthenticated => StatusCode::UNAUTHORIZED,
                                 connectrpc::ErrorCode::InvalidArgument => StatusCode::BAD_REQUEST,
-                                _ => {
-                                    server
-                                        .metrics
-                                        .events
-                                        .with_label_values(&["github", "failure"])
-                                        .inc();
-                                    StatusCode::SERVICE_UNAVAILABLE
-                                }
+                                _ => StatusCode::SERVICE_UNAVAILABLE,
                             }
                         }
                     }

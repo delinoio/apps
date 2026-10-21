@@ -109,12 +109,15 @@ pub async fn audit(db: &mut PgConnection, space: &str, action: &str, trace: &str
 }
 impl Server {
     pub fn record_failure(&self, fault: &Fault) {
-        if fault.source == server_common::error::FaultSource::Persistence {
-            self.metrics
-                .events
-                .with_label_values(&["persistence", "failure"])
-                .inc();
-        }
+        let kind = match fault.source {
+            server_common::error::FaultSource::Persistence => "persistence",
+            server_common::error::FaultSource::GitHub => "github",
+            server_common::error::FaultSource::Application => return,
+        };
+        self.metrics
+            .events
+            .with_label_values(&[kind, "failure"])
+            .inc();
     }
     async fn handle<R: serde::de::DeserializeOwned>(
         &self,
@@ -334,12 +337,18 @@ impl Server {
         self.authority.manager(h, space).await?;
         let actor = self.authority.identify(h).await?;
         let token = string(q, "githubAccessToken");
-        let user = self.github.user(token).await.map_err(|_| Fault::denied())?;
+        let user = self.github.user(token).await.map_err(|fault| {
+            self.record_failure(&fault);
+            Fault::denied()
+        })?;
         let mut r = self
             .github
             .connect(string(q, "fullName"), token)
             .await
-            .map_err(|_| Fault::denied())?;
+            .map_err(|fault| {
+                self.record_failure(&fault);
+                Fault::denied()
+            })?;
         r.space_id = space.into();
         let mut tx = self.db.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")

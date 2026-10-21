@@ -49,6 +49,17 @@ impl GitHub {
         token: &str,
         body: Option<Value>,
     ) -> Result<Value> {
+        self.call_inner(method, path, token, body)
+            .await
+            .map_err(github_failure)
+    }
+    async fn call_inner(
+        &self,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: Option<Value>,
+    ) -> Result<Value> {
         let mut request = self
             .http
             .request(
@@ -182,6 +193,9 @@ impl GitHub {
         Ok(result)
     }
     pub async fn resolve(&self, r: &Repository, c: &Context) -> Result<(Vec<String>, String)> {
+        self.resolve_inner(r, c).await.map_err(github_failure)
+    }
+    async fn resolve_inner(&self, r: &Repository, c: &Context) -> Result<(Vec<String>, String)> {
         let token = self.installation(&r.installation_id).await?;
         let mut commit = self.commit(r, &c.commit, &token).await?;
         if string(&commit, "sha") != c.commit {
@@ -266,6 +280,11 @@ impl GitHub {
         Ok(())
     }
     pub async fn comment(&self, r: &Repository, state: &State, record: &Record) -> Result<()> {
+        self.comment_inner(r, state, record)
+            .await
+            .map_err(github_failure)
+    }
+    async fn comment_inner(&self, r: &Repository, state: &State, record: &Record) -> Result<()> {
         let c = &record.execution.context;
         if c.pull_request == 0 {
             return Ok(());
@@ -360,4 +379,9 @@ impl GitHub {
             .await?;
         Ok(())
     }
+}
+
+fn github_failure(mut fault: Fault) -> Fault {
+    fault.source = server_common::error::FaultSource::GitHub;
+    fault
 }

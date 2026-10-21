@@ -5,6 +5,7 @@ pub type Result<T> = std::result::Result<T, Fault>;
 pub enum FaultSource {
     Application,
     Persistence,
+    GitHub,
 }
 #[derive(Debug)]
 pub struct Fault {

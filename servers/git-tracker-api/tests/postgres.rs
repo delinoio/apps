@@ -57,6 +57,7 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
             "/delcore.v1.DelcoreService/ListMembers" if auth=="Bearer manager"=>json!({}),
             "/delcore.v1.DelcoreService/Authorize"=>json!({"allowed":true}),
             "/user"=>json!({"id":7}),
+            "/repos/owner/repo/pulls/1"=>json!({"base":{"ref":"main","sha":commit},"head":{"sha":commit}}),
             "/repos/owner/repo"|"/repositories/42"=>json!({"id":42,"full_name":"owner/repo","private":false,"permissions":{"admin":true}}),
             "/repos/owner/repo/installation"=>json!({"id":1}),
             "/app/installations/1/access_tokens"=>json!({"token":"installation"}),
@@ -215,6 +216,39 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     )
     .await;
     assert_eq!(denied["code"], "permission_denied");
+    let github_failures = server
+        .metrics
+        .events
+        .with_label_values(&["github", "failure"]);
+    let before = github_failures.get();
+    let mut bad_commit = context.clone();
+    bad_commit["executionId"] = json!("bad-commit");
+    bad_commit["commit"] = json!("b".repeat(40));
+    let (_, failed) = call(
+        &http,
+        &base,
+        "Upload",
+        &auth,
+        json!({"context":bad_commit,"dataset":dataset,"rows":[]}),
+    )
+    .await;
+    assert_eq!(failed["code"], "unavailable");
+    assert_eq!(github_failures.get(), before + 1);
+    let mut pr_context = context.clone();
+    pr_context["executionId"] = json!("pr-warning");
+    pr_context["pullRequest"] = json!("1");
+    pr_context["baselineCommit"] = json!(commit);
+    let (status, warning) = call(
+        &http,
+        &base,
+        "Upload",
+        &auth,
+        json!({"context":pr_context,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{warning}");
+    assert_eq!(warning["warnings"][0], "PR comment could not be updated");
+    assert_eq!(github_failures.get(), before + 2);
     let (_, revoked) = call(
         &http,
         &base,

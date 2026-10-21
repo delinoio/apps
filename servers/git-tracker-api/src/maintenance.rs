@@ -57,7 +57,17 @@ impl Server {
                             .await?;
                         }
                     }
-                    _ => tracing::warn!(category = "github", "repository synchronization failed"),
+                    other => {
+                        match other {
+                            Err(fault) => self.record_failure(&fault),
+                            Ok(_) => self
+                                .metrics
+                                .events
+                                .with_label_values(&["github", "failure"])
+                                .inc(),
+                        }
+                        tracing::warn!(category = "github", "repository synchronization failed");
+                    }
                 }
             }
             let count = state.interrupt(now());
