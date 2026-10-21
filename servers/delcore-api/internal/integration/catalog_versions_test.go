@@ -622,6 +622,75 @@ func TestProductMutationResponsesReportPreservedFeatures(t *testing.T) {
 	}
 }
 
+func TestScheduledChangePinsLegacyPlanVersion(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare legacy change service", Service: &pb.Service{Key: "legacy-change-service", Name: "Legacy Change Service", ClientId: "legacy-change", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare legacy change meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "units", Key: "units"}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare default free plan", Plan: &pb.Plan{Key: "legacy-change-default", Name: "Legacy Change Default", Free: true, DefaultFree: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := me.Msg.Tenants[0].Id
+	high, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare high free tier", Plan: &pb.Plan{Key: "legacy-change-high", Name: "Legacy Change High", Rank: 10, Free: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	highPrice, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "declare high allowance", Price: &pb.Price{Key: "units-usd", PlanId: high.Msg.Plan.Id, ServiceId: serviceID, Meter: "units", UnitPrice: "1", Included: "10", Currency: "USD"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: high.Msg.Plan.Id, PriceIds: []string{highPrice.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the rows an upgraded database holds: migration 00006 backfills
+	// only the plan identity, without a version.
+	legacyPlanID, legacyPriceID := key(), key()
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1,$2,$3,$4,$5,$6)`, legacyPlanID, "Legacy Low Plan", 5, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO catalog_entities(id,kind,scope,key) VALUES($1,'plan','',$2)", legacyPlanID, "legacy-change-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, legacyPlanID, serviceID, "units", "1", "5", "USD", "", time.Now().UTC(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: legacyPlanID, PriceIds: []string{legacyPriceID}, ReturnUrl: cfg.ReturnURLs[0]}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	// Mutate the legacy plan while the scheduled change is pending. The
+	// requester does not use the plan yet, so no legacy snapshot covers it.
+	if _, err = client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "mutate pending legacy plan", Plan: &pb.Plan{Id: legacyPlanID, Name: "Legacy Low Plan", Rank: 7, Free: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	var end time.Time
+	if err = db.Pool.QueryRow(ctx, "SELECT period_end FROM tenants WHERE id=$1", tenant).Scan(&end); err != nil {
+		t.Fatal(err)
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	if err = w.Maintain(ctx, end.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var rank string
+	if err = db.Pool.QueryRow(ctx, `SELECT cv.definition->>'rank' FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenant, legacyPlanID).Scan(&rank); err != nil {
+		t.Fatal("scheduled legacy plan change activated without a pinned version: ", err)
+	}
+	if rank != "5" {
+		t.Fatalf("scheduled legacy plan change selected the mutated definition: rank=%s", rank)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string

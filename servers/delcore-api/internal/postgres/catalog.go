@@ -86,9 +86,30 @@ func ActiveCatalogVersion(ctx context.Context, tx pgx.Tx, kind, id string) (stri
 	return *version, nil
 }
 
+// materializedProductVersion returns the active version of a plan or add-on.
+// A product created before catalog versioning has an identity but no version;
+// record its current definition first so a pending change pins the definition
+// that was requested instead of whatever the mutable row holds at activation.
+func materializedProductVersion(ctx context.Context, tx pgx.Tx, kind, id string) (string, error) {
+	var version *string
+	err := tx.QueryRow(ctx, "SELECT active_version_id::text FROM catalog_entities WHERE id=$1 AND kind=$2 FOR UPDATE", id, kind).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if version != nil {
+		return *version, nil
+	}
+	return RebuildProductVersion(ctx, tx, kind, id)
+}
+
+// ActiveProductVersions returns the versions an explicit subscription change
+// pins, materializing versions for products created before catalog versioning.
 func ActiveProductVersions(ctx context.Context, tx pgx.Tx, plan string, addons []string) ([]string, error) {
 	versions := []string{}
-	base, err := ActiveCatalogVersion(ctx, tx, "plan", plan)
+	base, err := materializedProductVersion(ctx, tx, "plan", plan)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +118,7 @@ func ActiveProductVersions(ctx context.Context, tx pgx.Tx, plan string, addons [
 	}
 	sort.Strings(addons)
 	for _, addon := range addons {
-		version, err := ActiveCatalogVersion(ctx, tx, "addon", addon)
+		version, err := materializedProductVersion(ctx, tx, "addon", addon)
 		if err != nil {
 			return nil, err
 		}
