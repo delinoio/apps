@@ -330,3 +330,71 @@ test(
     assert.equal(result.stdout.includes("fixture-password"), false);
   },
 );
+
+test(
+  "server builder skips empty workspaces and propagates the single workspace build result",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const directory = fixture(t);
+    const output = join(directory, "cargo-calls.jsonl");
+    writeFileSync(
+      join(directory, "cargo"),
+      `#!${process.execPath}
+const fs = require('node:fs');
+fs.appendFileSync(process.env.FIXTURE_OUTPUT, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd()}) + '\\n');
+if (process.argv[2] === 'metadata') {
+  process.stdout.write(JSON.stringify({workspace_members: process.env.FIXTURE_EMPTY ? [] : ['fixture']}));
+} else {
+  process.exit(Number(process.env.FIXTURE_BUILD_EXIT));
+}
+`,
+      { mode: 0o755 },
+    );
+    for (const [empty, buildExit] of [
+      [true, 0],
+      [false, 0],
+      [false, 17],
+    ]) {
+      rmSync(output, { force: true });
+      const result = spawnSync(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL("../servers/scripts/build-rust.mjs", import.meta.url),
+          ),
+        ],
+        {
+          env: {
+            ...process.env,
+            PATH: `${directory}${delimiter}${process.env.PATH}`,
+            FIXTURE_OUTPUT: output,
+            FIXTURE_EMPTY: empty ? "1" : "",
+            FIXTURE_BUILD_EXIT: String(buildExit),
+          },
+          encoding: "utf8",
+        },
+      );
+      assert.equal(result.status, buildExit);
+      const calls = readFileSync(output, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.deepEqual(
+        calls.map((call) => call.args),
+        [
+          ["metadata", "--no-deps", "--format-version", "1"],
+          ...(empty ? [] : [["build", "--workspace", "--bins"]]),
+        ],
+      );
+      for (const call of calls) {
+        assert.equal(
+          call.cwd,
+          fileURLToPath(new URL("../servers/", import.meta.url)).replace(
+            /\/$/u,
+            "",
+          ),
+        );
+      }
+    }
+  },
+);

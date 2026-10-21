@@ -8,6 +8,7 @@
 
 - `servers/Cargo.toml` owns the independent server Cargo workspace. Add explicit members only when implementing each port; keep server packages out of the root client workspace.
 - Put shared server Rust modules in `servers/crates/` and inherit the server workspace license and publication settings. Follow the [server Rust workspace contract](../docs/servers-rust-workspace-contract.md).
+- In process-compose development, only `server-build` may invoke Cargo builds. Ported API launchers must execute the built binaries directly; do not start per-service Cargo build or watch processes. Follow the server Rust workspace contract for build dependencies and cascading restarts.
 - Run Cargo checks for implemented server members with `--manifest-path servers/Cargo.toml` from the repository root, in addition to applicable root checks.
 
 ## Development and validation

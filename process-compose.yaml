@@ -3,6 +3,31 @@ version: "0.5"
 
 # Turbo retains the environment allowlists and workspace-local Infisical injection.
 processes:
+  # Only this process builds the shared server Cargo target directory.
+  server-build:
+    command: node servers/scripts/build-rust.mjs
+    availability:
+      restart: "no"
+    watch:
+      cascade: true
+      debounce: 500ms
+      paths:
+        - path: ./servers
+          include:
+            [
+              "*.rs",
+              "Cargo.toml",
+              "Cargo.lock",
+              "*.sql",
+              "*.proto",
+              "build-rust.mjs",
+            ]
+          exclude: ["target/**", "**/tmp/**"]
+        - path: ./protos
+          include: ["*.proto", "*.rs", "Cargo.toml"]
+    shutdown:
+      signal: 2
+      timeout_seconds: 15
   frontends:
     command: pnpm exec turbo run dev --filter='./apps/*'
     availability:
@@ -11,6 +36,9 @@ processes:
       signal: 2
       timeout_seconds: 15
   delcore-api:
+    depends_on:
+      server-build:
+        condition: process_completed_successfully
     command: pnpm exec turbo run dev --filter=@delinoio/delcore-api
     availability:
       restart: exit_on_failure
@@ -18,6 +46,9 @@ processes:
       signal: 2
       timeout_seconds: 15
   devbase-api:
+    depends_on:
+      server-build:
+        condition: process_completed_successfully
     command: pnpm exec turbo run dev --filter=@delinoio/devbase-api
     availability:
       restart: exit_on_failure
@@ -25,6 +56,9 @@ processes:
       signal: 2
       timeout_seconds: 15
   git-tracker-api:
+    depends_on:
+      server-build:
+        condition: process_completed_successfully
     command: pnpm exec turbo run dev --filter=@delinoio/git-tracker-api
     availability:
       restart: exit_on_failure
