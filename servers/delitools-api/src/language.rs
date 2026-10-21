@@ -61,10 +61,10 @@ pub fn normalize(tag: &str) -> Option<String> {
         return (parts.len() > 1).then_some(lower);
     }
     let mut index = 0;
-    // language: 2-3 letters, optionally followed by up to three 3-letter extlangs; 4 reserved;
-    // 5-8 registered.
+    // language: 2-3 letters, optionally followed by up to three 3-letter extlangs; 4 letters
+    // (reserved for future use, still well-formed); 5-8 letters (registered).
     let language = parts[index];
-    if !alpha(language) || !(2..=8).contains(&language.len()) || language.len() == 4 {
+    if !alpha(language) || !(2..=8).contains(&language.len()) {
         return None;
     }
     index += 1;
@@ -139,6 +139,9 @@ mod tests {
             "ja-JP-u-ca-japanese",
             "yue-HK",
             "und",
+            // RFC 5646 reserves four-letter primary subtags; they are well-formed.
+            "abcd",
+            "ABCD-Latn-US",
         ] {
             assert!(normalize(tag).is_some(), "{tag}");
         }
@@ -164,7 +167,7 @@ mod tests {
             "toolongsubtag-en",
             "한국어",
             "en-US\n",
-            "abcd",
+            "abcd-efgh-ijkl-mnop-qrst",
             "en-a-b",
         ] {
             assert!(normalize(tag).is_none(), "{tag:?}");
