@@ -59,6 +59,49 @@ fn spawn_call(
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_transient_storage_error_does_not_leave_the_request_processing() {
+    let env = Env::start(&[], false).await;
+    echo(&env);
+    let key = env.service_key().await;
+    // Fail the first two writes of a completed state, as a transient database error would.
+    for statement in [
+        "CREATE SEQUENCE finalize_failures",
+        "CREATE FUNCTION fail_first_finalizations() RETURNS trigger AS $$ BEGIN \
+         IF NEW.state = 2 AND nextval('finalize_failures') <= 2 THEN \
+         RAISE EXCEPTION 'injected transient failure'; END IF; RETURN NEW; END; $$ \
+         LANGUAGE plpgsql",
+        "CREATE TRIGGER fail_finalizations BEFORE UPDATE ON requests FOR EACH ROW \
+         EXECUTE FUNCTION fail_first_finalizations()",
+    ] {
+        sqlx::query(statement).execute(&env.fx.pool).await.unwrap();
+    }
+    env.fx
+        .ok(
+            &key,
+            TRANSLATE,
+            env.translate_body(&["a"], Some("flaky-store")),
+        )
+        .await;
+    // The terminal write was retried, so a duplicate sees a completed request, not PROCESSING.
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["a"], Some("flaky-store")),
+            "already_exists",
+            reason::ALREADY_PROCESSED,
+        )
+        .await;
+    let states: Vec<i16> = sqlx::query_scalar("SELECT state FROM requests")
+        .fetch_all(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(states, vec![2]);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn scope_conflict_completed_duplicate_and_independent_scopes() {
     let env = Env::start(&[], false).await;
     echo(&env);

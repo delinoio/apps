@@ -45,6 +45,12 @@ const MAX_IDEMPOTENCY_KEY_BYTES: usize = 256;
 /// First pause before an AI retry; doubles per retry up to the cap. Bounded by the deadline.
 const AI_RETRY_BASE: Duration = Duration::from_millis(100);
 const AI_RETRY_CAP: Duration = Duration::from_secs(2);
+/// Writes of the terminal request state before the failure is only logged. The write is
+/// idempotent, so a transient database error is retried instead of leaving the request and its
+/// idempotency record `processing` (which a duplicate would report as `PROCESSING`).
+const TERMINAL_WRITE_ATTEMPTS: u32 = 5;
+/// First pause between terminal-state writes; doubles per retry.
+const TERMINAL_WRITE_PAUSE: Duration = Duration::from_millis(100);
 
 /// What a validated call needs for execution. Holds the input only in memory.
 struct Plan {
@@ -331,6 +337,39 @@ async fn canceled(cancel: &mut watch::Receiver<bool>) {
             std::future::pending::<()>().await;
         }
     }
+}
+
+/// Run an idempotent store operation up to `attempts` times with a doubling pause.
+async fn with_store_retries<T, F, Fut>(
+    attempts: u32,
+    pause: Duration,
+    mut operation: F,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut delay = pause;
+    let mut tries = 1;
+    loop {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(fault) if tries >= attempts => return Err(fault),
+            Err(_) => {
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+                tries += 1;
+            }
+        }
+    }
+}
+
+/// Persist the terminal request state, retrying transient storage errors.
+async fn store_terminal(pool: &PgPool, terminal: &db::Terminal<'_>) -> Result<()> {
+    with_store_retries(TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_PAUSE, || {
+        db::finish_request(pool, terminal, store::now())
+    })
+    .await
 }
 
 fn provider_fault() -> Fault {
@@ -673,7 +712,7 @@ impl Executor {
                     (state, reason, Err(fault))
                 }
             };
-            if let Err(fault) = db::finish_request(
+            if let Err(fault) = store_terminal(
                 &run.platform.store.pool,
                 &db::Terminal {
                     request_id: run.request_id,
@@ -683,7 +722,6 @@ impl Executor {
                     state,
                     reason,
                 },
-                store::now(),
             )
             .await
             {
@@ -703,7 +741,7 @@ impl Executor {
             Ok(result) => result,
             Err(_) => {
                 tracing::error!(category = "pipeline_panic", request_id = %request_id, "execution task failed");
-                let _ = db::finish_request(
+                let _ = store_terminal(
                     &platform.store.pool,
                     &db::Terminal {
                         request_id,
@@ -713,7 +751,6 @@ impl Executor {
                         state: State::Unknown,
                         reason: ErrorReason::ERROR_REASON_UNSPECIFIED,
                     },
-                    store::now(),
                 )
                 .await;
                 Err(Fault::internal())
@@ -894,6 +931,42 @@ impl ExecutionService for Executor {
 mod tests {
     use super::*;
     use crate::settings::fixture;
+
+    #[tokio::test]
+    async fn store_writes_are_retried_until_they_succeed_or_run_out() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let calls = AtomicU32::new(0);
+        let recovered = with_store_retries(5, Duration::from_millis(1), || {
+            let call = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if call < 3 {
+                    Err(Fault::internal())
+                } else {
+                    Ok(call)
+                }
+            }
+        })
+        .await;
+        assert_eq!(recovered.unwrap(), 3);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            4,
+            "stops after the first success"
+        );
+
+        let calls = AtomicU32::new(0);
+        let exhausted: Result<()> = with_store_retries(3, Duration::from_millis(1), || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err(Fault::internal()) }
+        })
+        .await;
+        assert!(exhausted.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "bounded number of attempts"
+        );
+    }
 
     fn platform_settings() -> Settings {
         Settings {
