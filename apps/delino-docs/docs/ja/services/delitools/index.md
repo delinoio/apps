@@ -222,31 +222,32 @@ DeliTools は、キー、入力のハッシュ、および状態を保持しま�
 
 すべてのエラーには、Connect コード、安定した理由、リクエスト ID、および英語のメッセージがあります。理由とリクエスト ID は、`delitools.v1.ErrorDetail` エラー詳細に含まれます。コードでは、メッセージではなく理由を使用してください。
 
-| 理由                                 | Connect コード        | 意味                                                                         |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------- |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | リクエストが無効です。たとえば、空の配列や同一の言語です。                   |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | スキーマがサポートされるサブセットの範囲外です。                             |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | モデルが許可リストにありません。                                             |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 認証情報がない、無効、期限切れ、または取り消されています。                   |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | この認証情報またはユーザーは、このテナントでこのツールを使用できません。     |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 課金により、このテナントの新しい有料の実行が許可されていません。             |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | モデルの公開価格が利用できないため、DeliTools はそのモデルを実行しません。   |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 設定された制限を超えました。入力サイズ、項目数、レート、同時実行数などです。 |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | 同じ冪等性キーのリクエストがまだ実行中です。                                 |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 同じ冪等性キーと入力のリクエストがすでに完了しています。                     |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 冪等性キーが異なる入力で使用されました。                                     |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 最初の実行の結果が不明です。                                                 |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | テキストに、スキーマが必要とする情報が含まれていません。                     |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | モデルが、不正な形式の出力、またはスキーマに一致しない出力を返しました。     |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | 許可された再試行の後も、AI プロバイダーで障害が発生しました。                |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 実行タイムアウトを超過しました。                                             |
-| `ERROR_REASON_CANCELED`              | `canceled`            | 呼び出しがキャンセルされました。                                             |
-| `ERROR_REASON_INTERNAL`              | `internal`            | 内部障害です。たとえば、ストレージでの障害です。                             |
+| 理由                                 | Connect コード        | 意味                                                                                 |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------ |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | リクエストが無効です。たとえば、空の配列や同一の言語です。                           |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | スキーマがサポートされるサブセットの範囲外です。                                     |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | モデルが許可リストにありません。                                                     |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 認証情報がない、無効、期限切れ、または取り消されています。                           |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | この認証情報またはユーザーは、このテナントでこのツールを使用できません。             |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 課金により、このテナントの新しい有料の実行が許可されていません。                     |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | モデルの公開価格が利用できないため、DeliTools はそのモデルを実行しません。           |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 設定された制限を超えました。入力サイズ、項目数、レート、同時実行数などです。         |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | 同じ冪等性キーのリクエストがまだ実行中です。                                         |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 同じ冪等性キーと入力のリクエストがすでに完了しています。                             |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 冪等性キーが異なる入力で使用されました。                                             |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 最初の実行の結果が不明です。                                                         |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | テキストに、スキーマが必要とする情報が含まれていません。                             |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | モデルが、不正な形式の出力、またはスキーマに一致しない出力を返しました。             |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | 許可された再試行の後も、AI プロバイダーで障害が発生しました。                        |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 実行タイムアウトを超過しました。                                                     |
+| `ERROR_REASON_CANCELED`              | `canceled`            | 呼び出しがキャンセルされました。                                                     |
+| `ERROR_REASON_INTERNAL`              | `internal`            | 内部障害です。たとえば、ストレージでの障害です。                                     |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | テナントの認可または課金の確認を完了できなかったため、新しい有料処理は拒否されます。 |
 
 対処方法:
 
 - `invalid_argument`、`permission_denied`、`unauthenticated`、`failed_precondition` のエラーでは、再試行する前にリクエストを修正してください。課金ブロックエラーでは、課金のブロックを解消してください。
-- プロバイダー、タイムアウト、または内部のエラーは、後で再試行できます。プロバイダーとタイムアウトの失敗は、引き続き請求されることがあります。最初の実行が成功していた可能性がある場合に2回目の実行を避けるには、冪等性キーを使用してください。
+- プロバイダー、タイムアウト、または内部のエラーは、後で再試行できます。プロバイダーとタイムアウトの失敗は、引き続き請求されることがあります。最初の実行が成功していた可能性がある場合に2回目の実行を避けるには、冪等性キーを使用してください。 `unavailable` と `ERROR_REASON_INTERNAL` の組み合わせは、DeliTools が認可または課金の確認を完了できなかったことを意味します。`ERROR_REASON_INTERNAL` は `internal` でも返されるため、コードと理由の両方で分岐してください。
 - 結果不明、処理中、処理済みのエラーには、最初の呼び出しのリクエスト ID が含まれます。結果が不明なままの場合は、その ID を添えてサポートに問い合わせてください。
 
 ## データの保持

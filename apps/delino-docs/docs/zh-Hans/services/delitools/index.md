@@ -222,31 +222,32 @@ DeliTools 保留键、输入的哈希值和状态。它不保留输入或结果�
 
 每个错误都有一个 Connect 代码、一个稳定的原因、一个请求 ID 和一条英文消息。原因和请求 ID 位于 `delitools.v1.ErrorDetail` 错误详情中。请在代码中使用原因，而不是消息。
 
-| 原因                                 | Connect 代码          | 含义                                                  |
-| ------------------------------------ | --------------------- | ----------------------------------------------------- |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | 请求无效，例如空数组或相同的语言。                    |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | 架构超出受支持的子集。                                |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | 模型不在允许列表中。                                  |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 凭据缺失、无效、已过期或已撤销。                      |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | 该凭据或用户不得在此租户中使用此工具。                |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 计费不允许该租户进行新的付费执行。                    |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | 该模型没有可用的公开价格，因此 DeliTools 不会运行它。 |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 超出了已配置的限制，例如输入大小、项数、速率或并发。  |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | 具有相同幂等键的请求仍在运行。                        |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 具有相同幂等键和输入的请求已经完成。                  |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 该幂等键已与不同的输入一起使用过。                    |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 第一次执行的结果未知。                                |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | 文本不包含架构所要求的信息。                          |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | 模型返回了格式错误的输出，或与架构不匹配的输出。      |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | AI 提供商在允许的重试之后仍然失败。                   |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 已超过执行超时。                                      |
-| `ERROR_REASON_CANCELED`              | `canceled`            | 调用已被取消。                                        |
-| `ERROR_REASON_INTERNAL`              | `internal`            | 内部故障，例如存储方面的故障。                        |
+| 原因                                 | Connect 代码          | 含义                                                     |
+| ------------------------------------ | --------------------- | -------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | 请求无效，例如空数组或相同的语言。                       |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | 架构超出受支持的子集。                                   |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | 模型不在允许列表中。                                     |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 凭据缺失、无效、已过期或已撤销。                         |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | 该凭据或用户不得在此租户中使用此工具。                   |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 计费不允许该租户进行新的付费执行。                       |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | 该模型没有可用的公开价格，因此 DeliTools 不会运行它。    |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 超出了已配置的限制，例如输入大小、项数、速率或并发。     |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | 具有相同幂等键的请求仍在运行。                           |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 具有相同幂等键和输入的请求已经完成。                     |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 该幂等键已与不同的输入一起使用过。                       |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 第一次执行的结果未知。                                   |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | 文本不包含架构所要求的信息。                             |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | 模型返回了格式错误的输出，或与架构不匹配的输出。         |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | AI 提供商在允许的重试之后仍然失败。                      |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 已超过执行超时。                                         |
+| `ERROR_REASON_CANCELED`              | `canceled`            | 调用已被取消。                                           |
+| `ERROR_REASON_INTERNAL`              | `internal`            | 内部故障，例如存储方面的故障。                           |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | 无法完成租户的授权或计费检查，因此新的付费工作会被拒绝。 |
 
 处理方式：
 
 - 对于 `invalid_argument`、`permission_denied`、`unauthenticated` 和 `failed_precondition` 错误，请先修正请求再重试。对于计费被阻止错误，请先解决计费阻止问题。
-- 提供商、超时或内部错误可以稍后重试。提供商和超时故障仍可能被计费。当第一次执行可能已经成功时，请使用幂等键以避免第二次执行。
+- 提供商、超时或内部错误可以稍后重试。提供商和超时故障仍可能被计费。当第一次执行可能已经成功时，请使用幂等键以避免第二次执行。 带有 `ERROR_REASON_INTERNAL` 的 `unavailable` 错误表示 DeliTools 无法完成授权或计费检查。请同时根据错误码和原因分支处理，因为 `ERROR_REASON_INTERNAL` 也会与 `internal` 一起出现。
 - 结果未知、处理中和已处理错误包含第一次调用的请求 ID。如果结果始终未知，请使用该 ID 联系支持。
 
 ## 数据保留

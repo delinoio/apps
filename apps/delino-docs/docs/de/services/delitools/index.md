@@ -222,31 +222,32 @@ DeliTools speichert den Schlüssel, einen Hash der Eingabe und den Zustand. Es s
 
 Jeder Fehler hat einen Connect-Code, einen stabilen Grund, eine Anfrage-ID und eine englische Meldung. Der Grund und die Anfrage-ID befinden sich im Fehlerdetail `delitools.v1.ErrorDetail`. Verwenden Sie in Ihrem Code den Grund, nicht die Meldung.
 
-| Grund                                | Connect-Code          | Bedeutung                                                                                              |
-| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | Die Anfrage ist ungültig, zum Beispiel ein leeres Array oder identische Sprachen.                      |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | Das Schema liegt außerhalb der unterstützten Teilmenge.                                                |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | Das Modell steht nicht auf der Zulassungsliste.                                                        |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | Die Anmeldeinformation fehlt, ist ungültig, abgelaufen oder widerrufen.                                |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | Die Anmeldeinformation oder der Nutzer darf dieses Werkzeug in diesem Mandanten nicht verwenden.       |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | Die Abrechnung erlaubt für den Mandanten keine neue kostenpflichtige Ausführung.                       |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Für das Modell ist kein öffentlicher Preis verfügbar, daher führt DeliTools es nicht aus.              |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Ein konfigurierter Grenzwert wurde überschritten, etwa Eingabegröße, Elemente, Rate oder Parallelität. |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | Eine Anfrage mit demselben Idempotenzschlüssel läuft noch.                                             |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Eine Anfrage mit demselben Idempotenzschlüssel und derselben Eingabe ist bereits abgeschlossen.        |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | Der Idempotenzschlüssel wurde mit einer anderen Eingabe verwendet.                                     |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | Der Ausgang der ersten Ausführung ist unbekannt.                                                       |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | Der Text enthält keine Informationen, die das Schema verlangt.                                         |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | Das Modell hat fehlerhafte Ausgabe oder Ausgabe zurückgegeben, die nicht zum Schema passt.             |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | Der KI-Anbieter ist nach den zulässigen Wiederholungsversuchen ausgefallen.                            |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | Das Ausführungs-Timeout ist verstrichen.                                                               |
-| `ERROR_REASON_CANCELED`              | `canceled`            | Der Aufruf wurde abgebrochen.                                                                          |
-| `ERROR_REASON_INTERNAL`              | `internal`            | Ein interner Fehler, zum Beispiel im Speicher.                                                         |
+| Grund                                | Connect-Code          | Bedeutung                                                                                                                                               |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | Die Anfrage ist ungültig, zum Beispiel ein leeres Array oder identische Sprachen.                                                                       |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | Das Schema liegt außerhalb der unterstützten Teilmenge.                                                                                                 |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | Das Modell steht nicht auf der Zulassungsliste.                                                                                                         |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | Die Anmeldeinformation fehlt, ist ungültig, abgelaufen oder widerrufen.                                                                                 |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | Die Anmeldeinformation oder der Nutzer darf dieses Werkzeug in diesem Mandanten nicht verwenden.                                                        |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | Die Abrechnung erlaubt für den Mandanten keine neue kostenpflichtige Ausführung.                                                                        |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Für das Modell ist kein öffentlicher Preis verfügbar, daher führt DeliTools es nicht aus.                                                               |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Ein konfigurierter Grenzwert wurde überschritten, etwa Eingabegröße, Elemente, Rate oder Parallelität.                                                  |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | Eine Anfrage mit demselben Idempotenzschlüssel läuft noch.                                                                                              |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Eine Anfrage mit demselben Idempotenzschlüssel und derselben Eingabe ist bereits abgeschlossen.                                                         |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | Der Idempotenzschlüssel wurde mit einer anderen Eingabe verwendet.                                                                                      |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | Der Ausgang der ersten Ausführung ist unbekannt.                                                                                                        |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | Der Text enthält keine Informationen, die das Schema verlangt.                                                                                          |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | Das Modell hat fehlerhafte Ausgabe oder Ausgabe zurückgegeben, die nicht zum Schema passt.                                                              |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | Der KI-Anbieter ist nach den zulässigen Wiederholungsversuchen ausgefallen.                                                                             |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | Das Ausführungs-Timeout ist verstrichen.                                                                                                                |
+| `ERROR_REASON_CANCELED`              | `canceled`            | Der Aufruf wurde abgebrochen.                                                                                                                           |
+| `ERROR_REASON_INTERNAL`              | `internal`            | Ein interner Fehler, zum Beispiel im Speicher.                                                                                                          |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | Die Autorisierungs- oder Abrechnungsprüfung des Mandanten konnte nicht abgeschlossen werden, daher werden neue kostenpflichtige Ausführungen abgelehnt. |
 
 Behandlung:
 
 - Korrigieren Sie bei den Fehlern `invalid_argument`, `permission_denied`, `unauthenticated` und `failed_precondition` die Anfrage, bevor Sie sie wiederholen. Beheben Sie bei einem Fehler wegen gesperrter Abrechnung die Abrechnungssperre.
-- Ein Anbieter-, Timeout- oder interner Fehler kann später wiederholt werden. Anbieter- und Timeout-Fehlschläge können dennoch abgerechnet werden. Verwenden Sie einen Idempotenzschlüssel, um eine zweite Ausführung zu vermeiden, wenn die erste möglicherweise erfolgreich war.
+- Ein Anbieter-, Timeout- oder interner Fehler kann später wiederholt werden. Anbieter- und Timeout-Fehlschläge können dennoch abgerechnet werden. Verwenden Sie einen Idempotenzschlüssel, um eine zweite Ausführung zu vermeiden, wenn die erste möglicherweise erfolgreich war. Ein Fehler `unavailable` mit `ERROR_REASON_INTERNAL` bedeutet, dass DeliTools die Autorisierungs- oder Abrechnungsprüfung nicht abschließen konnte. Werten Sie Code und Grund gemeinsam aus, weil `ERROR_REASON_INTERNAL` auch mit `internal` auftritt.
 - Fehler wegen unbekannten Ausgangs, laufender Verarbeitung und bereits verarbeiteter Anfrage enthalten die Anfrage-ID des ersten Aufrufs. Kontaktieren Sie den Support mit dieser ID, wenn der Ausgang unbekannt bleibt.
 
 ## Datenaufbewahrung

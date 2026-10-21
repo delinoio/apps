@@ -222,31 +222,32 @@ DeliTools keeps the key, a hash of the input and the state. It does not keep the
 
 Every error has a Connect code, a stable reason, a request ID and an English message. The reason and the request ID are in the `delitools.v1.ErrorDetail` error detail. Use the reason, not the message, in your code.
 
-| Reason                               | Connect code          | Meaning                                                                          |
-| ------------------------------------ | --------------------- | -------------------------------------------------------------------------------- |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | The request is invalid, for example an empty array or identical languages.       |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | The schema is outside the supported subset.                                      |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | The model is not on the allowlist.                                               |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | The credential is missing, invalid, expired or revoked.                          |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | The credential or user may not use this tool in this tenant.                     |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | Billing does not allow new paid execution for the tenant.                        |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | No public price is available for the model, so DeliTools does not run it.        |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | A configured limit was exceeded, such as input size, items, rate or concurrency. |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | A request with the same idempotency key is still running.                        |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | A request with the same idempotency key and input already finished.              |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | The idempotency key was used with a different input.                             |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | The outcome of the first execution is unknown.                                   |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | The text does not contain information that the schema requires.                  |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | The model returned malformed output or output that does not match the schema.    |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | The AI provider failed after the permitted retries.                              |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | The execution timeout passed.                                                    |
-| `ERROR_REASON_CANCELED`              | `canceled`            | The call was canceled.                                                           |
-| `ERROR_REASON_INTERNAL`              | `internal`            | An internal failure, for example in storage.                                     |
+| Reason                               | Connect code          | Meaning                                                                                         |
+| ------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | The request is invalid, for example an empty array or identical languages.                      |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | The schema is outside the supported subset.                                                     |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | The model is not on the allowlist.                                                              |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | The credential is missing, invalid, expired or revoked.                                         |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | The credential or user may not use this tool in this tenant.                                    |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | Billing does not allow new paid execution for the tenant.                                       |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | No public price is available for the model, so DeliTools does not run it.                       |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | A configured limit was exceeded, such as input size, items, rate or concurrency.                |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | A request with the same idempotency key is still running.                                       |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | A request with the same idempotency key and input already finished.                             |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | The idempotency key was used with a different input.                                            |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | The outcome of the first execution is unknown.                                                  |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | The text does not contain information that the schema requires.                                 |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | The model returned malformed output or output that does not match the schema.                   |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | The AI provider failed after the permitted retries.                                             |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | The execution timeout passed.                                                                   |
+| `ERROR_REASON_CANCELED`              | `canceled`            | The call was canceled.                                                                          |
+| `ERROR_REASON_INTERNAL`              | `internal`            | An internal failure, for example in storage.                                                    |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | The tenant authorization or billing check could not be completed, so new paid work is rejected. |
 
 Handling:
 
 - Fix the request for `invalid_argument`, `permission_denied`, `unauthenticated` and `failed_precondition` errors before you retry. Resolve the billing block for a billing-blocked error.
-- A provider, timeout or internal error can be retried later. Provider and timeout failures can still be billed. Use an idempotency key to avoid a second execution when the first one may have succeeded.
+- A provider, timeout or internal error can be retried later. Provider and timeout failures can still be billed. Use an idempotency key to avoid a second execution when the first one may have succeeded. An `unavailable` error with `ERROR_REASON_INTERNAL` means that DeliTools could not complete the authorization or billing check. Branch on both the code and the reason, because `ERROR_REASON_INTERNAL` also appears with `internal`.
 - Unknown, processing and already-processed errors contain the request ID of the first call. Contact support with that ID if the outcome stays unknown.
 
 ## Data retention

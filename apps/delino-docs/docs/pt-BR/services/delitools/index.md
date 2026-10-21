@@ -222,31 +222,32 @@ O DeliTools mantém a chave, um hash da entrada e o estado. Ele não mantém a e
 
 Todo erro tem um código Connect, um motivo estável, um ID de solicitação e uma mensagem em inglês. O motivo e o ID da solicitação estão no detalhe de erro `delitools.v1.ErrorDetail`. Use o motivo, não a mensagem, no seu código.
 
-| Motivo                               | Código Connect        | Significado                                                                                 |
-| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------- |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | A solicitação é inválida, por exemplo uma matriz vazia ou idiomas idênticos.                |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | O esquema está fora do subconjunto compatível.                                              |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | O modelo não está na lista de permissões.                                                   |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | A credencial está ausente, é inválida, expirou ou foi revogada.                             |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | A credencial ou o usuário não pode usar esta ferramenta neste tenant.                       |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | O faturamento não permite novas execuções pagas para o tenant.                              |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Não há preço público disponível para o modelo, então o DeliTools não o executa.             |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Um limite configurado foi excedido, como tamanho da entrada, itens, taxa ou simultaneidade. |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | Uma solicitação com a mesma chave de idempotência ainda está em execução.                   |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Uma solicitação com a mesma chave de idempotência e a mesma entrada já foi concluída.       |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | A chave de idempotência foi usada com uma entrada diferente.                                |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | O resultado da primeira execução é desconhecido.                                            |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | O texto não contém informações que o esquema exige.                                         |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | O modelo retornou uma saída malformada ou que não corresponde ao esquema.                   |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | O provedor de IA falhou após as novas tentativas permitidas.                                |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | O tempo limite de execução passou.                                                          |
-| `ERROR_REASON_CANCELED`              | `canceled`            | A chamada foi cancelada.                                                                    |
-| `ERROR_REASON_INTERNAL`              | `internal`            | Uma falha interna, por exemplo no armazenamento.                                            |
+| Motivo                               | Código Connect        | Significado                                                                                                                        |
+| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | A solicitação é inválida, por exemplo uma matriz vazia ou idiomas idênticos.                                                       |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | O esquema está fora do subconjunto compatível.                                                                                     |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | O modelo não está na lista de permissões.                                                                                          |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | A credencial está ausente, é inválida, expirou ou foi revogada.                                                                    |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | A credencial ou o usuário não pode usar esta ferramenta neste tenant.                                                              |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | O faturamento não permite novas execuções pagas para o tenant.                                                                     |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Não há preço público disponível para o modelo, então o DeliTools não o executa.                                                    |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Um limite configurado foi excedido, como tamanho da entrada, itens, taxa ou simultaneidade.                                        |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | Uma solicitação com a mesma chave de idempotência ainda está em execução.                                                          |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Uma solicitação com a mesma chave de idempotência e a mesma entrada já foi concluída.                                              |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | A chave de idempotência foi usada com uma entrada diferente.                                                                       |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | O resultado da primeira execução é desconhecido.                                                                                   |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | O texto não contém informações que o esquema exige.                                                                                |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | O modelo retornou uma saída malformada ou que não corresponde ao esquema.                                                          |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | O provedor de IA falhou após as novas tentativas permitidas.                                                                       |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | O tempo limite de execução passou.                                                                                                 |
+| `ERROR_REASON_CANCELED`              | `canceled`            | A chamada foi cancelada.                                                                                                           |
+| `ERROR_REASON_INTERNAL`              | `internal`            | Uma falha interna, por exemplo no armazenamento.                                                                                   |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | Não foi possível concluir a verificação de autorização ou de faturamento do tenant, por isso novos trabalhos pagos são rejeitados. |
 
 Tratamento:
 
 - Corrija a solicitação nos erros `invalid_argument`, `permission_denied`, `unauthenticated` e `failed_precondition` antes de tentar novamente. Resolva o bloqueio de faturamento em um erro de faturamento bloqueado.
-- Um erro de provedor, de tempo limite ou interno pode ser repetido mais tarde. Falhas de provedor e de tempo limite ainda podem ser faturadas. Use uma chave de idempotência para evitar uma segunda execução quando a primeira pode ter sido bem-sucedida.
+- Um erro de provedor, de tempo limite ou interno pode ser repetido mais tarde. Falhas de provedor e de tempo limite ainda podem ser faturadas. Use uma chave de idempotência para evitar uma segunda execução quando a primeira pode ter sido bem-sucedida. Um erro `unavailable` com `ERROR_REASON_INTERNAL` significa que o DeliTools não conseguiu concluir a verificação de autorização ou de faturamento. Trate o código e o motivo em conjunto, porque `ERROR_REASON_INTERNAL` também aparece com `internal`.
 - Os erros de resultado desconhecido, de processamento e de já processado contêm o ID de solicitação da primeira chamada. Entre em contato com o suporte com esse ID se o resultado continuar desconhecido.
 
 ## Retenção de dados

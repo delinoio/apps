@@ -222,31 +222,32 @@ DeliTools conserve la clé, une empreinte de l’entrée et l’état. Il ne con
 
 Chaque erreur possède un code Connect, une raison stable, un identifiant de requête et un message en anglais. La raison et l’identifiant de requête se trouvent dans le détail d’erreur `delitools.v1.ErrorDetail`. Utilisez la raison, et non le message, dans votre code.
 
-| Raison                               | Code Connect          | Signification                                                                                                      |
-| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | La requête n’est pas valide, par exemple un tableau vide ou des langues identiques.                                |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | Le schéma est en dehors du sous-ensemble pris en charge.                                                           |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | Le modèle ne figure pas dans la liste d’autorisation.                                                              |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | L’identifiant est absent, invalide, expiré ou révoqué.                                                             |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | L’identifiant ou l’utilisateur n’a pas le droit d’utiliser cet outil dans ce tenant.                               |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | La facturation n’autorise pas de nouvelle exécution payante pour le tenant.                                        |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Aucun prix public n’est disponible pour le modèle, donc DeliTools ne l’exécute pas.                                |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Une limite configurée a été dépassée, comme la taille d’entrée, le nombre d’éléments, le débit ou la simultanéité. |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | Une requête avec la même clé d’idempotence est toujours en cours.                                                  |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Une requête avec la même clé d’idempotence et la même entrée est déjà terminée.                                    |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | La clé d’idempotence a été utilisée avec une entrée différente.                                                    |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | Le résultat de la première exécution est inconnu.                                                                  |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | Le texte ne contient pas d’informations que le schéma exige.                                                       |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | Le modèle a renvoyé une sortie mal formée ou une sortie qui ne correspond pas au schéma.                           |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | Le fournisseur d’IA a échoué après les nouvelles tentatives autorisées.                                            |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | Le délai d’exécution est dépassé.                                                                                  |
-| `ERROR_REASON_CANCELED`              | `canceled`            | L’appel a été annulé.                                                                                              |
-| `ERROR_REASON_INTERNAL`              | `internal`            | Une défaillance interne, par exemple du stockage.                                                                  |
+| Raison                               | Code Connect          | Signification                                                                                                                       |
+| ------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | La requête n’est pas valide, par exemple un tableau vide ou des langues identiques.                                                 |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | Le schéma est en dehors du sous-ensemble pris en charge.                                                                            |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | Le modèle ne figure pas dans la liste d’autorisation.                                                                               |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | L’identifiant est absent, invalide, expiré ou révoqué.                                                                              |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | L’identifiant ou l’utilisateur n’a pas le droit d’utiliser cet outil dans ce tenant.                                                |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | La facturation n’autorise pas de nouvelle exécution payante pour le tenant.                                                         |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | Aucun prix public n’est disponible pour le modèle, donc DeliTools ne l’exécute pas.                                                 |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | Une limite configurée a été dépassée, comme la taille d’entrée, le nombre d’éléments, le débit ou la simultanéité.                  |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | Une requête avec la même clé d’idempotence est toujours en cours.                                                                   |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | Une requête avec la même clé d’idempotence et la même entrée est déjà terminée.                                                     |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | La clé d’idempotence a été utilisée avec une entrée différente.                                                                     |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | Le résultat de la première exécution est inconnu.                                                                                   |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | Le texte ne contient pas d’informations que le schéma exige.                                                                        |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | Le modèle a renvoyé une sortie mal formée ou une sortie qui ne correspond pas au schéma.                                            |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | Le fournisseur d’IA a échoué après les nouvelles tentatives autorisées.                                                             |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | Le délai d’exécution est dépassé.                                                                                                   |
+| `ERROR_REASON_CANCELED`              | `canceled`            | L’appel a été annulé.                                                                                                               |
+| `ERROR_REASON_INTERNAL`              | `internal`            | Une défaillance interne, par exemple du stockage.                                                                                   |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | La vérification d’autorisation ou de facturation du tenant n’a pas pu aboutir ; les nouveaux traitements payants sont donc rejetés. |
 
 Traitement :
 
 - Corrigez la requête pour les erreurs `invalid_argument`, `permission_denied`, `unauthenticated` et `failed_precondition` avant de réessayer. Levez le blocage de facturation pour une erreur de facturation bloquée.
-- Une erreur de fournisseur, de délai dépassé ou interne peut être réessayée plus tard. Les échecs de fournisseur et de délai dépassé peuvent quand même être facturés. Utilisez une clé d’idempotence pour éviter une seconde exécution lorsque la première a pu réussir.
+- Une erreur de fournisseur, de délai dépassé ou interne peut être réessayée plus tard. Les échecs de fournisseur et de délai dépassé peuvent quand même être facturés. Utilisez une clé d’idempotence pour éviter une seconde exécution lorsque la première a pu réussir. Une erreur `unavailable` avec `ERROR_REASON_INTERNAL` signifie que DeliTools n’a pas pu terminer la vérification d’autorisation ou de facturation. Tenez compte à la fois du code et de la raison, car `ERROR_REASON_INTERNAL` apparaît aussi avec `internal`.
 - Les erreurs de résultat inconnu, de traitement en cours et de requête déjà traitée contiennent l’identifiant de requête du premier appel. Contactez l’assistance avec cet identifiant si le résultat reste inconnu.
 
 ## Conservation des données

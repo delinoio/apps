@@ -222,31 +222,32 @@ DeliTools는 키, 입력의 해시, 상태를 보관합니다. 입력이나 결�
 
 모든 오류에는 Connect 코드, 안정적인 사유, 요청 ID, 영어 메시지가 있습니다. 사유와 요청 ID는 `delitools.v1.ErrorDetail` 오류 상세에 들어 있습니다. 코드에서는 메시지가 아닌 사유를 사용하세요.
 
-| 사유                                 | Connect 코드          | 의미                                                                   |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------- |
-| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | 요청이 올바르지 않습니다. 예: 빈 배열 또는 동일한 언어.                |
-| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | 스키마가 지원하는 하위 집합을 벗어납니다.                              |
-| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | 모델이 허용 목록에 없습니다.                                           |
-| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 자격 증명이 없거나, 유효하지 않거나, 만료되었거나, 폐기되었습니다.     |
-| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | 자격 증명이나 사용자가 이 테넌트에서 이 도구를 사용할 수 없습니다.     |
-| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 요금 청구가 해당 테넌트의 새 유료 실행을 허용하지 않습니다.            |
-| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | 모델의 공개 가격이 없으므로 DeliTools가 실행하지 않습니다.             |
-| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 설정된 제한을 초과했습니다. 예: 입력 크기, 항목 수, 속도, 동시성.      |
-| `ERROR_REASON_PROCESSING`            | `aborted`             | 같은 멱등성 키의 요청이 아직 실행 중입니다.                            |
-| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 같은 멱등성 키와 같은 입력의 요청이 이미 완료되었습니다.               |
-| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 멱등성 키를 다른 입력에 사용했습니다.                                  |
-| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 첫 실행의 결과를 알 수 없습니다.                                       |
-| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | 텍스트에 스키마가 요구하는 정보가 없습니다.                            |
-| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | 모델이 형식이 잘못된 출력 또는 스키마에 맞지 않는 출력을 반환했습니다. |
-| `ERROR_REASON_PROVIDER`              | `unavailable`         | 허용된 재시도 후에도 AI 제공자가 실패했습니다.                         |
-| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 실행 제한 시간이 지났습니다.                                           |
-| `ERROR_REASON_CANCELED`              | `canceled`            | 호출이 취소되었습니다.                                                 |
-| `ERROR_REASON_INTERNAL`              | `internal`            | 내부 실패입니다. 예: 저장소 실패.                                      |
+| 사유                                 | Connect 코드          | 의미                                                                         |
+| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------- |
+| `ERROR_REASON_INVALID_INPUT`         | `invalid_argument`    | 요청이 올바르지 않습니다. 예: 빈 배열 또는 동일한 언어.                      |
+| `ERROR_REASON_INVALID_SCHEMA`        | `invalid_argument`    | 스키마가 지원하는 하위 집합을 벗어납니다.                                    |
+| `ERROR_REASON_INVALID_MODEL`         | `invalid_argument`    | 모델이 허용 목록에 없습니다.                                                 |
+| `ERROR_REASON_UNAUTHENTICATED`       | `unauthenticated`     | 자격 증명이 없거나, 유효하지 않거나, 만료되었거나, 폐기되었습니다.           |
+| `ERROR_REASON_FORBIDDEN`             | `permission_denied`   | 자격 증명이나 사용자가 이 테넌트에서 이 도구를 사용할 수 없습니다.           |
+| `ERROR_REASON_BILLING_BLOCKED`       | `failed_precondition` | 요금 청구가 해당 테넌트의 새 유료 실행을 허용하지 않습니다.                  |
+| `ERROR_REASON_PRICE_UNAVAILABLE`     | `failed_precondition` | 모델의 공개 가격이 없으므로 DeliTools가 실행하지 않습니다.                   |
+| `ERROR_REASON_LIMIT`                 | `resource_exhausted`  | 설정된 제한을 초과했습니다. 예: 입력 크기, 항목 수, 속도, 동시성.            |
+| `ERROR_REASON_PROCESSING`            | `aborted`             | 같은 멱등성 키의 요청이 아직 실행 중입니다.                                  |
+| `ERROR_REASON_ALREADY_PROCESSED`     | `already_exists`      | 같은 멱등성 키와 같은 입력의 요청이 이미 완료되었습니다.                     |
+| `ERROR_REASON_INPUT_CONFLICT`        | `failed_precondition` | 멱등성 키를 다른 입력에 사용했습니다.                                        |
+| `ERROR_REASON_UNKNOWN_OUTCOME`       | `unknown`             | 첫 실행의 결과를 알 수 없습니다.                                             |
+| `ERROR_REASON_EXTRACTION_IMPOSSIBLE` | `failed_precondition` | 텍스트에 스키마가 요구하는 정보가 없습니다.                                  |
+| `ERROR_REASON_INVALID_OUTPUT`        | `data_loss`           | 모델이 형식이 잘못된 출력 또는 스키마에 맞지 않는 출력을 반환했습니다.       |
+| `ERROR_REASON_PROVIDER`              | `unavailable`         | 허용된 재시도 후에도 AI 제공자가 실패했습니다.                               |
+| `ERROR_REASON_TIMEOUT`               | `deadline_exceeded`   | 실행 제한 시간이 지났습니다.                                                 |
+| `ERROR_REASON_CANCELED`              | `canceled`            | 호출이 취소되었습니다.                                                       |
+| `ERROR_REASON_INTERNAL`              | `internal`            | 내부 실패입니다. 예: 저장소 실패.                                            |
+| `ERROR_REASON_INTERNAL`              | `unavailable`         | 테넌트의 인증 또는 요금 청구 확인을 완료하지 못해 새 유료 작업이 거부됩니다. |
 
 처리 방법:
 
 - `invalid_argument`, `permission_denied`, `unauthenticated`, `failed_precondition` 오류는 재시도하기 전에 요청을 고치세요. billing-blocked 오류는 요금 청구 차단을 해소하세요.
-- 제공자 오류, 시간 초과, 내부 오류는 나중에 재시도할 수 있습니다. 제공자 실패와 시간 초과도 요금이 청구될 수 있습니다. 첫 실행이 성공했을 수 있다면 두 번째 실행을 피하도록 멱등성 키를 사용하세요.
+- 제공자 오류, 시간 초과, 내부 오류는 나중에 재시도할 수 있습니다. 제공자 실패와 시간 초과도 요금이 청구될 수 있습니다. 첫 실행이 성공했을 수 있다면 두 번째 실행을 피하도록 멱등성 키를 사용하세요. `ERROR_REASON_INTERNAL`과 함께 오는 `unavailable` 오류는 DeliTools가 인증 또는 요금 청구 확인을 완료하지 못했다는 뜻입니다. `ERROR_REASON_INTERNAL`은 `internal`과 함께 올 수도 있으므로 코드와 사유를 모두 기준으로 분기하세요.
 - unknown, processing, already-processed 오류에는 첫 호출의 요청 ID가 들어 있습니다. 결과가 계속 알 수 없는 상태라면 그 ID로 지원팀에 문의하세요.
 
 ## 데이터 보관
