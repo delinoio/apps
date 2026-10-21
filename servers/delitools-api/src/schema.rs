@@ -11,7 +11,8 @@
 use crate::{decimal::Exact, json::Json};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Caller schema nesting limit. The root object is level 1.
+/// Caller schema nesting limit. The root object is level 1 and each nested object or array adds
+/// one level; scalar nodes sit inside their container and never add a level.
 pub const MAX_SCHEMA_LEVELS: usize = 8;
 /// Provider nesting levels reserved for the service's response envelope. The envelope uses one;
 /// the second stays reserved so the envelope can grow without changing the caller limit.
@@ -194,10 +195,9 @@ pub enum Output {
     Malformed,
 }
 
+/// Build one schema node. `level` is the level this node would occupy if it is an object or an
+/// array; a scalar node is accepted below a container at the limit.
 fn build(value: &Json, path: &str, level: usize, budget: &mut Budget) -> Result<Node, SchemaError> {
-    if level > MAX_SCHEMA_LEVELS {
-        return reject(path, &format!("nesting exceeds {MAX_SCHEMA_LEVELS} levels"));
-    }
     let Json::Object(map) = value else {
         return reject(path, "a schema must be a JSON object");
     };
@@ -217,6 +217,9 @@ fn build(value: &Json, path: &str, level: usize, budget: &mut Budget) -> Result<
             "type must be one of object, array, string, number, integer, boolean or null",
         );
     };
+    if matches!(kind, Kind::Object | Kind::Array) && level > MAX_SCHEMA_LEVELS {
+        return reject(path, &format!("nesting exceeds {MAX_SCHEMA_LEVELS} levels"));
+    }
     if kind != Kind::Object {
         for keyword in ["properties", "required", "additionalProperties"] {
             if map.contains_key(keyword) {
@@ -564,21 +567,32 @@ mod tests {
     }
 
     #[test]
-    fn nesting_limit_is_eight_levels() {
-        let build = |levels: usize| {
+    fn nesting_limit_is_eight_container_levels() {
+        // `containers` nested objects (the root is the first) around one scalar leaf.
+        let build = |containers: usize| {
             let mut inner = r#"{"type":"string"}"#.to_owned();
-            for _ in 1..levels {
+            for _ in 0..containers {
                 inner = format!(
                     r#"{{"type":"object","properties":{{"a":{inner}}},"required":["a"],"additionalProperties":false}}"#
                 );
             }
             inner
         };
-        // levels counts the deepest scalar; a root object with seven nested objects and a leaf.
+        // The scalar leaf below the eighth container does not add a level.
         ok(&build(8));
         assert!(bad(&build(9)).contains("nesting exceeds 8 levels"));
-        let arrays = r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}}}}}},"required":["a"],"additionalProperties":false}"#;
-        assert!(bad(arrays).contains("nesting"), "array levels count too");
+        // Arrays count like objects: the root plus seven nested arrays is eight levels.
+        let arrays = |nested: usize| {
+            let mut inner = r#"{"type":"string"}"#.to_owned();
+            for _ in 0..nested {
+                inner = format!(r#"{{"type":"array","items":{inner}}}"#);
+            }
+            format!(
+                r#"{{"type":"object","properties":{{"a":{inner}}},"required":["a"],"additionalProperties":false}}"#
+            )
+        };
+        ok(&arrays(7));
+        assert!(bad(&arrays(8)).contains("nesting exceeds 8 levels"));
     }
 
     #[test]
