@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"time"
 
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
@@ -264,6 +265,18 @@ func apply(ctx context.Context, tx pgx.Tx, d definition) error {
 	case "plan":
 		defaultFree := d.DefaultFree != nil && *d.DefaultFree
 		postpaid := d.Postpaid != nil && *d.Postpaid
+		// Tenants created before catalog versioning have no selection row and
+		// read policy from the mutable plan row. Snapshot them first, exactly
+		// like PutPlan, so a startup edit cannot change their billing policy.
+		var existing bool
+		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)", id).Scan(&existing); err != nil {
+			return err
+		}
+		if existing {
+			if err = postgres.SnapshotLegacyPlanSelections(ctx, tx, id, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1,$2,$3,$4,$5,$6)
  ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,rank=EXCLUDED.rank,free=EXCLUDED.free,is_default=EXCLUDED.is_default,postpaid=EXCLUDED.postpaid`, id, d.Name, *d.Rank, *d.Free, defaultFree, postpaid)
 	case "addon":

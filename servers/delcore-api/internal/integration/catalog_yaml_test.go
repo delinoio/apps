@@ -277,3 +277,45 @@ func TestDevelopmentCatalogCannotMutateOmittedDefaultPlan(t *testing.T) {
 		t.Fatal("rejected catalog partially applied", err)
 	}
 }
+
+func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforePlanEdit(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	legacy := "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\n"
+	setCatalogText(t, root, "legacy.yaml", legacy)
+	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil || len(me.Msg.Tenants) == 0 {
+		t.Fatal("personal tenant was not created", err)
+	}
+	tenantID := me.Msg.Tenants[0].Id
+	planID, original := catalogIdentity(t, db, "plan", "", "legacy-plan")
+	// A tenant created before catalog versioning has a plan but no selection row.
+	if _, err = db.Pool.Exec(ctx, "DELETE FROM tenant_catalog_selections WHERE tenant_id=$1", tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", tenantID, planID); err != nil {
+		t.Fatal(err)
+	}
+	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: false\npostpaid: true\n")
+	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	_, active := catalogIdentity(t, db, "plan", "", "legacy-plan")
+	if active == original {
+		t.Fatal("plan edit did not create a new active version")
+	}
+	var selected, selectedFree string
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.version_id::text,cv.definition->>'free'
+FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, planID).Scan(&selected, &selectedFree); err != nil {
+		t.Fatal("legacy tenant was not snapshotted before the plan changed: ", err)
+	}
+	if selected == active || selectedFree != "true" {
+		t.Fatalf("legacy tenant did not keep its previous plan policy: selected=%s free=%s active=%s", selected, selectedFree, active)
+	}
+}
