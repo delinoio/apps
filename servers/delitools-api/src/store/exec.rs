@@ -334,24 +334,6 @@ pub async fn finish_request(pool: &PgPool, end: &Terminal<'_>, now: DateTime<Utc
     Ok(())
 }
 
-/// Remove an idempotency claim whose request could not be created.
-pub async fn release_claim(
-    pool: &PgPool,
-    tenant_id: Uuid,
-    capability: Capability,
-    key: &str,
-    request_id: Uuid,
-) -> Result<()> {
-    sqlx::query("DELETE FROM idempotency_records WHERE tenant_id=$1 AND method=$2 AND idempotency_key=$3 AND request_id=$4")
-        .bind(tenant_id)
-        .bind(capability_db(capability))
-        .bind(key)
-        .bind(request_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------------------------
 // Attempts
 // ---------------------------------------------------------------------------------------------
