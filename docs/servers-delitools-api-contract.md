@@ -113,7 +113,7 @@ Use structured `tracing` events with safe correlation IDs, bounded metric dimens
 
 ## Build and Test
 
-Run the server checks in [the Rust workspace contract](servers-rust-workspace-contract.md): format, Clippy with warnings denied, unit tests and the ignored PostgreSQL tests against a disposable `TEST_DATABASE_URL`, plus workspace binary builds and root `cargo test`. Run protocol lint, generation, freshness and FILE breaking checks, `go test ./...` and the Go example build. Mocked Gateway, Logto and delcore servers replace live providers. Semantic fixtures test expected behavior without promising perfect extraction accuracy. Preserve actual results and unperformed live-account checks in PR/CI records.
+Once the planned `servers/delitools-api` and `examples/delitools-client` paths exist, run the server checks in [the Rust workspace contract](servers-rust-workspace-contract.md): format, Clippy with warnings denied, unit tests and the ignored PostgreSQL tests against a disposable `TEST_DATABASE_URL`, plus workspace binary builds and root `cargo test`. Run protocol lint, generation, freshness and FILE breaking checks, `go test ./...` and the Go example build. Mocked Gateway, Logto and delcore servers replace live providers. Semantic fixtures test expected behavior without promising perfect extraction accuracy. Preserve actual results and unperformed live-account checks in PR/CI records.
 
 ## Dependencies and Integrations
 
