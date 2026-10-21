@@ -100,6 +100,12 @@ const (
 	// DelcoreServiceAuthorizeProcedure is the fully-qualified name of the DelcoreService's Authorize
 	// RPC.
 	DelcoreServiceAuthorizeProcedure = "/delcore.v1.DelcoreService/Authorize"
+	// DelcoreServiceListMeterAggregatesProcedure is the fully-qualified name of the DelcoreService's
+	// ListMeterAggregates RPC.
+	DelcoreServiceListMeterAggregatesProcedure = "/delcore.v1.DelcoreService/ListMeterAggregates"
+	// DelcoreServiceGetMeteringStatusProcedure is the fully-qualified name of the DelcoreService's
+	// GetMeteringStatus RPC.
+	DelcoreServiceGetMeteringStatusProcedure = "/delcore.v1.DelcoreService/GetMeteringStatus"
 	// DelcoreServiceCheckTenantLifecycleProcedure is the fully-qualified name of the DelcoreService's
 	// CheckTenantLifecycle RPC.
 	DelcoreServiceCheckTenantLifecycleProcedure = "/delcore.v1.DelcoreService/CheckTenantLifecycle"
@@ -180,6 +186,8 @@ type DelcoreServiceClient interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error)
+	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
 	// Deprecated: retired quantity reporting. Delcore never bills these calls
@@ -360,6 +368,18 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 			connect.WithClientOptions(opts...),
 		),
+		listMeterAggregates: connect.NewClient[v1.ListMeterAggregatesRequest, v1.ListMeterAggregatesResponse](
+			httpClient,
+			baseURL+DelcoreServiceListMeterAggregatesProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("ListMeterAggregates")),
+			connect.WithClientOptions(opts...),
+		),
+		getMeteringStatus: connect.NewClient[v1.GetMeteringStatusRequest, v1.GetMeteringStatusResponse](
+			httpClient,
+			baseURL+DelcoreServiceGetMeteringStatusProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("GetMeteringStatus")),
+			connect.WithClientOptions(opts...),
+		),
 		checkTenantLifecycle: connect.NewClient[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse](
 			httpClient,
 			baseURL+DelcoreServiceCheckTenantLifecycleProcedure,
@@ -502,6 +522,8 @@ type delcoreServiceClient struct {
 	putPlan              *connect.Client[v1.PutPlanRequest, v1.PutPlanResponse]
 	createPrice          *connect.Client[v1.CreatePriceRequest, v1.CreatePriceResponse]
 	authorize            *connect.Client[v1.AuthorizeRequest, v1.AuthorizeResponse]
+	listMeterAggregates  *connect.Client[v1.ListMeterAggregatesRequest, v1.ListMeterAggregatesResponse]
+	getMeteringStatus    *connect.Client[v1.GetMeteringStatusRequest, v1.GetMeteringStatusResponse]
 	checkTenantLifecycle *connect.Client[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse]
 	getTenantStates      *connect.Client[v1.GetTenantStatesRequest, v1.GetTenantStatesResponse]
 	reportUsage          *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
@@ -638,6 +660,16 @@ func (c *delcoreServiceClient) Authorize(ctx context.Context, req *connect.Reque
 	return c.authorize.CallUnary(ctx, req)
 }
 
+// ListMeterAggregates calls delcore.v1.DelcoreService.ListMeterAggregates.
+func (c *delcoreServiceClient) ListMeterAggregates(ctx context.Context, req *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error) {
+	return c.listMeterAggregates.CallUnary(ctx, req)
+}
+
+// GetMeteringStatus calls delcore.v1.DelcoreService.GetMeteringStatus.
+func (c *delcoreServiceClient) GetMeteringStatus(ctx context.Context, req *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error) {
+	return c.getMeteringStatus.CallUnary(ctx, req)
+}
+
 // CheckTenantLifecycle calls delcore.v1.DelcoreService.CheckTenantLifecycle.
 func (c *delcoreServiceClient) CheckTenantLifecycle(ctx context.Context, req *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error) {
 	return c.checkTenantLifecycle.CallUnary(ctx, req)
@@ -762,6 +794,8 @@ type DelcoreServiceHandler interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error)
+	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
 	// Deprecated: retired quantity reporting. Delcore never bills these calls
@@ -938,6 +972,18 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceListMeterAggregatesHandler := connect.NewUnaryHandler(
+		DelcoreServiceListMeterAggregatesProcedure,
+		svc.ListMeterAggregates,
+		connect.WithSchema(delcoreServiceMethods.ByName("ListMeterAggregates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceGetMeteringStatusHandler := connect.NewUnaryHandler(
+		DelcoreServiceGetMeteringStatusProcedure,
+		svc.GetMeteringStatus,
+		connect.WithSchema(delcoreServiceMethods.ByName("GetMeteringStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServiceCheckTenantLifecycleHandler := connect.NewUnaryHandler(
 		DelcoreServiceCheckTenantLifecycleProcedure,
 		svc.CheckTenantLifecycle,
@@ -1100,6 +1146,10 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceCreatePriceHandler.ServeHTTP(w, r)
 		case DelcoreServiceAuthorizeProcedure:
 			delcoreServiceAuthorizeHandler.ServeHTTP(w, r)
+		case DelcoreServiceListMeterAggregatesProcedure:
+			delcoreServiceListMeterAggregatesHandler.ServeHTTP(w, r)
+		case DelcoreServiceGetMeteringStatusProcedure:
+			delcoreServiceGetMeteringStatusHandler.ServeHTTP(w, r)
 		case DelcoreServiceCheckTenantLifecycleProcedure:
 			delcoreServiceCheckTenantLifecycleHandler.ServeHTTP(w, r)
 		case DelcoreServiceGetTenantStatesProcedure:
@@ -1237,6 +1287,14 @@ func (UnimplementedDelcoreServiceHandler) CreatePrice(context.Context, *connect.
 
 func (UnimplementedDelcoreServiceHandler) Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.Authorize is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ListMeterAggregates is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.GetMeteringStatus is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error) {

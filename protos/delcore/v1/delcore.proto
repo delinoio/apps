@@ -28,6 +28,16 @@ enum BlockReason {
   BLOCK_REASON_DISPUTE = 4;
   BLOCK_REASON_BALANCE = 5;
   BLOCK_REASON_DELETING = 6;
+  // Feature authorization only: the calling service declares no feature with
+  // the requested key.
+  BLOCK_REASON_FEATURE_UNKNOWN = 7;
+  // Feature authorization only: the plan and add-on versions pinned for the
+  // tenant at the request time do not grant the feature, or they disable an
+  // access feature.
+  BLOCK_REASON_FEATURE_NOT_ENTITLED = 8;
+  // Feature authorization only: the last applied aggregate of the selected
+  // group reached the metered feature limit in the current billing period.
+  BLOCK_REASON_FEATURE_LIMIT_REACHED = 9;
 }
 // TenantState is the billing-independent lifecycle state of a tenant. The
 // server never returns TENANT_STATE_UNSPECIFIED.
@@ -53,7 +63,8 @@ enum ErrorReason {
   // No catalog meter of the calling service matches the event type and filters.
   ERROR_REASON_NO_MATCHING_METER = 8;
   // A matched meter lacks a required attribute, receives the wrong attribute
-  // type, or an attribute is not a valid flat scalar.
+  // type, or an attribute is not a valid flat scalar. Authorize also returns it
+  // for group values that do not match a metered feature's meter.
   ERROR_REASON_INVALID_ATTRIBUTE = 9;
   // Accepting the event would exceed the configured group or distinct-value
   // bound of a tenant meter billing period.
@@ -483,11 +494,127 @@ message AuthorizeRequest {
   string user_id = 2;
   string capability = 3;
   bool paid = 4;
+  // Optional key of a feature declared by the calling service. An empty key
+  // keeps the permission and billing result unchanged and returns no feature.
+  string feature_key = 5;
+  // Values that select one group of a metered feature's meter. Supply exactly
+  // the meter's group-by attributes with the scalar types used for ingestion.
+  // Access and configuration features take no group values.
+  map<string, AttributeValue> group_values = 6;
 }
 message AuthorizeResponse {
   Metadata metadata = 1;
   bool allowed = 2;
   repeated BlockReason reasons = 3;
+  // Present when feature_key names a known feature and the permission check
+  // passed. Feature block reasons are also listed in reasons.
+  FeatureAuthorization feature = 4;
+}
+// FeatureAuthorization evaluates one feature against the plan and add-on
+// versions pinned for the tenant at the request time. Feature access never
+// replaces the permission and billing checks of AuthorizeRequest.
+message FeatureAuthorization {
+  string feature_id = 1;
+  FeatureKind kind = 2;
+  // True when a pinned plan or add-on grants the feature. An access feature is
+  // entitled only when the grant enables it.
+  bool entitled = 3;
+  // Metered features: per-group limit of the pinned grant as a canonical
+  // decimal.
+  string limit = 4;
+  // Metered features: last applied aggregate of the selected group in the
+  // current billing period, or "0" without applied events. Ingestion is
+  // asynchronous: accepted but unprocessed events are not included, so a
+  // successful IngestEvent does not imply a changed usage value. Execution
+  // allowed before processing catches up can exceed the limit.
+  string usage = 5;
+  // Metered features: the current billing period, a Paddle renewal period for
+  // paid subscriptions or the UTC calendar month otherwise.
+  google.protobuf.Timestamp period_start = 6;
+  google.protobuf.Timestamp period_end = 7;
+  // Configuration features: the typed value of the pinned grant.
+  ConfigurationValue configuration = 8;
+}
+// MeterAggregate is one applied group aggregate of a tenant meter billing
+// period. Aggregates update asynchronously after ingestion; a successful
+// IngestEvent or CorrectEvent does not imply that an aggregate includes it.
+message MeterAggregate {
+  map<string, AttributeValue> group_values = 1;
+  // Exposed value: the count, sum, minimum, maximum, exact distinct count, or
+  // the exact average rounded half-up to six decimal places.
+  string value = 2;
+  // Exact number of applied events in the group.
+  int64 event_count = 3;
+  // Exact sum of applied numeric values; "0" for count and unique count.
+  string sum = 4;
+  // Exact distinct values for min, max, and unique count; zero otherwise.
+  int64 distinct_count = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+// ListMeterAggregatesRequest selects one meter by service and stable key.
+// Page.after_id carries the opaque next_after_id of a previous response.
+message ListMeterAggregatesRequest {
+  string tenant_id = 1;
+  // Service that owns the meter. Service callers may leave it empty and can
+  // only read their own meters.
+  string service_id = 2;
+  string meter_key = 3;
+  // Any instant in the requested billing period. Unset selects the period
+  // that contains the request time.
+  google.protobuf.Timestamp period_at = 4;
+  Page page = 5;
+}
+message ListMeterAggregatesResponse {
+  Metadata metadata = 1;
+  string meter_id = 2;
+  MeterAggregation aggregation = 3;
+  google.protobuf.Timestamp period_start = 4;
+  google.protobuf.Timestamp period_end = 5;
+  // Applied group aggregates ordered by an internal group key.
+  repeated MeterAggregate aggregates = 6;
+  string next_after_id = 7;
+}
+// MeteringFailureCategory classifies the last recorded failure of metering
+// work. Use ListJobs and RetryJob to inspect and reprocess failed jobs.
+enum MeteringFailureCategory {
+  METERING_FAILURE_CATEGORY_UNSPECIFIED = 0;
+  // A transient failure; the job waits for an automatic retry.
+  METERING_FAILURE_CATEGORY_TRANSIENT = 1;
+  // Automatic retries are exhausted; the job needs RetryJob.
+  METERING_FAILURE_CATEGORY_RETRY_EXHAUSTED = 2;
+  // Stored metering state is inconsistent; automatic retries cannot fix it.
+  METERING_FAILURE_CATEGORY_INVALID_STATE = 3;
+  // The job payload is unreadable.
+  METERING_FAILURE_CATEGORY_INVALID_PAYLOAD = 4;
+}
+message MeteringFailureCount {
+  MeteringFailureCategory category = 1;
+  int64 jobs = 2;
+}
+// GetMeteringStatusRequest reads processing lag and failure state of one
+// tenant, or service-wide state for platform operators when tenant_id is
+// empty.
+message GetMeteringStatusRequest {
+  string tenant_id = 1;
+}
+message GetMeteringStatusResponse {
+  Metadata metadata = 1;
+  // Accepted events whose latest revision is not applied yet, including
+  // events whose processing failed.
+  int64 unapplied_events = 2;
+  // Metering jobs that wait for processing or an automatic retry.
+  int64 pending_jobs = 3;
+  // Acceptance time of the oldest pending job; unset without pending jobs.
+  google.protobuf.Timestamp oldest_pending_at = 4;
+  // Age of the oldest pending job at the request time in whole seconds.
+  int64 lag_seconds = 5;
+  // Metering jobs that failed and wait for an operator RetryJob.
+  int64 failed_jobs = 6;
+  // Unfinished jobs per last recorded failure category.
+  repeated MeteringFailureCount failures = 7;
+  // Most recent failure among unfinished jobs; unset when none is recorded.
+  google.protobuf.Timestamp last_failure_at = 8;
+  MeteringFailureCategory last_failure_category = 9;
 }
 // Service-scoped lifecycle checks expose only finalized deletion for known IDs.
 message CheckTenantLifecycleRequest {
@@ -708,6 +835,8 @@ service DelcoreService {
   rpc PutPlan(PutPlanRequest) returns (PutPlanResponse);
   rpc CreatePrice(CreatePriceRequest) returns (CreatePriceResponse);
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  rpc ListMeterAggregates(ListMeterAggregatesRequest) returns (ListMeterAggregatesResponse);
+  rpc GetMeteringStatus(GetMeteringStatusRequest) returns (GetMeteringStatusResponse);
   rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);
   rpc GetTenantStates(GetTenantStatesRequest) returns (GetTenantStatesResponse);
   // Deprecated: retired quantity reporting. Delcore never bills these calls

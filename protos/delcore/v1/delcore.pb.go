@@ -147,6 +147,16 @@ const (
 	BlockReason_BLOCK_REASON_DISPUTE     BlockReason = 4
 	BlockReason_BLOCK_REASON_BALANCE     BlockReason = 5
 	BlockReason_BLOCK_REASON_DELETING    BlockReason = 6
+	// Feature authorization only: the calling service declares no feature with
+	// the requested key.
+	BlockReason_BLOCK_REASON_FEATURE_UNKNOWN BlockReason = 7
+	// Feature authorization only: the plan and add-on versions pinned for the
+	// tenant at the request time do not grant the feature, or they disable an
+	// access feature.
+	BlockReason_BLOCK_REASON_FEATURE_NOT_ENTITLED BlockReason = 8
+	// Feature authorization only: the last applied aggregate of the selected
+	// group reached the metered feature limit in the current billing period.
+	BlockReason_BLOCK_REASON_FEATURE_LIMIT_REACHED BlockReason = 9
 )
 
 // Enum value maps for BlockReason.
@@ -159,15 +169,21 @@ var (
 		4: "BLOCK_REASON_DISPUTE",
 		5: "BLOCK_REASON_BALANCE",
 		6: "BLOCK_REASON_DELETING",
+		7: "BLOCK_REASON_FEATURE_UNKNOWN",
+		8: "BLOCK_REASON_FEATURE_NOT_ENTITLED",
+		9: "BLOCK_REASON_FEATURE_LIMIT_REACHED",
 	}
 	BlockReason_value = map[string]int32{
-		"BLOCK_REASON_UNSPECIFIED": 0,
-		"BLOCK_REASON_PERMISSION":  1,
-		"BLOCK_REASON_OPERATOR":    2,
-		"BLOCK_REASON_RENEWAL":     3,
-		"BLOCK_REASON_DISPUTE":     4,
-		"BLOCK_REASON_BALANCE":     5,
-		"BLOCK_REASON_DELETING":    6,
+		"BLOCK_REASON_UNSPECIFIED":           0,
+		"BLOCK_REASON_PERMISSION":            1,
+		"BLOCK_REASON_OPERATOR":              2,
+		"BLOCK_REASON_RENEWAL":               3,
+		"BLOCK_REASON_DISPUTE":               4,
+		"BLOCK_REASON_BALANCE":               5,
+		"BLOCK_REASON_DELETING":              6,
+		"BLOCK_REASON_FEATURE_UNKNOWN":       7,
+		"BLOCK_REASON_FEATURE_NOT_ENTITLED":  8,
+		"BLOCK_REASON_FEATURE_LIMIT_REACHED": 9,
 	}
 )
 
@@ -274,7 +290,8 @@ const (
 	// No catalog meter of the calling service matches the event type and filters.
 	ErrorReason_ERROR_REASON_NO_MATCHING_METER ErrorReason = 8
 	// A matched meter lacks a required attribute, receives the wrong attribute
-	// type, or an attribute is not a valid flat scalar.
+	// type, or an attribute is not a valid flat scalar. Authorize also returns it
+	// for group values that do not match a metered feature's meter.
 	ErrorReason_ERROR_REASON_INVALID_ATTRIBUTE ErrorReason = 9
 	// Accepting the event would exceed the configured group or distinct-value
 	// bound of a tenant meter billing period.
@@ -691,6 +708,67 @@ func (x EventCorrectionKind) Number() protoreflect.EnumNumber {
 // Deprecated: Use EventCorrectionKind.Descriptor instead.
 func (EventCorrectionKind) EnumDescriptor() ([]byte, []int) {
 	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{10}
+}
+
+// MeteringFailureCategory classifies the last recorded failure of metering
+// work. Use ListJobs and RetryJob to inspect and reprocess failed jobs.
+type MeteringFailureCategory int32
+
+const (
+	MeteringFailureCategory_METERING_FAILURE_CATEGORY_UNSPECIFIED MeteringFailureCategory = 0
+	// A transient failure; the job waits for an automatic retry.
+	MeteringFailureCategory_METERING_FAILURE_CATEGORY_TRANSIENT MeteringFailureCategory = 1
+	// Automatic retries are exhausted; the job needs RetryJob.
+	MeteringFailureCategory_METERING_FAILURE_CATEGORY_RETRY_EXHAUSTED MeteringFailureCategory = 2
+	// Stored metering state is inconsistent; automatic retries cannot fix it.
+	MeteringFailureCategory_METERING_FAILURE_CATEGORY_INVALID_STATE MeteringFailureCategory = 3
+	// The job payload is unreadable.
+	MeteringFailureCategory_METERING_FAILURE_CATEGORY_INVALID_PAYLOAD MeteringFailureCategory = 4
+)
+
+// Enum value maps for MeteringFailureCategory.
+var (
+	MeteringFailureCategory_name = map[int32]string{
+		0: "METERING_FAILURE_CATEGORY_UNSPECIFIED",
+		1: "METERING_FAILURE_CATEGORY_TRANSIENT",
+		2: "METERING_FAILURE_CATEGORY_RETRY_EXHAUSTED",
+		3: "METERING_FAILURE_CATEGORY_INVALID_STATE",
+		4: "METERING_FAILURE_CATEGORY_INVALID_PAYLOAD",
+	}
+	MeteringFailureCategory_value = map[string]int32{
+		"METERING_FAILURE_CATEGORY_UNSPECIFIED":     0,
+		"METERING_FAILURE_CATEGORY_TRANSIENT":       1,
+		"METERING_FAILURE_CATEGORY_RETRY_EXHAUSTED": 2,
+		"METERING_FAILURE_CATEGORY_INVALID_STATE":   3,
+		"METERING_FAILURE_CATEGORY_INVALID_PAYLOAD": 4,
+	}
+)
+
+func (x MeteringFailureCategory) Enum() *MeteringFailureCategory {
+	p := new(MeteringFailureCategory)
+	*p = x
+	return p
+}
+
+func (x MeteringFailureCategory) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MeteringFailureCategory) Descriptor() protoreflect.EnumDescriptor {
+	return file_delcore_v1_delcore_proto_enumTypes[11].Descriptor()
+}
+
+func (MeteringFailureCategory) Type() protoreflect.EnumType {
+	return &file_delcore_v1_delcore_proto_enumTypes[11]
+}
+
+func (x MeteringFailureCategory) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MeteringFailureCategory.Descriptor instead.
+func (MeteringFailureCategory) EnumDescriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{11}
 }
 
 type ErrorDetail struct {
@@ -4938,11 +5016,18 @@ func (x *CreatePriceResponse) GetPrice() *Price {
 }
 
 type AuthorizeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Capability    string                 `protobuf:"bytes,3,opt,name=capability,proto3" json:"capability,omitempty"`
-	Paid          bool                   `protobuf:"varint,4,opt,name=paid,proto3" json:"paid,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	TenantId   string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	UserId     string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Capability string                 `protobuf:"bytes,3,opt,name=capability,proto3" json:"capability,omitempty"`
+	Paid       bool                   `protobuf:"varint,4,opt,name=paid,proto3" json:"paid,omitempty"`
+	// Optional key of a feature declared by the calling service. An empty key
+	// keeps the permission and billing result unchanged and returns no feature.
+	FeatureKey string `protobuf:"bytes,5,opt,name=feature_key,json=featureKey,proto3" json:"feature_key,omitempty"`
+	// Values that select one group of a metered feature's meter. Supply exactly
+	// the meter's group-by attributes with the scalar types used for ingestion.
+	// Access and configuration features take no group values.
+	GroupValues   map[string]*AttributeValue `protobuf:"bytes,6,rep,name=group_values,json=groupValues,proto3" json:"group_values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5005,11 +5090,28 @@ func (x *AuthorizeRequest) GetPaid() bool {
 	return false
 }
 
+func (x *AuthorizeRequest) GetFeatureKey() string {
+	if x != nil {
+		return x.FeatureKey
+	}
+	return ""
+}
+
+func (x *AuthorizeRequest) GetGroupValues() map[string]*AttributeValue {
+	if x != nil {
+		return x.GroupValues
+	}
+	return nil
+}
+
 type AuthorizeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Metadata      *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Allowed       bool                   `protobuf:"varint,2,opt,name=allowed,proto3" json:"allowed,omitempty"`
-	Reasons       []BlockReason          `protobuf:"varint,3,rep,packed,name=reasons,proto3,enum=delcore.v1.BlockReason" json:"reasons,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Metadata *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Allowed  bool                   `protobuf:"varint,2,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	Reasons  []BlockReason          `protobuf:"varint,3,rep,packed,name=reasons,proto3,enum=delcore.v1.BlockReason" json:"reasons,omitempty"`
+	// Present when feature_key names a known feature and the permission check
+	// passed. Feature block reasons are also listed in reasons.
+	Feature       *FeatureAuthorization `protobuf:"bytes,4,opt,name=feature,proto3" json:"feature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5065,6 +5167,610 @@ func (x *AuthorizeResponse) GetReasons() []BlockReason {
 	return nil
 }
 
+func (x *AuthorizeResponse) GetFeature() *FeatureAuthorization {
+	if x != nil {
+		return x.Feature
+	}
+	return nil
+}
+
+// FeatureAuthorization evaluates one feature against the plan and add-on
+// versions pinned for the tenant at the request time. Feature access never
+// replaces the permission and billing checks of AuthorizeRequest.
+type FeatureAuthorization struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	FeatureId string                 `protobuf:"bytes,1,opt,name=feature_id,json=featureId,proto3" json:"feature_id,omitempty"`
+	Kind      FeatureKind            `protobuf:"varint,2,opt,name=kind,proto3,enum=delcore.v1.FeatureKind" json:"kind,omitempty"`
+	// True when a pinned plan or add-on grants the feature. An access feature is
+	// entitled only when the grant enables it.
+	Entitled bool `protobuf:"varint,3,opt,name=entitled,proto3" json:"entitled,omitempty"`
+	// Metered features: per-group limit of the pinned grant as a canonical
+	// decimal.
+	Limit string `protobuf:"bytes,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Metered features: last applied aggregate of the selected group in the
+	// current billing period, or "0" without applied events. Ingestion is
+	// asynchronous: accepted but unprocessed events are not included, so a
+	// successful IngestEvent does not imply a changed usage value. Execution
+	// allowed before processing catches up can exceed the limit.
+	Usage string `protobuf:"bytes,5,opt,name=usage,proto3" json:"usage,omitempty"`
+	// Metered features: the current billing period, a Paddle renewal period for
+	// paid subscriptions or the UTC calendar month otherwise.
+	PeriodStart *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
+	PeriodEnd   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	// Configuration features: the typed value of the pinned grant.
+	Configuration *ConfigurationValue `protobuf:"bytes,8,opt,name=configuration,proto3" json:"configuration,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeatureAuthorization) Reset() {
+	*x = FeatureAuthorization{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeatureAuthorization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeatureAuthorization) ProtoMessage() {}
+
+func (x *FeatureAuthorization) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeatureAuthorization.ProtoReflect.Descriptor instead.
+func (*FeatureAuthorization) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *FeatureAuthorization) GetFeatureId() string {
+	if x != nil {
+		return x.FeatureId
+	}
+	return ""
+}
+
+func (x *FeatureAuthorization) GetKind() FeatureKind {
+	if x != nil {
+		return x.Kind
+	}
+	return FeatureKind_FEATURE_KIND_UNSPECIFIED
+}
+
+func (x *FeatureAuthorization) GetEntitled() bool {
+	if x != nil {
+		return x.Entitled
+	}
+	return false
+}
+
+func (x *FeatureAuthorization) GetLimit() string {
+	if x != nil {
+		return x.Limit
+	}
+	return ""
+}
+
+func (x *FeatureAuthorization) GetUsage() string {
+	if x != nil {
+		return x.Usage
+	}
+	return ""
+}
+
+func (x *FeatureAuthorization) GetPeriodStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodStart
+	}
+	return nil
+}
+
+func (x *FeatureAuthorization) GetPeriodEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodEnd
+	}
+	return nil
+}
+
+func (x *FeatureAuthorization) GetConfiguration() *ConfigurationValue {
+	if x != nil {
+		return x.Configuration
+	}
+	return nil
+}
+
+// MeterAggregate is one applied group aggregate of a tenant meter billing
+// period. Aggregates update asynchronously after ingestion; a successful
+// IngestEvent or CorrectEvent does not imply that an aggregate includes it.
+type MeterAggregate struct {
+	state       protoimpl.MessageState     `protogen:"open.v1"`
+	GroupValues map[string]*AttributeValue `protobuf:"bytes,1,rep,name=group_values,json=groupValues,proto3" json:"group_values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Exposed value: the count, sum, minimum, maximum, exact distinct count, or
+	// the exact average rounded half-up to six decimal places.
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// Exact number of applied events in the group.
+	EventCount int64 `protobuf:"varint,3,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
+	// Exact sum of applied numeric values; "0" for count and unique count.
+	Sum string `protobuf:"bytes,4,opt,name=sum,proto3" json:"sum,omitempty"`
+	// Exact distinct values for min, max, and unique count; zero otherwise.
+	DistinctCount int64                  `protobuf:"varint,5,opt,name=distinct_count,json=distinctCount,proto3" json:"distinct_count,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MeterAggregate) Reset() {
+	*x = MeterAggregate{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MeterAggregate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MeterAggregate) ProtoMessage() {}
+
+func (x *MeterAggregate) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MeterAggregate.ProtoReflect.Descriptor instead.
+func (*MeterAggregate) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *MeterAggregate) GetGroupValues() map[string]*AttributeValue {
+	if x != nil {
+		return x.GroupValues
+	}
+	return nil
+}
+
+func (x *MeterAggregate) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *MeterAggregate) GetEventCount() int64 {
+	if x != nil {
+		return x.EventCount
+	}
+	return 0
+}
+
+func (x *MeterAggregate) GetSum() string {
+	if x != nil {
+		return x.Sum
+	}
+	return ""
+}
+
+func (x *MeterAggregate) GetDistinctCount() int64 {
+	if x != nil {
+		return x.DistinctCount
+	}
+	return 0
+}
+
+func (x *MeterAggregate) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// ListMeterAggregatesRequest selects one meter by service and stable key.
+// Page.after_id carries the opaque next_after_id of a previous response.
+type ListMeterAggregatesRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	// Service that owns the meter. Service callers may leave it empty and can
+	// only read their own meters.
+	ServiceId string `protobuf:"bytes,2,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	MeterKey  string `protobuf:"bytes,3,opt,name=meter_key,json=meterKey,proto3" json:"meter_key,omitempty"`
+	// Any instant in the requested billing period. Unset selects the period
+	// that contains the request time.
+	PeriodAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=period_at,json=periodAt,proto3" json:"period_at,omitempty"`
+	Page          *Page                  `protobuf:"bytes,5,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMeterAggregatesRequest) Reset() {
+	*x = ListMeterAggregatesRequest{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMeterAggregatesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMeterAggregatesRequest) ProtoMessage() {}
+
+func (x *ListMeterAggregatesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMeterAggregatesRequest.ProtoReflect.Descriptor instead.
+func (*ListMeterAggregatesRequest) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *ListMeterAggregatesRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ListMeterAggregatesRequest) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *ListMeterAggregatesRequest) GetMeterKey() string {
+	if x != nil {
+		return x.MeterKey
+	}
+	return ""
+}
+
+func (x *ListMeterAggregatesRequest) GetPeriodAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodAt
+	}
+	return nil
+}
+
+func (x *ListMeterAggregatesRequest) GetPage() *Page {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListMeterAggregatesResponse struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Metadata    *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	MeterId     string                 `protobuf:"bytes,2,opt,name=meter_id,json=meterId,proto3" json:"meter_id,omitempty"`
+	Aggregation MeterAggregation       `protobuf:"varint,3,opt,name=aggregation,proto3,enum=delcore.v1.MeterAggregation" json:"aggregation,omitempty"`
+	PeriodStart *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=period_start,json=periodStart,proto3" json:"period_start,omitempty"`
+	PeriodEnd   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=period_end,json=periodEnd,proto3" json:"period_end,omitempty"`
+	// Applied group aggregates ordered by an internal group key.
+	Aggregates    []*MeterAggregate `protobuf:"bytes,6,rep,name=aggregates,proto3" json:"aggregates,omitempty"`
+	NextAfterId   string            `protobuf:"bytes,7,opt,name=next_after_id,json=nextAfterId,proto3" json:"next_after_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMeterAggregatesResponse) Reset() {
+	*x = ListMeterAggregatesResponse{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMeterAggregatesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMeterAggregatesResponse) ProtoMessage() {}
+
+func (x *ListMeterAggregatesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMeterAggregatesResponse.ProtoReflect.Descriptor instead.
+func (*ListMeterAggregatesResponse) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *ListMeterAggregatesResponse) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *ListMeterAggregatesResponse) GetMeterId() string {
+	if x != nil {
+		return x.MeterId
+	}
+	return ""
+}
+
+func (x *ListMeterAggregatesResponse) GetAggregation() MeterAggregation {
+	if x != nil {
+		return x.Aggregation
+	}
+	return MeterAggregation_METER_AGGREGATION_UNSPECIFIED
+}
+
+func (x *ListMeterAggregatesResponse) GetPeriodStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodStart
+	}
+	return nil
+}
+
+func (x *ListMeterAggregatesResponse) GetPeriodEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PeriodEnd
+	}
+	return nil
+}
+
+func (x *ListMeterAggregatesResponse) GetAggregates() []*MeterAggregate {
+	if x != nil {
+		return x.Aggregates
+	}
+	return nil
+}
+
+func (x *ListMeterAggregatesResponse) GetNextAfterId() string {
+	if x != nil {
+		return x.NextAfterId
+	}
+	return ""
+}
+
+type MeteringFailureCount struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Category      MeteringFailureCategory `protobuf:"varint,1,opt,name=category,proto3,enum=delcore.v1.MeteringFailureCategory" json:"category,omitempty"`
+	Jobs          int64                   `protobuf:"varint,2,opt,name=jobs,proto3" json:"jobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MeteringFailureCount) Reset() {
+	*x = MeteringFailureCount{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MeteringFailureCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MeteringFailureCount) ProtoMessage() {}
+
+func (x *MeteringFailureCount) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MeteringFailureCount.ProtoReflect.Descriptor instead.
+func (*MeteringFailureCount) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *MeteringFailureCount) GetCategory() MeteringFailureCategory {
+	if x != nil {
+		return x.Category
+	}
+	return MeteringFailureCategory_METERING_FAILURE_CATEGORY_UNSPECIFIED
+}
+
+func (x *MeteringFailureCount) GetJobs() int64 {
+	if x != nil {
+		return x.Jobs
+	}
+	return 0
+}
+
+// GetMeteringStatusRequest reads processing lag and failure state of one
+// tenant, or service-wide state for platform operators when tenant_id is
+// empty.
+type GetMeteringStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMeteringStatusRequest) Reset() {
+	*x = GetMeteringStatusRequest{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMeteringStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMeteringStatusRequest) ProtoMessage() {}
+
+func (x *GetMeteringStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMeteringStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetMeteringStatusRequest) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *GetMeteringStatusRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type GetMeteringStatusResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Metadata *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// Accepted events whose latest revision is not applied yet, including
+	// events whose processing failed.
+	UnappliedEvents int64 `protobuf:"varint,2,opt,name=unapplied_events,json=unappliedEvents,proto3" json:"unapplied_events,omitempty"`
+	// Metering jobs that wait for processing or an automatic retry.
+	PendingJobs int64 `protobuf:"varint,3,opt,name=pending_jobs,json=pendingJobs,proto3" json:"pending_jobs,omitempty"`
+	// Acceptance time of the oldest pending job; unset without pending jobs.
+	OldestPendingAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=oldest_pending_at,json=oldestPendingAt,proto3" json:"oldest_pending_at,omitempty"`
+	// Age of the oldest pending job at the request time in whole seconds.
+	LagSeconds int64 `protobuf:"varint,5,opt,name=lag_seconds,json=lagSeconds,proto3" json:"lag_seconds,omitempty"`
+	// Metering jobs that failed and wait for an operator RetryJob.
+	FailedJobs int64 `protobuf:"varint,6,opt,name=failed_jobs,json=failedJobs,proto3" json:"failed_jobs,omitempty"`
+	// Unfinished jobs per last recorded failure category.
+	Failures []*MeteringFailureCount `protobuf:"bytes,7,rep,name=failures,proto3" json:"failures,omitempty"`
+	// Most recent failure among unfinished jobs; unset when none is recorded.
+	LastFailureAt       *timestamppb.Timestamp  `protobuf:"bytes,8,opt,name=last_failure_at,json=lastFailureAt,proto3" json:"last_failure_at,omitempty"`
+	LastFailureCategory MeteringFailureCategory `protobuf:"varint,9,opt,name=last_failure_category,json=lastFailureCategory,proto3,enum=delcore.v1.MeteringFailureCategory" json:"last_failure_category,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetMeteringStatusResponse) Reset() {
+	*x = GetMeteringStatusResponse{}
+	mi := &file_delcore_v1_delcore_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMeteringStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMeteringStatusResponse) ProtoMessage() {}
+
+func (x *GetMeteringStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delcore_v1_delcore_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMeteringStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetMeteringStatusResponse) Descriptor() ([]byte, []int) {
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *GetMeteringStatusResponse) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *GetMeteringStatusResponse) GetUnappliedEvents() int64 {
+	if x != nil {
+		return x.UnappliedEvents
+	}
+	return 0
+}
+
+func (x *GetMeteringStatusResponse) GetPendingJobs() int64 {
+	if x != nil {
+		return x.PendingJobs
+	}
+	return 0
+}
+
+func (x *GetMeteringStatusResponse) GetOldestPendingAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.OldestPendingAt
+	}
+	return nil
+}
+
+func (x *GetMeteringStatusResponse) GetLagSeconds() int64 {
+	if x != nil {
+		return x.LagSeconds
+	}
+	return 0
+}
+
+func (x *GetMeteringStatusResponse) GetFailedJobs() int64 {
+	if x != nil {
+		return x.FailedJobs
+	}
+	return 0
+}
+
+func (x *GetMeteringStatusResponse) GetFailures() []*MeteringFailureCount {
+	if x != nil {
+		return x.Failures
+	}
+	return nil
+}
+
+func (x *GetMeteringStatusResponse) GetLastFailureAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastFailureAt
+	}
+	return nil
+}
+
+func (x *GetMeteringStatusResponse) GetLastFailureCategory() MeteringFailureCategory {
+	if x != nil {
+		return x.LastFailureCategory
+	}
+	return MeteringFailureCategory_METERING_FAILURE_CATEGORY_UNSPECIFIED
+}
+
 // Service-scoped lifecycle checks expose only finalized deletion for known IDs.
 type CheckTenantLifecycleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -5075,7 +5781,7 @@ type CheckTenantLifecycleRequest struct {
 
 func (x *CheckTenantLifecycleRequest) Reset() {
 	*x = CheckTenantLifecycleRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[67]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5087,7 +5793,7 @@ func (x *CheckTenantLifecycleRequest) String() string {
 func (*CheckTenantLifecycleRequest) ProtoMessage() {}
 
 func (x *CheckTenantLifecycleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[67]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5100,7 +5806,7 @@ func (x *CheckTenantLifecycleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckTenantLifecycleRequest.ProtoReflect.Descriptor instead.
 func (*CheckTenantLifecycleRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{67}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *CheckTenantLifecycleRequest) GetTenantIds() []string {
@@ -5120,7 +5826,7 @@ type CheckTenantLifecycleResponse struct {
 
 func (x *CheckTenantLifecycleResponse) Reset() {
 	*x = CheckTenantLifecycleResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[68]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5132,7 +5838,7 @@ func (x *CheckTenantLifecycleResponse) String() string {
 func (*CheckTenantLifecycleResponse) ProtoMessage() {}
 
 func (x *CheckTenantLifecycleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[68]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5145,7 +5851,7 @@ func (x *CheckTenantLifecycleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckTenantLifecycleResponse.ProtoReflect.Descriptor instead.
 func (*CheckTenantLifecycleResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{68}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *CheckTenantLifecycleResponse) GetMetadata() *Metadata {
@@ -5173,7 +5879,7 @@ type GetTenantStatesRequest struct {
 
 func (x *GetTenantStatesRequest) Reset() {
 	*x = GetTenantStatesRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[69]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5185,7 +5891,7 @@ func (x *GetTenantStatesRequest) String() string {
 func (*GetTenantStatesRequest) ProtoMessage() {}
 
 func (x *GetTenantStatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[69]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5198,7 +5904,7 @@ func (x *GetTenantStatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTenantStatesRequest.ProtoReflect.Descriptor instead.
 func (*GetTenantStatesRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{69}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *GetTenantStatesRequest) GetTenantIds() []string {
@@ -5218,7 +5924,7 @@ type TenantStateEntry struct {
 
 func (x *TenantStateEntry) Reset() {
 	*x = TenantStateEntry{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[70]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5230,7 +5936,7 @@ func (x *TenantStateEntry) String() string {
 func (*TenantStateEntry) ProtoMessage() {}
 
 func (x *TenantStateEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[70]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5243,7 +5949,7 @@ func (x *TenantStateEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantStateEntry.ProtoReflect.Descriptor instead.
 func (*TenantStateEntry) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{70}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *TenantStateEntry) GetTenantId() string {
@@ -5271,7 +5977,7 @@ type GetTenantStatesResponse struct {
 
 func (x *GetTenantStatesResponse) Reset() {
 	*x = GetTenantStatesResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[71]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5283,7 +5989,7 @@ func (x *GetTenantStatesResponse) String() string {
 func (*GetTenantStatesResponse) ProtoMessage() {}
 
 func (x *GetTenantStatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[71]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5296,7 +6002,7 @@ func (x *GetTenantStatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTenantStatesResponse.ProtoReflect.Descriptor instead.
 func (*GetTenantStatesResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{71}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *GetTenantStatesResponse) GetMetadata() *Metadata {
@@ -5323,7 +6029,7 @@ type ReportUsageRequest struct {
 
 func (x *ReportUsageRequest) Reset() {
 	*x = ReportUsageRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[72]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5335,7 +6041,7 @@ func (x *ReportUsageRequest) String() string {
 func (*ReportUsageRequest) ProtoMessage() {}
 
 func (x *ReportUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[72]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5348,7 +6054,7 @@ func (x *ReportUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportUsageRequest.ProtoReflect.Descriptor instead.
 func (*ReportUsageRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{72}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ReportUsageRequest) GetRequestKey() string {
@@ -5375,7 +6081,7 @@ type ReportUsageResponse struct {
 
 func (x *ReportUsageResponse) Reset() {
 	*x = ReportUsageResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[73]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5387,7 +6093,7 @@ func (x *ReportUsageResponse) String() string {
 func (*ReportUsageResponse) ProtoMessage() {}
 
 func (x *ReportUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[73]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5400,7 +6106,7 @@ func (x *ReportUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportUsageResponse.ProtoReflect.Descriptor instead.
 func (*ReportUsageResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{73}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ReportUsageResponse) GetMetadata() *Metadata {
@@ -5427,7 +6133,7 @@ type CorrectUsageRequest struct {
 
 func (x *CorrectUsageRequest) Reset() {
 	*x = CorrectUsageRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[74]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5439,7 +6145,7 @@ func (x *CorrectUsageRequest) String() string {
 func (*CorrectUsageRequest) ProtoMessage() {}
 
 func (x *CorrectUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[74]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5452,7 +6158,7 @@ func (x *CorrectUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorrectUsageRequest.ProtoReflect.Descriptor instead.
 func (*CorrectUsageRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{74}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *CorrectUsageRequest) GetRequestKey() string {
@@ -5479,7 +6185,7 @@ type CorrectUsageResponse struct {
 
 func (x *CorrectUsageResponse) Reset() {
 	*x = CorrectUsageResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[75]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5491,7 +6197,7 @@ func (x *CorrectUsageResponse) String() string {
 func (*CorrectUsageResponse) ProtoMessage() {}
 
 func (x *CorrectUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[75]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5504,7 +6210,7 @@ func (x *CorrectUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorrectUsageResponse.ProtoReflect.Descriptor instead.
 func (*CorrectUsageResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{75}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *CorrectUsageResponse) GetMetadata() *Metadata {
@@ -5533,7 +6239,7 @@ type IngestEventRequest struct {
 
 func (x *IngestEventRequest) Reset() {
 	*x = IngestEventRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[76]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5545,7 +6251,7 @@ func (x *IngestEventRequest) String() string {
 func (*IngestEventRequest) ProtoMessage() {}
 
 func (x *IngestEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[76]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5558,7 +6264,7 @@ func (x *IngestEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IngestEventRequest.ProtoReflect.Descriptor instead.
 func (*IngestEventRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{76}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *IngestEventRequest) GetRequestKey() string {
@@ -5587,7 +6293,7 @@ type IngestEventResponse struct {
 
 func (x *IngestEventResponse) Reset() {
 	*x = IngestEventResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[77]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5599,7 +6305,7 @@ func (x *IngestEventResponse) String() string {
 func (*IngestEventResponse) ProtoMessage() {}
 
 func (x *IngestEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[77]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5612,7 +6318,7 @@ func (x *IngestEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IngestEventResponse.ProtoReflect.Descriptor instead.
 func (*IngestEventResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{77}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *IngestEventResponse) GetMetadata() *Metadata {
@@ -5654,7 +6360,7 @@ type CorrectEventRequest struct {
 
 func (x *CorrectEventRequest) Reset() {
 	*x = CorrectEventRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[78]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5666,7 +6372,7 @@ func (x *CorrectEventRequest) String() string {
 func (*CorrectEventRequest) ProtoMessage() {}
 
 func (x *CorrectEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[78]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5679,7 +6385,7 @@ func (x *CorrectEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorrectEventRequest.ProtoReflect.Descriptor instead.
 func (*CorrectEventRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{78}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *CorrectEventRequest) GetRequestKey() string {
@@ -5743,7 +6449,7 @@ type CorrectEventResponse struct {
 
 func (x *CorrectEventResponse) Reset() {
 	*x = CorrectEventResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[79]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5755,7 +6461,7 @@ func (x *CorrectEventResponse) String() string {
 func (*CorrectEventResponse) ProtoMessage() {}
 
 func (x *CorrectEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[79]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5768,7 +6474,7 @@ func (x *CorrectEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorrectEventResponse.ProtoReflect.Descriptor instead.
 func (*CorrectEventResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{79}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *CorrectEventResponse) GetMetadata() *Metadata {
@@ -5802,7 +6508,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[80]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5814,7 +6520,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[80]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5827,7 +6533,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{80}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetEventRequest) GetTenantId() string {
@@ -5861,7 +6567,7 @@ type GetEventResponse struct {
 
 func (x *GetEventResponse) Reset() {
 	*x = GetEventResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[81]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5873,7 +6579,7 @@ func (x *GetEventResponse) String() string {
 func (*GetEventResponse) ProtoMessage() {}
 
 func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[81]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5886,7 +6592,7 @@ func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventResponse.ProtoReflect.Descriptor instead.
 func (*GetEventResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{81}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *GetEventResponse) GetMetadata() *Metadata {
@@ -5934,7 +6640,7 @@ type ListUsageRequest struct {
 
 func (x *ListUsageRequest) Reset() {
 	*x = ListUsageRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[82]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5946,7 +6652,7 @@ func (x *ListUsageRequest) String() string {
 func (*ListUsageRequest) ProtoMessage() {}
 
 func (x *ListUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[82]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5959,7 +6665,7 @@ func (x *ListUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsageRequest.ProtoReflect.Descriptor instead.
 func (*ListUsageRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{82}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ListUsageRequest) GetTenantId() string {
@@ -5987,7 +6693,7 @@ type ListUsageResponse struct {
 
 func (x *ListUsageResponse) Reset() {
 	*x = ListUsageResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[83]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5999,7 +6705,7 @@ func (x *ListUsageResponse) String() string {
 func (*ListUsageResponse) ProtoMessage() {}
 
 func (x *ListUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[83]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6012,7 +6718,7 @@ func (x *ListUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsageResponse.ProtoReflect.Descriptor instead.
 func (*ListUsageResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{83}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *ListUsageResponse) GetMetadata() *Metadata {
@@ -6046,7 +6752,7 @@ type ListLedgerRequest struct {
 
 func (x *ListLedgerRequest) Reset() {
 	*x = ListLedgerRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[84]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6058,7 +6764,7 @@ func (x *ListLedgerRequest) String() string {
 func (*ListLedgerRequest) ProtoMessage() {}
 
 func (x *ListLedgerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[84]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6071,7 +6777,7 @@ func (x *ListLedgerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLedgerRequest.ProtoReflect.Descriptor instead.
 func (*ListLedgerRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{84}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ListLedgerRequest) GetTenantId() string {
@@ -6099,7 +6805,7 @@ type ListLedgerResponse struct {
 
 func (x *ListLedgerResponse) Reset() {
 	*x = ListLedgerResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[85]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6111,7 +6817,7 @@ func (x *ListLedgerResponse) String() string {
 func (*ListLedgerResponse) ProtoMessage() {}
 
 func (x *ListLedgerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[85]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6124,7 +6830,7 @@ func (x *ListLedgerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLedgerResponse.ProtoReflect.Descriptor instead.
 func (*ListLedgerResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{85}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ListLedgerResponse) GetMetadata() *Metadata {
@@ -6160,7 +6866,7 @@ type RequestTopUpRequest struct {
 
 func (x *RequestTopUpRequest) Reset() {
 	*x = RequestTopUpRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[86]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6172,7 +6878,7 @@ func (x *RequestTopUpRequest) String() string {
 func (*RequestTopUpRequest) ProtoMessage() {}
 
 func (x *RequestTopUpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[86]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6185,7 +6891,7 @@ func (x *RequestTopUpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestTopUpRequest.ProtoReflect.Descriptor instead.
 func (*RequestTopUpRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{86}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *RequestTopUpRequest) GetRequestKey() string {
@@ -6226,7 +6932,7 @@ type RequestTopUpResponse struct {
 
 func (x *RequestTopUpResponse) Reset() {
 	*x = RequestTopUpResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[87]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6238,7 +6944,7 @@ func (x *RequestTopUpResponse) String() string {
 func (*RequestTopUpResponse) ProtoMessage() {}
 
 func (x *RequestTopUpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[87]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6251,7 +6957,7 @@ func (x *RequestTopUpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestTopUpResponse.ProtoReflect.Descriptor instead.
 func (*RequestTopUpResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{87}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *RequestTopUpResponse) GetMetadata() *Metadata {
@@ -6282,7 +6988,7 @@ type SetAutoTopUpRequest struct {
 
 func (x *SetAutoTopUpRequest) Reset() {
 	*x = SetAutoTopUpRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[88]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6294,7 +7000,7 @@ func (x *SetAutoTopUpRequest) String() string {
 func (*SetAutoTopUpRequest) ProtoMessage() {}
 
 func (x *SetAutoTopUpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[88]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6307,7 +7013,7 @@ func (x *SetAutoTopUpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAutoTopUpRequest.ProtoReflect.Descriptor instead.
 func (*SetAutoTopUpRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{88}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *SetAutoTopUpRequest) GetRequestKey() string {
@@ -6361,7 +7067,7 @@ type SetAutoTopUpResponse struct {
 
 func (x *SetAutoTopUpResponse) Reset() {
 	*x = SetAutoTopUpResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[89]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6373,7 +7079,7 @@ func (x *SetAutoTopUpResponse) String() string {
 func (*SetAutoTopUpResponse) ProtoMessage() {}
 
 func (x *SetAutoTopUpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[89]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6386,7 +7092,7 @@ func (x *SetAutoTopUpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAutoTopUpResponse.ProtoReflect.Descriptor instead.
 func (*SetAutoTopUpResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{89}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *SetAutoTopUpResponse) GetMetadata() *Metadata {
@@ -6409,7 +7115,7 @@ type ChangeSubscriptionRequest struct {
 
 func (x *ChangeSubscriptionRequest) Reset() {
 	*x = ChangeSubscriptionRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[90]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6421,7 +7127,7 @@ func (x *ChangeSubscriptionRequest) String() string {
 func (*ChangeSubscriptionRequest) ProtoMessage() {}
 
 func (x *ChangeSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[90]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6434,7 +7140,7 @@ func (x *ChangeSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*ChangeSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{90}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ChangeSubscriptionRequest) GetRequestKey() string {
@@ -6482,7 +7188,7 @@ type ChangeSubscriptionResponse struct {
 
 func (x *ChangeSubscriptionResponse) Reset() {
 	*x = ChangeSubscriptionResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[91]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6494,7 +7200,7 @@ func (x *ChangeSubscriptionResponse) String() string {
 func (*ChangeSubscriptionResponse) ProtoMessage() {}
 
 func (x *ChangeSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[91]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6507,7 +7213,7 @@ func (x *ChangeSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*ChangeSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{91}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ChangeSubscriptionResponse) GetMetadata() *Metadata {
@@ -6534,7 +7240,7 @@ type CancelSubscriptionRequest struct {
 
 func (x *CancelSubscriptionRequest) Reset() {
 	*x = CancelSubscriptionRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[92]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6546,7 +7252,7 @@ func (x *CancelSubscriptionRequest) String() string {
 func (*CancelSubscriptionRequest) ProtoMessage() {}
 
 func (x *CancelSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[92]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6559,7 +7265,7 @@ func (x *CancelSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*CancelSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{92}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *CancelSubscriptionRequest) GetRequestKey() string {
@@ -6586,7 +7292,7 @@ type CancelSubscriptionResponse struct {
 
 func (x *CancelSubscriptionResponse) Reset() {
 	*x = CancelSubscriptionResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[93]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6598,7 +7304,7 @@ func (x *CancelSubscriptionResponse) String() string {
 func (*CancelSubscriptionResponse) ProtoMessage() {}
 
 func (x *CancelSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[93]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6611,7 +7317,7 @@ func (x *CancelSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*CancelSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{93}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *CancelSubscriptionResponse) GetMetadata() *Metadata {
@@ -6638,7 +7344,7 @@ type DeleteTenantRequest struct {
 
 func (x *DeleteTenantRequest) Reset() {
 	*x = DeleteTenantRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[94]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6650,7 +7356,7 @@ func (x *DeleteTenantRequest) String() string {
 func (*DeleteTenantRequest) ProtoMessage() {}
 
 func (x *DeleteTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[94]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6663,7 +7369,7 @@ func (x *DeleteTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTenantRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTenantRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{94}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *DeleteTenantRequest) GetRequestKey() string {
@@ -6689,7 +7395,7 @@ type DeleteTenantResponse struct {
 
 func (x *DeleteTenantResponse) Reset() {
 	*x = DeleteTenantResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[95]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6701,7 +7407,7 @@ func (x *DeleteTenantResponse) String() string {
 func (*DeleteTenantResponse) ProtoMessage() {}
 
 func (x *DeleteTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[95]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6714,7 +7420,7 @@ func (x *DeleteTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTenantResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTenantResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{95}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *DeleteTenantResponse) GetMetadata() *Metadata {
@@ -6733,7 +7439,7 @@ type WithdrawRequest struct {
 
 func (x *WithdrawRequest) Reset() {
 	*x = WithdrawRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[96]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6745,7 +7451,7 @@ func (x *WithdrawRequest) String() string {
 func (*WithdrawRequest) ProtoMessage() {}
 
 func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[96]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6758,7 +7464,7 @@ func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{96}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *WithdrawRequest) GetRequestKey() string {
@@ -6777,7 +7483,7 @@ type WithdrawResponse struct {
 
 func (x *WithdrawResponse) Reset() {
 	*x = WithdrawResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[97]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6789,7 +7495,7 @@ func (x *WithdrawResponse) String() string {
 func (*WithdrawResponse) ProtoMessage() {}
 
 func (x *WithdrawResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[97]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6802,7 +7508,7 @@ func (x *WithdrawResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawResponse.ProtoReflect.Descriptor instead.
 func (*WithdrawResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{97}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *WithdrawResponse) GetMetadata() *Metadata {
@@ -6824,7 +7530,7 @@ type SetTenantBlockedRequest struct {
 
 func (x *SetTenantBlockedRequest) Reset() {
 	*x = SetTenantBlockedRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[98]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6836,7 +7542,7 @@ func (x *SetTenantBlockedRequest) String() string {
 func (*SetTenantBlockedRequest) ProtoMessage() {}
 
 func (x *SetTenantBlockedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[98]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6849,7 +7555,7 @@ func (x *SetTenantBlockedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTenantBlockedRequest.ProtoReflect.Descriptor instead.
 func (*SetTenantBlockedRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{98}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *SetTenantBlockedRequest) GetRequestKey() string {
@@ -6889,7 +7595,7 @@ type SetTenantBlockedResponse struct {
 
 func (x *SetTenantBlockedResponse) Reset() {
 	*x = SetTenantBlockedResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[99]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6901,7 +7607,7 @@ func (x *SetTenantBlockedResponse) String() string {
 func (*SetTenantBlockedResponse) ProtoMessage() {}
 
 func (x *SetTenantBlockedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[99]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6914,7 +7620,7 @@ func (x *SetTenantBlockedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTenantBlockedResponse.ProtoReflect.Descriptor instead.
 func (*SetTenantBlockedResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{99}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *SetTenantBlockedResponse) GetMetadata() *Metadata {
@@ -6933,7 +7639,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[100]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6945,7 +7651,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[100]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6958,7 +7664,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{100}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ListJobsRequest) GetPage() *Page {
@@ -6979,7 +7685,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[101]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6991,7 +7697,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[101]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7004,7 +7710,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{101}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *ListJobsResponse) GetMetadata() *Metadata {
@@ -7039,7 +7745,7 @@ type RetryJobRequest struct {
 
 func (x *RetryJobRequest) Reset() {
 	*x = RetryJobRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[102]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7051,7 +7757,7 @@ func (x *RetryJobRequest) String() string {
 func (*RetryJobRequest) ProtoMessage() {}
 
 func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[102]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7064,7 +7770,7 @@ func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
 func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{102}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *RetryJobRequest) GetRequestKey() string {
@@ -7097,7 +7803,7 @@ type RetryJobResponse struct {
 
 func (x *RetryJobResponse) Reset() {
 	*x = RetryJobResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[103]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7109,7 +7815,7 @@ func (x *RetryJobResponse) String() string {
 func (*RetryJobResponse) ProtoMessage() {}
 
 func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[103]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7122,7 +7828,7 @@ func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
 func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{103}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *RetryJobResponse) GetMetadata() *Metadata {
@@ -7141,7 +7847,7 @@ type ListAuditRequest struct {
 
 func (x *ListAuditRequest) Reset() {
 	*x = ListAuditRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[104]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7153,7 +7859,7 @@ func (x *ListAuditRequest) String() string {
 func (*ListAuditRequest) ProtoMessage() {}
 
 func (x *ListAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[104]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7166,7 +7872,7 @@ func (x *ListAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditRequest.ProtoReflect.Descriptor instead.
 func (*ListAuditRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{104}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *ListAuditRequest) GetPage() *Page {
@@ -7187,7 +7893,7 @@ type ListAuditResponse struct {
 
 func (x *ListAuditResponse) Reset() {
 	*x = ListAuditResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[105]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7199,7 +7905,7 @@ func (x *ListAuditResponse) String() string {
 func (*ListAuditResponse) ProtoMessage() {}
 
 func (x *ListAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[105]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7212,7 +7918,7 @@ func (x *ListAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditResponse.ProtoReflect.Descriptor instead.
 func (*ListAuditResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{105}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *ListAuditResponse) GetMetadata() *Metadata {
@@ -7247,7 +7953,7 @@ type DeleteGroupRequest struct {
 
 func (x *DeleteGroupRequest) Reset() {
 	*x = DeleteGroupRequest{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[106]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7259,7 +7965,7 @@ func (x *DeleteGroupRequest) String() string {
 func (*DeleteGroupRequest) ProtoMessage() {}
 
 func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[106]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7272,7 +7978,7 @@ func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupRequest.ProtoReflect.Descriptor instead.
 func (*DeleteGroupRequest) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{106}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *DeleteGroupRequest) GetRequestKey() string {
@@ -7305,7 +8011,7 @@ type DeleteGroupResponse struct {
 
 func (x *DeleteGroupResponse) Reset() {
 	*x = DeleteGroupResponse{}
-	mi := &file_delcore_v1_delcore_proto_msgTypes[107]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7317,7 +8023,7 @@ func (x *DeleteGroupResponse) String() string {
 func (*DeleteGroupResponse) ProtoMessage() {}
 
 func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delcore_v1_delcore_proto_msgTypes[107]
+	mi := &file_delcore_v1_delcore_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7330,7 +8036,7 @@ func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupResponse.ProtoReflect.Descriptor instead.
 func (*DeleteGroupResponse) Descriptor() ([]byte, []int) {
-	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{107}
+	return file_delcore_v1_delcore_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *DeleteGroupResponse) GetMetadata() *Metadata {
@@ -7686,18 +8392,83 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"p\n" +
 	"\x13CreatePriceResponse\x120\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x14.delcore.v1.MetadataR\bmetadata\x12'\n" +
-	"\x05price\x18\x02 \x01(\v2\x11.delcore.v1.PriceR\x05price\"|\n" +
+	"\x05price\x18\x02 \x01(\v2\x11.delcore.v1.PriceR\x05price\"\xcb\x02\n" +
 	"\x10AuthorizeRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1e\n" +
 	"\n" +
 	"capability\x18\x03 \x01(\tR\n" +
 	"capability\x12\x12\n" +
-	"\x04paid\x18\x04 \x01(\bR\x04paid\"\x92\x01\n" +
+	"\x04paid\x18\x04 \x01(\bR\x04paid\x12\x1f\n" +
+	"\vfeature_key\x18\x05 \x01(\tR\n" +
+	"featureKey\x12P\n" +
+	"\fgroup_values\x18\x06 \x03(\v2-.delcore.v1.AuthorizeRequest.GroupValuesEntryR\vgroupValues\x1aZ\n" +
+	"\x10GroupValuesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
+	"\x05value\x18\x02 \x01(\v2\x1a.delcore.v1.AttributeValueR\x05value:\x028\x01\"\xce\x01\n" +
 	"\x11AuthorizeResponse\x120\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x14.delcore.v1.MetadataR\bmetadata\x12\x18\n" +
 	"\aallowed\x18\x02 \x01(\bR\aallowed\x121\n" +
-	"\areasons\x18\x03 \x03(\x0e2\x17.delcore.v1.BlockReasonR\areasons\"<\n" +
+	"\areasons\x18\x03 \x03(\x0e2\x17.delcore.v1.BlockReasonR\areasons\x12:\n" +
+	"\afeature\x18\x04 \x01(\v2 .delcore.v1.FeatureAuthorizationR\afeature\"\xea\x02\n" +
+	"\x14FeatureAuthorization\x12\x1d\n" +
+	"\n" +
+	"feature_id\x18\x01 \x01(\tR\tfeatureId\x12+\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x17.delcore.v1.FeatureKindR\x04kind\x12\x1a\n" +
+	"\bentitled\x18\x03 \x01(\bR\bentitled\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\tR\x05limit\x12\x14\n" +
+	"\x05usage\x18\x05 \x01(\tR\x05usage\x12=\n" +
+	"\fperiod_start\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x129\n" +
+	"\n" +
+	"period_end\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x12D\n" +
+	"\rconfiguration\x18\b \x01(\v2\x1e.delcore.v1.ConfigurationValueR\rconfiguration\"\xe7\x02\n" +
+	"\x0eMeterAggregate\x12N\n" +
+	"\fgroup_values\x18\x01 \x03(\v2+.delcore.v1.MeterAggregate.GroupValuesEntryR\vgroupValues\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1f\n" +
+	"\vevent_count\x18\x03 \x01(\x03R\n" +
+	"eventCount\x12\x10\n" +
+	"\x03sum\x18\x04 \x01(\tR\x03sum\x12%\n" +
+	"\x0edistinct_count\x18\x05 \x01(\x03R\rdistinctCount\x129\n" +
+	"\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1aZ\n" +
+	"\x10GroupValuesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
+	"\x05value\x18\x02 \x01(\v2\x1a.delcore.v1.AttributeValueR\x05value:\x028\x01\"\xd4\x01\n" +
+	"\x1aListMeterAggregatesRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x02 \x01(\tR\tserviceId\x12\x1b\n" +
+	"\tmeter_key\x18\x03 \x01(\tR\bmeterKey\x127\n" +
+	"\tperiod_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bperiodAt\x12$\n" +
+	"\x04page\x18\x05 \x01(\v2\x10.delcore.v1.PageR\x04page\"\x84\x03\n" +
+	"\x1bListMeterAggregatesResponse\x120\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x14.delcore.v1.MetadataR\bmetadata\x12\x19\n" +
+	"\bmeter_id\x18\x02 \x01(\tR\ameterId\x12>\n" +
+	"\vaggregation\x18\x03 \x01(\x0e2\x1c.delcore.v1.MeterAggregationR\vaggregation\x12=\n" +
+	"\fperiod_start\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x129\n" +
+	"\n" +
+	"period_end\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tperiodEnd\x12:\n" +
+	"\n" +
+	"aggregates\x18\x06 \x03(\v2\x1a.delcore.v1.MeterAggregateR\n" +
+	"aggregates\x12\"\n" +
+	"\rnext_after_id\x18\a \x01(\tR\vnextAfterId\"k\n" +
+	"\x14MeteringFailureCount\x12?\n" +
+	"\bcategory\x18\x01 \x01(\x0e2#.delcore.v1.MeteringFailureCategoryR\bcategory\x12\x12\n" +
+	"\x04jobs\x18\x02 \x01(\x03R\x04jobs\"7\n" +
+	"\x18GetMeteringStatusRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"\x80\x04\n" +
+	"\x19GetMeteringStatusResponse\x120\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x14.delcore.v1.MetadataR\bmetadata\x12)\n" +
+	"\x10unapplied_events\x18\x02 \x01(\x03R\x0funappliedEvents\x12!\n" +
+	"\fpending_jobs\x18\x03 \x01(\x03R\vpendingJobs\x12F\n" +
+	"\x11oldest_pending_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0foldestPendingAt\x12\x1f\n" +
+	"\vlag_seconds\x18\x05 \x01(\x03R\n" +
+	"lagSeconds\x12\x1f\n" +
+	"\vfailed_jobs\x18\x06 \x01(\x03R\n" +
+	"failedJobs\x12<\n" +
+	"\bfailures\x18\a \x03(\v2 .delcore.v1.MeteringFailureCountR\bfailures\x12B\n" +
+	"\x0flast_failure_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\rlastFailureAt\x12W\n" +
+	"\x15last_failure_category\x18\t \x01(\x0e2#.delcore.v1.MeteringFailureCategoryR\x13lastFailureCategory\"<\n" +
 	"\x1bCheckTenantLifecycleRequest\x12\x1d\n" +
 	"\n" +
 	"tenant_ids\x18\x01 \x03(\tR\ttenantIds\"\x82\x01\n" +
@@ -7875,7 +8646,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x11JOB_STATE_RUNNING\x10\x02\x12\x17\n" +
 	"\x13JOB_STATE_RECONCILE\x10\x03\x12\x12\n" +
 	"\x0eJOB_STATE_DONE\x10\x04\x12\x14\n" +
-	"\x10JOB_STATE_FAILED\x10\x05*\xcc\x01\n" +
+	"\x10JOB_STATE_FAILED\x10\x05*\xbd\x02\n" +
 	"\vBlockReason\x12\x1c\n" +
 	"\x18BLOCK_REASON_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17BLOCK_REASON_PERMISSION\x10\x01\x12\x19\n" +
@@ -7883,7 +8654,10 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x14BLOCK_REASON_RENEWAL\x10\x03\x12\x18\n" +
 	"\x14BLOCK_REASON_DISPUTE\x10\x04\x12\x18\n" +
 	"\x14BLOCK_REASON_BALANCE\x10\x05\x12\x19\n" +
-	"\x15BLOCK_REASON_DELETING\x10\x06*\xad\x01\n" +
+	"\x15BLOCK_REASON_DELETING\x10\x06\x12 \n" +
+	"\x1cBLOCK_REASON_FEATURE_UNKNOWN\x10\a\x12%\n" +
+	"!BLOCK_REASON_FEATURE_NOT_ENTITLED\x10\b\x12&\n" +
+	"\"BLOCK_REASON_FEATURE_LIMIT_REACHED\x10\t*\xad\x01\n" +
 	"\vTenantState\x12\x1c\n" +
 	"\x18TENANT_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13TENANT_STATE_ACTIVE\x10\x01\x12\x18\n" +
@@ -7945,7 +8719,13 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x13EventCorrectionKind\x12%\n" +
 	"!EVENT_CORRECTION_KIND_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEVENT_CORRECTION_KIND_REPLACE\x10\x01\x12 \n" +
-	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x022\xaf\x1b\n" +
+	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x02*\xf8\x01\n" +
+	"\x17MeteringFailureCategory\x12)\n" +
+	"%METERING_FAILURE_CATEGORY_UNSPECIFIED\x10\x00\x12'\n" +
+	"#METERING_FAILURE_CATEGORY_TRANSIENT\x10\x01\x12-\n" +
+	")METERING_FAILURE_CATEGORY_RETRY_EXHAUSTED\x10\x02\x12+\n" +
+	"'METERING_FAILURE_CATEGORY_INVALID_STATE\x10\x03\x12-\n" +
+	")METERING_FAILURE_CATEGORY_INVALID_PAYLOAD\x10\x042\xf9\x1c\n" +
 	"\x0eDelcoreService\x12N\n" +
 	"\vDeleteGroup\x12\x1e.delcore.v1.DeleteGroupRequest\x1a\x1f.delcore.v1.DeleteGroupResponse\x12E\n" +
 	"\bPutMeter\x12\x1b.delcore.v1.PutMeterRequest\x1a\x1c.delcore.v1.PutMeterResponse\x12K\n" +
@@ -7973,7 +8753,9 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"PutService\x12\x1d.delcore.v1.PutServiceRequest\x1a\x1e.delcore.v1.PutServiceResponse\x12B\n" +
 	"\aPutPlan\x12\x1a.delcore.v1.PutPlanRequest\x1a\x1b.delcore.v1.PutPlanResponse\x12N\n" +
 	"\vCreatePrice\x12\x1e.delcore.v1.CreatePriceRequest\x1a\x1f.delcore.v1.CreatePriceResponse\x12H\n" +
-	"\tAuthorize\x12\x1c.delcore.v1.AuthorizeRequest\x1a\x1d.delcore.v1.AuthorizeResponse\x12i\n" +
+	"\tAuthorize\x12\x1c.delcore.v1.AuthorizeRequest\x1a\x1d.delcore.v1.AuthorizeResponse\x12f\n" +
+	"\x13ListMeterAggregates\x12&.delcore.v1.ListMeterAggregatesRequest\x1a'.delcore.v1.ListMeterAggregatesResponse\x12`\n" +
+	"\x11GetMeteringStatus\x12$.delcore.v1.GetMeteringStatusRequest\x1a%.delcore.v1.GetMeteringStatusResponse\x12i\n" +
 	"\x14CheckTenantLifecycle\x12'.delcore.v1.CheckTenantLifecycleRequest\x1a(.delcore.v1.CheckTenantLifecycleResponse\x12Z\n" +
 	"\x0fGetTenantStates\x12\".delcore.v1.GetTenantStatesRequest\x1a#.delcore.v1.GetTenantStatesResponse\x12S\n" +
 	"\vReportUsage\x12\x1e.delcore.v1.ReportUsageRequest\x1a\x1f.delcore.v1.ReportUsageResponse\"\x03\x88\x02\x01\x12V\n" +
@@ -8007,8 +8789,8 @@ func file_delcore_v1_delcore_proto_rawDescGZIP() []byte {
 	return file_delcore_v1_delcore_proto_rawDescData
 }
 
-var file_delcore_v1_delcore_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_delcore_v1_delcore_proto_msgTypes = make([]protoimpl.MessageInfo, 110)
+var file_delcore_v1_delcore_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_delcore_v1_delcore_proto_msgTypes = make([]protoimpl.MessageInfo, 119)
 var file_delcore_v1_delcore_proto_goTypes = []any{
 	(Role)(0),                            // 0: delcore.v1.Role
 	(JobState)(0),                        // 1: delcore.v1.JobState
@@ -8021,321 +8803,358 @@ var file_delcore_v1_delcore_proto_goTypes = []any{
 	(FeatureKind)(0),                     // 8: delcore.v1.FeatureKind
 	(ConfigurationValueType)(0),          // 9: delcore.v1.ConfigurationValueType
 	(EventCorrectionKind)(0),             // 10: delcore.v1.EventCorrectionKind
-	(*ErrorDetail)(nil),                  // 11: delcore.v1.ErrorDetail
-	(*Metadata)(nil),                     // 12: delcore.v1.Metadata
-	(*Page)(nil),                         // 13: delcore.v1.Page
-	(*Tenant)(nil),                       // 14: delcore.v1.Tenant
-	(*Member)(nil),                       // 15: delcore.v1.Member
-	(*Group)(nil),                        // 16: delcore.v1.Group
-	(*Permission)(nil),                   // 17: delcore.v1.Permission
-	(*Service)(nil),                      // 18: delcore.v1.Service
-	(*Plan)(nil),                         // 19: delcore.v1.Plan
-	(*Meter)(nil),                        // 20: delcore.v1.Meter
-	(*AddOn)(nil),                        // 21: delcore.v1.AddOn
-	(*Price)(nil),                        // 22: delcore.v1.Price
-	(*MeterFilter)(nil),                  // 23: delcore.v1.MeterFilter
-	(*Feature)(nil),                      // 24: delcore.v1.Feature
-	(*StringList)(nil),                   // 25: delcore.v1.StringList
-	(*ConfigurationValue)(nil),           // 26: delcore.v1.ConfigurationValue
-	(*FeatureValue)(nil),                 // 27: delcore.v1.FeatureValue
-	(*Usage)(nil),                        // 28: delcore.v1.Usage
-	(*AttributeValue)(nil),               // 29: delcore.v1.AttributeValue
-	(*Event)(nil),                        // 30: delcore.v1.Event
-	(*LedgerEntry)(nil),                  // 31: delcore.v1.LedgerEntry
-	(*Job)(nil),                          // 32: delcore.v1.Job
-	(*AuditEntry)(nil),                   // 33: delcore.v1.AuditEntry
-	(*GetCurrentUserRequest)(nil),        // 34: delcore.v1.GetCurrentUserRequest
-	(*GetCurrentUserResponse)(nil),       // 35: delcore.v1.GetCurrentUserResponse
-	(*CreateTenantRequest)(nil),          // 36: delcore.v1.CreateTenantRequest
-	(*CreateTenantResponse)(nil),         // 37: delcore.v1.CreateTenantResponse
-	(*GetTenantRequest)(nil),             // 38: delcore.v1.GetTenantRequest
-	(*GetTenantResponse)(nil),            // 39: delcore.v1.GetTenantResponse
-	(*ListMembersRequest)(nil),           // 40: delcore.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),          // 41: delcore.v1.ListMembersResponse
-	(*SetMemberRolesRequest)(nil),        // 42: delcore.v1.SetMemberRolesRequest
-	(*SetMemberRolesResponse)(nil),       // 43: delcore.v1.SetMemberRolesResponse
-	(*RemoveMemberRequest)(nil),          // 44: delcore.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),         // 45: delcore.v1.RemoveMemberResponse
-	(*CreateInvitationRequest)(nil),      // 46: delcore.v1.CreateInvitationRequest
-	(*CreateInvitationResponse)(nil),     // 47: delcore.v1.CreateInvitationResponse
-	(*AcceptInvitationRequest)(nil),      // 48: delcore.v1.AcceptInvitationRequest
-	(*AcceptInvitationResponse)(nil),     // 49: delcore.v1.AcceptInvitationResponse
-	(*RevokeInvitationRequest)(nil),      // 50: delcore.v1.RevokeInvitationRequest
-	(*RevokeInvitationResponse)(nil),     // 51: delcore.v1.RevokeInvitationResponse
-	(*TransferOwnershipRequest)(nil),     // 52: delcore.v1.TransferOwnershipRequest
-	(*TransferOwnershipResponse)(nil),    // 53: delcore.v1.TransferOwnershipResponse
-	(*AcceptOwnershipRequest)(nil),       // 54: delcore.v1.AcceptOwnershipRequest
-	(*AcceptOwnershipResponse)(nil),      // 55: delcore.v1.AcceptOwnershipResponse
-	(*SetGroupRequest)(nil),              // 56: delcore.v1.SetGroupRequest
-	(*SetGroupResponse)(nil),             // 57: delcore.v1.SetGroupResponse
-	(*ListGroupsRequest)(nil),            // 58: delcore.v1.ListGroupsRequest
-	(*ListGroupsResponse)(nil),           // 59: delcore.v1.ListGroupsResponse
-	(*GetCatalogRequest)(nil),            // 60: delcore.v1.GetCatalogRequest
-	(*GetCatalogResponse)(nil),           // 61: delcore.v1.GetCatalogResponse
-	(*PutMeterRequest)(nil),              // 62: delcore.v1.PutMeterRequest
-	(*PutMeterResponse)(nil),             // 63: delcore.v1.PutMeterResponse
-	(*PutFeatureRequest)(nil),            // 64: delcore.v1.PutFeatureRequest
-	(*PutFeatureResponse)(nil),           // 65: delcore.v1.PutFeatureResponse
-	(*PutAddOnRequest)(nil),              // 66: delcore.v1.PutAddOnRequest
-	(*PutAddOnResponse)(nil),             // 67: delcore.v1.PutAddOnResponse
-	(*ListBillingHistoryRequest)(nil),    // 68: delcore.v1.ListBillingHistoryRequest
-	(*ListBillingHistoryResponse)(nil),   // 69: delcore.v1.ListBillingHistoryResponse
-	(*PutServiceRequest)(nil),            // 70: delcore.v1.PutServiceRequest
-	(*PutServiceResponse)(nil),           // 71: delcore.v1.PutServiceResponse
-	(*PutPlanRequest)(nil),               // 72: delcore.v1.PutPlanRequest
-	(*PutPlanResponse)(nil),              // 73: delcore.v1.PutPlanResponse
-	(*CreatePriceRequest)(nil),           // 74: delcore.v1.CreatePriceRequest
-	(*CreatePriceResponse)(nil),          // 75: delcore.v1.CreatePriceResponse
-	(*AuthorizeRequest)(nil),             // 76: delcore.v1.AuthorizeRequest
-	(*AuthorizeResponse)(nil),            // 77: delcore.v1.AuthorizeResponse
-	(*CheckTenantLifecycleRequest)(nil),  // 78: delcore.v1.CheckTenantLifecycleRequest
-	(*CheckTenantLifecycleResponse)(nil), // 79: delcore.v1.CheckTenantLifecycleResponse
-	(*GetTenantStatesRequest)(nil),       // 80: delcore.v1.GetTenantStatesRequest
-	(*TenantStateEntry)(nil),             // 81: delcore.v1.TenantStateEntry
-	(*GetTenantStatesResponse)(nil),      // 82: delcore.v1.GetTenantStatesResponse
-	(*ReportUsageRequest)(nil),           // 83: delcore.v1.ReportUsageRequest
-	(*ReportUsageResponse)(nil),          // 84: delcore.v1.ReportUsageResponse
-	(*CorrectUsageRequest)(nil),          // 85: delcore.v1.CorrectUsageRequest
-	(*CorrectUsageResponse)(nil),         // 86: delcore.v1.CorrectUsageResponse
-	(*IngestEventRequest)(nil),           // 87: delcore.v1.IngestEventRequest
-	(*IngestEventResponse)(nil),          // 88: delcore.v1.IngestEventResponse
-	(*CorrectEventRequest)(nil),          // 89: delcore.v1.CorrectEventRequest
-	(*CorrectEventResponse)(nil),         // 90: delcore.v1.CorrectEventResponse
-	(*GetEventRequest)(nil),              // 91: delcore.v1.GetEventRequest
-	(*GetEventResponse)(nil),             // 92: delcore.v1.GetEventResponse
-	(*ListUsageRequest)(nil),             // 93: delcore.v1.ListUsageRequest
-	(*ListUsageResponse)(nil),            // 94: delcore.v1.ListUsageResponse
-	(*ListLedgerRequest)(nil),            // 95: delcore.v1.ListLedgerRequest
-	(*ListLedgerResponse)(nil),           // 96: delcore.v1.ListLedgerResponse
-	(*RequestTopUpRequest)(nil),          // 97: delcore.v1.RequestTopUpRequest
-	(*RequestTopUpResponse)(nil),         // 98: delcore.v1.RequestTopUpResponse
-	(*SetAutoTopUpRequest)(nil),          // 99: delcore.v1.SetAutoTopUpRequest
-	(*SetAutoTopUpResponse)(nil),         // 100: delcore.v1.SetAutoTopUpResponse
-	(*ChangeSubscriptionRequest)(nil),    // 101: delcore.v1.ChangeSubscriptionRequest
-	(*ChangeSubscriptionResponse)(nil),   // 102: delcore.v1.ChangeSubscriptionResponse
-	(*CancelSubscriptionRequest)(nil),    // 103: delcore.v1.CancelSubscriptionRequest
-	(*CancelSubscriptionResponse)(nil),   // 104: delcore.v1.CancelSubscriptionResponse
-	(*DeleteTenantRequest)(nil),          // 105: delcore.v1.DeleteTenantRequest
-	(*DeleteTenantResponse)(nil),         // 106: delcore.v1.DeleteTenantResponse
-	(*WithdrawRequest)(nil),              // 107: delcore.v1.WithdrawRequest
-	(*WithdrawResponse)(nil),             // 108: delcore.v1.WithdrawResponse
-	(*SetTenantBlockedRequest)(nil),      // 109: delcore.v1.SetTenantBlockedRequest
-	(*SetTenantBlockedResponse)(nil),     // 110: delcore.v1.SetTenantBlockedResponse
-	(*ListJobsRequest)(nil),              // 111: delcore.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),             // 112: delcore.v1.ListJobsResponse
-	(*RetryJobRequest)(nil),              // 113: delcore.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),             // 114: delcore.v1.RetryJobResponse
-	(*ListAuditRequest)(nil),             // 115: delcore.v1.ListAuditRequest
-	(*ListAuditResponse)(nil),            // 116: delcore.v1.ListAuditResponse
-	(*DeleteGroupRequest)(nil),           // 117: delcore.v1.DeleteGroupRequest
-	(*DeleteGroupResponse)(nil),          // 118: delcore.v1.DeleteGroupResponse
-	nil,                                  // 119: delcore.v1.Event.AttributesEntry
-	nil,                                  // 120: delcore.v1.CorrectEventRequest.AttributesEntry
-	(*timestamppb.Timestamp)(nil),        // 121: google.protobuf.Timestamp
+	(MeteringFailureCategory)(0),         // 11: delcore.v1.MeteringFailureCategory
+	(*ErrorDetail)(nil),                  // 12: delcore.v1.ErrorDetail
+	(*Metadata)(nil),                     // 13: delcore.v1.Metadata
+	(*Page)(nil),                         // 14: delcore.v1.Page
+	(*Tenant)(nil),                       // 15: delcore.v1.Tenant
+	(*Member)(nil),                       // 16: delcore.v1.Member
+	(*Group)(nil),                        // 17: delcore.v1.Group
+	(*Permission)(nil),                   // 18: delcore.v1.Permission
+	(*Service)(nil),                      // 19: delcore.v1.Service
+	(*Plan)(nil),                         // 20: delcore.v1.Plan
+	(*Meter)(nil),                        // 21: delcore.v1.Meter
+	(*AddOn)(nil),                        // 22: delcore.v1.AddOn
+	(*Price)(nil),                        // 23: delcore.v1.Price
+	(*MeterFilter)(nil),                  // 24: delcore.v1.MeterFilter
+	(*Feature)(nil),                      // 25: delcore.v1.Feature
+	(*StringList)(nil),                   // 26: delcore.v1.StringList
+	(*ConfigurationValue)(nil),           // 27: delcore.v1.ConfigurationValue
+	(*FeatureValue)(nil),                 // 28: delcore.v1.FeatureValue
+	(*Usage)(nil),                        // 29: delcore.v1.Usage
+	(*AttributeValue)(nil),               // 30: delcore.v1.AttributeValue
+	(*Event)(nil),                        // 31: delcore.v1.Event
+	(*LedgerEntry)(nil),                  // 32: delcore.v1.LedgerEntry
+	(*Job)(nil),                          // 33: delcore.v1.Job
+	(*AuditEntry)(nil),                   // 34: delcore.v1.AuditEntry
+	(*GetCurrentUserRequest)(nil),        // 35: delcore.v1.GetCurrentUserRequest
+	(*GetCurrentUserResponse)(nil),       // 36: delcore.v1.GetCurrentUserResponse
+	(*CreateTenantRequest)(nil),          // 37: delcore.v1.CreateTenantRequest
+	(*CreateTenantResponse)(nil),         // 38: delcore.v1.CreateTenantResponse
+	(*GetTenantRequest)(nil),             // 39: delcore.v1.GetTenantRequest
+	(*GetTenantResponse)(nil),            // 40: delcore.v1.GetTenantResponse
+	(*ListMembersRequest)(nil),           // 41: delcore.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),          // 42: delcore.v1.ListMembersResponse
+	(*SetMemberRolesRequest)(nil),        // 43: delcore.v1.SetMemberRolesRequest
+	(*SetMemberRolesResponse)(nil),       // 44: delcore.v1.SetMemberRolesResponse
+	(*RemoveMemberRequest)(nil),          // 45: delcore.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),         // 46: delcore.v1.RemoveMemberResponse
+	(*CreateInvitationRequest)(nil),      // 47: delcore.v1.CreateInvitationRequest
+	(*CreateInvitationResponse)(nil),     // 48: delcore.v1.CreateInvitationResponse
+	(*AcceptInvitationRequest)(nil),      // 49: delcore.v1.AcceptInvitationRequest
+	(*AcceptInvitationResponse)(nil),     // 50: delcore.v1.AcceptInvitationResponse
+	(*RevokeInvitationRequest)(nil),      // 51: delcore.v1.RevokeInvitationRequest
+	(*RevokeInvitationResponse)(nil),     // 52: delcore.v1.RevokeInvitationResponse
+	(*TransferOwnershipRequest)(nil),     // 53: delcore.v1.TransferOwnershipRequest
+	(*TransferOwnershipResponse)(nil),    // 54: delcore.v1.TransferOwnershipResponse
+	(*AcceptOwnershipRequest)(nil),       // 55: delcore.v1.AcceptOwnershipRequest
+	(*AcceptOwnershipResponse)(nil),      // 56: delcore.v1.AcceptOwnershipResponse
+	(*SetGroupRequest)(nil),              // 57: delcore.v1.SetGroupRequest
+	(*SetGroupResponse)(nil),             // 58: delcore.v1.SetGroupResponse
+	(*ListGroupsRequest)(nil),            // 59: delcore.v1.ListGroupsRequest
+	(*ListGroupsResponse)(nil),           // 60: delcore.v1.ListGroupsResponse
+	(*GetCatalogRequest)(nil),            // 61: delcore.v1.GetCatalogRequest
+	(*GetCatalogResponse)(nil),           // 62: delcore.v1.GetCatalogResponse
+	(*PutMeterRequest)(nil),              // 63: delcore.v1.PutMeterRequest
+	(*PutMeterResponse)(nil),             // 64: delcore.v1.PutMeterResponse
+	(*PutFeatureRequest)(nil),            // 65: delcore.v1.PutFeatureRequest
+	(*PutFeatureResponse)(nil),           // 66: delcore.v1.PutFeatureResponse
+	(*PutAddOnRequest)(nil),              // 67: delcore.v1.PutAddOnRequest
+	(*PutAddOnResponse)(nil),             // 68: delcore.v1.PutAddOnResponse
+	(*ListBillingHistoryRequest)(nil),    // 69: delcore.v1.ListBillingHistoryRequest
+	(*ListBillingHistoryResponse)(nil),   // 70: delcore.v1.ListBillingHistoryResponse
+	(*PutServiceRequest)(nil),            // 71: delcore.v1.PutServiceRequest
+	(*PutServiceResponse)(nil),           // 72: delcore.v1.PutServiceResponse
+	(*PutPlanRequest)(nil),               // 73: delcore.v1.PutPlanRequest
+	(*PutPlanResponse)(nil),              // 74: delcore.v1.PutPlanResponse
+	(*CreatePriceRequest)(nil),           // 75: delcore.v1.CreatePriceRequest
+	(*CreatePriceResponse)(nil),          // 76: delcore.v1.CreatePriceResponse
+	(*AuthorizeRequest)(nil),             // 77: delcore.v1.AuthorizeRequest
+	(*AuthorizeResponse)(nil),            // 78: delcore.v1.AuthorizeResponse
+	(*FeatureAuthorization)(nil),         // 79: delcore.v1.FeatureAuthorization
+	(*MeterAggregate)(nil),               // 80: delcore.v1.MeterAggregate
+	(*ListMeterAggregatesRequest)(nil),   // 81: delcore.v1.ListMeterAggregatesRequest
+	(*ListMeterAggregatesResponse)(nil),  // 82: delcore.v1.ListMeterAggregatesResponse
+	(*MeteringFailureCount)(nil),         // 83: delcore.v1.MeteringFailureCount
+	(*GetMeteringStatusRequest)(nil),     // 84: delcore.v1.GetMeteringStatusRequest
+	(*GetMeteringStatusResponse)(nil),    // 85: delcore.v1.GetMeteringStatusResponse
+	(*CheckTenantLifecycleRequest)(nil),  // 86: delcore.v1.CheckTenantLifecycleRequest
+	(*CheckTenantLifecycleResponse)(nil), // 87: delcore.v1.CheckTenantLifecycleResponse
+	(*GetTenantStatesRequest)(nil),       // 88: delcore.v1.GetTenantStatesRequest
+	(*TenantStateEntry)(nil),             // 89: delcore.v1.TenantStateEntry
+	(*GetTenantStatesResponse)(nil),      // 90: delcore.v1.GetTenantStatesResponse
+	(*ReportUsageRequest)(nil),           // 91: delcore.v1.ReportUsageRequest
+	(*ReportUsageResponse)(nil),          // 92: delcore.v1.ReportUsageResponse
+	(*CorrectUsageRequest)(nil),          // 93: delcore.v1.CorrectUsageRequest
+	(*CorrectUsageResponse)(nil),         // 94: delcore.v1.CorrectUsageResponse
+	(*IngestEventRequest)(nil),           // 95: delcore.v1.IngestEventRequest
+	(*IngestEventResponse)(nil),          // 96: delcore.v1.IngestEventResponse
+	(*CorrectEventRequest)(nil),          // 97: delcore.v1.CorrectEventRequest
+	(*CorrectEventResponse)(nil),         // 98: delcore.v1.CorrectEventResponse
+	(*GetEventRequest)(nil),              // 99: delcore.v1.GetEventRequest
+	(*GetEventResponse)(nil),             // 100: delcore.v1.GetEventResponse
+	(*ListUsageRequest)(nil),             // 101: delcore.v1.ListUsageRequest
+	(*ListUsageResponse)(nil),            // 102: delcore.v1.ListUsageResponse
+	(*ListLedgerRequest)(nil),            // 103: delcore.v1.ListLedgerRequest
+	(*ListLedgerResponse)(nil),           // 104: delcore.v1.ListLedgerResponse
+	(*RequestTopUpRequest)(nil),          // 105: delcore.v1.RequestTopUpRequest
+	(*RequestTopUpResponse)(nil),         // 106: delcore.v1.RequestTopUpResponse
+	(*SetAutoTopUpRequest)(nil),          // 107: delcore.v1.SetAutoTopUpRequest
+	(*SetAutoTopUpResponse)(nil),         // 108: delcore.v1.SetAutoTopUpResponse
+	(*ChangeSubscriptionRequest)(nil),    // 109: delcore.v1.ChangeSubscriptionRequest
+	(*ChangeSubscriptionResponse)(nil),   // 110: delcore.v1.ChangeSubscriptionResponse
+	(*CancelSubscriptionRequest)(nil),    // 111: delcore.v1.CancelSubscriptionRequest
+	(*CancelSubscriptionResponse)(nil),   // 112: delcore.v1.CancelSubscriptionResponse
+	(*DeleteTenantRequest)(nil),          // 113: delcore.v1.DeleteTenantRequest
+	(*DeleteTenantResponse)(nil),         // 114: delcore.v1.DeleteTenantResponse
+	(*WithdrawRequest)(nil),              // 115: delcore.v1.WithdrawRequest
+	(*WithdrawResponse)(nil),             // 116: delcore.v1.WithdrawResponse
+	(*SetTenantBlockedRequest)(nil),      // 117: delcore.v1.SetTenantBlockedRequest
+	(*SetTenantBlockedResponse)(nil),     // 118: delcore.v1.SetTenantBlockedResponse
+	(*ListJobsRequest)(nil),              // 119: delcore.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),             // 120: delcore.v1.ListJobsResponse
+	(*RetryJobRequest)(nil),              // 121: delcore.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),             // 122: delcore.v1.RetryJobResponse
+	(*ListAuditRequest)(nil),             // 123: delcore.v1.ListAuditRequest
+	(*ListAuditResponse)(nil),            // 124: delcore.v1.ListAuditResponse
+	(*DeleteGroupRequest)(nil),           // 125: delcore.v1.DeleteGroupRequest
+	(*DeleteGroupResponse)(nil),          // 126: delcore.v1.DeleteGroupResponse
+	nil,                                  // 127: delcore.v1.Event.AttributesEntry
+	nil,                                  // 128: delcore.v1.AuthorizeRequest.GroupValuesEntry
+	nil,                                  // 129: delcore.v1.MeterAggregate.GroupValuesEntry
+	nil,                                  // 130: delcore.v1.CorrectEventRequest.AttributesEntry
+	(*timestamppb.Timestamp)(nil),        // 131: google.protobuf.Timestamp
 }
 var file_delcore_v1_delcore_proto_depIdxs = []int32{
 	4,   // 0: delcore.v1.ErrorDetail.reason:type_name -> delcore.v1.ErrorReason
 	0,   // 1: delcore.v1.Member.roles:type_name -> delcore.v1.Role
-	17,  // 2: delcore.v1.Group.permissions:type_name -> delcore.v1.Permission
-	27,  // 3: delcore.v1.Plan.feature_values:type_name -> delcore.v1.FeatureValue
+	18,  // 2: delcore.v1.Group.permissions:type_name -> delcore.v1.Permission
+	28,  // 3: delcore.v1.Plan.feature_values:type_name -> delcore.v1.FeatureValue
 	6,   // 4: delcore.v1.Meter.aggregation:type_name -> delcore.v1.MeterAggregation
-	23,  // 5: delcore.v1.Meter.filters:type_name -> delcore.v1.MeterFilter
-	27,  // 6: delcore.v1.AddOn.feature_values:type_name -> delcore.v1.FeatureValue
+	24,  // 5: delcore.v1.Meter.filters:type_name -> delcore.v1.MeterFilter
+	28,  // 6: delcore.v1.AddOn.feature_values:type_name -> delcore.v1.FeatureValue
 	5,   // 7: delcore.v1.Price.kind:type_name -> delcore.v1.PriceKind
 	7,   // 8: delcore.v1.MeterFilter.operator:type_name -> delcore.v1.MeterFilterOperator
 	8,   // 9: delcore.v1.Feature.kind:type_name -> delcore.v1.FeatureKind
 	9,   // 10: delcore.v1.Feature.value_type:type_name -> delcore.v1.ConfigurationValueType
-	25,  // 11: delcore.v1.ConfigurationValue.string_list:type_name -> delcore.v1.StringList
-	26,  // 12: delcore.v1.FeatureValue.configuration:type_name -> delcore.v1.ConfigurationValue
-	121, // 13: delcore.v1.Usage.occurred_at:type_name -> google.protobuf.Timestamp
-	121, // 14: delcore.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	119, // 15: delcore.v1.Event.attributes:type_name -> delcore.v1.Event.AttributesEntry
-	121, // 16: delcore.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
+	26,  // 11: delcore.v1.ConfigurationValue.string_list:type_name -> delcore.v1.StringList
+	27,  // 12: delcore.v1.FeatureValue.configuration:type_name -> delcore.v1.ConfigurationValue
+	131, // 13: delcore.v1.Usage.occurred_at:type_name -> google.protobuf.Timestamp
+	131, // 14: delcore.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	127, // 15: delcore.v1.Event.attributes:type_name -> delcore.v1.Event.AttributesEntry
+	131, // 16: delcore.v1.LedgerEntry.created_at:type_name -> google.protobuf.Timestamp
 	1,   // 17: delcore.v1.Job.state:type_name -> delcore.v1.JobState
-	121, // 18: delcore.v1.AuditEntry.created_at:type_name -> google.protobuf.Timestamp
-	13,  // 19: delcore.v1.GetCurrentUserRequest.page:type_name -> delcore.v1.Page
-	12,  // 20: delcore.v1.GetCurrentUserResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 21: delcore.v1.GetCurrentUserResponse.tenants:type_name -> delcore.v1.Tenant
-	12,  // 22: delcore.v1.CreateTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 23: delcore.v1.CreateTenantResponse.tenant:type_name -> delcore.v1.Tenant
-	12,  // 24: delcore.v1.GetTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	14,  // 25: delcore.v1.GetTenantResponse.tenant:type_name -> delcore.v1.Tenant
-	13,  // 26: delcore.v1.ListMembersRequest.page:type_name -> delcore.v1.Page
-	12,  // 27: delcore.v1.ListMembersResponse.metadata:type_name -> delcore.v1.Metadata
-	15,  // 28: delcore.v1.ListMembersResponse.members:type_name -> delcore.v1.Member
+	131, // 18: delcore.v1.AuditEntry.created_at:type_name -> google.protobuf.Timestamp
+	14,  // 19: delcore.v1.GetCurrentUserRequest.page:type_name -> delcore.v1.Page
+	13,  // 20: delcore.v1.GetCurrentUserResponse.metadata:type_name -> delcore.v1.Metadata
+	15,  // 21: delcore.v1.GetCurrentUserResponse.tenants:type_name -> delcore.v1.Tenant
+	13,  // 22: delcore.v1.CreateTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	15,  // 23: delcore.v1.CreateTenantResponse.tenant:type_name -> delcore.v1.Tenant
+	13,  // 24: delcore.v1.GetTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	15,  // 25: delcore.v1.GetTenantResponse.tenant:type_name -> delcore.v1.Tenant
+	14,  // 26: delcore.v1.ListMembersRequest.page:type_name -> delcore.v1.Page
+	13,  // 27: delcore.v1.ListMembersResponse.metadata:type_name -> delcore.v1.Metadata
+	16,  // 28: delcore.v1.ListMembersResponse.members:type_name -> delcore.v1.Member
 	0,   // 29: delcore.v1.SetMemberRolesRequest.roles:type_name -> delcore.v1.Role
-	12,  // 30: delcore.v1.SetMemberRolesResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 31: delcore.v1.RemoveMemberResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 30: delcore.v1.SetMemberRolesResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 31: delcore.v1.RemoveMemberResponse.metadata:type_name -> delcore.v1.Metadata
 	0,   // 32: delcore.v1.CreateInvitationRequest.roles:type_name -> delcore.v1.Role
-	12,  // 33: delcore.v1.CreateInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 34: delcore.v1.AcceptInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 35: delcore.v1.RevokeInvitationResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 36: delcore.v1.TransferOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 37: delcore.v1.AcceptOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 38: delcore.v1.SetGroupRequest.group:type_name -> delcore.v1.Group
-	12,  // 39: delcore.v1.SetGroupResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 40: delcore.v1.SetGroupResponse.group:type_name -> delcore.v1.Group
-	13,  // 41: delcore.v1.ListGroupsRequest.page:type_name -> delcore.v1.Page
-	12,  // 42: delcore.v1.ListGroupsResponse.metadata:type_name -> delcore.v1.Metadata
-	16,  // 43: delcore.v1.ListGroupsResponse.groups:type_name -> delcore.v1.Group
-	13,  // 44: delcore.v1.GetCatalogRequest.page:type_name -> delcore.v1.Page
-	12,  // 45: delcore.v1.GetCatalogResponse.metadata:type_name -> delcore.v1.Metadata
-	18,  // 46: delcore.v1.GetCatalogResponse.services:type_name -> delcore.v1.Service
-	19,  // 47: delcore.v1.GetCatalogResponse.plans:type_name -> delcore.v1.Plan
-	22,  // 48: delcore.v1.GetCatalogResponse.prices:type_name -> delcore.v1.Price
-	21,  // 49: delcore.v1.GetCatalogResponse.add_ons:type_name -> delcore.v1.AddOn
-	20,  // 50: delcore.v1.GetCatalogResponse.meters:type_name -> delcore.v1.Meter
-	24,  // 51: delcore.v1.GetCatalogResponse.features:type_name -> delcore.v1.Feature
-	20,  // 52: delcore.v1.PutMeterRequest.meter:type_name -> delcore.v1.Meter
-	12,  // 53: delcore.v1.PutMeterResponse.metadata:type_name -> delcore.v1.Metadata
-	20,  // 54: delcore.v1.PutMeterResponse.meter:type_name -> delcore.v1.Meter
-	24,  // 55: delcore.v1.PutFeatureRequest.feature:type_name -> delcore.v1.Feature
-	12,  // 56: delcore.v1.PutFeatureResponse.metadata:type_name -> delcore.v1.Metadata
-	24,  // 57: delcore.v1.PutFeatureResponse.feature:type_name -> delcore.v1.Feature
-	21,  // 58: delcore.v1.PutAddOnRequest.add_on:type_name -> delcore.v1.AddOn
-	12,  // 59: delcore.v1.PutAddOnResponse.metadata:type_name -> delcore.v1.Metadata
-	21,  // 60: delcore.v1.PutAddOnResponse.add_on:type_name -> delcore.v1.AddOn
-	13,  // 61: delcore.v1.ListBillingHistoryRequest.page:type_name -> delcore.v1.Page
-	12,  // 62: delcore.v1.ListBillingHistoryResponse.metadata:type_name -> delcore.v1.Metadata
-	32,  // 63: delcore.v1.ListBillingHistoryResponse.jobs:type_name -> delcore.v1.Job
-	18,  // 64: delcore.v1.PutServiceRequest.service:type_name -> delcore.v1.Service
-	12,  // 65: delcore.v1.PutServiceResponse.metadata:type_name -> delcore.v1.Metadata
-	18,  // 66: delcore.v1.PutServiceResponse.service:type_name -> delcore.v1.Service
-	19,  // 67: delcore.v1.PutPlanRequest.plan:type_name -> delcore.v1.Plan
-	12,  // 68: delcore.v1.PutPlanResponse.metadata:type_name -> delcore.v1.Metadata
-	19,  // 69: delcore.v1.PutPlanResponse.plan:type_name -> delcore.v1.Plan
-	22,  // 70: delcore.v1.CreatePriceRequest.price:type_name -> delcore.v1.Price
-	12,  // 71: delcore.v1.CreatePriceResponse.metadata:type_name -> delcore.v1.Metadata
-	22,  // 72: delcore.v1.CreatePriceResponse.price:type_name -> delcore.v1.Price
-	12,  // 73: delcore.v1.AuthorizeResponse.metadata:type_name -> delcore.v1.Metadata
-	2,   // 74: delcore.v1.AuthorizeResponse.reasons:type_name -> delcore.v1.BlockReason
-	12,  // 75: delcore.v1.CheckTenantLifecycleResponse.metadata:type_name -> delcore.v1.Metadata
-	3,   // 76: delcore.v1.TenantStateEntry.state:type_name -> delcore.v1.TenantState
-	12,  // 77: delcore.v1.GetTenantStatesResponse.metadata:type_name -> delcore.v1.Metadata
-	81,  // 78: delcore.v1.GetTenantStatesResponse.states:type_name -> delcore.v1.TenantStateEntry
-	28,  // 79: delcore.v1.ReportUsageRequest.usage:type_name -> delcore.v1.Usage
-	12,  // 80: delcore.v1.ReportUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	28,  // 81: delcore.v1.CorrectUsageRequest.usage:type_name -> delcore.v1.Usage
-	12,  // 82: delcore.v1.CorrectUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	30,  // 83: delcore.v1.IngestEventRequest.event:type_name -> delcore.v1.Event
-	12,  // 84: delcore.v1.IngestEventResponse.metadata:type_name -> delcore.v1.Metadata
-	10,  // 85: delcore.v1.CorrectEventRequest.kind:type_name -> delcore.v1.EventCorrectionKind
-	120, // 86: delcore.v1.CorrectEventRequest.attributes:type_name -> delcore.v1.CorrectEventRequest.AttributesEntry
-	12,  // 87: delcore.v1.CorrectEventResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 88: delcore.v1.GetEventResponse.metadata:type_name -> delcore.v1.Metadata
-	30,  // 89: delcore.v1.GetEventResponse.event:type_name -> delcore.v1.Event
-	13,  // 90: delcore.v1.ListUsageRequest.page:type_name -> delcore.v1.Page
-	12,  // 91: delcore.v1.ListUsageResponse.metadata:type_name -> delcore.v1.Metadata
-	28,  // 92: delcore.v1.ListUsageResponse.events:type_name -> delcore.v1.Usage
-	13,  // 93: delcore.v1.ListLedgerRequest.page:type_name -> delcore.v1.Page
-	12,  // 94: delcore.v1.ListLedgerResponse.metadata:type_name -> delcore.v1.Metadata
-	31,  // 95: delcore.v1.ListLedgerResponse.entries:type_name -> delcore.v1.LedgerEntry
-	12,  // 96: delcore.v1.RequestTopUpResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 97: delcore.v1.SetAutoTopUpResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 98: delcore.v1.ChangeSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 99: delcore.v1.CancelSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 100: delcore.v1.DeleteTenantResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 101: delcore.v1.WithdrawResponse.metadata:type_name -> delcore.v1.Metadata
-	12,  // 102: delcore.v1.SetTenantBlockedResponse.metadata:type_name -> delcore.v1.Metadata
-	13,  // 103: delcore.v1.ListJobsRequest.page:type_name -> delcore.v1.Page
-	12,  // 104: delcore.v1.ListJobsResponse.metadata:type_name -> delcore.v1.Metadata
-	32,  // 105: delcore.v1.ListJobsResponse.jobs:type_name -> delcore.v1.Job
-	12,  // 106: delcore.v1.RetryJobResponse.metadata:type_name -> delcore.v1.Metadata
-	13,  // 107: delcore.v1.ListAuditRequest.page:type_name -> delcore.v1.Page
-	12,  // 108: delcore.v1.ListAuditResponse.metadata:type_name -> delcore.v1.Metadata
-	33,  // 109: delcore.v1.ListAuditResponse.entries:type_name -> delcore.v1.AuditEntry
-	12,  // 110: delcore.v1.DeleteGroupResponse.metadata:type_name -> delcore.v1.Metadata
-	29,  // 111: delcore.v1.Event.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
-	29,  // 112: delcore.v1.CorrectEventRequest.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
-	117, // 113: delcore.v1.DelcoreService.DeleteGroup:input_type -> delcore.v1.DeleteGroupRequest
-	62,  // 114: delcore.v1.DelcoreService.PutMeter:input_type -> delcore.v1.PutMeterRequest
-	64,  // 115: delcore.v1.DelcoreService.PutFeature:input_type -> delcore.v1.PutFeatureRequest
-	66,  // 116: delcore.v1.DelcoreService.PutAddOn:input_type -> delcore.v1.PutAddOnRequest
-	68,  // 117: delcore.v1.DelcoreService.ListBillingHistory:input_type -> delcore.v1.ListBillingHistoryRequest
-	34,  // 118: delcore.v1.DelcoreService.GetCurrentUser:input_type -> delcore.v1.GetCurrentUserRequest
-	36,  // 119: delcore.v1.DelcoreService.CreateTenant:input_type -> delcore.v1.CreateTenantRequest
-	38,  // 120: delcore.v1.DelcoreService.GetTenant:input_type -> delcore.v1.GetTenantRequest
-	40,  // 121: delcore.v1.DelcoreService.ListMembers:input_type -> delcore.v1.ListMembersRequest
-	42,  // 122: delcore.v1.DelcoreService.SetMemberRoles:input_type -> delcore.v1.SetMemberRolesRequest
-	44,  // 123: delcore.v1.DelcoreService.RemoveMember:input_type -> delcore.v1.RemoveMemberRequest
-	46,  // 124: delcore.v1.DelcoreService.CreateInvitation:input_type -> delcore.v1.CreateInvitationRequest
-	48,  // 125: delcore.v1.DelcoreService.AcceptInvitation:input_type -> delcore.v1.AcceptInvitationRequest
-	50,  // 126: delcore.v1.DelcoreService.RevokeInvitation:input_type -> delcore.v1.RevokeInvitationRequest
-	52,  // 127: delcore.v1.DelcoreService.TransferOwnership:input_type -> delcore.v1.TransferOwnershipRequest
-	54,  // 128: delcore.v1.DelcoreService.AcceptOwnership:input_type -> delcore.v1.AcceptOwnershipRequest
-	56,  // 129: delcore.v1.DelcoreService.SetGroup:input_type -> delcore.v1.SetGroupRequest
-	58,  // 130: delcore.v1.DelcoreService.ListGroups:input_type -> delcore.v1.ListGroupsRequest
-	60,  // 131: delcore.v1.DelcoreService.GetCatalog:input_type -> delcore.v1.GetCatalogRequest
-	70,  // 132: delcore.v1.DelcoreService.PutService:input_type -> delcore.v1.PutServiceRequest
-	72,  // 133: delcore.v1.DelcoreService.PutPlan:input_type -> delcore.v1.PutPlanRequest
-	74,  // 134: delcore.v1.DelcoreService.CreatePrice:input_type -> delcore.v1.CreatePriceRequest
-	76,  // 135: delcore.v1.DelcoreService.Authorize:input_type -> delcore.v1.AuthorizeRequest
-	78,  // 136: delcore.v1.DelcoreService.CheckTenantLifecycle:input_type -> delcore.v1.CheckTenantLifecycleRequest
-	80,  // 137: delcore.v1.DelcoreService.GetTenantStates:input_type -> delcore.v1.GetTenantStatesRequest
-	83,  // 138: delcore.v1.DelcoreService.ReportUsage:input_type -> delcore.v1.ReportUsageRequest
-	85,  // 139: delcore.v1.DelcoreService.CorrectUsage:input_type -> delcore.v1.CorrectUsageRequest
-	93,  // 140: delcore.v1.DelcoreService.ListUsage:input_type -> delcore.v1.ListUsageRequest
-	87,  // 141: delcore.v1.DelcoreService.IngestEvent:input_type -> delcore.v1.IngestEventRequest
-	89,  // 142: delcore.v1.DelcoreService.CorrectEvent:input_type -> delcore.v1.CorrectEventRequest
-	91,  // 143: delcore.v1.DelcoreService.GetEvent:input_type -> delcore.v1.GetEventRequest
-	95,  // 144: delcore.v1.DelcoreService.ListLedger:input_type -> delcore.v1.ListLedgerRequest
-	97,  // 145: delcore.v1.DelcoreService.RequestTopUp:input_type -> delcore.v1.RequestTopUpRequest
-	99,  // 146: delcore.v1.DelcoreService.SetAutoTopUp:input_type -> delcore.v1.SetAutoTopUpRequest
-	101, // 147: delcore.v1.DelcoreService.ChangeSubscription:input_type -> delcore.v1.ChangeSubscriptionRequest
-	103, // 148: delcore.v1.DelcoreService.CancelSubscription:input_type -> delcore.v1.CancelSubscriptionRequest
-	105, // 149: delcore.v1.DelcoreService.DeleteTenant:input_type -> delcore.v1.DeleteTenantRequest
-	107, // 150: delcore.v1.DelcoreService.Withdraw:input_type -> delcore.v1.WithdrawRequest
-	109, // 151: delcore.v1.DelcoreService.SetTenantBlocked:input_type -> delcore.v1.SetTenantBlockedRequest
-	111, // 152: delcore.v1.DelcoreService.ListJobs:input_type -> delcore.v1.ListJobsRequest
-	113, // 153: delcore.v1.DelcoreService.RetryJob:input_type -> delcore.v1.RetryJobRequest
-	115, // 154: delcore.v1.DelcoreService.ListAudit:input_type -> delcore.v1.ListAuditRequest
-	118, // 155: delcore.v1.DelcoreService.DeleteGroup:output_type -> delcore.v1.DeleteGroupResponse
-	63,  // 156: delcore.v1.DelcoreService.PutMeter:output_type -> delcore.v1.PutMeterResponse
-	65,  // 157: delcore.v1.DelcoreService.PutFeature:output_type -> delcore.v1.PutFeatureResponse
-	67,  // 158: delcore.v1.DelcoreService.PutAddOn:output_type -> delcore.v1.PutAddOnResponse
-	69,  // 159: delcore.v1.DelcoreService.ListBillingHistory:output_type -> delcore.v1.ListBillingHistoryResponse
-	35,  // 160: delcore.v1.DelcoreService.GetCurrentUser:output_type -> delcore.v1.GetCurrentUserResponse
-	37,  // 161: delcore.v1.DelcoreService.CreateTenant:output_type -> delcore.v1.CreateTenantResponse
-	39,  // 162: delcore.v1.DelcoreService.GetTenant:output_type -> delcore.v1.GetTenantResponse
-	41,  // 163: delcore.v1.DelcoreService.ListMembers:output_type -> delcore.v1.ListMembersResponse
-	43,  // 164: delcore.v1.DelcoreService.SetMemberRoles:output_type -> delcore.v1.SetMemberRolesResponse
-	45,  // 165: delcore.v1.DelcoreService.RemoveMember:output_type -> delcore.v1.RemoveMemberResponse
-	47,  // 166: delcore.v1.DelcoreService.CreateInvitation:output_type -> delcore.v1.CreateInvitationResponse
-	49,  // 167: delcore.v1.DelcoreService.AcceptInvitation:output_type -> delcore.v1.AcceptInvitationResponse
-	51,  // 168: delcore.v1.DelcoreService.RevokeInvitation:output_type -> delcore.v1.RevokeInvitationResponse
-	53,  // 169: delcore.v1.DelcoreService.TransferOwnership:output_type -> delcore.v1.TransferOwnershipResponse
-	55,  // 170: delcore.v1.DelcoreService.AcceptOwnership:output_type -> delcore.v1.AcceptOwnershipResponse
-	57,  // 171: delcore.v1.DelcoreService.SetGroup:output_type -> delcore.v1.SetGroupResponse
-	59,  // 172: delcore.v1.DelcoreService.ListGroups:output_type -> delcore.v1.ListGroupsResponse
-	61,  // 173: delcore.v1.DelcoreService.GetCatalog:output_type -> delcore.v1.GetCatalogResponse
-	71,  // 174: delcore.v1.DelcoreService.PutService:output_type -> delcore.v1.PutServiceResponse
-	73,  // 175: delcore.v1.DelcoreService.PutPlan:output_type -> delcore.v1.PutPlanResponse
-	75,  // 176: delcore.v1.DelcoreService.CreatePrice:output_type -> delcore.v1.CreatePriceResponse
-	77,  // 177: delcore.v1.DelcoreService.Authorize:output_type -> delcore.v1.AuthorizeResponse
-	79,  // 178: delcore.v1.DelcoreService.CheckTenantLifecycle:output_type -> delcore.v1.CheckTenantLifecycleResponse
-	82,  // 179: delcore.v1.DelcoreService.GetTenantStates:output_type -> delcore.v1.GetTenantStatesResponse
-	84,  // 180: delcore.v1.DelcoreService.ReportUsage:output_type -> delcore.v1.ReportUsageResponse
-	86,  // 181: delcore.v1.DelcoreService.CorrectUsage:output_type -> delcore.v1.CorrectUsageResponse
-	94,  // 182: delcore.v1.DelcoreService.ListUsage:output_type -> delcore.v1.ListUsageResponse
-	88,  // 183: delcore.v1.DelcoreService.IngestEvent:output_type -> delcore.v1.IngestEventResponse
-	90,  // 184: delcore.v1.DelcoreService.CorrectEvent:output_type -> delcore.v1.CorrectEventResponse
-	92,  // 185: delcore.v1.DelcoreService.GetEvent:output_type -> delcore.v1.GetEventResponse
-	96,  // 186: delcore.v1.DelcoreService.ListLedger:output_type -> delcore.v1.ListLedgerResponse
-	98,  // 187: delcore.v1.DelcoreService.RequestTopUp:output_type -> delcore.v1.RequestTopUpResponse
-	100, // 188: delcore.v1.DelcoreService.SetAutoTopUp:output_type -> delcore.v1.SetAutoTopUpResponse
-	102, // 189: delcore.v1.DelcoreService.ChangeSubscription:output_type -> delcore.v1.ChangeSubscriptionResponse
-	104, // 190: delcore.v1.DelcoreService.CancelSubscription:output_type -> delcore.v1.CancelSubscriptionResponse
-	106, // 191: delcore.v1.DelcoreService.DeleteTenant:output_type -> delcore.v1.DeleteTenantResponse
-	108, // 192: delcore.v1.DelcoreService.Withdraw:output_type -> delcore.v1.WithdrawResponse
-	110, // 193: delcore.v1.DelcoreService.SetTenantBlocked:output_type -> delcore.v1.SetTenantBlockedResponse
-	112, // 194: delcore.v1.DelcoreService.ListJobs:output_type -> delcore.v1.ListJobsResponse
-	114, // 195: delcore.v1.DelcoreService.RetryJob:output_type -> delcore.v1.RetryJobResponse
-	116, // 196: delcore.v1.DelcoreService.ListAudit:output_type -> delcore.v1.ListAuditResponse
-	155, // [155:197] is the sub-list for method output_type
-	113, // [113:155] is the sub-list for method input_type
-	113, // [113:113] is the sub-list for extension type_name
-	113, // [113:113] is the sub-list for extension extendee
-	0,   // [0:113] is the sub-list for field type_name
+	13,  // 33: delcore.v1.CreateInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 34: delcore.v1.AcceptInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 35: delcore.v1.RevokeInvitationResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 36: delcore.v1.TransferOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 37: delcore.v1.AcceptOwnershipResponse.metadata:type_name -> delcore.v1.Metadata
+	17,  // 38: delcore.v1.SetGroupRequest.group:type_name -> delcore.v1.Group
+	13,  // 39: delcore.v1.SetGroupResponse.metadata:type_name -> delcore.v1.Metadata
+	17,  // 40: delcore.v1.SetGroupResponse.group:type_name -> delcore.v1.Group
+	14,  // 41: delcore.v1.ListGroupsRequest.page:type_name -> delcore.v1.Page
+	13,  // 42: delcore.v1.ListGroupsResponse.metadata:type_name -> delcore.v1.Metadata
+	17,  // 43: delcore.v1.ListGroupsResponse.groups:type_name -> delcore.v1.Group
+	14,  // 44: delcore.v1.GetCatalogRequest.page:type_name -> delcore.v1.Page
+	13,  // 45: delcore.v1.GetCatalogResponse.metadata:type_name -> delcore.v1.Metadata
+	19,  // 46: delcore.v1.GetCatalogResponse.services:type_name -> delcore.v1.Service
+	20,  // 47: delcore.v1.GetCatalogResponse.plans:type_name -> delcore.v1.Plan
+	23,  // 48: delcore.v1.GetCatalogResponse.prices:type_name -> delcore.v1.Price
+	22,  // 49: delcore.v1.GetCatalogResponse.add_ons:type_name -> delcore.v1.AddOn
+	21,  // 50: delcore.v1.GetCatalogResponse.meters:type_name -> delcore.v1.Meter
+	25,  // 51: delcore.v1.GetCatalogResponse.features:type_name -> delcore.v1.Feature
+	21,  // 52: delcore.v1.PutMeterRequest.meter:type_name -> delcore.v1.Meter
+	13,  // 53: delcore.v1.PutMeterResponse.metadata:type_name -> delcore.v1.Metadata
+	21,  // 54: delcore.v1.PutMeterResponse.meter:type_name -> delcore.v1.Meter
+	25,  // 55: delcore.v1.PutFeatureRequest.feature:type_name -> delcore.v1.Feature
+	13,  // 56: delcore.v1.PutFeatureResponse.metadata:type_name -> delcore.v1.Metadata
+	25,  // 57: delcore.v1.PutFeatureResponse.feature:type_name -> delcore.v1.Feature
+	22,  // 58: delcore.v1.PutAddOnRequest.add_on:type_name -> delcore.v1.AddOn
+	13,  // 59: delcore.v1.PutAddOnResponse.metadata:type_name -> delcore.v1.Metadata
+	22,  // 60: delcore.v1.PutAddOnResponse.add_on:type_name -> delcore.v1.AddOn
+	14,  // 61: delcore.v1.ListBillingHistoryRequest.page:type_name -> delcore.v1.Page
+	13,  // 62: delcore.v1.ListBillingHistoryResponse.metadata:type_name -> delcore.v1.Metadata
+	33,  // 63: delcore.v1.ListBillingHistoryResponse.jobs:type_name -> delcore.v1.Job
+	19,  // 64: delcore.v1.PutServiceRequest.service:type_name -> delcore.v1.Service
+	13,  // 65: delcore.v1.PutServiceResponse.metadata:type_name -> delcore.v1.Metadata
+	19,  // 66: delcore.v1.PutServiceResponse.service:type_name -> delcore.v1.Service
+	20,  // 67: delcore.v1.PutPlanRequest.plan:type_name -> delcore.v1.Plan
+	13,  // 68: delcore.v1.PutPlanResponse.metadata:type_name -> delcore.v1.Metadata
+	20,  // 69: delcore.v1.PutPlanResponse.plan:type_name -> delcore.v1.Plan
+	23,  // 70: delcore.v1.CreatePriceRequest.price:type_name -> delcore.v1.Price
+	13,  // 71: delcore.v1.CreatePriceResponse.metadata:type_name -> delcore.v1.Metadata
+	23,  // 72: delcore.v1.CreatePriceResponse.price:type_name -> delcore.v1.Price
+	128, // 73: delcore.v1.AuthorizeRequest.group_values:type_name -> delcore.v1.AuthorizeRequest.GroupValuesEntry
+	13,  // 74: delcore.v1.AuthorizeResponse.metadata:type_name -> delcore.v1.Metadata
+	2,   // 75: delcore.v1.AuthorizeResponse.reasons:type_name -> delcore.v1.BlockReason
+	79,  // 76: delcore.v1.AuthorizeResponse.feature:type_name -> delcore.v1.FeatureAuthorization
+	8,   // 77: delcore.v1.FeatureAuthorization.kind:type_name -> delcore.v1.FeatureKind
+	131, // 78: delcore.v1.FeatureAuthorization.period_start:type_name -> google.protobuf.Timestamp
+	131, // 79: delcore.v1.FeatureAuthorization.period_end:type_name -> google.protobuf.Timestamp
+	27,  // 80: delcore.v1.FeatureAuthorization.configuration:type_name -> delcore.v1.ConfigurationValue
+	129, // 81: delcore.v1.MeterAggregate.group_values:type_name -> delcore.v1.MeterAggregate.GroupValuesEntry
+	131, // 82: delcore.v1.MeterAggregate.updated_at:type_name -> google.protobuf.Timestamp
+	131, // 83: delcore.v1.ListMeterAggregatesRequest.period_at:type_name -> google.protobuf.Timestamp
+	14,  // 84: delcore.v1.ListMeterAggregatesRequest.page:type_name -> delcore.v1.Page
+	13,  // 85: delcore.v1.ListMeterAggregatesResponse.metadata:type_name -> delcore.v1.Metadata
+	6,   // 86: delcore.v1.ListMeterAggregatesResponse.aggregation:type_name -> delcore.v1.MeterAggregation
+	131, // 87: delcore.v1.ListMeterAggregatesResponse.period_start:type_name -> google.protobuf.Timestamp
+	131, // 88: delcore.v1.ListMeterAggregatesResponse.period_end:type_name -> google.protobuf.Timestamp
+	80,  // 89: delcore.v1.ListMeterAggregatesResponse.aggregates:type_name -> delcore.v1.MeterAggregate
+	11,  // 90: delcore.v1.MeteringFailureCount.category:type_name -> delcore.v1.MeteringFailureCategory
+	13,  // 91: delcore.v1.GetMeteringStatusResponse.metadata:type_name -> delcore.v1.Metadata
+	131, // 92: delcore.v1.GetMeteringStatusResponse.oldest_pending_at:type_name -> google.protobuf.Timestamp
+	83,  // 93: delcore.v1.GetMeteringStatusResponse.failures:type_name -> delcore.v1.MeteringFailureCount
+	131, // 94: delcore.v1.GetMeteringStatusResponse.last_failure_at:type_name -> google.protobuf.Timestamp
+	11,  // 95: delcore.v1.GetMeteringStatusResponse.last_failure_category:type_name -> delcore.v1.MeteringFailureCategory
+	13,  // 96: delcore.v1.CheckTenantLifecycleResponse.metadata:type_name -> delcore.v1.Metadata
+	3,   // 97: delcore.v1.TenantStateEntry.state:type_name -> delcore.v1.TenantState
+	13,  // 98: delcore.v1.GetTenantStatesResponse.metadata:type_name -> delcore.v1.Metadata
+	89,  // 99: delcore.v1.GetTenantStatesResponse.states:type_name -> delcore.v1.TenantStateEntry
+	29,  // 100: delcore.v1.ReportUsageRequest.usage:type_name -> delcore.v1.Usage
+	13,  // 101: delcore.v1.ReportUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	29,  // 102: delcore.v1.CorrectUsageRequest.usage:type_name -> delcore.v1.Usage
+	13,  // 103: delcore.v1.CorrectUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	31,  // 104: delcore.v1.IngestEventRequest.event:type_name -> delcore.v1.Event
+	13,  // 105: delcore.v1.IngestEventResponse.metadata:type_name -> delcore.v1.Metadata
+	10,  // 106: delcore.v1.CorrectEventRequest.kind:type_name -> delcore.v1.EventCorrectionKind
+	130, // 107: delcore.v1.CorrectEventRequest.attributes:type_name -> delcore.v1.CorrectEventRequest.AttributesEntry
+	13,  // 108: delcore.v1.CorrectEventResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 109: delcore.v1.GetEventResponse.metadata:type_name -> delcore.v1.Metadata
+	31,  // 110: delcore.v1.GetEventResponse.event:type_name -> delcore.v1.Event
+	14,  // 111: delcore.v1.ListUsageRequest.page:type_name -> delcore.v1.Page
+	13,  // 112: delcore.v1.ListUsageResponse.metadata:type_name -> delcore.v1.Metadata
+	29,  // 113: delcore.v1.ListUsageResponse.events:type_name -> delcore.v1.Usage
+	14,  // 114: delcore.v1.ListLedgerRequest.page:type_name -> delcore.v1.Page
+	13,  // 115: delcore.v1.ListLedgerResponse.metadata:type_name -> delcore.v1.Metadata
+	32,  // 116: delcore.v1.ListLedgerResponse.entries:type_name -> delcore.v1.LedgerEntry
+	13,  // 117: delcore.v1.RequestTopUpResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 118: delcore.v1.SetAutoTopUpResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 119: delcore.v1.ChangeSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 120: delcore.v1.CancelSubscriptionResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 121: delcore.v1.DeleteTenantResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 122: delcore.v1.WithdrawResponse.metadata:type_name -> delcore.v1.Metadata
+	13,  // 123: delcore.v1.SetTenantBlockedResponse.metadata:type_name -> delcore.v1.Metadata
+	14,  // 124: delcore.v1.ListJobsRequest.page:type_name -> delcore.v1.Page
+	13,  // 125: delcore.v1.ListJobsResponse.metadata:type_name -> delcore.v1.Metadata
+	33,  // 126: delcore.v1.ListJobsResponse.jobs:type_name -> delcore.v1.Job
+	13,  // 127: delcore.v1.RetryJobResponse.metadata:type_name -> delcore.v1.Metadata
+	14,  // 128: delcore.v1.ListAuditRequest.page:type_name -> delcore.v1.Page
+	13,  // 129: delcore.v1.ListAuditResponse.metadata:type_name -> delcore.v1.Metadata
+	34,  // 130: delcore.v1.ListAuditResponse.entries:type_name -> delcore.v1.AuditEntry
+	13,  // 131: delcore.v1.DeleteGroupResponse.metadata:type_name -> delcore.v1.Metadata
+	30,  // 132: delcore.v1.Event.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
+	30,  // 133: delcore.v1.AuthorizeRequest.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
+	30,  // 134: delcore.v1.MeterAggregate.GroupValuesEntry.value:type_name -> delcore.v1.AttributeValue
+	30,  // 135: delcore.v1.CorrectEventRequest.AttributesEntry.value:type_name -> delcore.v1.AttributeValue
+	125, // 136: delcore.v1.DelcoreService.DeleteGroup:input_type -> delcore.v1.DeleteGroupRequest
+	63,  // 137: delcore.v1.DelcoreService.PutMeter:input_type -> delcore.v1.PutMeterRequest
+	65,  // 138: delcore.v1.DelcoreService.PutFeature:input_type -> delcore.v1.PutFeatureRequest
+	67,  // 139: delcore.v1.DelcoreService.PutAddOn:input_type -> delcore.v1.PutAddOnRequest
+	69,  // 140: delcore.v1.DelcoreService.ListBillingHistory:input_type -> delcore.v1.ListBillingHistoryRequest
+	35,  // 141: delcore.v1.DelcoreService.GetCurrentUser:input_type -> delcore.v1.GetCurrentUserRequest
+	37,  // 142: delcore.v1.DelcoreService.CreateTenant:input_type -> delcore.v1.CreateTenantRequest
+	39,  // 143: delcore.v1.DelcoreService.GetTenant:input_type -> delcore.v1.GetTenantRequest
+	41,  // 144: delcore.v1.DelcoreService.ListMembers:input_type -> delcore.v1.ListMembersRequest
+	43,  // 145: delcore.v1.DelcoreService.SetMemberRoles:input_type -> delcore.v1.SetMemberRolesRequest
+	45,  // 146: delcore.v1.DelcoreService.RemoveMember:input_type -> delcore.v1.RemoveMemberRequest
+	47,  // 147: delcore.v1.DelcoreService.CreateInvitation:input_type -> delcore.v1.CreateInvitationRequest
+	49,  // 148: delcore.v1.DelcoreService.AcceptInvitation:input_type -> delcore.v1.AcceptInvitationRequest
+	51,  // 149: delcore.v1.DelcoreService.RevokeInvitation:input_type -> delcore.v1.RevokeInvitationRequest
+	53,  // 150: delcore.v1.DelcoreService.TransferOwnership:input_type -> delcore.v1.TransferOwnershipRequest
+	55,  // 151: delcore.v1.DelcoreService.AcceptOwnership:input_type -> delcore.v1.AcceptOwnershipRequest
+	57,  // 152: delcore.v1.DelcoreService.SetGroup:input_type -> delcore.v1.SetGroupRequest
+	59,  // 153: delcore.v1.DelcoreService.ListGroups:input_type -> delcore.v1.ListGroupsRequest
+	61,  // 154: delcore.v1.DelcoreService.GetCatalog:input_type -> delcore.v1.GetCatalogRequest
+	71,  // 155: delcore.v1.DelcoreService.PutService:input_type -> delcore.v1.PutServiceRequest
+	73,  // 156: delcore.v1.DelcoreService.PutPlan:input_type -> delcore.v1.PutPlanRequest
+	75,  // 157: delcore.v1.DelcoreService.CreatePrice:input_type -> delcore.v1.CreatePriceRequest
+	77,  // 158: delcore.v1.DelcoreService.Authorize:input_type -> delcore.v1.AuthorizeRequest
+	81,  // 159: delcore.v1.DelcoreService.ListMeterAggregates:input_type -> delcore.v1.ListMeterAggregatesRequest
+	84,  // 160: delcore.v1.DelcoreService.GetMeteringStatus:input_type -> delcore.v1.GetMeteringStatusRequest
+	86,  // 161: delcore.v1.DelcoreService.CheckTenantLifecycle:input_type -> delcore.v1.CheckTenantLifecycleRequest
+	88,  // 162: delcore.v1.DelcoreService.GetTenantStates:input_type -> delcore.v1.GetTenantStatesRequest
+	91,  // 163: delcore.v1.DelcoreService.ReportUsage:input_type -> delcore.v1.ReportUsageRequest
+	93,  // 164: delcore.v1.DelcoreService.CorrectUsage:input_type -> delcore.v1.CorrectUsageRequest
+	101, // 165: delcore.v1.DelcoreService.ListUsage:input_type -> delcore.v1.ListUsageRequest
+	95,  // 166: delcore.v1.DelcoreService.IngestEvent:input_type -> delcore.v1.IngestEventRequest
+	97,  // 167: delcore.v1.DelcoreService.CorrectEvent:input_type -> delcore.v1.CorrectEventRequest
+	99,  // 168: delcore.v1.DelcoreService.GetEvent:input_type -> delcore.v1.GetEventRequest
+	103, // 169: delcore.v1.DelcoreService.ListLedger:input_type -> delcore.v1.ListLedgerRequest
+	105, // 170: delcore.v1.DelcoreService.RequestTopUp:input_type -> delcore.v1.RequestTopUpRequest
+	107, // 171: delcore.v1.DelcoreService.SetAutoTopUp:input_type -> delcore.v1.SetAutoTopUpRequest
+	109, // 172: delcore.v1.DelcoreService.ChangeSubscription:input_type -> delcore.v1.ChangeSubscriptionRequest
+	111, // 173: delcore.v1.DelcoreService.CancelSubscription:input_type -> delcore.v1.CancelSubscriptionRequest
+	113, // 174: delcore.v1.DelcoreService.DeleteTenant:input_type -> delcore.v1.DeleteTenantRequest
+	115, // 175: delcore.v1.DelcoreService.Withdraw:input_type -> delcore.v1.WithdrawRequest
+	117, // 176: delcore.v1.DelcoreService.SetTenantBlocked:input_type -> delcore.v1.SetTenantBlockedRequest
+	119, // 177: delcore.v1.DelcoreService.ListJobs:input_type -> delcore.v1.ListJobsRequest
+	121, // 178: delcore.v1.DelcoreService.RetryJob:input_type -> delcore.v1.RetryJobRequest
+	123, // 179: delcore.v1.DelcoreService.ListAudit:input_type -> delcore.v1.ListAuditRequest
+	126, // 180: delcore.v1.DelcoreService.DeleteGroup:output_type -> delcore.v1.DeleteGroupResponse
+	64,  // 181: delcore.v1.DelcoreService.PutMeter:output_type -> delcore.v1.PutMeterResponse
+	66,  // 182: delcore.v1.DelcoreService.PutFeature:output_type -> delcore.v1.PutFeatureResponse
+	68,  // 183: delcore.v1.DelcoreService.PutAddOn:output_type -> delcore.v1.PutAddOnResponse
+	70,  // 184: delcore.v1.DelcoreService.ListBillingHistory:output_type -> delcore.v1.ListBillingHistoryResponse
+	36,  // 185: delcore.v1.DelcoreService.GetCurrentUser:output_type -> delcore.v1.GetCurrentUserResponse
+	38,  // 186: delcore.v1.DelcoreService.CreateTenant:output_type -> delcore.v1.CreateTenantResponse
+	40,  // 187: delcore.v1.DelcoreService.GetTenant:output_type -> delcore.v1.GetTenantResponse
+	42,  // 188: delcore.v1.DelcoreService.ListMembers:output_type -> delcore.v1.ListMembersResponse
+	44,  // 189: delcore.v1.DelcoreService.SetMemberRoles:output_type -> delcore.v1.SetMemberRolesResponse
+	46,  // 190: delcore.v1.DelcoreService.RemoveMember:output_type -> delcore.v1.RemoveMemberResponse
+	48,  // 191: delcore.v1.DelcoreService.CreateInvitation:output_type -> delcore.v1.CreateInvitationResponse
+	50,  // 192: delcore.v1.DelcoreService.AcceptInvitation:output_type -> delcore.v1.AcceptInvitationResponse
+	52,  // 193: delcore.v1.DelcoreService.RevokeInvitation:output_type -> delcore.v1.RevokeInvitationResponse
+	54,  // 194: delcore.v1.DelcoreService.TransferOwnership:output_type -> delcore.v1.TransferOwnershipResponse
+	56,  // 195: delcore.v1.DelcoreService.AcceptOwnership:output_type -> delcore.v1.AcceptOwnershipResponse
+	58,  // 196: delcore.v1.DelcoreService.SetGroup:output_type -> delcore.v1.SetGroupResponse
+	60,  // 197: delcore.v1.DelcoreService.ListGroups:output_type -> delcore.v1.ListGroupsResponse
+	62,  // 198: delcore.v1.DelcoreService.GetCatalog:output_type -> delcore.v1.GetCatalogResponse
+	72,  // 199: delcore.v1.DelcoreService.PutService:output_type -> delcore.v1.PutServiceResponse
+	74,  // 200: delcore.v1.DelcoreService.PutPlan:output_type -> delcore.v1.PutPlanResponse
+	76,  // 201: delcore.v1.DelcoreService.CreatePrice:output_type -> delcore.v1.CreatePriceResponse
+	78,  // 202: delcore.v1.DelcoreService.Authorize:output_type -> delcore.v1.AuthorizeResponse
+	82,  // 203: delcore.v1.DelcoreService.ListMeterAggregates:output_type -> delcore.v1.ListMeterAggregatesResponse
+	85,  // 204: delcore.v1.DelcoreService.GetMeteringStatus:output_type -> delcore.v1.GetMeteringStatusResponse
+	87,  // 205: delcore.v1.DelcoreService.CheckTenantLifecycle:output_type -> delcore.v1.CheckTenantLifecycleResponse
+	90,  // 206: delcore.v1.DelcoreService.GetTenantStates:output_type -> delcore.v1.GetTenantStatesResponse
+	92,  // 207: delcore.v1.DelcoreService.ReportUsage:output_type -> delcore.v1.ReportUsageResponse
+	94,  // 208: delcore.v1.DelcoreService.CorrectUsage:output_type -> delcore.v1.CorrectUsageResponse
+	102, // 209: delcore.v1.DelcoreService.ListUsage:output_type -> delcore.v1.ListUsageResponse
+	96,  // 210: delcore.v1.DelcoreService.IngestEvent:output_type -> delcore.v1.IngestEventResponse
+	98,  // 211: delcore.v1.DelcoreService.CorrectEvent:output_type -> delcore.v1.CorrectEventResponse
+	100, // 212: delcore.v1.DelcoreService.GetEvent:output_type -> delcore.v1.GetEventResponse
+	104, // 213: delcore.v1.DelcoreService.ListLedger:output_type -> delcore.v1.ListLedgerResponse
+	106, // 214: delcore.v1.DelcoreService.RequestTopUp:output_type -> delcore.v1.RequestTopUpResponse
+	108, // 215: delcore.v1.DelcoreService.SetAutoTopUp:output_type -> delcore.v1.SetAutoTopUpResponse
+	110, // 216: delcore.v1.DelcoreService.ChangeSubscription:output_type -> delcore.v1.ChangeSubscriptionResponse
+	112, // 217: delcore.v1.DelcoreService.CancelSubscription:output_type -> delcore.v1.CancelSubscriptionResponse
+	114, // 218: delcore.v1.DelcoreService.DeleteTenant:output_type -> delcore.v1.DeleteTenantResponse
+	116, // 219: delcore.v1.DelcoreService.Withdraw:output_type -> delcore.v1.WithdrawResponse
+	118, // 220: delcore.v1.DelcoreService.SetTenantBlocked:output_type -> delcore.v1.SetTenantBlockedResponse
+	120, // 221: delcore.v1.DelcoreService.ListJobs:output_type -> delcore.v1.ListJobsResponse
+	122, // 222: delcore.v1.DelcoreService.RetryJob:output_type -> delcore.v1.RetryJobResponse
+	124, // 223: delcore.v1.DelcoreService.ListAudit:output_type -> delcore.v1.ListAuditResponse
+	180, // [180:224] is the sub-list for method output_type
+	136, // [136:180] is the sub-list for method input_type
+	136, // [136:136] is the sub-list for extension type_name
+	136, // [136:136] is the sub-list for extension extendee
+	0,   // [0:136] is the sub-list for field type_name
 }
 
 func init() { file_delcore_v1_delcore_proto_init() }
@@ -8361,8 +9180,8 @@ func file_delcore_v1_delcore_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delcore_v1_delcore_proto_rawDesc), len(file_delcore_v1_delcore_proto_rawDesc)),
-			NumEnums:      11,
-			NumMessages:   110,
+			NumEnums:      12,
+			NumMessages:   119,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
