@@ -568,6 +568,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "delitools-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "buffa",
+ "buffa-types",
+ "chrono",
+ "connectrpc",
+ "delino-protocol",
+ "dotenvy",
+ "hex",
+ "jsonwebtoken",
+ "prometheus",
+ "rand 0.9.5",
+ "reqwest",
+ "rsa",
+ "serde",
+ "serde_json",
+ "server-common",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
