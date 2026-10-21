@@ -238,6 +238,15 @@ async fn later_prices_corrections_and_replays_reconcile_the_ledger() {
         sum(&f, &tenant, "translator-usd", &["usage", "correction"]).await,
         d("-0.0069")
     );
+    // A correction cannot reprice the accepted report, cheaper or dearer.
+    for price in ["0.000002", "0.0000005"] {
+        f.error("service","CorrectEvent",json!({"requestKey":key(),"tenantId":tenant,"eventKey":"a","expectedRevision":2,"kind":"EVENT_CORRECTION_KIND_REPLACE","eventType":TRANSLATOR,"attributes":attrs(["3000","","",""],[price,"","",""],&(Utc::now() - Duration::days(2)).to_rfc3339())}),"invalid_argument").await;
+    }
+    f.process_metering().await;
+    assert_eq!(
+        sum(&f, &tenant, "translator-usd", &["usage", "correction"]).await,
+        d("-0.0069")
+    );
     // A correction without a price for nonzero tokens is invalid and changes nothing.
     f.error("service","CorrectEvent",json!({"requestKey":key(),"tenantId":tenant,"eventKey":"a","expectedRevision":2,"kind":"EVENT_CORRECTION_KIND_REPLACE","eventType":TRANSLATOR,"attributes":attrs(["3000","","",""],["","","",""],&(Utc::now() - Duration::days(2)).to_rfc3339())}),"invalid_argument").await;
     // Cancelling removes the charge exactly; the other event is untouched.

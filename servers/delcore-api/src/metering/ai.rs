@@ -77,6 +77,29 @@ pub fn price_effective_at(attributes: &BTreeMap<String, Value>) -> Result<DateTi
         })
 }
 
+/// A replacement report keeps the per-token prices frozen by the accepted report:
+/// a price present in both must be identical. A category the accepted report did
+/// not price may gain a price, and a price may be omitted when the replacement
+/// reports no tokens for the category (the token rules reject any other omission).
+pub fn frozen_prices_unchanged(
+    accepted: &BTreeMap<String, Value>,
+    replacement: &BTreeMap<String, Value>,
+) -> Result<()> {
+    for category in TOKEN_CATEGORIES {
+        if let (Some(before), Some(after)) = (
+            accepted.get(category.price),
+            replacement.get(category.price),
+        ) && before != after
+        {
+            return Err(invalid(format!(
+                "attribute {:?} must keep the price of the accepted report",
+                category.price
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Sum of tokens times USD per token over the four token categories, before any
 /// markup. A category without tokens contributes nothing even when it carries no
 /// price. A nonzero token count without a price is rejected: usage is never
@@ -346,6 +369,33 @@ mod tests {
         ] {
             assert!(parse_markup(bad).is_err(), "{bad}");
         }
+    }
+    #[test]
+    fn replacements_keep_the_frozen_prices() {
+        let accepted = full();
+        assert!(frozen_prices_unchanged(&accepted, &accepted).is_ok());
+        // Measured tokens may change.
+        let mut more = accepted.clone();
+        more.insert("input_tokens".into(), Value::number("3000").unwrap());
+        assert!(frozen_prices_unchanged(&accepted, &more).is_ok());
+        // Any changed price, cheaper or dearer, would reprice the earlier usage.
+        for price in ["0.000001", "0.000003"] {
+            let mut repriced = accepted.clone();
+            repriced.insert("input_usd_per_token".into(), Value::number(price).unwrap());
+            assert!(
+                frozen_prices_unchanged(&accepted, &repriced).is_err(),
+                "{price}"
+            );
+        }
+        // A category that had no price may gain one; an unpriced zero category may drop it.
+        let unpriced = report(&[("output_tokens", "1")], &[("output_usd_per_token", "1")]);
+        let mut gained = unpriced.clone();
+        gained.insert("input_usd_per_token".into(), Value::number("5").unwrap());
+        assert!(frozen_prices_unchanged(&unpriced, &gained).is_ok());
+        let mut dropped = accepted.clone();
+        dropped.remove("cache_write_usd_per_token");
+        dropped.remove("cache_write_tokens");
+        assert!(frozen_prices_unchanged(&accepted, &dropped).is_ok());
     }
     #[test]
     fn price_effective_time_is_parsed() {

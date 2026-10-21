@@ -241,6 +241,7 @@ pub async fn correct(
             },
         )?;
         check_price_snapshots(&meters, &added, &c.attributes, occurred)?;
+        check_frozen_prices(tx, &id, latest, &meters, &added, &c.attributes).await?;
         added
     } else {
         Vec::new()
@@ -384,10 +385,7 @@ fn check_price_snapshots(
     attributes: &BTreeMap<String, metering::Value>,
     occurred_at: DateTime<Utc>,
 ) -> Result<()> {
-    if !matched
-        .iter()
-        .any(|c| meters.iter().any(|m| m.id == c.meter_id && m.call_time()))
-    {
+    if !matches_call_time(meters, matched) {
         return Ok(());
     }
     let effective = metering::ai::price_effective_at(attributes)
@@ -399,6 +397,37 @@ fn check_price_snapshots(
         ));
     }
     Ok(())
+}
+
+fn matches_call_time(meters: &[Meter], matched: &[Contribution]) -> bool {
+    matched
+        .iter()
+        .any(|c| meters.iter().any(|m| m.id == c.meter_id && m.call_time()))
+}
+
+/// A replacement of an accepted AI usage report corrects the measured usage only.
+/// Its per-token prices stay those frozen when the report was accepted, so a
+/// correction can never reprice earlier usage.
+async fn check_frozen_prices(
+    tx: &mut PgConnection,
+    event: &str,
+    accepted_revision: i32,
+    meters: &[Meter],
+    matched: &[Contribution],
+    attributes: &BTreeMap<String, metering::Value>,
+) -> Result<()> {
+    if !matches_call_time(meters, matched) {
+        return Ok(());
+    }
+    let raw: Json = sqlx::query_scalar(
+        "SELECT attributes FROM metering_event_revisions WHERE event_id=$1::text::uuid AND revision=$2",
+    )
+    .bind(event)
+    .bind(accepted_revision)
+    .fetch_one(&mut *tx)
+    .await?;
+    metering::ai::frozen_prices_unchanged(&decode_values(&raw)?, attributes)
+        .map_err(|e| reject(Reason::InvalidAttribute, &e.to_string()))
 }
 
 /// Truncate to the microsecond precision PostgreSQL stores.
