@@ -33,5 +33,7 @@ prometheus = "0.14"
 subtle = "2"
 
 [dev-dependencies]
+bytes = "1"
 rsa = "0.9"
+tokio-stream = "0.1"
 tracing-subscriber.workspace = true
