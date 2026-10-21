@@ -69,6 +69,21 @@ impl Fault {
     pub fn missing() -> Self {
         Self::new(ErrorCode::NotFound, 6, "resource not found")
     }
+    pub fn with_correlation(self, correlation: &str) -> connectrpc::ConnectError {
+        let detail = ErrorDetail {
+            reason: self.reason.into(),
+            correlation_id: correlation.to_owned(),
+            ..Default::default()
+        };
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
+        self.connect()
+            .with_headers(headers)
+            .with_detail(connectrpc::ErrorDetail::from_message(
+                "delcore.v1.ErrorDetail",
+                &detail,
+            ))
+    }
     pub fn connect(self) -> connectrpc::ConnectError {
         connectrpc::ConnectError::new(self.code, self.message)
     }
@@ -264,7 +279,13 @@ impl Server {
         Q: Message + Serialize + DeserializeOwned,
         R: Message + Serialize + DeserializeOwned,
     {
-        let correlation = server_common::id();
+        let correlation = ctx
+            .headers()
+            .get("X-Delcore-Correlation-Id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| server_common::canonical_id(value))
+            .map(str::to_owned)
+            .unwrap_or_else(server_common::id);
         let authorization = ctx
             .headers()
             .get("authorization")
@@ -334,16 +355,7 @@ impl Server {
             }
             Err(fault) => {
                 tracing::warn!(correlation_id=%correlation,procedure=op.name(),category=fault.code.as_str(),reason=fault.reason,"rpc rejected");
-                let detail = ErrorDetail {
-                    reason: fault.reason.into(),
-                    correlation_id: correlation.clone(),
-                    ..Default::default()
-                };
-                let mut headers = axum::http::HeaderMap::new();
-                headers.insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
-                Err(fault.connect().with_headers(headers).with_detail(
-                    connectrpc::ErrorDetail::from_message("delcore.v1.ErrorDetail", &detail),
-                ))
+                Err(fault.with_correlation(&correlation))
             }
         }
     }
