@@ -272,10 +272,28 @@ func TestMeteringStatusLagAndFailures(t *testing.T) {
 	if len(failed) != 4 {
 		t.Fatalf("failed metering jobs = %v", failed)
 	}
+	before, err := f.status("owner", f.alpha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A retry request after every recorded failure is not itself a failure.
+	f.setClock(time.Now().Add(time.Hour))
 	for _, id := range failed {
 		if _, err = f.client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: id, Reason: "fixed metering state"}, "owner")); err != nil {
 			t.Fatal(err)
 		}
+	}
+	got, err = f.status("owner", f.alpha)
+	f.setClock(accepted.Add(90 * time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PendingJobs != 3 || got.FailedJobs != 1 || got.LastFailureCategory != invalidPayload || !got.LastFailureAt.AsTime().Equal(before.LastFailureAt.AsTime()) {
+		t.Fatalf("retry changed the last failure: before %v, after %v", before, got)
+	}
+	// The retries became available at the later request clock.
+	if _, err = f.db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE kind='metering' AND state='pending'"); err != nil {
+		t.Fatal(err)
 	}
 	f.worker.MeteringApplied = nil
 	f.process(t)

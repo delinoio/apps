@@ -227,7 +227,9 @@ func (s *Server) GetMeteringStatus(ctx context.Context, r *connect.Request[pb.Ge
 			o.OldestPendingAt = timestamppb.New(*oldest)
 			o.LagSeconds = max(int64(c.now.Sub(*oldest)/time.Second), 0)
 		}
-		rows, e := c.tx.Query(c.ctx, `SELECT j.error_category,count(*),max(j.updated_at) `+work+` AND j.error_category<>'' GROUP BY j.error_category ORDER BY j.error_category`, tenant, service)
+		// failed_at keeps the recorded failure time when RetryJob returns a
+		// failed job to pending work and rewrites updated_at.
+		rows, e := c.tx.Query(c.ctx, `SELECT j.error_category,count(*),max(j.failed_at) `+work+` AND j.error_category<>'' GROUP BY j.error_category ORDER BY j.error_category`, tenant, service)
 		if e != nil {
 			return e
 		}
@@ -237,14 +239,14 @@ func (s *Server) GetMeteringStatus(ctx context.Context, r *connect.Request[pb.Ge
 		for rows.Next() {
 			var category string
 			var n int64
-			var at time.Time
+			var at *time.Time
 			if e = rows.Scan(&category, &n, &at); e != nil {
 				return e
 			}
 			typed := meteringFailureCategories[category]
 			counts[typed] += n
-			if at.After(latest) {
-				latest, o.LastFailureCategory = at, typed
+			if at != nil && at.After(latest) {
+				latest, o.LastFailureCategory = *at, typed
 			}
 		}
 		if e = rows.Err(); e != nil {

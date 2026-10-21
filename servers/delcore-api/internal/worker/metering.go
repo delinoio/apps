@@ -104,7 +104,7 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.Config.Timeout())
 	defer cancel()
 	if e := w.DB.Transaction(recordCtx, func(tx pgx.Tx) error {
-		_, e := tx.Exec(recordCtx, "UPDATE jobs SET state=$2,error_category=$3,attempts=attempts+1,available_at=$4,updated_at=now() WHERE id=$1 AND state='pending'", j.ID, state, category, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
+		_, e := tx.Exec(recordCtx, "UPDATE jobs SET state=$2,error_category=$3,attempts=attempts+1,available_at=$4,updated_at=now(),failed_at=now() WHERE id=$1 AND state='pending'", j.ID, state, category, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
 		return e
 	}); e != nil {
 		return false, e
