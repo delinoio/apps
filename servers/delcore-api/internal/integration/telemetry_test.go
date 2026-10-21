@@ -392,6 +392,13 @@ func TestEventSpansCarryCorrelationOfEveryResponse(t *testing.T) {
 	if got := o.spanCorrelations(telemetry.SpanEventCorrect, "replayed"); len(got) != 1 || got[0] == "" || got[0] != corrected.Msg.GetMetadata().GetCorrelationId() {
 		t.Fatalf("correction replay span correlations = %q, response %q", got, corrected.Msg.GetMetadata().GetCorrelationId())
 	}
+	// A replayed correction keeps its real kind instead of the invalid label.
+	if got := o.counter(t, "delcore_metering_corrections_total", map[string]string{"kind": "cancel", "outcome": "replayed", "reason": "none"}); got != 1 {
+		t.Fatalf("replayed cancel correction counted %v times, want 1", got)
+	}
+	if got := o.counter(t, "delcore_metering_corrections_total", map[string]string{"kind": "invalid", "outcome": "replayed", "reason": "none"}); got != 0 {
+		t.Fatalf("replayed correction counted as invalid %v times", got)
+	}
 	invalid := &pb.IngestEventRequest{RequestKey: "not-a-uuid", Event: ingest.Event}
 	_, err = f.client.IngestEvent(ctx, req(invalid, "service"))
 	var ce *connect.Error

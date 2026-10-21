@@ -147,7 +147,16 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 	defer span.End()
 	o := &pb.CorrectEventResponse{}
 	var result eventResult
+	// Derive the bounded kind from the request before run: a request-key replay
+	// returns the cached response without invoking the handler, so a kind set
+	// inside it would stay invalid for every normal idempotent retry.
 	kind := telemetry.CorrectionInvalid
+	switch r.Msg.Kind {
+	case pb.EventCorrectionKind_EVENT_CORRECTION_KIND_REPLACE:
+		kind = telemetry.CorrectionReplace
+	case pb.EventCorrectionKind_EVENT_CORRECTION_KIND_CANCEL:
+		kind = telemetry.CorrectionCancel
+	}
 	response, err := run(s, ctx, r, o, func(c *call) error {
 		if e := c.serviceScope("usage:write"); e != nil {
 			return e
@@ -165,7 +174,6 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 		default:
 			return invalid("correction kind must be replace or cancel")
 		}
-		kind = telemetry.CorrectionKind(correction.Kind)
 		values, e := attributes(q.Attributes)
 		if e != nil {
 			return e
