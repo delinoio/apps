@@ -183,6 +183,34 @@ pub struct Duplicate {
     pub input_hash: Vec<u8>,
 }
 
+/// The unexpired deduplication record for a key, if any. A duplicate call answers from this
+/// without consuming tenant admission or contacting the Gateway; a concurrent first call that
+/// races past this check is still decided atomically by [`start_request`].
+pub async fn peek_duplicate(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    capability: Capability,
+    key: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<Duplicate>> {
+    let row = sqlx::query("SELECT request_id,input_hash,state FROM idempotency_records WHERE tenant_id=$1 AND method=$2 AND idempotency_key=$3 AND created_at>$4")
+        .bind(tenant_id)
+        .bind(capability_db(capability))
+        .bind(key)
+        .bind(cutoff(now))
+        .fetch_optional(pool)
+        .await?;
+    row.map(|row| -> std::result::Result<Duplicate, sqlx::Error> {
+        Ok(Duplicate {
+            request_id: row.try_get("request_id")?,
+            state: State::from_db(row.try_get("state")?),
+            input_hash: row.try_get("input_hash")?,
+        })
+    })
+    .transpose()
+    .map_err(Into::into)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Start {
     Started,

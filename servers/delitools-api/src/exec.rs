@@ -567,6 +567,20 @@ impl Executor {
         let platform = &self.platform;
         let request_id = parse_request_id(&call.request_id);
         let started = Instant::now();
+        // Authorization already succeeded, so duplicate state may be disclosed. Answer a known
+        // duplicate before admission: it does no AI work and must not consume tenant budget.
+        if let Some(key) = plan.key.as_deref()
+            && let Some(existing) = db::peek_duplicate(
+                &platform.store.pool,
+                principal.tenant_id,
+                plan.capability,
+                key,
+                store::now(),
+            )
+            .await?
+        {
+            return Err(duplicate_fault(&existing, &plan.input_hash));
+        }
         let permit = platform
             .admission
             .admit(principal.tenant_id, &settings, &platform.metrics)?;

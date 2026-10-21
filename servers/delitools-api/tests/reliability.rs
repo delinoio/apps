@@ -134,7 +134,7 @@ async fn transient_failures_retry_with_a_frozen_price_and_no_model_fallback() {
     assert_eq!(paid, 3);
 
     // A later request uses the newly effective price.
-    env.gateway.respond(|n, body| good(n, body));
+    env.gateway.respond(good);
     env.fx
         .ok(&key, TRANSLATE, env.translate_body(&["x"], None))
         .await;

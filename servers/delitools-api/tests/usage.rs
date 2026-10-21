@@ -1,0 +1,924 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//! Pricing snapshots, usage delivery to delcore, Gateway reconciliation, operator association,
+//! catalog synchronization and 30-day expiry. These tests need a disposable PostgreSQL database
+//! in `TEST_DATABASE_URL`.
+mod support;
+use delitools_api::store::{self, retention};
+use serde_json::{Value, json};
+use std::{sync::atomic::Ordering, time::Duration};
+use support::{
+    EXTRACTION_MODEL, Env, INVOICE_SCHEMA, TRANSLATION_MODEL, echo_translations,
+    extraction_content, mocks,
+    mocks::{MemberRole, Script, StreamReply, UsageSpec, generation_data, reply},
+    reason,
+};
+
+const TRANSLATE: &str = "TranslateTextArray";
+const EXTRACT: &str = "ExtractDataFromText";
+/// `SERVICE_ID` of `.env.example`.
+const SERVICE_ID: &str = "01900000-0000-7000-8000-000000000001";
+
+fn translating(env: &Env, usage: Option<UsageSpec>) {
+    env.gateway.respond(move |n, body| {
+        reply(
+            &echo_translations(body),
+            &format!("gen_t{n}"),
+            usage.clone(),
+        )
+    });
+}
+
+async fn translate_ok(env: &Env, key: &str) -> String {
+    env.fx
+        .ok(key, TRANSLATE, env.translate_body(&["x"], None))
+        .await
+        .body["requestId"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn usage_service(env: &Env) -> std::sync::Arc<delitools_api::usage::UsageService> {
+    env.fx.usage.clone().expect("execution mode")
+}
+
+/// Exact integer charge basis at 1e-15 USD from the event's raw tokens and prices.
+fn basis(attributes: &Value) -> u128 {
+    let scaled = |price: &str| -> u128 {
+        let (whole, fraction) = price.split_once('.').unwrap_or((price, ""));
+        format!("{whole}{fraction:0<15}").parse().unwrap()
+    };
+    ["input", "output", "cache_read", "cache_write"]
+        .iter()
+        .map(|category| {
+            let tokens = &attributes[format!("{category}_tokens")];
+            let price = &attributes[format!("{category}_usd_per_token")];
+            match (tokens["number"].as_str(), price["number"].as_str()) {
+                (Some(t), Some(p)) => t.parse::<u128>().unwrap() * scaled(p),
+                _ => 0,
+            }
+        })
+        .sum()
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn usage_events_carry_raw_tokens_and_frozen_prices_never_a_charge() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // Translator: input 1000 + cache read 50 + cache write 10 = 1060 prompt tokens.
+    translating(&env, Some(UsageSpec::full(1060, 200, 50, 10)));
+    let request_id = translate_ok(&env, &key).await;
+    let events = env.wait_for_events(1).await;
+    let (attempt, row): (String, (String, String)) = sqlx::query_as(
+        "SELECT id::text, ROW(to_char(occurred_at AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'), to_char(price_effective_at AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'))::text FROM attempts",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .map(|(id, row): (String, String)| {
+        let trimmed = row.trim_matches(['(', ')']).replace('"', "");
+        let (a, b) = trimmed.split_once(',').unwrap();
+        (id, (a.to_owned(), b.to_owned()))
+    })
+    .unwrap();
+    let body = &events[&attempt];
+    // The durable attempt UUID is the request key and the event key.
+    assert_eq!(body["requestKey"], attempt);
+    assert_eq!(body["event"]["eventKey"], attempt);
+    assert_ne!(attempt, request_id, "attempts have their own identity");
+    assert_eq!(body["event"]["serviceId"], SERVICE_ID);
+    assert_eq!(body["event"]["tenantId"], env.tenant.to_string());
+    assert_eq!(body["event"]["eventType"], "translator.usage");
+    assert_eq!(body["event"]["occurredAt"], row.0);
+    let attributes = &body["event"]["attributes"];
+    assert_eq!(attributes["model"], json!({"text": TRANSLATION_MODEL}));
+    assert_eq!(attributes["price_effective_at"], json!({"text": row.1}));
+    assert_eq!(
+        *attributes,
+        json!({
+            "model": {"text": TRANSLATION_MODEL},
+            "price_effective_at": {"text": row.1},
+            "input_tokens": {"number": "1000"}, "input_usd_per_token": {"number": "0.000003"},
+            "output_tokens": {"number": "200"}, "output_usd_per_token": {"number": "0.000015"},
+            "cache_read_tokens": {"number": "50"}, "cache_read_usd_per_token": {"number": "0.0000003"},
+            "cache_write_tokens": {"number": "10"}, "cache_write_usd_per_token": {"number": "0.00000375"},
+        })
+    );
+    // Delcore applies the markup; the report is sufficient input for exactly 1.15 and 1.30.
+    // 1000*3e-6 + 200*1.5e-5 + 50*3e-7 + 10*3.75e-6 = 0.003 + 0.003 + 0.000015 + 0.0000375 USD.
+    let translator_basis = basis(attributes);
+    assert_eq!(translator_basis, 6_052_500_000_000);
+    assert_eq!(translator_basis * 115 / 100, 6_960_375_000_000);
+    assert_eq!(translator_basis * 130 / 100, 7_868_250_000_000);
+    assert!(
+        env.delcore
+            .token_scopes()
+            .contains(&"usage:write".to_owned())
+    );
+    assert!(
+        env.delcore
+            .ingest_authorizations()
+            .iter()
+            .all(|a| a == "m2m-usage:write")
+    );
+
+    // Extractor: its own event type and fixed model.
+    env.gateway.respond(|n, _| {
+        reply(
+            &extraction_content(
+                "extracted",
+                json!({"vendor":"A","total":1,"currency":"USD"}),
+            ),
+            &format!("gen_e{n}"),
+            Some(UsageSpec::full(500, 100, 0, 0)),
+        )
+    });
+    env.fx
+        .ok(
+            &key,
+            EXTRACT,
+            env.extract_body("text", INVOICE_SCHEMA, None),
+        )
+        .await;
+    let events = env.wait_for_events(2).await;
+    let extractor = events
+        .values()
+        .find(|e| e["event"]["eventType"] == "extractor.usage")
+        .expect("extractor event");
+    let attributes = &extractor["event"]["attributes"];
+    assert_eq!(attributes["model"], json!({"text": EXTRACTION_MODEL}));
+    assert_eq!(attributes["input_tokens"]["number"], "500");
+    assert_eq!(
+        attributes["cache_read_tokens"]["number"], "0",
+        "published categories are reported even at zero"
+    );
+    // 500*1e-7 + 100*5e-7 = 1e-4 USD.
+    assert_eq!(basis(attributes), 100_000_000_000);
+    assert_eq!(basis(attributes) * 130 / 100, 130_000_000_000);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn categories_without_a_published_price_are_omitted_or_keep_usage_pending() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // A newer catalog version publishes no cache prices for the model.
+    env.set_price(
+        TRANSLATION_MODEL,
+        "anthropic",
+        ("0.000003", "0.000015", None, None),
+    )
+    .await;
+
+    translating(&env, Some(UsageSpec::full(100, 20, 0, 0)));
+    translate_ok(&env, &key).await;
+    let events = env.wait_for_events(1).await;
+    let attributes = &events.values().next().unwrap()["event"]["attributes"];
+    for omitted in [
+        "cache_read_tokens",
+        "cache_read_usd_per_token",
+        "cache_write_tokens",
+        "cache_write_usd_per_token",
+    ] {
+        assert!(attributes.get(omitted).is_none(), "{omitted}");
+    }
+
+    // Cache reads that need an unpublished price are never reported or estimated.
+    translating(&env, Some(UsageSpec::full(100, 20, 40, 0)));
+    translate_ok(&env, &key).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(env.delcore.accepted().len(), 1);
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(env.delcore.accepted().len(), 1);
+    let (known, delivered, failures): (bool, bool, i32) = sqlx::query_as(
+        "SELECT measured_usage IS NOT NULL, delivered_at IS NOT NULL, delivery_failures FROM attempts ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert!(known && !delivered && failures >= 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn delivery_retries_with_capped_backoff_and_a_duplicate_never_creates_a_second_event() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    env.delcore.fail_ingests(3);
+    translate_ok(&env, &key).await;
+    // The immediate delivery failed once.
+    for _ in 0..50 {
+        if env.delcore.ingest_calls().len() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let state = |env: &Env| {
+        let pool = env.fx.pool.clone();
+        async move {
+            let (failures, delay, delivered) = sqlx::query_as::<_, (i32, Option<f64>, bool)>(
+                "SELECT delivery_failures, EXTRACT(EPOCH FROM (retry_at - updated_at))::float8, delivered_at IS NOT NULL FROM attempts",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            (failures, delay.unwrap_or(0.0), delivered)
+        }
+    };
+    let (failures, delay, delivered) = state(&env).await;
+    assert_eq!((failures, delivered), (1, false));
+    assert!((0.9..=1.1).contains(&delay), "initial retry delay {delay}");
+    // Not yet due: the background run does nothing.
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(env.delcore.ingest_calls().len(), 1);
+
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    let (failures, delay, _) = state(&env).await;
+    assert_eq!(failures, 2);
+    assert!((1.9..=2.1).contains(&delay), "exponential delay {delay}");
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    let (failures, delay, _) = state(&env).await;
+    assert_eq!(failures, 3);
+    assert!(
+        (3.9..=4.1).contains(&delay),
+        "delay capped at MAX_BACKOFF_SECONDS: {delay}"
+    );
+
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    let (_, _, delivered) = state(&env).await;
+    assert!(delivered);
+    assert_eq!(env.delcore.accepted().len(), 1);
+    let calls = env.delcore.ingest_calls();
+    assert_eq!(calls.len(), 4);
+    assert!(
+        calls.iter().all(|c| c == &calls[0]),
+        "every retry resends identical content"
+    );
+
+    // A duplicate delivery (for example after a crash between the report and its bookkeeping) is
+    // answered from delcore's retained identity: still exactly one accepted event.
+    sqlx::query("UPDATE attempts SET delivered_at=NULL, retry_at=now()-interval '1 second'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(env.delcore.ingest_calls().len(), 5);
+    assert_eq!(env.delcore.accepted().len(), 1);
+    let metrics = env.fx.platform.metrics.encode();
+    assert!(metrics.contains("delitools_usage_deliveries_total{outcome=\"failed\"} 3"));
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn background_delivery_survives_restart_from_persisted_state_alone() {
+    let env = Env::start(&[], false).await;
+    env.seed_crash_state().await;
+    // A restart finds the request still processing and marks it unknown, then resumes usage work.
+    let interrupted = store::recovery::mark_interrupted_unknown(&env.fx.pool, store::now())
+        .await
+        .unwrap();
+    assert_eq!(interrupted, 1);
+    env.gateway.set_generation(
+        "gen_crash",
+        Some(generation_data(
+            "gen_crash",
+            TRANSLATION_MODEL,
+            50,
+            5,
+            10,
+            0,
+        )),
+    );
+    let usage = usage_service(&env);
+    usage.run_deliveries().await.unwrap();
+    usage.run_reconciliation().await.unwrap();
+    let events = env.wait_for_events(2).await;
+    assert_eq!(
+        events.len(),
+        2,
+        "both the known and the reconciled attempt were delivered"
+    );
+    assert_eq!(
+        env.gateway.chat_count(),
+        0,
+        "an interrupted prompt is never resumed"
+    );
+    let state: i16 = sqlx::query_scalar("SELECT state FROM requests")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(state, 3);
+    env.finish().await;
+}
+
+impl Env {
+    /// Persisted leftovers of a crash: a processing request with an in-flight attempt whose
+    /// generation is known and a completed-usage attempt that was never delivered.
+    async fn seed_crash_state(&self) {
+        let (request, known, unknown) = (support::id(), support::id(), support::id());
+        sqlx::query("INSERT INTO requests(id,tenant_id,capability,state,model,credential_kind,created_at,updated_at) VALUES($1,$2,1,1,$3,3,now(),now())")
+            .bind(request)
+            .bind(self.tenant)
+            .bind(TRANSLATION_MODEL)
+            .execute(&self.fx.pool)
+            .await
+            .unwrap();
+        let snapshot = json!({"input_usd_per_token":"0.000003","output_usd_per_token":"0.000015",
+            "cache_read_usd_per_token":"0.0000003","cache_write_usd_per_token":"0.00000375"});
+        for (id, generation, usage) in [
+            (
+                known,
+                "gen_known",
+                Some(
+                    json!({"input_tokens":10,"output_tokens":2,"cache_read_tokens":0,"cache_write_tokens":0}),
+                ),
+            ),
+            (unknown, "gen_crash", None),
+        ] {
+            sqlx::query("INSERT INTO attempts(id,request_id,tenant_id,capability,model,provider_route,generation_id,price_effective_at,catalog_price,occurred_at,measured_usage,created_at,updated_at) VALUES($1,$2,$3,1,$4,'anthropic',$5,now()-interval '1 minute',$6,now(),$7,now(),now())")
+                .bind(id)
+                .bind(request)
+                .bind(self.tenant)
+                .bind(TRANSLATION_MODEL)
+                .bind(generation)
+                .bind(&snapshot)
+                .bind(usage)
+                .execute(&self.fx.pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn unknown_usage_is_reconciled_with_the_gateway_and_never_estimated() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // No usage chunk at all.
+    translating(&env, None);
+    translate_ok(&env, &key).await;
+    // A usage chunk without cache details is incomplete, not zero cache.
+    env.gateway.respond(|n, body| {
+        reply(
+            &echo_translations(body),
+            &format!("gen_inc{n}"),
+            Some(UsageSpec {
+                prompt: 80,
+                completion: 8,
+                cached: None,
+                created: None,
+            }),
+        )
+    });
+    translate_ok(&env, &key).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        env.delcore.ingest_calls().is_empty(),
+        "no estimate and no partial report"
+    );
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT generation_id, measured_usage IS NOT NULL FROM attempts ORDER BY created_at",
+    )
+    .fetch_all(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![("gen_t0".into(), false), ("gen_inc1".into(), false)]
+    );
+
+    let usage = usage_service(&env);
+    // The Gateway has not ingested the usage yet (404): try again later with backoff.
+    env.make_due().await;
+    usage.run_reconciliation().await.unwrap();
+    assert_eq!(env.gateway.generation_lookups().len(), 2);
+    let failures: Vec<i32> =
+        sqlx::query_scalar("SELECT delivery_failures FROM attempts ORDER BY created_at")
+            .fetch_all(&env.fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(failures, vec![1, 1]);
+    assert!(env.delcore.ingest_calls().is_empty());
+
+    // Unreadable or inconsistent lookups are not accepted: wrong model, a missing count and cached
+    // tokens above the prompt total all leave the attempt pending.
+    env.gateway.set_generation(
+        "gen_t0",
+        Some(generation_data("gen_t0", "other/model", 10, 2, 0, 0)),
+    );
+    let mut incomplete = generation_data("gen_inc1", TRANSLATION_MODEL, 10, 2, 0, 0);
+    incomplete
+        .as_object_mut()
+        .unwrap()
+        .remove("native_tokens_cache_creation");
+    env.gateway.set_generation("gen_inc1", Some(incomplete));
+    env.make_due().await;
+    usage.run_reconciliation().await.unwrap();
+    assert!(env.delcore.ingest_calls().is_empty());
+    env.gateway.set_generation(
+        "gen_inc1",
+        Some(generation_data("gen_inc1", TRANSLATION_MODEL, 5, 2, 9, 0)),
+    );
+    env.make_due().await;
+    usage.run_reconciliation().await.unwrap();
+    assert!(env.delcore.ingest_calls().is_empty());
+
+    // Valid measured counts are accepted and delivered, split into the four categories.
+    env.gateway.set_generation(
+        "gen_t0",
+        Some(generation_data("gen_t0", TRANSLATION_MODEL, 90, 11, 20, 5)),
+    );
+    env.gateway.set_generation(
+        "gen_inc1",
+        Some(generation_data("gen_inc1", TRANSLATION_MODEL, 80, 8, 0, 0)),
+    );
+    env.make_due().await;
+    usage.run_reconciliation().await.unwrap();
+    let events = env.wait_for_events(2).await;
+    let mut inputs: Vec<(String, String, String, String)> = events
+        .values()
+        .map(|e| {
+            let a = &e["event"]["attributes"];
+            (
+                a["input_tokens"]["number"].as_str().unwrap().to_owned(),
+                a["output_tokens"]["number"].as_str().unwrap().to_owned(),
+                a["cache_read_tokens"]["number"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+                a["cache_write_tokens"]["number"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    inputs.sort();
+    assert_eq!(
+        inputs,
+        vec![
+            ("65".into(), "11".into(), "20".into(), "5".into()),
+            ("80".into(), "8".into(), "0".into(), "0".into()),
+        ]
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn failed_calls_and_unusable_output_still_bill_their_confirmed_usage() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // Truncated output (finish_reason length) fails the request but consumed tokens.
+    env.gateway.sequence(vec![Script::Reply(StreamReply {
+        content: "{\"translations\":[\"a\"".into(),
+        generation: "gen_len".into(),
+        usage: Some(UsageSpec::full(100, 4096, 0, 0)),
+        finish: "length",
+    })]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "data_loss",
+            reason::INVALID_OUTPUT,
+        )
+        .await;
+    // Malformed content fails too.
+    env.gateway.sequence(vec![reply(
+        "garbage",
+        "gen_bad",
+        Some(UsageSpec::full(10, 3, 0, 0)),
+    )]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "data_loss",
+            reason::INVALID_OUTPUT,
+        )
+        .await;
+    let events = env.wait_for_events(2).await;
+    let outputs: Vec<String> = events
+        .values()
+        .map(|e| {
+            e["event"]["attributes"]["output_tokens"]["number"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert!(outputs.contains(&"4096".to_owned()) && outputs.contains(&"3".to_owned()));
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn operators_associate_generations_with_validation_and_audit() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    let operator = env.fx.operator();
+    // An attempt whose usage is unknown and which has no generation: a 5xx before any chunk.
+    env.gateway.sequence(vec![Script::Status(503)]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "unavailable",
+            reason::PROVIDER,
+        )
+        .await;
+    let attempts: Vec<String> =
+        sqlx::query_scalar("SELECT id::text FROM attempts ORDER BY created_at")
+            .fetch_all(&env.fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(attempts.len(), 3);
+    let call = |attempt: &str, generation: &str, reason_text: &str| json!({"attemptId": attempt, "generationId": generation, "reason": reason_text});
+
+    // Authority: platform operators only, with a reason.
+    let (tenant_owner, _) = env.user("owner", Some(MemberRole::Owner));
+    env.fx
+        .fails(
+            Some(&tenant_owner),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_a", "found it"),
+            "permission_denied",
+            reason::FORBIDDEN,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&key),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_a", "found it"),
+            "permission_denied",
+            reason::FORBIDDEN,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_a", "x"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call("not-a-uuid", "gen_a", "found it"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&support::id().to_string(), "gen_a", "found it"),
+            "not_found",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "bad id!", "found it"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    // The generation must be readable at the Gateway and belong to the stored model.
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_missing", "found it"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.gateway.set_generation(
+        "gen_wrong",
+        Some(generation_data("gen_wrong", "other/model", 10, 2, 0, 0)),
+    );
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_wrong", "found it"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_records WHERE action='generation.associate'",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 0, "rejected calls leave no audit record");
+
+    // A valid association is audited, never replays inference and schedules normal
+    // reconciliation, which then reports the measured usage.
+    env.gateway.set_generation(
+        "gen_a",
+        Some(generation_data("gen_a", TRANSLATION_MODEL, 70, 7, 10, 0)),
+    );
+    let chats = env.gateway.chat_count();
+    env.fx
+        .ok(
+            &operator,
+            "AssociateGeneration",
+            call(&attempts[0], "gen_a", "matched by user reference"),
+        )
+        .await;
+    assert_eq!(env.gateway.chat_count(), chats);
+    let (reason_text, target, details): (String, String, Value) = sqlx::query_as(
+        "SELECT reason, target_id::text, details FROM audit_records WHERE action='generation.associate'",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(reason_text, "matched by user reference");
+    assert_eq!(target, attempts[0]);
+    assert_eq!(details["generationId"], "gen_a");
+    // A generation can be associated with one attempt only; the attempt only once.
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[1], "gen_a", "again"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_b", "again"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    usage_service(&env).run_reconciliation().await.unwrap();
+    let events = env.wait_for_events(1).await;
+    assert_eq!(events.len(), 1);
+    // The associated attempt is now settled; a confirmed attempt cannot be re-associated.
+    env.gateway.set_generation(
+        "gen_c",
+        Some(generation_data("gen_c", TRANSLATION_MODEL, 1, 1, 0, 0)),
+    );
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call(&attempts[0], "gen_c", "late"),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn catalog_synchronization_versions_prices_and_never_enables_models() {
+    let env = Env::start(&[], true).await;
+    env.wait_for_price(TRANSLATION_MODEL).await;
+    let prices = |env: &Env| {
+        let pool = env.fx.pool.clone();
+        async move {
+            sqlx::query_as::<_, (String, String, String, String)>(
+                "SELECT model, provider_route, input_usd_per_token::text, output_usd_per_token::text FROM catalog_prices ORDER BY model, effective_at",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    // Only the allowlisted models are priced, on the one provider route that charges the public
+    // price (the azure endpoint prices differently). The unlisted catalog model stays unpriced.
+    let rows = prices(&env).await;
+    assert_eq!(
+        rows,
+        vec![
+            (
+                TRANSLATION_MODEL.into(),
+                "anthropic".into(),
+                "0.000003".into(),
+                "0.000015".into()
+            ),
+            (
+                EXTRACTION_MODEL.into(),
+                "openai".into(),
+                "0.0000001".into(),
+                "0.0000005".into()
+            ),
+        ]
+    );
+    assert!(rows.iter().all(|r| r.0 != "google/gemini-unlisted"));
+    // The public catalog is read without any credential.
+    assert!(
+        env.gateway
+            .models_auth_headers()
+            .iter()
+            .all(String::is_empty)
+    );
+
+    // An unchanged price only refreshes its synchronization time.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(prices(&env).await.len(), 2);
+
+    // A changed public price becomes a new effective version for later requests.
+    let new_luna = (
+        "0.0000002",
+        "0.000001",
+        Some("0.00000002"),
+        Some("0.00000025"),
+    );
+    env.gateway.set_catalog(
+        vec![
+            mocks::catalog_entry(
+                TRANSLATION_MODEL,
+                "0.000003",
+                "0.000015",
+                Some("0.0000003"),
+                Some("0.00000375"),
+            ),
+            mocks::catalog_entry(
+                EXTRACTION_MODEL,
+                new_luna.0,
+                new_luna.1,
+                new_luna.2,
+                new_luna.3,
+            ),
+        ],
+        vec![
+            (
+                TRANSLATION_MODEL,
+                vec![mocks::endpoint_entry(
+                    "anthropic",
+                    "0.000003",
+                    "0.000015",
+                    Some("0.0000003"),
+                    Some("0.00000375"),
+                )],
+            ),
+            (
+                EXTRACTION_MODEL,
+                vec![mocks::endpoint_entry(
+                    "openai", new_luna.0, new_luna.1, new_luna.2, new_luna.3,
+                )],
+            ),
+        ],
+    );
+    for _ in 0..40 {
+        if prices(&env).await.len() == 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let after = prices(&env).await;
+    assert_eq!(after.len(), 3, "{after:?}");
+    let key = env.service_key().await;
+    env.gateway.respond(|n, _| {
+        reply(
+            &extraction_content(
+                "extracted",
+                json!({"vendor":"A","total":1,"currency":"USD"}),
+            ),
+            &format!("gen_s{n}"),
+            Some(UsageSpec::full(10, 1, 0, 0)),
+        )
+    });
+    env.fx
+        .ok(&key, EXTRACT, env.extract_body("t", INVOICE_SCHEMA, None))
+        .await;
+    let latest: String = sqlx::query_scalar("SELECT catalog_price->>'input_usd_per_token' FROM attempts ORDER BY created_at DESC LIMIT 1")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        latest, "0.0000002",
+        "requests starting after the change use the new price"
+    );
+
+    // A tiered model has no single flat price: it keeps its last known price.
+    let mut tiered = mocks::catalog_entry(TRANSLATION_MODEL, "0.5", "0.5", None, None);
+    tiered["pricing"]["input_tiers"] = json!([{"cost": "0.4", "min": 0}]);
+    env.gateway.set_catalog(
+        vec![
+            tiered,
+            mocks::catalog_entry(
+                EXTRACTION_MODEL,
+                new_luna.0,
+                new_luna.1,
+                new_luna.2,
+                new_luna.3,
+            ),
+        ],
+        vec![(
+            EXTRACTION_MODEL,
+            vec![mocks::endpoint_entry(
+                "openai", new_luna.0, new_luna.1, new_luna.2, new_luna.3,
+            )],
+        )],
+    );
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(prices(&env).await.len(), 3);
+
+    // A failing catalog keeps every known price in use indefinitely and keeps readiness.
+    env.gateway.models_fail.store(true, Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(prices(&env).await.len(), 3);
+    let ready = env
+        .fx
+        .http
+        .get(format!("{}/readyz", env.fx.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ready.status(), 200);
+    translating(&env, Some(UsageSpec::full(10, 1, 0, 0)));
+    env.fx
+        .ok(&key, TRANSLATE, env.translate_body(&["x"], None))
+        .await;
+    let metrics = env.fx.platform.metrics.encode();
+    assert!(
+        metrics.contains("delitools_failures_total{kind=\"catalog_sync\"}"),
+        "{metrics}"
+    );
+    assert!(metrics.contains("delitools_price_syncs_total{outcome=\"failed\"}"));
+    let events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operational_events WHERE category='price_sync_failure'",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert!(events >= 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn pending_usage_stops_at_thirty_days_and_is_deleted_in_every_state() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    env.delcore.fail_ingests(100);
+    translate_ok(&env, &key).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(env.delcore.accepted().is_empty());
+    let before = env.delcore.ingest_calls().len();
+
+    // created_at is immutable in production; the test schema lifts the trigger only to age rows.
+    sqlx::query("ALTER TABLE attempts DISABLE TRIGGER attempts_created_at")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    // Just inside the window the attempt is still retried ...
+    sqlx::query("UPDATE attempts SET created_at=now()-interval '30 days'+interval '1 minute', retry_at=now()-interval '1 second'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(env.delcore.ingest_calls().len(), before + 1);
+    // ... and at the expiry boundary it is neither retried nor kept: unconfirmed usage is lost.
+    sqlx::query("UPDATE attempts SET created_at=now()-interval '30 days', retry_at=now()-interval '1 second'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(
+        env.delcore.ingest_calls().len(),
+        before + 1,
+        "no delivery attempt after expiry"
+    );
+    let report = retention::sweep(&env.fx.pool, store::now()).await.unwrap();
+    assert!(report.total() >= 1);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM attempts")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+    env.finish().await;
+}

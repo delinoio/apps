@@ -71,12 +71,17 @@ impl Reply {
     }
     /// Decode the typed `delitools.v1.ErrorDetail` attached to an error.
     pub fn detail(&self) -> ErrorDetail {
-        assert_eq!(self.body["details"][0]["type"], "delitools.v1.ErrorDetail");
-        let raw = base64::engine::general_purpose::STANDARD_NO_PAD
-            .decode(self.body["details"][0]["value"].as_str().unwrap())
-            .unwrap();
-        ErrorDetail::decode_from_slice(&raw).unwrap()
+        detail_of(&self.body)
     }
+}
+
+/// Decode the typed `delitools.v1.ErrorDetail` of a Connect error body.
+pub fn detail_of(body: &Value) -> ErrorDetail {
+    assert_eq!(body["details"][0]["type"], "delitools.v1.ErrorDetail");
+    let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(body["details"][0]["value"].as_str().unwrap())
+        .unwrap();
+    ErrorDetail::decode_from_slice(&raw).unwrap()
 }
 
 pub fn id() -> Uuid {
