@@ -320,6 +320,68 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, pl
 	}
 }
 
+// A feature-only edit leaves the plan and add-on rows unchanged but replaces
+// their grants, so tenants without selections must be pinned first.
+func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforeFeatureOnlyEdit(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: true\n")
+	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
+	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil || len(me.Msg.Tenants) == 0 {
+		t.Fatal("personal tenant was not created", err)
+	}
+	tenantID := me.Msg.Tenants[0].Id
+	serviceID, _ := catalogIdentity(t, db, "service", "", "example-api")
+	planID, originalPlan := catalogIdentity(t, db, "plan", "", "legacy-plan")
+	addonID, originalAddOn := catalogIdentity(t, db, "addon", serviceID, "priority")
+	_, addonPrice := catalogIdentity(t, db, "price", "addon:"+addonID, "priority-monthly")
+	// A tenant created before catalog versioning has a plan and an add-on
+	// entitlement but no selection rows.
+	if _, err = db.Pool.Exec(ctx, "DELETE FROM tenant_catalog_selections WHERE tenant_id=$1", tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", tenantID, planID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,now()-interval '1 day')", key(), tenantID, addonPrice); err != nil {
+		t.Fatal(err)
+	}
+	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: false\n")
+	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
+	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, productID, original, want string
+	}{
+		{"plan", planID, originalPlan, `{"enabled": true}`},
+		{"add-on", addonID, originalAddOn, `{"limit": "10"}`},
+	} {
+		var active string
+		if err = db.Pool.QueryRow(ctx, "SELECT active_version_id::text FROM catalog_entities WHERE id=$1", tc.productID).Scan(&active); err != nil {
+			t.Fatal(err)
+		}
+		if active == tc.original {
+			t.Fatalf("%s feature edit did not create a new active version", tc.name)
+		}
+		var selected, value string
+		if err = db.Pool.QueryRow(ctx, `SELECT cs.version_id::text,vf.value::text
+FROM tenant_catalog_selections cs JOIN catalog_version_features vf ON vf.version_id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, tc.productID).Scan(&selected, &value); err != nil {
+			t.Fatalf("legacy tenant was not snapshotted before the %s grants changed: %v", tc.name, err)
+		}
+		if selected == active || value != tc.want {
+			t.Fatalf("legacy tenant did not keep its previous %s grants: selected=%s value=%s active=%s", tc.name, selected, value, active)
+		}
+	}
+}
+
 func TestDevelopmentCatalogStoresExistsFilterInCanonicalForm(t *testing.T) {
 	db, client, _ := setup(t)
 	ctx := context.Background()

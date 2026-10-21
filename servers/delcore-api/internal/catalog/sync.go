@@ -50,7 +50,7 @@ func Sync(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logg
 	}
 	counts := map[string]int{}
 	err = db.Transaction(ctx, func(tx pgx.Tx) error {
-		if err := snapshotLegacyPlans(ctx, tx, items); err != nil {
+		if err := snapshotLegacyProducts(ctx, tx, items); err != nil {
 			return err
 		}
 		if err := validateDatabase(ctx, tx, items); err != nil {
@@ -132,42 +132,50 @@ func Sync(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logg
 	return nil
 }
 
-// snapshotLegacyPlans keeps tenants that predate catalog versioning on their
-// current plan policy. Such tenants have no selection row and read free,
-// postpaid and rank from the mutable plan row, so each declared plan that
-// already exists, differs from its declaration and still has a legacy tenant
-// is snapshotted before validation or application changes the row. Unchanged
-// plans are skipped so reapplying the same files creates no extra version.
-func snapshotLegacyPlans(ctx context.Context, tx pgx.Tx, items []definition) error {
+// snapshotLegacyProducts keeps tenants that predate catalog versioning on
+// their current plan and add-on policy. Such tenants have no selection row and
+// read the mutable plan row and product feature grants, which synchronization
+// replaces even when only a declared feature changes. Each declared plan or
+// add-on that already exists and still has such a tenant is therefore
+// snapshotted before validation or application changes it, matching PutPlan
+// and PutAddOn. The snapshot records the current definition, so reapplying
+// unchanged files reselects the same version instead of creating another one.
+func snapshotLegacyProducts(ctx context.Context, tx pgx.Tx, items []definition) error {
+	now := time.Now().UTC()
 	for _, item := range items {
-		if item.Kind != "plan" {
-			continue
-		}
 		var id string
-		err := tx.QueryRow(ctx, "SELECT id::text FROM catalog_entities WHERE kind='plan' AND scope='' AND key=$1", item.Key).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		defaultFree := item.DefaultFree != nil && *item.DefaultFree
-		postpaid := item.Postpaid != nil && *item.Postpaid
 		var needed bool
-		err = tx.QueryRow(ctx, `SELECT (p.name,p.rank,p.free,p.is_default,p.postpaid) IS DISTINCT FROM ($2::text,$3::integer,$4::boolean,$5::boolean,$6::boolean)
- AND EXISTS(SELECT 1 FROM tenants t WHERE t.plan_id=p.id AND NOT EXISTS (
+		var err error
+		switch item.Kind {
+		case "plan":
+			err = tx.QueryRow(ctx, `SELECT p.id::text, EXISTS(SELECT 1 FROM tenants t WHERE t.plan_id=p.id AND NOT EXISTS (
    SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=t.id AND cs.product_id=t.plan_id AND cs.ends_at IS NULL))
- FROM plans p WHERE p.id=$1`, id, item.Name, *item.Rank, *item.Free, defaultFree, postpaid).Scan(&needed)
-		if errors.Is(err, pgx.ErrNoRows) {
+ FROM catalog_entities ce JOIN plans p ON p.id=ce.id
+ WHERE ce.kind='plan' AND ce.scope='' AND ce.key=$1`, item.Key).Scan(&id, &needed)
+		case "addon":
+			err = tx.QueryRow(ctx, `SELECT a.id::text, EXISTS(SELECT 1 FROM entitlements en JOIN prices p ON p.id=en.price_id
+   WHERE en.ends_at IS NULL AND p.addon_id=a.id AND NOT EXISTS (
+     SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=en.tenant_id AND cs.product_id=a.id AND cs.ends_at IS NULL))
+ FROM catalog_entities ce
+ JOIN catalog_entities se ON se.kind='service' AND se.scope='' AND se.key=$2 AND ce.scope=se.id::text
+ JOIN addons a ON a.id=ce.id AND a.service_id=se.id
+ WHERE ce.kind='addon' AND ce.key=$1`, item.Key, item.Service).Scan(&id, &needed)
+		default:
+			continue
+		}
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && !needed {
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		if needed {
-			if err = postgres.SnapshotLegacyPlanSelections(ctx, tx, id, time.Now().UTC()); err != nil {
-				return err
-			}
+		if item.Kind == "plan" {
+			err = postgres.SnapshotLegacyPlanSelections(ctx, tx, id, now)
+		} else {
+			err = postgres.SnapshotLegacyAddOnSelections(ctx, tx, id, now)
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
