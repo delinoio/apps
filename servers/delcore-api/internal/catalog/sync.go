@@ -425,26 +425,20 @@ func applyItem(ctx context.Context, tx pgx.Tx, d definition) error {
 func applyMeter(ctx context.Context, tx pgx.Tx, d definition, id, serviceID string) error {
 	filters := make([]*pb.MeterFilter, 0, len(d.Filters))
 	for _, item := range d.Filters {
-		values := make([]string, 0, len(item.Values))
-		for _, value := range item.Values {
-			values = append(values, value.Value)
+		filter := &pb.MeterFilter{Attribute: item.Attribute, Operator: operators[item.Operator]}
+		for _, node := range item.Values {
+			value, err := operand(node, item.Operator)
+			if err != nil {
+				return err
+			}
+			filter.TypedValues = append(filter.TypedValues, value)
 		}
-		// YAML presence checks take no values, but the server represents an
-		// existence filter with exactly one boolean value; store that form so the
-		// definition validates through PutMeter and the metering engine.
-		if item.Operator == "exists" && len(values) == 0 {
-			values = []string{"true"}
-		}
-		if item.Operator == "in" {
-			sort.Strings(values)
-		}
-		filters = append(filters, &pb.MeterFilter{Attribute: item.Attribute, Operator: operators[item.Operator], Values: values})
+		filters = append(filters, filter)
 	}
-	sort.Slice(filters, func(i, j int) bool {
-		a, _ := json.Marshal(filters[i])
-		b, _ := json.Marshal(filters[j])
-		return string(a) < string(b)
-	})
+	filters, err := events.CanonicalFilters(filters)
+	if err != nil {
+		return err
+	}
 	groups := append([]string(nil), d.GroupBy...)
 	sort.Strings(groups)
 	definition := struct {

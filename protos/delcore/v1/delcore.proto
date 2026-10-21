@@ -193,10 +193,40 @@ enum MeterFilterOperator {
   METER_FILTER_OPERATOR_LESS_OR_EQUAL = 7;
   METER_FILTER_OPERATOR_EXISTS = 8;
 }
+// MeterFilterValueKind is the scalar type of a typed filter operand. It uses
+// the scalar types of AttributeValue.
+enum MeterFilterValueKind {
+  METER_FILTER_VALUE_KIND_UNSPECIFIED = 0;
+  METER_FILTER_VALUE_KIND_STRING = 1;
+  // A canonical decimal string, never a binary float.
+  METER_FILTER_VALUE_KIND_NUMBER = 2;
+  // "true" or "false".
+  METER_FILTER_VALUE_KIND_BOOLEAN = 3;
+}
+// MeterFilterValue is one typed filter operand. An operand equals an event
+// attribute only when both the scalar type and the canonical value are equal.
+message MeterFilterValue {
+  MeterFilterValueKind kind = 1;
+  string value = 2;
+}
+// MeterFilter is one AND-combined condition on a flat event attribute.
+//
+// Operands come from exactly one of values and typed_values; supplying both is
+// invalid. values holds untyped operands: string operands for equal,
+// not_equal, and in; one canonical decimal for numeric comparisons; and, for
+// exists, either no operand or one "true" or "false" operand. typed_values
+// holds operands with explicit scalar types, which lets equal, not_equal,
+// and in compare number and boolean attributes. Numeric comparisons take one
+// number operand and exists takes at most one boolean operand. exists without
+// an operand means the attribute must be present. GetCatalog returns the
+// canonical form: string-only operands, numeric comparisons, and exists use
+// values; number or boolean operands of equal, not_equal, and in use
+// typed_values.
 message MeterFilter {
   string attribute = 1;
   MeterFilterOperator operator = 2;
   repeated string values = 3;
+  repeated MeterFilterValue typed_values = 4;
 }
 enum FeatureKind {
   FEATURE_KIND_UNSPECIFIED = 0;

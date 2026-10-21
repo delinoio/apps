@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
-	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"sort"
 )
@@ -64,36 +63,15 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 				return e
 			}
 		}
-		filters := make([]*pb.MeterFilter, 0, len(m.Filters))
 		for _, filter := range m.Filters {
-			if filter == nil || filter.Attribute == "" || filter.Operator < pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL || filter.Operator > pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS {
+			if filter == nil || filter.Attribute == "" || filter.Operator < pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL || filter.Operator > pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS || len(filter.Values)+len(filter.TypedValues) > 100 {
 				return invalid("invalid meter filter")
 			}
-			item := &pb.MeterFilter{Attribute: filter.Attribute, Operator: filter.Operator, Values: append([]string(nil), filter.Values...)}
-			switch item.Operator {
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN:
-				sort.Strings(item.Values)
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER,
-				pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL,
-				pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS,
-				pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS_OR_EQUAL:
-				// Store the canonical decimal so equivalent spellings such as
-				// 1.0 and 1.00 hash to the same immutable definition.
-				for i, value := range item.Values {
-					number, err := metering.Number(value)
-					if err != nil {
-						return invalid("numeric meter filter requires a decimal value")
-					}
-					item.Values[i] = number.Text
-				}
-			}
-			filters = append(filters, item)
 		}
-		sort.Slice(filters, func(i, j int) bool {
-			a, _ := json.Marshal(filters[i])
-			b, _ := json.Marshal(filters[j])
-			return string(a) < string(b)
-		})
+		filters, e := events.CanonicalFilters(m.Filters)
+		if e != nil {
+			return invalid(e.Error())
+		}
 		groups := append([]string(nil), m.GroupBy...)
 		sort.Strings(groups)
 		for i, group := range groups {

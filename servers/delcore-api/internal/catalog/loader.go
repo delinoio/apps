@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
+	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"go.yaml.in/yaml/v4"
@@ -337,15 +339,50 @@ func validateFilter(item filter) error {
 		return errors.New("filter requires the expected number of values")
 	}
 	for _, value := range item.Values {
-		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" || len(value.Value) > 4096 {
-			return errors.New("filter values must be quoted string scalars")
+		typed, err := operand(value, item.Operator)
+		if err != nil {
+			return err
 		}
-		if item.Operator != "equal" && item.Operator != "not_equal" && item.Operator != "in" {
-			decimal, err := accounting.Parse(value.Value)
-			if err != nil || decimal.String() != value.Value {
-				return errors.New("numeric filter values must be canonical decimals")
-			}
+		comparison := item.Operator != "equal" && item.Operator != "not_equal" && item.Operator != "in"
+		if comparison && typed.Kind != pb.MeterFilterValueKind_METER_FILTER_VALUE_KIND_NUMBER {
+			return errors.New("numeric filter values must be canonical decimals")
 		}
 	}
 	return nil
+}
+
+// operand converts one YAML filter scalar to a typed operand. A quoted scalar
+// is a string, except that numeric comparisons also accept a quoted canonical
+// decimal. Unquoted integers and decimals are numbers and must be canonical
+// decimals; YAML exponents and special floats are rejected. Unquoted true and
+// false are booleans.
+func operand(node yaml.Node, operator string) (*pb.MeterFilterValue, error) {
+	if node.Kind != yaml.ScalarNode || len(node.Value) > 4096 {
+		return nil, errors.New("filter values must be scalars of at most 4096 bytes")
+	}
+	comparison := operator != "equal" && operator != "not_equal" && operator != "in"
+	number := func() (*pb.MeterFilterValue, error) {
+		decimal, err := accounting.Parse(node.Value)
+		if err != nil || decimal.String() != node.Value {
+			return nil, errors.New("numeric filter values must be canonical decimals")
+		}
+		return &pb.MeterFilterValue{Kind: pb.MeterFilterValueKind_METER_FILTER_VALUE_KIND_NUMBER, Value: node.Value}, nil
+	}
+	switch node.Tag {
+	case "!!str":
+		if comparison {
+			return number()
+		}
+		return &pb.MeterFilterValue{Kind: pb.MeterFilterValueKind_METER_FILTER_VALUE_KIND_STRING, Value: node.Value}, nil
+	case "!!int", "!!float":
+		return number()
+	case "!!bool":
+		var value bool
+		if err := node.Decode(&value); err != nil {
+			return nil, errors.New("invalid boolean filter value")
+		}
+		return &pb.MeterFilterValue{Kind: pb.MeterFilterValueKind_METER_FILTER_VALUE_KIND_BOOLEAN, Value: strconv.FormatBool(value)}, nil
+	default:
+		return nil, errors.New("filter values must be strings, canonical decimal numbers, or booleans")
+	}
 }

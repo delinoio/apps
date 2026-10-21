@@ -242,8 +242,9 @@ var aggregations = map[pb.MeterAggregation]metering.Aggregation{
 }
 
 // CatalogDefinition converts catalog meter fields to a validated metering
-// definition. Equality and membership filters compare string scalars, numeric
-// comparisons use one decimal, and existence takes one boolean.
+// definition. Filter operands follow the MeterFilter protocol rules: untyped
+// values compare as strings, typed values keep their scalar type, numeric
+// comparisons use one number, and existence takes at most one boolean.
 func CatalogDefinition(key, eventType string, aggregation pb.MeterAggregation, valueAttribute string, filters []*pb.MeterFilter, groupBy []string) (metering.Definition, error) {
 	kind, ok := aggregations[aggregation]
 	if !ok {
@@ -251,60 +252,9 @@ func CatalogDefinition(key, eventType string, aggregation pb.MeterAggregation, v
 	}
 	definition := metering.Definition{Key: key, EventType: eventType, Aggregation: kind, ValueAttribute: valueAttribute, GroupBy: append([]string(nil), groupBy...)}
 	for _, filter := range filters {
-		if filter == nil {
-			return metering.Definition{}, errors.New("invalid meter filter")
-		}
-		item := metering.Filter{Attribute: filter.Attribute}
-		switch filter.Operator {
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL:
-			if len(filter.Values) != 1 {
-				return metering.Definition{}, errors.New("equal meter filters require one value")
-			}
-			item.Operator, item.Value = metering.Equal, metering.String(filter.Values[0])
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_NOT_EQUAL:
-			if len(filter.Values) != 1 {
-				return metering.Definition{}, errors.New("not-equal meter filters require one value")
-			}
-			item.Operator, item.Value = metering.NotEqual, metering.String(filter.Values[0])
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN:
-			if len(filter.Values) == 0 {
-				return metering.Definition{}, errors.New("in meter filters require values")
-			}
-			item.Operator = metering.In
-			item.Values = make([]metering.Value, 0, len(filter.Values))
-			for _, value := range filter.Values {
-				item.Values = append(item.Values, metering.String(value))
-			}
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS_OR_EQUAL:
-			if len(filter.Values) != 1 {
-				return metering.Definition{}, errors.New("numeric meter filters require one value")
-			}
-			value, err := metering.Number(filter.Values[0])
-			if err != nil {
-				return metering.Definition{}, errors.New("numeric meter filter requires a decimal value")
-			}
-			item.Value = value
-			switch filter.Operator {
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER:
-				item.Operator = metering.GreaterThan
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL:
-				item.Operator = metering.GreaterThanOrEqual
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS:
-				item.Operator = metering.LessThan
-			default:
-				item.Operator = metering.LessThanOrEqual
-			}
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS:
-			if len(filter.Values) != 1 || (filter.Values[0] != "true" && filter.Values[0] != "false") {
-				return metering.Definition{}, errors.New("exists meter filters require one boolean value")
-			}
-			item.Operator = metering.Exists
-			item.Value = metering.Boolean(filter.Values[0] == "true")
-		default:
-			return metering.Definition{}, errors.New("unknown meter filter operator")
+		item, err := domainFilter(filter)
+		if err != nil {
+			return metering.Definition{}, err
 		}
 		definition.Filters = append(definition.Filters, item)
 	}

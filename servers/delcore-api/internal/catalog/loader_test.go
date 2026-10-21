@@ -75,26 +75,29 @@ func TestCountMeterRejectsValueAttribute(t *testing.T) {
 
 func TestFilterLiteralValidation(t *testing.T) {
 	cases := []struct {
-		name, body string
-		valid      bool
+		name, operator, body string
+		valid                bool
 	}{
-		{"text", "values: [\"success\"]", true},
-		{"numeric", "values: [\"2.5\"]", true},
-		{"noncanonical", "values: [\"02.50\"]", false},
-		{"unquoted", "values: [2.5]", false},
-		{"exists-value", "values: [\"present\"]", false},
+		{"text", "equal", "values: [\"success\"]", true},
+		{"number-equal", "equal", "values: [5]", true},
+		{"boolean-not-equal", "not_equal", "values: [true]", true},
+		{"mixed-membership", "in", "values: [\"a\", 2.5, false]", true},
+		{"noncanonical-number-equal", "equal", "values: [2.50]", false},
+		{"exponent-number", "in", "values: [1e3]", false},
+		{"null-value", "equal", "values: [null]", false},
+		{"nested-value", "equal", "values: [[1]]", false},
+		{"numeric", "greater_than", "values: [\"2.5\"]", true},
+		{"unquoted-numeric", "greater_than", "values: [2.5]", true},
+		{"noncanonical", "greater_than", "values: [\"02.50\"]", false},
+		{"boolean-comparison", "less_than", "values: [true]", false},
+		{"text-comparison", "less_than", "values: [\"high\"]", false},
+		{"exists", "exists", "values: []", true},
+		{"exists-value", "exists", "values: [\"present\"]", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			operator := "greater_than"
-			if tc.name == "text" {
-				operator = "equal"
-			}
-			if tc.name == "exists-value" {
-				operator = "exists"
-			}
-			body := "kind: meter\nkey: requests\nservice: api\nevent_type: request\naggregation: count\nfilters:\n  - attribute: value\n    operator: " + operator + "\n    " + tc.body + "\n"
+			body := "kind: meter\nkey: requests\nservice: api\nevent_type: request\naggregation: count\nfilters:\n  - attribute: value\n    operator: " + tc.operator + "\n    " + tc.body + "\n"
 			put(t, dir, "meter.yaml", body)
 			_, err := load(dir)
 			if (err == nil) != tc.valid {
