@@ -3,10 +3,12 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
@@ -41,7 +43,9 @@ func aggregatePage(p *pb.Page) (int, string, error) {
 		return n, "", nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil || len(raw) == 0 || len(raw) > maxAggregateCursorBytes {
+	// The decoded cursor is compared with text group keys, so it must be
+	// UTF-8 without NUL bytes, which PostgreSQL text cannot hold.
+	if err != nil || len(raw) == 0 || len(raw) > maxAggregateCursorBytes || !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 {
 		return 0, "", invalid("invalid cursor")
 	}
 	return n, string(raw), nil

@@ -6,6 +6,7 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
@@ -142,7 +143,9 @@ func TestMeterAggregateQueries(t *testing.T) {
 			t.Fatalf("%s: %v", label, err)
 		}
 	}
-	for _, cursor := range []string{"!!", strings.Repeat("A", 1<<17)} {
+	// Cursors must decode to group-key text: "AA" is a NUL byte and "_w" is
+	// invalid UTF-8, which PostgreSQL text cannot hold.
+	for _, cursor := range []string{"!!", strings.Repeat("A", 1<<17), "AA", "_w", base64.RawURLEncoding.EncodeToString([]byte("m\x00"))} {
 		if _, err := f.aggregates(aggregateQuery{token: "service", tenant: f.alpha, meter: "calls"}, cursor); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("cursor accepted: %v", err)
 		}
