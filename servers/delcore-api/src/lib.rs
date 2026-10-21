@@ -369,10 +369,10 @@ impl Server {
             });
             event_span.record("delcore.outcome", outcome.as_str());
             event_span.record("delcore.error_reason", telemetry::reason(reason));
-            if let Ok(value) = &result {
-                if let Some(revision) = value["revision"].as_i64() {
-                    event_span.record("delcore.event.revision", revision);
-                }
+            if let Ok(value) = &result
+                && let Some(revision) = value["revision"].as_i64()
+            {
+                event_span.record("delcore.event.revision", revision);
             }
             if op == Op::IngestEvent {
                 self.metrics.event_ingested(outcome, reason);
