@@ -22,6 +22,12 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 		if !canonical(q.TenantId) || !canonical(q.UserId) {
 			return invalid("invalid tenant or user ID")
 		}
+		// Feature authorization is additive: an empty feature key leaves the
+		// permission and billing result below unchanged.
+		feature, fe := c.featureRequest(q)
+		if fe != nil {
+			return fe
+		}
 		var allowed bool
 		e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM members m JOIN tenants t ON t.id=m.tenant_id JOIN users u ON u.id=m.user_id JOIN services s ON s.id=$3
  WHERE m.tenant_id=$1 AND m.user_id=$2 AND u.withdrawing_at IS NULL AND t.deleted_at IS NULL AND $4=ANY(s.capabilities)
@@ -69,6 +75,9 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 					o.Reasons = append(o.Reasons, v.reason)
 				}
 			}
+		}
+		if e = c.authorizeFeature(feature, q.TenantId, o); e != nil {
+			return e
 		}
 		o.Allowed = len(o.Reasons) == 0
 		return nil
