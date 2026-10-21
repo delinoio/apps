@@ -435,6 +435,49 @@ func TestSubscriptionRejectsPartialActivePriceSet(t *testing.T) {
 	}
 }
 
+func TestSubscriptionComparesLegacyAndCatalogPricesInOneDomain(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	if _, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare default mixed plan", Plan: &pb.Plan{Key: "mixed-default", Name: "Mixed Default", Free: true, DefaultFree: true}}, "owner")); err != nil {
+		t.Fatal(err)
+	}
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare mixed price service", Service: &pb.Service{Key: "mixed-price-service", Name: "Mixed Price Service", ClientId: "mixed-price", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	for _, meter := range []string{"legacy-units", "requests"} {
+		if _, err = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare mixed price meter", Meter: &pb.Meter{ServiceId: serviceID, Name: meter}}, "owner")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare mixed price plan", Plan: &pb.Plan{Key: "mixed-price-plan", Name: "Mixed Price Plan", Rank: 1, Free: true}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPriceID := key()
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, legacyPriceID, plan.Msg.Plan.Id, serviceID, "legacy-units", "1", "0", "USD", "", time.Now().UTC(), 1); err != nil {
+		t.Fatal(err)
+	}
+	catalogPrice, err := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "declare keyed mixed price", Price: &pb.Price{Key: "requests-usd", PlanId: plan.Msg.Plan.Id, ServiceId: serviceID, Meter: "requests", UnitPrice: "2", Included: "0", Currency: "USD"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := me.Msg.Tenants[0].Id
+	_, err = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan.Msg.Plan.Id, PriceIds: []string{legacyPriceID}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("legacy-only selection omitted the active catalog price: %v", err)
+	}
+	if _, err = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan.Msg.Plan.Id, PriceIds: []string{legacyPriceID, catalogPrice.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner")); err != nil {
+		t.Fatalf("complete legacy and catalog price set rejected: %v", err)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string

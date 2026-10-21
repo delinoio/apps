@@ -208,19 +208,17 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			if err != nil {
 				return err
 			}
-			catalogRequested := make([]string, 0, len(requested))
-			for _, priceID := range requested {
-				var catalogPrice bool
-				if err := c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM catalog_versions WHERE id=$1)", priceID).Scan(&catalogPrice); err != nil {
-					return err
-				}
-				if catalogPrice {
-					catalogRequested = append(catalogRequested, priceID)
-				}
+			// Legacy price rows have no catalog version and may postdate the
+			// product snapshot, so compare both sets only by their catalog
+			// prices. Every catalog price in the active version must be selected.
+			var catalogRequested, catalogActive []string
+			if err := c.tx.QueryRow(c.ctx, "SELECT COALESCE(array_agg(id::text ORDER BY id::text),'{}') FROM catalog_versions WHERE id=ANY($1::uuid[])", requested).Scan(&catalogRequested); err != nil {
+				return err
 			}
-			sort.Strings(catalogRequested)
-			sort.Strings(active)
-			if len(catalogRequested) > 0 && !slices.Equal(catalogRequested, active) {
+			if err := c.tx.QueryRow(c.ctx, "SELECT COALESCE(array_agg(id::text ORDER BY id::text),'{}') FROM catalog_versions WHERE id=ANY($1::uuid[])", active).Scan(&catalogActive); err != nil {
+				return err
+			}
+			if !slices.Equal(catalogRequested, catalogActive) {
 				return invalid("selected prices must match the active product version")
 			}
 		}
