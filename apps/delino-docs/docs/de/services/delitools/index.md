@@ -14,6 +14,7 @@ Rufen Sie DeliTools aus serverseitigem Code oder von der Befehlszeile aus auf, m
 # Translate two texts into Korean. Detect the input language.
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextArray" \
   --header "Content-Type: application/json" \
+  --header "Connect-Protocol-Version: 1" \
   --header "Authorization: Bearer $DELITOOLS_KEY" \
   --data '{"tenantId":"<tenant-id>","outputLanguage":"ko","model":"<allowed-model>","texts":["Good morning","Where is the station?"]}'
 ```
@@ -67,6 +68,7 @@ Die Antwort enthält `requestId` und `jsonData`, eine JSON-Zeichenfolge, die Del
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/ExtractDataFromText" \
   --header "Content-Type: application/json" \
+  --header "Connect-Protocol-Version: 1" \
   --header "Authorization: Bearer $DELITOOLS_KEY" \
   --data '{"tenantId":"<tenant-id>","text":"Ada Lovelace lives in London.","jsonSchema":"{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"city\":{\"type\":\"string\"}},\"required\":[\"name\",\"city\"],\"additionalProperties\":false}"}'
 ```
@@ -178,6 +180,7 @@ Jede Anfrage wird außerdem anhand Ihres Mandanten in Delcore geprüft. Der Mand
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
   --header "Content-Type: application/json" \
+  --header "Connect-Protocol-Version: 1" \
   --header "Authorization: Bearer $DELINO_TOKEN" \
   --data '{"tenantId":"<tenant-id>","kind":"KEY_KIND_SERVICE","capabilities":["CAPABILITY_TRANSLATOR"]}'
 ```
