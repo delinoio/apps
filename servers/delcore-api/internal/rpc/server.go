@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/apps/servers/delcore-api/internal/auth"
 	"github.com/delinoio/apps/servers/delcore-api/internal/config"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
+	"github.com/delinoio/apps/servers/delcore-api/internal/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,6 +33,8 @@ type Server struct {
 	Config config.Config
 	Log    *slog.Logger
 	Now    func() time.Time
+	// Metrics is optional; nil records no counters.
+	Metrics *telemetry.Metrics
 }
 type call struct {
 	ctx                               context.Context

@@ -6,10 +6,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
+	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
+	"github.com/delinoio/apps/servers/delcore-api/internal/telemetry"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // MeteringBatch bounds the metering jobs processed in one worker step so other
@@ -41,6 +47,7 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	var j job
 	var applied events.Applied
 	var entries int
+	started := time.Now()
 	// Bound one transition; a timeout is a transient, retried failure.
 	jobCtx, cancelJob := context.WithTimeout(ctx, w.Config.Timeout())
 	defer cancelJob()
@@ -77,16 +84,28 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	if errors.Is(err, errNoMeteringWork) {
 		return false, nil
 	}
+	// The span starts at the claim attempt but is created only for claimed
+	// work, so an idle worker emits no spans. It carries the job ID and
+	// bounded values only, never tenant or event IDs or attributes.
+	_, span := telemetry.Tracer().Start(ctx, telemetry.SpanMeteringProcess, trace.WithTimestamp(started))
+	defer span.End()
+	if j.ID != "" {
+		span.SetAttributes(attribute.String("delcore.job_id", j.ID), attribute.Int("delcore.job.attempt", j.Attempts+1))
+	}
 	if err == nil {
+		w.Metrics.MeteringJob(telemetry.OutcomeApplied, "", time.Since(started))
+		span.SetAttributes(attribute.String("delcore.outcome", string(telemetry.OutcomeApplied)), attribute.Int("delcore.metering.changed_groups", len(applied.Changes)), attribute.Int("delcore.metering.rating_differences", entries))
 		w.Log.DebugContext(ctx, "metering work applied", "category", "metering_processing", "job_id", j.ID, "from_revision", applied.FromRevision, "to_revision", applied.ToRevision, "changed_groups", len(applied.Changes), "rating_differences", entries)
 		return true, nil
 	}
 	if j.ID == "" {
+		span.SetStatus(codes.Error, "database")
 		return false, err
 	}
 	if ctx.Err() != nil {
 		// Shutdown rolled back the attempt; the job stays pending without
 		// consuming its retry budget.
+		span.SetStatus(codes.Error, "shutdown")
 		return false, ctx.Err()
 	}
 	state, category := "pending", "metering_transient"
@@ -98,14 +117,26 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	case j.Attempts+1 >= w.Config.RetryLimit:
 		state, category = "failed", "retry_exhausted"
 	}
+	outcome := telemetry.OutcomeDeferred
+	if state == "failed" {
+		outcome = telemetry.OutcomeFailed
+	}
+	w.Metrics.MeteringJob(outcome, category, time.Since(started))
+	span.SetAttributes(attribute.String("delcore.outcome", string(outcome)), attribute.String("delcore.failure_category", category))
+	span.SetStatus(codes.Error, category)
 	w.Log.WarnContext(ctx, "metering work deferred", "category", category, "state", state, "job_id", j.ID, "attempts", j.Attempts+1)
 	// Record the attempt with a fresh bound after the processing transaction
 	// rolled back, including after its own timeout.
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.Config.Timeout())
 	defer cancel()
 	if e := w.DB.Transaction(recordCtx, func(tx pgx.Tx) error {
-		_, e := tx.Exec(recordCtx, "UPDATE jobs SET state=$2,error_category=$3,attempts=attempts+1,available_at=$4,updated_at=now(),failed_at=now() WHERE id=$1 AND state='pending'", j.ID, state, category, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
-		return e
+		tag, e := tx.Exec(recordCtx, "UPDATE jobs SET state=$2,error_category=$3,attempts=attempts+1,available_at=$4,updated_at=now(),failed_at=now() WHERE id=$1 AND state='pending'", j.ID, state, category, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
+		if e != nil || state != "failed" || tag.RowsAffected() != 1 {
+			return e
+		}
+		// A permanent failure is a state change that waits for an operator;
+		// audit it as system work. Transient deferrals are not audited.
+		return postgres.Audit(recordCtx, tx, postgres.ActorMetering, j.Tenant, "metering.failed", fmt.Sprintf("category=%s attempts=%d", category, j.Attempts+1), id(), time.Now().UTC())
 	}); e != nil {
 		return false, e
 	}

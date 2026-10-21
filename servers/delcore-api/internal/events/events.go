@@ -41,11 +41,22 @@ const (
 	ReasonPeriodUnavailable
 )
 
+// Limit names the admission bound behind a ReasonCardinalityExceeded rejection.
+type Limit int
+
+const (
+	LimitNone Limit = iota
+	LimitGroups
+	LimitDistinctValues
+)
+
 // Error is a request rejection. Message never contains attribute values,
 // credentials, or tenant identifiers.
 type Error struct {
 	Reason  Reason
 	Message string
+	// Limit is set for cardinality rejections.
+	Limit Limit
 }
 
 func (e *Error) Error() string { return e.Message }

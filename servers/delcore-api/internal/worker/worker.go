@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/apps/servers/delcore-api/internal/provider"
+	"github.com/delinoio/apps/servers/delcore-api/internal/telemetry"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -32,6 +33,8 @@ type Worker struct {
 	// transition and its rating, and retries the job. Tests use it to simulate
 	// failures after rating.
 	MeteringApplied func(context.Context, pgx.Tx, events.Applied) error
+	// Metrics is optional; nil records no counters.
+	Metrics *telemetry.Metrics
 }
 type job struct {
 	ID, Tenant, Kind, State, ExternalID string

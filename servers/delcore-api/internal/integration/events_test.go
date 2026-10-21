@@ -27,6 +27,7 @@ import (
 	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/apps/servers/delcore-api/internal/rpc"
+	"github.com/delinoio/apps/servers/delcore-api/internal/telemetry"
 	"github.com/delinoio/apps/servers/delcore-api/internal/worker"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -62,19 +63,29 @@ func (f *meterFixture) setClock(at time.Time) {
 
 func newMeterFixture(t *testing.T, mutate func(*config.Config)) *meterFixture {
 	t.Helper()
+	return newObservedMeterFixture(t, mutate, nil, nil)
+}
+
+// newObservedMeterFixture lets telemetry tests capture the server and worker
+// logs and metrics. A nil logger discards logs; nil metrics record nothing.
+func newObservedMeterFixture(t *testing.T, mutate func(*config.Config), logger *slog.Logger, metrics *telemetry.Metrics) *meterFixture {
+	t.Helper()
 	db, _, cfg := setup(t)
 	if mutate != nil {
 		mutate(&cfg)
 	}
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	f := &meterFixture{db: db, cfg: cfg}
-	server := &rpc.Server{DB: db, Auth: verifier{}, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: f.now}
+	server := &rpc.Server{DB: db, Auth: verifier{}, Config: cfg, Log: logger, Now: f.now, Metrics: metrics}
 	path, handler := server.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	httpServer := httptest.NewServer(mux)
 	t.Cleanup(httpServer.Close)
 	f.client = delcorev1connect.NewDelcoreServiceClient(httpServer.Client(), httpServer.URL)
-	f.worker = &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	f.worker = &worker.Worker{DB: db, Config: cfg, Log: logger, Metrics: metrics}
 	_, f.tenant = bootstrap(t, f.client)
 	ctx := context.Background()
 	service, err := f.client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register metered service", Service: &pb.Service{Key: "metered", Name: "metered", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize", "usage:write", "usage:read"}}}, "owner"))

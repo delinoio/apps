@@ -37,6 +37,11 @@ func catalogFixture(t *testing.T) string {
 	}
 	return root
 }
+// syncCatalog applies a development catalog without metrics.
+func syncCatalog(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logger) error {
+	_, err := catalog.Sync(ctx, db, dir, logger, nil)
+	return err
+}
 func catalogText(t *testing.T, root, name string) string {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Join(root, name))
@@ -66,7 +71,7 @@ func TestDevelopmentCatalogSyncAtomicVersionedAndAuthoritative(t *testing.T) {
 	ctx := context.Background()
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sync := func() error { return catalog.Sync(ctx, db, root, logger) }
+	sync := func() error { return syncCatalog(ctx, db, root, logger) }
 	if err := sync(); err != nil {
 		t.Fatal(err)
 	}
@@ -205,18 +210,18 @@ func TestDevelopmentCatalogIgnoresTraversalOrderAndSwapsPlanRanks(t *testing.T) 
 	if err := os.Rename(filepath.Join(root, "06-price.yaml"), filepath.Join(root, "aa-price.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal("cross-file references depend on traversal order", err)
 	}
 	other := "kind: plan\nkey: other-free\nname: Other Free\nrank: 1\nfree: true\ndefault_free: false\n"
 	setCatalogText(t, root, "other.yaml", other)
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	original := catalogText(t, root, "zz-plan.yaml")
 	setCatalogText(t, root, "zz-plan.yaml", strings.Replace(original, "rank: 0", "rank: 1", 1))
 	setCatalogText(t, root, "other.yaml", strings.Replace(other, "rank: 1", "rank: 0", 1))
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal("rank swap failed despite a valid complete set", err)
 	}
 	for key, want := range map[string]int{"example-free": 1, "other-free": 0} {
@@ -233,14 +238,14 @@ func TestDevelopmentCatalogPriceOnlyRebuildsOmittedOwner(t *testing.T) {
 	ctx := context.Background()
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	planID, original := catalogIdentity(t, db, "plan", "", "example-free")
 	priceOnly := t.TempDir()
 	body := catalogText(t, root, "06-price.yaml")
 	setCatalogText(t, priceOnly, "only-price.yml", strings.Replace(body, "unit_price: \"0.01\"", "unit_price: \"0.04\"", 1))
-	if err := catalog.Sync(ctx, db, priceOnly, logger); err != nil {
+	if err := syncCatalog(ctx, db, priceOnly, logger); err != nil {
 		t.Fatal(err)
 	}
 	if _, version := catalogIdentity(t, db, "plan", "", "example-free"); version == original {
@@ -257,13 +262,13 @@ func TestDevelopmentCatalogCannotMutateOmittedDefaultPlan(t *testing.T) {
 	ctx := context.Background()
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	originalID, originalVersion := catalogIdentity(t, db, "plan", "", "example-free")
 	other := t.TempDir()
 	setCatalogText(t, other, "replacement.yaml", "kind: plan\nkey: replacement\nname: Replacement\nrank: 1\nfree: true\ndefault_free: true\n")
-	if err := catalog.Sync(ctx, db, other, logger); err == nil {
+	if err := syncCatalog(ctx, db, other, logger); err == nil {
 		t.Fatal("omitted default plan was silently changed")
 	}
 	var isDefault bool
@@ -286,7 +291,7 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforePlanEdit(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	legacy := "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\n"
 	setCatalogText(t, root, "legacy.yaml", legacy)
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
@@ -303,7 +308,7 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforePlanEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: false\npostpaid: true\n")
-	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+	if err = syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	_, active := catalogIdentity(t, db, "plan", "", "legacy-plan")
@@ -330,7 +335,7 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforeFeatureOnlyEdit(t *testin
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: true\n")
 	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
@@ -355,7 +360,7 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforeFeatureOnlyEdit(t *testin
 	}
 	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: false\n")
 	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
-	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+	if err = syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -392,7 +397,7 @@ func TestDevelopmentCatalogSnapshotsLegacyAddOnEndingInFuture(t *testing.T) {
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
@@ -413,7 +418,7 @@ func TestDevelopmentCatalogSnapshotsLegacyAddOnEndingInFuture(t *testing.T) {
 		t.Fatal(err)
 	}
 	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
-	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+	if err = syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	_, active := catalogIdentity(t, db, "addon", serviceID, "priority")
@@ -441,7 +446,7 @@ func TestDevelopmentCatalogStoresExistsFilterInCanonicalForm(t *testing.T) {
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	setCatalogText(t, root, "02-meter.yml", strings.Replace(catalogText(t, root, "02-meter.yml"), "filters:\n", "filters:\n  - attribute: trace\n    operator: exists\n", 1))
-	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
 	got, err := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
@@ -499,11 +504,11 @@ func TestDevelopmentCatalogTypesNameOnlyMetersUnderTheInUseRule(t *testing.T) {
 	meter("spare", "aggregation: count\nevent_type: spare-event\n")
 	// A used untyped meter accepts only its compatibility definition.
 	meter("units", "aggregation: count\nevent_type: units\n")
-	if err := catalog.Sync(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
+	if err := syncCatalog(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
 		t.Fatalf("used untyped meter changed its definition: %v", err)
 	}
 	meter("units", "aggregation: sum\nevent_type: units\nvalue_attribute: quantity\n")
-	if err := catalog.Sync(ctx, f.db, root, logger); err != nil {
+	if err := syncCatalog(ctx, f.db, root, logger); err != nil {
 		t.Fatal("name-only meters could not be typed: ", err)
 	}
 	for meterKey, eventType := range map[string]string{"spare": "spare-event", "units": "units"} {
@@ -515,7 +520,7 @@ func TestDevelopmentCatalogTypesNameOnlyMetersUnderTheInUseRule(t *testing.T) {
 	}
 	// Once typed, the declaration is immutable.
 	meter("spare", "aggregation: count\nevent_type: other-event\n")
-	if err := catalog.Sync(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
+	if err := syncCatalog(ctx, f.db, root, logger); err == nil || !strings.Contains(err.Error(), "immutable") {
 		t.Fatalf("typed meter changed its definition: %v", err)
 	}
 }

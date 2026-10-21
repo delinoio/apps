@@ -5,9 +5,11 @@ package rpc
 import (
 	"connectrpc.com/connect"
 	"context"
+	"errors"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"slices"
 	"sort"
@@ -488,7 +490,8 @@ func (s *Server) ListJobs(ctx context.Context, r *connect.Request[pb.ListJobsReq
 }
 func (s *Server) RetryJob(ctx context.Context, r *connect.Request[pb.RetryJobRequest]) (*connect.Response[pb.RetryJobResponse], error) {
 	o := &pb.RetryJobResponse{}
-	return run(s, ctx, r, o, func(c *call) error {
+	var retried string
+	response, e := run(s, ctx, r, o, func(c *call) error {
 		q := r.Msg
 		if e := c.operator(q.Reason); e != nil {
 			return e
@@ -499,15 +502,26 @@ func (s *Server) RetryJob(ctx context.Context, r *connect.Request[pb.RetryJobReq
 		// A payment with an unknown result always returns to reconciliation, never to
 		// a blind POST retry, even when an operator explicitly reprocesses the job.
 		// Metering work has no provider side effect and is reprocessed directly.
-		tag, e := c.tx.Exec(c.ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook','metering') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed'`, q.JobId, c.now)
+		var kind, category string
+		e := c.tx.QueryRow(c.ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook','metering') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed' RETURNING kind,error_category`, q.JobId, c.now).Scan(&kind, &category)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return precondition("job is not failed")
+		}
 		if e != nil {
 			return e
 		}
-		if tag.RowsAffected() != 1 {
-			return precondition("job is not failed")
+		if e = c.audit("", "job.retry", q.Reason); e != nil {
+			return e
 		}
-		return c.audit("", "job.retry", q.Reason)
+		retried = kind
+		// The operator reason stays in the audit record; logs carry bounded fields.
+		s.Log.InfoContext(c.ctx, "failed job returned to processing", "category", "operator_recovery", "correlation_id", c.correlation, "job_id", q.JobId, "kind", kind, "failure_category", category)
+		return nil
 	})
+	if e == nil && retried != "" {
+		s.Metrics.OperatorRetry(retried)
+	}
+	return response, e
 }
 func (s *Server) ListAudit(ctx context.Context, r *connect.Request[pb.ListAuditRequest]) (*connect.Response[pb.ListAuditResponse], error) {
 	o := &pb.ListAuditResponse{}

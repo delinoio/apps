@@ -5,12 +5,17 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
+	"github.com/delinoio/apps/servers/delcore-api/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -101,8 +106,12 @@ func wireAttributes(in map[string]metering.Value) map[string]*pb.AttributeValue 
 // IngestEvent persists an event and its processing work before acknowledging
 // it. The response does not promise updated aggregates.
 func (s *Server) IngestEvent(ctx context.Context, r *connect.Request[pb.IngestEventRequest]) (*connect.Response[pb.IngestEventResponse], error) {
+	ctx, span := telemetry.Tracer().Start(ctx, telemetry.SpanEventIngest)
+	defer span.End()
 	o := &pb.IngestEventResponse{}
-	return run(s, ctx, r, o, func(c *call) error {
+	var result eventResult
+	response, err := run(s, ctx, r, o, func(c *call) error {
+		result.correlation = c.correlation
 		if e := c.serviceScope("usage:write"); e != nil {
 			return e
 		}
@@ -116,19 +125,31 @@ func (s *Server) IngestEvent(ctx context.Context, r *connect.Request[pb.IngestEv
 		}
 		accepted, e := events.Ingest(c.ctx, c.tx, c.now, s.eventPolicy(), events.Input{TenantID: v.TenantId, ServiceID: c.service, Key: v.EventKey, Type: v.EventType, OccurredAt: v.OccurredAt.AsTime(), Attributes: values})
 		if e != nil {
+			errors.As(e, &result.rejection)
 			return eventError(e)
 		}
+		result.executed, result.accepted = true, accepted
 		o.EventId, o.Revision = accepted.EventID, accepted.Revision
 		s.Log.InfoContext(c.ctx, "metering event accepted", "category", "event_ingestion", "correlation_id", c.correlation, "service_id", c.service, "revision", accepted.Revision, "replayed", accepted.Replayed, "matched_meters", accepted.Meters)
 		return nil
 	})
+	outcome := result.outcome(err)
+	s.Metrics.EventIngested(outcome, err)
+	s.observeEvent(span, result, outcome, err)
+	return response, err
 }
 
 // CorrectEvent appends a replacement or cancellation with compare-and-set on
-// the latest revision.
+// the latest revision. Each new correction writes one audit record attributed
+// to the calling service; replays and rejections write none.
 func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.CorrectEventRequest]) (*connect.Response[pb.CorrectEventResponse], error) {
+	ctx, span := telemetry.Tracer().Start(ctx, telemetry.SpanEventCorrect)
+	defer span.End()
 	o := &pb.CorrectEventResponse{}
-	return run(s, ctx, r, o, func(c *call) error {
+	var result eventResult
+	kind := telemetry.CorrectionInvalid
+	response, err := run(s, ctx, r, o, func(c *call) error {
+		result.correlation = c.correlation
 		if e := c.serviceScope("usage:write"); e != nil {
 			return e
 		}
@@ -145,6 +166,7 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 		default:
 			return invalid("correction kind must be replace or cancel")
 		}
+		kind = telemetry.CorrectionKind(correction.Kind)
 		values, e := attributes(q.Attributes)
 		if e != nil {
 			return e
@@ -152,12 +174,71 @@ func (s *Server) CorrectEvent(ctx context.Context, r *connect.Request[pb.Correct
 		correction.Attributes = values
 		accepted, e := events.Correct(c.ctx, c.tx, c.now, s.eventPolicy(), correction)
 		if e != nil {
+			errors.As(e, &result.rejection)
 			return eventError(e)
 		}
+		result.executed, result.accepted = true, accepted
 		o.EventId, o.Revision = accepted.EventID, accepted.Revision
+		if !accepted.Replayed {
+			// Counts and the revision only; never the event key or content.
+			if e = c.audit(q.TenantId, "event.correct", fmt.Sprintf("kind=%s revision=%d matched_meters=%d", correction.Kind, accepted.Revision, accepted.Meters)); e != nil {
+				return e
+			}
+		}
 		s.Log.InfoContext(c.ctx, "metering correction accepted", "category", "event_correction", "correlation_id", c.correlation, "service_id", c.service, "kind", string(correction.Kind), "revision", accepted.Revision, "replayed", accepted.Replayed, "matched_meters", accepted.Meters)
 		return nil
 	})
+	outcome := result.outcome(err)
+	s.Metrics.EventCorrected(kind, outcome, err)
+	span.SetAttributes(attribute.String("delcore.correction.kind", string(kind)))
+	s.observeEvent(span, result, outcome, err)
+	return response, err
+}
+
+// eventResult carries the safe facts of one ingestion or correction request
+// out of its transaction for metrics and tracing.
+type eventResult struct {
+	correlation string
+	executed    bool
+	accepted    events.Accepted
+	rejection   *events.Error
+}
+
+func (r eventResult) outcome(err error) telemetry.Outcome {
+	switch {
+	case err != nil:
+		return telemetry.OutcomeRejected
+	// A request-key replay returns the cached response without running the
+	// handler; an event-identity replay runs it but has no new effect.
+	case !r.executed || r.accepted.Replayed:
+		return telemetry.OutcomeReplayed
+	default:
+		return telemetry.OutcomeAccepted
+	}
+}
+
+// observeEvent records cardinality rejections and annotates the span with
+// bounded values only: no tenant, event, or service IDs and no attributes.
+func (s *Server) observeEvent(span trace.Span, r eventResult, outcome telemetry.Outcome, err error) {
+	if err != nil && r.rejection != nil && r.rejection.Reason == events.ReasonCardinalityExceeded {
+		switch r.rejection.Limit {
+		case events.LimitGroups:
+			s.Metrics.CardinalityRejected(telemetry.LimitGroups)
+		case events.LimitDistinctValues:
+			s.Metrics.CardinalityRejected(telemetry.LimitDistinctValues)
+		}
+	}
+	span.SetAttributes(
+		attribute.String("delcore.correlation_id", r.correlation),
+		attribute.String("delcore.outcome", string(outcome)),
+		attribute.String("delcore.error_reason", telemetry.Reason(err)),
+	)
+	if r.executed {
+		span.SetAttributes(attribute.Int("delcore.event.revision", int(r.accepted.Revision)), attribute.Int("delcore.event.matched_meters", r.accepted.Meters))
+	}
+	if err != nil {
+		span.SetStatus(codes.Error, telemetry.Reason(err))
+	}
 }
 
 // GetEvent lets the owning service re-read the latest revision before a

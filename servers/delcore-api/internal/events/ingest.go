@@ -490,7 +490,7 @@ func acquire(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, c 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if limits.MaxGroupsPerMeter > 0 && groups[c.MeterID]+1 > limits.MaxGroupsPerMeter {
-			return reject(ReasonCardinalityExceeded, fmt.Sprintf("meter %q reached its group limit for the billing period", c.MeterKey))
+			return &Error{Reason: ReasonCardinalityExceeded, Limit: LimitGroups, Message: fmt.Sprintf("meter %q reached its group limit for the billing period", c.MeterKey)}
 		}
 		groups[c.MeterID]++
 		if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_groups(tenant_id,meter_id,period_start,group_digest,events,distinct_values) VALUES($1,$2,$3,$4,1,0)", tenant, c.MeterID, period, digest); err != nil {
@@ -511,7 +511,7 @@ func acquire(ctx context.Context, tx pgx.Tx, tenant string, period time.Time, c 
 		return err
 	}
 	if limits.MaxDistinctValuesPerGroup > 0 && distinct+1 > limits.MaxDistinctValuesPerGroup {
-		return reject(ReasonCardinalityExceeded, fmt.Sprintf("meter %q reached its distinct-value limit for a group", c.MeterKey))
+		return &Error{Reason: ReasonCardinalityExceeded, Limit: LimitDistinctValues, Message: fmt.Sprintf("meter %q reached its distinct-value limit for a group", c.MeterKey)}
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO metering_admission_values(tenant_id,meter_id,period_start,group_digest,value_kind,value,events) VALUES($1,$2,$3,$4,$5,$6,1)", tenant, c.MeterID, period, digest, string(c.Value.Kind), c.Value.Text); err != nil {
 		return err

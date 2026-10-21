@@ -209,7 +209,7 @@ The quantity reporting calls `ReportUsage` and `CorrectUsage` are retired. They 
 
 - Event identities, revisions, raw attributes, contributions, price attributions, aggregates, rated periods, and admission rows follow the raw-usage boundary. After a tenant's deletion is final and older than the raw-usage and accounting retention cutoff, maintenance copies replay identities into a separate table and removes those rows in one transaction. A tenant with unfinished metering work is skipped.
 - Recover a growing backlog by checking worker health, database availability, and `delcore_metering_lag_seconds`; accepted work remains durable while processing is stopped. Recover failed work by reading its category with `ListJobs`, correcting the cause, and calling `RetryJob`. A cardinality rejection is final for that content in that billing period; raise the operator bound and restart, or declare a new meter key with different grouping for future events. Rejected events leave nothing to clean up.
-- Logs record the correlation ID, calling service ID, correction kind, revision, replay flag, matched meter count, and typed rejection reason. Worker logs record job IDs, failure categories, attempt counts, and the number of appended rating differences. Logs never contain attribute values, event keys, tenant IDs, or credentials. Prometheus exposes `delcore_metering_backlog`, `delcore_metering_failed_jobs`, and `delcore_metering_lag_seconds` without labels.
+- Logs record the correlation ID, calling service ID, correction kind, revision, replay flag, matched meter count, and typed rejection reason. Worker logs record job IDs, failure categories, attempt counts, and the number of appended rating differences. Logs never contain attribute values, event keys, tenant IDs, or credentials. Prometheus exposes `delcore_metering_backlog`, `delcore_metering_failed_jobs`, and `delcore_metering_lag_seconds` without labels. The [logging](#logging) section lists the ingestion, correction, processing, recovery, and catalog counters, spans, and audit records.
 
 ### Rating and ledger reconciliation
 
@@ -283,6 +283,28 @@ Validate issuer, audience, signature, expiry and token purpose. Recheck current 
 ## Logging
 
 Use log/slog, safe correlation identifiers, bounded error categories, Prometheus and OpenTelemetry. Never place tenant, user, event or provider identifiers in metric labels.
+
+Catalog reconciliation, event ingestion, corrections, asynchronous metering, and operator recovery use these signals. Every label value comes from a fixed set; an unknown category or job kind becomes `other`. Typed `reason` labels are the lowercase `ErrorReason` name without its prefix, `none` on success, or `other`.
+
+| Signal                                            | Labels                                                      | Meaning                                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `delcore_catalog_reconciliations_total`           | `outcome`: `applied`, `unchanged`, `rejected`               | Development catalog applications. `applied` changed at least one catalog row. |
+| `delcore_catalog_reconciliation_duration_seconds` | none                                                        | Application duration, including rejected applications.                        |
+| `delcore_metering_ingestions_total`               | `outcome`: `accepted`, `replayed`, `rejected`; `reason`     | `IngestEvent` results. A request-key or event-identity replay is `replayed`.  |
+| `delcore_metering_corrections_total`              | `kind`: `replace`, `cancel`, `invalid`; `outcome`; `reason` | `CorrectEvent` results.                                                       |
+| `delcore_metering_cardinality_rejections_total`   | `limit`: `groups`, `distinct_values`                        | Events rejected by `MAX_METER_GROUPS` or `MAX_METER_GROUP_VALUES`.            |
+| `delcore_metering_jobs_total`                     | `outcome`: `applied`, `deferred`, `failed`; `category`      | Metering job attempts. `category` is `none` or the recorded failure category. |
+| `delcore_metering_processing_duration_seconds`    | `outcome`                                                   | Duration of one metering job attempt.                                         |
+| `delcore_operator_job_retries_total`              | `kind`: job kind                                            | Failed jobs that an operator returned to processing with `RetryJob`.          |
+
+OpenTelemetry spans `delcore.catalog.reconcile`, `delcore.event.ingest`, `delcore.event.correct`, and `delcore.metering.process` carry the correlation ID or job ID, the outcome, the typed reason or failure category, and counts such as revision, matched meters, changed groups, files, and created versions. They never carry tenant, user, event, or service IDs, event keys, attribute values, or credentials. An idle worker step creates no metering span.
+
+Audit records cover state changes without one row per ingested event:
+
+- `catalog.reconcile`: one record per development application that changed catalog state, attributed to `system:catalog`, without a tenant. The reason lists file and per-kind declaration counts and created entity and version counts. An unchanged or rejected application writes none.
+- `event.correct`: one record per new correction, attributed to the calling `service:<id>` with the event's tenant. The reason holds the correction kind, new revision, and matched meter count, never the event key or content. Replays and rejected corrections write none.
+- `metering.failed`: one record when metering work fails permanently or exhausts retries, attributed to `system:metering` with the tenant. The reason holds the failure category and attempt count. Transient deferrals write none.
+- `job.retry`: the operator `RetryJob` record with the operator reason. Its log records the job ID, job kind, and previous failure category, not the reason.
 
 ## Build and Test
 
