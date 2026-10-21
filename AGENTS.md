@@ -55,6 +55,7 @@
 
 ## Monorepo Structure Map
 
+- `go/`: Independent Go client modules; follow `go/AGENTS.md`.
 - `servers/`: Delcore, DevBase and Git Tracker services, migrations and OCI packaging; follow `servers/AGENTS.md`.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.

@@ -46,6 +46,11 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project catalog
 
+### clairic
+
+- [Project index](project-clairic.md)
+- [Go client](packages-clairic-client-contract.md)
+
 ### delcore
 
 - [Project index](project-delcore.md)

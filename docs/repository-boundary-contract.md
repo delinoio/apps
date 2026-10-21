@@ -8,6 +8,8 @@ The Delcore protocol is `protos/delcore/v1`, with Go import path `github.com/del
 
 ## Contribution boundary
 
+Independent Go client libraries under `go/` own separate modules. They do not consume repository server or protocol packages. Run their checks from each module directory; the root Go module does not traverse them. See the [Clairic project](project-clairic.md).
+
 Client, protocol and server contributions use one checkout, branch and review. No separate private repository access, companion checkout, `DELINO_APPS_DIR`, `client:setup`, protocol dependency pin or local `go.work` is required. Do not commit absolute paths or local `replace` directives.
 
 Read root and affected scoped instructions. Keep public client behavior and protocol requirements in their owning contracts and server implementation details in root server contracts. Public product documentation describes supported behavior and interfaces. Review and CI records must exclude credentials, user state and raw account data. Live provider credentials are not prerequisites for fixture-based contributions.
