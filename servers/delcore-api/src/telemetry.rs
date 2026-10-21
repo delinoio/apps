@@ -37,7 +37,7 @@ pub enum CorrectionKind {
     Invalid,
 }
 impl CorrectionKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Replace => "replace",
             Self::Cancel => "cancel",

@@ -99,6 +99,7 @@ impl Call<'_> {
                 };
                 let policy = self.event_policy();
                 let a = events::ingest(self.tx, self.now, &policy, input).await?;
+                tracing::Span::current().record("delcore.event.matched_meters", a.meters);
                 tracing::info!(category="event_ingestion",correlation_id=%self.correlation,revision=a.revision,replayed=a.replayed,matched_meters=a.meters,"metering event accepted");
                 Ok(json!({"eventId":a.event_id,"revision":a.revision,"_replayed":a.replayed}))
             }
@@ -144,6 +145,7 @@ impl Call<'_> {
                     )
                     .await?;
                 }
+                tracing::Span::current().record("delcore.event.matched_meters", a.meters);
                 tracing::info!(category="event_correction",correlation_id=%self.correlation,kind=kind.as_str(),revision=a.revision,replayed=a.replayed,matched_meters=a.meters,"metering correction accepted");
                 Ok(json!({"eventId":a.event_id,"revision":a.revision,"_replayed":a.replayed}))
             }

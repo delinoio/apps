@@ -22,6 +22,7 @@ use serde_json::{Value, json};
 
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
+use tracing::Instrument;
 
 pub type Result<T> = std::result::Result<T, Fault>;
 #[derive(Debug)]
@@ -259,6 +260,27 @@ impl Op {
         )
     }
 }
+fn event_span(op: Op, correlation: &str) -> tracing::Span {
+    macro_rules! span {
+        ($name:literal) => {
+            tracing::info_span!(
+                $name,
+                "delcore.correlation_id" = correlation,
+                "delcore.outcome" = tracing::field::Empty,
+                "delcore.error_reason" = tracing::field::Empty,
+                "delcore.event.revision" = tracing::field::Empty,
+                "delcore.event.matched_meters" = tracing::field::Empty,
+                "delcore.correction.kind" = tracing::field::Empty,
+            )
+        };
+    }
+    match op {
+        Op::IngestEvent => span!("delcore.event.ingest"),
+        Op::CorrectEvent => span!("delcore.event.correct"),
+        _ => tracing::Span::none(),
+    }
+}
+
 pub struct Server {
     pub db: PgPool,
     pub auth: auth::Verifier,
@@ -292,9 +314,11 @@ impl Server {
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
         let input = serde_json::to_value(&q).unwrap_or_default();
+        let event_span = event_span(op, &correlation);
         let result = tokio::time::timeout(
             self.config.timeout(),
-            self.execute::<Q, R>(authorization, op, q, &correlation),
+            self.execute::<Q, R>(authorization, op, q, &correlation)
+                .instrument(event_span.clone()),
         )
         .await
         .unwrap_or_else(|_| {
@@ -327,6 +351,13 @@ impl Server {
                 14 => "reporting_window_closed",
                 _ => "other",
             });
+            event_span.record("delcore.outcome", outcome.as_str());
+            event_span.record("delcore.error_reason", telemetry::reason(reason));
+            if let Ok(value) = &result {
+                if let Some(revision) = value["revision"].as_i64() {
+                    event_span.record("delcore.event.revision", revision);
+                }
+            }
             if op == Op::IngestEvent {
                 self.metrics.event_ingested(outcome, reason);
             } else {
@@ -339,6 +370,7 @@ impl Server {
                         _ => telemetry::CorrectionKind::Invalid,
                     },
                 };
+                event_span.record("delcore.correction.kind", kind.as_str());
                 self.metrics.event_corrected(kind, outcome, reason);
             }
             if let Some(limit) = result.as_ref().err().and_then(|f| f.limit) {
@@ -807,3 +839,6 @@ impl DelcoreService for Server {
         self.handle(ctx, Op::ListAudit, q.to_owned_message()).await
     }
 }
+
+#[cfg(test)]
+mod trace_tests;
