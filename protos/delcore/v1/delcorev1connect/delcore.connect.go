@@ -182,7 +182,17 @@ type DelcoreServiceClient interface {
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
+	// Deprecated: retired quantity reporting. Delcore never bills these calls
+	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+	// Report measured events with IngestEvent instead.
+	//
+	// Deprecated: do not use.
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
+	// Deprecated: retired quantity correction. Delcore never bills these calls
+	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+	// Correct accepted events with CorrectEvent instead.
+	//
+	// Deprecated: do not use.
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
 	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
@@ -639,11 +649,15 @@ func (c *delcoreServiceClient) GetTenantStates(ctx context.Context, req *connect
 }
 
 // ReportUsage calls delcore.v1.DelcoreService.ReportUsage.
+//
+// Deprecated: do not use.
 func (c *delcoreServiceClient) ReportUsage(ctx context.Context, req *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
 	return c.reportUsage.CallUnary(ctx, req)
 }
 
 // CorrectUsage calls delcore.v1.DelcoreService.CorrectUsage.
+//
+// Deprecated: do not use.
 func (c *delcoreServiceClient) CorrectUsage(ctx context.Context, req *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error) {
 	return c.correctUsage.CallUnary(ctx, req)
 }
@@ -750,7 +764,17 @@ type DelcoreServiceHandler interface {
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
+	// Deprecated: retired quantity reporting. Delcore never bills these calls
+	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+	// Report measured events with IngestEvent instead.
+	//
+	// Deprecated: do not use.
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
+	// Deprecated: retired quantity correction. Delcore never bills these calls
+	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+	// Correct accepted events with CorrectEvent instead.
+	//
+	// Deprecated: do not use.
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
 	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)

@@ -710,8 +710,18 @@ service DelcoreService {
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
   rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);
   rpc GetTenantStates(GetTenantStatesRequest) returns (GetTenantStatesResponse);
-  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
-  rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse);
+  // Deprecated: retired quantity reporting. Delcore never bills these calls
+  // and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+  // Report measured events with IngestEvent instead.
+  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
+    option deprecated = true;
+  }
+  // Deprecated: retired quantity correction. Delcore never bills these calls
+  // and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
+  // Correct accepted events with CorrectEvent instead.
+  rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse) {
+    option deprecated = true;
+  }
   rpc ListUsage(ListUsageRequest) returns (ListUsageResponse);
   rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse);
   rpc CorrectEvent(CorrectEventRequest) returns (CorrectEventResponse);

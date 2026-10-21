@@ -7945,7 +7945,7 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\x13EventCorrectionKind\x12%\n" +
 	"!EVENT_CORRECTION_KIND_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEVENT_CORRECTION_KIND_REPLACE\x10\x01\x12 \n" +
-	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x022\xa5\x1b\n" +
+	"\x1cEVENT_CORRECTION_KIND_CANCEL\x10\x022\xaf\x1b\n" +
 	"\x0eDelcoreService\x12N\n" +
 	"\vDeleteGroup\x12\x1e.delcore.v1.DeleteGroupRequest\x1a\x1f.delcore.v1.DeleteGroupResponse\x12E\n" +
 	"\bPutMeter\x12\x1b.delcore.v1.PutMeterRequest\x1a\x1c.delcore.v1.PutMeterResponse\x12K\n" +
@@ -7975,9 +7975,9 @@ const file_delcore_v1_delcore_proto_rawDesc = "" +
 	"\vCreatePrice\x12\x1e.delcore.v1.CreatePriceRequest\x1a\x1f.delcore.v1.CreatePriceResponse\x12H\n" +
 	"\tAuthorize\x12\x1c.delcore.v1.AuthorizeRequest\x1a\x1d.delcore.v1.AuthorizeResponse\x12i\n" +
 	"\x14CheckTenantLifecycle\x12'.delcore.v1.CheckTenantLifecycleRequest\x1a(.delcore.v1.CheckTenantLifecycleResponse\x12Z\n" +
-	"\x0fGetTenantStates\x12\".delcore.v1.GetTenantStatesRequest\x1a#.delcore.v1.GetTenantStatesResponse\x12N\n" +
-	"\vReportUsage\x12\x1e.delcore.v1.ReportUsageRequest\x1a\x1f.delcore.v1.ReportUsageResponse\x12Q\n" +
-	"\fCorrectUsage\x12\x1f.delcore.v1.CorrectUsageRequest\x1a .delcore.v1.CorrectUsageResponse\x12H\n" +
+	"\x0fGetTenantStates\x12\".delcore.v1.GetTenantStatesRequest\x1a#.delcore.v1.GetTenantStatesResponse\x12S\n" +
+	"\vReportUsage\x12\x1e.delcore.v1.ReportUsageRequest\x1a\x1f.delcore.v1.ReportUsageResponse\"\x03\x88\x02\x01\x12V\n" +
+	"\fCorrectUsage\x12\x1f.delcore.v1.CorrectUsageRequest\x1a .delcore.v1.CorrectUsageResponse\"\x03\x88\x02\x01\x12H\n" +
 	"\tListUsage\x12\x1c.delcore.v1.ListUsageRequest\x1a\x1d.delcore.v1.ListUsageResponse\x12N\n" +
 	"\vIngestEvent\x12\x1e.delcore.v1.IngestEventRequest\x1a\x1f.delcore.v1.IngestEventResponse\x12Q\n" +
 	"\fCorrectEvent\x12\x1f.delcore.v1.CorrectEventRequest\x1a .delcore.v1.CorrectEventResponse\x12E\n" +
