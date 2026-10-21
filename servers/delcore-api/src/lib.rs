@@ -70,6 +70,25 @@ impl Fault {
     pub fn missing() -> Self {
         Self::new(ErrorCode::NotFound, 6, "resource not found")
     }
+    fn log_rejection(&self, correlation: &str, op: Op) {
+        let sqlstate = self.cause.as_ref().and_then(|cause| {
+            cause
+                .chain()
+                .find_map(|cause| match cause.downcast_ref::<sqlx::Error>() {
+                    Some(sqlx::Error::Database(db)) => db.code().map(|code| code.into_owned()),
+                    _ => None,
+                })
+        });
+        // Database messages can contain customer values; retain only SQLSTATE.
+        tracing::warn!(
+            correlation_id = correlation,
+            procedure = op.name(),
+            category = self.code.as_str(),
+            reason = self.reason,
+            sqlstate = sqlstate.as_deref(),
+            "rpc rejected"
+        );
+    }
     pub fn with_correlation(self, correlation: &str) -> connectrpc::ConnectError {
         let detail = ErrorDetail {
             reason: self.reason.into(),
@@ -97,13 +116,10 @@ impl std::fmt::Display for Fault {
 impl std::error::Error for Fault {}
 impl From<sqlx::Error> for Fault {
     fn from(error: sqlx::Error) -> Self {
-        if let sqlx::Error::Database(ref db) = error {
-            tracing::error!(sqlstate=?db.code(),"database operation failed");
-            if db.code().as_deref() == Some("23505") {
-                return Self::conflict();
-            }
-        }
-        let mut fault = Self::unavailable();
+        let mut fault = match &error {
+            sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => Self::conflict(),
+            _ => Self::unavailable(),
+        };
         fault.cause = Some(error.into());
         fault
     }
@@ -386,7 +402,7 @@ impl Server {
                 Ok(Response::new(body).with_header("X-Delcore-Correlation-Id", correlation))
             }
             Err(fault) => {
-                tracing::warn!(correlation_id=%correlation,procedure=op.name(),category=fault.code.as_str(),reason=fault.reason,"rpc rejected");
+                fault.log_rejection(&correlation, op);
                 Err(fault.with_correlation(&correlation))
             }
         }

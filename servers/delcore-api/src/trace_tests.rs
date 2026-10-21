@@ -37,6 +37,11 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
                 .unwrap(),
         );
     }
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        let mut fields = Fields::default();
+        event.record(&mut fields);
+        self.0.lock().unwrap().push(fields.0);
+    }
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         self.0.lock().unwrap().push(
             ctx.span(&id)
@@ -118,4 +123,56 @@ async fn event_spans_include_authentication_rejections() {
         );
     }
     task.abort();
+}
+
+#[derive(Debug)]
+struct DatabaseFailure(&'static str);
+impl std::fmt::Display for DatabaseFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("sensitive customer value")
+    }
+}
+impl std::error::Error for DatabaseFailure {}
+impl sqlx::error::DatabaseError for DatabaseFailure {
+    fn message(&self) -> &str {
+        "sensitive customer value"
+    }
+    fn code(&self) -> Option<std::borrow::Cow<'_, str>> {
+        Some(self.0.into())
+    }
+    fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+        self
+    }
+    fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+        self
+    }
+    fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+        self
+    }
+    fn kind(&self) -> sqlx::error::ErrorKind {
+        sqlx::error::ErrorKind::Other
+    }
+}
+
+#[test]
+fn database_rejections_keep_correlated_sqlstate_without_payloads() {
+    let capture = Capture::default();
+    let subscriber = tracing_subscriber::registry().with(capture.clone());
+    tracing::subscriber::with_default(subscriber, || {
+        for state in ["23505", "42P01"] {
+            let fault = Fault::from(sqlx::Error::Database(Box::new(DatabaseFailure(state))));
+            assert!(fault.cause.is_some());
+            if state == "23505" {
+                assert_eq!(fault.code, Fault::conflict().code);
+            }
+            fault.log_rejection("test-correlation", Op::IngestEvent);
+        }
+    });
+    let events = capture.0.lock().unwrap();
+    assert_eq!(events.len(), 2);
+    for (event, state) in events.iter().zip(["23505", "42P01"]) {
+        assert_eq!(event["correlation_id"], "test-correlation");
+        assert_eq!(event["sqlstate"], state);
+        assert!(!format!("{event:?}").contains("sensitive"));
+    }
 }
