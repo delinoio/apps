@@ -431,3 +431,50 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   }
   assert.equal(apiCommand(Api.Delcore, {})[0], "go");
 });
+
+test("root, service-local and Portless Delcore development share the catalog-applying launcher", () => {
+  const read = (path) =>
+    readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+  const root = JSON.parse(read("../package.json"));
+  const service = JSON.parse(read("../servers/delcore-api/package.json"));
+  const portless = JSON.parse(read("../portless.json"));
+  const turbo = JSON.parse(read("../turbo.json"));
+  // Root development starts Compose, then process-compose, whose Delcore task
+  // runs the Turbo dev task; Portless runs the same Turbo dev tasks. Both
+  // reach the service-local dev script.
+  assert.equal(root.scripts.dev, "node scripts/dev.mjs");
+  assert.equal(root.scripts["dev:portless"], "portless");
+  assert.equal(turbo.tasks.dev.persistent, true);
+  assert.match(read("dev.mjs"), /process-compose/u);
+  assert.match(
+    read("../process-compose.yaml"),
+    /delcore-api:[\s\S]*?command: pnpm exec turbo run dev --filter=@delinoio\/delcore-api/u,
+  );
+  // The service-local dev script injects Infisical values, then runs the
+  // shared launcher, which starts Air for the Delcore binary.
+  assert.match(
+    service.scripts.dev,
+    /^infisical run .*--path=\/delcore-api -- node \.\.\/scripts\/dev-api\.mjs delcore$/u,
+  );
+  const listen = prepareApiEnvironment(Api.Delcore, {}).env.LISTEN;
+  assert.equal(
+    portless.apps["servers/delcore-api"].appPort,
+    Number(listen.split(":")[1]),
+  );
+  // Air rebuilds for Go and SQL changes only; YAML-only edits never restart
+  // the server, and catalog application stays a startup step.
+  const air = read("../servers/delcore-api/.air.toml");
+  const extensions = JSON.parse(
+    air.match(/^include_ext = (\[.*\])$/mu)[1].replaceAll("'", '"'),
+  );
+  assert.deepEqual(extensions, ["go", "sql"]);
+  assert.match(air, /\.\/cmd\/delcore-api/u);
+  // The binary applies the catalog in development before the worker and the
+  // listener start.
+  const main = read("../servers/delcore-api/cmd/delcore-api/main.go");
+  const sync = main.indexOf("catalog.Sync(");
+  assert.ok(sync > main.indexOf("if c.Development {"));
+  assert.ok(sync > main.indexOf("db.AcquireInstance("));
+  assert.ok(sync < main.indexOf("w.Run(ctx)"));
+  assert.ok(sync < main.indexOf("server.ListenAndServe()"));
+});
