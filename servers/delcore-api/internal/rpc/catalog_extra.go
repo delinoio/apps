@@ -173,11 +173,23 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 			Filters        []*pb.MeterFilter   `json:"filters"`
 			GroupBy        []string            `json:"group_by"`
 		}{m.Name, m.EventType, m.Aggregation, m.ValueAttribute, filters, groups}
-		if !legacy {
-			previous, e := postgres.ActiveCatalogVersion(c.ctx, c.tx, "meter", m.Id)
-			if e != nil {
+		previous, e := postgres.ActiveCatalogVersion(c.ctx, c.tx, "meter", m.Id)
+		if e != nil {
+			return e
+		}
+		if legacy && previous != "" {
+			// A name-only request registers an already defined meter; report
+			// the stored definition instead of the legacy default.
+			var stored []byte
+			if e = c.tx.QueryRow(c.ctx, "SELECT definition FROM catalog_versions WHERE id=$1", previous).Scan(&stored); e != nil {
 				return e
 			}
+			if e = json.Unmarshal(stored, m); e != nil {
+				return e
+			}
+		} else {
+			// A first name-only request stores its defaulted definition so
+			// catalog reads return the identity and aggregation reported here.
 			version, _, e := postgres.SelectCatalogVersion(c.ctx, c.tx, m.Id, definition)
 			if e != nil {
 				return e

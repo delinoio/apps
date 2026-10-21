@@ -531,6 +531,51 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, ad
 	}
 }
 
+func TestLegacyMeterRequestPersistsDefaultDefinition(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare legacy meter service", Service: &pb.Service{Key: "legacy-meter-service", Name: "Legacy Meter Service", ClientId: "legacy-meter", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceID := service.Msg.Service.Id
+	legacy, err := client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare name-only meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "units"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Msg.Meter.Id == "" || legacy.Msg.Meter.Aggregation != pb.MeterAggregation_METER_AGGREGATION_SUM {
+		t.Fatalf("name-only meter response was not normalized: %+v", legacy.Msg.Meter)
+	}
+	catalog, err := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, meter := range catalog.Msg.Meters {
+		if meter.Name != "units" {
+			continue
+		}
+		found = true
+		if meter.Id != legacy.Msg.Meter.Id || meter.Key != "units" || meter.Aggregation != pb.MeterAggregation_METER_AGGREGATION_SUM {
+			t.Fatalf("catalog read differs from the name-only meter response: got %+v, want %+v", meter, legacy.Msg.Meter)
+		}
+	}
+	if !found {
+		t.Fatal("catalog read omitted the name-only meter")
+	}
+	typed, err := client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare typed meter", Meter: &pb.Meter{ServiceId: serviceID, Name: "requests", EventType: "request", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reregistered, err := client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "register typed meter by name", Meter: &pb.Meter{ServiceId: serviceID, Name: "requests"}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reregistered.Msg.Meter.Id != typed.Msg.Meter.Id || reregistered.Msg.Meter.Aggregation != pb.MeterAggregation_METER_AGGREGATION_COUNT || reregistered.Msg.Meter.EventType != "request" {
+		t.Fatalf("name-only request misreported a stored meter: %+v", reregistered.Msg.Meter)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string
