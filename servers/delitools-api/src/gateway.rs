@@ -370,10 +370,19 @@ pub fn split_prompt(prompt: u64, cached: u64, created: u64) -> Option<u64> {
 }
 
 /// Classify a non-200 chat response. A definitive client-side rejection consumed nothing; a
-/// server-side failure may have.
+/// server-side failure may have. HTTP 408 is not provably unsent: the Gateway aborts a provider
+/// request that timed out after forwarding it, and some providers still bill an aborted call, so
+/// its usage stays unknown and is reconciled instead of being recorded as zero.
 pub fn classify_status(status: u16) -> (Failure, Usage) {
     match status {
-        408 | 425 | 429 => (
+        408 => (
+            Failure {
+                kind: FailureKind::Transient,
+                category: "request_timeout",
+            },
+            Usage::Unknown,
+        ),
+        425 | 429 => (
             Failure {
                 kind: FailureKind::Transient,
                 category: "rate_limited",
@@ -775,11 +784,12 @@ mod tests {
 
     #[test]
     fn status_classification_separates_zero_unknown_and_retryable() {
-        for status in [408, 425, 429] {
+        for status in [425, 429] {
             let (failure, usage) = classify_status(status);
             assert_eq!((failure.kind, usage), (FailureKind::Transient, Usage::Zero));
         }
-        for status in [500, 502, 503, 504, 599] {
+        // A Gateway timeout may follow a forwarded provider request, so it is not provably unsent.
+        for status in [408, 500, 502, 503, 504, 599] {
             let (failure, usage) = classify_status(status);
             assert_eq!(
                 (failure.kind, usage),
