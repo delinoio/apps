@@ -314,6 +314,10 @@ type storedMeter struct {
 // CompatibilityAttribute is the value attribute of CompatibilityDefinition.
 const CompatibilityAttribute = "quantity"
 
+// CompatibilityAggregation is the wire aggregation of CompatibilityDefinition,
+// which queries report for a meter without a typed definition.
+const CompatibilityAggregation = pb.MeterAggregation_METER_AGGREGATION_SUM
+
 // CompatibilityDefinition is the catalog compatibility rule for a meter that
 // was registered without a typed definition, such as an operator PutMeter call
 // that names only a service and a key: the event type equals the meter key and

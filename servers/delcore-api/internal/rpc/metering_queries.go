@@ -105,6 +105,11 @@ func (s *Server) ListMeterAggregates(ctx context.Context, r *connect.Request[pb.
 			return e
 		}
 		o.Aggregation = definition.Aggregation
+		if definition.EventType == "" {
+			// Ingestion evaluates a meter without a typed definition with
+			// events.CompatibilityDefinition, so its aggregates are sums.
+			o.Aggregation = events.CompatibilityAggregation
+		}
 		start, end, e := postgres.BillingPeriod(c.ctx, c.tx, q.TenantId, at)
 		if e != nil {
 			return e

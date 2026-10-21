@@ -175,6 +175,10 @@ func TestUntypedMetersUseTheCompatibilityDefinition(t *testing.T) {
 			t.Fatalf("non-numeric quantity accepted: %v", err)
 		}
 	}
+	declared, err := CatalogDefinition("units", "units", CompatibilityAggregation, CompatibilityAttribute, nil, nil)
+	if err != nil || !IsCompatibilityDefinition(declared) {
+		t.Fatalf("compatibility wire aggregation = %v: %+v %v", CompatibilityAggregation, declared, err)
+	}
 	typed := CompatibilityDefinition("units")
 	typed.GroupBy = []string{"region"}
 	if IsCompatibilityDefinition(typed) {

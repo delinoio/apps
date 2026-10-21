@@ -546,6 +546,22 @@ func meterID(t *testing.T, f *ratingFixture, meter string) string {
 	return id
 }
 
+func TestUntypedMeterAggregatesReportTheCompatibilityAggregation(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	f := newRatingFixture(t, now.Add(-12*time.Hour), now.Add(12*time.Hour), false)
+	f.ingest(t, "compat-1", "units", now.Add(-time.Hour), map[string]*pb.AttributeValue{"quantity": num("2")})
+	f.ingest(t, "compat-2", "units", now.Add(-time.Hour), map[string]*pb.AttributeValue{"quantity": num("3.5")})
+	processMetering(t, f.w)
+	listed, err := f.client.ListMeterAggregates(context.Background(), req(&pb.ListMeterAggregatesRequest{TenantId: f.tenant, MeterKey: "units"}, "service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The untyped meter sums "quantity" under its compatibility definition.
+	if got := listed.Msg; got.Aggregation != pb.MeterAggregation_METER_AGGREGATION_SUM || len(got.Aggregates) != 1 || got.Aggregates[0].Value != "5.5" {
+		t.Fatalf("untyped meter aggregates = %v", got)
+	}
+}
+
 func TestUntypedMeterCompatibilityDefinitionIsImmutable(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	f := newRatingFixture(t, now.Add(-12*time.Hour), now.Add(12*time.Hour), false)
