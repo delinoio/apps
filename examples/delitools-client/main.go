@@ -12,8 +12,9 @@
 //	DELITOOLS_TOKEN      Logto user access token
 //	DELITOOLS_TENANT_ID  tenant that receives the usage charge
 //
-// Credentials are never printed. Failures print only the Connect code, the
-// stable reason and the request ID.
+// Credentials and response content are never printed. Successful runs print
+// counts and request IDs; failures print only the Connect code, the stable
+// reason and the request ID.
 package main
 
 import (
@@ -140,10 +141,9 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 	if e != nil {
 		return fmt.Errorf("translate: %w", e)
 	}
+	// Results are application data. The example reports only content-free
+	// metadata; a real consumer hands the result to its own code instead.
 	fmt.Fprintf(out, "Translated %d texts (request %s)\n", len(translated.Msg.Texts), translated.Msg.RequestId)
-	for i, text := range translated.Msg.Texts {
-		fmt.Fprintf(out, "  %d: %s\n", i+1, text)
-	}
 
 	// 2. Extract data that the text states explicitly. The model is fixed by the
 	// service. Information missing from the text returns EXTRACTION_IMPOSSIBLE.
@@ -156,7 +156,7 @@ func run(ctx context.Context, client delitoolsv1connect.DeliToolsServiceClient, 
 	if e != nil {
 		return fmt.Errorf("extract: %w", e)
 	}
-	fmt.Fprintf(out, "Extracted data (request %s): %s\n", extracted.Msg.RequestId, extracted.Msg.JsonData)
+	fmt.Fprintf(out, "Extracted %d bytes of JSON data (request %s)\n", len(extracted.Msg.JsonData), extracted.Msg.RequestId)
 	// Usage and charges are not part of the responses; inspect them through the
 	// billing interface.
 	return nil

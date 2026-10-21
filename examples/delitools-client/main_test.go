@@ -97,9 +97,15 @@ func TestRunTranslatesAndExtracts(t *testing.T) {
 		t.Fatal("schema must use the supported subset")
 	}
 	text := out.String()
-	for _, want := range []string{"Translated 2 texts (request " + testRequestID, "[ko] Good morning", `"city":"London"`} {
+	for _, want := range []string{"Translated 2 texts (request " + testRequestID, "Extracted 39 bytes of JSON data (request " + testRequestID} {
 		if !strings.Contains(text, want) {
 			t.Errorf("output missing %q:\n%s", want, text)
+		}
+	}
+	// Response content is application data and must never reach the output.
+	for _, content := range []string{"[ko] Good morning", "[ko] Where is the station?", "Ada Lovelace", "London"} {
+		if strings.Contains(text, content) {
+			t.Errorf("output must not contain response content %q:\n%s", content, text)
 		}
 	}
 	if strings.Contains(text, "test-key") {
