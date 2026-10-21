@@ -35,3 +35,7 @@ CREATE INDEX metering_rated_periods_end ON metering_rated_periods(period_end);
 
 -- Rating scans the applied contributions of one tenant billing period.
 CREATE INDEX metering_events_period ON metering_events(tenant_id,period_start);
+
+-- Rating loads the allowance grants of one tenant service meter period on
+-- every rated transition and paid authorization.
+CREATE INDEX allowance_grants_period ON allowance_grants(tenant_id,service_id,meter,period_start,applied_at);

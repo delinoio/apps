@@ -36,6 +36,28 @@ type MeterPeriod struct {
 	End       time.Time
 }
 
+// allowanceGrantsQuery loads the allowance grants of one tenant service meter
+// period in applied order. The allowance_grants_period index serves it.
+const allowanceGrantsQuery = "SELECT amount::text,applied_at FROM allowance_grants WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 ORDER BY applied_at,id"
+
+// contributionBucketsQuery buckets the applied contributions of one tenant
+// meter period ($1 tenant, $2 meter ID, $3 period start) by group, attributed
+// price, and allowance epoch. $4 lists the applied times of the period's
+// allowance grants in ascending order; width_bucket returns how many of them
+// are at or before an occurrence, counting equal times, so a grant applied at
+// the same instant as an occurrence is available to it. Deriving the epoch
+// from that list keeps the per-contribution work independent of the
+// allowance_grants table.
+const contributionBucketsQuery = `WITH applied AS (
+ SELECT c.group_key,COALESCE(ep.price_id::text,'') price,
+  width_bucket(e.occurred_at,$4::timestamptz[]) epoch,
+  e.occurred_at,CASE WHEN c.value_kind='number' THEN c.value::numeric END amount
+ FROM metering_events e
+ JOIN metering_contributions c ON c.event_id=e.id AND c.revision=e.applied_revision AND c.meter_id=$2
+ LEFT JOIN metering_event_prices ep ON ep.event_id=e.id AND ep.meter_id=$2
+ WHERE e.tenant_id=$1 AND e.period_start=$3 AND e.applied_revision>0)
+SELECT group_key,price,epoch,min(occurred_at),max(occurred_at),count(*),COALESCE(sum(amount),0)::text FROM applied GROUP BY group_key,price,epoch ORDER BY group_key,price,epoch`
+
 // RateMeterPeriod rates the applied aggregates of one tenant meter billing
 // period with the prices attributed at event acceptance and the allowance
 // grants of the period. It reads only materialized state, so it reflects the
@@ -43,13 +65,18 @@ type MeterPeriod struct {
 // the formula and the mixed-price rule.
 func RateMeterPeriod(ctx context.Context, tx pgx.Tx, p MeterPeriod) (rating.Result, error) {
 	in := rating.Input{Prices: map[string]accounting.Decimal{}}
-	rows, err := tx.Query(ctx, "SELECT amount::text FROM allowance_grants WHERE tenant_id=$1 AND service_id=$2 AND meter=$3 AND period_start=$4 ORDER BY applied_at,id", p.TenantID, p.ServiceID, p.MeterKey, p.Start)
+	rows, err := tx.Query(ctx, allowanceGrantsQuery, p.TenantID, p.ServiceID, p.MeterKey, p.Start)
 	if err != nil {
 		return rating.Result{}, err
 	}
+	// grantTimes lists the applied times of in.Grants in the same ascending
+	// order; the bucket query derives each contribution's allowance epoch from
+	// it instead of reading allowance_grants once per contribution.
+	var grantTimes []time.Time
 	for rows.Next() {
 		var text string
-		if err = rows.Scan(&text); err != nil {
+		var appliedAt time.Time
+		if err = rows.Scan(&text, &appliedAt); err != nil {
 			rows.Close()
 			return rating.Result{}, err
 		}
@@ -59,6 +86,7 @@ func RateMeterPeriod(ctx context.Context, tx pgx.Tx, p MeterPeriod) (rating.Resu
 			return rating.Result{}, fmt.Errorf("%w: stored allowance grant", rating.ErrInconsistent)
 		}
 		in.Grants = append(in.Grants, amount)
+		grantTimes = append(grantTimes, appliedAt)
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
@@ -93,18 +121,10 @@ func RateMeterPeriod(ctx context.Context, tx pgx.Tx, p MeterPeriod) (rating.Resu
 	if err = rows.Err(); err != nil {
 		return rating.Result{}, err
 	}
-	// Bucket the applied contributions by group, attributed price, and the
-	// number of grants applied at or before their occurrence. A grant applied
-	// at the same instant as an occurrence is available to it.
-	rows, err = tx.Query(ctx, `WITH applied AS (
- SELECT c.group_key,COALESCE(ep.price_id::text,'') price,
-  (SELECT count(*) FROM allowance_grants g WHERE g.tenant_id=e.tenant_id AND g.service_id=$2 AND g.meter=$3 AND g.period_start=e.period_start AND g.applied_at<=e.occurred_at)::integer epoch,
-  e.occurred_at,CASE WHEN c.value_kind='number' THEN c.value::numeric END amount
- FROM metering_events e
- JOIN metering_contributions c ON c.event_id=e.id AND c.revision=e.applied_revision AND c.meter_id=$4
- LEFT JOIN metering_event_prices ep ON ep.event_id=e.id AND ep.meter_id=$4
- WHERE e.tenant_id=$1 AND e.period_start=$5 AND e.applied_revision>0)
-SELECT group_key,price,epoch,min(occurred_at),max(occurred_at),count(*),COALESCE(sum(amount),0)::text FROM applied GROUP BY group_key,price,epoch ORDER BY group_key,price,epoch`, p.TenantID, p.ServiceID, p.MeterKey, p.MeterID, p.Start)
+	if grantTimes == nil {
+		grantTimes = []time.Time{}
+	}
+	rows, err = tx.Query(ctx, contributionBucketsQuery, p.TenantID, p.MeterID, p.Start, grantTimes)
 	if err != nil {
 		return rating.Result{}, err
 	}
