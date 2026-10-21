@@ -30,7 +30,7 @@
 - FixKey releases must not require a native-acceptance revision variable or comparison. Keep immutable source validation, signing and protected publication gates in the owning release workflow.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Development `dev` and `dev:*` scripts must inject Infisical development variables through the local root project configuration. Follow [environment ownership](docs/repository-environment-contract.md) for CLI setup and secret boundaries.
-- Run root `pnpm dev` to start all workspace `dev` scripts together, or root `pnpm dev:portless` to expose the frontends and Go APIs through named local URLs. For one app, run `pnpm dev` from the owning app to serve its frontend or `pnpm dev:desktop` to launch its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the [repository workflow](docs/repository-workflow-contract.md) and owning application contracts.
+- Run root `pnpm dev` to start workspace development through process-compose, or root `pnpm dev:portless` to expose the frontends and Go APIs through named local URLs. For one app, run `pnpm dev` from the owning app to serve its frontend or `pnpm dev:desktop` to launch its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the [repository workflow](docs/repository-workflow-contract.md) and owning application contracts.
 - Root `pnpm dev` must wait for the local Compose databases and pass their resolved URLs only to API development launchers, which apply them after Infisical injection. Keep service-local environment files unchanged. Follow the [development Compose procedure](docs/repository-workflow-contract.md#local-development-databases), keep schema migrations explicit and run application development commands on the host.
 - Follow [Turborepo remote caching](docs/repository-workflow-contract.md#turborepo-remote-caching) for local cache setup, CI access and build hash inputs. Keep Turbo credentials and linked team configuration uncommitted.
 - Run root `pnpm i18n:translate` or `pnpm i18n:check` to process all workspaces that provide the corresponding localization command. Allow bounded parallel translation generation while serializing shared ChatGPT authentication updates and per-app output writes. Follow the [localization contract](docs/apps-delino-site-localization-contract.md).
@@ -55,7 +55,8 @@
 
 ## Monorepo Structure Map
 
-- `servers/`: Delcore, DevBase and Git Tracker services, migrations and OCI packaging; follow `servers/AGENTS.md`.
+- `servers/`: Delcore, DevBase and Git Tracker services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
+- `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.

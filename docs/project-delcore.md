@@ -14,6 +14,8 @@ The official API server base URL is `https://delcore.api.delino.io`.
 
 ## Domain Ownership Map
 
+- `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
+
 - `servers/scripts/dev-api.mjs`: shared Go API development launcher.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 

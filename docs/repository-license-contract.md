@@ -9,3 +9,7 @@ Repository-owned files outside `servers/`, including clients, shared protocol so
 Include `servers/LICENSE` and `servers/NOTICE` with server distributions, and root `LICENSE` and `NOTICE` for included Apache-2.0 protocol code. Other distributions include root `LICENSE` and `NOTICE`. Preserve third-party licenses, copyright notices and CEF notices. Imported third-party code and bundled fonts retain their original licenses; neither repository license replaces them.
 
 Official terms: [FSL-1.1-ALv2](https://fsl.software/FSL-1.1-ALv2.template.md) and [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+## Server Rust workspace
+
+`servers/Cargo.toml` owns an independent Cargo workspace for server ports. Shared server Rust modules belong in `servers/crates/` under FSL-1.1-ALv2, separate from the Apache-2.0 client workspace and root `crates/`. See the [server Rust workspace contract](servers-rust-workspace-contract.md).

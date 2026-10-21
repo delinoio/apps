@@ -8,6 +8,8 @@
 
 See the [repository boundary contract](repository-boundary-contract.md) for client/server directory ownership, contribution requirements and development in one checkout.
 
+- [Server Rust workspace](servers-rust-workspace-contract.md) defines server Cargo ownership, shared modules and incremental adoption.
+
 ## Repository Defaults
 
 - Repository-wide default technology choices and workflow defaults are defined in [repository defaults](repository-defaults.md).

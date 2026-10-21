@@ -1,5 +1,7 @@
 # Git Tracker Server
 
+Rust port preparation follows the [server Rust workspace contract](servers-rust-workspace-contract.md). This service remains implemented in Go until its individual port. Root development uses process-compose with the existing workspace launcher.
+
 ## Scope
 
 `servers/git-tracker-api` owns this component. See the [project index](project-git-tracker.md) for boundaries. Infrastructure provisioning, Runbooks, billing, exports, non-GitHub hosting and native clients are excluded.

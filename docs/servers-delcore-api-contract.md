@@ -1,5 +1,7 @@
 # Delcore API contract
 
+Rust port preparation follows the [server Rust workspace contract](servers-rust-workspace-contract.md). This service remains implemented in Go until its individual port. Root development uses process-compose with the existing workspace launcher.
+
 ## Scope
 
 `servers/delcore-api` owns the independent service, migrations and background jobs. The consumer example and protocol source live in root `examples/` and `protos/`.

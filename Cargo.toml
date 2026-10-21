@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["servers"]
 members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "apps/fixkey-app/src-tauri", "crates/fixkey-core"]
 
 [patch.crates-io]

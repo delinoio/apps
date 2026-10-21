@@ -4,12 +4,18 @@
 - This file covers `servers/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+## Rust workspace ownership
+
+- `servers/Cargo.toml` owns the independent server Cargo workspace. Add explicit members only when implementing each port; keep server packages out of the root client workspace.
+- Put shared server Rust modules in `servers/crates/` and inherit the server workspace license and publication settings. Follow the [server Rust workspace contract](../docs/servers-rust-workspace-contract.md).
+- Run Cargo checks for implemented server members with `--manifest-path servers/Cargo.toml` from the repository root, in addition to applicable root checks.
+
 ## Development and validation
 
 - `servers/scripts/` owns development helpers shared by the Go APIs; follow the [repository workflow](../docs/repository-workflow-contract.md).
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
-- Run service-local `pnpm dev` for one Go API or root `pnpm dev` for the full workspace. Follow the owning server contract for required configuration and database preparation; the pinned Air watcher does not provision dependencies or run migrations. Root development passes Compose database URLs to the API launchers after Infisical injection; preserve the environment precedence and secret boundaries in the environment contract. Keep each API's Infisical development settings in its owning folder and select that folder explicitly in its development command.
+- Run service-local `pnpm dev` for one Go API or root `pnpm dev` for process-compose to manage the full development session. Follow the owning server contract for required configuration and database preparation; the pinned Air watcher does not provision dependencies or run migrations. Root development passes Compose database URLs to the API launchers after Infisical injection; preserve the environment precedence and secret boundaries in the environment contract. Keep each API's Infisical development settings in its owning folder and select that folder explicitly in its development command.
 - All repository-owned files under `servers/` use FSL-1.1-ALv2; preserve third-party licenses and notices. Include `servers/LICENSE` and `servers/NOTICE` in server distributions.
 - Run server checks from the repository root with `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/... ./servers/devbase-api/cmd/... ./servers/git-tracker-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL and OCI checks when affected. Protocol source remains in root `protos/`; do not duplicate it under servers.
 

@@ -157,7 +157,7 @@ test("direct API development preserves existing environment without a Compose ha
 });
 
 test(
-  "root development stops before Turbo when Compose startup fails",
+  "root development stops before process-compose when Compose startup fails",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
@@ -186,7 +186,7 @@ test(
     );
     const result = spawnSync(
       process.execPath,
-      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--dry=json"],
+      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--tui=false"],
       {
         env: {
           ...process.env,
@@ -254,5 +254,79 @@ test(
       assert.equal(readFileSync(output, "utf8"), urls[Api.Delcore]);
       assert.equal(existsSync(path), true);
     }
+  },
+);
+
+test(
+  "root development hands databases and arguments to process-compose and returns its failure",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const directory = fixture(t);
+    const output = join(directory, "process-compose.json");
+    const config = {
+      services: Object.fromEntries(
+        Object.values(Api).map((api) => [
+          `${api}-postgres`,
+          {
+            ports: [
+              {
+                target: 5432,
+                published: "17432",
+                host_ip: "127.0.0.1",
+                protocol: "tcp",
+              },
+            ],
+            environment: {
+              POSTGRES_USER: "fixture",
+              POSTGRES_PASSWORD: "fixture-password",
+              POSTGRES_DB: "fixture",
+            },
+          },
+        ]),
+      ),
+    };
+    writeFileSync(
+      join(directory, "docker"),
+      `#!${process.execPath}\nif (process.argv.includes('config')) process.stdout.write(${JSON.stringify(JSON.stringify(config))});\n`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(directory, "process-compose"),
+      `#!${process.execPath}\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FIXTURE_OUTPUT, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), urls: JSON.parse(process.env.DEV_COMPOSE_DATABASE_URLS)})); process.exit(19);\n`,
+      { mode: 0o755 },
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./dev.mjs", import.meta.url)),
+        "--tui=false",
+        "delcore-api",
+      ],
+      {
+        env: {
+          ...process.env,
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+          FIXTURE_OUTPUT: output,
+        },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 19);
+    const captured = JSON.parse(readFileSync(output, "utf8"));
+    assert.deepEqual(captured.args, [
+      "--config",
+      "process-compose.yaml",
+      "--no-server",
+      "--disable-dotenv",
+      "up",
+      "--tui=false",
+      "delcore-api",
+    ]);
+    assert.equal(
+      captured.cwd,
+      fileURLToPath(new URL("../", import.meta.url)).replace(/\/$/u, ""),
+    );
+    assert.deepEqual(captured.urls, composeDatabaseUrls(config));
+    assert.equal(result.stdout.includes("fixture-password"), false);
   },
 );

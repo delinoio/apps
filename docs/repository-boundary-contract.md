@@ -19,3 +19,7 @@ Update affected project, protocol, client and server contracts in the same chang
 Server changes require `go vet ./servers/...`, `go build ./servers/delcore-api/cmd/... ./servers/devbase-api/cmd/... ./servers/git-tracker-api/cmd/...` and `go test -race ./servers/...`. Run the owning PostgreSQL integration and the Delcore and DevBase OCI checks against disposable databases and mocked providers. OCI builds use the root checkout and local protocol source. CI selects affected services and protocol consumers before runner allocation.
 
 Record the source revision, commands, results and unperformed platform/account checks in review or CI records. Builds and fixtures do not establish live provider, deployment or native acceptance. No credentials or account state move through Git.
+
+## Server Rust workspace
+
+`servers/Cargo.toml` owns an independent Cargo workspace for server ports. Shared server Rust modules belong in `servers/crates/` under FSL-1.1-ALv2, separate from the Apache-2.0 client workspace and root `crates/`. See the [server Rust workspace contract](servers-rust-workspace-contract.md).

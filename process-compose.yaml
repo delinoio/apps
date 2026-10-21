@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+version: "0.5"
+
+# Turbo retains the environment allowlists and workspace-local Infisical injection.
+processes:
+  frontends:
+    command: pnpm exec turbo run dev --filter='./apps/*'
+    availability:
+      restart: exit_on_failure
+    shutdown:
+      signal: 2
+      timeout_seconds: 15
+  delcore-api:
+    command: pnpm exec turbo run dev --filter=@delinoio/delcore-api
+    availability:
+      restart: exit_on_failure
+    shutdown:
+      signal: 2
+      timeout_seconds: 15
+  devbase-api:
+    command: pnpm exec turbo run dev --filter=@delinoio/devbase-api
+    availability:
+      restart: exit_on_failure
+    shutdown:
+      signal: 2
+      timeout_seconds: 15
+  git-tracker-api:
+    command: pnpm exec turbo run dev --filter=@delinoio/git-tracker-api
+    availability:
+      restart: exit_on_failure
+    shutdown:
+      signal: 2
+      timeout_seconds: 15

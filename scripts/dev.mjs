@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
@@ -68,16 +67,21 @@ export async function main(args = process.argv.slice(2)) {
       services: Object.values(Api),
     }),
   );
-  const require = createRequire(import.meta.url);
   return spawnDevServer(
-    process.execPath,
-    [require.resolve("turbo"), "run", "dev", ...args],
+    "process-compose",
+    [
+      "--config",
+      "process-compose.yaml",
+      "--no-server",
+      "--disable-dotenv",
+      "up",
+      ...args,
+    ],
     {
       cwd: root,
       stdio: "inherit",
       env: { ...process.env, [databaseHandoff]: JSON.stringify(urls) },
     },
-    { terminateProcessTree: true },
   );
 }
 
@@ -92,7 +96,7 @@ if (
       JSON.stringify({
         event: "dev_start_failed",
         message:
-          "Could not prepare Compose databases or launch workspace development. Check Docker and Compose configuration.",
+          "Could not prepare Compose databases or launch workspace development. Check Docker, Compose configuration and the process-compose installation.",
       }),
     );
     process.exitCode = 1;
