@@ -23,7 +23,8 @@ Declare the project/component and canonical implementation paths owned by this d
 ## Runtime and Language
 
 Declare runtime and primary language.
-If unspecified for a new project, the default primary language is Golang.
+For new server implementations, default to Rust unless the owning project or domain contract specifies another language.
+For other new projects without a specified primary language, default to Golang.
 For build tooling, prefer Rspack-family tools when they fit the runtime and deployment target.
 Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default unless documented otherwise.
 

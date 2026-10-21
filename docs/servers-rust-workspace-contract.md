@@ -2,6 +2,8 @@
 
 ## Ownership and license
 
+Rust is the default language for new server implementations unless the owning project or domain contract specifies another language. See the [repository defaults](repository-defaults.md).
+
 `servers/Cargo.toml` owns the server Cargo workspace, independently of the root client workspace. `servers/crates/` owns shared server Rust modules. Service crates belong to their existing `servers/<service>` directories when ported. All these server files use FSL-1.1-ALv2 under the [license contract](repository-license-contract.md).
 
 Add explicit workspace members as each service or shared crate is implemented. Each package inherits `license.workspace = true` and `publish.workspace = true`; the workspace disables registry publication. Keep server dependencies, profiles and the future `servers/Cargo.lock` separate from the root client workspace. Commit the server lockfile when the first member introduces a dependency graph. Keep server implementation modules out of root `crates/` and client dependency graphs. Protocol ownership remains in `protos/` under Apache-2.0.
