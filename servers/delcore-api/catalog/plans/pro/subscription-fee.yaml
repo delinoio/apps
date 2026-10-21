@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Fixed recurring fee. Replace the external price ID with your Paddle price.
+kind: price
+key: pro-monthly
+plan: example-pro
+service: example-api
+meter: subscription
+price_kind: recurring
+unit_price: "20"
+included: "0"
+currency: USD
+external_price_id: pri_replace_for_local_paddle_pro

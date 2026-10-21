@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Exact unique count of users with a numeric comparison filter.
+kind: meter
+service: example-api
+key: active-users
+event_type: request.completed
+aggregation: unique_count
+value_attribute: user
+filters:
+  - attribute: status
+    operator: less_than
+    values: [500]

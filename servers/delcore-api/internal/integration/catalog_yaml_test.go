@@ -6,6 +6,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -22,20 +23,100 @@ import (
 func catalogFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	files, err := os.ReadDir("../../catalog")
+	err := filepath.WalkDir("../../catalog", func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel("../../catalog", path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(filepath.Join(root, relative), 0700)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(root, relative), body, 0600)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range files {
-		body, err := os.ReadFile(filepath.Join("../../catalog", file.Name()))
-		if err != nil {
+	return root
+}
+
+// catalogState lists every catalog identity with its active version.
+func catalogState(t *testing.T, db *postgres.Store) map[string]string {
+	t.Helper()
+	rows, err := db.Pool.Query(context.Background(), "SELECT kind||'/'||scope||'/'||key||'='||id::text,COALESCE(active_version_id::text,'') FROM catalog_entities")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	state := map[string]string{}
+	for rows.Next() {
+		var identity, version string
+		if err = rows.Scan(&identity, &version); err != nil {
 			t.Fatal(err)
 		}
-		if err = os.WriteFile(filepath.Join(root, file.Name()), body, 0600); err != nil {
-			t.Fatal(err)
+		state[identity] = version
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+// The committed sample directory, read in place, applies on an empty
+// database and reapplies with identical identities and versions.
+func TestCommittedSampleCatalogAppliesIdempotently(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	first, err := catalog.Sync(ctx, db, "../../catalog", logger, nil)
+	if err != nil {
+		t.Fatal("committed sample catalog rejected", err)
+	}
+	state := catalogState(t, db)
+	if len(state) != first.Files {
+		t.Fatalf("%d identities for %d declarations", len(state), first.Files)
+	}
+	var versions int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM catalog_versions").Scan(&versions); err != nil {
+		t.Fatal(err)
+	}
+	second, err := catalog.Sync(ctx, db, "../../catalog", logger, nil)
+	if err != nil || second.Changed || second.EntitiesCreated != 0 || second.VersionsCreated != 0 {
+		t.Fatalf("reapplication changed the catalog: %+v %v", second, err)
+	}
+	again := catalogState(t, db)
+	for identity, version := range state {
+		// Services have no billing version; every other declaration has one.
+		if (version == "") != strings.HasPrefix(identity, "service/") || again[identity] != version {
+			t.Fatalf("%s version %q became %q", identity, version, again[identity])
 		}
 	}
-	return root
+	var after int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM catalog_versions").Scan(&after); err != nil || after != versions {
+		t.Fatalf("reapplication created versions: %d to %d %v", versions, after, err)
+	}
+	// The sample paid plan exposes every configuration type through the catalog.
+	response, err := client.GetCatalog(ctx, req(&pb.GetCatalogRequest{}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	for _, plan := range response.Msg.Plans {
+		for _, value := range plan.FeatureValues {
+			if value.Configuration != nil {
+				kinds[fmt.Sprintf("%T", value.Configuration.Value)] = true
+			}
+		}
+	}
+	if len(kinds) != 5 {
+		t.Fatalf("sample configuration value types = %v", kinds)
+	}
 }
 // syncCatalog applies a development catalog without metrics.
 func syncCatalog(ctx context.Context, db *postgres.Store, dir string, logger *slog.Logger) error {
@@ -334,7 +415,12 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforeFeatureOnlyEdit(t *testin
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: true\n")
-	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
+	// Replace the whole add-on file so the test does not depend on the grants of
+	// the committed sample.
+	addon := func(limit string) string {
+		return "kind: addon\nservice: example-api\nkey: priority\nname: Priority requests\nfeatures:\n  - service: example-api\n    key: monthly-requests\n    limit: \"" + limit + "\"\n"
+	}
+	setCatalogText(t, root, "07-addon.yaml", addon("10"))
 	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +445,7 @@ func TestDevelopmentCatalogSnapshotsLegacyTenantsBeforeFeatureOnlyEdit(t *testin
 		t.Fatal(err)
 	}
 	setCatalogText(t, root, "legacy.yaml", "kind: plan\nkey: legacy-plan\nname: Legacy Plan\nrank: 7\nfree: true\nfeatures:\n  - service: example-api\n    key: api-access\n    enabled: false\n")
-	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
+	setCatalogText(t, root, "07-addon.yaml", addon("20"))
 	if err = syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +482,10 @@ func TestDevelopmentCatalogSnapshotsLegacyAddOnEndingInFuture(t *testing.T) {
 	ctx := context.Background()
 	root := catalogFixture(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
+	addonText := func(limit string) string {
+		return "kind: addon\nservice: example-api\nkey: priority\nname: Priority requests\nfeatures:\n  - service: example-api\n    key: monthly-requests\n    limit: \"" + limit + "\"\n"
+	}
+	setCatalogText(t, root, "07-addon.yaml", addonText("10"))
 	if err := syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +506,7 @@ func TestDevelopmentCatalogSnapshotsLegacyAddOnEndingInFuture(t *testing.T) {
 	if err = db.Pool.QueryRow(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1,$2,$3,now()-interval '1 day',date_trunc('second',now())+interval '1 day') RETURNING ends_at", key(), tenantID, addonPrice).Scan(&endsAt); err != nil {
 		t.Fatal(err)
 	}
-	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
+	setCatalogText(t, root, "07-addon.yaml", addonText("20"))
 	if err = syncCatalog(ctx, db, root, logger); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Granted only by the priority add-on, so no plan defines it twice.
+kind: feature
+service: example-api
+key: priority-queue
+name: Priority queue
+type: access

@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# The limit applies separately to each model group of the tokens meter.
+kind: feature
+service: example-api
+key: monthly-tokens
+name: Monthly tokens per model
+type: metered
+meter: tokens

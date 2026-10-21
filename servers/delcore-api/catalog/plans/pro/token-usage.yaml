@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Usage price. The included usage is shared once per tenant and meter across
+# all model groups; negative groups never offset positive groups.
+kind: price
+key: pro-tokens
+plan: example-pro
+service: example-api
+meter: tokens
+price_kind: usage
+unit_price: "0.000002"
+included: "1000000"
+currency: USD

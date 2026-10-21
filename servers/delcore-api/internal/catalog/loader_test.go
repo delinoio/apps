@@ -107,17 +107,87 @@ func TestFilterLiteralValidation(t *testing.T) {
 	}
 }
 
-func TestExampleCatalogParses(t *testing.T) {
-	items, err := load("../../catalog")
+// The committed sample is the documented format reference. Keep one example of
+// every supported declaration so it cannot silently lose coverage.
+func TestExampleCatalogCoversTheDocumentedFormat(t *testing.T) {
+	root := "../../catalog"
+	items, err := load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 8 {
-		t.Fatalf("example has %d definitions", len(items))
-	}
+	has := map[string]bool{}
+	planFeatures := map[string]bool{}
+	var addonFeatures []string
+	prices := map[string]map[string]bool{}
 	for _, item := range items {
-		if !strings.Contains(item.Path, "catalog") {
-			t.Fatal("lost source path")
+		relative, err := filepath.Rel(root, item.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		has["ext:"+filepath.Ext(item.Path)] = true
+		if strings.Contains(relative, string(filepath.Separator)) {
+			has["nested"] = true
+		}
+		has["kind:"+item.Kind] = true
+		switch item.Kind {
+		case "meter":
+			has["aggregation:"+item.Aggregation] = true
+			if item.Aggregation == "sum" && len(item.Filters) > 0 && len(item.GroupBy) > 0 {
+				has["sum-with-filters-and-group-by"] = true
+			}
+			for _, f := range item.Filters {
+				has["operator:"+f.Operator] = true
+			}
+		case "feature":
+			has["feature:"+item.Type+":"+item.ValueType] = true
+		case "plan":
+			for _, g := range item.Features {
+				planFeatures[g.Service+":"+g.Key] = true
+			}
+		case "addon":
+			for _, g := range item.Features {
+				addonFeatures = append(addonFeatures, g.Service+":"+g.Key)
+			}
+		case "price":
+			owner := item.Plan
+			if item.AddOn != nil {
+				owner = "addon:" + item.AddOn.Key
+			}
+			if prices[owner] == nil {
+				prices[owner] = map[string]bool{}
+			}
+			prices[owner][item.PriceKind] = true
+			if item.PriceKind == "usage" && item.Included != "0" {
+				prices[owner]["included"] = true
+			}
+		}
+	}
+	for _, want := range []string{
+		"ext:.yaml", "ext:.yml", "nested",
+		"kind:service", "kind:meter", "kind:feature", "kind:plan", "kind:addon", "kind:price",
+		"aggregation:count", "aggregation:sum", "aggregation:unique_count", "sum-with-filters-and-group-by",
+		"operator:exists", "operator:in", "operator:not_equal", "operator:less_than",
+		"feature:access:", "feature:metered:",
+		"feature:configuration:boolean", "feature:configuration:integer", "feature:configuration:decimal",
+		"feature:configuration:string", "feature:configuration:string_list",
+	} {
+		if !has[want] {
+			t.Errorf("sample catalog lacks %s", want)
+		}
+	}
+	paid := false
+	for _, kinds := range prices {
+		paid = paid || kinds["recurring"] && kinds["usage"] && kinds["included"]
+	}
+	if !paid {
+		t.Error("sample catalog lacks a plan with a fixed fee, a usage price, and included usage")
+	}
+	if len(addonFeatures) == 0 {
+		t.Error("sample add-on grants no feature")
+	}
+	for _, feature := range addonFeatures {
+		if planFeatures[feature] {
+			t.Errorf("sample add-on feature %s conflicts with a plan grant", feature)
 		}
 	}
 }

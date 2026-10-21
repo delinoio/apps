@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: feature
+service: example-api
+key: support-tier
+name: Support tier
+type: configuration
+value_type: string

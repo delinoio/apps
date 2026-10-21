@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: feature
+service: example-api
+key: allowed-regions
+name: Allowed regions
+type: configuration
+value_type: string_list

@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# The add-on grants a feature that no plan defines; a subscription that
+# defined the same feature in its plan and an add-on would be rejected.
 kind: addon
 service: example-api
 key: priority
 name: Priority requests
+features:
+  - service: example-api
+    key: priority-queue
+    enabled: true

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+kind: feature
+service: example-api
+key: storage-gb
+name: Storage in GB
+type: configuration
+value_type: decimal

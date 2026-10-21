@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Sum meter with typed filters and group-by. Unquoted true is a boolean
+# operand; the exists filter takes no values.
+kind: meter
+service: example-api
+key: tokens
+event_type: completion.finished
+aggregation: sum
+value_attribute: tokens
+filters:
+  - attribute: model
+    operator: exists
+  - attribute: cached
+    operator: not_equal
+    values: [true]
+group_by:
+  - model
