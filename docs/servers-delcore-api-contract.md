@@ -89,7 +89,7 @@ After explicit migration and a successful schema compatibility check, the server
 
 - Meter definitions match an event type and AND-combined scalar attribute filters. Filters support equality, inequality, membership, numeric comparisons, and existence. Group keys include sorted attribute names, scalar types, and canonical values so equivalent flat events select the same group without key collisions.
 - For each matched meter and group, compute count, sum, min, max, average, or exact unique count. Retain the exact sum and count for averages; round the exposed average to six decimal places using half-up rounding, with negative ties rounded away from zero. Negative numeric inputs remain valid. Replacing or cancelling an event recomputes affected groups and removes empty groups.
-- Check group and distinct-value cardinality against the complete accepted event state, including events awaiting aggregate materialization. Apply the admission decision to the whole event when multiple meters match.
+- Check group and distinct-value cardinality against the complete accepted event state, including events awaiting aggregate materialization. Apply the admission decision to the whole event when multiple meters match. [Event ingestion](#event-ingestion-and-asynchronous-metering) owns the accepted wire contract, admission accounting, and processing rules.
 - Services report measured usage after execution. Delcore calculates charges using its price contracts.
 - Preserve usage event identity, service and tenant attribution, occurrence time, and applicable price history.
 - Deduplicate accepted usage durably. A service may correct its own prior event through a referenced correction API.
@@ -117,7 +117,7 @@ After explicit migration and a successful schema compatibility check, the server
 - After settlement and the configured deletion grace period, delete personal information and retain required accounting/audit records in de-identified form.
 - User withdrawal removes delcore access, the personal tenant, and organization memberships subject to ownership and settlement constraints.
 - Do not delete the shared Logto identity. Prevent re-registration through the same identity while deletion is pending.
-- Require operator-configured retention periods for raw usage, accounting records, audit records, and webhook records. Implement retention jobs without breaking unsettled accounting or required replay protection.
+- Require operator-configured retention periods for raw usage, accounting records, audit records, and webhook records. Implement retention jobs without breaking unsettled accounting or required replay protection. Metering events, their revision history and derived rows follow the raw-usage boundary described in [event ingestion](#event-ingestion-and-asynchronous-metering).
 
 **Interfaces and notifications**
 
@@ -125,7 +125,7 @@ After explicit migration and a successful schema compatibility check, the server
   - Current user and tenant discovery; tenant, membership, invitation, ownership, and group management.
   - Catalog reads; subscription changes; manual top-ups and automatic top-up settings.
   - Usage, ledger, and billing history.
-  - Service authorization checks, usage reporting, and usage corrections.
+  - Service authorization checks, usage reporting, and usage corrections, including event ingestion, event corrections, and event reads.
   - Operator catalog management, tenant blocking, audit inspection, and failed-job inspection/reprocessing.
 - Use typed errors, correlation identifiers, bounded pagination, and UUID v7 for delcore entities. Keep external provider identifiers as explicit external references.
 - Authenticate and verify inbound provider events before processing. Apply duplicate and stale-event protection.
@@ -165,9 +165,50 @@ Prorated included quantities are floored to six decimal places (one millionth of
 
 Purchased monetary credits apply only to metered usage. Paddle collects fixed subscription and add-on fees separately. Paid usage periods follow Paddle subscription periods; free usage periods follow UTC calendar months. Automatic top-up monthly caps use UTC calendar months. Schemas and Go bindings live in root `protos/delcore/v1`. Servers consume local packages from the same Go module; see the [repository boundary contract](repository-boundary-contract.md).
 
+### Event ingestion and asynchronous metering
+
+Registered services report measured events with `IngestEvent` and correct them with `CorrectEvent` under the existing `usage:write` scope and service ownership checks. `GetEvent` returns the latest accepted revision to the owning service with either usage scope. The legacy `ReportUsage` and `CorrectUsage` quantity path remains available and remains the rating path until event aggregates are rated; event ingestion currently materializes aggregates only and appends no ledger entries.
+
+**Acceptance**
+
+- An event names a tenant UUID, the authenticated service, a service-scoped event key of 1 to 200 bytes, an event type of 1 to 100 bytes, an occurrence time, and a flat attribute map. A map has at most 100 attributes; names have 1 to 100 bytes; values are strings of at most 1,024 bytes, booleans, or decimal strings of at most 64 characters. Nested values, lists, binary floats, and exponent notation are rejected. Occurrence times are normalized to microseconds and numbers to canonical decimals before hashing and storage.
+- The applicable meters are the typed catalog meters of the calling service when the event is accepted. Legacy meters without an event type never match. The evaluated meter set is stored with the event, and corrections match only that set; a meter added later is not backfilled.
+- An event that matches no meter returns `ERROR_REASON_NO_MATCHING_METER`. If any matched meter lacks a group-by or value attribute, or a `sum`, `min`, `max`, or `avg` meter receives a non-numeric value, the whole event returns `ERROR_REASON_INVALID_ATTRIBUTE` and no meter receives it. Negative and zero numbers are valid inputs.
+- The service and event key form the durable identity. A repeated event with identical canonical content returns the original event ID and revision 1 without repeated effects, before reporting-window and tenant checks and after retention through retained replay identities. Different content under the same key returns `ERROR_REASON_EVENT_IDENTITY_CONFLICT`. Request keys keep their existing response-replay behavior.
+- A future occurrence is invalid input. An occurrence older than `USAGE_LATENESS_SECONDS` returns `ERROR_REASON_REPORTING_WINDOW_CLOSED`. A deleted tenant is forbidden. A deleting tenant accepts only occurrences before deletion started and only until `REPORTING_GRACE_SECONDS` after that point; later requests return `ERROR_REASON_REPORTING_WINDOW_CLOSED`.
+- The billing period is fixed at acceptance from the occurrence time: the recorded Paddle renewal period that covers it for paid subscriptions, otherwise the UTC calendar month.
+- One transaction stores the event identity, the first revision, its matched meter contributions, admission accounting, and a durable `metering` job before the response. Success promises durable storage and queued processing only. It does not promise read-after-write visibility of aggregates, rating, or entitlement usage; `GetEvent.applied_revision` reports processing progress.
+
+**Corrections**
+
+- A correction names the tenant, event key, expected revision, and either `EVENT_CORRECTION_KIND_REPLACE` with a complete event type and attribute map or `EVENT_CORRECTION_KIND_CANCEL` with no content. Tenant, service, occurrence time, billing period, and the evaluated meter set never change.
+- The expected revision must equal the latest accepted revision. Otherwise the request returns `ERROR_REASON_STALE_REVISION` with an aborted status and the caller must re-read the event. A retry whose content equals the already accepted next revision returns that revision without effects. Concurrent corrections of one revision therefore produce one winner.
+- A cancelled event cannot be corrected again and returns `ERROR_REASON_EVENT_CANCELLED`. The accepted-lateness bound applies to the original occurrence, and the tenant deletion rules above apply unchanged.
+- A replacement is validated like a new event, including admission bounds and group removal or introduction. The original and every correction remain as append-only revisions; database triggers reject updates and deletions outside controlled retention.
+
+**Cardinality admission**
+
+- `MAX_METER_GROUPS` bounds the groups of one tenant, meter, and billing period. `MAX_METER_GROUP_VALUES` bounds the distinct values of one group for `min`, `max`, and `unique_count`, which retain an exact value multiset. `count`, `sum`, and `avg` retain only exact counts and sums and do not consume distinct-value capacity. Unique counts are never approximated.
+- Admission accounting follows the latest accepted revision of every event, including revisions that processing has not materialized. A correction releases its previous revision before claiming the replacement, so moving an event between groups needs capacity only for the destination. Requests lock the affected period rows in a fixed order, and every state transition already holds the single-instance transaction lock, so concurrent requests and worker backlog cannot exceed the bounds.
+- An event that would exceed either bound on any matched meter returns `ERROR_REASON_CARDINALITY_EXCEEDED` with a resource-exhausted status and leaves no partial effect. Materialized aggregates can briefly retain a superseded group until its correction is processed.
+
+**Asynchronous processing**
+
+- Each worker step processes up to 100 ready `metering` jobs before other durable jobs. One transaction claims a job, moves the event's materialized state from its applied revision to its latest revision, runs the in-process rating hook, and completes the job. A crash before commit leaves the job pending with no aggregate effect; a commit records the applied revision, so repeated or redelivered work changes nothing. Several queued revisions collapse into one exact transition.
+- Group aggregates keep the exact event count, exact sum for numeric aggregations, and the distinct-value multiset for `min`, `max`, and `unique_count`. The exposed value is the count, sum, minimum, maximum, distinct count, or the exact average rounded half-up to six places with negative ties away from zero. Removing the last contribution deletes a group; a replacement can remove one group and introduce another. The hook receives exact before and after aggregates for every changed group.
+- A failed attempt rolls back and is recorded separately. Transient failures return to pending after `RETRY_SECONDS` until `RETRY_LIMIT` attempts, then fail with `retry_exhausted`. Inconsistent stored state fails with `metering_invalid`, and an unreadable job payload with `invalid_payload`; neither retries automatically. A shutdown that interrupts an attempt keeps the job pending without consuming an attempt.
+- Operators inspect failed work with `ListJobs` and reprocess it with `RetryJob`, which requires a reason, writes the `job.retry` audit record, and returns metering work to pending with a reset attempt count. Pending and failed metering jobs hold final tenant deletion and are never pruned. Tenant billing history omits metering jobs.
+- While work is delayed or failed, aggregates and later authorization decisions use the last applied state. Processing lag does not block ingestion.
+
+**Retention and recovery**
+
+- Event identities, revisions, raw attributes, contributions, aggregates, and admission rows follow the raw-usage boundary. After a tenant's deletion is final and older than the raw-usage and accounting retention cutoff, maintenance copies replay identities into a separate table and removes those rows in one transaction. A tenant with unfinished metering work is skipped.
+- Recover a growing backlog by checking worker health, database availability, and `delcore_metering_lag_seconds`; accepted work remains durable while processing is stopped. Recover failed work by reading its category with `ListJobs`, correcting the cause, and calling `RetryJob`. A cardinality rejection is final for that content in that billing period; raise the operator bound and restart, or declare a new meter key with different grouping for future events. Rejected events leave nothing to clean up.
+- Logs record the correlation ID, calling service ID, correction kind, revision, replay flag, matched meter count, and typed rejection reason. Worker logs record job IDs, failure categories, and attempt counts. Logs never contain attribute values, event keys, tenant IDs, or credentials. Prometheus exposes `delcore_metering_backlog`, `delcore_metering_failed_jobs`, and `delcore_metering_lag_seconds` without labels.
+
 ## Storage
 
-PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
+PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Migration 7 adds metering event identities, append-only revisions and contributions, replay identities, materialized group aggregates with value multisets, admission accounting, and a ready-work index for `metering` jobs. Catalog synchronization never applies it. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
 
 ## Security
 
@@ -233,7 +274,7 @@ Registered services with the `authorize` scope can also check final deletion for
 
 ## Environment configuration
 
-The server reads individual, unprefixed environment variables and an optional `.env` in its working directory. Process variables, including explicitly empty values, take precedence over `.env`. Both direct and Air startup use the Go `godotenv` parser, including its variable expansion semantics. The JSON `CONFIG` variable and `-config` flag are removed. The service-local `.env.example` lists every setting. Environment names are the uppercase forms of the former JSON keys, for example `DATABASE_URL`, `IDENTITY_KEY`, `PADDLE_TOKEN` and `TIMEOUT_SECONDS`. `RETURN_URLS` is a JSON array of exact URL strings; numeric values use base-10 integers, and `DEVELOPMENT` uses a Go boolean value. An omitted `DEVELOPMENT` is false. `CATALOG_DIR` is optional and selects the development YAML directory; the default is `servers/delcore-api/catalog` when started from the repository root or `catalog` from the service directory. All required settings and existing policy bounds remain validated at startup; invalid values must not appear in logs or errors.
+The server reads individual, unprefixed environment variables and an optional `.env` in its working directory. Process variables, including explicitly empty values, take precedence over `.env`. Both direct and Air startup use the Go `godotenv` parser, including its variable expansion semantics. The JSON `CONFIG` variable and `-config` flag are removed. The service-local `.env.example` lists every setting. Environment names are the uppercase forms of the former JSON keys, for example `DATABASE_URL`, `IDENTITY_KEY`, `PADDLE_TOKEN` and `TIMEOUT_SECONDS`. `RETURN_URLS` is a JSON array of exact URL strings; numeric values use base-10 integers, and `DEVELOPMENT` uses a Go boolean value. An omitted `DEVELOPMENT` is false. `MAX_METER_GROUPS` and `MAX_METER_GROUP_VALUES` are required base-10 integers from 1 to 1,000,000 and set the [cardinality admission](#event-ingestion-and-asynchronous-metering) bounds. `CATALOG_DIR` is optional and selects the development YAML directory; the default is `servers/delcore-api/catalog` when started from the repository root or `catalog` from the service directory. All required settings and existing policy bounds remain validated at startup; invalid values must not appear in logs or errors.
 
 PostgreSQL integration tests use `TEST_DATABASE_URL`. Service-prefixed aliases are not supported. Standard `OTEL_*` and `NO_COLOR` variables retain their names. The consumer example uses its separate `DELCORE_ACCESS_TOKEN` variable.
 

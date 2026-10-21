@@ -43,6 +43,7 @@ Bootstrap the service catalog and default free plan with a user token carrying t
 | `REPORTING_GRACE_SECONDS`, `DELETION_GRACE_SECONDS`           | Final reporting and deletion delays                    |
 | `*_RETENTION_SECONDS`                                         | Explicit retention policy inputs                       |
 | `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                   | Operational alert thresholds                           |
+| `MAX_METER_GROUPS`, `MAX_METER_GROUP_VALUES`                  | Event admission bounds per tenant meter period         |
 | `DEVELOPMENT`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
 | `CATALOG_DIR`                                                 | Optional development YAML catalog directory            |
 
@@ -64,6 +65,8 @@ User clients discover their personal tenant, create organizations, manage invita
 
 M2M clients call `Authorize`, `ReportUsage`, `CorrectUsage` and service-scoped `ListUsage` under their registered service identity. Treat an unavailable authorization decision as a denial of new paid execution. Retain pending usage reports locally until accepted. Use a stable event key for every measured execution. A correction supplies the original tenant, meter and occurrence time, references the previous event, and replaces its quantity. Corrections and ledger effects append new records.
 
+Event-based callers use `IngestEvent`, `CorrectEvent` and `GetEvent`. Send each measured execution once with a stable event key, its event type, occurrence time and flat attributes; repeat it unchanged after a timeout. A success means Delcore stored the event and queued aggregation, not that aggregates are already updated. A correction names the latest revision and replaces the complete type and attributes or cancels the event; after `ERROR_REASON_STALE_REVISION`, read the event again before deciding. Events that match no meter, miss a required attribute, or exceed the configured group or distinct-value bound are rejected as a whole with a typed reason. See the [event ingestion contract](../../docs/servers-delcore-api-contract.md#event-ingestion-and-asynchronous-metering).
+
 Post-execution reporting cannot guarantee zero overspend under concurrency. A non-postpaid tenant may incur negative credits; the next top-up offsets that debt. Monetary values are decimal strings. Prorated included quantities are floored to 0.000001; monetary products keep full precision until cumulative service/meter period totals are rounded half-up to currency minor units. Occurrence timestamps are normalized to PostgreSQL microsecond precision. Credits pay usage only. Fixed subscription and add-on fees remain Paddle charges. Negative postpaid corrections carry forward against later usage. On cancellation, refund any remaining usage overpayment through Paddle. Select the original usage transaction item; an approved refund clears the settlement hold after webhook processing. A fixed subscription fee refund does not clear usage debt. Keep the transaction item attribution when restoring a backup; an unverified refund must remain under operator review.
 
 Payment requests return a durable job ID. Poll `ListBillingHistory` for payment state and checkout URLs. A checkout return is not proof of payment. One-time charges use Paddle price metadata to correlate the resulting transaction; the subscription response itself never grants credits. Recover payment failures through the payment provider and inspect independently enforced blocking reasons.
@@ -71,6 +74,8 @@ Payment requests return a durable job ID. Poll `ListBillingHistory` for payment 
 ## Operations and recovery
 
 Use `/healthz`, `/readyz`, `/metrics`, structured JSON logs and optional OTLP traces. Correlate failures by response IDs. Never include access tokens, invitation tokens, raw webhook bodies or operator configuration in support reports. Metric labels must not contain user or tenant identifiers.
+
+Event metering exposes `delcore_metering_backlog`, `delcore_metering_failed_jobs` and `delcore_metering_lag_seconds`. Accepted events stay durable while processing is delayed; aggregates show the last applied state until the backlog drains. Failed `metering` jobs appear in `ListJobs` with a `metering_invalid`, `invalid_payload` or `retry_exhausted` category and return to processing through `RetryJob` after the cause is fixed. Pending or failed metering work holds final tenant deletion. Cardinality rejections leave no state behind; raise `MAX_METER_GROUPS` or `MAX_METER_GROUP_VALUES` and restart, or declare a new meter key with different grouping.
 
 Operators inspect failed jobs and audit history through authenticated APIs. Reprocessing requires a reason. An ambiguous payment returns to reconciliation, not a blind charge retry. If no provider transaction can be identified, inspect Paddle and preserve the failed job for review. Never change a balance directly in PostgreSQL; the ledger is append-only.
 
