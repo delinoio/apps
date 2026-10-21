@@ -108,7 +108,9 @@ func (w *Worker) processMeteringJob(ctx context.Context) (bool, error) {
 	}
 	if ctx.Err() != nil {
 		// Shutdown rolled back the attempt; the job stays pending without
-		// consuming its retry budget.
+		// consuming its retry budget. The span still carries bounded outcome
+		// and category values so outcome-based trace queries find it.
+		span.SetAttributes(attribute.String("delcore.outcome", string(telemetry.OutcomeDeferred)), attribute.String("delcore.failure_category", "shutdown"))
 		span.SetStatus(codes.Error, "shutdown")
 		return false, ctx.Err()
 	}

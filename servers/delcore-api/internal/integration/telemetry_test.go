@@ -466,3 +466,46 @@ func TestMeteringClaimFailureSpanCarriesOutcome(t *testing.T) {
 		}
 	}
 }
+
+// TestMeteringShutdownSpanCarriesOutcome proves that a shutdown after a job
+// is claimed annotates its span with bounded outcome and category values and
+// leaves the job pending without consuming an attempt.
+func TestMeteringShutdownSpanCarriesOutcome(t *testing.T) {
+	o := observe(t)
+	f := newObservedMeterFixture(t, nil, o.logger, o.metrics)
+	attributes := request{region: "us", outcome: "success", user: "u1", bytes: "7", latency: "1"}.wire()
+	if _, err := f.ingest("service", "shutdown-event", "request", time.Now().UTC().Add(-time.Minute), attributes); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.worker.MeteringApplied = func(hookCtx context.Context, _ pgx.Tx, _ events.Applied) error {
+		cancel()
+		return hookCtx.Err()
+	}
+	if _, err := f.worker.ProcessMetering(ctx, 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted processing error = %v, want context.Canceled", err)
+	}
+	var state string
+	var attempts int
+	if err := f.db.Pool.QueryRow(context.Background(), "SELECT state,attempts FROM jobs WHERE kind='metering'").Scan(&state, &attempts); err != nil || state != "pending" || attempts != 0 {
+		t.Fatalf("interrupted job = %s %d %v, want pending with no attempt", state, attempts, err)
+	}
+	if got := o.spanCount(telemetry.SpanMeteringProcess, string(telemetry.OutcomeDeferred)); got != 1 {
+		t.Fatalf("shutdown spans with a deferred outcome = %d, want 1", got)
+	}
+	for _, span := range o.spans.Ended() {
+		if span.Name() != telemetry.SpanMeteringProcess {
+			continue
+		}
+		var category string
+		for _, attribute := range span.Attributes() {
+			if attribute.Key == "delcore.failure_category" {
+				category = attribute.Value.AsString()
+			}
+		}
+		if category != "shutdown" {
+			t.Fatalf("shutdown span failure category = %q, want shutdown", category)
+		}
+	}
+}

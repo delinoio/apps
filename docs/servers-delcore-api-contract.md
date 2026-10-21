@@ -476,7 +476,7 @@ Catalog reconciliation, event ingestion, corrections, asynchronous metering, and
 | `delcore_metering_processing_duration_seconds`    | `outcome`                                                   | Duration of one metering job attempt.                                         |
 | `delcore_operator_job_retries_total`              | `kind`: job kind                                            | Failed jobs that an operator returned to processing with `RetryJob`.          |
 
-OpenTelemetry spans `delcore.catalog.reconcile`, `delcore.event.ingest`, `delcore.event.correct`, and `delcore.metering.process` carry the correlation ID or job ID, the outcome, the typed reason or failure category, and counts such as revision, matched meters, changed groups, files, and created versions. They never carry tenant, user, event, or service IDs, event keys, attribute values, or credentials. An idle worker step creates no metering span.
+OpenTelemetry spans `delcore.catalog.reconcile`, `delcore.event.ingest`, `delcore.event.correct`, and `delcore.metering.process` carry the correlation ID or job ID, the outcome, the typed reason or failure category, and counts such as revision, matched meters, changed groups, files, and created versions. They never carry tenant, user, event, or service IDs, event keys, attribute values, or credentials. An idle worker step creates no metering span. A shutdown that interrupts a claimed metering attempt ends its span with outcome `deferred` and failure category `shutdown`; it records no job metric because the job stays pending without consuming an attempt.
 
 Audit records cover state changes without one row per ingested event:
 
