@@ -392,16 +392,19 @@ fn check_price_snapshots(
     }
     let effective = metering::ai::price_effective_at(attributes)
         .map_err(|e| reject(Reason::InvalidAttribute, &e.to_string()))?;
-    let stored = occurred_at
-        .with_nanosecond(occurred_at.nanosecond() / 1000 * 1000)
-        .unwrap_or(occurred_at);
-    if effective > stored {
+    if micros(effective) > micros(occurred_at) {
         return Err(reject(
             Reason::InvalidAttribute,
             "price_effective_at is later than the event occurrence",
         ));
     }
     Ok(())
+}
+
+/// Truncate to the microsecond precision PostgreSQL stores.
+fn micros(at: DateTime<Utc>) -> DateTime<Utc> {
+    at.with_nanosecond(at.nanosecond() / 1000 * 1000)
+        .unwrap_or(at)
 }
 
 fn match_meters(meters: &[Meter], event: &metering::Event) -> Result<Vec<Contribution>> {
@@ -683,5 +686,81 @@ mod tests {
         event.event_type = "unmatched".into();
         assert!(match_meters(&meters, &event).is_err());
         assert!(match_meters(&[], &event).is_err());
+    }
+
+    fn ai_report(effective: &str) -> BTreeMap<String, metering::Value> {
+        BTreeMap::from([
+            ("model".into(), metering::Value::string("vendor/model")),
+            (
+                "price_effective_at".into(),
+                metering::Value::string(effective),
+            ),
+            (
+                "input_tokens".into(),
+                metering::Value::number("1000").unwrap(),
+            ),
+            (
+                "input_usd_per_token".into(),
+                metering::Value::number("0.000002").unwrap(),
+            ),
+        ])
+    }
+
+    #[test]
+    fn price_effective_time_is_compared_at_microsecond_precision() {
+        let meters = vec![Meter {
+            id: "ai".into(),
+            definition: metering::Definition {
+                key: "translator-usd".into(),
+                event_type: "translator.usage".into(),
+                aggregation: metering::Aggregation::Sum,
+                value_attribute: String::new(),
+                filters: vec![],
+                group_by: vec![],
+                value_source: metering::ValueSource::AiTokenUsd,
+                markup: "1.15".into(),
+            },
+            untyped: false,
+        }];
+        let check = |effective: &str, occurred: &str| {
+            let attributes = ai_report(effective);
+            let matched = match_meters(
+                &meters,
+                &metering::Event {
+                    event_type: "translator.usage".into(),
+                    attributes: attributes.clone(),
+                },
+            )
+            .unwrap();
+            let occurred = DateTime::parse_from_rfc3339(occurred)
+                .unwrap()
+                .with_timezone(&Utc);
+            check_price_snapshots(&meters, &matched, &attributes, occurred)
+        };
+        // The same instant below microsecond precision is equal once stored.
+        assert!(
+            check(
+                "2026-01-01T00:00:00.000000999Z",
+                "2026-01-01T00:00:00.000000999Z"
+            )
+            .is_ok()
+        );
+        assert!(
+            check(
+                "2026-01-01T00:00:00.000000500Z",
+                "2026-01-01T00:00:00.000000999Z"
+            )
+            .is_ok()
+        );
+        assert!(check("2026-01-01T00:00:00Z", "2026-01-01T00:00:00.000000999Z").is_ok());
+        // A whole later microsecond is still rejected.
+        assert!(
+            check(
+                "2026-01-01T00:00:00.000001Z",
+                "2026-01-01T00:00:00.000000999Z"
+            )
+            .is_err()
+        );
+        assert!(check("2026-01-01T00:00:01Z", "2026-01-01T00:00:00Z").is_err());
     }
 }
