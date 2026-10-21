@@ -213,6 +213,7 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "git-tracker-clients",
     "delcore-api",
     "rust-servers",
+    "rust-servers-clippy",
     "devbase-frontend",
     "delino-site-frontend",
     "delino-docs-frontend",
@@ -273,6 +274,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   const noServers = structuredClone(needs);
   noServers.changes.outputs.rust_servers = "[]";
   noServers["rust-servers"].result = "skipped";
+  noServers["rust-servers-clippy"].result = "skipped";
   assert.equal(run(noServers).status, 0);
   noServers["rust-servers"].result = "success";
   assert.notEqual(run(noServers).status, 0);
@@ -408,7 +410,7 @@ test("Rust API jobs install Clippy for the repository-selected toolchain", () =>
     new URL("../../rust-toolchain", import.meta.url),
     "utf8",
   ).trim();
-  for (const id of ["rust-servers"]) {
+  for (const id of ["rust-servers-clippy"]) {
     const setup = workflow.jobs[id].steps.find((step) =>
       step.uses?.startsWith("dtolnay/rust-toolchain@"),
     );
@@ -445,7 +447,7 @@ test("Rust server matrix gates allocation and preserves independent evidence", (
     /matrix.service/u,
   );
   const commands = job.steps.map((step) => step.run ?? "").join("\n");
-  assert.match(commands, /cargo clippy.*-p "\$SERVICE".*-D warnings/u);
+  assert.doesNotMatch(commands, /cargo clippy/u);
   assert.match(commands, /cargo test.*--test postgres -- --ignored/u);
   assert.doesNotMatch(commands, /\bgo (?:vet|build|test)\b/u);
   assert.ok(
@@ -454,4 +456,29 @@ test("Rust server matrix gates allocation and preserves independent evidence", (
   assert.equal(job.env.GOWORK, undefined);
   assert.ok(!workflow.jobs["devbase-api"]);
   assert.ok(!workflow.jobs["git-tracker-api"]);
+});
+
+test("Rust server Clippy runs independently with the affected-service matrix", () => {
+  const job = workflow.jobs["rust-servers-clippy"];
+  assert.equal(job.needs, "changes");
+  assert.equal(job.if, workflow.jobs["rust-servers"].if);
+  assert.deepEqual(job.strategy, workflow.jobs["rust-servers"].strategy);
+  assert.ok(workflow.jobs["ci-result"].needs.includes("rust-servers-clippy"));
+  const commands = job.steps.map((step) => step.run ?? "").join("\n");
+  assert.match(
+    commands,
+    /cargo clippy.*-p "\$SERVICE".*--all-targets -- -D warnings/u,
+  );
+  assert.doesNotMatch(commands, /cargo test|docker|\bgo (?:vet|build|test)\b/u);
+  assert.ok(
+    !job.steps.some((step) => step.uses?.startsWith("actions/setup-go@")),
+  );
+  const record = job.steps.find((step) => step.name === "Record validation");
+  assert.equal(record.env.VALIDATION_JOB, "rust-servers-clippy");
+  assert.equal(record.env.VALIDATION_MATRIX, "${{ toJSON(matrix) }}");
+  assert.match(
+    job.steps.find((step) => step.name === "Preserve validation evidence").with
+      .name,
+    /validation-rust-servers-clippy-.*matrix.service/u,
+  );
 });

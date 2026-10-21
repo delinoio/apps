@@ -748,6 +748,62 @@ jobs:
       - name: Remove integration database
         if: ${{ always() }}
         run: docker rm --force delcore-postgres >/dev/null 2>&1 || true
+  rust-servers-clippy:
+    name: Rust server Clippy (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.rust_servers != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.rust_servers) }}
+    env:
+      SERVICE: ${{ matrix.service }}
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          components: clippy
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - name: Run Rust server Clippy
+        run: |
+          cargo clippy --locked --manifest-path servers/Cargo.toml -p "$SERVICE" --all-targets -- -D warnings
+        id: clippy
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: rust-servers-clippy
+          VALIDATION_MATRIX: ${{ toJSON(matrix) }}
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-rust-servers-clippy-${{ matrix.service }}-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
   rust-servers:
     name: Rust server (${{ matrix.service }})
     needs: changes
@@ -777,13 +833,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
-          components: rustfmt, clippy
       - name: Install protocol compiler
         id: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - name: Validate Rust server with local protocol packages
         run: |
-          cargo clippy --locked --manifest-path servers/Cargo.toml -p "$SERVICE" --all-targets -- -D warnings
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE"
         id: unit
       - name: Start integration database
@@ -848,6 +902,7 @@ jobs:
       - protocol
       - delcore-api
       - rust-servers
+      - rust-servers-clippy
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected job
@@ -858,7 +913,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'delcore-api': selection.delcore_api === 'true', 'rust-servers': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'delcore-api': selection.delcore_api === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);
