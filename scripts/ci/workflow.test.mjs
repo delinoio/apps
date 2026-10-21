@@ -396,3 +396,17 @@ test("server validation uses local protocols, PostgreSQL and licensed OCI packag
     assert.match(dockerfile, /COPY LICENSE NOTICE/u);
   }
 });
+
+test("Rust API jobs install Clippy for the repository-selected toolchain", () => {
+  const toolchain = readFileSync(
+    new URL("../../rust-toolchain", import.meta.url),
+    "utf8",
+  ).trim();
+  for (const id of ["devbase-api", "git-tracker-api"]) {
+    const setup = workflow.jobs[id].steps.find((step) =>
+      step.uses?.startsWith("dtolnay/rust-toolchain@"),
+    );
+    assert.equal(setup.with.toolchain, toolchain, id);
+    assert.ok(setup.with.components.split(/,\s*/u).includes("clippy"), id);
+  }
+});
