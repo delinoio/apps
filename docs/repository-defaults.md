@@ -65,17 +65,18 @@ Delcore, DevBase and Git Tracker APIs use Rust, Connect RPC and PostgreSQL. Deli
 
 All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on port conflicts. Native shells use the same frontend address as their app's `pnpm dev` command.
 
-| Component            | Port    | Configuration                                                                   | Owning contract                                        |
-| -------------------- | ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| DeliDev frontend     | `46311` | `apps/delidev/rsbuild.config.ts`                                                | [Desktop shell](apps-delidev-desktop-contract.md)      |
-| DeliTools frontend   | `46312` | `apps/delitools/rsbuild.config.ts`                                              | [Application foundation](apps-delitools-foundation.md) |
-| DevBase frontend     | `46313` | `apps/devbase/rsbuild.config.ts`                                                | [Web application](apps-devbase-web-contract.md)        |
-| Delino Site frontend | `46314` | `apps/delino-site/rsbuild.config.ts`                                            | [Web application](apps-delino-site-web-contract.md)    |
-| Delino Docs frontend | `46315` | `apps/delino-docs/rspress.config.ts`                                            | [Documentation app](apps-delino-docs-web-contract.md)  |
-| FixKey frontend      | `46316` | `apps/fixkey-app/rsbuild.config.ts`                                             | [Desktop application](apps-fixkey-desktop-contract.md) |
-| DevBase API          | `46317` | `LISTEN` in `servers/devbase-api/.env.example`; runtime default matches         | [Server](servers-devbase-api-contract.md)              |
-| Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                            | [Web application](apps-git-tracker-web-contract.md)    |
-| Git Tracker API      | `46321` | `LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches     | [Server](servers-git-tracker-api-contract.md)          |
-| Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
+| Component            | Port    | Configuration                                                                     | Owning contract                                        |
+| -------------------- | ------- | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| DeliDev frontend     | `46311` | `apps/delidev/rsbuild.config.ts`                                                  | [Desktop shell](apps-delidev-desktop-contract.md)      |
+| DeliTools frontend   | `46312` | `apps/delitools/rsbuild.config.ts`                                                | [Application foundation](apps-delitools-foundation.md) |
+| DevBase frontend     | `46313` | `apps/devbase/rsbuild.config.ts`                                                  | [Web application](apps-devbase-web-contract.md)        |
+| Delino Site frontend | `46314` | `apps/delino-site/rsbuild.config.ts`                                              | [Web application](apps-delino-site-web-contract.md)    |
+| Delino Docs frontend | `46315` | `apps/delino-docs/rspress.config.ts`                                              | [Documentation app](apps-delino-docs-web-contract.md)  |
+| FixKey frontend      | `46316` | `apps/fixkey-app/rsbuild.config.ts`                                               | [Desktop application](apps-fixkey-desktop-contract.md) |
+| DeliTools API        | `46322` | `LISTEN` in `servers/delitools-api/.env.example`; explicit configuration required | [Server](servers-delitools-api-contract.md)            |
+| DevBase API          | `46317` | `LISTEN` in `servers/devbase-api/.env.example`; runtime default matches           | [Server](servers-devbase-api-contract.md)              |
+| Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                              | [Web application](apps-git-tracker-web-contract.md)    |
+| Git Tracker API      | `46321` | `LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches       | [Server](servers-git-tracker-api-contract.md)          |
+| Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required   | [Server](servers-delcore-api-contract.md)              |
 
 Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.

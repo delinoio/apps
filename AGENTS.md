@@ -55,7 +55,7 @@
 
 ## Monorepo Structure Map
 
-- `servers/`: Delcore, DevBase and Git Tracker services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
+- `servers/`: Delcore, DeliTools, DevBase and Git Tracker services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
 - `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.

@@ -6,6 +6,7 @@ import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
 
 export const Api = Object.freeze({
   Delcore: "delcore",
+  Delitools: "delitools",
   DevBase: "devbase",
   GitTracker: "git-tracker",
 });

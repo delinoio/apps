@@ -24,6 +24,11 @@
       "appPort": 8080,
       "proxy": true
     },
+    "servers/delitools-api": {
+      "name": "delitools-api",
+      "appPort": 46322,
+      "proxy": true
+    },
     "servers/devbase-api": {
       "name": "devbase-api",
       "appPort": 46317,

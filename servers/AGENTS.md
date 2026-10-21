@@ -41,4 +41,4 @@
 - [Git Tracker server](../docs/servers-git-tracker-api-contract.md)
 - [Git Tracker threat model](../docs/servers-git-tracker-threat-model.md)
 
-- Delcore, DevBase and Git Tracker production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.
+- Delcore, DeliTools, DevBase and Git Tracker production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.

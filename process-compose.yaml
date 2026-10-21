@@ -45,6 +45,16 @@ processes:
     shutdown:
       signal: 2
       timeout_seconds: 15
+  delitools-api:
+    depends_on:
+      server-build:
+        condition: process_completed_successfully
+    command: pnpm exec turbo run dev --filter=@delinoio/delitools-api
+    availability:
+      restart: exit_on_failure
+    shutdown:
+      signal: 2
+      timeout_seconds: 15
   devbase-api:
     depends_on:
       server-build:

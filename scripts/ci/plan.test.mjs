@@ -5,6 +5,7 @@ import { select, selectRustServers } from "./plan.mjs";
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
     delcore_api: false,
+    delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
@@ -18,6 +19,7 @@ test("isolated projects select only their validation", () => {
   });
   assert.deepEqual(select(["protos/delcore/v1/delcore.proto"]), {
     delcore_api: true,
+    delitools_api: true,
     devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
@@ -31,6 +33,7 @@ test("isolated projects select only their validation", () => {
   });
   assert.deepEqual(select(["pnpm-lock.yaml"]), {
     delcore_api: true,
+    delitools_api: true,
     devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
@@ -58,6 +61,7 @@ for (const [project, key] of [
     ]) {
       assert.deepEqual(select([path]), {
         delcore_api: false,
+        delitools_api: false,
         devbase_api: key === "devbase" && path === "docs/project-devbase.md",
         git_tracker_api: false,
         git_tracker: false,
@@ -76,6 +80,7 @@ for (const [project, key] of [
 test("consumer examples select protocol validation without native runners", () => {
   assert.deepEqual(select(["examples/delcore-client/main.go"]), {
     delcore_api: false,
+    delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
@@ -99,6 +104,7 @@ for (const path of [
   test(`standalone FixKey ownership: ${path}`, () => {
     assert.deepEqual(select([path]), {
       delcore_api: false,
+      delitools_api: false,
       devbase_api: false,
       git_tracker_api: false,
       git_tracker: false,
@@ -128,6 +134,7 @@ test("Git Tracker clients and Action avoid unrelated runners", () => {
 
 for (const [service, key] of [
   ["delcore-api", "delcore_api"],
+  ["delitools-api", "delitools_api"],
   ["devbase-api", "devbase_api"],
   ["git-tracker-api", "git_tracker_api"],
 ]) {
@@ -138,7 +145,12 @@ for (const [service, key] of [
     ]) {
       const selection = select([path]);
       assert.equal(selection[key], true);
-      for (const other of ["delcore_api", "devbase_api", "git_tracker_api"])
+      for (const other of [
+        "delcore_api",
+        "delitools_api",
+        "devbase_api",
+        "git_tracker_api",
+      ])
         if (other !== key) assert.equal(selection[other], false, path);
       for (const frontend of [
         "fixkey",
@@ -161,6 +173,7 @@ test("server-wide license, instructions and helpers select every server", () => 
   ]) {
     const selection = select([path]);
     assert.equal(selection.delcore_api, true);
+    assert.equal(selection.delitools_api, true);
     assert.equal(selection.devbase_api, true);
     assert.equal(selection.git_tracker_api, true);
     assert.equal(selection.fixkey, false);
@@ -171,6 +184,7 @@ test("protocol contract changes select their owning server", () => {
   for (const [path, owner, other] of [
     ["docs/protos-delcore-v1-contract.md", "delcore_api", "git_tracker_api"],
     ["docs/protos-devbase-v1-contract.md", "devbase_api", "delcore_api"],
+    ["docs/protos-delitools-v1-contract.md", "delitools_api", "delcore_api"],
     [
       "docs/protos-git-tracker-v1-contract.md",
       "git_tracker_api",
@@ -197,6 +211,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
   test(`${path} selects native products without unrelated web or Go jobs`, () => {
     assert.deepEqual(select([path]), {
       delcore_api: false,
+      delitools_api: false,
       devbase_api: false,
       git_tracker_api: false,
       git_tracker: false,
@@ -214,6 +229,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
 test("go.sum selects Go protocol and consumer validation only", () => {
   assert.deepEqual(select(["go.sum"]), {
     delcore_api: false,
+    delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
@@ -264,6 +280,7 @@ test("shared Rust server changes select all API validators", () => {
   ]) {
     const jobs = select([path]);
     assert.equal(jobs.delcore_api, true, path);
+    assert.equal(jobs.delitools_api, true, path);
     assert.equal(jobs.devbase_api, true, path);
     assert.equal(jobs.git_tracker_api, true, path);
   }
@@ -273,19 +290,20 @@ test("Rust server matrix selects only affected services", () => {
   for (const [paths, expected] of [
     [["apps/delitools/src/main.tsx"], []],
     [["servers/delcore-api/src/main.rs"], ["delcore-api"]],
+    [["servers/delitools-api/src/main.rs"], ["delitools-api"]],
     [["servers/devbase-api/src/main.rs"], ["devbase-api"]],
     [["servers/git-tracker-api/src/main.rs"], ["git-tracker-api"]],
     [
       ["servers/crates/server-common/src/lib.rs"],
-      ["delcore-api", "devbase-api", "git-tracker-api"],
+      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
     ],
     [
       ["protos/devbase/v1/devbase.proto"],
-      ["delcore-api", "devbase-api", "git-tracker-api"],
+      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
     ],
     [
       [".github/workflows/CI.yml"],
-      ["delcore-api", "devbase-api", "git-tracker-api"],
+      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
     ],
   ]) {
     assert.deepEqual(

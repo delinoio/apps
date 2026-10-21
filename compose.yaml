@@ -18,6 +18,23 @@ services:
       retries: 30
       start_period: 10s
 
+  delitools-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: delitools
+      POSTGRES_PASSWORD: local-delitools
+      POSTGRES_DB: delitools
+    ports:
+      - "127.0.0.1:${DELITOOLS_POSTGRES_PORT:-55434}:5432"
+    volumes:
+      - delitools-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U delitools -d delitools"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
   devbase-postgres:
     image: postgres:17
     environment:
@@ -55,5 +72,6 @@ services:
 
 volumes:
   delcore-postgres-data:
+  delitools-postgres-data:
   devbase-postgres-data:
   git-tracker-postgres-data:

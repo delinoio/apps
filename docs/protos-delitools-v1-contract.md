@@ -20,6 +20,8 @@ Schema subset: object roots, nested object/array/string/number/integer/boolean/n
 
 Errors carry `ErrorDetail` with a stable reason and UUID v7 request ID, an English message, and a Connect code. Invalid input/schema/model maps to invalid_argument; credentials to unauthenticated; permissions to permission_denied; billing and absent prices to failed_precondition; configured limits to resource_exhausted; processing to aborted; completed duplicates to already_exists; input conflicts to failed_precondition; unknown outcomes to unknown; impossible extraction to failed_precondition; malformed extraction/provider output to data_loss; provider failures to unavailable; timeouts to deadline_exceeded; cancellation to canceled; internal storage failure to internal.
 
+Deviations from the reason table are deliberate and stable: a tenant authority or billing check that cannot answer fails closed as Connect `unavailable` with reason `INTERNAL`; an operator target request that does not exist or has expired is `not_found` with reason `INVALID_INPUT`; and execution RPCs that are not installed answer `unimplemented` with an unspecified reason. A key that does not exist or is not manageable by the caller is `permission_denied`. Every response carries `X-Delitools-Request-Id`, which equals the `request_id` in the message or `ErrorDetail`.
+
 Operator settings are mandatory and validated, including explicit AI retry count (zero is valid). Catalog updates never enable models. Requests freeze their initial catalog snapshot for all attempts. Platform mutations require a reason; tenant administrators have no platform authority.
 
 ## Storage

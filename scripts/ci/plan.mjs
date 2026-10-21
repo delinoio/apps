@@ -47,6 +47,15 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
           path,
         ),
       ),
+    delitools_api:
+      serverRust ||
+      shared ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/delitools-api\/|protos\/|examples\/delitools|docs\/(?:project-delitools|servers-delitools|protos-delitools-v1-contract\.md$))/u.test(
+          path,
+        ),
+      ),
     devbase_api:
       serverRust ||
       shared ||
@@ -103,13 +112,17 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       shared ||
       nativeLock ||
       paths.some((path) =>
-        /^(apps\/delitools\/|docs\/.*delitools)/u.test(path),
+        /^(apps\/delitools\/|docs\/(?:project-delitools|apps-delitools))/u.test(
+          path,
+        ),
       ),
     protocol:
       shared ||
       goLock ||
       paths.some((path) =>
-        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1))/u.test(path),
+        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1))/u.test(
+          path,
+        ),
       ),
   };
 }
@@ -122,6 +135,13 @@ export function selectRustServers(selected) {
       port: 55434,
       user: "delcore",
       database: "delcore_api_test",
+    },
+    {
+      service: "delitools-api",
+      owner: "delitools_api",
+      port: 55435,
+      user: "delitools",
+      database: "delitools_api_test",
     },
     {
       service: "devbase-api",
