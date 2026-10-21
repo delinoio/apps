@@ -56,7 +56,7 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 		if m.Aggregation < pb.MeterAggregation_METER_AGGREGATION_COUNT || m.Aggregation > pb.MeterAggregation_METER_AGGREGATION_UNIQUE_COUNT {
 			return invalid("unknown meter aggregation")
 		}
-		if len(m.EventType) > 100 || len(m.ValueAttribute) > 100 || len(m.Filters) > 100 || len(m.GroupBy) > 20 {
+		if len(m.EventType) > 100 || len(m.ValueAttribute) > 100 || len(m.Filters) > 100 || len(m.GroupBy) > events.MaxGroupAttributes {
 			return invalid("meter definition exceeds catalog limits")
 		}
 		if !legacy {

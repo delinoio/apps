@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -208,7 +209,7 @@ func validate(d definition) error {
 			}
 		}
 	case "meter":
-		if !validKey(d.Service) || d.EventType == "" || d.Aggregation == "" || len(d.EventType) > 100 || len(d.ValueAttribute) > 100 || len(d.Filters) > 100 || len(d.GroupBy) > 20 {
+		if !validKey(d.Service) || d.EventType == "" || d.Aggregation == "" || len(d.EventType) > 100 || len(d.ValueAttribute) > 100 || len(d.Filters) > 100 || len(d.GroupBy) > events.MaxGroupAttributes {
 			return errors.New("invalid meter definition")
 		}
 		if _, ok := aggregations[d.Aggregation]; !ok {

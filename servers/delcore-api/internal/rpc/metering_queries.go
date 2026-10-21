@@ -20,10 +20,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// maxAggregateCursorBytes bounds a decoded group-key cursor. Group keys derive
-// from at most the catalog group-by and attribute value limits.
-const maxAggregateCursorBytes = 1 << 16
-
 // aggregatePage applies the shared page size rules. Aggregates are keyed by
 // their group key rather than a UUID, so the cursor is an opaque base64url
 // encoding of the last returned group key.
@@ -42,10 +38,15 @@ func aggregatePage(p *pb.Page) (int, string, error) {
 	if cursor == "" {
 		return n, "", nil
 	}
+	// Reject an oversized cursor before decoding it. Any stored group key,
+	// including one whose bytes JSON escaping expanded, fits the bound.
+	if base64.RawURLEncoding.DecodedLen(len(cursor)) > events.MaxGroupKeyBytes {
+		return 0, "", invalid("invalid cursor")
+	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	// The decoded cursor is compared with text group keys, so it must be
 	// UTF-8 without NUL bytes, which PostgreSQL text cannot hold.
-	if err != nil || len(raw) == 0 || len(raw) > maxAggregateCursorBytes || !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 {
+	if err != nil || len(raw) == 0 || !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 {
 		return 0, "", invalid("invalid cursor")
 	}
 	return n, string(raw), nil
