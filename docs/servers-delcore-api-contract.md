@@ -75,16 +75,6 @@ The official API server base URL is `https://delcore.api.delino.io`.
 - Retain the latest subscription status and occurrence time by provider subscription ID even when no tenant is associated yet. When the initial subscription payment establishes the association, apply retained state that occurred after that payment in the same transaction: a canceled state moves the tenant to the free plan and ends paid products, and a past-due state blocks paid use as renewal failure. The payment is ordered by its provider billing time, capped at the processing time, so a payment that reconciliation or the immediate provider response confirms late is compared with retained state by when it happened and its entitlements start at that time. The confirmed initial payment becomes the subscription's ordering watermark, so a delayed notification that occurred before it stays stale in either delivery order. Retain an unresolved past-due notification separately from the latest status, so a later active status or a past-due notification delivered after a newer active status cannot erase it; a retained cancellation outranks it. Older retained state never overrides a newer payment, the newest occurrence wins regardless of delivery order, and an active status alone never grants paid products or clears a payment failure. Retention applies to notifications processed after this behavior ships; delcore does not backfill or reconstruct notifications that were already acknowledged without retained state.
 - Never activate paid entitlements or credit balances solely from a checkout request or browser return.
 
-### Development catalog
-
-The default development catalog lives at `servers/delcore-api/catalog`; when the service working directory is `servers/delcore-api`, its relative path is `catalog`. `CATALOG_DIR` overrides it with an absolute path or a path relative to the service working directory. The same environment precedence applies as other settings. Development startup requires an existing directory containing at least one `.yaml` or `.yml` file. Discovery is recursive. Each file has exactly one entity mapping with a `kind` and stable `key`; unknown fields, duplicate kind/scope/key identities (including identical copies), malformed or multi-document YAML, invalid types, missing references, and catalog constraints reject startup. File names and traversal order do not define identity or reference resolution. The committed catalog demonstrates declarations split across `.yaml` and `.yml` files and nested subdirectories: a service; count, sum, and unique-count meters with typed filters and group-by; access, metered, and all five configuration feature types; a free default plan; a paid plan with a fixed fee, a usage price, and included usage; and an add-on whose feature no plan grants. Tests load and apply it twice so it stays valid.
-
-The supported kinds are `service`, `meter`, `feature`, `plan`, `addon`, and `price`. Service and plan keys are catalog-wide. Meter, feature, and add-on declarations name a service key, and price declarations name a plan key or an add-on `{service, key}` reference. Feature grants name both service and feature keys. A price names its service and meter keys. References can resolve to declarations in the same file set or retained database entities. Each file is authoritative for the entity it declares. The complete set is validated and applied in one transaction; a failure rolls back every change and stops startup. Omitted entities remain in their last database state; replacing an omitted default free plan is a conflict and requires declaring the previous default in the file set. A later development startup restores declared fields and active definitions changed through operator APIs. Stable UUID v7 identities survive file moves and restarts. Identical billing content reuses its prior version, including A→B→A; display names, file paths, and order do not create a new billing version.
-
-Meter `aggregation` values are `count`, `sum`, `min`, `max`, `avg`, and `unique_count`. The event type, aggregation, value attribute, filters, and group-by list are immutable for a meter key. Filter operators are `equal`, `not_equal`, `in`, `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal`, and `exists`. Filter values are typed YAML scalars. A quoted value is a string, an unquoted integer or decimal is a number and must be a canonical decimal (exponents and special floats are rejected), and unquoted `true` or `false` is a boolean. Equality, inequality, and membership compare the scalar type and canonical value, so a number or boolean attribute never equals a string operand with the same text, and membership values can mix types. Numeric comparisons take one number, written unquoted or as a quoted canonical decimal. `exists` takes no values and requires the attribute to be present with any scalar type. Filters combine with AND. Group-by and membership order do not affect the semantic version. Access grants use `enabled: true|false`, metered grants use a nonnegative decimal `limit` string, and configuration grants use `configuration` with the declared boolean, integer, quoted decimal, string, or string-list type. A grant supplies exactly one value.
-
-After explicit migration and a successful schema compatibility check, the server acquires the single-instance lock and applies the YAML set only when `DEVELOPMENT=true`. It completes before listening or processing jobs. Root, service-local, and Portless development use the same API startup path. Air watches Go and SQL, but YAML-only edits do not restart it; restart the API to apply them. Production startup and `-migrate` do not apply YAML. Correct an invalid file or constraint and restart; do not edit the catalog tables directly to work around a failed transaction. Restoring an earlier valid definition selects its old version for future explicit selections without moving existing subscriptions.
-
 **Metering, credits, and settlement**
 
 - Meter definitions match an event type and AND-combined scalar attribute filters. Filters support equality, inequality, membership, numeric comparisons, and existence. Filter operands are typed strings, exact decimal numbers, or booleans; equality and membership require the same scalar type. Group keys include sorted attribute names, scalar types, and canonical values so equivalent flat events select the same group without key collisions.
@@ -125,7 +115,7 @@ After explicit migration and a successful schema compatibility check, the server
   - Current user and tenant discovery; tenant, membership, invitation, ownership, and group management.
   - Catalog reads; subscription changes; manual top-ups and automatic top-up settings.
   - Usage, ledger, and billing history.
-  - Service authorization checks, including [feature authorization](#feature-authorization-and-metering-queries), usage reporting, and usage corrections, including event ingestion, event corrections, and event reads.
+  - Service authorization checks, including [feature authorization](#feature-authorization-and-metering-queries), and usage reporting and corrections through event ingestion, event corrections, and event reads.
   - Billing-period group aggregate queries and metering lag and failure status.
   - Operator catalog management, tenant blocking, audit inspection, and failed-job inspection/reprocessing.
 - Use typed errors, correlation identifiers, bounded pagination, and UUID v7 for delcore entities. Keep external provider identifiers as explicit external references.
@@ -147,7 +137,7 @@ After explicit migration and a successful schema compatibility check, the server
 - Include safe correlation IDs and bounded error categories. Exclude secrets, tokens, sensitive payloads, and unbounded identity labels from telemetry.
 - Expose signals for payment mismatches, settlement delay, delivery failures, retry exhaustion, and durable job backlog.
 - Support explicit migrations and backup-before-update procedures. Roll back through a compatible image or documented backup recovery; do not claim arbitrary schema downgrade support.
-- Feature flags are not applicable because this is a new independent service. Authorization, billing checks, tenant blocking, and recovery controls remain independently enforced.
+- Feature flags are not applicable because this is a new independent, pre-release service; the [pre-release transition](#pre-release-transition) covers the catalog and event metering change. Authorization, billing checks, tenant blocking, and recovery controls remain independently enforced.
 - Include a threat model and automated security tests. External security certification or audit is not a completion requirement.
 
 **Documentation and repository integration**
@@ -166,11 +156,184 @@ Prorated included quantities are floored to six decimal places (one millionth of
 
 Purchased monetary credits apply only to metered usage. Paddle collects fixed subscription and add-on fees separately. Paid usage periods follow Paddle subscription periods; free usage periods follow UTC calendar months. Automatic top-up monthly caps use UTC calendar months. Schemas and Go bindings live in root `protos/delcore/v1`. Servers consume local packages from the same Go module; see the [repository boundary contract](repository-boundary-contract.md).
 
+### Development catalog
+
+The default development catalog lives at `servers/delcore-api/catalog`; when the service working directory is `servers/delcore-api`, its relative path is `catalog`. `CATALOG_DIR` overrides it with an absolute path or a path relative to the service working directory. The same environment precedence applies as other settings: an Infisical-injected or process value wins over the service-local `.env`, which wins over the default. The development launchers neither set nor read it. Development startup requires an existing directory containing at least one `.yaml` or `.yml` file; a missing directory, a path that is not a directory, or a directory without YAML files stops startup. Discovery is recursive through nested directories and matches the lowercase `.yaml` and `.yml` suffixes. Each file has exactly one entity mapping with a `kind` and stable `key`; unknown fields, duplicate kind/scope/key identities (including identical copies), malformed or multi-document YAML, invalid types, missing references, and catalog constraints reject startup. File names, directory layout, and traversal order do not define identity or reference resolution. The committed catalog splits its declarations across `.yaml` and `.yml` files and nested subdirectories: a service; count, sum, and unique-count meters with typed filters and group-by; access, metered, and all five configuration feature types; a free default plan; a paid plan with a fixed fee, a usage price, and included usage; and an add-on whose feature no plan grants. Tests load and apply it twice so it stays valid. The [split-file example](#split-file-example) below shows another layout.
+
+The supported kinds are `service`, `meter`, `feature`, `plan`, `addon`, and `price`. Service and plan keys are catalog-wide. Meter, feature, and add-on declarations name a service key, and price declarations name a plan key or an add-on `{service, key}` reference. Feature grants name both service and feature keys. A price names its service and meter keys. Keys match `^[a-z][a-z0-9-]{0,99}$`. References can resolve to declarations in other files of the same set or to retained database entities. Each file is authoritative for the entity it declares. The complete set is validated and applied in one transaction; a failure rolls back every change and stops startup. Omitted entities remain in their last database state; omission never deletes or archives them. Replacing an omitted default free plan is a conflict and requires declaring the previous default in the file set. A later development startup restores declared fields and active definitions changed through operator APIs; an omitted entity keeps any operator change. Stable UUID v7 identities survive file moves and restarts. Identical billing content reuses its prior version, including A→B→A; display names, file paths, and order do not create a new billing version. [Catalog version pinning](#catalog-version-pinning) describes the effect on tenants.
+
+Meter `aggregation` values are `count`, `sum`, `min`, `max`, `avg`, and `unique_count`. The event type, aggregation, value attribute, filters, and group-by list are immutable for a meter key. Filter operators are `equal`, `not_equal`, `in`, `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal`, and `exists`. Filter values are typed YAML scalars. A quoted value is a string, an unquoted integer or decimal is a number and must be a canonical decimal (exponents and special floats are rejected), and unquoted `true` or `false` is a boolean. Equality, inequality, and membership compare the scalar type and canonical value, so a number or boolean attribute never equals a string operand with the same text, and membership values can mix types. Numeric comparisons take one number, written unquoted or as a quoted canonical decimal. `exists` takes no values and requires the attribute to be present with any scalar type. Filters combine with AND. Group-by and membership order do not affect the semantic version. A feature `type` is `access`, `metered` with a same-service `meter`, or `configuration` with a `value_type` of `boolean`, `integer`, `decimal`, `string`, or `string_list`. Access grants use `enabled: true|false`, metered grants use a nonnegative decimal `limit` string, and configuration grants use `configuration` with the declared boolean, integer, quoted decimal, string, or string-list type. A grant supplies exactly one value.
+
+**Catalog constraints**
+
+The loader and the transaction reject the complete set when any of these constraints fails:
+
+- A meter definition differs from the active definition of its key, or a typed declaration changes an untyped meter that already evaluated events (see the [compatibility rule](#event-ingestion-and-asynchronous-metering)). A service has at most 100 meters.
+- A feature declaration changes the kind, configuration type, or meter key of its key. A metered feature names a meter that its service does not have.
+- A plan has a negative or duplicate rank, or reuses the rank of an omitted plan. More than one plan is the default free plan, the default is not free, a free plan enables `postpaid`, a declared default is cleared without a replacement, or a new default replaces an omitted default.
+- An add-on changes its service, or a plan or add-on grants the same feature twice. An add-on grants a feature of another service. A grant value does not match its feature type.
+- A price names both or neither of `plan` and `add_on`, uses a currency other than `USD`, has a negative or invalid `unit_price` or `included` decimal, or uses a `price_kind` other than `usage` or `recurring`. A recurring price lacks `external_price_id`. A usage price names a meter that its service does not have. An add-on price names a service other than the add-on's service.
+
+#### Split-file example
+
+Any directory layout works; this one groups declarations by owner and mixes both suffixes:
+
+```text
+catalog/
+  services/search-api.yaml
+  search-api/
+    meters/queries.yml
+    meters/storage-bytes.yaml
+    features/search-access.yaml
+    features/monthly-queries.yml
+    features/allowed-regions.yaml
+  plans/
+    search-free.yaml
+    search-free/query-usd.yaml
+  addons/
+    extra-regions.yml
+    extra-regions/monthly.yaml
+```
+
+The meter in `search-api/meters/queries.yml` counts successful queries per region, and `search-api/meters/storage-bytes.yaml` keeps the largest reported index size per index:
+
+```yaml
+kind: meter
+service: search-api
+key: queries
+event_type: search.query
+aggregation: count
+filters:
+  - attribute: status
+    operator: in
+    values: ["ok", "partial"]
+  - attribute: source
+    operator: not_equal
+    values: ["internal"]
+group_by: [region]
+```
+
+```yaml
+kind: meter
+service: search-api
+key: storage-bytes
+event_type: search.index.size
+aggregation: max
+value_attribute: bytes
+filters:
+  - attribute: bytes
+    operator: greater_than_or_equal
+    values: ["0"]
+group_by: [index]
+```
+
+The features in `search-api/features/monthly-queries.yml` and `allowed-regions.yaml` reference the meter and declare a configuration type:
+
+```yaml
+kind: feature
+service: search-api
+key: monthly-queries
+name: Monthly queries
+type: metered
+meter: queries
+```
+
+```yaml
+kind: feature
+service: search-api
+key: allowed-regions
+name: Allowed regions
+type: configuration
+value_type: string_list
+```
+
+`plans/search-free.yaml` grants features declared in other files, and `plans/search-free/query-usd.yaml` prices the meter for that plan:
+
+```yaml
+kind: plan
+key: search-free
+name: Search Free
+rank: 0
+free: true
+default_free: true
+postpaid: false
+features:
+  - service: search-api
+    key: search-access
+    enabled: true
+  - service: search-api
+    key: monthly-queries
+    limit: "5000"
+  - service: search-api
+    key: allowed-regions
+    configuration: ["eu"]
+```
+
+```yaml
+kind: price
+key: query-usd
+plan: search-free
+service: search-api
+meter: queries
+price_kind: usage
+unit_price: "0.001"
+included: "1000"
+currency: USD
+```
+
+The add-on in `addons/extra-regions.yml` and its price in `addons/extra-regions/monthly.yaml` use the scoped add-on reference:
+
+```yaml
+kind: addon
+service: search-api
+key: extra-regions
+name: Extra regions
+```
+
+```yaml
+kind: price
+key: monthly
+add_on:
+  service: search-api
+  key: extra-regions
+service: search-api
+meter: subscription
+price_kind: recurring
+unit_price: "5"
+included: "0"
+currency: USD
+external_price_id: pri_replace_for_local_paddle
+```
+
+Moving `query-usd.yaml` to another directory, renaming it, or splitting the plan's grants into another order changes nothing. Declaring `kind: price` with `key: query-usd` for `plan: search-free` in a second file is a duplicate identity even when both files are identical. The same price key under another plan or add-on is a different identity because price keys are scoped to their owner. This example does not grant `allowed-regions` from the add-on, because a subscription that receives the same feature from its base plan and an add-on is rejected. The example assumes a fresh development database. Against a database that already applied the committed catalog, the omitted `example-free` plan keeps rank 0 and the default, so this set fails until it uses another rank and `default_free: false` or the database is reset.
+
+After explicit migration and a successful schema compatibility check, the server acquires the single-instance lock and applies the YAML set only when `DEVELOPMENT=true`. A second instance fails at the lock before it reads the catalog. Synchronization completes before listening or processing jobs. Root, service-local, and Portless development use the same API startup path. Air watches Go and SQL, but YAML-only edits do not restart it; restart the API to apply them. There is no hot reload. Production startup and `-migrate` do not apply YAML, and catalog synchronization never applies schema migrations. Production automatic application and standalone validate, diff, or apply commands are out of scope; non-development catalogs use the operator APIs. Correct an invalid file or constraint and restart; do not edit the catalog tables directly to work around a failed transaction. [Recovery](#catalog-and-metering-operations) covers each failure. Restoring an earlier valid definition selects its old version for future explicit selections without moving existing subscriptions.
+
+### Catalog version pinning
+
+A version is the immutable semantic content of one catalog entity. Meter and feature versions hold their definitions. A price version holds its service, meter, unit price, included usage, currency, external price ID, and price kind; the price `id` is the version and `stable_id` the scoped price key. A plan version holds its rank, free flag, and postpaid policy; plan and add-on versions both hold the active price versions of their price keys and their feature values. Decimals are normalized and order-independent collections are sorted before comparison. Names, file paths, and declaration order are not version content.
+
+- Reapplying unchanged files, or applying the same content after a move or reorder, selects the existing versions and creates nothing.
+- Changing a price, an included quantity, a feature value, or a plan rank, free flag, or postpaid policy creates version B and makes it active. Returning the files to the earlier content makes the existing version A active again; no third version is created for A→B→A.
+- A display-name-only edit updates the name and creates no billing version.
+- A tenant records its plan and add-on versions in `tenant_catalog_selections`. Existing subscriptions keep the versions they selected, including their price versions and feature values, through every renewal. A catalog change never moves them.
+- Tenant creation and an explicit subscription change select the versions that are active when they are requested. A pending paid or scheduled change keeps those version IDs until confirmed payment or the scheduled free period installs them. A confirmed cancellation selects the default free version that is active at that time.
+- Meter definitions cannot change in place. To meter differently, declare a new meter key, a new metered feature key if a feature limits it, and point the plan's prices and grants at them. That creates a new plan version for future selections. Tenants on the earlier version keep the earlier meter, feature, and prices. The earlier meter is never deleted, so matching events still contribute to it and count against its admission bounds.
+
+To restore an earlier catalog definition, return the declarations to their earlier content and restart development. New tenants and explicit subscription changes then select the earlier version again. Tenants that selected the intervening version keep it until they make an explicit subscription change. There is no automatic subscription migration and no API that moves existing selections to another version.
+
 ### Event ingestion and asynchronous metering
 
 Registered services report measured events with `IngestEvent` and correct them with `CorrectEvent` under the existing `usage:write` scope and service ownership checks. `GetEvent` returns the latest accepted revision to the owning service with either usage scope. Event aggregates are the only rating input; [rating](#rating-and-ledger-reconciliation) owns the charge formula and ledger effects.
 
 The quantity reporting calls `ReportUsage` and `CorrectUsage` are retired. They remain declared and deprecated in the protocol for wire compatibility. A caller without the `usage:write` service scope still receives a forbidden result; every other call returns a failed precondition with `ERROR_REASON_PRECONDITION` and a message that names `IngestEvent` or `CorrectEvent`. They never write usage, ledger, or job rows. The legacy `usage_events` and `usage_replay` tables stay in the schema without new writes, so `ListUsage`, retention, and deletion keep working on any rows a development database still holds; reset development databases instead of migrating them.
+
+**Event model and matching**
+
+- An event is one measured execution: a durable service-scoped event key, the tenant, the event type, the occurrence time, and a flat map of scalar attributes. Attribute values are text, booleans, or canonical decimal numbers. Meters refer to attributes by name; nested objects and lists are not supported.
+- A meter matches an event when the event type equals the meter's event type and every filter holds. Filters combine only with AND; OR, NOT nesting, and regular expressions are not supported. A filter on an absent attribute fails, except `exists`. `equal`, `not_equal`, and `in` compare against text values, so a number or boolean attribute never equals a filter value and always satisfies `not_equal`. Numeric comparisons hold only for number attributes.
+- One event can match several meters of its service. Every matched meter is validated before any of them receives the event; one invalid match, or one cardinality violation, rejects the whole event. An event that matches no meter is rejected.
+- Accepting an event and materializing its aggregates are separate steps. Acceptance validates the event, stores it with its processing work, and returns; aggregation, rating, and feature usage follow asynchronously.
 
 **Acceptance**
 
@@ -241,6 +404,22 @@ Delcore rates one tenant, meter, and billing period at a time from the materiali
 - `metering_rated_periods` records the latest exact charge and remaining included usage of each rated period so rounding can revisit it. The ledger remains the authoritative charged amount.
 - Paid authorization treats a non-postpaid tenant with a zero balance as depleted unless a current usage-priced meter of the service has remaining included usage in the tenant's current period. Remaining included usage follows the same rating rule over the last applied aggregates, so accepted but unprocessed events do not consume it yet.
 
+### Group limits and shared included usage
+
+Feature limits and rating read the same applied group aggregates of one tenant, meter, and billing period, but they use them differently:
+
+| Aspect          | Metered feature limit                                      | Usage rating                                                   |
+| --------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
+| Scope           | Each group separately                                      | All groups of the tenant meter period together                 |
+| Allowance       | The plan or add-on grant's `limit`, applied to every group | Included usage, shared once by all groups                      |
+| Negative groups | Below the limit; never offsets another group               | Clamped to zero before summing; never offsets another group    |
+| Effect          | Blocks new execution of that group at or above the limit   | Charges `max(0, sum(max(0, group)) - included) * unit_price`   |
+| Reset           | At the start of the next billing period                    | Each billing period is rated separately with its own allowance |
+
+Worked example: a `sum` meter grouped by `region` has applied groups `eu` = -5 and `us` = 20 in the current period. The plan grants a metered feature limit of 15 and a usage price with 10 included units. `Authorize` with `region` = `us` returns usage 20 and `BLOCK_REASON_FEATURE_LIMIT_REACHED`; with `region` = `eu` it returns usage -5 and allows execution. Rating clamps `eu` to 0 and bills `max(0, 0 + 20 - 10)` = 10 units. Included usage is not granted per group, so the result is not `max(0, 20 - 10) + max(0, -5 - 10)`, and `eu` does not reduce `us` to 15 billable units.
+
+Billing periods are the recorded Paddle renewal periods for paid subscriptions and UTC calendar months otherwise; there are no daily or weekly entitlement periods. An `avg` group uses the exact average rounded half-up to six decimal places, with negative ties away from zero, and the same rounded value is the limit usage, the query value, and the rating quantity.
+
 ### Feature authorization and metering queries
 
 `Authorize` accepts an optional `feature_key` and flat `group_values` in addition to its existing tenant, user, capability, and `paid` fields. An empty feature key keeps the existing permission and billing evaluation and response unchanged and returns no feature result; Git Tracker and other non-paid permission consumers depend on that behavior. Group values without a feature key are invalid input.
@@ -274,7 +453,7 @@ Delcore rates one tenant, meter, and billing period at a time from the materiali
 
 ## Storage
 
-PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Migration 7 adds metering event identities, append-only revisions and contributions, replay identities, materialized group aggregates with value multisets, admission accounting, and a ready-work index for `metering` jobs. Aggregate and admission rows are keyed by the SHA-256 digest of the canonical group key, because a key of several maximum-size group attributes exceeds the PostgreSQL B-tree entry limit; aggregates also keep the full group key and group values. Migration 8 adds append-only per-event usage price attributions, rated meter periods, and a tenant-period index for rating scans; it keeps the unused legacy quantity tables. Rating loads a period's grants once and derives each contribution's allowance epoch from their ordered applied times instead of reading allowance grants once per contribution. Migration 9 adds a partial index of unfinished `metering` jobs so status reads never scan retained completed work, and a job failure time that `RetryJob` does not change. Migration 10 lets controlled retention clear only the raw attribute map of a finally deleted tenant's event revision. Catalog synchronization never applies either migration. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
+PostgreSQL stores authoritative entities, immutable price history, append-only ledger entries, replay protection and durable jobs. Migration 7 adds metering event identities, append-only revisions and contributions, replay identities, materialized group aggregates with value multisets, admission accounting, and a ready-work index for `metering` jobs. Aggregate and admission rows are keyed by the SHA-256 digest of the canonical group key, because a key of several maximum-size group attributes exceeds the PostgreSQL B-tree entry limit; aggregates also keep the full group key and group values. Migration 8 adds append-only per-event usage price attributions, rated meter periods, and a tenant-period index for rating scans; it keeps the unused legacy quantity tables. Rating loads a period's grants once and derives each contribution's allowance epoch from their ordered applied times instead of reading allowance grants once per contribution. Migration 9 adds a partial index of unfinished `metering` jobs so status reads never scan retained completed work, and a job failure time that `RetryJob` does not change. Migration 10 lets controlled retention clear only the raw attribute map of a finally deleted tenant's event revision. Migration 6 adds scoped stable catalog identities, immutable catalog versions, typed feature definitions, product and version feature values, and tenant catalog selections. Catalog synchronization never applies either migration. Persist intent before external requests. Use transactional constraints and locks for concurrent mutations. Explicit migrations run separately from server startup. A database session lock prevents a second instance.
 
 ## Security
 
@@ -351,7 +530,12 @@ Update the [project index](project-delcore.md) and [protocol contract](protos-de
 - Pre-execution cost reservation or a guarantee of zero overspend.
 - User refund requests and delcore-initiated refund execution.
 - Global Logto account deletion, general user-data export, and outbound service webhook delivery.
-- Feature-flag rollout and migration of existing service data.
+- Feature-flag rollout and migration of existing service data, including production migration of quantity usage to events.
+- OpenMeter installation, integration, or API and schema compatibility.
+- YAML hot reload, standalone catalog validate, diff, or apply commands, production automatic catalog application, implicit deletion of omitted catalog entities, and automatic schema migration during catalog synchronization.
+- In-place meter definition changes, automatic subscription migration to new catalog versions, and retroactive backfill when a meter is added.
+- Nested event attributes, OR or NOT filter expressions, regular-expression filters, approximate unique counts, arbitrary time-range aggregate queries, and hourly or daily query buckets.
+- Independent daily or weekly entitlement periods, cross-group negative offsets, per-group included-usage grants, and lag-based blocking.
 
 ### Consumer deletion synchronization
 
@@ -378,3 +562,34 @@ The development command first injects Infisical `dev` variables from `/delcore-a
 Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. The script runs [Air](https://github.com/air-verse/air) with `root = "../.."` to watch the repository root while build and run commands execute from the service workspace. Copy the service-local `.env.example` to the ignored `servers/delcore-api/.env`, replace placeholders, and choose policy values. Injected/process variables override this file. Keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.
 
 Prepare PostgreSQL and apply the existing explicit migration command before starting. Check the [development catalog](#development-catalog) and restart the API after YAML edits; Air does not watch YAML. An absent, empty, invalid, or database-incompatible catalog stops development startup without partial application. Air does not bypass configuration validation, authentication or schema compatibility checks. Stop with `Ctrl+C`; Air sends an interrupt before terminating the server after five seconds. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
+
+## Catalog and metering operations
+
+### Pre-release transition
+
+Delcore has no deployed data that must be preserved. The YAML catalog, catalog versions, feature entitlements, event ingestion, aggregate rating, and feature authorization ship as one coordinated pre-release change: the protocol, server, repository callers, fixtures, examples, and contracts change together in the same review. No feature flag or staged rollout gates them. The deprecated `ReportUsage` and `CorrectUsage` calls return a failed precondition instead of billing, so a caller that still reports quantities must move to `IngestEvent` and `CorrectEvent` with the server.
+
+There is no production data migration. Migrations do not convert legacy quantity usage into events, and legacy `usage_events` rows are retained but never rated. Reset a development database instead of migrating its usage or catalog data. Migrations stay explicit through `-migrate`, transactional, and separate from catalog synchronization: normal startup only checks schema compatibility, and `-migrate` never reads the catalog.
+
+To reset the local Compose database, stop the Delcore API and run from the repository root:
+
+```sh
+docker compose exec delcore-postgres dropdb -U delcore --force delcore
+docker compose exec delcore-postgres createdb -U delcore delcore
+(cd "servers/delcore-api" && go run ./cmd/delcore-api -migrate)
+```
+
+The next development startup applies the catalog again. A reset database assigns new UUID v7 identities to every catalog key, so discard any Delcore IDs that local consumers stored from the earlier database. `docker compose down --volumes` also resets the DevBase and Git Tracker databases.
+
+### Recovery procedures
+
+These procedures use the existing settings, recovery APIs, and backup rules. They do not define performance or recovery-time targets.
+
+- **Invalid YAML or catalog files.** Development startup exits before listening and reports the catalog error with the affected file path; a duplicate identity names both files. Causes include a missing or empty directory, malformed or multi-document YAML, an unknown kind or field, an invalid key or value, a missing reference, and a duplicate identity. Files are validated before the transaction starts, and the transaction rolls back on any later error, so the database keeps its previous catalog. Correct the files, or point `CATALOG_DIR` at the intended directory, and restart the API task. Air does not restart for YAML-only edits.
+- **Catalog constraint failures.** A [catalog constraint](#development-catalog) failure rolls back the whole set and stops startup in the same way. Change the declaration instead of the database: declare a new meter or feature key instead of changing a definition, choose an unused plan rank, or declare the omitted default free plan with `default_free: false` next to its replacement. Do not edit catalog tables directly. When a development database holds state that is no longer needed, reset it as described above.
+- **Database failure.** Startup stops when PostgreSQL is unreachable, the schema is missing or has another version, or another instance holds the instance lock. Restore database service, run `-migrate` from the matching image or revision, or stop the other instance, then restart. During operation, requests that need the database fail with a typed error and acknowledge nothing. Reporting services keep the event and resend it with the same event key; identical content never applies twice. A failed worker attempt rolls back and retries after `RETRY_SECONDS` until `RETRY_LIMIT` attempts. The process stops when it loses the instance-lock connection; restart it after the database recovers.
+- **Asynchronous backlog.** A growing `lag_seconds` or pending count in `GetMeteringStatus`, the metering backlog and lag metrics, or a `GetEvent.applied_revision` below the latest revision shows that processing is behind. Accepted events stay durable. Aggregates, feature usage, and rating keep the last applied state, and authorization keeps using it, so lag can allow overspend but never blocks ingestion or authorization. Check that the process is running and ready and that PostgreSQL is healthy. The worker drains pending work when it runs; do not delete or edit jobs.
+- **Exhausted retries and permanent failures.** `GetMeteringStatus` reports failed jobs by `MeteringFailureCategory`. Operators list failed `metering` jobs with `ListJobs` and read the `retry_exhausted`, `metering_invalid`, or `invalid_payload` category. Fix the cause first: database availability or capacity for exhausted retries, and inconsistent stored state or an unreadable payload for the other two, which need a code fix or a development database reset. Then call `RetryJob` with a reason; it writes the `job.retry` audit record and returns the job to pending with a reset attempt count. Pending and failed metering work is never pruned and holds final tenant deletion.
+- **Cardinality rejection.** `ERROR_REASON_CARDINALITY_EXCEEDED` stores nothing, so the reporting service keeps the event. `MAX_METER_GROUPS` bounds the groups of one tenant, meter, and billing period. `MAX_METER_GROUP_VALUES` bounds the distinct values of one group for `min`, `max`, and `unique_count` meters. Both accept 1 to 1,000,000 and are read at startup, so change the setting and restart the server. Raising a bound permits more admission, aggregate, and value rows for each tenant meter period, which increases storage, per-event processing, rating work over all groups of the period, and aggregate query pages. Lowering a bound rejects only new groups or new distinct values; existing ones remain and keep accepting events. Each billing period starts with empty admission state, and corrections or cancellations that remove a group or value release its capacity. When capacity is available, resend the rejected event with the same key and content. To group future events differently, declare a new meter key and select it through a new catalog version. Choose bounds from expected tenant cardinality and database capacity.
+- **Restoring a previous catalog definition.** Return the declarations to their earlier content, for example by checking out the earlier catalog files, and restart development. Version reuse makes the earlier version active again for new tenants and explicit subscription changes. Existing subscriptions keep the version they selected; nothing moves them automatically. Removing a file does not restore anything, because omitted entities keep their database state; declare the entity with its earlier content instead.
+- **Compatible image or backup recovery.** Back up and verify the database before running `-migrate`, as the [server README](../servers/delcore-api/README.md#operations-and-recovery) describes. An earlier image starts only when it accepts the installed schema version. Otherwise restore the verified backup into a separate database with matching configuration and run a compatible image. There is no arbitrary schema downgrade. Pending metering jobs in the backup resume after restart. Events accepted after the backup are absent; reporting services that still hold them can resend them with the same keys within the accepted lateness.
