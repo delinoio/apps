@@ -87,13 +87,19 @@ async fn postgres_wire_authorization_replays_and_deletion() {
             post(move |Json(q): Json<Value>| {
                 let state = state_mock.clone();
                 async move {
+                    if *state.lock().unwrap() == "unavailable" {
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({"code":"unavailable"})),
+                        );
+                    }
                     let entries: Vec<_> = q["tenantIds"]
                         .as_array()
                         .unwrap()
                         .iter()
                         .map(|id| json!({"tenantId":id,"state":*state.lock().unwrap()}))
                         .collect();
-                    Json(json!({"states":entries}))
+                    (StatusCode::OK, Json(json!({"states":entries})))
                 }
             }),
         );
@@ -305,6 +311,15 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     )
     .await;
     assert!(new.get("project").is_some());
+    let failures = server.metrics.cleanup_failures.get();
+    *state.lock().unwrap() = "unavailable".into();
+    server.maintain().await.unwrap();
+    assert_eq!(server.metrics.cleanup_failures.get(), failures + 1);
+    let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM projects")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(retained, 1);
     *state.lock().unwrap() = "TENANT_STATE_DELETED".into();
     server.maintain().await.unwrap();
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM projects")

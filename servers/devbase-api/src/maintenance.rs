@@ -39,6 +39,7 @@ impl Server {
             let states = match self.authority.states(&ids).await {
                 Ok(s) => s,
                 Err(_) => {
+                    self.metrics.cleanup_failures.inc();
                     tracing::warn!(category = "state_check", "tenant cleanup failed");
                     continue;
                 }
