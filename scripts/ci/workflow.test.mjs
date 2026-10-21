@@ -387,7 +387,7 @@ test("server validation uses local protocols and PostgreSQL without OCI checks",
     assert.equal(job["runs-on"], "ubuntu-latest");
     assert.ok(workflow.jobs["ci-result"].needs.includes(id));
     const commands = job.steps.map((step) => step.run ?? "").join("\n");
-    assert.match(commands, /go vet "?\.\/servers\//u);
+    if (id === "delcore-api") assert.match(commands, /go vet \.\/servers\//u);
     assert.match(commands, /docker run.*postgres:17/u);
     assert.doesNotMatch(commands, /ci:oci|docker build/u);
     assert.doesNotMatch(commands, /go get|client:setup|delinoio\/servers/u);
@@ -447,7 +447,11 @@ test("Rust server matrix gates allocation and preserves independent evidence", (
   const commands = job.steps.map((step) => step.run ?? "").join("\n");
   assert.match(commands, /cargo clippy.*-p "\$SERVICE".*-D warnings/u);
   assert.match(commands, /cargo test.*--test postgres -- --ignored/u);
-  assert.match(commands, /go test -race -count=1/u);
+  assert.doesNotMatch(commands, /\bgo (?:vet|build|test)\b/u);
+  assert.ok(
+    !job.steps.some((step) => step.uses?.startsWith("actions/setup-go@")),
+  );
+  assert.equal(job.env.GOWORK, undefined);
   assert.ok(!workflow.jobs["devbase-api"]);
   assert.ok(!workflow.jobs["git-tracker-api"]);
 });

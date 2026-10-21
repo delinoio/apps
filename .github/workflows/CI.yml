@@ -764,7 +764,6 @@ jobs:
       POSTGRES_DB: ${{ matrix.database }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-      GOWORK: "off"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -773,9 +772,6 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: dtolnay/rust-toolchain@v1
@@ -789,9 +785,6 @@ jobs:
         run: |
           cargo clippy --locked --manifest-path servers/Cargo.toml -p "$SERVICE" --all-targets -- -D warnings
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE"
-          go vet "./servers/$SERVICE/..."
-          go build "./servers/$SERVICE/cmd/..."
-          go test -race "./servers/$SERVICE/..."
         id: unit
       - name: Start integration database
         run: |
@@ -810,9 +803,6 @@ jobs:
           TEST_DATABASE_URL: ${{ format('postgres://{0}:{0}@127.0.0.1:{1}/{2}?sslmode=disable', matrix.user, matrix.port, matrix.database) }}
         run: |
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE" --test postgres -- --ignored
-          if [ "$SERVICE" = git-tracker-api ]; then
-            go test -race -count=1 "./servers/$SERVICE/..."
-          fi
         id: integration
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
