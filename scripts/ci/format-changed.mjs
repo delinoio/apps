@@ -196,19 +196,20 @@ export function main(env = process.env) {
     throw new Error(
       "Staged formatting requires local execution without a comparison or --all",
     );
-  if (ci && !explicit)
+  if (ci && !explicit && !values.all)
     throw new Error("CI formatting requires the planner comparison");
-  const head = values.staged
-    ? null
-    : explicit
-      ? (values.head ?? env.TURBO_SCM_HEAD)
-      : git(cwd, "rev-parse", "HEAD").trim();
-  const base = values.staged
-    ? null
-    : explicit
-      ? (values.base ?? env.TURBO_SCM_BASE)
-      : git(cwd, "merge-base", "origin/main", head).trim();
-  if (values.all && ci) throw new Error("CI formatting must use changed files");
+  const head =
+    values.staged || values.all
+      ? null
+      : explicit
+        ? (values.head ?? env.TURBO_SCM_HEAD)
+        : git(cwd, "rev-parse", "HEAD").trim();
+  const base =
+    values.staged || values.all
+      ? null
+      : explicit
+        ? (values.base ?? env.TURBO_SCM_BASE)
+        : git(cwd, "merge-base", "origin/main", head).trim();
   const paths = values.staged
     ? stagedFormatFiles(cwd)
     : values.all
@@ -226,7 +227,7 @@ export function main(env = process.env) {
       staged: values.staged ?? false,
       mode,
       candidates: paths.length,
-      local: !explicit,
+      local: !ci && !explicit,
     }),
   );
   const status = runFormatter(cwd, paths, mode);

@@ -170,25 +170,23 @@ test("write-capable remote cache credentials stay in trusted main jobs", () => {
 test("all CI formatting checks belong to Check Formatting", () => {
   const job = workflow.jobs["check-formatting"];
   assert.equal(job.name, "Check Formatting");
-  assert.equal(job.needs, "changes");
-  assert.equal(job.env.TURBO_SCM_BASE, "${{ needs.changes.outputs.base }}");
-  assert.equal(job.env.TURBO_SCM_HEAD, "${{ needs.changes.outputs.head }}");
-  const commands = new Map(
-    job.steps.filter((step) => step.run).map((step) => [step.run, step]),
-  );
-  assert.ok(commands.has("pnpm format:check"));
-  assert.equal(
-    commands.get("cargo fmt --all --check").if,
-    "needs.changes.outputs.rust_clippy != '[]'",
-  );
+  assert.equal(job.needs, undefined);
+  assert.equal(job.env, undefined);
+  for (const step of job.steps) {
+    assert.doesNotMatch(step.if ?? "", /needs\.changes/u);
+  }
+  const commands = new Set(job.steps.map((step) => step.run?.trim()));
   for (const command of [
+    "pnpm format:check --all",
+    "cargo fmt --all --check",
+    "cargo fmt --manifest-path servers/Cargo.toml --all --check",
     "node scripts/ci/check-go-format.mjs protos examples",
+    "node scripts/ci/check-go-format.mjs servers",
     "pnpm exec buf format --diff --exit-code",
   ])
-    assert.equal(
-      commands.get(command).if,
-      "needs.changes.outputs.protocol == 'true'",
-    );
+    assert.ok(commands.has(command), command);
+  assert.equal(workflow.jobs.changes.outputs.devbase_api, undefined);
+  assert.equal(workflow.jobs.changes.outputs.git_tracker_api, undefined);
   for (const [id, config] of Object.entries(workflow.jobs)) {
     if (id === "check-formatting") continue;
     for (const step of config.steps)

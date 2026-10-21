@@ -3,7 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `scripts/ci/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts before changing behavior, including cross-domain consumers.
-- Propagate the event's exact affected comparison to selectors, formatting, protocol checks and validation evidence. Do not infer full validation from a manual event alone.
+- Propagate the event's exact affected comparison to selectors, protocol checks and affected-validation evidence. Formatting checks run across all tracked supported files without change detection. Do not infer full validation from a manual event alone.
 - Preserve selected-job failure, cancellation and skipped-result rejection in the final result check. Keep native/account acceptance distinct from fixtures and builds.
 
 ## Owning contracts

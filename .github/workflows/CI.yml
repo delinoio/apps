@@ -23,8 +23,6 @@ jobs:
       delino_site: ${{ steps.plan.outputs.delino_site }}
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
       delcore_api: ${{ steps.plan.outputs.delcore_api }}
-      devbase_api: ${{ steps.plan.outputs.devbase_api }}
-      git_tracker_api: ${{ steps.plan.outputs.git_tracker_api }}
       protocol: ${{ steps.plan.outputs.protocol }}
       fixkey: ${{ steps.plan.outputs.fixkey }}
     steps:
@@ -50,11 +48,7 @@ jobs:
         run: node scripts/ci/rust-plan.mjs
   check-formatting:
     name: Check Formatting
-    needs: changes
     runs-on: ubuntu-latest
-    env:
-      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -64,33 +58,26 @@ jobs:
       - uses: ./.github/actions/setup-ci-node
         id: node
       - uses: dtolnay/rust-toolchain@v1
-        if: needs.changes.outputs.rust_clippy != '[]' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         with:
           toolchain: nightly-2026-09-28
           components: rustfmt
       - uses: actions/setup-go@v6
-        if: needs.changes.outputs.protocol == 'true' || needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         with:
           go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: format
-        run: pnpm format:check
+        run: pnpm format:check --all
       - id: rustfmt
-        if: needs.changes.outputs.rust_clippy != '[]'
         run: cargo fmt --all --check
       - id: server-rustfmt
-        if: needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
       - id: gofmt
-        if: needs.changes.outputs.protocol == 'true'
         run: node scripts/ci/check-go-format.mjs protos examples
       - id: server-gofmt
-        if: needs.changes.outputs.delcore_api == 'true' || needs.changes.outputs.devbase_api == 'true' || needs.changes.outputs.git_tracker_api == 'true'
         run: node scripts/ci/check-go-format.mjs servers
       - id: protobuf-format
-        if: needs.changes.outputs.protocol == 'true'
         run: pnpm exec buf format --diff --exit-code
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
