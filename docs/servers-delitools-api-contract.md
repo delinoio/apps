@@ -175,4 +175,4 @@ Back up before updates. Stop the old process, run forward migrations and start t
 
 ## Local development
 
-Run service-local `pnpm dev` to inject the Infisical development folder `/delitools-api` and execute the binary built by the shared server builder, as for the other Rust APIs. Root `pnpm dev` starts the owning Compose database and includes the task. The disposable database uses `127.0.0.1:55433` by default, overridden by `DELITOOLS_POSTGRES_PORT`. Apply migrations explicitly with `delitools-api --migrate`; development launchers never run migrations.
+Run service-local `pnpm dev` to inject the Infisical development folder `/delitools-api` and execute the binary built by the shared server builder, as for the other Rust APIs. Root `pnpm dev` starts the owning Compose database and includes the task. The disposable database uses `127.0.0.1:55434` by default, overridden by `DELITOOLS_POSTGRES_PORT`. Apply migrations explicitly with `delitools-api --migrate`; development launchers never run migrations.
