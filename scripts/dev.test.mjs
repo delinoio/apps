@@ -443,10 +443,10 @@ test("root, service-local and Portless Delcore development share the catalog-app
   const portless = JSON.parse(read("../portless.json"));
   const turbo = JSON.parse(read("../turbo.json"));
   // Root development starts Compose, then process-compose, whose Delcore task
-  // runs the Turbo dev task; Portless runs the same Turbo dev tasks. Both
-  // reach the service-local dev script.
+  // runs the Turbo dev task. Portless invokes the same root development
+  // script in a detached session, so process-compose must run without a TUI.
   assert.equal(root.scripts.dev, "node scripts/dev.mjs");
-  assert.equal(root.scripts["dev:portless"], "portless");
+  assert.equal(root.scripts["dev:portless"], "portless -- --tui=false");
   assert.equal(turbo.tasks.dev.persistent, true);
   assert.match(read("dev.mjs"), /process-compose/u);
   assert.match(

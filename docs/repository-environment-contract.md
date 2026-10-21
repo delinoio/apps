@@ -18,7 +18,7 @@ Delcore's required `MAX_METER_GROUPS` and `MAX_METER_GROUP_VALUES` metering boun
 
 API development launchers always set the owning fixed loopback `LISTEN`: `127.0.0.1:8080` for Delcore, `127.0.0.1:46317` for DevBase and `127.0.0.1:46321` for Git Tracker. Shared parent variables, Infisical and service-local `.env` values cannot redirect these development listeners. Non-development server startup retains its configured listener.
 
-Root database port overrides are resolved before Infisical injection, so remote database settings cannot redirect this local workflow. Direct service-local development and root `pnpm dev:portless` have no handoff and retain their existing configuration behavior.
+Root database port overrides are resolved before Infisical injection, so remote database settings cannot redirect this local workflow. Root `pnpm dev:portless` invokes the root `dev` script and uses the same Compose database handoff. Direct service-local development has no handoff and retains its existing configuration behavior.
 
 Build, test, localization and release commands do not use this injection. Keep service, production and signing credentials out of frontend development secrets. Only public client configuration may enter browser bundles.
 
