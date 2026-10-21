@@ -387,6 +387,45 @@ async fn credits_blocking_and_billing_checks_apply_to_call_time_usage() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn included_usage_of_other_meters_does_not_offset_a_depleted_call_time_balance() {
+    let f = Fixture::setup().await;
+    let s = register(&f).await;
+    // A legacy meter of the same service carries a plan price with included usage.
+    let plan = f.rpc("owner", "GetCatalog", json!({})).await["plans"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":s.service,"name":"requests","key":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"}})).await;
+    f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"plan price","price":{"planId":plan,"serviceId":s.service,"meter":"requests","unitPrice":"1","included":"5","currency":"USD"}})).await;
+    let tenant = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Allowance"}),
+        )
+        .await["tenant"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let held: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM allowance_grants WHERE tenant_id=$1::text::uuid AND amount>0",
+    )
+    .bind(&tenant)
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    assert!(held > 0, "the tenant holds included usage of another meter");
+    let paid = json!({"tenantId":tenant,"capability":"translator","paid":true,"consumerAuthorization":"CONSUMER_AUTHORIZATION_TENANT_SERVICE_KEY"});
+    // Call-time usage never consumes that allowance, so the empty balance still blocks.
+    let r = authorize(&f, paid.clone()).await;
+    assert_eq!(r["allowed"], false);
+    assert_eq!(reasons(&r), vec!["\"BLOCK_REASON_BALANCE\"".to_string()]);
+    credit(&f, &tenant, "0.01").await;
+    assert_eq!(authorize(&f, paid).await["allowed"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn authorization_modes_for_service_keys_personal_keys_and_key_management() {
     let f = Fixture::setup().await;
     let s = register(&f).await;

@@ -47,7 +47,9 @@ impl Call<'_> {
                     // prices, so no subscription price entitlement is required.
                     let call_time = crate::delitools::is_delitools(self.tx, &self.service).await?;
                     let mut depleted: bool = row.try_get(5)?;
-                    if depleted {
+                    // Included usage of the service's other meters is never consumed by
+                    // call-time usage, so it cannot keep a depleted balance authorized.
+                    if depleted && !call_time {
                         let start: DateTime<Utc> =
                             sqlx::query_scalar("SELECT period_start FROM tenants WHERE id=$1")
                                 .bind(tenant_id)
