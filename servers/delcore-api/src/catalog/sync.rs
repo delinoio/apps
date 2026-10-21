@@ -36,7 +36,7 @@ pub async fn sync(
     let started = std::time::Instant::now();
     let correlation = uuid::Uuid::now_v7().to_string();
     let span = tracing::info_span!("delcore.catalog.reconcile", delcore.correlation_id = %correlation, delcore.outcome = tracing::field::Empty, delcore.catalog.files = tracing::field::Empty, delcore.catalog.entities_created = tracing::field::Empty, delcore.catalog.versions_created = tracing::field::Empty);
-    let result = apply(pool, directory, correlation)
+    let result = apply(pool, directory, correlation.clone())
         .instrument(span.clone())
         .await;
     let outcome = match &result {
@@ -51,8 +51,36 @@ pub async fn sync(
         span.record("delcore.catalog.entities_created", r.entities_created);
         span.record("delcore.catalog.versions_created", r.versions_created);
     }
+    if let Err(error) = &result {
+        tracing::error!(parent: &span, correlation_id = %correlation,
+            category = "catalog_rejected", directory = %directory.display(),
+            error = %diagnostic(error), "development catalog synchronization failed");
+    }
     result
 }
+
+// Preserve file and validation context, but never print SQL values or protocol
+// payloads included in dependency errors.
+fn diagnostic(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .map(|cause| {
+            if let Some(error) = cause.downcast_ref::<sqlx::Error>() {
+                match error {
+                    sqlx::Error::Database(db) => format!(
+                        "database failure (SQLSTATE {})",
+                        db.code().as_deref().unwrap_or("unknown")
+                    ),
+                    _ => "database dependency failure".to_owned(),
+                }
+            } else {
+                cause.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(": ")
+}
+
 async fn apply(pool: &PgPool, directory: &Path, correlation: String) -> Result<SyncResult> {
     let items = load(directory)?;
     let mut result = SyncResult {
@@ -429,4 +457,24 @@ async fn replace_grants(
         sqlx::query("INSERT INTO catalog_product_features(product_id,feature_id,value) VALUES($1::text::uuid,$2::text::uuid,$3)").bind(product).bind(feature).bind(value).execute(&mut *c).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn catalog_diagnostic_preserves_file_context_without_database_payloads() {
+        let error = anyhow::Error::new(sqlx::Error::Protocol("private database payload".into()))
+            .context("catalog file catalog/plans/free.yaml");
+        let message = diagnostic(&error);
+        assert!(message.contains("catalog/plans/free.yaml"));
+        assert!(message.contains("database dependency failure"));
+        assert!(!message.contains("private database payload"));
+        let error =
+            anyhow::anyhow!("duplicate plan rank").context("catalog file catalog/plan.yaml");
+        assert_eq!(
+            diagnostic(&error),
+            "catalog file catalog/plan.yaml: duplicate plan rank"
+        );
+    }
 }
