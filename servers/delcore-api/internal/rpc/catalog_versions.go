@@ -3,6 +3,8 @@
 package rpc
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -28,12 +30,43 @@ func (c *call) catalogKey(id, supplied, fallback string) (string, error) {
 			return key, err
 		}
 	}
-	key := strings.ToLower(strings.TrimSpace(fallback))
-	key = strings.NewReplacer(" ", "-", "_", "-").Replace(key)
-	if !catalogKeyPattern.MatchString(key) {
-		return "", invalid("a stable catalog key is required")
+	return derivedCatalogKey(fallback), nil
+}
+
+// derivedCatalogKey maps a display name from a client that predates catalog
+// keys to a deterministic valid key. A name that becomes valid after
+// lowercasing and replacing spaces and underscores keeps that readable key.
+// Any other accepted name, including punctuation, non-ASCII text, or more
+// than 100 characters, uses a slug plus a hash of the name so distinct names
+// keep distinct keys.
+func derivedCatalogKey(name string) string {
+	name = strings.TrimSpace(name)
+	key := strings.NewReplacer(" ", "-", "_", "-").Replace(strings.ToLower(name))
+	if catalogKeyPattern.MatchString(key) {
+		return key
 	}
-	return key, nil
+	var slug strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			slug.WriteRune(r)
+		case slug.Len() > 0 && !strings.HasSuffix(slug.String(), "-"):
+			slug.WriteByte('-')
+		}
+	}
+	base := strings.Trim(slug.String(), "-")
+	switch {
+	case base == "":
+		base = "key"
+	case base[0] < 'a' || base[0] > 'z':
+		base = "key-" + base
+	}
+	sum := sha256.Sum256([]byte(name))
+	suffix := hex.EncodeToString(sum[:8])
+	if limit := 100 - len(suffix) - 1; len(base) > limit {
+		base = strings.TrimRight(base[:limit], "-")
+	}
+	return base + "-" + suffix
 }
 
 func (c *call) catalogEntity(kind, scope, key, id string) (string, error) {

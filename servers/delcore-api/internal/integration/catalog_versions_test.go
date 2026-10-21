@@ -7,6 +7,8 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -706,6 +708,47 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenant, lega
 	}
 	if rank != "5" {
 		t.Fatalf("scheduled legacy plan change selected the mutated definition: rank=%s", rank)
+	}
+}
+
+func TestKeylessLegacyNamesDeriveStableKeys(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	keyPattern := regexp.MustCompile(`^[a-z][a-z0-9-]{0,99}$`)
+	// Clients that predate catalog keys send only a display name, which was
+	// previously accepted up to 200 characters without a character set.
+	serviceName := "Ünïcode Service (v2)!"
+	put := func() *pb.Service {
+		t.Helper()
+		service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare keyless service", Service: &pb.Service{Name: serviceName, ClientId: "keyless", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+		if err != nil {
+			t.Fatalf("keyless service name rejected: %v", err)
+		}
+		return service.Msg.Service
+	}
+	first, replay := put(), put()
+	if !keyPattern.MatchString(first.Key) || replay.Id != first.Id || replay.Key != first.Key {
+		t.Fatalf("keyless service replay changed identity: first=%s/%s replay=%s/%s", first.Id, first.Key, replay.Id, replay.Key)
+	}
+	plans := map[string]string{}
+	for i, name := range []string{"Pro Plan (2024)", "Pro Plan [2024]", "123 " + strings.Repeat("Long Plan ", 15), "プラン"} {
+		plan, err := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "declare keyless plan", Plan: &pb.Plan{Name: name, Rank: int32(i + 1), Free: true}}, "owner"))
+		if err != nil {
+			t.Fatalf("keyless plan name %q rejected: %v", name, err)
+		}
+		if !keyPattern.MatchString(plan.Msg.Plan.Key) {
+			t.Fatalf("derived plan key %q is invalid", plan.Msg.Plan.Key)
+		}
+		for other, id := range plans {
+			if id == plan.Msg.Plan.Id {
+				t.Fatalf("distinct plan names %q and %q share one identity", other, name)
+			}
+		}
+		plans[name] = plan.Msg.Plan.Id
+	}
+	addon, err := client.PutAddOn(ctx, req(&pb.PutAddOnRequest{RequestKey: key(), Reason: "declare keyless add-on", AddOn: &pb.AddOn{ServiceId: first.Id, Name: "Extra seats +5"}}, "owner"))
+	if err != nil || !keyPattern.MatchString(addon.Msg.AddOn.Key) {
+		t.Fatalf("keyless add-on name rejected: %v", err)
 	}
 }
 
