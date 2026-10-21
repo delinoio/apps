@@ -145,8 +145,22 @@ func (s *Server) PutMeter(ctx context.Context, r *connect.Request[pb.PutMeterReq
 				return invalid("invalid meter filter")
 			}
 			item := &pb.MeterFilter{Attribute: filter.Attribute, Operator: filter.Operator, Values: append([]string(nil), filter.Values...)}
-			if item.Operator == pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN {
+			switch item.Operator {
+			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN:
 				sort.Strings(item.Values)
+			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER,
+				pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL,
+				pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS,
+				pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS_OR_EQUAL:
+				// Store the canonical decimal so equivalent spellings such as
+				// 1.0 and 1.00 hash to the same immutable definition.
+				for i, value := range item.Values {
+					number, err := metering.Number(value)
+					if err != nil {
+						return invalid("numeric meter filter requires a decimal value")
+					}
+					item.Values[i] = number.Text
+				}
 			}
 			filters = append(filters, item)
 		}

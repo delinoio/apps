@@ -752,6 +752,32 @@ func TestKeylessLegacyNamesDeriveStableKeys(t *testing.T) {
 	}
 }
 
+func TestMeterReplayCanonicalizesNumericFilters(t *testing.T) {
+	_, client, _ := setup(t)
+	ctx := context.Background()
+	service, err := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "declare numeric filter service", Service: &pb.Service{Key: "numeric-filter-service", Name: "Numeric Filter Service", ClientId: "numeric-filter", Capabilities: []string{"execute"}, Scopes: []string{"authorize"}}}, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(threshold string) (*connect.Response[pb.PutMeterResponse], error) {
+		return client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "declare numeric filter meter", Meter: &pb.Meter{ServiceId: service.Msg.Service.Id, Name: "large-requests", Key: "large-requests", EventType: "request", Aggregation: pb.MeterAggregation_METER_AGGREGATION_COUNT, Filters: []*pb.MeterFilter{{Attribute: "bytes", Operator: pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER, Values: []string{threshold}}}}}, "owner"))
+	}
+	first, err := put("1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := put("1.00")
+	if err != nil {
+		t.Fatalf("equivalent numeric filter replay rejected: %v", err)
+	}
+	if replay.Msg.Meter.Id != first.Msg.Meter.Id {
+		t.Fatalf("equivalent numeric filter replay changed identity: %s != %s", replay.Msg.Meter.Id, first.Msg.Meter.Id)
+	}
+	if _, err = put("2"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("changed numeric filter was not rejected: %v", err)
+	}
+}
+
 func activeVersion(t *testing.T, ctx context.Context, db *pgxpool.Pool, product string) string {
 	t.Helper()
 	var version string
