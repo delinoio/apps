@@ -31,11 +31,13 @@ func TestOCI(t *testing.T) {
 		}
 		return strings.TrimSpace(string(b))
 	}
-	mustFail := func(args ...string) {
+	mustFail := func(args ...string) string {
 		t.Helper()
-		if b, e := exec.Command("docker", args...).CombinedOutput(); e == nil {
+		b, e := exec.Command("docker", args...).CombinedOutput()
+		if e == nil {
 			t.Fatalf("expected failure: %s", b)
 		}
+		return string(b)
 	}
 	image := "delcore-api:validation"
 	if user := run("image", "inspect", "--format", "{{.Config.User}}", image); user != "65532:65532" {
@@ -113,7 +115,10 @@ func TestOCI(t *testing.T) {
 	// Development startup fails before serving without its catalog directory.
 	cfg["CATALOG_DIR"] = "/missing-catalog"
 	writeEnvironment()
-	mustFail(args...)
+	// The rejection log carries the correlation ID of the failed reconciliation.
+	if rejected := mustFail(args...); !strings.Contains(rejected, "catalog synchronization rejected") || !strings.Contains(rejected, "correlation_id") {
+		t.Fatalf("catalog rejection log lacks its correlation ID: %s", rejected)
+	}
 	cfg["CATALOG_DIR"] = "/catalog"
 	writeEnvironment()
 	app := name + "-app"

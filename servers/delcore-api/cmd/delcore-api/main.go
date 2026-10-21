@@ -85,8 +85,12 @@ func execute() error {
 	registry := prometheus.NewRegistry()
 	metrics := telemetry.New(registry)
 	if c.Development {
-		if _, e = catalog.Sync(ctx, db, c.CatalogDir, logger, metrics); e != nil {
-			logger.Error("catalog synchronization rejected", "category", "catalog_reconciliation", "error", e.Error())
+		// The result carries the correlation ID of the reconciliation span even
+		// when the application is rejected, so the only startup failure log can be
+		// matched with its trace.
+		reconciled, e := catalog.Sync(ctx, db, c.CatalogDir, logger, metrics)
+		if e != nil {
+			logger.Error("catalog synchronization rejected", "category", "catalog_reconciliation", "correlation_id", reconciled.Correlation, "error", e.Error())
 			return e
 		}
 	}
