@@ -115,6 +115,14 @@ const (
 	// DelcoreServiceListUsageProcedure is the fully-qualified name of the DelcoreService's ListUsage
 	// RPC.
 	DelcoreServiceListUsageProcedure = "/delcore.v1.DelcoreService/ListUsage"
+	// DelcoreServiceIngestEventProcedure is the fully-qualified name of the DelcoreService's
+	// IngestEvent RPC.
+	DelcoreServiceIngestEventProcedure = "/delcore.v1.DelcoreService/IngestEvent"
+	// DelcoreServiceCorrectEventProcedure is the fully-qualified name of the DelcoreService's
+	// CorrectEvent RPC.
+	DelcoreServiceCorrectEventProcedure = "/delcore.v1.DelcoreService/CorrectEvent"
+	// DelcoreServiceGetEventProcedure is the fully-qualified name of the DelcoreService's GetEvent RPC.
+	DelcoreServiceGetEventProcedure = "/delcore.v1.DelcoreService/GetEvent"
 	// DelcoreServiceListLedgerProcedure is the fully-qualified name of the DelcoreService's ListLedger
 	// RPC.
 	DelcoreServiceListLedgerProcedure = "/delcore.v1.DelcoreService/ListLedger"
@@ -177,6 +185,9 @@ type DelcoreServiceClient interface {
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
+	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
+	CorrectEvent(context.Context, *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error)
+	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
 	ListLedger(context.Context, *connect.Request[v1.ListLedgerRequest]) (*connect.Response[v1.ListLedgerResponse], error)
 	RequestTopUp(context.Context, *connect.Request[v1.RequestTopUpRequest]) (*connect.Response[v1.RequestTopUpResponse], error)
 	SetAutoTopUp(context.Context, *connect.Request[v1.SetAutoTopUpRequest]) (*connect.Response[v1.SetAutoTopUpResponse], error)
@@ -369,6 +380,24 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("ListUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		ingestEvent: connect.NewClient[v1.IngestEventRequest, v1.IngestEventResponse](
+			httpClient,
+			baseURL+DelcoreServiceIngestEventProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("IngestEvent")),
+			connect.WithClientOptions(opts...),
+		),
+		correctEvent: connect.NewClient[v1.CorrectEventRequest, v1.CorrectEventResponse](
+			httpClient,
+			baseURL+DelcoreServiceCorrectEventProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("CorrectEvent")),
+			connect.WithClientOptions(opts...),
+		),
+		getEvent: connect.NewClient[v1.GetEventRequest, v1.GetEventResponse](
+			httpClient,
+			baseURL+DelcoreServiceGetEventProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("GetEvent")),
+			connect.WithClientOptions(opts...),
+		),
 		listLedger: connect.NewClient[v1.ListLedgerRequest, v1.ListLedgerResponse](
 			httpClient,
 			baseURL+DelcoreServiceListLedgerProcedure,
@@ -468,6 +497,9 @@ type delcoreServiceClient struct {
 	reportUsage          *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
 	correctUsage         *connect.Client[v1.CorrectUsageRequest, v1.CorrectUsageResponse]
 	listUsage            *connect.Client[v1.ListUsageRequest, v1.ListUsageResponse]
+	ingestEvent          *connect.Client[v1.IngestEventRequest, v1.IngestEventResponse]
+	correctEvent         *connect.Client[v1.CorrectEventRequest, v1.CorrectEventResponse]
+	getEvent             *connect.Client[v1.GetEventRequest, v1.GetEventResponse]
 	listLedger           *connect.Client[v1.ListLedgerRequest, v1.ListLedgerResponse]
 	requestTopUp         *connect.Client[v1.RequestTopUpRequest, v1.RequestTopUpResponse]
 	setAutoTopUp         *connect.Client[v1.SetAutoTopUpRequest, v1.SetAutoTopUpResponse]
@@ -621,6 +653,21 @@ func (c *delcoreServiceClient) ListUsage(ctx context.Context, req *connect.Reque
 	return c.listUsage.CallUnary(ctx, req)
 }
 
+// IngestEvent calls delcore.v1.DelcoreService.IngestEvent.
+func (c *delcoreServiceClient) IngestEvent(ctx context.Context, req *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
+	return c.ingestEvent.CallUnary(ctx, req)
+}
+
+// CorrectEvent calls delcore.v1.DelcoreService.CorrectEvent.
+func (c *delcoreServiceClient) CorrectEvent(ctx context.Context, req *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error) {
+	return c.correctEvent.CallUnary(ctx, req)
+}
+
+// GetEvent calls delcore.v1.DelcoreService.GetEvent.
+func (c *delcoreServiceClient) GetEvent(ctx context.Context, req *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error) {
+	return c.getEvent.CallUnary(ctx, req)
+}
+
 // ListLedger calls delcore.v1.DelcoreService.ListLedger.
 func (c *delcoreServiceClient) ListLedger(ctx context.Context, req *connect.Request[v1.ListLedgerRequest]) (*connect.Response[v1.ListLedgerResponse], error) {
 	return c.listLedger.CallUnary(ctx, req)
@@ -706,6 +753,9 @@ type DelcoreServiceHandler interface {
 	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
 	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
 	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
+	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
+	CorrectEvent(context.Context, *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error)
+	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
 	ListLedger(context.Context, *connect.Request[v1.ListLedgerRequest]) (*connect.Response[v1.ListLedgerResponse], error)
 	RequestTopUp(context.Context, *connect.Request[v1.RequestTopUpRequest]) (*connect.Response[v1.RequestTopUpResponse], error)
 	SetAutoTopUp(context.Context, *connect.Request[v1.SetAutoTopUpRequest]) (*connect.Response[v1.SetAutoTopUpResponse], error)
@@ -894,6 +944,24 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("ListUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceIngestEventHandler := connect.NewUnaryHandler(
+		DelcoreServiceIngestEventProcedure,
+		svc.IngestEvent,
+		connect.WithSchema(delcoreServiceMethods.ByName("IngestEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceCorrectEventHandler := connect.NewUnaryHandler(
+		DelcoreServiceCorrectEventProcedure,
+		svc.CorrectEvent,
+		connect.WithSchema(delcoreServiceMethods.ByName("CorrectEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceGetEventHandler := connect.NewUnaryHandler(
+		DelcoreServiceGetEventProcedure,
+		svc.GetEvent,
+		connect.WithSchema(delcoreServiceMethods.ByName("GetEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServiceListLedgerHandler := connect.NewUnaryHandler(
 		DelcoreServiceListLedgerProcedure,
 		svc.ListLedger,
@@ -1018,6 +1086,12 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceCorrectUsageHandler.ServeHTTP(w, r)
 		case DelcoreServiceListUsageProcedure:
 			delcoreServiceListUsageHandler.ServeHTTP(w, r)
+		case DelcoreServiceIngestEventProcedure:
+			delcoreServiceIngestEventHandler.ServeHTTP(w, r)
+		case DelcoreServiceCorrectEventProcedure:
+			delcoreServiceCorrectEventHandler.ServeHTTP(w, r)
+		case DelcoreServiceGetEventProcedure:
+			delcoreServiceGetEventHandler.ServeHTTP(w, r)
 		case DelcoreServiceListLedgerProcedure:
 			delcoreServiceListLedgerHandler.ServeHTTP(w, r)
 		case DelcoreServiceRequestTopUpProcedure:
@@ -1159,6 +1233,18 @@ func (UnimplementedDelcoreServiceHandler) CorrectUsage(context.Context, *connect
 
 func (UnimplementedDelcoreServiceHandler) ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ListUsage is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.IngestEvent is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) CorrectEvent(context.Context, *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.CorrectEvent is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.GetEvent is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) ListLedger(context.Context, *connect.Request[v1.ListLedgerRequest]) (*connect.Response[v1.ListLedgerResponse], error) {

@@ -47,6 +47,26 @@ enum ErrorReason {
   ERROR_REASON_CONFLICT = 4;
   ERROR_REASON_PRECONDITION = 5;
   ERROR_REASON_DEPENDENCY = 6;
+  // An event correction named a revision that is no longer the latest one.
+  // Re-read the event with GetEvent before deciding on a new correction.
+  ERROR_REASON_STALE_REVISION = 7;
+  // No catalog meter of the calling service matches the event type and filters.
+  ERROR_REASON_NO_MATCHING_METER = 8;
+  // A matched meter lacks a required attribute, receives the wrong attribute
+  // type, or an attribute is not a valid flat scalar.
+  ERROR_REASON_INVALID_ATTRIBUTE = 9;
+  // Accepting the event would exceed the configured group or distinct-value
+  // bound of a tenant meter billing period.
+  ERROR_REASON_CARDINALITY_EXCEEDED = 10;
+  // The service-scoped event key was already accepted with different content.
+  ERROR_REASON_EVENT_IDENTITY_CONFLICT = 11;
+  // The calling service has no retained event with the requested key.
+  ERROR_REASON_EVENT_NOT_FOUND = 12;
+  // The event was cancelled; a cancelled event cannot be corrected again.
+  ERROR_REASON_EVENT_CANCELLED = 13;
+  // The occurrence is older than the accepted lateness bound or the tenant
+  // reporting grace period has ended.
+  ERROR_REASON_REPORTING_WINDOW_CLOSED = 14;
 }
 message ErrorDetail {
   ErrorReason reason = 1;
@@ -217,6 +237,33 @@ message Usage {
   string quantity = 6;
   google.protobuf.Timestamp occurred_at = 7;
   string correction_of = 8;
+}
+// AttributeValue is one flat event attribute. Nested objects and lists are not
+// supported. Numbers are canonical decimal strings, never binary floats.
+message AttributeValue {
+  oneof value {
+    string text = 1;
+    bool boolean = 2;
+    string number = 3;
+  }
+}
+// Event is a measured occurrence reported by a registered service. The
+// service-scoped event key is the durable identity; id is assigned by Delcore.
+message Event {
+  string id = 1;
+  string tenant_id = 2;
+  string service_id = 3;
+  string event_key = 4;
+  string event_type = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+  map<string, AttributeValue> attributes = 7;
+}
+enum EventCorrectionKind {
+  EVENT_CORRECTION_KIND_UNSPECIFIED = 0;
+  // Replace the complete event type and attribute map.
+  EVENT_CORRECTION_KIND_REPLACE = 1;
+  // Cancel the event. A cancelled event cannot be corrected again.
+  EVENT_CORRECTION_KIND_CANCEL = 2;
 }
 message LedgerEntry {
   string id = 1;
@@ -480,6 +527,51 @@ message CorrectUsageResponse {
   Metadata metadata = 1;
   string usage_id = 2;
 }
+// IngestEvent durably accepts one event. A response promises durable storage
+// and queued aggregation, not updated aggregates.
+message IngestEventRequest {
+  string request_key = 1;
+  Event event = 2;
+}
+message IngestEventResponse {
+  Metadata metadata = 1;
+  string event_id = 2;
+  // Revision accepted for this request. An original event is revision 1.
+  int32 revision = 3;
+}
+// CorrectEvent replaces or cancels a prior event of the calling service.
+// expected_revision must equal the latest accepted revision of the event.
+message CorrectEventRequest {
+  string request_key = 1;
+  string tenant_id = 2;
+  string event_key = 3;
+  int32 expected_revision = 4;
+  EventCorrectionKind kind = 5;
+  // Replacement content. Both fields must be empty for a cancellation.
+  string event_type = 6;
+  map<string, AttributeValue> attributes = 7;
+}
+message CorrectEventResponse {
+  Metadata metadata = 1;
+  string event_id = 2;
+  // New latest revision created by this correction.
+  int32 revision = 3;
+}
+message GetEventRequest {
+  string tenant_id = 1;
+  string event_key = 2;
+}
+message GetEventResponse {
+  Metadata metadata = 1;
+  // Latest accepted content. A cancelled event keeps its identity and
+  // occurrence fields with an empty type and attribute map.
+  Event event = 2;
+  int32 revision = 3;
+  bool cancelled = 4;
+  // Latest revision materialized by asynchronous processing. It trails
+  // revision while work is pending or failed.
+  int32 applied_revision = 5;
+}
 message ListUsageRequest {
   string tenant_id = 1;
   Page page = 2;
@@ -621,6 +713,9 @@ service DelcoreService {
   rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
   rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse);
   rpc ListUsage(ListUsageRequest) returns (ListUsageResponse);
+  rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse);
+  rpc CorrectEvent(CorrectEventRequest) returns (CorrectEventResponse);
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
   rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
   rpc RequestTopUp(RequestTopUpRequest) returns (RequestTopUpResponse);
   rpc SetAutoTopUp(SetAutoTopUpRequest) returns (SetAutoTopUpResponse);
