@@ -136,23 +136,24 @@ pub struct Gateway {
     base: String,
     key: String,
     max_bytes: usize,
+    /// Deadline of one non-execution request (catalog, endpoints, generation lookup).
+    request_timeout: Duration,
 }
 
 impl Gateway {
-    pub fn new(
-        base: &str,
-        key: &str,
-        max_bytes: usize,
-        connect_timeout: Duration,
-    ) -> anyhow::Result<Self> {
+    /// `timeout` bounds connecting for every call and the whole of each non-execution request
+    /// (`TIMEOUT_SECONDS`). A streamed chat completion has no client-side total timeout here: the
+    /// executor bounds it with the request's execution deadline and drops the future.
+    pub fn new(base: &str, key: &str, max_bytes: usize, timeout: Duration) -> anyhow::Result<Self> {
         Ok(Self {
             http: reqwest::Client::builder()
-                .connect_timeout(connect_timeout)
+                .connect_timeout(timeout)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
             base: base.trim_end_matches('/').to_owned(),
             key: key.to_owned(),
             max_bytes,
+            request_timeout: timeout,
         })
     }
 
@@ -286,7 +287,14 @@ impl Gateway {
         query: &[(&str, &str)],
         authenticated: bool,
     ) -> Result<(u16, Value), GatewayError> {
-        let mut request = self.http.get(self.url(path)).query(query);
+        // The per-request timeout covers connecting, the headers and reading the body, so a
+        // Gateway that accepts the connection and then stalls cannot block catalog
+        // synchronization or usage reconciliation indefinitely.
+        let mut request = self
+            .http
+            .get(self.url(path))
+            .query(query)
+            .timeout(self.request_timeout);
         if authenticated {
             request = request.bearer_auth(&self.key);
         }
@@ -877,5 +885,47 @@ mod tests {
         .unwrap();
         assert!(endpoint.active);
         assert_eq!(endpoint.price.unwrap().output, "0.0000005");
+    }
+
+    /// A server that accepts connections and then stalls, optionally after partial headers and
+    /// body bytes. Returns the base URL; the task runs until the test ends.
+    async fn stalled_server(reply: &'static [u8]) -> String {
+        use tokio::{io::AsyncWriteExt, net::TcpListener};
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((mut socket, _)) = listener.accept().await {
+                if !reply.is_empty() {
+                    let _ = socket.write_all(reply).await;
+                }
+                // Keep the socket open and silent.
+                held.push(socket);
+            }
+        });
+        base
+    }
+
+    #[tokio::test]
+    async fn stalled_non_execution_requests_time_out() {
+        let limit = Duration::from_millis(300);
+        for reply in [
+            &b""[..],
+            // Headers promise a body that never arrives.
+            &b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n{\"data\":"[..],
+        ] {
+            let base = stalled_server(reply).await;
+            let gateway = Gateway::new(&base, "key", 1 << 20, limit).unwrap();
+            let started = std::time::Instant::now();
+            let all = async {
+                assert!(gateway.models().await.is_err());
+                assert!(gateway.endpoints("openai/gpt-6-luna").await.is_err());
+                assert!(gateway.generation("gen_1").await.is_err());
+            };
+            tokio::time::timeout(Duration::from_secs(10), all)
+                .await
+                .expect("stalled requests are bounded by the configured timeout");
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
     }
 }
