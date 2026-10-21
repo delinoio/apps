@@ -44,8 +44,11 @@ Outside development, bootstrap the service catalog and default free plan through
 | `*_RETENTION_SECONDS`                                         | Explicit retention policy inputs                       |
 | `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                   | Operational alert thresholds                           |
 | `MAX_METER_GROUPS`, `MAX_METER_GROUP_VALUES`                  | Event admission bounds per tenant meter period         |
+| `DELITOOLS_ENABLED`                                           | Serve DeliTools; requires 30-day reporting windows     |
 | `DEVELOPMENT`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
 | `CATALOG_DIR`                                                 | Optional development YAML catalog directory            |
+
+The service registered with the key `delitools` is the DeliTools consumer: its AI usage events are rated at call time from the per-token USD prices they carry, times the catalog markups, for every tenant. Serving it needs `DELITOOLS_ENABLED=true` with `USAGE_LATENESS_SECONDS` and `REPORTING_GRACE_SECONDS` of at least 2592000 (the committed `.env.example` and sample catalog do). See the [DeliTools consumer integration](../../docs/servers-delcore-api-contract.md#delitools-consumer-integration).
 
 All billing uses USD with two decimal places for currency minor units. Currency and minor-unit precision are fixed and have no configuration settings.
 

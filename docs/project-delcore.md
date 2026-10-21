@@ -47,6 +47,10 @@ Development startup reconciles the declared split-file YAML catalog after schema
 
 The catalog and event metering change is a coordinated pre-release transition: the server and its repository callers change together without a feature flag, no production data is migrated, development databases may be reset, and migrations stay explicit and separate from catalog synchronization. The [server operations section](servers-delcore-api-contract.md#catalog-and-metering-operations) owns the transition and recovery procedures.
 
+## DeliTools consumer integration
+
+The service registered with the reserved key `delitools` is the DeliTools consumer. Its AI usage events are rated at call time from the price snapshot each event carries, for every tenant, through `ai_token_usd` meters with delcore-owned 1.15 and 1.30 markups; other services keep subscription prices. `Authorize` gains tenant service-key, personal-key-management and service-key-management modes restricted to that service, the reserved identity is immutable, and DeliTools may delete its own pending usage reports after 30 days without affecting accepted delcore events or ledger entries, which requires 30-day reporting windows (`DELITOOLS_ENABLED`). The [server contract](servers-delcore-api-contract.md#delitools-consumer-integration) owns these rules; the [DeliTools project](project-delitools.md) owns the consumer.
+
 ## Change Policy
 
 When the boundary changes, update the local protocol and server contracts and this project index in the same change. Describe interface effects and client/server integration validation in the pull request. Update instruction files only for ownership or development-rule changes. Record validation and remaining limits in PRs, issues or CI artifacts.
