@@ -64,6 +64,8 @@
         "WEBHOOK_RETENTION_SECONDS",
         "BACKLOG_ALERT",
         "SETTLEMENT_ALERT_SECONDS",
+        "MAX_METER_GROUPS",
+        "MAX_METER_GROUP_VALUES",
         "DEVELOPMENT",
         "CATALOG_DIR",
         "OTEL_*",

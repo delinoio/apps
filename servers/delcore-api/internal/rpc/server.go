@@ -181,7 +181,12 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 		if databaseError != nil && databaseError.Code == "23505" {
 			e = conflict()
 		}
-		s.Log.WarnContext(ctx, "rpc rejected", "correlation_id", correlation, "procedure", req.Spec().Procedure, "category", connect.CodeOf(e).String())
+		attributes := []any{"correlation_id", correlation, "procedure", req.Spec().Procedure, "category", connect.CodeOf(e).String()}
+		var specific *reasonedError
+		if errors.As(e, &specific) {
+			attributes = append(attributes, "reason", specific.reason.String())
+		}
+		s.Log.WarnContext(ctx, "rpc rejected", attributes...)
 		return nil, typed(e, correlation)
 	}
 	reflect.ValueOf(out).Elem().FieldByName("Metadata").Set(reflect.ValueOf(&pb.Metadata{CorrelationId: correlation}))
@@ -189,7 +194,26 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 	resp.Header().Set("X-Delcore-Correlation-Id", correlation)
 	return resp, nil
 }
+
+// reasonedError carries a specific typed reason when the status code alone
+// does not identify the failure.
+type reasonedError struct {
+	err    *connect.Error
+	reason pb.ErrorReason
+}
+
+func (e *reasonedError) Error() string { return e.err.Error() }
+func (e *reasonedError) Unwrap() error { return e.err }
+
+func reasoned(code connect.Code, reason pb.ErrorReason, message string) error {
+	return &reasonedError{err: connect.NewError(code, errors.New(message)), reason: reason}
+}
+
 func typed(err error, id string) error {
+	var specific *reasonedError
+	if errors.As(err, &specific) {
+		return detailed(specific.err, specific.reason, id)
+	}
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
 		ce = connect.NewError(connect.CodeInternal, errors.New("operation could not be completed"))
@@ -207,6 +231,9 @@ func typed(err error, id string) error {
 	case connect.CodeFailedPrecondition:
 		reason = pb.ErrorReason_ERROR_REASON_PRECONDITION
 	}
+	return detailed(ce, reason, id)
+}
+func detailed(ce *connect.Error, reason pb.ErrorReason, id string) error {
 	d, e := connect.NewErrorDetail(&pb.ErrorDetail{Reason: reason, CorrelationId: id})
 	if e == nil {
 		ce.AddDetail(d)
@@ -320,7 +347,7 @@ func (c *call) authorizeReplay(request any) error {
 		return c.operator(operator.GetReason())
 	}
 	switch request.(type) {
-	case *pb.ReportUsageRequest, *pb.CorrectUsageRequest:
+	case *pb.ReportUsageRequest, *pb.CorrectUsageRequest, *pb.IngestEventRequest, *pb.CorrectEventRequest:
 		return c.serviceScope("usage:write")
 	}
 	scoped, ok := request.(interface{ GetTenantId() string })

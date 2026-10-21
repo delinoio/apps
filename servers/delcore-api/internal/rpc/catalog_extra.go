@@ -7,89 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/metering"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"sort"
 )
 
 func validateCatalogMeter(m *pb.Meter) error {
-	aggregation := metering.Count
-	switch m.Aggregation {
-	case pb.MeterAggregation_METER_AGGREGATION_COUNT:
-		aggregation = metering.Count
-	case pb.MeterAggregation_METER_AGGREGATION_SUM:
-		aggregation = metering.Sum
-	case pb.MeterAggregation_METER_AGGREGATION_MIN:
-		aggregation = metering.Min
-	case pb.MeterAggregation_METER_AGGREGATION_MAX:
-		aggregation = metering.Max
-	case pb.MeterAggregation_METER_AGGREGATION_AVG:
-		aggregation = metering.Avg
-	case pb.MeterAggregation_METER_AGGREGATION_UNIQUE_COUNT:
-		aggregation = metering.UniqueCount
-	default:
-		return invalid("unknown meter aggregation")
-	}
-	definition := metering.Definition{Key: m.Name, EventType: m.EventType, Aggregation: aggregation, ValueAttribute: m.ValueAttribute, GroupBy: m.GroupBy}
-	for _, filter := range m.Filters {
-		if filter == nil {
-			return invalid("invalid meter filter")
-		}
-		item := metering.Filter{Attribute: filter.Attribute}
-		switch filter.Operator {
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EQUAL:
-			if len(filter.Values) != 1 {
-				return invalid("equal meter filters require one value")
-			}
-			item.Operator, item.Value = metering.Equal, metering.String(filter.Values[0])
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_NOT_EQUAL:
-			if len(filter.Values) != 1 {
-				return invalid("not-equal meter filters require one value")
-			}
-			item.Operator, item.Value = metering.NotEqual, metering.String(filter.Values[0])
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_IN:
-			if len(filter.Values) == 0 {
-				return invalid("in meter filters require values")
-			}
-			item.Operator = metering.In
-			item.Values = make([]metering.Value, 0, len(filter.Values))
-			for _, value := range filter.Values {
-				item.Values = append(item.Values, metering.String(value))
-			}
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS,
-			pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS_OR_EQUAL:
-			if len(filter.Values) != 1 {
-				return invalid("numeric meter filters require one value")
-			}
-			value, err := metering.Number(filter.Values[0])
-			if err != nil {
-				return invalid("numeric meter filter requires a decimal value")
-			}
-			item.Value = value
-			switch filter.Operator {
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER:
-				item.Operator = metering.GreaterThan
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_GREATER_OR_EQUAL:
-				item.Operator = metering.GreaterThanOrEqual
-			case pb.MeterFilterOperator_METER_FILTER_OPERATOR_LESS:
-				item.Operator = metering.LessThan
-			default:
-				item.Operator = metering.LessThanOrEqual
-			}
-		case pb.MeterFilterOperator_METER_FILTER_OPERATOR_EXISTS:
-			if len(filter.Values) != 1 || (filter.Values[0] != "true" && filter.Values[0] != "false") {
-				return invalid("exists meter filters require one boolean value")
-			}
-			item.Operator = metering.Exists
-			item.Value = metering.Boolean(filter.Values[0] == "true")
-		default:
-			return invalid("unknown meter filter operator")
-		}
-		definition.Filters = append(definition.Filters, item)
-	}
-	if err := definition.Validate(); err != nil {
+	if _, err := events.CatalogDefinition(m.Name, m.EventType, m.Aggregation, m.ValueAttribute, m.Filters, m.GroupBy); err != nil {
 		return invalid(err.Error())
 	}
 	return nil
@@ -366,7 +291,8 @@ func (s *Server) ListBillingHistory(ctx context.Context, r *connect.Request[pb.L
 		if e != nil {
 			return e
 		}
-		rows, e := c.tx.Query(c.ctx, "SELECT id::text,kind,state,error_category,attempts,checkout_url FROM jobs WHERE tenant_id=$1 AND kind<>'email' AND id>$2 ORDER BY id LIMIT $3", r.Msg.TenantId, after, n+1)
+		// Metering work is internal processing state; operators inspect it with ListJobs.
+		rows, e := c.tx.Query(c.ctx, "SELECT id::text,kind,state,error_category,attempts,checkout_url FROM jobs WHERE tenant_id=$1 AND kind NOT IN ('email','metering') AND id>$2 ORDER BY id LIMIT $3", r.Msg.TenantId, after, n+1)
 		if e != nil {
 			return e
 		}

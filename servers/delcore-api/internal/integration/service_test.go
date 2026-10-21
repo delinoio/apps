@@ -56,6 +56,8 @@ func (verifier) Verify(_ context.Context, h string) (auth.Identity, error) {
 		return auth.Identity{ClientID: "limited", Scopes: []string{"authorize"}}, nil
 	case "Bearer service":
 		return auth.Identity{ClientID: "service", Scopes: []string{"authorize", "usage:write", "usage:read"}}, nil
+	case "Bearer other":
+		return auth.Identity{ClientID: "other", Scopes: []string{"authorize", "usage:write", "usage:read"}}, nil
 	default:
 		return auth.Identity{}, errors.New("invalid token")
 	}
@@ -106,7 +108,7 @@ func setup(t *testing.T) (*postgres.Store, delcorev1connect.DelcoreServiceClient
 	if e = db.CheckSchema(ctx); e != nil {
 		t.Fatal(e)
 	}
-	c := config.Config{Issuer: "https://issuer.example.test", TimeoutSeconds: 10, MaxPayloadBytes: 1 << 20, InvitationSeconds: 3600, UsageLatenessSeconds: 86400, ReportingGraceSeconds: 86400, ReturnURLs: []string{"https://consumer.example.test/return"}, RetryLimit: 3, RetrySeconds: 1}
+	c := config.Config{Issuer: "https://issuer.example.test", TimeoutSeconds: 10, MaxPayloadBytes: 1 << 20, InvitationSeconds: 3600, UsageLatenessSeconds: 86400, ReportingGraceSeconds: 86400, ReturnURLs: []string{"https://consumer.example.test/return"}, RetryLimit: 3, RetrySeconds: 1, MaxMeterGroups: 1000, MaxMeterGroupValues: 1000}
 	server := &rpc.Server{DB: db, Auth: verifier{}, Config: c, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	path, handler := server.Handler()
 	mux := http.NewServeMux()

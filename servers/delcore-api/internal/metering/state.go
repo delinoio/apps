@@ -111,7 +111,9 @@ func Build(definitions []Definition, active map[string]Event) (State, error) {
 			}
 			b.count++
 			if b.definition.Aggregation != Count {
-				b.distinct[contribution.Value]++
+				if RetainsValues(b.definition.Aggregation) {
+					b.distinct[contribution.Value]++
+				}
 				if b.definition.Aggregation != UniqueCount {
 					n, _ := contribution.Value.decimal()
 					b.sum = b.sum.Add(n)
@@ -153,6 +155,19 @@ func Build(definitions []Definition, active map[string]Event) (State, error) {
 }
 
 func integerDecimal(n int64) accounting.Decimal { return accounting.FromMinor(big.NewInt(n), 0) }
+
+// RetainsValues reports whether an aggregation must keep its distinct value
+// multiset to support exact removal. Count, sum, and average keep only their
+// exact count and sum, so the distinct-value bound does not apply to them.
+func RetainsValues(kind Aggregation) bool {
+	return kind == Min || kind == Max || kind == UniqueCount
+}
+
+// RoundedAverage is the six-place half-up average used by queries, limits, and rating.
+// count must be positive.
+func RoundedAverage(sum accounting.Decimal, count int64) accounting.Decimal {
+	return roundedAverage(sum, count)
+}
 
 // roundedAverage rounds a signed exact quotient half away from zero at six decimal places.
 func roundedAverage(sum accounting.Decimal, count int64) accounting.Decimal {

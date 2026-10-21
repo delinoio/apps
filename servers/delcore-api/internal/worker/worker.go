@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/delinoio/apps/servers/delcore-api/internal/config"
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/delinoio/apps/servers/delcore-api/internal/provider"
 	"github.com/jackc/pgx/v5"
@@ -25,6 +26,10 @@ type Worker struct {
 	Provider *provider.Client
 	Config   config.Config
 	Log      *slog.Logger
+	// MeteringApplied runs inside the transaction that materializes an event
+	// transition and completes its job. Rating appends ledger differences here;
+	// an error rolls back the transition and retries the job.
+	MeteringApplied func(context.Context, pgx.Tx, events.Applied) error
 }
 type job struct {
 	ID, Tenant, Kind, State, ExternalID string
@@ -33,7 +38,7 @@ type job struct {
 }
 
 func (w *Worker) Recover(ctx context.Context) error {
-	_, e := w.DB.Pool.Exec(ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook') THEN 'pending' ELSE 'reconcile' END,available_at=now(),updated_at=now() WHERE state='running'`)
+	_, e := w.DB.Pool.Exec(ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook','metering') THEN 'pending' ELSE 'reconcile' END,available_at=now(),updated_at=now() WHERE state='running'`)
 	return e
 }
 func (w *Worker) Run(ctx context.Context) error {
@@ -64,9 +69,12 @@ func (w *Worker) Step(ctx context.Context) error {
 	if e := w.Maintain(ctx, time.Now().UTC()); e != nil {
 		return e
 	}
+	if _, e := w.ProcessMetering(ctx, MeteringBatch); e != nil {
+		return e
+	}
 	j := job{}
 	e := w.DB.Transaction(ctx, func(tx pgx.Tx) error {
-		e := tx.QueryRow(ctx, `SELECT id::text,COALESCE(tenant_id::text,''),kind,state,attempts,external_id,payload FROM jobs WHERE state IN ('pending','reconcile') AND available_at<=now() ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&j.ID, &j.Tenant, &j.Kind, &j.State, &j.Attempts, &j.ExternalID, &j.Payload)
+		e := tx.QueryRow(ctx, `SELECT id::text,COALESCE(tenant_id::text,''),kind,state,attempts,external_id,payload FROM jobs WHERE state IN ('pending','reconcile') AND kind<>'metering' AND available_at<=now() ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&j.ID, &j.Tenant, &j.Kind, &j.State, &j.Attempts, &j.ExternalID, &j.Payload)
 		if e != nil {
 			return e
 		}

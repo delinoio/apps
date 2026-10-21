@@ -7,6 +7,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
 )
 
 func number(t *testing.T, text string) Value {
@@ -304,4 +306,41 @@ func TestNumericFilterBoundariesAndMissingAttributes(t *testing.T) {
 			t.Fatalf("missing numeric filter attribute was accepted: %v", err)
 		}
 	}
+}
+
+func TestDistinctBoundAppliesOnlyToValueRetainingAggregations(t *testing.T) {
+	definitions := []Definition{
+		{Key: "sum", EventType: "use", Aggregation: Sum, ValueAttribute: "n"},
+		{Key: "avg", EventType: "use", Aggregation: Avg, ValueAttribute: "n"},
+		{Key: "min", EventType: "use", Aggregation: Min, ValueAttribute: "n"},
+	}
+	state, err := Build(definitions, map[string]Event{
+		"a": {Type: "use", Attributes: map[string]Value{"n": number(t, "1")}},
+		"b": {Type: "use", Attributes: map[string]Value{"n": number(t, "2")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregates := state.Aggregates()
+	if aggregates["sum"]["[]"].DistinctCount != 0 || aggregates["avg"]["[]"].DistinctCount != 0 || aggregates["min"]["[]"].DistinctCount != 2 {
+		t.Fatalf("distinct values were retained for the wrong aggregation: %+v", aggregates)
+	}
+	if err := state.CheckLimits(Limits{MaxDistinctValuesPerGroup: 2}); err != nil {
+		t.Fatalf("sum and average consumed distinct-value capacity: %v", err)
+	}
+	if err := state.CheckLimits(Limits{MaxDistinctValuesPerGroup: 1}); !errors.Is(err, ErrLimit) {
+		t.Fatalf("minimum did not consume distinct-value capacity: %v", err)
+	}
+	if !RetainsValues(UniqueCount) || RetainsValues(Count) || RoundedAverage(must(t, "1"), 3).String() != "0.333333" {
+		t.Fatal("exported aggregation helpers changed")
+	}
+}
+
+func must(t *testing.T, text string) accounting.Decimal {
+	t.Helper()
+	d, err := accounting.Parse(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

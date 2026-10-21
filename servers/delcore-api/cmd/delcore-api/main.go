@@ -98,7 +98,10 @@ func execute() error {
 	delivery := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_email_failures", Help: "Failed email delivery jobs."})
 	retries := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_retry_exhausted", Help: "Jobs that exhausted automatic retries."})
 	settlementAge := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_settlement_delay_seconds", Help: "Age of the oldest incomplete settlement."})
-	registry.MustRegister(backlog, failed, mismatch, delivery, retries, settlementAge)
+	meteringBacklog := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_metering_backlog", Help: "Accepted metering work awaiting aggregate materialization."})
+	meteringFailed := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_metering_failed_jobs", Help: "Metering work requiring operator retry."})
+	meteringLag := prometheus.NewGauge(prometheus.GaugeOpts{Name: "delcore_metering_lag_seconds", Help: "Age of the oldest pending metering work."})
+	registry.MustRegister(backlog, failed, mismatch, delivery, retries, settlementAge, meteringBacklog, meteringFailed, meteringLag)
 	mux := http.NewServeMux()
 	pathRPC, handler := s.Handler()
 	mux.Handle(pathRPC, otelhttp.NewHandler(handler, "delcore.connect"))
@@ -178,6 +181,19 @@ func execute() error {
 				settlementAge.Set(delay)
 				if delay >= float64(c.SettlementAlertSeconds) {
 					logger.Warn("settlement delay threshold exceeded", "category", "settlement_delay")
+				}
+			}
+			var meteringPending, meteringFailures int
+			var lag float64
+			metricsCtx, metricsDone = context.WithTimeout(ctx, c.Timeout())
+			e = db.Pool.QueryRow(metricsCtx, `SELECT count(*) FILTER(WHERE state='pending'),count(*) FILTER(WHERE state='failed'),COALESCE(EXTRACT(EPOCH FROM now()-min(created_at) FILTER(WHERE state='pending')),0) FROM jobs WHERE kind='metering'`).Scan(&meteringPending, &meteringFailures, &lag)
+			metricsDone()
+			if e == nil {
+				meteringBacklog.Set(float64(meteringPending))
+				meteringFailed.Set(float64(meteringFailures))
+				meteringLag.Set(lag)
+				if meteringFailures > 0 {
+					logger.Warn("metering work requires operator retry", "category", "metering_failure", "failed", meteringFailures)
 				}
 			}
 		}

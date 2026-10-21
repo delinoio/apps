@@ -498,7 +498,8 @@ func (s *Server) RetryJob(ctx context.Context, r *connect.Request[pb.RetryJobReq
 		}
 		// A payment with an unknown result always returns to reconciliation, never to
 		// a blind POST retry, even when an operator explicitly reprocesses the job.
-		tag, e := c.tx.Exec(c.ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed'`, q.JobId, c.now)
+		// Metering work has no provider side effect and is reprocessed directly.
+		tag, e := c.tx.Exec(c.ctx, `UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook','metering') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed'`, q.JobId, c.now)
 		if e != nil {
 			return e
 		}

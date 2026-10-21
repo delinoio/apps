@@ -28,6 +28,9 @@ func TestLoadEnvironment(t *testing.T) {
 	if c.Listen != "127.0.0.1:8080" || c.RetryLimit != 8 || c.MaxPayloadBytes != 1048576 || !c.Development || len(c.ReturnURLs) != 1 {
 		t.Fatalf("environment fields were not loaded: listener=%s retries=%d", c.Listen, c.RetryLimit)
 	}
+	if c.MaxMeterGroups != 1000 || c.MaxMeterGroupValues != 10000 {
+		t.Fatal("metering cardinality bounds were not loaded")
+	}
 	if c.CatalogDir != "servers/delcore-api/catalog" {
 		t.Fatal("unexpected default catalog directory")
 	}
@@ -42,7 +45,7 @@ func TestLoadEnvironment(t *testing.T) {
 		t.Fatal("invalid catalog directory override accepted")
 	}
 	delete(values, "CATALOG_DIR")
-	for _, key := range []string{"RETRY_LIMIT", "MAX_PAYLOAD_BYTES", "DEVELOPMENT", "RETURN_URLS"} {
+	for _, key := range []string{"RETRY_LIMIT", "MAX_PAYLOAD_BYTES", "DEVELOPMENT", "RETURN_URLS", "MAX_METER_GROUPS", "MAX_METER_GROUP_VALUES"} {
 		t.Run(key, func(t *testing.T) {
 			values[key] = "invalid-secret-value"
 			_, err := load(func(key string) string { return values[key] })
@@ -51,6 +54,17 @@ func TestLoadEnvironment(t *testing.T) {
 			}
 			values, _ = godotenv.Read("../../.env.example")
 		})
+	}
+	for _, setting := range []string{"MAX_METER_GROUPS", "MAX_METER_GROUP_VALUES"} {
+		values[setting] = "0"
+		if _, err := load(func(key string) string { return values[key] }); err == nil || !strings.Contains(err.Error(), setting) {
+			t.Fatalf("nonpositive %s accepted: %v", setting, err)
+		}
+		delete(values, setting)
+		if _, err := load(func(key string) string { return values[key] }); err == nil {
+			t.Fatalf("missing %s accepted", setting)
+		}
+		values, _ = godotenv.Read("../../.env.example")
 	}
 	delete(values, "TIMEOUT_SECONDS")
 	if _, err := load(func(key string) string { return values[key] }); err == nil {
@@ -106,14 +120,14 @@ func TestLoadWithoutDotEnv(t *testing.T) {
 }
 
 func valid() Config {
-	return Config{Listen: "127.0.0.1:8080", DatabaseURL: "postgres://localhost/delcore", Issuer: "https://issuer.example.test", Audience: "delcore", OperatorRole: "operator", IdentityKey: "fixture-identity-key-at-least-32-bytes", PaddleURL: "https://sandbox-api.paddle.com", PaddleCreditProductID: "pro_fixture", PaddleToken: "fixture", PaddleWebhookSecret: "fixture-secret-at-least-16-bytes", EmailURL: "https://api.cloudflare.com/client/v4", EmailToken: "fixture", EmailAccount: "account", EmailSender: "sender@example.test", ReturnURLs: []string{"https://consumer.example.test/return"}, TimeoutSeconds: 10, RetryLimit: 3, RetrySeconds: 10, MaxPayloadBytes: 1048576, RequestsPerMinute: 100, InvitationSeconds: 3600, UsageLatenessSeconds: 3600, ReportingGraceSeconds: 3600, DeletionGraceSeconds: 3600, RawUsageRetentionSeconds: 7200, AccountingRetentionSeconds: 14400, AuditRetentionSeconds: 14400, WebhookRetentionSeconds: 7200, BacklogAlert: 100, SettlementAlertSeconds: 3600}
+	return Config{Listen: "127.0.0.1:8080", DatabaseURL: "postgres://localhost/delcore", Issuer: "https://issuer.example.test", Audience: "delcore", OperatorRole: "operator", IdentityKey: "fixture-identity-key-at-least-32-bytes", PaddleURL: "https://sandbox-api.paddle.com", PaddleCreditProductID: "pro_fixture", PaddleToken: "fixture", PaddleWebhookSecret: "fixture-secret-at-least-16-bytes", EmailURL: "https://api.cloudflare.com/client/v4", EmailToken: "fixture", EmailAccount: "account", EmailSender: "sender@example.test", ReturnURLs: []string{"https://consumer.example.test/return"}, TimeoutSeconds: 10, RetryLimit: 3, RetrySeconds: 10, MaxPayloadBytes: 1048576, RequestsPerMinute: 100, InvitationSeconds: 3600, UsageLatenessSeconds: 3600, ReportingGraceSeconds: 3600, DeletionGraceSeconds: 3600, RawUsageRetentionSeconds: 7200, AccountingRetentionSeconds: 14400, AuditRetentionSeconds: 14400, WebhookRetentionSeconds: 7200, BacklogAlert: 100, SettlementAlertSeconds: 3600, MaxMeterGroups: 100, MaxMeterGroupValues: 1000}
 }
 func TestConfigValidation(t *testing.T) {
 	c := valid()
 	if e := c.Validate(); e != nil {
 		t.Fatal(e)
 	}
-	for _, mutate := range []func(*Config){func(c *Config) { c.RetryLimit = 0 }, func(c *Config) { c.ReportingGraceSeconds = 1 }, func(c *Config) { c.AccountingRetentionSeconds = 1 }, func(c *Config) { c.IdentityKey = "" }, func(c *Config) { c.ReturnURLs = []string{"https://user:pass@example.test/return"} }, func(c *Config) { c.PaddleURL = "http://external.example.test" }} {
+	for _, mutate := range []func(*Config){func(c *Config) { c.RetryLimit = 0 }, func(c *Config) { c.ReportingGraceSeconds = 1 }, func(c *Config) { c.AccountingRetentionSeconds = 1 }, func(c *Config) { c.IdentityKey = "" }, func(c *Config) { c.ReturnURLs = []string{"https://user:pass@example.test/return"} }, func(c *Config) { c.PaddleURL = "http://external.example.test" }, func(c *Config) { c.MaxMeterGroups = 0 }, func(c *Config) { c.MaxMeterGroupValues = -1 }, func(c *Config) { c.MaxMeterGroups = MaxCardinality + 1 }, func(c *Config) { c.MaxMeterGroupValues = MaxCardinality + 1 }} {
 		c = valid()
 		mutate(&c)
 		if c.Validate() == nil {

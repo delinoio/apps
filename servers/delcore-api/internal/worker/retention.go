@@ -4,8 +4,10 @@ package worker
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5"
 	"time"
+
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
+	"github.com/jackc/pgx/v5"
 )
 
 func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
@@ -37,6 +39,13 @@ func (w *Worker) retain(ctx context.Context, tx pgx.Tx, now time.Time) error {
 	}
 	if _, e := tx.Exec(ctx, "DELETE FROM settlements WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)", cutoff); e != nil {
 		return e
+	}
+	// Event bodies and revision history follow raw usage retention. Replay
+	// identities remain, and tenants with unfinished metering work are kept.
+	if removed, e := events.Retain(ctx, tx, cutoff); e != nil {
+		return e
+	} else if removed > 0 {
+		w.Log.InfoContext(ctx, "metering history retained as replay identities", "category", "retention", "tenants", removed)
 	}
 	if _, e := tx.Exec(ctx, "SELECT set_config('delcore.retention','off',true)"); e != nil {
 		return e

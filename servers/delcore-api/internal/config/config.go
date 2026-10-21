@@ -16,6 +16,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// MaxCardinality is the largest accepted metering cardinality setting. It keeps
+// one group's retained value multiset and one period's admission rows bounded.
+const MaxCardinality = 1_000_000
+
 type Config struct {
 	PaddleCreditProductID      string
 	Listen                     string
@@ -47,8 +51,13 @@ type Config struct {
 	WebhookRetentionSeconds    int
 	BacklogAlert               int
 	SettlementAlertSeconds     int
-	Development                bool
-	CatalogDir                 string
+	// MaxMeterGroups bounds the groups of one tenant meter billing period.
+	MaxMeterGroups int
+	// MaxMeterGroupValues bounds the distinct values retained by one minimum,
+	// maximum, or unique-count group.
+	MaxMeterGroupValues int
+	Development         bool
+	CatalogDir          string
 }
 
 // Load reads .env from the working directory. Process variables take precedence,
@@ -112,6 +121,8 @@ func load(getenv func(string) string) (Config, error) {
 		{"WEBHOOK_RETENTION_SECONDS", &c.WebhookRetentionSeconds},
 		{"BACKLOG_ALERT", &c.BacklogAlert},
 		{"SETTLEMENT_ALERT_SECONDS", &c.SettlementAlertSeconds},
+		{"MAX_METER_GROUPS", &c.MaxMeterGroups},
+		{"MAX_METER_GROUP_VALUES", &c.MaxMeterGroupValues},
 	} {
 		value, err := strconv.Atoi(getenv(setting.name))
 		if err != nil {
@@ -141,6 +152,9 @@ func (c Config) Validate() error {
 		if n <= 0 || n > 100*365*24*60*60 {
 			return errors.New("policy limits must be explicitly positive and no greater than 100 years in seconds")
 		}
+	}
+	if c.MaxMeterGroups <= 0 || c.MaxMeterGroups > MaxCardinality || c.MaxMeterGroupValues <= 0 || c.MaxMeterGroupValues > MaxCardinality {
+		return fmt.Errorf("MAX_METER_GROUPS and MAX_METER_GROUP_VALUES must be 1 to %d", MaxCardinality)
 	}
 	if c.TimeoutSeconds > 120 || c.MaxPayloadBytes < 1024 || c.MaxPayloadBytes > 16<<20 || c.RetryLimit > 100 {
 		return errors.New("request or retry bounds exceed safety limits")
