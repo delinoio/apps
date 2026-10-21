@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delitools.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/delitools/v1;delitoolsv1";
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_TRANSLATOR = 1;
+  CAPABILITY_EXTRACTOR = 2;
+}
+enum KeyKind {
+  KEY_KIND_UNSPECIFIED = 0;
+  KEY_KIND_PERSONAL = 1;
+  KEY_KIND_SERVICE = 2;
+}
+enum RequestState {
+  REQUEST_STATE_UNSPECIFIED = 0;
+  REQUEST_STATE_PROCESSING = 1;
+  REQUEST_STATE_COMPLETED = 2;
+  REQUEST_STATE_UNKNOWN = 3;
+}
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_INPUT = 1;
+  ERROR_REASON_INVALID_SCHEMA = 2;
+  ERROR_REASON_INVALID_MODEL = 3;
+  ERROR_REASON_UNAUTHENTICATED = 4;
+  ERROR_REASON_FORBIDDEN = 5;
+  ERROR_REASON_BILLING_BLOCKED = 6;
+  ERROR_REASON_LIMIT = 7;
+  ERROR_REASON_PROCESSING = 8;
+  ERROR_REASON_ALREADY_PROCESSED = 9;
+  ERROR_REASON_INPUT_CONFLICT = 10;
+  ERROR_REASON_UNKNOWN_OUTCOME = 11;
+  ERROR_REASON_EXTRACTION_IMPOSSIBLE = 12;
+  ERROR_REASON_INVALID_OUTPUT = 13;
+  ERROR_REASON_PROVIDER = 14;
+  ERROR_REASON_TIMEOUT = 15;
+  ERROR_REASON_CANCELED = 16;
+  ERROR_REASON_PRICE_UNAVAILABLE = 17;
+  ERROR_REASON_INTERNAL = 18;
+}
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string request_id = 2;
+}
+message TranslateTextArrayRequest {
+  string tenant_id = 1;
+  string output_language = 2;
+  string input_language = 3;
+  string model = 4;
+  repeated string texts = 5;
+  string idempotency_key = 6;
+}
+message TranslateTextArrayResponse {
+  string request_id = 1;
+  repeated string texts = 2;
+}
+message ExtractDataFromTextRequest {
+  string tenant_id = 1;
+  string text = 2;
+  string json_schema = 3;
+  string idempotency_key = 4;
+}
+message ExtractDataFromTextResponse {
+  string request_id = 1;
+  string json_data = 2;
+}
+message ApiKey {
+  string id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  KeyKind kind = 4;
+  repeated Capability capabilities = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  bool revoked = 8;
+}
+message CreateKeyRequest {
+  string tenant_id = 1;
+  KeyKind kind = 2;
+  repeated Capability capabilities = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+message CreateKeyResponse {
+  string request_id = 1;
+  ApiKey key = 2;
+  string secret = 3;
+}
+message ListKeysRequest {
+  string tenant_id = 1;
+  KeyKind kind = 2;
+  string after_id = 3;
+  uint32 page_size = 4;
+}
+message ListKeysResponse {
+  string request_id = 1;
+  repeated ApiKey keys = 2;
+  string next_after_id = 3;
+}
+message RevokeKeyRequest {
+  string tenant_id = 1;
+  string key_id = 2;
+}
+message RevokeKeyResponse {
+  string request_id = 1;
+}
+message Settings {
+  uint32 max_input_bytes = 1;
+  uint32 max_translation_items = 2;
+  uint32 execution_timeout_seconds = 3;
+  uint32 tenant_requests_per_minute = 4;
+  uint32 tenant_concurrency = 5;
+  optional uint32 max_ai_retries = 6;
+  uint32 price_sync_seconds = 7;
+  uint32 delivery_retry_seconds = 8;
+  uint32 max_backoff_seconds = 9;
+  uint32 alert_backlog = 10;
+  uint32 alert_expiry_seconds = 11;
+  repeated string translation_models = 12;
+}
+message GetSettingsRequest {}
+message GetSettingsResponse {
+  string request_id = 1;
+  Settings settings = 2;
+}
+message UpdateSettingsRequest {
+  Settings settings = 1;
+  string reason = 2;
+}
+message UpdateSettingsResponse {
+  string request_id = 1;
+}
+message InspectRequestRequest {
+  string request_id = 1;
+}
+message Attempt {
+  string id = 1;
+  string generation_id = 2;
+  bool usage_known = 3;
+  bool delivered = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string catalog_price_json = 6;
+  string measured_usage_json = 7;
+  google.protobuf.Timestamp occurred_at = 8;
+  google.protobuf.Timestamp retry_at = 9;
+  uint32 delivery_failures = 10;
+  google.protobuf.Timestamp price_effective_at = 11;
+}
+message InspectRequestResponse {
+  string request_id = 1;
+  string inspected_request_id = 2;
+  string tenant_id = 3;
+  Capability capability = 4;
+  RequestState state = 5;
+  string model = 6;
+  google.protobuf.Timestamp created_at = 7;
+  repeated Attempt attempts = 8;
+  // Safe terminal failure reason; unspecified for success or pre-upgrade records.
+  ErrorReason error_reason = 9;
+}
+message AssociateGenerationRequest {
+  string attempt_id = 1;
+  string generation_id = 2;
+  string reason = 3;
+}
+message AssociateGenerationResponse {
+  string request_id = 1;
+}
+service DeliToolsService {
+  rpc AssociateGeneration(AssociateGenerationRequest) returns (AssociateGenerationResponse);
+  rpc TranslateTextArray(TranslateTextArrayRequest) returns (TranslateTextArrayResponse);
+  rpc ExtractDataFromText(ExtractDataFromTextRequest) returns (ExtractDataFromTextResponse);
+  rpc CreateKey(CreateKeyRequest) returns (CreateKeyResponse);
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
+  rpc RevokeKey(RevokeKeyRequest) returns (RevokeKeyResponse);
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  rpc InspectRequest(InspectRequestRequest) returns (InspectRequestResponse);
+}

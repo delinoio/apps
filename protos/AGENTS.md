@@ -20,6 +20,8 @@
 - [project-delcore](../docs/project-delcore.md)
 - [protos-delcore-v1-contract](../docs/protos-delcore-v1-contract.md)
 - [servers-delcore-api-contract](../docs/servers-delcore-api-contract.md)
+- [DeliTools protocol](../docs/protos-delitools-v1-contract.md)
+- [DeliTools server](../docs/servers-delitools-api-contract.md)
 - [DevBase protocol](../docs/protos-devbase-v1-contract.md)
 - [DevBase server](../docs/servers-devbase-api-contract.md)
 - [Git Tracker protocol](../docs/protos-git-tracker-v1-contract.md)
