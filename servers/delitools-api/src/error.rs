@@ -15,6 +15,9 @@ pub struct Fault {
     pub reason: ErrorReason,
     pub code: ErrorCode,
     pub message: String,
+    /// Request ID reported instead of the current call's own, used when a duplicate call is told
+    /// about the existing request that holds its idempotency key.
+    pub request_id: Option<String>,
 }
 
 /// Connect code documented for each reason in the protocol contract.
@@ -74,7 +77,13 @@ impl Fault {
             reason,
             code: code_for(reason),
             message: message.into(),
+            request_id: None,
         }
+    }
+    /// Report an existing request's ID in the error detail and header.
+    pub fn with_request_id(mut self, request_id: String) -> Self {
+        self.request_id = Some(request_id);
+        self
     }
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self::new(ErrorReason::ERROR_REASON_INVALID_INPUT, message)
@@ -123,6 +132,7 @@ impl Fault {
             reason: ErrorReason::ERROR_REASON_INTERNAL,
             code: ErrorCode::Unavailable,
             message: "a required dependency is unavailable".into(),
+            request_id: None,
         }
     }
     /// An operator target (request record) does not exist or has expired. The reason is
@@ -132,6 +142,7 @@ impl Fault {
             reason: ErrorReason::ERROR_REASON_INVALID_INPUT,
             code: ErrorCode::NotFound,
             message: message.into(),
+            request_id: None,
         }
     }
     /// An RPC whose implementation is delivered by a later layer.
@@ -140,10 +151,12 @@ impl Fault {
             reason: ErrorReason::ERROR_REASON_UNSPECIFIED,
             code: ErrorCode::Unimplemented,
             message: message.into(),
+            request_id: None,
         }
     }
     /// Convert to a Connect error with the typed detail and the request ID header.
     pub fn into_connect(self, request_id: &str) -> ConnectError {
+        let request_id = self.request_id.as_deref().unwrap_or(request_id);
         let detail = ErrorDetail {
             reason: self.reason.into(),
             request_id: request_id.to_owned(),

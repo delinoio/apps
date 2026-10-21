@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 
 pub mod audit;
+pub mod exec;
 pub mod inspect;
 pub mod keys;
 pub mod recovery;

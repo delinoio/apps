@@ -3,11 +3,15 @@ use delitools_api::{
     Server,
     authority::TenantAuthority,
     config::Config,
+    delcore::DelcoreAuthority,
+    exec::Executor,
+    gateway::Gateway,
     platform::Platform,
     store::{
         self, Store,
         audit::{self, EventCategory, Severity},
     },
+    usage::{DeliveryTask, PriceSyncTask, ReconciliationTask, UsageService},
     worker::Worker,
 };
 use std::{sync::Arc, time::Duration};
@@ -181,10 +185,30 @@ async fn run() -> anyhow::Result<()> {
         config.timeout(),
     )
     .await?;
-    let authority: Arc<dyn TenantAuthority> = authority(&config)?;
+    // Tenant authorization, billing checks and usage reporting all go through delcore with the
+    // service's machine-to-machine identity. An unreachable delcore fails new paid work closed.
+    let delcore = Arc::new(DelcoreAuthority::new(&config, config.timeout())?);
+    let authority: Arc<dyn TenantAuthority> = delcore.clone();
     let platform = Platform::new(store.clone(), config.clone(), verifier, authority, settings);
-    let server = Arc::new(Server::new(platform.clone()));
-    let worker = Arc::new(Worker::new(platform.clone()));
+    let gateway = Arc::new(Gateway::new(
+        &config.gateway_url,
+        &config.gateway_key,
+        config.max_gateway_response_bytes,
+        config.timeout(),
+    )?);
+    let usage = UsageService::new(
+        platform.clone(),
+        gateway.clone(),
+        delcore.clone(),
+        config.service_id,
+    );
+    let executor = Executor::new(platform.clone(), gateway.clone(), usage.clone());
+    let server = Arc::new(Server::with_execution(platform.clone(), executor));
+    let mut worker = Worker::new(platform.clone());
+    worker.register(Arc::new(DeliveryTask(usage.clone())));
+    worker.register(Arc::new(ReconciliationTask(usage)));
+    worker.register(Arc::new(PriceSyncTask { gateway }));
+    let worker = Arc::new(worker);
     let app = delitools_api::http::router(server);
     let listener = tokio::net::TcpListener::bind(&config.listen).await?;
 
@@ -278,18 +302,6 @@ async fn run() -> anyhow::Result<()> {
         return Err(error);
     }
     Ok(())
-}
-
-/// The delcore-backed tenant authority is installed by the execution layer, once delcore exposes
-/// the consumer authorization modes it needs. Until then the service fails closed: every
-/// authorization question is answered "unavailable", so key management and paid execution are
-/// refused while operator RPCs, health, readiness and metrics keep working.
-fn authority(_config: &Config) -> anyhow::Result<Arc<dyn TenantAuthority>> {
-    tracing::warn!(
-        category = "authority_not_installed",
-        "no tenant authority adapter is installed; tenant-scoped RPCs fail closed"
-    );
-    Ok(Arc::new(delitools_api::authority::FailClosedAuthority))
 }
 
 #[cfg(test)]

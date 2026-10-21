@@ -58,7 +58,11 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
             .map(axum::body::Body::new)
         }
     };
-    response.headers_mut().insert(REQUEST_ID_HEADER, value);
+    // A duplicate-call error carries the existing request's ID in its own header; every other
+    // response carries this call's ID.
+    if !response.headers().contains_key(REQUEST_ID_HEADER) {
+        response.headers_mut().insert(REQUEST_ID_HEADER, value);
+    }
     response
 }
 

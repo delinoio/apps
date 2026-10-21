@@ -98,6 +98,16 @@ pub struct Metrics {
     pub retention_deleted: IntCounterVec,
     pub retention_runs: IntCounter,
     pub task_runs: IntCounterVec,
+    /// AI attempts by bounded outcome.
+    pub ai_attempts: IntCounterVec,
+    /// AI retries started after a transient failure.
+    pub ai_retries: IntCounter,
+    /// Usage deliveries to delcore by outcome.
+    pub usage_deliveries: IntCounterVec,
+    /// Gateway usage reconciliation lookups by outcome.
+    pub reconciliations: IntCounterVec,
+    /// Catalog price synchronizations by outcome.
+    pub price_syncs: IntCounterVec,
     unknown_usage: IntGauge,
     pending_delivery: IntGauge,
     unknown_requests: IntGauge,
@@ -150,7 +160,36 @@ impl Metrics {
         registry
             .register(Box::new(retention_runs.clone()))
             .expect("unique metric name");
+        let ai_retries = IntCounter::new(
+            "delitools_ai_retries_total",
+            "AI retries started after a transient provider failure.",
+        )
+        .expect("static metric definition");
+        registry
+            .register(Box::new(ai_retries.clone()))
+            .expect("unique metric name");
         Self {
+            ai_attempts: counter(
+                "delitools_ai_attempts_total",
+                "AI attempts by bounded outcome.",
+                &["outcome"],
+            ),
+            ai_retries,
+            usage_deliveries: counter(
+                "delitools_usage_deliveries_total",
+                "Usage deliveries to delcore by outcome.",
+                &["outcome"],
+            ),
+            reconciliations: counter(
+                "delitools_usage_reconciliations_total",
+                "Gateway usage lookups by outcome.",
+                &["outcome"],
+            ),
+            price_syncs: counter(
+                "delitools_price_syncs_total",
+                "Catalog price synchronizations by outcome.",
+                &["outcome"],
+            ),
             requests: counter(
                 "delitools_requests_total",
                 "RPC results by procedure and bounded error reason.",
