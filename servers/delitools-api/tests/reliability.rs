@@ -392,6 +392,47 @@ async fn the_execution_deadline_cancels_the_call_and_returns_a_timeout() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn no_provider_call_starts_after_the_deadline_passed_during_reauthorization() {
+    let env = Env::start(&[("EXECUTION_TIMEOUT_SECONDS", "1")], false).await;
+    let key = env.service_key().await;
+    // The first attempt fails transiently; the re-authorization before the retry then outlasts
+    // the one-second deadline (the first paid check, before execution, answers at once).
+    env.gateway.respond(|n, body| match n {
+        0 => Script::Status(503),
+        _ => good(n, body),
+    });
+    env.delcore
+        .delay_paid_authorizations_after(1, Duration::from_millis(1300));
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "deadline_exceeded",
+            reason::TIMEOUT,
+        )
+        .await;
+    assert_eq!(
+        env.gateway.chat_count(),
+        1,
+        "no provider call after the deadline"
+    );
+    let attempts: i64 = sqlx::query_scalar("SELECT count(*) FROM attempts")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        attempts, 1,
+        "no attempt record for a call that never started"
+    );
+    // No call was in flight, so the outcome is definitive rather than unknown.
+    let (state, error) = wait_for_request_state(&env, 2).await;
+    assert_eq!((state, error as i32), (2, reason::TIMEOUT));
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn revoking_a_key_during_a_call_lets_it_finish_and_bills_it_but_rejects_new_requests() {
     let env = Env::start(&[], false).await;
     let (member, _) = env.user("member", Some(MemberRole::Member));

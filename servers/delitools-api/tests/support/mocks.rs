@@ -434,6 +434,8 @@ struct DelcoreState {
     token_scopes: Vec<String>,
     token_down: bool,
     ingest_authorizations: Vec<String>,
+    /// Paid checks to let through immediately, then the delay applied to every later paid check.
+    paid_delay: Option<(usize, Duration)>,
 }
 
 pub struct DelcoreMock {
@@ -500,6 +502,11 @@ impl DelcoreMock {
     pub fn set_authorize_down(&self, down: bool) {
         lock(&self.state).authorize_down = down;
     }
+    /// Let the next `skip` paid authorization checks answer at once, then delay every later paid
+    /// check by `delay`. Management checks are never delayed.
+    pub fn delay_paid_authorizations_after(&self, skip: usize, delay: Duration) {
+        lock(&self.state).paid_delay = Some((skip, delay));
+    }
     pub fn set_token_down(&self, down: bool) {
         lock(&self.state).token_down = down;
     }
@@ -565,6 +572,22 @@ async fn rpc(
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("")
         .to_owned();
+    if method == "Authorize" && body["paid"] == true {
+        let delay = {
+            let mut state = lock(&mock.state);
+            match state.paid_delay.as_mut() {
+                Some((skip, _)) if *skip > 0 => {
+                    *skip -= 1;
+                    None
+                }
+                Some((_, delay)) => Some(*delay),
+                None => None,
+            }
+        };
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+    }
     let mut state = lock(&mock.state);
     match method.as_str() {
         "GetCurrentUser" => match state.users.get(&bearer) {

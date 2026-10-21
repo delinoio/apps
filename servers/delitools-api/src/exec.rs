@@ -383,9 +383,19 @@ impl Run {
                 if let Err(fault) = self.platform.reauthorize(&self.principal).await {
                     return Ending::Failed(fault);
                 }
-            } else if *cancel.borrow() {
+            }
+            // Price lookup, request creation and the retry pause or re-authorization may have used
+            // up the deadline or seen a cancellation. No provider call is in flight yet, so a
+            // definitive timeout or cancellation is returned and nothing billable is started.
+            if *cancel.borrow() {
                 return Ending::Interrupted {
                     fault: canceled_fault(),
+                    ambiguous: false,
+                };
+            }
+            if Instant::now() >= self.deadline {
+                return Ending::Interrupted {
+                    fault: timeout_fault(),
                     ambiguous: false,
                 };
             }
