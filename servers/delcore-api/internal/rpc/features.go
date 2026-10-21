@@ -10,11 +10,18 @@ import (
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/apps/servers/delcore-api/internal/events"
 	"github.com/delinoio/apps/servers/delcore-api/internal/features"
 	"github.com/delinoio/apps/servers/delcore-api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// featureUsageQuery reads the applied aggregate of one group through the
+// metering_aggregates primary key. Group keys can exceed the PostgreSQL B-tree
+// entry limit and are not indexed, so the lookup names the group digest and
+// compares the full key only to verify the matched row.
+const featureUsageQuery = "SELECT value::text FROM metering_aggregates WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_digest=$4 AND group_key=$5"
 
 // featureQuery is a validated feature request of the calling service. A nil
 // query means the request named no feature. An unknown feature has no ID.
@@ -148,7 +155,7 @@ func (c *call) authorizeFeature(f *featureQuery, tenant string, o *pb.AuthorizeR
 			return err
 		}
 		var text string
-		err = c.tx.QueryRow(c.ctx, "SELECT value::text FROM metering_aggregates WHERE tenant_id=$1 AND meter_id=$2 AND period_start=$3 AND group_key=$4", tenant, f.meterID, start, f.groupKey).Scan(&text)
+		err = c.tx.QueryRow(c.ctx, featureUsageQuery, tenant, f.meterID, start, events.GroupDigest(f.groupKey), f.groupKey).Scan(&text)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 		case err != nil:
