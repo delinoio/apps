@@ -19,6 +19,21 @@ impl std::fmt::Display for InvalidPayload {
 }
 impl std::error::Error for InvalidPayload {}
 
+// This guard also records an interrupted attempt when its future is dropped.
+// It owns no metric update: cancellation must not consume the job retry budget.
+struct AttemptSpan {
+    span: tracing::Span,
+    completed: bool,
+}
+impl Drop for AttemptSpan {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.span.record("delcore.outcome", "deferred");
+            self.span.record("delcore.failure_category", "shutdown");
+        }
+    }
+}
+
 impl Worker {
     pub async fn process_metering(&self, limit: usize) -> Result<usize> {
         let mut processed = 0;
@@ -31,6 +46,7 @@ impl Worker {
     async fn process_metering_job(&self) -> Result<bool> {
         let started = Instant::now();
         let mut claimed: Option<(String, String, i32)> = None;
+        let mut attempt: Option<AttemptSpan> = None;
         // Cancellation drops the transaction and leaves the retry budget intact.
         // A processing timeout is different: record it using a fresh deadline.
         let result: Result<Option<(events::Applied, usize)>> = match tokio::time::timeout(self.config.timeout(), async {
@@ -42,6 +58,14 @@ impl Worker {
             let tenant: String = row.try_get(1)?;
             let attempts: i32 = row.try_get(2)?;
             claimed = Some((job_id.clone(), tenant, attempts));
+            attempt = Some(AttemptSpan { span: tracing::info_span!(
+                "delcore.metering.process",
+                "delcore.job_id" = job_id.as_str(),
+                "delcore.job.attempt" = attempts + 1,
+                "delcore.outcome" = tracing::field::Empty,
+                "delcore.failure_category" = tracing::field::Empty,
+                elapsed_seconds = tracing::field::Empty
+            ), completed: false });
             let payload: serde_json::Value = row.try_get(3)?;
             let event_id = payload.get("event_id").and_then(serde_json::Value::as_str)
                 .filter(|id| !id.is_empty()).ok_or(InvalidPayload)?;
@@ -59,18 +83,15 @@ impl Worker {
         if matches!(result, Ok(None)) {
             return Ok(false);
         }
-        let span = tracing::info_span!(
-            "delcore.metering.process",
-            "delcore.job_id" = tracing::field::Empty,
-            "delcore.job.attempt" = tracing::field::Empty,
-            "delcore.outcome" = tracing::field::Empty,
-            "delcore.failure_category" = tracing::field::Empty,
-            elapsed_seconds = started.elapsed().as_secs_f64()
-        );
-        if let Some((id, _, attempts)) = &claimed {
-            span.record("delcore.job_id", id.as_str());
-            span.record("delcore.job.attempt", attempts + 1);
-        }
+        let span = if let Some(attempt) = &mut attempt {
+            attempt.completed = true;
+            attempt
+                .span
+                .record("elapsed_seconds", started.elapsed().as_secs_f64());
+            attempt.span.clone()
+        } else {
+            tracing::Span::none()
+        };
         let error = match result {
             Ok(Some((applied, entries))) => {
                 self.metrics

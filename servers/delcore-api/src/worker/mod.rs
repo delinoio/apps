@@ -65,13 +65,29 @@ impl Worker {
         Ok(())
     }
     pub async fn run(&self, mut shutdown: tokio::sync::watch::Receiver<bool>) -> Result<()> {
-        self.recover().await?;
-        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-        ticker.tick().await;
-        loop {
-            tokio::select! {_=shutdown.changed()=>return Ok(()),_=ticker.tick()=>{if self.step().await.is_err(){tracing::error!(category="database","background step failed");}}}
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        // Keep shutdown in the select while a step is in flight. Dropping a
+        // claimed metering transaction rolls it back; external payment intents
+        // remain durable and recover as reconciliation work on the next start.
+        tokio::select! {
+            biased;
+            _ = shutdown.changed() => Ok(()),
+            result = async {
+                self.recover().await?;
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                ticker.tick().await;
+                loop {
+                    ticker.tick().await;
+                    if self.step().await.is_err() {
+                        tracing::error!(category="database", "background step failed");
+                    }
+                }
+            } => result,
         }
     }
+
     pub async fn step(&self) -> Result<()> {
         let _lock = self.step_lock.lock().await;
         self.recover().await?;
@@ -305,5 +321,38 @@ impl Worker {
         }
         tracing::warn!(kind = j.kind, state, category, "provider work deferred");
         self.finish(j, state, category, &j.external_id).await
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[tokio::test]
+    async fn shutdown_cancels_in_flight_database_work() {
+        let values: std::collections::HashMap<_, _> =
+            dotenvy::from_read_iter(include_bytes!("../../.env.example").as_slice())
+                .map(|entry| entry.unwrap())
+                .collect();
+        let config =
+            Config::from_getter(|key| values.get(key).cloned().unwrap_or_default()).unwrap();
+        // An unreachable fixture endpoint keeps recovery waiting for a connection.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://fixture:fixture@127.0.0.1:1/fixture")
+            .unwrap();
+        let worker = Worker::new(pool, config).unwrap();
+        let (stop, stopped) = tokio::sync::watch::channel(false);
+        let run = worker.run(stopped);
+        tokio::pin!(run);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut run)
+                .await
+                .is_err()
+        );
+        stop.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut run)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
