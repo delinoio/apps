@@ -39,6 +39,8 @@ Catalog entities use stable, scoped keys and UUID v7 identities. Billing and fea
 
 Registered services report flat events through `IngestEvent` and correct them with revision compare-and-set through `CorrectEvent`. Acceptance durably stores the event and its processing work; group aggregates update asynchronously. The [server contract](servers-delcore-api-contract.md#event-ingestion-and-asynchronous-metering) owns admission bounds, processing, recovery, and retention.
 
+`Authorize` optionally evaluates a feature against the tenant's pinned plan and add-on versions after the unchanged permission and billing checks. Metered features block once the last applied group aggregate of the current billing period reaches the limit; authorization reserves nothing, so concurrent or lagging execution can overspend. `ListMeterAggregates` and `GetMeteringStatus` expose applied aggregates, processing lag, and failures. The [server contract](servers-delcore-api-contract.md#feature-authorization-and-metering-queries) owns these rules.
+
 Catalog reads identify the active immutable price version for each stable price key so subscription clients can select the version accepted by the server.
 
 Development startup reconciles the declared YAML catalog after schema compatibility and single-instance checks, before API and worker startup. Production startup does not read the development catalog. The [server contract](servers-delcore-api-contract.md#development-catalog) owns the file format and reconciliation rules.
