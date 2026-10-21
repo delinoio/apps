@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/delinoio/apps/protos/delcore/v1"
 	"github.com/delinoio/apps/servers/delcore-api/internal/catalog"
@@ -379,6 +380,58 @@ WHERE cs.tenant_id=$1 AND cs.product_id=$2 AND cs.ends_at IS NULL`, tenantID, tc
 		if selected == active || value != tc.want {
 			t.Fatalf("legacy tenant did not keep its previous %s grants: selected=%s value=%s active=%s", tc.name, selected, value, active)
 		}
+	}
+}
+
+// An add-on entitlement whose end time is still in the future remains active
+// until then, so a grant edit must pin the tenant's current add-on policy for
+// the rest of that entitlement.
+func TestDevelopmentCatalogSnapshotsLegacyAddOnEndingInFuture(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	root := catalogFixture(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	setCatalogText(t, root, "07-addon.yaml", catalogText(t, root, "07-addon.yaml")+"features:\n  - service: example-api\n    key: monthly-requests\n    limit: \"10\"\n")
+	if err := catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	me, err := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if err != nil || len(me.Msg.Tenants) == 0 {
+		t.Fatal("personal tenant was not created", err)
+	}
+	tenantID := me.Msg.Tenants[0].Id
+	serviceID, _ := catalogIdentity(t, db, "service", "", "example-api")
+	addonID, original := catalogIdentity(t, db, "addon", serviceID, "priority")
+	_, addonPrice := catalogIdentity(t, db, "price", "addon:"+addonID, "priority-monthly")
+	// A tenant created before catalog versioning holds the add-on until a
+	// future end time but has no add-on selection row.
+	if _, err = db.Pool.Exec(ctx, "DELETE FROM tenant_catalog_selections WHERE tenant_id=$1 AND product_id=$2", tenantID, addonID); err != nil {
+		t.Fatal(err)
+	}
+	var endsAt time.Time
+	if err = db.Pool.QueryRow(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1,$2,$3,now()-interval '1 day',date_trunc('second',now())+interval '1 day') RETURNING ends_at", key(), tenantID, addonPrice).Scan(&endsAt); err != nil {
+		t.Fatal(err)
+	}
+	setCatalogText(t, root, "07-addon.yaml", strings.Replace(catalogText(t, root, "07-addon.yaml"), "limit: \"10\"", "limit: \"20\"", 1))
+	if err = catalog.Sync(ctx, db, root, logger); err != nil {
+		t.Fatal(err)
+	}
+	_, active := catalogIdentity(t, db, "addon", serviceID, "priority")
+	if active == original {
+		t.Fatal("add-on feature edit did not create a new active version")
+	}
+	var selected, value string
+	var selectedEnd *time.Time
+	if err = db.Pool.QueryRow(ctx, `SELECT cs.version_id::text,vf.value::text,cs.ends_at
+FROM tenant_catalog_selections cs JOIN catalog_version_features vf ON vf.version_id=cs.version_id
+WHERE cs.tenant_id=$1 AND cs.product_id=$2`, tenantID, addonID).Scan(&selected, &value, &selectedEnd); err != nil {
+		t.Fatal("legacy tenant with a future-ending add-on was not snapshotted: ", err)
+	}
+	if selected == active || value != `{"limit": "10"}` {
+		t.Fatalf("legacy tenant did not keep its previous add-on grants: selected=%s value=%s active=%s", selected, value, active)
+	}
+	if selectedEnd == nil || !selectedEnd.Equal(endsAt) {
+		t.Fatalf("snapshot selection ends at %v, want the entitlement end %v", selectedEnd, endsAt)
 	}
 }
 

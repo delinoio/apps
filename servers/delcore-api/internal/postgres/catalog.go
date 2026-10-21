@@ -279,45 +279,50 @@ func SnapshotLegacyPlanSelections(ctx context.Context, tx pgx.Tx, planID string,
 	return snapshotLegacySelections(ctx, tx, "plan", planID, at, `LEAST(
  (SELECT period_start FROM tenants WHERE id=$2::uuid),
  (SELECT min(en.starts_at) FROM entitlements en JOIN prices p ON p.id=en.price_id
-  WHERE en.tenant_id=$2::uuid AND en.ends_at IS NULL AND p.plan_id=$3::uuid))`, `SELECT t.id::text
+  WHERE en.tenant_id=$2::uuid AND en.ends_at IS NULL AND p.plan_id=$3::uuid))`, `NULL::timestamptz`, `SELECT t.id::text
 FROM tenants t
 WHERE t.plan_id=$1
   AND NOT EXISTS (
     SELECT 1 FROM tenant_catalog_selections cs
     WHERE cs.tenant_id=t.id AND cs.product_id=t.plan_id AND cs.ends_at IS NULL
   )
-FOR UPDATE`)
+FOR UPDATE`, planID)
 }
 
 // SnapshotLegacyAddOnSelections creates the first immutable add-on selection
 // for tenants that held the add-on before catalog versioning. Call it before
 // changing the add-on so those tenants keep the definition they purchased.
+// An entitlement whose end time is after the mutation is still held, so it
+// needs a snapshot that ends with the last such entitlement.
 func SnapshotLegacyAddOnSelections(ctx context.Context, tx pgx.Tx, addonID string, at time.Time) error {
 	return snapshotLegacySelections(ctx, tx, "addon", addonID, at, `(SELECT min(en.starts_at) FROM entitlements en JOIN prices p ON p.id=en.price_id
- WHERE en.tenant_id=$2::uuid AND en.ends_at IS NULL AND p.addon_id=$3::uuid)`, `SELECT t.id::text
+ WHERE en.tenant_id=$2::uuid AND (en.ends_at IS NULL OR en.ends_at>$5::timestamptz) AND p.addon_id=$3::uuid)`, `(SELECT CASE WHEN bool_or(en.ends_at IS NULL) THEN NULL ELSE max(en.ends_at) END
+ FROM entitlements en JOIN prices p ON p.id=en.price_id
+ WHERE en.tenant_id=$2::uuid AND (en.ends_at IS NULL OR en.ends_at>$5::timestamptz) AND p.addon_id=$3::uuid)`, `SELECT t.id::text
 FROM tenants t
 WHERE EXISTS (
     SELECT 1 FROM entitlements en JOIN prices p ON p.id=en.price_id
-    WHERE en.tenant_id=t.id AND en.ends_at IS NULL AND p.addon_id=$1
+    WHERE en.tenant_id=t.id AND (en.ends_at IS NULL OR en.ends_at>$2) AND p.addon_id=$1
   )
   AND NOT EXISTS (
     SELECT 1 FROM tenant_catalog_selections cs
-    WHERE cs.tenant_id=t.id AND cs.product_id=$1 AND cs.ends_at IS NULL
+    WHERE cs.tenant_id=t.id AND cs.product_id=$1 AND (cs.ends_at IS NULL OR cs.ends_at>$2)
   )
-FOR UPDATE`)
+FOR UPDATE`, addonID, at)
 }
 
 // snapshotLegacySelections backdates each new selection to legacyStartSQL so
 // late usage that occurred earlier in the tenant's period or entitlement still
-// finds the preserved version. legacyStartSQL reads $2 as the tenant and $3 as
-// the product. The start never precedes an earlier selection of the same
-// product and never follows the mutation time.
-func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID string, at time.Time, legacyStartSQL, tenantQuery string) error {
+// finds the preserved version, and ends it at legacyEndSQL (NULL keeps it
+// open). Both read $2 as the tenant, $3 as the product and $5 as the mutation
+// time. The start never precedes an earlier selection of the same product and
+// never follows the mutation time. tenantQuery receives tenantArgs.
+func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID string, at time.Time, legacyStartSQL, legacyEndSQL, tenantQuery string, tenantArgs ...any) error {
 	version, err := RebuildProductVersion(ctx, tx, kind, productID)
 	if err != nil {
 		return err
 	}
-	rows, err := tx.Query(ctx, tenantQuery, productID)
+	rows, err := tx.Query(ctx, tenantQuery, tenantArgs...)
 	if err != nil {
 		return err
 	}
@@ -335,10 +340,11 @@ func snapshotLegacySelections(ctx context.Context, tx pgx.Tx, kind, productID st
 		return err
 	}
 	for _, tenantID := range tenantIDs {
-		if _, err = tx.Exec(ctx, `INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at)
+		if _, err = tx.Exec(ctx, `INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at,ends_at)
 SELECT $1::uuid,$2::uuid,$3::uuid,$4::uuid,GREATEST(
  LEAST($5::timestamptz,`+legacyStartSQL+`),
- (SELECT max(ends_at) FROM tenant_catalog_selections WHERE tenant_id=$2::uuid AND product_id=$3::uuid AND ends_at<=$5::timestamptz))
+ (SELECT max(ends_at) FROM tenant_catalog_selections WHERE tenant_id=$2::uuid AND product_id=$3::uuid AND ends_at<=$5::timestamptz)),
+ `+legacyEndSQL+`
 ON CONFLICT DO NOTHING`, catalogID(), tenantID, productID, version, at); err != nil {
 			return err
 		}

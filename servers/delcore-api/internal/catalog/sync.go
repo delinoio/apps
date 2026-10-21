@@ -153,13 +153,15 @@ func snapshotLegacyProducts(ctx context.Context, tx pgx.Tx, items []definition) 
  FROM catalog_entities ce JOIN plans p ON p.id=ce.id
  WHERE ce.kind='plan' AND ce.scope='' AND ce.key=$1`, item.Key).Scan(&id, &needed)
 		case "addon":
+			// An entitlement ending after now is still held, matching
+			// SnapshotLegacyAddOnSelections.
 			err = tx.QueryRow(ctx, `SELECT a.id::text, EXISTS(SELECT 1 FROM entitlements en JOIN prices p ON p.id=en.price_id
-   WHERE en.ends_at IS NULL AND p.addon_id=a.id AND NOT EXISTS (
-     SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=en.tenant_id AND cs.product_id=a.id AND cs.ends_at IS NULL))
+   WHERE (en.ends_at IS NULL OR en.ends_at>$3) AND p.addon_id=a.id AND NOT EXISTS (
+     SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=en.tenant_id AND cs.product_id=a.id AND (cs.ends_at IS NULL OR cs.ends_at>$3)))
  FROM catalog_entities ce
  JOIN catalog_entities se ON se.kind='service' AND se.scope='' AND se.key=$2 AND ce.scope=se.id::text
  JOIN addons a ON a.id=ce.id AND a.service_id=se.id
- WHERE ce.kind='addon' AND ce.key=$1`, item.Key, item.Service).Scan(&id, &needed)
+ WHERE ce.kind='addon' AND ce.key=$1`, item.Key, item.Service, now).Scan(&id, &needed)
 		default:
 			continue
 		}
