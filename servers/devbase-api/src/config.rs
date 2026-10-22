@@ -28,10 +28,12 @@ impl Config {
                 n > 0.0 && n.is_finite(),
                 "{key} must be positive and finite"
             );
-            // The limiter reports at most 1/rate seconds as the retry delay and converts it to a
-            // Duration; reject rates whose reciprocal overflows or does not fit a Duration.
+            // The limiter reports at most 1/rate seconds as the retry delay. Reject rates whose
+            // reciprocal does not fit a Duration or whose whole seconds do not fit the signed
+            // 64-bit `ErrorDetail.retry_after.seconds` field.
             anyhow::ensure!(
-                Duration::try_from_secs_f64(1.0 / n).is_ok(),
+                Duration::try_from_secs_f64(1.0 / n)
+                    .is_ok_and(|retry| i64::try_from(retry.as_secs()).is_ok()),
                 "{key} must have a representable retry delay"
             );
             Ok(n)
@@ -187,10 +189,39 @@ mod tests {
         ];
         for (rate_key, burst_key) in RATE_KEYS {
             for rate in neighbors {
-                let accepted = Duration::try_from_secs_f64(1.0 / rate).is_ok();
+                let accepted = Duration::try_from_secs_f64(1.0 / rate)
+                    .is_ok_and(|retry| i64::try_from(retry.as_secs()).is_ok());
                 let loaded = load_with(&[(rate_key, &format!("{rate:e}")), (burst_key, "1")]);
                 assert_eq!(loaded.is_ok(), accepted, "{rate_key}={rate:e}");
             }
+        }
+    }
+
+    #[test]
+    fn rejects_retry_delay_beyond_signed_seconds_field() {
+        // 1e-19 gives a retry of 1e19 seconds: it fits Duration (u64 seconds) but not the
+        // signed 64-bit seconds of ErrorDetail.retry_after, so it must be rejected at startup.
+        assert!(Duration::try_from_secs_f64(1.0 / 1e-19).is_ok());
+        let boundary = 2_f64.powi(-63);
+        let rejected = [
+            "1e-19".to_string(),
+            format!("{:e}", f64::from_bits(boundary.to_bits() - 1)),
+            format!("{boundary:e}"),
+        ];
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in &rejected {
+                let err = rate_error(rate_key, burst_key, value);
+                assert!(err.contains(rate_key), "{value}: {err}");
+            }
+            let accepted = f64::from_bits(boundary.to_bits() + 1);
+            let c = load_with(&[(rate_key, &format!("{accepted:e}")), (burst_key, "1")]).unwrap();
+            let rate = if rate_key == "USER_RATE_PER_SECOND" {
+                c.user_rate
+            } else {
+                c.management_rate
+            };
+            let retry = Duration::try_from_secs_f64(1.0 / rate).unwrap();
+            assert!(i64::try_from(retry.as_secs()).is_ok());
         }
     }
 
