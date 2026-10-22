@@ -87,7 +87,20 @@ impl Worker {
                     && let Some(period) = &t.billing_period
                 {
                     let marked = sqlx::query("UPDATE tenants SET renewal_failed=true WHERE external_subscription_id=$1 AND external_customer_id=$2 AND period_end<=$3 AND NOT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$4)").bind(&t.subscription_id).bind(&t.customer_id).bind(period.starts_at).bind(&t.id).execute(&mut *tx).await?.rows_affected();
-                    if marked > 0 {
+                    // A failure for a subscription that no tenant carries yet (its initial payment
+                    // is still unreconciled) is retained like an unassociated past-due status, so
+                    // the older initial payment sees it when it establishes the association. A
+                    // failure that matched no row of an associated tenant does not apply to it
+                    // (covered period or another customer) and is not retained.
+                    let unassociated = marked == 0
+                        && !t.subscription_id.is_empty()
+                        && !sqlx::query_scalar::<_, bool>(
+                            "SELECT EXISTS(SELECT 1 FROM tenants WHERE external_subscription_id=$1)",
+                        )
+                        .bind(&t.subscription_id)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                    if marked > 0 || unassociated {
                         // Keep the occurrence so an older renewal payment delivered later cannot clear it.
                         self.retain_subscription_failure(&mut tx, &t.subscription_id, &event)
                             .await?;

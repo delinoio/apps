@@ -152,6 +152,20 @@ impl Scenario {
         self.deliver(event, "transaction.completed", period.2, data)
             .await;
     }
+    /// Delivers a failed recurring transaction for the period `[starts, ends)` that occurred at
+    /// `failed_at`.
+    async fn fail(
+        &self,
+        event: &str,
+        txn: &str,
+        period: (DateTime<Utc>, DateTime<Utc>),
+        failed_at: DateTime<Utc>,
+    ) {
+        let mut data = self.completion(txn, (period.0, period.1, failed_at));
+        data["status"] = json!("past_due");
+        self.deliver(event, "transaction.payment_failed", failed_at, data)
+            .await;
+    }
     async fn pay_a(&self, event: &str) {
         self.pay(event, "txn_a", self.time.payment_a()).await;
     }
@@ -750,6 +764,122 @@ async fn retained_failure_survives_initial_association_against_a_recurring_payme
     );
     // A renewal confirmed after the failure recovers it.
     s.pay_c("evt_c").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn recurring_payment_failure_before_association_is_retained_for_the_initial_payment() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    let (starts, ends, _) = s.time.payment_c();
+    let failed_at = s.time.days(41);
+    // The failed renewal of the period after A arrives while the initial payment is still
+    // unreconciled, so no tenant carries the subscription yet.
+    s.fail("evt_b", "txn_b", (starts, ends), failed_at).await;
+    assert!(!s.flag().await);
+    let state = s.state().await;
+    assert_eq!(
+        state["failure"],
+        json!({"at":failed_at.to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    // The older initial payment then establishes the association and must see the failure.
+    let initial_start = s.time.days(-40);
+    let initial_at = initial_start + Duration::seconds(1);
+    let data = json!({"id":"txn_initial","status":"completed","origin":"web","customer_id":CUSTOMER,"subscription_id":SUBSCRIPTION,"currency_code":"USD",
+        "custom_data":{"delcore_job_id":job,"delcore_tenant_id":s.tenant},
+        "items":[{"price":{"id":EXTERNAL_PRICE,"product_id":"pro_order"},"quantity":1}],
+        "billing_period":{"starts_at":initial_start.to_rfc3339(),"ends_at":s.time.days(0).to_rfc3339()},
+        "billed_at":initial_at.to_rfc3339()});
+    s.deliver("evt_initial", "transaction.completed", initial_at, data)
+        .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(
+        state["failure"],
+        json!({"at":failed_at.to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    assert!(
+        s.authorize().await["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("BLOCK_REASON_RENEWAL"))
+    );
+    // An older renewal leaves the failure; a renewal confirmed after it recovers it.
+    s.pay_a("evt_a").await;
+    assert!(s.flag().await);
+    s.pay(
+        "evt_d",
+        "txn_d",
+        (starts, ends, failed_at + Duration::seconds(1)),
+    )
+    .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn payment_failure_before_association_older_than_the_initial_payment_is_ignored() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    // A retained failure that occurred before the initial payment was already resolved by it.
+    let initial_start = s.time.days(-40);
+    let initial_at = initial_start + Duration::seconds(1);
+    s.fail(
+        "evt_b",
+        "txn_b",
+        (initial_start, s.time.days(0)),
+        initial_start - Duration::hours(1),
+    )
+    .await;
+    let data = json!({"id":"txn_initial","status":"completed","origin":"web","customer_id":CUSTOMER,"subscription_id":SUBSCRIPTION,"currency_code":"USD",
+        "custom_data":{"delcore_job_id":job,"delcore_tenant_id":s.tenant},
+        "items":[{"price":{"id":EXTERNAL_PRICE,"product_id":"pro_order"},"quantity":1}],
+        "billing_period":{"starts_at":initial_start.to_rfc3339(),"ends_at":s.time.days(0).to_rfc3339()},
+        "billed_at":initial_at.to_rfc3339()});
+    s.deliver("evt_initial", "transaction.completed", initial_at, data)
+        .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn payment_failure_for_an_associated_tenant_is_retained_only_when_it_applies() {
+    let s = scenario().await;
+    // The seeded period ends at day 0. A failure for a period that starts earlier is already
+    // covered, and one for another customer is not this tenant's: neither is retained.
+    s.fail(
+        "evt_covered",
+        "txn_covered",
+        (s.time.days(-10), s.time.days(30)),
+        s.time.days(-9),
+    )
+    .await;
+    let mut data = s.completion(
+        "txn_other",
+        (
+            s.time.days(0),
+            s.time.days(40),
+            s.time.days(0) + Duration::seconds(5),
+        ),
+    );
+    data["status"] = json!("past_due");
+    data["customer_id"] = json!("ctm_other");
+    s.deliver(
+        "evt_other",
+        "transaction.payment_failed",
+        s.time.days(0) + Duration::seconds(5),
+        data,
+    )
+    .await;
     let state = s.state().await;
     assert_eq!(state["renewalFailed"], false, "{state}");
     assert_eq!(state["failure"], Value::Null, "{state}");
