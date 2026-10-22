@@ -162,7 +162,7 @@ Send `Authorization: Bearer <credential>` with each request. Two credential type
 - **A Delino login token** (a Logto user access token) acts as the signed-in user.
 - **A DeliTools API key** acts as its key kind describes.
 
-Every request is also checked against your tenant in Delcore. The tenant must be active and allowed to run paid work, and billing must allow it. If DeliTools cannot complete these checks, it rejects new paid executions.
+Every request is also checked against your tenant in Delcore. For `TranslateTextArray` and `ExtractDataFromText`, the tenant must be active and allowed to run paid work, and billing must allow it. If DeliTools cannot complete these checks, it rejects new paid executions. Key management (`CreateKey`, `ListKeys` and `RevokeKey`) is not paid work: it needs only your current membership or Owner or Admin role, so a billing block does not stop you from listing or revoking keys. If DeliTools cannot complete that check, it rejects the call.
 
 ### Key kinds and capabilities
 

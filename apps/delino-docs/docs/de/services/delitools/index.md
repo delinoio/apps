@@ -162,7 +162,7 @@ Senden Sie mit jeder Anfrage `Authorization: Bearer <credential>`. Zwei Arten vo
 - **Ein Delino-Anmeldetoken** (ein Logto-Zugriffstoken des Nutzers) handelt als der angemeldete Nutzer.
 - **Ein DeliTools-API-Schlüssel** handelt so, wie es seine Schlüsselart beschreibt.
 
-Jede Anfrage wird außerdem anhand Ihres Mandanten in Delcore geprüft. Der Mandant muss aktiv sein und kostenpflichtige Arbeit ausführen dürfen, und die Abrechnung muss dies zulassen. Wenn DeliTools diese Prüfungen nicht abschließen kann, lehnt es neue kostenpflichtige Ausführungen ab.
+Jede Anfrage wird außerdem anhand Ihres Mandanten in Delcore geprüft. Für `TranslateTextArray` und `ExtractDataFromText` muss der Mandant aktiv sein und kostenpflichtige Arbeit ausführen dürfen, und die Abrechnung muss dies zulassen. Wenn DeliTools diese Prüfungen nicht abschließen kann, lehnt es neue kostenpflichtige Ausführungen ab. Die Schlüsselverwaltung (`CreateKey`, `ListKeys` und `RevokeKey`) ist keine kostenpflichtige Arbeit: Sie erfordert nur Ihre aktuelle Mitgliedschaft oder Ihre Rolle als Eigentümer oder Administrator. Eine Abrechnungssperre hindert Sie daher nicht daran, Schlüssel aufzulisten oder zu widerrufen. Wenn DeliTools diese Prüfung nicht abschließen kann, lehnt es den Aufruf ab.
 
 ### Schlüsselarten und Fähigkeiten
 

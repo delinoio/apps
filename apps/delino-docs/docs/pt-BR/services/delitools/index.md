@@ -162,7 +162,7 @@ Envie `Authorization: Bearer <credential>` em cada solicitação. Dois tipos de 
 - **Um token de login da Delino** (um token de acesso de usuário do Logto) atua como o usuário conectado.
 - **Uma chave de API do DeliTools** atua conforme o tipo da chave descreve.
 
-Toda solicitação também é verificada em relação ao seu tenant no Delcore. O tenant deve estar ativo e autorizado a executar trabalho pago, e o faturamento deve permiti-lo. Se o DeliTools não puder concluir essas verificações, ele rejeita novas execuções pagas.
+Toda solicitação também é verificada em relação ao seu tenant no Delcore. Para `TranslateTextArray` e `ExtractDataFromText`, o tenant deve estar ativo e autorizado a executar trabalho pago, e o faturamento deve permiti-lo. Se o DeliTools não puder concluir essas verificações, ele rejeita novas execuções pagas. O gerenciamento de chaves (`CreateKey`, `ListKeys` e `RevokeKey`) não é trabalho pago: ele exige apenas a sua participação atual no tenant ou o papel de Proprietário ou Administrador, portanto um bloqueio de faturamento não impede que você liste ou revogue chaves. Se o DeliTools não puder concluir essa verificação, ele rejeita a chamada.
 
 ### Tipos de chave e capacidades
 

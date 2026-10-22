@@ -162,7 +162,7 @@ Envía `Authorization: Bearer <credential>` con cada solicitud. Dos tipos de cre
 - **Un token de inicio de sesión de Delino** (un token de acceso de usuario de Logto) actúa como el usuario que ha iniciado sesión.
 - **Una clave de API de DeliTools** actúa según lo que describe su tipo de clave.
 
-Cada solicitud también se comprueba con tu tenant en Delcore. El tenant debe estar activo y tener permitido ejecutar trabajo de pago, y la facturación debe permitirlo. Si DeliTools no puede completar estas comprobaciones, rechaza las nuevas ejecuciones de pago.
+Cada solicitud también se comprueba con tu tenant en Delcore. Para `TranslateTextArray` y `ExtractDataFromText`, el tenant debe estar activo y tener permitido ejecutar trabajo de pago, y la facturación debe permitirlo. Si DeliTools no puede completar estas comprobaciones, rechaza las nuevas ejecuciones de pago. La gestión de claves (`CreateKey`, `ListKeys` y `RevokeKey`) no es trabajo de pago: solo requiere tu pertenencia actual al tenant o tu rol de Owner o Admin, por lo que un bloqueo de facturación no te impide enumerar ni revocar claves. Si DeliTools no puede completar esa comprobación, rechaza la llamada.
 
 ### Tipos de clave y capacidades
 

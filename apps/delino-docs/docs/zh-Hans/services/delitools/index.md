@@ -162,7 +162,7 @@ DeliTools 仅接受提取模型的结构化输出所支持的那部分 JSON Sche
 - **Delino 登录令牌**（Logto 用户访问令牌）以已登录用户的身份行事。
 - **DeliTools API 密钥**按其密钥类型所述的方式行事。
 
-每个请求还会根据你在 Delcore 中的租户进行检查。租户必须处于活动状态并被允许运行付费工作，且计费必须允许这样做。如果 DeliTools 无法完成这些检查，它会拒绝新的付费执行。
+每个请求还会根据你在 Delcore 中的租户进行检查。对于 `TranslateTextArray` 和 `ExtractDataFromText`，租户必须处于活动状态并被允许运行付费工作，且计费必须允许这样做。如果 DeliTools 无法完成这些检查，它会拒绝新的付费执行。密钥管理（`CreateKey`、`ListKeys` 和 `RevokeKey`）不是付费工作：它只需要你当前的成员资格或所有者/管理员角色，因此计费阻止不会妨碍你列出或撤销密钥。如果 DeliTools 无法完成该检查，它会拒绝该调用。
 
 ### 密钥类型和能力
 

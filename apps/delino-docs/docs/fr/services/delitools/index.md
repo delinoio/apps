@@ -162,7 +162,7 @@ Envoyez `Authorization: Bearer <credential>` avec chaque requête. Deux types d�
 - **Un jeton de connexion Delino** (un jeton d’accès utilisateur Logto) agit en tant qu’utilisateur connecté.
 - **Une clé d’API DeliTools** agit selon ce que décrit son type de clé.
 
-Chaque requête est également vérifiée par rapport à votre tenant dans Delcore. Le tenant doit être actif et autorisé à exécuter des tâches payantes, et la facturation doit l’autoriser. Si DeliTools ne peut pas effectuer ces vérifications, il rejette les nouvelles exécutions payantes.
+Chaque requête est également vérifiée par rapport à votre tenant dans Delcore. Pour `TranslateTextArray` et `ExtractDataFromText`, le tenant doit être actif et autorisé à exécuter des tâches payantes, et la facturation doit l’autoriser. Si DeliTools ne peut pas effectuer ces vérifications, il rejette les nouvelles exécutions payantes. La gestion des clés (`CreateKey`, `ListKeys` et `RevokeKey`) n’est pas une tâche payante : elle exige seulement votre appartenance actuelle au tenant ou votre rôle d’Owner ou d’Admin, donc un blocage de facturation ne vous empêche pas de répertorier ou de révoquer des clés. Si DeliTools ne peut pas effectuer cette vérification, il rejette l’appel.
 
 ### Types de clés et capacités
 
