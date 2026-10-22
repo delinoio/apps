@@ -636,10 +636,21 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: native-prerequisites
-        name: Install Linux native prerequisites
+        name: Install selected crates' Linux native prerequisites
+        if: contains(fromJSON(env.RUST_PACKAGES), 'delidev-desktop') || contains(fromJSON(env.RUST_PACKAGES), 'delitools-shell') || contains(fromJSON(env.RUST_PACKAGES), 'fixkey')
+        env:
+          CEF_SHELL: ${{ contains(fromJSON(env.RUST_PACKAGES), 'delidev-desktop') || contains(fromJSON(env.RUST_PACKAGES), 'delitools-shell') }}
+          FIXKEY_DESKTOP: ${{ contains(fromJSON(env.RUST_PACKAGES), 'fixkey') }}
         run: |-
+          packages=()
+          if [[ "$CEF_SHELL" == 'true' ]]; then
+            packages+=(clang cmake libgbm-dev libgtk-4-dev libx11-dev libxtst-dev ninja-build xdg-desktop-portal xdg-desktop-portal-gtk zenity)
+          fi
+          if [[ "$FIXKEY_DESKTOP" == 'true' ]]; then
+            packages+=(libayatana-appindicator3-dev libgtk-3-dev libwebkit2gtk-4.1-dev)
+          fi
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y "${packages[@]}"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -680,16 +691,20 @@ jobs:
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
   rust-test:
-    name: Rust Test
+    name: Rust Test (${{ matrix.package }})
     needs: changes
     if: needs.changes.outputs.rust_test != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.changes.outputs.rust_test) }}
     env:
       TURBO_TEAM: ${{ vars.TURBO_TEAM }}
       TURBO_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && secrets.TURBO_TOKEN || '' }}
       # Withhold the write-capable token from PRs and non-main manual runs.
       TURBO_CACHE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
-      RUST_PACKAGES: ${{ needs.changes.outputs.rust_test }}
+      RUST_PACKAGES: ${{ format('["{0}"]', matrix.package) }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
@@ -705,23 +720,18 @@ jobs:
           toolchain: nightly-2026-09-28
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: native-prerequisites
-        name: Install Linux native prerequisites
-        run: |-
-          sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
       - id: delidev-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delidev-desktop')
+        if: matrix.package == 'delidev-desktop'
         run: pnpm exec turbo run build:frontend --filter=delidev-desktop
       - id: delitools-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delitools-shell')
+        if: matrix.package == 'delitools-shell'
         run: pnpm exec turbo run build:frontend --filter=delitools
       - id: fixkey-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'fixkey')
+        if: matrix.package == 'fixkey'
         run: pnpm exec turbo run build:frontend --filter=fixkey-desktop
       - id: test
         run: node scripts/ci/rust-check.mjs test
@@ -731,21 +741,6 @@ jobs:
         with:
           path: ${{ steps.node.outputs.cache-path }}
           key: ${{ steps.node.outputs.cache-key }}
-      - name: Record validation
-        if: ${{ always() }}
-        env:
-          VALIDATION_JOB: rust-test
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATION_STEPS: ${{ toJSON(steps) }}
-        run: node scripts/ci/record-validation.mjs
-      - name: Preserve validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: validation-rust-test-${{ github.run_attempt }}
-          path: .ci-evidence/
-          include-hidden-files: true
-          if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"

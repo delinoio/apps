@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -62,11 +63,14 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     assert.equal(job.if, `needs.changes.outputs.rust_${check} != '[]'`);
     assert.equal(
       job.env.RUST_PACKAGES,
-      "${{ needs.changes.outputs.rust_" + check + " }}",
+      check === "test"
+        ? "${{ format('[\"{0}\"]', matrix.package) }}"
+        : "${{ needs.changes.outputs.rust_clippy }}",
     );
     const steps = job.steps;
-    assert.ok(
-      steps.some((step) => step.run?.includes("libwebkit2gtk-4.1-dev")),
+    assert.equal(
+      steps.some((step) => step.run?.includes("apt-get")),
+      check === "clippy",
     );
     const command = steps.find((step) => step.id === check);
     assert.equal(command.run, `node scripts/ci/rust-check.mjs ${check}`);
@@ -78,7 +82,9 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
       const build = steps.find((step) => step.id === `${owner}-build`);
       assert.equal(
         build.if,
-        `contains(fromJSON(needs.changes.outputs.rust_${check}), '${pkg}')`,
+        check === "test"
+          ? `matrix.package == '${pkg}'`
+          : `contains(fromJSON(needs.changes.outputs.rust_${check}), '${pkg}')`,
       );
       assert.equal(
         build.run,
@@ -92,6 +98,104 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
   assert.equal(planner.env.TURBO_SCM_BASE, "${{ steps.plan.outputs.base }}");
   assert.equal(planner.env.TURBO_SCM_HEAD, "${{ steps.plan.outputs.head }}");
   assert.ok(steps.some((step) => step.with?.tool === "cargo-mono@0.6.9"));
+});
+
+test("Rust tests fan out the affected crates without uploading artifacts", () => {
+  const job = workflow.jobs["rust-test"];
+  assert.deepEqual(job.strategy, {
+    "fail-fast": false,
+    matrix: { package: "${{ fromJSON(needs.changes.outputs.rust_test) }}" },
+  });
+  assert.equal(job.name, "Rust Test (${{ matrix.package }})");
+  assert.ok(
+    !job.steps.some((step) =>
+      step.uses?.startsWith("actions/upload-artifact@"),
+    ),
+  );
+  assert.ok(!job.steps.some((step) => step.run?.includes("record-validation")));
+});
+
+test("Clippy installs only the selected shells' apt packages", (t) => {
+  const step = workflow.jobs["rust-clippy"].steps.find(
+    (entry) => entry.id === "native-prerequisites",
+  );
+  const cwd = mkdtempSync(join(tmpdir(), "rust-apt-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const output = join(cwd, "apt.jsonl");
+  const sudo = join(cwd, "sudo");
+  writeFileSync(
+    sudo,
+    `#!/usr/bin/env node
+require("node:fs").appendFileSync(process.env.APT_TEST_OUTPUT, JSON.stringify(process.argv.slice(2)) + "\\n");
+`,
+  );
+  chmodSync(sudo, 0o755);
+  const evaluate = (expression, packages) =>
+    runInNewContext(expression.replace(/^\$\{\{ | \}\}$/gu, ""), {
+      env: { RUST_PACKAGES: JSON.stringify(packages) },
+      fromJSON: JSON.parse,
+      contains: (values, value) => values.includes(value),
+    });
+  for (const packages of [
+    [],
+    ["fixkey-core"],
+    ["delidev-desktop"],
+    ["delitools-shell"],
+    ["fixkey"],
+    ["fixkey-core", "fixkey", "delidev-desktop"],
+  ]) {
+    const cef = packages.some((pkg) =>
+      ["delidev-desktop", "delitools-shell"].includes(pkg),
+    );
+    const fixkey = packages.includes("fixkey");
+    assert.equal(evaluate(step.if, packages), cef || fixkey);
+    if (!cef && !fixkey) continue;
+    rmSync(output, { force: true });
+    const result = spawnSync(
+      "bash",
+      ["-e", "-u", "-o", "pipefail", "-c", step.run],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${cwd}:${process.env.PATH}`,
+          APT_TEST_OUTPUT: output,
+          ...Object.fromEntries(
+            Object.entries(step.env).map(([key, value]) => [
+              key,
+              String(evaluate(value, packages)),
+            ]),
+          ),
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const [update, install] = readFileSync(output, "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.deepEqual(update, ["apt-get", "update"]);
+    assert.deepEqual(install.slice(0, 3), ["apt-get", "install", "-y"]);
+    for (const pkg of [
+      "clang",
+      "cmake",
+      "ninja-build",
+      "libgtk-4-dev",
+      "libgbm-dev",
+      "libx11-dev",
+      "libxtst-dev",
+      "xdg-desktop-portal",
+      "xdg-desktop-portal-gtk",
+      "zenity",
+    ])
+      assert.equal(install.includes(pkg), cef, `${packages}: ${pkg}`);
+    for (const pkg of [
+      "libwebkit2gtk-4.1-dev",
+      "libgtk-3-dev",
+      "libayatana-appindicator3-dev",
+    ])
+      assert.equal(install.includes(pkg), fixkey, `${packages}: ${pkg}`);
+  }
 });
 
 test("write-capable remote cache credentials stay in trusted main jobs", () => {
@@ -222,7 +326,6 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delidev-frontend",
     "delitools-frontend",
     "rust-clippy",
-    "rust-test",
     "protocol",
     "fixkey-frontend",
     "fixkey-desktop",
