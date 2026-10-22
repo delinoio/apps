@@ -203,7 +203,7 @@ DeliTools signale l’utilisation à Delcore. Delcore la tarifie et la règle en
 
 ## Idempotence
 
-`idempotencyKey` est facultatif. Sans cette clé, chaque appel est une nouvelle exécution et peut créer une nouvelle facturation, y compris lorsque vous réessayez après une défaillance du réseau.
+`idempotencyKey` est facultatif. Si vous l’envoyez, elle doit comporter de 1 à 256 caractères ASCII visibles (ni espaces ni caractères de contrôle) ; toute autre clé renvoie une erreur d’entrée non valide. Sans cette clé, chaque appel est une nouvelle exécution et peut créer une nouvelle facturation, y compris lorsque vous réessayez après une défaillance du réseau.
 
 Avec une clé, DeliTools suit la requête par **tenant, méthode et clé**. Cela s’applique à différents identifiants du même tenant. DeliTools vérifie votre autorisation actuelle avant de vous indiquer l’état d’une requête.
 

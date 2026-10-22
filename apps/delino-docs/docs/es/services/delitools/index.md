@@ -203,7 +203,7 @@ DeliTools informa del uso a Delcore. Delcore lo tarifica y lo liquida en USD.
 
 ## Idempotencia
 
-`idempotencyKey` es opcional. Sin ella, cada llamada es una ejecución nueva y puede generar un cargo nuevo, incluso cuando reintentas tras un fallo de red.
+`idempotencyKey` es opcional. Si la envías, debe tener de 1 a 256 caracteres ASCII visibles (sin espacios ni caracteres de control); cualquier otra clave devuelve un error de entrada no válida. Sin ella, cada llamada es una ejecución nueva y puede generar un cargo nuevo, incluso cuando reintentas tras un fallo de red.
 
 Con una clave, DeliTools hace el seguimiento de la solicitud por **tenant, método y clave**. Esto se aplica a distintas credenciales del mismo tenant. DeliTools comprueba tu autorización actual antes de informarte del estado de una solicitud.
 

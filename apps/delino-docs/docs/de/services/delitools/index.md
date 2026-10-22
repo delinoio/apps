@@ -203,7 +203,7 @@ DeliTools meldet die Nutzung an Delcore. Delcore bewertet und verrechnet sie in 
 
 ## Idempotenz
 
-`idempotencyKey` ist optional. Ohne ihn ist jeder Aufruf eine neue Ausführung und kann eine neue Berechnung verursachen, auch wenn Sie nach einem Netzwerkfehler wiederholen.
+`idempotencyKey` ist optional. Wenn Sie ihn senden, muss er aus 1 bis 256 sichtbaren ASCII-Zeichen bestehen (keine Leerzeichen oder Steuerzeichen); jeder andere Schlüssel gibt einen Fehler wegen ungültiger Eingabe zurück. Ohne ihn ist jeder Aufruf eine neue Ausführung und kann eine neue Berechnung verursachen, auch wenn Sie nach einem Netzwerkfehler wiederholen.
 
 Mit einem Schlüssel verfolgt DeliTools die Anfrage anhand von **Mandant, Methode und Schlüssel**. Dies gilt über verschiedene Anmeldeinformationen desselben Mandanten hinweg. DeliTools prüft Ihre aktuelle Berechtigung, bevor es Ihnen den Zustand einer Anfrage mitteilt.
 

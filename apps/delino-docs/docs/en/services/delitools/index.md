@@ -203,7 +203,7 @@ DeliTools reports usage to Delcore. Delcore rates and settles it in USD.
 
 ## Idempotency
 
-`idempotencyKey` is optional. Without it, every call is a new execution and can create a new charge, including when you retry after a network failure.
+`idempotencyKey` is optional. If you send one, it must have 1 to 256 visible ASCII characters (no spaces or control characters); any other key returns an invalid-input error. Without it, every call is a new execution and can create a new charge, including when you retry after a network failure.
 
 With a key, DeliTools tracks the request by **tenant, method and key**. This applies across different credentials of the same tenant. DeliTools checks your current authorization before it tells you the state of a request.
 
