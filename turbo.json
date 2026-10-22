@@ -106,6 +106,7 @@
         "ALERT_EXPIRY_SECONDS",
         "TRANSLATION_MODELS",
         "LOG_FORMAT",
+        "RUST_LOG",
         "OTEL_*",
         "NO_COLOR",
         "DEV_COMPOSE_DATABASE_URLS",
