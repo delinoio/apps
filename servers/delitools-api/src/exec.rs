@@ -891,7 +891,7 @@ impl ExecutionService for Executor {
                 "generationId must be 1 to 200 characters of letters, digits, underscore, hyphen, dot or colon",
             ));
         }
-        let attempt = db::attempt_info(&platform.store.pool, attempt_id)
+        let attempt = db::attempt_info(&platform.store.pool, attempt_id, store::now())
             .await?
             .ok_or_else(|| Fault::not_found("attempt not found or already expired"))?;
         if attempt.usage_known || attempt.delivered || !attempt.generation_id.is_empty() {
@@ -955,7 +955,7 @@ impl ExecutionService for Executor {
                 "the generation is already associated with another attempt",
             )),
             Association::NotEligible => Err(Fault::invalid_input(
-                "the attempt already has a generation or confirmed usage",
+                "the attempt no longer qualifies for association",
             )),
         }
     }

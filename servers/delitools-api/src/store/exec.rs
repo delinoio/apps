@@ -588,9 +588,16 @@ pub struct AttemptInfo {
     pub delivered: bool,
 }
 
-pub async fn attempt_info(pool: &PgPool, id: Uuid) -> Result<Option<AttemptInfo>> {
-    let row = sqlx::query("SELECT tenant_id,request_id,model,generation_id,measured_usage IS NOT NULL AS usage_known,delivered_at IS NOT NULL AS delivered FROM attempts WHERE id=$1")
+/// The retained attempt, if any. An attempt at or past its 30-day boundary is expired even before
+/// the retention sweep deletes it, so it is reported as absent.
+pub async fn attempt_info(
+    pool: &PgPool,
+    id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Option<AttemptInfo>> {
+    let row = sqlx::query("SELECT tenant_id,request_id,model,generation_id,measured_usage IS NOT NULL AS usage_known,delivered_at IS NOT NULL AS delivered FROM attempts WHERE id=$1 AND created_at>$2")
         .bind(id)
+        .bind(cutoff(now))
         .fetch_optional(pool)
         .await?;
     row.map(|row| -> std::result::Result<AttemptInfo, sqlx::Error> {
@@ -611,7 +618,8 @@ pub enum Association {
     Associated,
     /// The generation is already attached to another retained attempt.
     GenerationInUse,
-    /// The attempt no longer qualifies (usage known, delivered or already has a generation).
+    /// The attempt no longer qualifies (usage known, delivered, already has a generation or
+    /// reached its 30-day expiry).
     NotEligible,
 }
 
@@ -625,10 +633,11 @@ pub async fn associate_generation(
     now: DateTime<Utc>,
 ) -> Result<Association> {
     let mut tx = pool.begin().await?;
-    let updated = sqlx::query("UPDATE attempts SET generation_id=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND generation_id='' AND measured_usage IS NULL AND delivered_at IS NULL")
+    let updated = sqlx::query("UPDATE attempts SET generation_id=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND generation_id='' AND measured_usage IS NULL AND delivered_at IS NULL AND created_at>$4")
         .bind(attempt_id)
         .bind(generation_id)
         .bind(now)
+        .bind(cutoff(now))
         .execute(&mut *tx)
         .await;
     match updated {

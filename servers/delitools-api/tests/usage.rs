@@ -701,6 +701,100 @@ async fn operators_associate_generations_with_validation_and_audit() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn an_attempt_at_its_expiry_boundary_cannot_be_associated_before_the_sweep() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    let operator = env.fx.operator();
+    env.gateway.sequence(vec![Script::Status(503)]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "unavailable",
+            reason::PROVIDER,
+        )
+        .await;
+    let attempt: String = sqlx::query_scalar("SELECT id::text FROM attempts LIMIT 1")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    // created_at is immutable in production; the test schema lifts the trigger only to age rows.
+    sqlx::query("ALTER TABLE attempts DISABLE TRIGGER attempts_created_at")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE attempts SET created_at=now()-interval '30 days'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    env.gateway.set_generation(
+        "gen_late",
+        Some(generation_data("gen_late", TRANSLATION_MODEL, 10, 2, 0, 0)),
+    );
+    // The retention sweep has not run, but the contract treats the attempt as already deleted.
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            json!({"attemptId": attempt, "generationId": "gen_late", "reason": "too late"}),
+            "not_found",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    let (generations, audits): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM attempts WHERE generation_id<>''), (SELECT count(*) FROM audit_records WHERE action='generation.associate')",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        generations, 0,
+        "no generation is stored for an expired attempt"
+    );
+    assert_eq!(audits, 0, "no audit record is written");
+
+    // The transactional update enforces the same cutoff against a lookup that raced the expiry.
+    let id: uuid::Uuid = attempt.parse().unwrap();
+    assert!(
+        store::exec::attempt_info(&env.fx.pool, id, store::now())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let raced = store::exec::associate_generation(
+        &env.fx.pool,
+        id,
+        "gen_late",
+        store::audit::AuditEntry {
+            action: store::audit::Action::GenerationAssociate,
+            actor: "operator:test",
+            reason: "raced the expiry",
+            request_id: support::id(),
+            tenant_id: None,
+            target_id: Some(id),
+            details: json!({}),
+        },
+        store::now(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(raced, store::exec::Association::NotEligible));
+    sqlx::query("UPDATE attempts SET created_at=now()-interval '30 days'+interval '1 minute'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    assert!(
+        store::exec::attempt_info(&env.fx.pool, id, store::now())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn catalog_synchronization_versions_prices_and_never_enables_models() {
     let env = Env::start(&[], true).await;
     env.wait_for_price(TRANSLATION_MODEL).await;
