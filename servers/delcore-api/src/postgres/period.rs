@@ -55,8 +55,12 @@ pub async fn billing_period(
 ) -> anyhow::Result<(DateTime<Utc>, DateTime<Utc>)> {
     let tenant_id = Uuid::parse_str(tenant)?;
     // Legacy tenants without pinned history fall back to `plans.free`; current tenant state
-    // never substitutes for historical evidence.
-    let applicability: Option<(bool, bool)> = sqlx::query_as("SELECT COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),p.free), EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
+    // never substitutes for historical evidence. A tenant that has pinned history but is asked
+    // about an instant before its first pinned plan selection (the legacy snapshot only
+    // backdates to the current period) is paid at that instant when a paid plan entitlement
+    // covers it, so its retained recorded periods apply instead of the current plan's calendar
+    // month.
+    let applicability: Option<(bool, bool)> = sqlx::query_as("SELECT COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),CASE WHEN EXISTS(SELECT 1 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=t.id AND ce.kind='plan') AND NOT EXISTS(SELECT 1 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2) AND EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=t.id AND pl.free IS FALSE AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) THEN false ELSE p.free END), EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
         .bind(tenant_id).bind(at).fetch_optional(&mut *db).await?;
     let Some((free, recurring)) = applicability else {
         return Err(PeriodUnavailable.into());

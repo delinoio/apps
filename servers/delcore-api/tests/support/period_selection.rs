@@ -696,6 +696,63 @@ async fn recurring_price_of_the_free_base_plan_keeps_the_calendar_month() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn recorded_periods_before_the_first_pinned_selection_keep_their_coverage() {
+    let s = scenario().await;
+    let t = &s.time;
+    s.subscribe().await;
+    s.cancel().await;
+    let paid = (t.paid_start, t.paid_end);
+    // A legacy tenant: the snapshot only backdated the free selection to the cancellation, so
+    // the retained paid period and the paid plan entitlement predate the first pinned plan
+    // selection.
+    sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid AND product_id IN (SELECT id FROM catalog_entities WHERE kind='plan') AND ends_at IS NOT NULL")
+        .bind(&s.tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    // The current free plan must not replace the evidence: the recorded paid period applies to
+    // resolution, ingestion and aggregate queries before the first selection.
+    assert_eq!(s.resolve(t.before(24)).await.unwrap(), paid);
+    s.ingest("legacy-paid", "3", t.before(6)).await;
+    assert_eq!(s.persisted("legacy-paid").await, paid);
+    s.f.process_metering().await;
+    let paid_aggregates = s.aggregates(Some(t.before(6))).await;
+    assert_eq!(paid_aggregates.len(), 1, "{paid_aggregates:?}");
+    assert_eq!(paid_aggregates[0]["value"], "3", "{paid_aggregates:?}");
+    // From the first selection on, the free selection applies as before.
+    assert_eq!(s.resolve(t.after(30)).await.unwrap(), calendar(t.after(30)));
+    // Paid applicability without recorded coverage stays unavailable instead of taking the
+    // current plan's calendar month.
+    sqlx::query("DELETE FROM billing_periods WHERE tenant_id=$1::text::uuid")
+        .bind(&s.tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    assert!(unavailable(s.resolve(t.before(24)).await));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn tenants_without_pinned_history_use_the_plan_free_flag() {
+    let s = scenario().await;
+    let t = &s.time;
+    s.subscribe().await;
+    s.cancel().await;
+    // A legacy tenant that never received a pinned selection resolves from its current plan,
+    // also where a retained paid period exists.
+    sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid")
+        .bind(&s.tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        s.resolve(t.before(24)).await.unwrap(),
+        calendar(t.before(24))
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn recurring_entitlement_lookup_uses_the_tenant_window_index() {
     let s = scenario().await;
     let mut tx = s.f.db.begin().await.unwrap();
