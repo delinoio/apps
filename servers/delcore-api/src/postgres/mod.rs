@@ -14,8 +14,8 @@ pub use catalog::*;
 pub use period::*;
 pub use rating::*;
 
-pub const SCHEMA_VERSION: i32 = 11;
-const MIGRATIONS: [&str; 11] = [
+pub const SCHEMA_VERSION: i32 = 12;
+const MIGRATIONS: [&str; 12] = [
     include_str!("../../migrations/00001_foundation.sql"),
     include_str!("../../migrations/00002_payment_history.sql"),
     include_str!("../../migrations/00003_retention.sql"),
@@ -27,6 +27,7 @@ const MIGRATIONS: [&str; 11] = [
     include_str!("../../migrations/00009_metering_status.sql"),
     include_str!("../../migrations/00010_metering_attribute_retention.sql"),
     include_str!("../../migrations/00011_call_time_prices.sql"),
+    include_str!("../../migrations/00012_api_keys.sql"),
 ];
 #[derive(Clone)]
 pub struct Store {

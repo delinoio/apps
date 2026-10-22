@@ -137,6 +137,12 @@ impl Call<'_> {
                     self.queue_deletion_cancel(&tenant).await?;
                 }
                 sqlx::query("DELETE FROM members WHERE user_id=$1 AND tenant_id IN (SELECT id FROM tenants WHERE NOT personal)").bind(uuid(&user)?).execute(&mut *self.tx).await?;
+                // Personal keys act for the user only; withdrawal ends them. Tenant
+                // keys issued by the user stay independent of the issuer.
+                sqlx::query("DELETE FROM api_keys WHERE user_id=$1 AND owner_kind=1")
+                    .bind(uuid(&user)?)
+                    .execute(&mut *self.tx)
+                    .await?;
                 self.audit("", "user.withdraw", "").await?;
                 Ok(json!({}))
             }

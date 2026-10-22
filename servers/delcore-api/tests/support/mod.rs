@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
 
+pub mod api_keys;
 pub mod billing_domain;
 pub mod billing_safeguards;
 pub mod catalog;

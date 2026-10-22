@@ -78,6 +78,8 @@ AND t.external_subscription_id=''"#).bind(now-Duration::seconds(self.config.repo
                 "UPDATE requests SET response=''::bytea WHERE tenant_id=$1",
                 "UPDATE jobs SET payload='{}'::jsonb,checkout_url='' WHERE tenant_id=$1 AND state='done'",
                 "DELETE FROM group_members WHERE tenant_id=$1",
+                // Keys (and their grants) cannot outlive their tenant.
+                "DELETE FROM api_keys WHERE tenant_id=$1",
                 "DELETE FROM members WHERE tenant_id=$1",
             ] {
                 sqlx::query(sql).bind(tenant).execute(&mut *tx).await?;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+pub mod api_keys;
 pub mod billing;
 pub mod catalog;
 pub mod events;
@@ -155,6 +156,7 @@ impl Call<'_> {
             };
         }
         match op {
+            CreateApiKey | RevokeApiKey => self.authorize_api_key_replay(op, q).await,
             SetMemberRoles | RemoveMember | CreateInvitation | RevokeInvitation | SetGroup
             | DeleteGroup => self.require(tenant, &[2]).await,
             RequestTopUp | SetAutoTopUp | ChangeSubscription | CancelSubscription => {
@@ -176,6 +178,9 @@ impl Call<'_> {
             GetTenantStates => self.tenant_states(q).await,
             Authorize | ReportUsage | CorrectUsage | ListUsage | ListLedger
             | CheckTenantLifecycle => self.usage(op, q).await,
+            CreateApiKey | ListApiKeys | RevokeApiKey | AuthorizeApiKey => {
+                self.api_keys(op, q).await
+            }
             IngestEvent | CorrectEvent | GetEvent => self.events(op, q).await,
             ListMeterAggregates | GetMeteringStatus => self.metering_queries(op, q).await,
             SetGroup | ListGroups | DeleteGroup | GetCatalog | PutService | PutPlan

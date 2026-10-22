@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 pub mod accounting;
+pub mod api_keys;
 pub mod auth;
 pub mod catalog;
 pub mod config;
@@ -171,6 +172,10 @@ pub enum Op {
     PutPlan,
     CreatePrice,
     Authorize,
+    CreateApiKey,
+    ListApiKeys,
+    RevokeApiKey,
+    AuthorizeApiKey,
     ListMeterAggregates,
     GetMeteringStatus,
     CheckTenantLifecycle,
@@ -219,6 +224,10 @@ impl Op {
             Self::PutPlan => "PutPlan",
             Self::CreatePrice => "CreatePrice",
             Self::Authorize => "Authorize",
+            Self::CreateApiKey => "CreateApiKey",
+            Self::ListApiKeys => "ListApiKeys",
+            Self::RevokeApiKey => "RevokeApiKey",
+            Self::AuthorizeApiKey => "AuthorizeApiKey",
             Self::ListMeterAggregates => "ListMeterAggregates",
             Self::GetMeteringStatus => "GetMeteringStatus",
             Self::CheckTenantLifecycle => "CheckTenantLifecycle",
@@ -261,6 +270,8 @@ impl Op {
                 | Self::PutService
                 | Self::PutPlan
                 | Self::CreatePrice
+                | Self::CreateApiKey
+                | Self::RevokeApiKey
                 | Self::ReportUsage
                 | Self::CorrectUsage
                 | Self::IngestEvent
@@ -393,6 +404,21 @@ impl Server {
                 self.metrics.cardinality_rejected(limit);
             }
         }
+        if let Some(operation) = telemetry::ApiKeyOperation::of(op) {
+            let outcome = match &result {
+                Ok(v) if op == Op::AuthorizeApiKey => {
+                    if v["allowed"].as_bool().unwrap_or(false) {
+                        telemetry::ApiKeyOutcome::Allowed
+                    } else {
+                        telemetry::ApiKeyOutcome::Denied
+                    }
+                }
+                Ok(_) => telemetry::ApiKeyOutcome::Succeeded,
+                Err(fault) if fault.reason == 2 => telemetry::ApiKeyOutcome::Unauthenticated,
+                Err(_) => telemetry::ApiKeyOutcome::Rejected,
+            };
+            self.metrics.api_key_operation(operation, outcome);
+        }
         match result {
             Ok(mut value) => {
                 value.as_object_mut().unwrap().remove("_replayed");
@@ -508,7 +534,13 @@ impl Server {
         let replayed = response.as_object_mut().unwrap().remove("_replayed");
         let retry_kind = response.as_object_mut().unwrap().remove("_retryKind");
         if op.mutation() {
-            let message: R = serde_json::from_value(response.clone())?;
+            // A one-time secret must never reach the replay record: a replayed
+            // response carries the key metadata and an empty secret.
+            let mut stored = response.clone();
+            if op == Op::CreateApiKey {
+                stored["secret"] = json!("");
+            }
+            let message: R = serde_json::from_value(stored)?;
             let tenant = server_common::string(&q, "tenantId");
             let tenant = if rpc::canonical(tenant) {
                 Some(rpc::uuid(tenant)?)
@@ -704,6 +736,38 @@ impl DelcoreService for Server {
         q: ServiceRequest<'_, AuthorizeRequest>,
     ) -> ServiceResult<AuthorizeResponse> {
         self.handle(ctx, Op::Authorize, q.to_owned_message()).await
+    }
+    async fn create_api_key(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreateApiKeyRequest>,
+    ) -> ServiceResult<CreateApiKeyResponse> {
+        self.handle(ctx, Op::CreateApiKey, q.to_owned_message())
+            .await
+    }
+    async fn list_api_keys(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, ListApiKeysRequest>,
+    ) -> ServiceResult<ListApiKeysResponse> {
+        self.handle(ctx, Op::ListApiKeys, q.to_owned_message())
+            .await
+    }
+    async fn revoke_api_key(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, RevokeApiKeyRequest>,
+    ) -> ServiceResult<RevokeApiKeyResponse> {
+        self.handle(ctx, Op::RevokeApiKey, q.to_owned_message())
+            .await
+    }
+    async fn authorize_api_key(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, AuthorizeApiKeyRequest>,
+    ) -> ServiceResult<AuthorizeApiKeyResponse> {
+        self.handle(ctx, Op::AuthorizeApiKey, q.to_owned_message())
+            .await
     }
     async fn list_meter_aggregates(
         &self,

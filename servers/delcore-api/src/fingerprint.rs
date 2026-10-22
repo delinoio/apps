@@ -104,6 +104,7 @@ pub fn fingerprint(op: Op, raw: &[u8]) -> Result<String> {
     let raw = match op {
         Op::CorrectEvent => canonical_map(raw, 7)?,
         Op::Authorize => canonical_map(raw, 6)?,
+        Op::AuthorizeApiKey => canonical_map(raw, 5)?,
         Op::IngestEvent => {
             let mut fs = fields(raw)?;
             for f in &mut fs {
@@ -134,6 +135,29 @@ mod tests {
         assert_eq!(
             canonical_map(&raw, 7).unwrap(),
             encode(vec![entry(b'a'), entry(b'z')])
+        );
+    }
+    #[test]
+    fn api_key_authorization_canonicalizes_group_values_without_covering_other_ops() {
+        let entry = |key: u8| Field {
+            number: 5,
+            wire: 2,
+            payload: vec![10, 1, key, 18, 3, 10, 1, b'v'],
+        };
+        let sorted = encode(vec![entry(b'a'), entry(b'z')]);
+        let shuffled = encode(vec![entry(b'z'), entry(b'a')]);
+        assert_eq!(
+            fingerprint(Op::AuthorizeApiKey, &shuffled).unwrap(),
+            fingerprint(Op::AuthorizeApiKey, &sorted).unwrap()
+        );
+        // The procedure name is part of the hash, so operations never collide.
+        assert_ne!(
+            fingerprint(Op::AuthorizeApiKey, &sorted).unwrap(),
+            fingerprint(Op::Authorize, &sorted).unwrap()
+        );
+        assert_ne!(
+            fingerprint(Op::CreateApiKey, &sorted).unwrap(),
+            fingerprint(Op::RevokeApiKey, &sorted).unwrap()
         );
     }
     #[test]

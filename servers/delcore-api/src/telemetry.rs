@@ -59,6 +59,55 @@ impl LimitKind {
     }
 }
 
+/// API key operations as bounded metric labels.
+#[derive(Clone, Copy, Debug)]
+pub enum ApiKeyOperation {
+    Create,
+    List,
+    Revoke,
+    Authorize,
+}
+impl ApiKeyOperation {
+    pub fn of(op: crate::Op) -> Option<Self> {
+        match op {
+            crate::Op::CreateApiKey => Some(Self::Create),
+            crate::Op::ListApiKeys => Some(Self::List),
+            crate::Op::RevokeApiKey => Some(Self::Revoke),
+            crate::Op::AuthorizeApiKey => Some(Self::Authorize),
+            _ => None,
+        }
+    }
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::List => "list",
+            Self::Revoke => "revoke",
+            Self::Authorize => "authorize",
+        }
+    }
+}
+/// Result classes of API key operations. Invalid, unknown, revoked and expired
+/// secrets share `Unauthenticated`, matching what callers can observe.
+#[derive(Clone, Copy, Debug)]
+pub enum ApiKeyOutcome {
+    Succeeded,
+    Allowed,
+    Denied,
+    Unauthenticated,
+    Rejected,
+}
+impl ApiKeyOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Allowed => "allowed",
+            Self::Denied => "denied",
+            Self::Unauthenticated => "unauthenticated",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
 pub fn reason(value: Option<&str>) -> &'static str {
     match value {
         None => "none",
@@ -91,6 +140,7 @@ pub struct Metrics {
     metering: IntCounterVec,
     metering_duration: HistogramVec,
     retries: IntCounterVec,
+    api_keys: IntCounterVec,
     gauges: Vec<Gauge>,
 }
 impl Default for Metrics {
@@ -138,6 +188,11 @@ impl Metrics {
             "delcore_operator_job_retries_total",
             "Failed jobs returned to processing by an operator, by job kind.",
             &["kind"],
+        );
+        let api_keys = counter(
+            "delcore_api_key_operations_total",
+            "API key operations by operation and outcome class.",
+            &["operation", "outcome"],
         );
         let catalog_duration = Histogram::with_opts(HistogramOpts::new(
             "delcore_catalog_reconciliation_duration_seconds",
@@ -206,6 +261,7 @@ impl Metrics {
             metering,
             metering_duration,
             retries,
+            api_keys,
             gauges,
         }
     }
@@ -252,6 +308,11 @@ impl Metrics {
         self.metering_duration
             .with_label_values(&[outcome.as_str()])
             .observe(elapsed.as_secs_f64());
+    }
+    pub fn api_key_operation(&self, operation: ApiKeyOperation, outcome: ApiKeyOutcome) {
+        self.api_keys
+            .with_label_values(&[operation.as_str(), outcome.as_str()])
+            .inc();
     }
     pub fn operator_retry(&self, kind: &str) {
         let kind = match kind {
@@ -338,6 +399,7 @@ mod tests {
         clone.catalog_applied(Outcome::Applied, Duration::from_secs(2));
         clone.event_corrected(CorrectionKind::Cancel, Outcome::Accepted, None);
         clone.cardinality_rejected(LimitKind::Groups);
+        clone.api_key_operation(ApiKeyOperation::Authorize, ApiKeyOutcome::Unauthenticated);
         let text = metrics.encode();
         assert!(text.contains("delcore_catalog_reconciliations_total{outcome=\"applied\"} 1"));
         assert!(text.contains("delcore_catalog_reconciliation_duration_seconds_sum 2"));
@@ -345,5 +407,8 @@ mod tests {
         assert!(text.contains("delcore_metering_corrections_total{kind=\"cancel\",outcome=\"accepted\",reason=\"none\"} 1"));
         assert!(text.contains("delcore_metering_cardinality_rejections_total{limit=\"groups\"} 1"));
         assert!(text.contains("delcore_metering_lag_seconds 0"));
+        assert!(text.contains(
+            "delcore_api_key_operations_total{operation=\"authorize\",outcome=\"unauthenticated\"} 1"
+        ));
     }
 }
