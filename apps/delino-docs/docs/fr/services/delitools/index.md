@@ -199,7 +199,7 @@ DeliTools signale l’utilisation à Delcore. Delcore la tarifie et la règle en
 - **Les échecs sont facturables.** Les jetons utilisés par les nouvelles tentatives, les appels en échec, les délais dépassés, les annulations et les résultats que vous n’avez pas pu recevoir comptent quand même, avec la majoration.
 - **Utilisation inconnue.** Si DeliTools ne peut pas lire immédiatement l’utilisation d’un appel, il reporte la facturation et effectue le rapprochement avec le Gateway plus tard. Il n’estime jamais l’utilisation pour une facturation. Si l’utilisation est toujours inconnue lorsque l’enregistrement expire après 30 jours, cette facturation est abandonnée.
 - **Où consulter l’utilisation.** Les réponses ne contiennent aucune information d’utilisation. Utilisez l’interface de facturation Delino de votre tenant pour examiner l’utilisation et les frais.
-- **Tenants bloqués.** Si la facturation bloque votre tenant, les nouvelles exécutions échouent avec une erreur de facturation bloquée. Un appel déjà en cours n’est pas interrompu. Comme DeliTools mesure l’utilisation après l’exécution, des appels simultanés peuvent dépasser un solde ou une limite avant que le blocage ne s’applique.
+- **Tenants bloqués.** Si la facturation bloque votre tenant, les nouvelles exécutions échouent avec une erreur de facturation bloquée. Une tentative d’IA déjà en cours n’est pas interrompue, mais DeliTools vérifie à nouveau l’autorisation avant chaque nouvelle tentative. Si la facturation a bloqué le tenant entre-temps, il n’effectue plus de tentative et renvoie l’erreur de facturation bloquée. Comme DeliTools mesure l’utilisation après l’exécution, des appels simultanés peuvent dépasser un solde ou une limite avant que le blocage ne s’applique.
 
 ## Idempotence
 

@@ -199,7 +199,7 @@ O DeliTools informa o uso ao Delcore. O Delcore o avalia e o liquida em USD.
 - **Falhas são faturáveis.** Os tokens usados por novas tentativas, chamadas com falha, tempos limite, cancelamentos e resultados que você não conseguiu receber continuam sendo contados, junto com a margem.
 - **Uso desconhecido.** Se o DeliTools não conseguir ler o uso de uma chamada imediatamente, ele adia a cobrança e a reconcilia com o Gateway depois. Ele nunca estima o uso para uma cobrança. Se o uso ainda for desconhecido quando o registro expirar após 30 dias, essa cobrança é descartada.
 - **Onde ver o uso.** As respostas não contêm uso. Use a interface de faturamento da Delino para o seu tenant para inspecionar o uso e as cobranças.
-- **Tenants bloqueados.** Se o faturamento bloquear o seu tenant, novas execuções falham com um erro de faturamento bloqueado. Uma chamada que já está em andamento não é interrompida. Como o DeliTools mede o uso após a execução, chamadas simultâneas podem exceder um saldo ou limite antes de o bloqueio ser aplicado.
+- **Tenants bloqueados.** Se o faturamento bloquear o seu tenant, novas execuções falham com um erro de faturamento bloqueado. Uma tentativa de IA que já está em andamento não é interrompida, mas o DeliTools verifica a autorização novamente antes de cada nova tentativa. Se o faturamento já tiver bloqueado o tenant até lá, ele não faz mais tentativas e retorna o erro de faturamento bloqueado. Como o DeliTools mede o uso após a execução, chamadas simultâneas podem exceder um saldo ou limite antes de o bloqueio ser aplicado.
 
 ## Idempotência
 

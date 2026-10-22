@@ -199,7 +199,7 @@ DeliTools reports usage to Delcore. Delcore rates and settles it in USD.
 - **Failures are billable.** Tokens used by retries, failed calls, timeouts, cancellations and results that you could not receive still count, together with the markup.
 - **Unknown usage.** If DeliTools cannot read the usage of a call at once, it defers the charge and reconciles with the Gateway later. It never estimates usage for a charge. If usage is still unknown when the record expires after 30 days, that charge is dropped.
 - **Where to see usage.** Responses contain no usage. Use the Delino billing interface for your tenant to inspect usage and charges.
-- **Blocked tenants.** If billing blocks your tenant, new executions fail with a billing-blocked error. A call that already runs is not interrupted. Because DeliTools measures usage after execution, concurrent calls can exceed a balance or limit before the block applies.
+- **Blocked tenants.** If billing blocks your tenant, new executions fail with a billing-blocked error. An AI attempt that is already running is not interrupted, but DeliTools checks authorization again before each retry. If billing has blocked the tenant by then, it makes no further attempts and returns the billing-blocked error. Because DeliTools measures usage after execution, concurrent calls can exceed a balance or limit before the block applies.
 
 ## Idempotency
 
