@@ -6,7 +6,7 @@ use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::{get, post},
 };
 use std::{
@@ -30,14 +30,26 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
         state.1 = state.1.saturating_add(1);
         state.1 <= policy.limit
     };
-    if !allowed {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
+    // Generate the server correlation ID before admission so that every response,
+    // including a rate rejection, carries it. Any client-supplied value is replaced.
     let correlation = server_common::id();
     request
         .headers_mut()
         .insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
     let request_headers = request.headers().clone();
+    if !allowed {
+        // Log only the correlation ID and category; never headers or request data.
+        tracing::warn!(correlation_id = %correlation, category="rate_limited", "request rate limit exceeded");
+        // The schema has no rate-limit reason, so use ERROR_REASON_UNSPECIFIED (0).
+        return crate::Fault::new(
+            connectrpc::ErrorCode::ResourceExhausted,
+            0,
+            "request rate limit exceeded",
+        )
+        .with_correlation(&correlation)
+        .into_http_response(&request_headers)
+        .map(axum::body::Body::new);
+    }
     match tokio::time::timeout(
         policy.timeout,
         next.run(request)
@@ -148,9 +160,12 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert!(raw.starts_with(&format!("HTTP/1.1 {status}")), "{raw}");
+            assert!(raw.contains("x-delcore-correlation-id:"), "{raw}");
+            assert!(raw.contains("delcore.v1.ErrorDetail"), "{raw}");
             if status == 504 {
-                assert!(raw.contains("x-delcore-correlation-id:"), "{raw}");
-                assert!(raw.contains("delcore.v1.ErrorDetail"), "{raw}");
+                assert!(raw.contains("deadline_exceeded"), "{raw}");
+            } else {
+                assert!(raw.contains("resource_exhausted"), "{raw}");
             }
         }
         task.abort();
@@ -202,6 +217,123 @@ mod tests {
                 delino_protocol::delcore::v1::ErrorDetail::decode_from_slice(&bytes).unwrap();
             assert_eq!(detail.correlation_id, correlation);
         }
+        task.abort();
+    }
+    fn decode_detail(body: &serde_json::Value) -> delino_protocol::delcore::v1::ErrorDetail {
+        use base64::Engine;
+        use buffa::Message;
+        assert_eq!(body["details"][0]["type"], "delcore.v1.ErrorDetail");
+        let bytes = base64::engine::general_purpose::STANDARD_NO_PAD
+            .decode(body["details"][0]["value"].as_str().unwrap())
+            .unwrap();
+        delino_protocol::delcore::v1::ErrorDetail::decode_from_slice(&bytes).unwrap()
+    }
+    #[tokio::test]
+    async fn rate_rejections_keep_typed_errors_and_server_correlation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        for content_type in ["application/json", "application/proto"] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let handler_calls = calls.clone();
+            let app = Router::new()
+                .route(
+                    "/",
+                    post(move || {
+                        let calls = handler_calls.clone();
+                        async move {
+                            calls.fetch_add(1, Ordering::SeqCst);
+                            StatusCode::OK
+                        }
+                    }),
+                )
+                .layer(middleware::from_fn_with_state(
+                    Policy {
+                        timeout: Duration::from_secs(30),
+                        limit: 1,
+                        window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    },
+                    bounded,
+                ));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let client = reqwest::Client::new();
+            let admitted = client
+                .post(&url)
+                .header("content-type", content_type)
+                .body("{}")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(admitted.status(), StatusCode::OK);
+            let response = client
+                .post(&url)
+                .header("content-type", content_type)
+                .header("X-Delcore-Correlation-Id", "untrusted-client-value")
+                .body("{}")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(response.headers()["content-type"], "application/json");
+            let correlation = response.headers()["X-Delcore-Correlation-Id"]
+                .to_str()
+                .unwrap()
+                .to_owned();
+            assert_ne!(correlation, "untrusted-client-value");
+            assert!(server_common::canonical_id(&correlation));
+            let body: serde_json::Value = response.json().await.unwrap();
+            assert_eq!(body["code"], "resource_exhausted");
+            assert!(!body["message"].as_str().unwrap().is_empty());
+            let detail = decode_detail(&body);
+            assert_eq!(detail.correlation_id, correlation);
+            assert_eq!(detail.reason.to_i32(), 0);
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                1,
+                "rejected call reached handler"
+            );
+            task.abort();
+        }
+    }
+    #[tokio::test]
+    async fn rate_window_resets_after_sixty_seconds() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let handler_calls = calls.clone();
+        let stale = Instant::now()
+            .checked_sub(Duration::from_secs(61))
+            .expect("monotonic clock older than 61 seconds");
+        let app = Router::new()
+            .route(
+                "/",
+                post(move || {
+                    let calls = handler_calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        StatusCode::OK
+                    }
+                }),
+            )
+            .layer(middleware::from_fn_with_state(
+                Policy {
+                    timeout: Duration::from_secs(30),
+                    limit: 1,
+                    window: Arc::new(Mutex::new((stale, 1))),
+                },
+                bounded,
+            ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let response = reqwest::Client::new()
+            .post(&url)
+            .header("content-type", "application/json")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
         task.abort();
     }
 }
