@@ -7,10 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 use tracing::Instrument;
@@ -30,16 +27,66 @@ pub struct Policy {
     pub procedure: Option<ProcedureResolver>,
 }
 
-/// Exactly-once marker for the request metrics of a known DevBase procedure. The middleware
-/// stores one in the request extensions; the first party that calls [`Accounting::claim`] (the
-/// service handler when it finishes, or the outer timeout) records the request, so a handler
-/// that finishes just before the outer deadline is not counted a second time as a timeout.
+/// Pending observation of a known DevBase procedure, shared between the service handler and
+/// this middleware. The middleware stores one in the request extensions. A handler that finishes
+/// does not record metrics itself; it publishes its outcome with [`Accounting::report`] and the
+/// middleware records exactly one observation for the response that is actually returned:
+///
+/// - a whole-request timeout, or any 504 response (the Connect transport's expired client
+///   `Connect-Timeout-Ms` deadline), is recorded as `deadline_exceeded` with the latency since
+///   the request headers arrived, even when the handler had already reported an earlier outcome;
+/// - any other response records the handler's reported outcome and latency, and a response the
+///   handler never reported (for example a transport rejection before the handler) records
+///   nothing, as before.
+///
+/// A request abandoned by the client after the handler finished still records the handler's
+/// outcome. Only the middleware records, so no combination of timers can count a request twice.
 #[derive(Clone, Default)]
-pub struct Accounting(Arc<AtomicBool>);
+pub struct Accounting(Arc<Mutex<Option<Reported>>>);
+#[derive(Clone, Copy)]
+struct Reported {
+    code: &'static str,
+    elapsed: Duration,
+}
 impl Accounting {
-    /// Returns `true` for the first caller only.
-    pub fn claim(&self) -> bool {
-        !self.0.swap(true, Ordering::AcqRel)
+    /// Publishes the handler's outcome (the Connect code or `ok`) and its own latency. A later
+    /// call replaces an earlier one; handlers report once.
+    pub fn report(&self, code: &'static str, elapsed: Duration) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(Reported { code, elapsed });
+    }
+    fn take(&self) -> Option<Reported> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
+    }
+}
+
+/// Records the single observation of one request. Settling happens at most once, either
+/// explicitly with the response outcome or, when the request future is dropped first, from
+/// `Drop` with the handler's reported outcome.
+struct Settlement<'a> {
+    policy: &'a Policy,
+    procedure: Option<&'static str>,
+    accounting: Accounting,
+    started: Instant,
+    settled: bool,
+}
+impl Settlement<'_> {
+    fn settle(&mut self, deadline_exceeded: bool) {
+        if std::mem::replace(&mut self.settled, true) {
+            return;
+        }
+        let reported = self.accounting.take();
+        if deadline_exceeded {
+            record_timeout(self.policy, self.procedure, self.started);
+        } else if let Some(reported) = reported {
+            record_outcome(self.policy, self.procedure, reported.code, reported.elapsed);
+        }
+    }
+}
+impl Drop for Settlement<'_> {
+    fn drop(&mut self) {
+        // The request future was cancelled (for example by a client disconnect) before any
+        // response was produced: keep an outcome the handler already finished.
+        self.settle(false);
     }
 }
 
@@ -69,14 +116,22 @@ pub async fn middleware(
         if procedure.is_some() {
             request.extensions_mut().insert(accounting.clone());
         }
-        let started = Instant::now();
+        let mut settlement = Settlement {
+            policy: &policy,
+            procedure,
+            accounting,
+            started: Instant::now(),
+            settled: false,
+        };
         match tokio::time::timeout(policy.timeout, next.run(request).instrument(span)).await {
-            Ok(response) => response,
+            Ok(response) => {
+                // A 504 reaching the client is a whole-request timeout whatever the handler
+                // reported before the deadline passed.
+                settlement.settle(response.status() == StatusCode::GATEWAY_TIMEOUT);
+                response
+            }
             Err(_) => {
-                // A handler that already recorded its own outcome owns the request's metrics.
-                if accounting.claim() {
-                    record_timeout(&policy, procedure, started);
-                }
+                settlement.settle(true);
                 timeout_response(policy.service)
             }
         }
@@ -124,23 +179,29 @@ pub async fn middleware(
     response
 }
 
-/// Records one request and one latency sample for an outer timeout of a known DevBase procedure.
-/// A cancelled handler never reaches its own accounting; callers claim [`Accounting`] first so a
-/// handler that finished earlier is not counted twice.
+/// Records one request and one latency sample for a whole-request timeout of a known DevBase
+/// procedure. Only [`Settlement`] calls it, once per request, after any handler outcome has been
+/// superseded by the timeout response.
 pub fn record_timeout(policy: &Policy, procedure: Option<&'static str>, started: Instant) {
+    record_outcome(policy, procedure, "deadline_exceeded", started.elapsed());
+}
+
+/// Records one request counter increment and one latency sample for a known DevBase procedure.
+/// Anything else (unknown paths, Git Tracker) creates no procedure series.
+fn record_outcome(policy: &Policy, procedure: Option<&'static str>, code: &str, elapsed: Duration) {
     let (Service::DevBase, Some(procedure)) = (policy.service, procedure) else {
         return;
     };
     policy
         .metrics
         .requests
-        .with_label_values(&[procedure, "deadline_exceeded"])
+        .with_label_values(&[procedure, code])
         .inc();
     policy
         .metrics
         .duration
         .with_label_values(&[procedure])
-        .observe(started.elapsed().as_secs_f64());
+        .observe(elapsed.as_secs_f64());
 }
 
 fn timeout_response(service: Service) -> Response {
@@ -258,12 +319,16 @@ mod tests {
     }
 
     #[test]
-    fn accounting_is_claimed_once_across_clones() {
+    fn accounting_reports_are_shared_across_clones_and_taken_once() {
         let accounting = Accounting::default();
         let other = accounting.clone();
-        assert!(accounting.claim());
-        assert!(!other.claim());
-        assert!(!accounting.claim());
+        assert!(accounting.take().is_none());
+        other.report("ok", Duration::from_millis(5));
+        accounting.report("unavailable", Duration::from_millis(7));
+        let reported = other.take().unwrap();
+        assert_eq!(reported.code, "unavailable");
+        assert_eq!(reported.elapsed, Duration::from_millis(7));
+        assert!(accounting.take().is_none());
     }
 
     fn policy(service: Service, procedure: Option<ProcedureResolver>) -> Policy {
@@ -274,6 +339,170 @@ mod tests {
             metrics: Arc::new(Metrics::new(service)),
             procedure,
         }
+    }
+
+    /// Routes `/rpc/<scenario>` through the middleware. Each handler publishes an outcome as the
+    /// DevBase handler does, then behaves as the scenario describes.
+    fn accounting_app(timeout: Duration, metrics: Arc<Metrics>) -> Router {
+        use axum::extract::Extension;
+        let report = |accounting: Accounting| accounting.report("ok", Duration::from_millis(3));
+        Router::new()
+            .route(
+                "/rpc/ok",
+                post(
+                    move |Extension(accounting): Extension<Accounting>| async move {
+                        report(accounting);
+                        StatusCode::OK
+                    },
+                ),
+            )
+            .route(
+                "/rpc/slow-after-report",
+                post(
+                    move |Extension(accounting): Extension<Accounting>| async move {
+                        report(accounting);
+                        tokio::time::sleep(Duration::from_secs(10)).await;
+                        StatusCode::OK
+                    },
+                ),
+            )
+            .route(
+                "/rpc/bare-504-after-report",
+                post(
+                    move |Extension(accounting): Extension<Accounting>| async move {
+                        report(accounting);
+                        StatusCode::GATEWAY_TIMEOUT
+                    },
+                ),
+            )
+            .route(
+                "/rpc/bare-504",
+                post(|| async { StatusCode::GATEWAY_TIMEOUT }),
+            )
+            .route(
+                "/rpc/unreported",
+                post(|| async { StatusCode::BAD_REQUEST }),
+            )
+            .route(
+                "/other/bare-504",
+                post(|| async { StatusCode::GATEWAY_TIMEOUT }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                Policy {
+                    origin: String::new(),
+                    timeout,
+                    service: Service::DevBase,
+                    metrics,
+                    procedure: Some(|path| path.starts_with("/rpc/").then_some("GetProject")),
+                },
+                middleware,
+            ))
+    }
+
+    async fn status_of(app: &Router, path: &str) -> StatusCode {
+        tower::ServiceExt::oneshot(
+            app.clone(),
+            Request::post(path).body(axum::body::Body::empty()).unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+    }
+
+    fn observed(metrics: &Metrics, code: &str) -> u64 {
+        metrics
+            .requests
+            .with_label_values(&["GetProject", code])
+            .get()
+    }
+
+    #[tokio::test]
+    async fn the_returned_outcome_is_recorded_exactly_once() {
+        let metrics = Arc::new(Metrics::new(Service::DevBase));
+        let app = accounting_app(Duration::from_millis(100), metrics.clone());
+        let samples = || metrics.duration.with_label_values(&["GetProject"]);
+
+        // A reported handler outcome is recorded with the handler's own latency.
+        assert_eq!(status_of(&app, "/rpc/ok").await, StatusCode::OK);
+        assert_eq!(observed(&metrics, "ok"), 1);
+        assert_eq!(samples().get_sample_count(), 1);
+        assert!((samples().get_sample_sum() - 0.003).abs() < 1e-9);
+
+        // The handler reported, but the outer deadline wins while the response is still pending:
+        // the 504 the client receives is the one recorded, with the whole-request latency.
+        let before = samples().get_sample_sum();
+        assert_eq!(
+            status_of(&app, "/rpc/slow-after-report").await,
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        assert_eq!(observed(&metrics, "deadline_exceeded"), 1);
+        assert_eq!(observed(&metrics, "ok"), 1);
+        assert_eq!(samples().get_sample_count(), 2);
+        assert!(samples().get_sample_sum() - before >= 0.09);
+
+        // A 504 produced inside the deadline (the transport's expired client deadline) is a
+        // timeout whether or not the handler reported an earlier outcome, and counts once.
+        for path in ["/rpc/bare-504-after-report", "/rpc/bare-504"] {
+            assert_eq!(status_of(&app, path).await, StatusCode::GATEWAY_TIMEOUT);
+        }
+        assert_eq!(observed(&metrics, "deadline_exceeded"), 3);
+        assert_eq!(observed(&metrics, "ok"), 1);
+        assert_eq!(samples().get_sample_count(), 4);
+
+        // A response the handler never reported and that is no timeout records nothing, and a
+        // 504 on a path outside the procedure allowlist creates no series.
+        assert_eq!(
+            status_of(&app, "/rpc/unreported").await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_of(&app, "/other/bare-504").await,
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        assert_eq!(samples().get_sample_count(), 4);
+        assert!(!metrics.encode().contains("\"/other"));
+    }
+
+    #[test]
+    fn an_abandoned_request_keeps_the_finished_handler_outcome() {
+        let policy = policy(Service::DevBase, Some(|_| Some("GetProject")));
+        let accounting = Accounting::default();
+        {
+            let _abandoned = Settlement {
+                policy: &policy,
+                procedure: Some("GetProject"),
+                accounting: accounting.clone(),
+                started: Instant::now(),
+                settled: false,
+            };
+            accounting.report("not_found", Duration::from_millis(4));
+        }
+        let requests = |code| {
+            policy
+                .metrics
+                .requests
+                .with_label_values(&["GetProject", code])
+        };
+        assert_eq!(requests("not_found").get(), 1);
+        assert_eq!(requests("deadline_exceeded").get(), 0);
+
+        // Cancelled before the handler reported anything: nothing to record.
+        drop(Settlement {
+            policy: &policy,
+            procedure: Some("GetProject"),
+            accounting: Accounting::default(),
+            started: Instant::now(),
+            settled: false,
+        });
+        assert_eq!(requests("not_found").get(), 1);
+        assert_eq!(
+            policy
+                .metrics
+                .duration
+                .with_label_values(&["GetProject"])
+                .get_sample_count(),
+            1
+        );
     }
 
     #[test]
