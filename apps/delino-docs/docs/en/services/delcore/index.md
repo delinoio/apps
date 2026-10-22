@@ -1,6 +1,6 @@
 # Delcore
 
-Delcore provides shared tenants, access control and billing for Delino services. The official API server is `https://delcore.api.delino.io`. This page describes the tenant state check for service developers.
+Delcore provides shared tenants, access control and billing for Delino services. The official API server is `https://delcore.api.delino.io`. This page describes usage pricing, record expiry and the tenant state check for service developers.
 
 ## Check tenant state
 
@@ -26,6 +26,14 @@ The state does not depend on billing. An expired subscription, a failed renewal,
 
 - Allow access only for `TENANT_STATE_ACTIVE`, or when your own documented rules for owners or administrators permit access to a blocked or deleting tenant.
 - Treat `TENANT_STATE_UNKNOWN`, request errors, timeouts and an unavailable Delcore as no access. Do not delete data in these cases.
-- Delete your retained tenant data automatically only after an explicit `TENANT_STATE_DELETED`. `BLOCKED` and `DELETING` never permit automatic deletion.
+- For cleanup caused by tenant deletion, delete your retained tenant data automatically only after an explicit `TENANT_STATE_DELETED`. `BLOCKED` and `DELETING` never permit that cleanup. Fixed record expiry applies independently of tenant state.
 - Invalid IDs, an empty request or more than 100 IDs return an invalid-argument error. Credentials that are missing, expired or invalid return an unauthenticated error. A caller that is not allowed to read tenant state receives a permission-denied error. Other failures return an error with a correlation ID; include this ID, found in the error details and the `X-Delcore-Correlation-Id` header, when you ask for support.
 - Retry a failed request later. A failed request never means a tenant is active or deleted.
+
+## Usage prices and record expiry
+
+Usage unit prices apply at the initial execution start for every customer, including existing subscribers. Report that start in `IngestEvent` as `occurred_at` and keep it across execution retries and usage reconciliation. A price change applies to later executions; late delivery and corrections keep the original price attribution. Recurring payment prices, selected features and included-usage grants retain their subscription terms.
+
+Request deduplication lasts 30 days from the record's first creation. A retry does not extend this period. After expiry, the same request key can start a new operation subject to current permissions and independent payment or event identity checks. Accepted usage events retain their durable identities to prevent duplicate accounting effects.
+
+Consumer services must delete usage-delivery and reconciliation records 30 days after first creation, even when execution or usage remains unknown or a report has not reached Delcore. Retry delivery and unknown-usage lookup until that expiry, then abandon the pending charge. Do not estimate usage for billing. This can permanently lose billable usage, and an expired execution deduplication key can permit a new execution and charge. Platform audit records and operational logs also expire 30 days after creation. These limits do not delete accounting entries already accepted by Delcore or change API-key validity.
