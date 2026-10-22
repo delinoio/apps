@@ -367,3 +367,240 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         .unwrap();
     admin.close().await;
 }
+
+const MAINTENANCE_PAGE: usize = 100;
+
+fn maintenance_config() -> Config {
+    Config {
+        projects: 100,
+        users: 100,
+        keys: 20,
+        user_rate: 10000.0,
+        user_burst: 20000,
+        management_rate: 10000.0,
+        management_burst: 20000,
+        dependency_timeout: Duration::from_secs(3),
+        request_timeout: Duration::from_secs(10),
+        cleanup_interval: Duration::from_secs(300),
+        origin: "https://console.example".into(),
+        listen: "127.0.0.1:0".into(),
+    }
+}
+
+fn maintenance_authority(base: &str) -> Authority {
+    Authority::new(
+        reqwest::Client::new(),
+        base.to_owned(),
+        format!("{base}/token"),
+        "resource".into(),
+        "client".into(),
+        "fixture".into(),
+    )
+}
+
+/// A server on an isolated schema whose mocked Delcore returns one tenant state for every tenant.
+struct MaintenanceFixture {
+    server: Arc<Server>,
+    admin: sqlx::PgPool,
+    schema: String,
+    state: Arc<Mutex<String>>,
+    root: String,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl MaintenanceFixture {
+    async fn new() -> Self {
+        let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
+        let admin = sqlx::PgPool::connect(&url).await.unwrap();
+        let schema = format!("devbase_{}", uuid::Uuid::now_v7().simple());
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let search = schema.clone();
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .after_connect(move |conn, _| {
+                let search = search.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO {search}"))
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect(&url)
+            .await
+            .unwrap();
+        store::migrate(&db).await.unwrap();
+        let state = Arc::new(Mutex::new("TENANT_STATE_ACTIVE".to_owned()));
+        let state_mock = state.clone();
+        let mock = Router::new()
+            .route(
+                "/token",
+                post(|| async { Json(json!({"access_token":"service","expires_in":3600})) }),
+            )
+            .route(
+                "/delcore.v1.DelcoreService/GetTenantStates",
+                post(move |Json(q): Json<Value>| {
+                    let state = state_mock.clone();
+                    async move {
+                        let state = state.lock().unwrap().clone();
+                        if state == "unavailable" {
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                Json(json!({"code":"unavailable"})),
+                            );
+                        }
+                        let entries: Vec<_> = q["tenantIds"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|id| json!({"tenantId":id,"state":state}))
+                            .collect();
+                        (StatusCode::OK, Json(json!({"states":entries})))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let mock_task = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+        let server = Arc::new(Server::new(
+            db,
+            maintenance_authority(&base),
+            maintenance_config(),
+        ));
+        let router = devbase_api::http::router(server.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let root = format!("http://{}", listener.local_addr().unwrap());
+        let api_task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        Self {
+            server,
+            admin,
+            schema,
+            state,
+            root,
+            tasks: vec![mock_task, api_task],
+        }
+    }
+
+    async fn seed_tenants(&self, count: usize) {
+        for index in 0..count {
+            sqlx::query("INSERT INTO projects(id,tenant_id,name,created_at,updated_at) VALUES($1,$2,$3,now(),now())")
+                .bind(uuid::Uuid::now_v7())
+                .bind(uuid::Uuid::now_v7())
+                .bind(format!("Project {index}"))
+                .execute(&self.server.db)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn project_count(&self) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM projects")
+            .fetch_one(&self.server.db)
+            .await
+            .unwrap()
+    }
+
+    fn set_state(&self, state: &str) {
+        *self.state.lock().unwrap() = state.to_owned();
+    }
+
+    /// Reads a counter from the scraped `/metrics` endpoint.
+    async fn scrape(&self, name: &str) -> u64 {
+        let body = reqwest::get(format!("{}/metrics", self.root))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        body.lines()
+            .find_map(|line| line.strip_prefix(&format!("{name} ")))
+            .unwrap_or_else(|| panic!("metric {name} is exposed"))
+            .parse()
+            .unwrap()
+    }
+
+    async fn close(self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+        self.server.db.close().await;
+        sqlx::query(&format!("DROP SCHEMA {} CASCADE", self.schema))
+            .execute(&self.admin)
+            .await
+            .unwrap();
+        self.admin.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn maintenance_counts_completed_cycles() {
+    let fixture = MaintenanceFixture::new().await;
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 0);
+
+    fixture.server.maintain().await.unwrap();
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 1);
+    assert_eq!(fixture.scrape("devbase_cleanup_failures_total").await, 0);
+
+    fixture.server.maintain().await.unwrap();
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 2);
+
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn maintenance_counts_multi_batch_and_cleanup_cycles() {
+    let fixture = MaintenanceFixture::new().await;
+    fixture.seed_tenants(MAINTENANCE_PAGE + 1).await;
+
+    fixture.server.maintain().await.unwrap();
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 1);
+    assert_eq!(fixture.project_count().await, 101);
+
+    fixture.set_state("TENANT_STATE_DELETED");
+    fixture.server.maintain().await.unwrap();
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 2);
+    assert_eq!(fixture.project_count().await, 0);
+
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn maintenance_counts_cycles_with_recoverable_authority_failure() {
+    let fixture = MaintenanceFixture::new().await;
+    fixture.seed_tenants(MAINTENANCE_PAGE + 1).await;
+    fixture.set_state("unavailable");
+
+    fixture.server.maintain().await.unwrap();
+    assert_eq!(fixture.scrape("devbase_cleanup_runs_total").await, 1);
+    assert_eq!(fixture.scrape("devbase_cleanup_failures_total").await, 2);
+    assert_eq!(fixture.project_count().await, 101);
+
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn maintenance_does_not_count_failed_cycles() {
+    // A closed lazy pool fails the first query immediately and needs no database server.
+    let db = sqlx::PgPool::connect_lazy("postgres://postgres@127.0.0.1:1/unused").unwrap();
+    db.close().await;
+    let server = Server::new(
+        db,
+        maintenance_authority("http://127.0.0.1:1"),
+        maintenance_config(),
+    );
+
+    assert!(server.maintain().await.is_err());
+    assert_eq!(server.metrics.cleanup_runs.get(), 0);
+    assert!(
+        server
+            .metrics
+            .encode()
+            .contains("devbase_cleanup_runs_total 0")
+    );
+}

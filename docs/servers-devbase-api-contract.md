@@ -150,7 +150,7 @@ Migrations are explicit, ordered and immutable SQL files embedded in the binary.
 
 ## Logging
 
-Use `tracing` structured logs with trace IDs and bounded error categories. Operator logs are colored key/value text by default; `NO_COLOR` disables the color and `LOG_FORMAT=json` emits one JSON object per record for log ingestion. Any other `LOG_FORMAT` value stops startup. Expose Prometheus metrics for request count, error rate by Connect code, latency, limit rejection and maintenance cleanup failure, without tenant, project, user or key IDs in labels. Support OpenTelemetry through the standard `OTEL_*` variables. The server exposes `/healthz` and `/readyz`; readiness checks the database schema.
+Use `tracing` structured logs with trace IDs and bounded error categories. Operator logs are colored key/value text by default; `NO_COLOR` disables the color and `LOG_FORMAT=json` emits one JSON object per record for log ingestion. Any other `LOG_FORMAT` value stops startup. Expose Prometheus metrics for request count, error rate by Connect code, latency, limit rejection, completed maintenance cycles and maintenance cleanup failure, without tenant, project, user or key IDs in labels. Support OpenTelemetry through the standard `OTEL_*` variables. The server exposes `/healthz` and `/readyz`; readiness checks the database schema.
 
 Operational inspection starts from the trace ID in a failing response: search structured logs for it. Check `/metrics` for the rejection and cleanup counters, run `devbase-api check-schema` for schema questions, and query `audit_events` for change history. Numeric SLOs, dashboards and alert infrastructure are not part of this contract.
 
@@ -191,6 +191,7 @@ Run `pnpm dev` at the repository root for all development servers, or from `serv
 - **Migrate:** run `devbase-api migrate` against the target database before starting a new version. It is safe to repeat.
 - **Schema compatibility:** `devbase-api check-schema` exits non-zero when the schema is missing, newer or modified.
 - **Audit query:** `devbase-api audit --since <RFC3339> [--target <uuid>] [--actor <actor>] [--limit <n>]` prints matching records as JSON lines, newest first. Equivalent SQL: `SELECT occurred_at, action, actor, target_id, trace_id FROM audit_events WHERE occurred_at >= $1 ORDER BY occurred_at DESC`.
+- **Cleanup cycles:** the cleanup run counter increases by one for every maintenance cycle that finishes without an error, including a cycle that skips a tenant batch after a recoverable state-check failure. A cycle that stops with an error does not increase it. A counter that stays flat over several cleanup intervals means that no cycle finishes; check the failure counter and the logs.
 - **Cleanup failures:** watch the cleanup failure counter and the `tenant cleanup failed` log events. Failures retry on the next cycle. A persistent failure usually means Delcore or database unavailability; check Delcore health and the service credentials first.
 - **Fix-forward recovery:** deploy a corrected image and, if data needs correction, a new forward migration. Take a database backup before applying a migration. Do not roll back images or reverse migrations.
 - **Key loss:** a lost key secret is unrecoverable. Revoke the key and issue another.

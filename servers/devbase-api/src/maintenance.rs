@@ -74,6 +74,9 @@ impl Server {
                 tx.commit().await?;
             }
         }
+        // Count only cycles that reach this point; every early `?` return is a failed cycle and
+        // is counted by the caller as a cleanup failure instead.
+        self.metrics.cleanup_runs.inc();
         tracing::info!(category = "maintenance", "maintenance cycle completed");
         Ok(())
     }
