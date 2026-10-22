@@ -94,7 +94,7 @@ DeliTools akzeptiert nur den Teil von JSON Schema, den die strukturierte Ausgabe
 Unterstützt:
 
 - Ein Objekt an der Wurzel.
-- Die Typen `object`, `array`, `string`, `number`, `integer`, `boolean` und `null`, verschachtelt bis zu einer Tiefe von 8 Ebenen.
+- Die Typen `object`, `array`, `string`, `number`, `integer`, `boolean` und `null`, verschachtelt bis zu einer Tiefe von 8 Ebenen. Jeder Schemaknoten hat genau einen `type`, der als Zeichenfolge angegeben wird. Ein Typ-Array wie `["string", "null"]` wird abgelehnt.
 - `properties`, wobei jede Eigenschaft in `required` aufgeführt ist.
 - `additionalProperties` mit dem Wert `false` bei jedem Objekt.
 - `items` für Arrays.

@@ -94,7 +94,7 @@ DeliTools accepts only the part of JSON Schema that the structured output of the
 Supported:
 
 - An object at the root.
-- The types `object`, `array`, `string`, `number`, `integer`, `boolean` and `null`, nested to a depth of 8 levels.
+- The types `object`, `array`, `string`, `number`, `integer`, `boolean` and `null`, nested to a depth of 8 levels. Each schema node has exactly one `type`, written as a string. A type array, such as `["string", "null"]`, is rejected.
 - `properties`, with every property listed in `required`.
 - `additionalProperties` set to `false` on every object.
 - `items` for arrays.

@@ -94,7 +94,7 @@ DeliTools accepte uniquement la partie de JSON Schema que prend en charge la sor
 Pris en charge :
 
 - Un objet à la racine.
-- Les types `object`, `array`, `string`, `number`, `integer`, `boolean` et `null`, imbriqués jusqu’à une profondeur de 8 niveaux.
+- Les types `object`, `array`, `string`, `number`, `integer`, `boolean` et `null`, imbriqués jusqu’à une profondeur de 8 niveaux. Chaque nœud du schéma a exactement un `type`, écrit sous forme de chaîne. Un tableau de types, comme `["string", "null"]`, est rejeté.
 - `properties`, avec chaque propriété listée dans `required`.
 - `additionalProperties` défini sur `false` pour chaque objet.
 - `items` pour les tableaux.
