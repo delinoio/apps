@@ -9,8 +9,8 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
-use delino_protocol::delcore::v1::DELCORE_SERVICE_SERVICE_NAME;
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -21,6 +21,19 @@ struct Policy {
     timeout: Duration,
     limit: i64,
     window: Arc<Mutex<(Instant, i64)>>,
+    /// Request paths (with the leading slash) of every procedure registered on the
+    /// Delcore RPC router. See `rpc_procedures`.
+    procedures: Arc<HashSet<String>>,
+}
+/// Collects the request path of every procedure the generated Delcore service
+/// registered on `router`, for example `/delcore.v1.DelcoreService/ListTenants`.
+/// The set comes from the router itself, so it cannot diverge from the generated
+/// service definition when RPCs are added or removed.
+fn rpc_procedures(router: &connectrpc::Router) -> HashSet<String> {
+    router
+        .methods()
+        .map(|method| format!("/{method}"))
+        .collect()
 }
 /// Decides whether the Nth rejected request of one window writes a diagnostic.
 /// Logging only the 1st, 2nd, 4th, 8th, ... rejection keeps the log volume of an
@@ -32,24 +45,21 @@ fn log_rejection(rejected_in_window: i64) -> bool {
 }
 /// Selects the headers that decide how a rate rejection is rendered.
 ///
-/// A genuine Delcore RPC (a POST under the generated `delcore.v1.DelcoreService`
-/// path) keeps its request headers, so the connectrpc renderer answers in the
-/// caller's protocol: Connect unary gets the HTTP 429 JSON error, while gRPC,
-/// gRPC-Web and Connect-streaming callers get their protocol framing
-/// (`grpc-status` trailers or an end-stream envelope) carrying
-/// `resource_exhausted`, which their clients decode as a typed error. Every
-/// other request, including health, readiness, metrics, webhook and unknown
-/// paths, is rendered without headers so it stays HTTP 429 with the typed Connect
-/// JSON body whatever its content type; probes, webhook senders and proxies
-/// only see the HTTP status and must not receive a 200 for a rejection.
-fn rejection_render_headers(request: &Request) -> axum::http::HeaderMap {
+/// A genuine Delcore RPC (a POST to a procedure registered by the generated
+/// `delcore.v1.DelcoreService`) keeps its request headers, so the connectrpc
+/// renderer answers in the caller's protocol: Connect unary gets the HTTP 429 JSON
+/// error, while gRPC, gRPC-Web and Connect-streaming callers get their protocol
+/// framing (`grpc-status` trailers or an end-stream envelope) carrying
+/// `resource_exhausted`, which their clients decode as a typed error. The complete
+/// path must match a registered procedure, so an unknown method under the service
+/// prefix is not an RPC. Every other request, including health, readiness,
+/// metrics, webhook, lookalike and unknown paths, is rendered without headers so
+/// it stays HTTP 429 with the typed Connect JSON body whatever its content type;
+/// probes, webhook senders and proxies only see the HTTP status and must not
+/// receive a 200 for a rejection.
+fn rejection_render_headers(policy: &Policy, request: &Request) -> axum::http::HeaderMap {
     let is_rpc = request.method() == axum::http::Method::POST
-        && request
-            .uri()
-            .path()
-            .strip_prefix('/')
-            .and_then(|path| path.strip_prefix(DELCORE_SERVICE_SERVICE_NAME))
-            .is_some_and(|rest| rest.starts_with('/'));
+        && policy.procedures.contains(request.uri().path());
     if is_rpc {
         request.headers().clone()
     } else {
@@ -75,7 +85,7 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
         .headers_mut()
         .insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
     let request_headers = request.headers().clone();
-    let render_headers = rejection_render_headers(&request);
+    let render_headers = rejection_render_headers(&policy, &request);
     if !allowed {
         // Log only the correlation ID, category and sampled count; never headers or
         // request data. The log is sampled so that it stays bounded under load.
@@ -117,12 +127,11 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
     }
 }
 pub fn router(server: Arc<Server>, worker: Arc<Worker>) -> Router {
-    let rpc = connectrpc::Router::new()
-        .add_service(server.clone())
-        .into_axum_service()
-        .with_limits(
-            connectrpc::Limits::default().with_max_message_size(server.config.max_payload_bytes),
-        );
+    let rpc = connectrpc::Router::new().add_service(server.clone());
+    let procedures = Arc::new(rpc_procedures(&rpc));
+    let rpc = rpc.into_axum_service().with_limits(
+        connectrpc::Limits::default().with_max_message_size(server.config.max_payload_bytes),
+    );
     let ready = server.db.clone();
     let metrics = server.metrics.clone();
     Router::new()
@@ -160,6 +169,7 @@ pub fn router(server: Arc<Server>, worker: Arc<Worker>) -> Router {
                 timeout: server.config.timeout(),
                 limit: server.config.requests_per_minute,
                 window: Arc::new(Mutex::new((Instant::now(), 0))),
+                procedures,
             },
             bounded,
         ))
@@ -196,6 +206,7 @@ mod tests {
                     timeout: Duration::from_millis(30),
                     limit: 1,
                     window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    procedures: Arc::default(),
                 },
                 bounded,
             ));
@@ -239,6 +250,7 @@ mod tests {
                     timeout: Duration::from_millis(20),
                     limit: 10,
                     window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    procedures: Arc::default(),
                 },
                 bounded,
             ));
@@ -303,6 +315,7 @@ mod tests {
                         timeout: Duration::from_secs(30),
                         limit: 1,
                         window: Arc::new(Mutex::new((Instant::now(), 0))),
+                        procedures: Arc::default(),
                     },
                     bounded,
                 ));
@@ -359,6 +372,7 @@ mod tests {
                     timeout: Duration::from_secs(30),
                     limit: 1,
                     window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    procedures: Arc::default(),
                 },
                 bounded,
             ));
@@ -414,7 +428,9 @@ mod tests {
         }
         task.abort();
     }
-    const RPC_PATH: &str = "/delcore.v1.DelcoreService/ListTenants";
+    const RPC_PATH: &str = "/delcore.v1.DelcoreService/GetCurrentUser";
+    /// A method name under the service prefix that the generated service does not register.
+    const UNKNOWN_METHOD_PATH: &str = "/delcore.v1.DelcoreService/NoSuchMethod";
     /// Starts a limit-1 app with an RPC-shaped route and non-RPC routes, and
     /// consumes the only admitted request of the window.
     async fn exhausted_app() -> (String, tokio::task::JoinHandle<()>) {
@@ -432,6 +448,7 @@ mod tests {
                     timeout: Duration::from_secs(30),
                     limit: 1,
                     window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    procedures: Arc::new(HashSet::from([RPC_PATH.to_owned()])),
                 },
                 bounded,
             ));
@@ -545,6 +562,8 @@ mod tests {
             (reqwest::Method::POST, "/delcore.v1.DelcoreServiceX/Other"),
             (reqwest::Method::POST, "/other.v1.Service/Method"),
             (reqwest::Method::POST, "/unknown"),
+            // An unknown method under the service path is not a registered procedure.
+            (reqwest::Method::POST, UNKNOWN_METHOD_PATH),
         ];
         for content_type in [
             "application/grpc",
@@ -564,6 +583,120 @@ mod tests {
                     .unwrap();
                 assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{label}");
                 assert!(response.headers().get("grpc-status").is_none(), "{label}");
+                let correlation = correlation_of(&response, &label);
+                let body: serde_json::Value = response.json().await.unwrap();
+                assert_eq!(body["code"], "resource_exhausted", "{label}");
+                assert_eq!(decode_detail(&body).correlation_id, correlation, "{label}");
+            }
+        }
+        task.abort();
+    }
+    /// Builds the production router around a real `Server` with a one-request
+    /// window, so the registered-procedure set comes from the generated service.
+    /// The database pool is lazy and unreachable: the admitted `/healthz` request
+    /// and every rejected request never touch it.
+    async fn exhausted_production_app() -> (String, tokio::task::JoinHandle<()>) {
+        use axum::{Json, routing::get};
+        let oidc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", oidc.local_addr().unwrap());
+        let discovery = serde_json::json!({"issuer":issuer,"jwks_uri":format!("{issuer}/jwks")});
+        let mock = Router::new()
+            .route(
+                "/.well-known/openid-configuration",
+                get(move || async { Json(discovery) }),
+            )
+            .route(
+                "/jwks",
+                get(|| async { Json(serde_json::json!({"keys":[]})) }),
+            );
+        tokio::spawn(async move { axum::serve(oidc, mock).await.unwrap() });
+        let mut values: std::collections::HashMap<_, _> =
+            dotenvy::from_read_iter(include_bytes!("../.env.example").as_slice())
+                .map(|v| v.unwrap())
+                .collect();
+        values.insert("ISSUER".into(), issuer);
+        values.insert("REQUESTS_PER_MINUTE".into(), "1".into());
+        let config =
+            crate::config::Config::from_getter(|key| values.get(key).cloned().unwrap_or_default())
+                .unwrap();
+        let auth = crate::auth::Verifier::new(&config).await.unwrap();
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://fixture:fixture@127.0.0.1:1/test")
+            .unwrap();
+        let server = Arc::new(Server::new(db.clone(), auth, config.clone()));
+        let worker = Arc::new(Worker::new(db, config).unwrap());
+        let app = router(server, worker);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert_eq!(
+            reqwest::get(format!("{base}/healthz"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        (base, task)
+    }
+    #[tokio::test]
+    async fn generated_service_procedures_get_framing_and_unknown_methods_stay_429() {
+        use delino_protocol::delcore::v1::{
+            DELCORE_SERVICE_GET_CURRENT_USER_SPEC, DELCORE_SERVICE_INGEST_EVENT_SPEC,
+        };
+        let _serial = WARNING_TESTS.lock().await;
+        assert_eq!(DELCORE_SERVICE_GET_CURRENT_USER_SPEC.procedure, RPC_PATH);
+        let (base, task) = exhausted_production_app().await;
+        let client = reqwest::Client::new();
+        let post = |path: &str, content_type: &'static str| {
+            client
+                .post(format!("{base}{path}"))
+                .header("content-type", content_type)
+                .body("{}")
+                .send()
+        };
+        // Registered procedures keep their protocol framing.
+        for spec in [
+            DELCORE_SERVICE_GET_CURRENT_USER_SPEC,
+            DELCORE_SERVICE_INGEST_EVENT_SPEC,
+        ] {
+            let response = post(spec.procedure, "application/grpc").await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{}", spec.procedure);
+            assert_eq!(response.headers()["grpc-status"], "8", "{}", spec.procedure);
+            let response = post(spec.procedure, "application/connect+json")
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{}", spec.procedure);
+            let body = response.bytes().await.unwrap();
+            assert_eq!(body[0], 0x02, "{}: end-stream flag", spec.procedure);
+            let response = post(spec.procedure, "application/grpc-web+proto")
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{}", spec.procedure);
+            let body = response.bytes().await.unwrap();
+            assert_eq!(body[0], 0x80, "{}: trailer flag", spec.procedure);
+        }
+        // Unknown methods, including near misses of registered ones, stay unary HTTP 429.
+        for path in [
+            UNKNOWN_METHOD_PATH,
+            "/delcore.v1.DelcoreService/getcurrentuser",
+            "/delcore.v1.DelcoreService/GetCurrentUser/",
+            "/delcore.v1.DelcoreService/",
+        ] {
+            for content_type in [
+                "application/grpc",
+                "application/grpc-web+proto",
+                "application/connect+proto",
+                "application/connect+json",
+            ] {
+                let label = format!("{path} {content_type}");
+                let response = post(path, content_type).await.unwrap();
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{label}");
+                assert!(response.headers().get("grpc-status").is_none(), "{label}");
+                assert_eq!(
+                    response.headers()["content-type"],
+                    "application/json",
+                    "{label}"
+                );
                 let correlation = correlation_of(&response, &label);
                 let body: serde_json::Value = response.json().await.unwrap();
                 assert_eq!(body["code"], "resource_exhausted", "{label}");
@@ -611,6 +744,7 @@ mod tests {
                     timeout: Duration::from_secs(30),
                     limit: 1,
                     window: Arc::new(Mutex::new((Instant::now(), 0))),
+                    procedures: Arc::default(),
                 },
                 bounded,
             ));
@@ -662,6 +796,7 @@ mod tests {
                     timeout: Duration::from_secs(30),
                     limit: 1,
                     window: Arc::new(Mutex::new((stale, 1))),
+                    procedures: Arc::default(),
                 },
                 bounded,
             ));
