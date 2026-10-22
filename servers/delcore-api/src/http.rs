@@ -41,13 +41,18 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
         // Log only the correlation ID and category; never headers or request data.
         tracing::warn!(correlation_id = %correlation, category="rate_limited", "request rate limit exceeded");
         // The schema has no rate-limit reason, so use ERROR_REASON_UNSPECIFIED (0).
+        // Render with empty request headers so the unary Connect representation is
+        // always used: for a gRPC or Connect-streaming content type the request
+        // headers would select an HTTP 200 trailers-only or end-stream rendering,
+        // which would hide the rejection from health probes, webhook callers and
+        // proxies. Every rejection must stay HTTP 429 with the typed JSON body.
         return crate::Fault::new(
             connectrpc::ErrorCode::ResourceExhausted,
             0,
             "request rate limit exceeded",
         )
         .with_correlation(&correlation)
-        .into_http_response(&request_headers)
+        .into_http_response(&axum::http::HeaderMap::new())
         .map(axum::body::Body::new);
     }
     match tokio::time::timeout(
@@ -294,6 +299,71 @@ mod tests {
             );
             task.abort();
         }
+    }
+    #[tokio::test]
+    async fn rate_rejections_stay_429_for_every_route_and_content_type() {
+        let app = Router::new()
+            .route("/healthz", get(|| async { StatusCode::OK }))
+            .route("/webhooks/paddle", post(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(
+                Policy {
+                    timeout: Duration::from_secs(30),
+                    limit: 1,
+                    window: Arc::new(Mutex::new((Instant::now(), 0))),
+                },
+                bounded,
+            ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        // Consume the only admitted request of the window.
+        assert_eq!(
+            client
+                .get(format!("{base}/healthz"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        for content_type in [
+            None,
+            Some("application/json"),
+            Some("application/proto"),
+            Some("application/connect+proto"),
+            Some("application/connect+json"),
+            Some("application/grpc"),
+            Some("application/grpc+proto"),
+            Some("application/grpc-web+proto"),
+            Some("text/plain"),
+            Some("not a media type"),
+        ] {
+            for (method, path) in [
+                (reqwest::Method::GET, "/healthz"),
+                (reqwest::Method::POST, "/webhooks/paddle"),
+            ] {
+                let mut request = client
+                    .request(method, format!("{base}{path}"))
+                    .header("X-Delcore-Correlation-Id", "untrusted-client-value");
+                if let Some(content_type) = content_type {
+                    request = request.header("content-type", content_type);
+                }
+                let response = request.send().await.unwrap();
+                let label = format!("{path} {content_type:?}");
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{label}");
+                let correlation = response.headers()["X-Delcore-Correlation-Id"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                assert_ne!(correlation, "untrusted-client-value", "{label}");
+                assert!(server_common::canonical_id(&correlation), "{label}");
+                let body: serde_json::Value = response.json().await.unwrap();
+                assert_eq!(body["code"], "resource_exhausted", "{label}");
+                assert_eq!(decode_detail(&body).correlation_id, correlation, "{label}");
+            }
+        }
+        task.abort();
     }
     #[tokio::test]
     async fn rate_window_resets_after_sixty_seconds() {
