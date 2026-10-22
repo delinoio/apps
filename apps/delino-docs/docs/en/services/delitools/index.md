@@ -154,7 +154,7 @@ An unsupported schema, because `note` is optional and `pattern` is not supported
 - Every success and every error contains a request ID, a UUID version 7. Include it when you ask for support. Success responses contain only the result and the request ID. They do not contain the model, token counts or the charge. See Billing to inspect usage.
 - DeliTools retries transient AI provider errors, up to a limit that the operator sets. It does not retry malformed output and never switches to another model on its own.
 - If you cancel the call or disconnect, DeliTools tries to cancel the AI call and stops further retries. Usage that already happened is still measured and billed.
-- The operator sets the limits for input size, translation item count, execution timeout, request rate per tenant and concurrent requests per tenant. These are deployment settings, not fixed product limits. A request over a limit returns a limit error. The exception is the execution timeout: a call that runs past it returns a timeout error (`ERROR_REASON_TIMEOUT`).
+- The operator sets the limits for input size, translation item count, execution timeout, request rate per tenant and concurrent requests per tenant. These are deployment settings, not fixed product limits. A request over a limit returns a limit error. The exception is the execution timeout: a call that runs past it returns a timeout error (`ERROR_REASON_TIMEOUT`). The input size limit counts UTF-8 bytes, not characters: for a translation it is the total of all `texts`, and for an extraction it is `text` plus the raw `jsonSchema` string.
 
 ## Authentication and API keys
 
