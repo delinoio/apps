@@ -311,6 +311,9 @@ pub struct PriceSyncTask {
 /// The revision label of a version that withdraws the price of a model the catalog no longer
 /// publishes (as opposed to one withdrawn because no endpoint matches its published price).
 const UNPUBLISHED_REVISION: &str = "unpublished";
+/// The revision label of a version that withdraws the price of a model the operator no longer
+/// allows.
+const NOT_ALLOWLISTED_REVISION: &str = "not-allowlisted";
 
 /// The unchanged-price revision digest stored with each version.
 fn revision(route: &str, price: &CatalogPrice) -> String {
@@ -379,6 +382,42 @@ impl BackgroundTask for PriceSyncTask {
             );
             anyhow::anyhow!("catalog price synchronization failed")
         };
+        // Catalog synchronization never enables a model: only allowlisted models and the fixed
+        // extraction model are priced.
+        let mut wanted: BTreeSet<&str> = context
+            .settings
+            .translation_models
+            .iter()
+            .map(String::as_str)
+            .collect();
+        wanted.insert(EXTRACTION_MODEL);
+        let (mut changed, mut refreshed, mut skipped, mut withdrawn, mut failed) = (0, 0, 0, 0, 0);
+        // A model that left the allowlist is no longer synchronized, so its newest version would
+        // stay in force and be used unchanged, however old, if the operator allowed it again, and
+        // it would keep readiness true. Withdraw it now; it is priced afresh by the first
+        // synchronization after it is allowed again. This needs no catalog read.
+        match db::priced_models(pool).await {
+            Ok(priced) => {
+                for model in priced {
+                    if wanted.contains(model.as_str()) {
+                        continue;
+                    }
+                    match db::record_unpriced(pool, &model, NOT_ALLOWLISTED_REVISION).await {
+                        Ok(PriceWrite::Withdrawn) => {
+                            withdrawn += 1;
+                            tracing::warn!(
+                                model,
+                                category = "price_withdrawn",
+                                "the model left the allowlist; its price was withdrawn"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(_) => failed += 1,
+                    }
+                }
+            }
+            Err(_) => failed += 1,
+        }
         let catalog = match self.gateway.models().await {
             Ok(catalog) => catalog,
             Err(_) => {
@@ -394,16 +433,6 @@ impl BackgroundTask for PriceSyncTask {
                 return Err(fail("catalog_unavailable"));
             }
         };
-        // Catalog synchronization never enables a model: only allowlisted models and the fixed
-        // extraction model are priced.
-        let mut wanted: BTreeSet<&str> = context
-            .settings
-            .translation_models
-            .iter()
-            .map(String::as_str)
-            .collect();
-        wanted.insert(EXTRACTION_MODEL);
-        let (mut changed, mut refreshed, mut skipped, mut withdrawn, mut failed) = (0, 0, 0, 0, 0);
         for model in wanted {
             let Some(price) = catalog
                 .iter()

@@ -1591,6 +1591,92 @@ async fn a_model_the_catalog_stops_publishing_loses_its_price_but_a_failed_fetch
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_model_removed_from_the_allowlist_loses_its_price_until_it_is_synchronized_again() {
+    let env = Env::start(&[], true).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(10, 1, 0, 0)));
+    env.wait_for_price(TRANSLATION_MODEL).await;
+    translate_ok(&env, &key).await;
+    let withdrawals = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM catalog_prices WHERE model=$1 AND NOT priced",
+        )
+        .bind(TRANSLATION_MODEL)
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(withdrawals().await, 0);
+
+    // The operator removes the model: the next synchronization withdraws the stored price.
+    let operator = env.fx.operator();
+    let mut settings =
+        env.fx.ok(&operator, "GetSettings", json!({})).await.body["settings"].clone();
+    settings["translationModels"] = json!([EXTRACTION_MODEL]);
+    env.fx
+        .ok(
+            &operator,
+            "UpdateSettings",
+            json!({"settings": settings.clone(), "reason": "retire the translation model"}),
+        )
+        .await;
+    let mut withdrawn = false;
+    for _ in 0..60 {
+        if withdrawals().await == 1 {
+            withdrawn = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        withdrawn,
+        "the price of a model that left the allowlist is withdrawn"
+    );
+    // Further synchronizations do not stack withdrawals, and the extraction model keeps the
+    // service ready.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 1);
+    let ready = env
+        .fx
+        .http
+        .get(format!("{}/readyz", env.fx.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ready.status(), 200);
+
+    // Allowing the model again prices it by a new version at the next synchronization.
+    settings["translationModels"] = json!([TRANSLATION_MODEL, EXTRACTION_MODEL]);
+    env.fx
+        .ok(
+            &operator,
+            "UpdateSettings",
+            json!({"settings": settings, "reason": "allow the translation model again"}),
+        )
+        .await;
+    let mut restored = false;
+    for _ in 0..60 {
+        if env
+            .fx
+            .call(Some(&key), TRANSLATE, env.translate_body(&["x"], None))
+            .await
+            .code()
+            .is_empty()
+        {
+            restored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        restored,
+        "the model is priced again after it is allowed again"
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
     use delitools_api::{
         gateway::CatalogPrice,

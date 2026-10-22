@@ -183,6 +183,15 @@ pub async fn record_price(
     Ok(PriceWrite::NewVersion)
 }
 
+/// Models whose newest catalog version still carries a price.
+pub async fn priced_models(pool: &PgPool) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT model FROM (SELECT DISTINCT ON (model) model,priced FROM catalog_prices ORDER BY model, effective_at DESC, synced_at DESC) latest WHERE priced ORDER BY model",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 /// Record that the public catalog was read successfully but no active provider endpoint charges
 /// the published flat price of `model`, so the model has no applicable route or price. A previous
 /// price is withdrawn by appending an unpriced version effective now (requests that already
