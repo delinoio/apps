@@ -460,6 +460,78 @@ async fn authorization_is_checked_before_any_duplicate_state_is_disclosed() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_duplicate_is_authorized_again_immediately_before_its_state_is_disclosed() {
+    let env = Env::start(&[], false).await;
+    echo(&env);
+    let key = env.service_key().await;
+    let body = || env.translate_body(&["a"], Some("recheck"));
+    env.fx.ok(&key, TRANSLATE, body()).await;
+
+    // Only the request's own authentication passes; the check repeated before the existing state
+    // would be disclosed finds the tenant blocked and wins over the duplicate answer.
+    env.delcore.block_billing_after_paid_checks(2);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            body(),
+            "failed_precondition",
+            reason::BILLING_BLOCKED,
+        )
+        .await;
+    let paid = env
+        .delcore
+        .authorize_calls()
+        .into_iter()
+        .filter(|c| c["paid"] == true)
+        .count();
+    assert_eq!(paid, 3, "first call, duplicate authentication, recheck");
+
+    // Without the block the same duplicate is answered from the retained state.
+    env.delcore.block_billing_after_paid_checks(usize::MAX);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            body(),
+            "already_exists",
+            reason::ALREADY_PROCESSED,
+        )
+        .await;
+    assert_eq!(env.gateway.chat_count(), 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_call_that_loses_the_claim_is_authorized_again_before_it_is_told_the_state() {
+    let env = Env::start(&[], false).await;
+    echo(&env);
+    let key = env.service_key().await;
+    // Both concurrent calls pass their own authentication (two paid checks). Whichever one ends
+    // up answering as a duplicate, whether it lost the claim or found the record first, repeats
+    // the check, finds the tenant blocked and discloses nothing; the other call executes.
+    env.delcore.block_billing_after_paid_checks(2);
+    let body = || env.translate_body(&["a"], Some("race"));
+    let (first, second) = tokio::join!(
+        env.fx.call(Some(&key), TRANSLATE, body()),
+        env.fx.call(Some(&key), TRANSLATE, body()),
+    );
+    let mut codes = [first.code().to_owned(), second.code().to_owned()];
+    codes.sort();
+    assert_eq!(
+        codes,
+        ["".to_owned(), "failed_precondition".to_owned()],
+        "{} / {}",
+        first.body,
+        second.body
+    );
+    assert_eq!(env.gateway.chat_count(), 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn expiry_thirty_days_after_first_creation_permits_a_fresh_charged_execution() {
     let env = Env::start(&[], false).await;
     echo(&env);

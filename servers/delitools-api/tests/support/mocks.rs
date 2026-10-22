@@ -425,6 +425,8 @@ struct DelcoreState {
     members: HashMap<(Uuid, Uuid), MemberRole>,
     tenants: HashSet<Uuid>,
     blocked: HashSet<Uuid>,
+    /// Paid checks to allow in total; every later paid check answers as a billing block.
+    paid_check_budget: Option<usize>,
     denied: HashSet<(Uuid, String)>,
     authorize_down: bool,
     authorize_calls: Vec<Value>,
@@ -499,6 +501,11 @@ impl DelcoreMock {
         } else {
             state.blocked.remove(&tenant);
         }
+    }
+    /// Let only the first `allowed` paid authorization checks pass; every later one is answered as
+    /// a billing block, as if the tenant became blocked between two checks of one call.
+    pub fn block_billing_after_paid_checks(&self, allowed: usize) {
+        lock(&self.state).paid_check_budget = Some(allowed);
     }
     pub fn deny_capability(&self, tenant: Uuid, capability: &str) {
         lock(&self.state)
@@ -714,7 +721,17 @@ fn authorize(state: &DelcoreState, body: &Value) -> Response {
     if !permitted {
         return deny("BLOCK_REASON_PERMISSION");
     }
-    if paid && state.blocked.contains(&tenant) {
+    let paid_checks = state
+        .authorize_calls
+        .iter()
+        .filter(|call| call["paid"] == true)
+        .count();
+    if paid
+        && (state.blocked.contains(&tenant)
+            || state
+                .paid_check_budget
+                .is_some_and(|allowed| paid_checks > allowed))
+    {
         return deny("BLOCK_REASON_BALANCE");
     }
     Json(json!({"allowed": true, "reasons": []})).into_response()

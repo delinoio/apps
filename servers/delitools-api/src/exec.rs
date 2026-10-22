@@ -650,8 +650,10 @@ impl Executor {
         let platform = &self.platform;
         let request_id = parse_request_id(&call.request_id);
         let started = Instant::now();
-        // Authorization already succeeded, so duplicate state may be disclosed. Answer a known
-        // duplicate before admission: it does no AI work and must not consume tenant budget.
+        // Answer a known duplicate before admission: it does no AI work and must not consume
+        // tenant budget. The credential, tenant and billing check is repeated immediately before
+        // the retained request state is disclosed, so a credential revoked, a permission removed
+        // or a billing block raised since the request was authenticated is not told that state.
         if let Some(key) = plan.key.as_deref()
             && let Some(existing) = db::peek_duplicate(
                 &platform.store.pool,
@@ -662,6 +664,7 @@ impl Executor {
             )
             .await?
         {
+            platform.reauthorize(&principal).await?;
             return Err(duplicate_fault(&existing, &plan.input_hash));
         }
         let permit = platform
@@ -722,6 +725,9 @@ impl Executor {
                     // tenant's request-rate budget; a burst of racing duplicates could otherwise
                     // exhaust it.
                     permit.refund_rate();
+                    // Winning the claim may have taken a while behind the other call, so the
+                    // principal is checked again before the existing state is disclosed.
+                    platform.reauthorize(&principal).await?;
                     return Err(duplicate_fault(&existing, &plan.input_hash));
                 }
             };
