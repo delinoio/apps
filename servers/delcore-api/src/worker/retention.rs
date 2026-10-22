@@ -6,11 +6,21 @@ use sqlx::PgConnection;
 
 impl Worker {
     pub(super) async fn retain(&self, conn: &mut PgConnection, now: DateTime<Utc>) -> Result<()> {
-        if self.config.audit_retention_seconds > 0 {
-            sqlx::query("DELETE FROM audit WHERE created_at<$1")
-                .bind(now - Duration::seconds(self.config.audit_retention_seconds))
+        let transient_cutoff = now - Duration::seconds(crate::config::TRANSIENT_RETENTION_SECONDS);
+        for table in ["audit", "requests"] {
+            let removed = sqlx::query(&format!("DELETE FROM {table} WHERE created_at<=$1"))
+                .bind(transient_cutoff)
                 .execute(&mut *conn)
-                .await?;
+                .await?
+                .rows_affected();
+            if removed > 0 {
+                tracing::info!(
+                    category = "retention",
+                    record_kind = table,
+                    removed,
+                    "expired transient records removed"
+                );
+            }
         }
         // Keep normalized quantities and attribution for the longer accounting
         // interval even after raw event attributes have expired.
