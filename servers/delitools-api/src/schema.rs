@@ -21,6 +21,8 @@ pub const RESERVED_ENVELOPE_LEVELS: usize = 2;
 const MAX_PROPERTIES: usize = 5000;
 const ENVELOPE_PROPERTIES: usize = 2;
 const MAX_ENUM_VALUES: usize = 1000;
+/// The envelope `status` enum holds `extracted` and `impossible`.
+const ENVELOPE_ENUM_VALUES: usize = 2;
 const MAX_NAME_AND_ENUM_CHARS: usize = 120_000;
 const ENVELOPE_CHARS: usize = 20;
 const LARGE_ENUM_VALUES: usize = 250;
@@ -126,7 +128,7 @@ impl Schema {
         }
         let mut budget = Budget {
             properties: ENVELOPE_PROPERTIES,
-            enum_values: 0,
+            enum_values: ENVELOPE_ENUM_VALUES,
             chars: ENVELOPE_CHARS,
         };
         let node = build(&json, "", 1, &mut budget)?;
@@ -621,6 +623,9 @@ mod tests {
         assert!(bad(&enum_of(251, 100)).contains("250 values"));
         ok(&enum_of(251, 10));
         assert!(bad(&enum_of(1001, 1)).contains("enum value limit"));
+        // The envelope sends two enum values of its own, so the caller has 998 left.
+        ok(&enum_of(998, 4));
+        assert!(bad(&enum_of(999, 4)).contains("enum value limit"));
     }
 
     #[test]
