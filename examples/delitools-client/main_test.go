@@ -164,6 +164,21 @@ func TestRunAppliesTheTimeoutToEachCall(t *testing.T) {
 	}
 }
 
+func TestDefaultCallTimeoutSetsNoDeadline(t *testing.T) {
+	// A deadline shorter than the operator's execution timeout would cancel a
+	// valid, billable call, so the default must not impose one.
+	ctx, cancel := callContext(context.Background(), defaultCallTimeout)
+	defer cancel()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("the default call timeout must not set a client deadline")
+	}
+	ctx, cancel = callContext(context.Background(), time.Minute)
+	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatal("an explicit timeout must set a deadline")
+	}
+}
+
 func TestRunSelectsOneOperation(t *testing.T) {
 	for _, tc := range []struct {
 		op   operation

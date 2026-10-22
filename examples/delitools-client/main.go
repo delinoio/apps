@@ -40,8 +40,12 @@ import (
 )
 
 const (
-	defaultURL         = "http://127.0.0.1:46322"
-	defaultCallTimeout = 2 * time.Minute
+	defaultURL = "http://127.0.0.1:46322"
+	// defaultCallTimeout is zero: no client deadline. The operator's execution
+	// timeout (up to an hour) is enforced by the server and returns a typed
+	// timeout error, while a shorter client default would cancel an otherwise
+	// valid call whose usage is still billed.
+	defaultCallTimeout time.Duration = 0
 )
 
 // extractionSchema uses the supported schema subset: an object root, every
@@ -106,7 +110,7 @@ func main() {
 	input := flag.String("from", "", "BCP 47 input language; omit to detect it")
 	model := flag.String("model", "", "translation model from the operator allowlist; required for the translate and all operations")
 	operationName := flag.String("operation", "all", "call to run: all (needs both capabilities), translate or extract")
-	timeout := flag.Duration("timeout", defaultCallTimeout, "client deadline of each call; the operator's execution timeout can be up to an hour")
+	timeout := flag.Duration("timeout", defaultCallTimeout, "client deadline of each call; zero (default) sets none and leaves the limit to the server's execution timeout. A deadline below that timeout cancels the call, and its usage is still billed")
 	translateKey := flag.String("translate-key", "", "idempotency key of the translation; reuse it to retry an uncertain run")
 	extractKey := flag.String("extract-key", "", "idempotency key of the extraction; reuse it to retry an uncertain run")
 	flag.Parse()
