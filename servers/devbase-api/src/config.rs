@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use server_common::config::{duration, positive, valid_origin};
 use std::time::Duration;
+/// Largest `seconds` value that google.protobuf.Duration permits (about 10,000 years).
+const MAX_RETRY_SECONDS: u64 = 315_576_000_000;
+
+/// Reports whether the exhausted-bucket retry delay `1 / rate` converts to a Duration whose whole
+/// seconds stay within the protobuf Duration range.
+fn retry_delay_fits_protobuf_duration(rate: f64) -> bool {
+    Duration::try_from_secs_f64(1.0 / rate).is_ok_and(|retry| retry.as_secs() <= MAX_RETRY_SECONDS)
+}
+
 pub struct Config {
     pub projects: i64,
     pub users: i64,
@@ -28,13 +37,13 @@ impl Config {
                 n > 0.0 && n.is_finite(),
                 "{key} must be positive and finite"
             );
-            // The limiter reports at most 1/rate seconds as the retry delay. Reject rates whose
-            // reciprocal does not fit a Duration or whose whole seconds do not fit the signed
-            // 64-bit `ErrorDetail.retry_after.seconds` field.
+            // The limiter reports at most 1/rate seconds as the retry delay, encoded as
+            // `ErrorDetail.retry_after` (google.protobuf.Duration). Reject rates whose reciprocal
+            // does not convert to a Duration or whose whole seconds exceed the protobuf Duration
+            // range, because such a value would make the response detail semantically invalid.
             anyhow::ensure!(
-                Duration::try_from_secs_f64(1.0 / n)
-                    .is_ok_and(|retry| i64::try_from(retry.as_secs()).is_ok()),
-                "{key} must have a representable retry delay"
+                retry_delay_fits_protobuf_duration(n),
+                "{key} must have a retry delay of at most {MAX_RETRY_SECONDS} seconds"
             );
             Ok(n)
         }
@@ -180,8 +189,24 @@ mod tests {
     }
 
     #[test]
-    fn rate_acceptance_matches_duration_conversion_at_boundary() {
-        let boundary = 2_f64.powi(-64);
+    fn rejects_retry_delay_beyond_protobuf_duration_range() {
+        // 1e-18 and 1e-19 fit i64 seconds but exceed the protobuf Duration maximum.
+        assert!(Duration::try_from_secs_f64(1.0 / 1e-18).is_ok());
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["1e-18", "1e-19", "1e-12"] {
+                let err = rate_error(rate_key, burst_key, value);
+                assert!(err.contains(rate_key), "{value}: {err}");
+                assert!(err.contains("315576000000"), "{value}: {err}");
+            }
+        }
+    }
+
+    #[test]
+    fn rate_acceptance_matches_protobuf_duration_limit_at_boundary() {
+        // A retry of exactly 315576000000 seconds is the last whole-second value that fits;
+        // 1 / rate below 315576000001 seconds is accepted and anything from there is rejected.
+        let first_rejected_seconds = (MAX_RETRY_SECONDS + 1) as f64;
+        let boundary = 1.0 / first_rejected_seconds;
         let neighbors = [
             f64::from_bits(boundary.to_bits() - 1),
             boundary,
@@ -189,39 +214,16 @@ mod tests {
         ];
         for (rate_key, burst_key) in RATE_KEYS {
             for rate in neighbors {
-                let accepted = Duration::try_from_secs_f64(1.0 / rate)
-                    .is_ok_and(|retry| i64::try_from(retry.as_secs()).is_ok());
+                let expected = 1.0 / rate < first_rejected_seconds;
                 let loaded = load_with(&[(rate_key, &format!("{rate:e}")), (burst_key, "1")]);
-                assert_eq!(loaded.is_ok(), accepted, "{rate_key}={rate:e}");
+                assert_eq!(loaded.is_ok(), expected, "{rate_key}={rate:e}");
             }
-        }
-    }
-
-    #[test]
-    fn rejects_retry_delay_beyond_signed_seconds_field() {
-        // 1e-19 gives a retry of 1e19 seconds: it fits Duration (u64 seconds) but not the
-        // signed 64-bit seconds of ErrorDetail.retry_after, so it must be rejected at startup.
-        assert!(Duration::try_from_secs_f64(1.0 / 1e-19).is_ok());
-        let boundary = 2_f64.powi(-63);
-        let rejected = [
-            "1e-19".to_string(),
-            format!("{:e}", f64::from_bits(boundary.to_bits() - 1)),
-            format!("{boundary:e}"),
-        ];
-        for (rate_key, burst_key) in RATE_KEYS {
-            for value in &rejected {
-                let err = rate_error(rate_key, burst_key, value);
-                assert!(err.contains(rate_key), "{value}: {err}");
-            }
-            let accepted = f64::from_bits(boundary.to_bits() + 1);
-            let c = load_with(&[(rate_key, &format!("{accepted:e}")), (burst_key, "1")]).unwrap();
-            let rate = if rate_key == "USER_RATE_PER_SECOND" {
-                c.user_rate
-            } else {
-                c.management_rate
-            };
-            let retry = Duration::try_from_secs_f64(1.0 / rate).unwrap();
-            assert!(i64::try_from(retry.as_secs()).is_ok());
+            // Explicit values on each side of the maximum.
+            let at_max = 1.0 / MAX_RETRY_SECONDS as f64;
+            let past_max = 1.0 / first_rejected_seconds * (1.0 - 1e-9);
+            load_with(&[(rate_key, &format!("{at_max:e}")), (burst_key, "1")]).unwrap();
+            let err = rate_error(rate_key, burst_key, &format!("{past_max:e}"));
+            assert!(err.contains(rate_key), "{err}");
         }
     }
 
@@ -231,7 +233,7 @@ mod tests {
         assert_eq!(c.user_rate, 1000.0);
         assert_eq!(c.management_rate, 50.0);
         for (rate_key, burst_key) in RATE_KEYS {
-            for value in ["0.001", "1e-18"] {
+            for value in ["0.001", "1e-11"] {
                 load_with(&[(rate_key, value), (burst_key, "1")]).expect(value);
             }
         }
