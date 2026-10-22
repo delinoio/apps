@@ -546,7 +546,8 @@ pub async fn mark_delivered(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Resu
     Ok(())
 }
 
-/// Count a failed delivery or lookup and schedule the next try.
+/// Count a failed delivery or lookup and schedule the next try. Lookups and deliveries of one
+/// attempt never overlap in time, so they share the counter; confirming usage resets it.
 pub async fn mark_retry(
     pool: &PgPool,
     id: Uuid,
@@ -567,13 +568,17 @@ pub async fn mark_retry(
 /// Store usage confirmed by Gateway reconciliation; it is then due for delivery. `now` must be read
 /// after the Gateway lookup: usage that was not established before the 30-day boundary is
 /// abandoned with the record, so an attempt that expired during the lookup is left unchanged.
+///
+/// The failure counter is reset because unsuccessful lookups share it with delivery (`mark_retry`):
+/// delivery backoff and the first-failure event must start from the first real delivery failure,
+/// not from the number of lookups that preceded the confirmation.
 pub async fn set_measured(
     pool: &PgPool,
     id: Uuid,
     tokens: &Tokens,
     now: DateTime<Utc>,
 ) -> Result<bool> {
-    let result = sqlx::query("UPDATE attempts SET measured_usage=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND measured_usage IS NULL AND created_at>$4")
+    let result = sqlx::query("UPDATE attempts SET measured_usage=$2,delivery_failures=0,retry_at=$3,updated_at=$3 WHERE id=$1 AND measured_usage IS NULL AND created_at>$4")
         .bind(id)
         .bind(pricing::tokens_json(tokens))
         .bind(now)

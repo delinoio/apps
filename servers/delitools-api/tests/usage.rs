@@ -626,6 +626,60 @@ async fn usage_confirmed_after_the_expiry_boundary_is_not_stored_or_delivered() 
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn reconciliation_failures_do_not_inflate_the_delivery_backoff() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, None);
+    translate_ok(&env, &key).await;
+    // Two lookups find nothing yet, so the attempt has two reconciliation failures.
+    for _ in 0..2 {
+        env.make_due().await;
+        usage_service(&env).run_reconciliation().await.unwrap();
+    }
+    let failures: i32 = sqlx::query_scalar("SELECT delivery_failures FROM attempts")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(failures, 2);
+
+    // The Gateway now confirms the usage, and the first delivery to delcore fails.
+    env.gateway.set_generation(
+        "gen_t0",
+        Some(generation_data(
+            "gen_t0",
+            TRANSLATION_MODEL,
+            100,
+            20,
+            30,
+            10,
+        )),
+    );
+    env.delcore.fail_ingests(1);
+    env.make_due().await;
+    usage_service(&env).run_reconciliation().await.unwrap();
+    let (failures, delay): (i32, f64) = sqlx::query_as(
+        "SELECT delivery_failures, EXTRACT(EPOCH FROM (retry_at - updated_at))::float8 FROM attempts",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(failures, 1, "only the real delivery failure is counted");
+    assert!(
+        (0.9..=1.1).contains(&delay),
+        "the first delivery failure waits the initial delay, not an inflated one: {delay}"
+    );
+    let events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operational_events WHERE category='usage_delivery_failure'",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(events, 1, "the first delivery failure is recorded");
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn failed_calls_and_unusable_output_still_bill_their_confirmed_usage() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;
