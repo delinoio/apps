@@ -20,6 +20,13 @@ const MAX_TOKEN_BYTES: usize = 8 << 10;
 /// Minimum interval between forced key-set refreshes. A flood of unverifiable tokens must not turn
 /// into a flood of requests to the identity provider.
 const MIN_REFRESH: Duration = Duration::from_secs(10);
+/// Longest time a fetched key set is trusted. Once it is older, no token is accepted from it: the
+/// next verification must fetch a fresh set first. Without this bound a signing key that the
+/// identity provider has retired or revoked would keep verifying tokens for as long as no token
+/// failed verification, because refreshes otherwise happen only after a failure. The bound is also
+/// the longest delay before a removed key stops working. When the provider cannot be reached after
+/// the bound, JWT authentication fails closed; API keys do not depend on it.
+const MAX_KEY_AGE: Duration = Duration::from_secs(300);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Credential<'a> {
@@ -92,12 +99,13 @@ fn jwks_endpoint(discovery: &serde_json::Value, issuer: &str) -> anyhow::Result<
 pub struct Verifier {
     http: reqwest::Client,
     jwks_url: String,
-    /// The cached key set. Readers never wait for a network refresh: the write lock is taken only
-    /// to install a completed result.
-    keys: RwLock<JwkSet>,
-    /// Serializes refreshes and records when the key set was last fetched. It is held during the
-    /// identity-provider request, so only callers that could not verify against the cached keys
-    /// wait for it.
+    /// The cached key set and when it was fetched. Readers never wait for a network refresh: the
+    /// write lock is taken only to install a completed result. A set older than [`MAX_KEY_AGE`] is
+    /// not used.
+    keys: RwLock<(JwkSet, Instant)>,
+    /// Serializes refreshes and records when a fetch was last attempted, successful or not. It is
+    /// held during the identity-provider request, so only callers that could not verify against
+    /// the cached keys wait for it.
     refresh: Mutex<Instant>,
     issuer: String,
     audience: String,
@@ -137,7 +145,7 @@ impl Verifier {
         Ok(Self {
             http,
             jwks_url,
-            keys: RwLock::new(keys),
+            keys: RwLock::new((keys, Instant::now())),
             refresh: Mutex::new(Instant::now()),
             issuer: issuer.to_owned(),
             audience: audience.to_owned(),
@@ -188,7 +196,7 @@ impl Verifier {
         .await;
         *last_fetch = Instant::now();
         match fetched {
-            Ok(set) => *self.keys.write().await = set,
+            Ok(set) => *self.keys.write().await = (set, Instant::now()),
             Err(_) => {
                 tracing::warn!(category = "jwks_refresh", "identity key refresh failed");
                 return Err(Fault::unauthenticated());
@@ -209,7 +217,10 @@ impl Verifier {
         validation: &Validation,
     ) -> Option<Claims> {
         let cached = self.keys.read().await;
-        Self::decode(raw, kid, &cached, validation).ok()
+        if cached.1.elapsed() > MAX_KEY_AGE {
+            return None;
+        }
+        Self::decode(raw, kid, &cached.0, validation).ok()
     }
 
     fn decode(
@@ -269,7 +280,7 @@ mod tests {
         Verifier {
             http: reqwest::Client::new(),
             jwks_url: "http://127.0.0.1:9/jwks".into(),
-            keys: RwLock::new(keys),
+            keys: RwLock::new((keys, Instant::now())),
             refresh: Mutex::new(Instant::now()),
             issuer: "https://issuer.example".into(),
             audience: "api".into(),
@@ -371,6 +382,94 @@ mod tests {
         );
         rotating.abort();
         provider.abort();
+    }
+
+    /// Make the cached key set older than `MAX_KEY_AGE` and the next refresh attempt eligible.
+    async fn age_cache(v: &Verifier) {
+        v.keys.write().await.1 = Instant::now()
+            .checked_sub(MAX_KEY_AGE * 2)
+            .expect("monotonic clock has run long enough");
+        *v.refresh.lock().await = Instant::now()
+            .checked_sub(MIN_REFRESH * 2)
+            .expect("monotonic clock has run long enough");
+    }
+
+    /// A signing key that the provider has retired must stop verifying once the cached key set
+    /// is older than `MAX_KEY_AGE`, even though no token ever failed verification and so nothing
+    /// forced a refresh.
+    #[tokio::test]
+    async fn an_expired_key_set_is_refreshed_before_it_verifies_anything() {
+        use rsa::pkcs8::DecodePrivateKey;
+        use std::sync::{
+            Arc, Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let private =
+            RsaPrivateKey::from_pkcs8_pem(include_str!("../tests/support/oidc-test-key.pem"))
+                .unwrap();
+        let signing =
+            EncodingKey::from_rsa_pem(private.to_pkcs8_pem(Default::default()).unwrap().as_bytes())
+                .unwrap();
+        let with_key: serde_json::Value = json!({"keys":[{
+            "kty":"RSA","kid":"fixture","alg":"RS256","use":"sig",
+            "n":URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),
+            "e":URL_SAFE_NO_PAD.encode(private.e().to_bytes_be())
+        }]});
+        let served = Arc::new(StdMutex::new(with_key.clone()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let provider = tokio::spawn({
+            let (served, fetches) = (served.clone(), fetches.clone());
+            async move {
+                let app = axum::Router::new().route(
+                    "/jwks",
+                    axum::routing::get(move || {
+                        let (served, fetches) = (served.clone(), fetches.clone());
+                        async move {
+                            fetches.fetch_add(1, Ordering::SeqCst);
+                            axum::Json(served.lock().unwrap().clone())
+                        }
+                    }),
+                );
+                axum::serve(listener, app).await.unwrap()
+            }
+        });
+        let mut v = verifier(serde_json::from_value(with_key.clone()).unwrap());
+        v.jwks_url = format!("http://{address}/jwks");
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({"iss":v.issuer,"aud":v.audience,"sub":"user","exp":now+3600});
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("fixture".into());
+        let token = jsonwebtoken::encode(&header, &claims, &signing).unwrap();
+        // A fresh cache verifies without any request to the provider.
+        assert!(v.verify(&token).await.is_ok());
+        assert_eq!(fetches.load(Ordering::SeqCst), 0);
+
+        // The provider retires the key. The old cache must not keep accepting its tokens.
+        *served.lock().unwrap() = json!({"keys": []});
+        age_cache(&v).await;
+        assert!(v.verify(&token).await.is_err(), "a retired key verified");
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
+        // The failed attempt is throttled like any other refresh.
+        assert!(v.verify(&token).await.is_err());
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
+
+        // A still-valid key is accepted again after one refresh, which also renews the cache.
+        *served.lock().unwrap() = with_key;
+        *v.refresh.lock().await = Instant::now()
+            .checked_sub(MIN_REFRESH * 2)
+            .expect("monotonic clock has run long enough");
+        assert!(v.verify(&token).await.is_ok());
+        assert_eq!(fetches.load(Ordering::SeqCst), 2);
+        assert!(v.verify(&token).await.is_ok());
+        assert_eq!(fetches.load(Ordering::SeqCst), 2);
+
+        // An unreachable provider fails closed once the cache is too old.
+        provider.abort();
+        let _ = provider.await;
+        age_cache(&v).await;
+        assert!(v.verify(&token).await.is_err());
     }
 
     #[test]
