@@ -136,13 +136,32 @@ impl Authority {
         }
         Ok(user.into())
     }
+    /// Requires Delcore to confirm the caller is a current tenant Owner or Admin.
+    ///
+    /// Delcore stays the only role authority: a successful `ListMembers` call is the proof,
+    /// so the reply must be a well-formed `ListMembersResponse` ProtoJSON object. Default
+    /// values may be omitted (`{}` is valid), but a reply of any other shape is malformed and
+    /// fails closed as `unavailable`. The response body is never logged.
     pub async fn manager(&self, authorization: &str, tenant: &str) -> Result<()> {
-        self.call(
-            "ListMembers",
-            authorization,
-            json!({"tenantId":tenant,"page":{"size":1}}),
-        )
-        .await?;
+        let value = self
+            .call(
+                "ListMembers",
+                authorization,
+                json!({"tenantId":tenant,"page":{"size":1}}),
+            )
+            .await?;
+        // The generated decoder accepts a top-level array as an empty message, so the
+        // object check must come first.
+        if !value.is_object()
+            || serde_json::from_value::<delino_protocol::delcore::v1::ListMembersResponse>(value)
+                .is_err()
+        {
+            tracing::warn!(
+                reason = "malformed_list_members_response",
+                "Delcore returned a malformed membership response"
+            );
+            return Err(Fault::unavailable());
+        }
         Ok(())
     }
     pub async fn states(&self, ids: &[String]) -> Result<Vec<TenantState>> {
@@ -217,4 +236,131 @@ pub async fn bounded_json(mut response: reqwest::Response, limit: usize) -> Resu
         bytes.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&bytes).map_err(|_| Fault::unavailable())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{Json, Router, http::HeaderMap, http::StatusCode, routing::post};
+    use connectrpc::ErrorCode;
+    use std::sync::{Arc, Mutex};
+
+    type Reply = (StatusCode, String);
+
+    /// Starts a loopback Delcore mock whose `ListMembers` reply is controlled by the test and
+    /// records the forwarded authorization header and request body.
+    async fn mock(reply: Arc<Mutex<Reply>>, seen: Arc<Mutex<Vec<(String, Value)>>>) -> Authority {
+        let app = Router::new().route(
+            "/delcore.v1.DelcoreService/ListMembers",
+            post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                let reply = reply.clone();
+                let seen = seen.clone();
+                async move {
+                    let authorization = headers
+                        .get("authorization")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned();
+                    seen.lock().unwrap().push((authorization, body));
+                    let (status, body) = reply.lock().unwrap().clone();
+                    (status, [("content-type", "application/json")], body)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Authority::new(
+            reqwest::Client::new(),
+            url,
+            "http://127.0.0.1:1/token".into(),
+            "resource".into(),
+            "client".into(),
+            "secret".into(),
+        )
+    }
+
+    #[tokio::test]
+    async fn manager_requires_a_listmembers_response_object() {
+        let reply = Arc::new(Mutex::new((StatusCode::OK, String::new())));
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let authority = mock(reply.clone(), seen.clone()).await;
+        let tenant = "01900000-0000-7000-8000-000000000002";
+        let valid = [
+            "{}",
+            r#"{"members":[]}"#,
+            r#"{"members":null}"#,
+            r#"{"metadata":null,"nextAfterId":null}"#,
+            r#"{"members":[{"userId":"01900000-0000-7000-8000-000000000001","roles":["ROLE_OWNER"]}],"nextAfterId":"next"}"#,
+        ];
+        for body in valid {
+            *reply.lock().unwrap() = (StatusCode::OK, body.into());
+            authority
+                .manager("Bearer caller", tenant)
+                .await
+                .unwrap_or_else(|e| panic!("{body} must be accepted: {e:?}"));
+        }
+        let malformed = [
+            "[]",
+            "42",
+            "true",
+            "null",
+            r#""text""#,
+            r#"{"members":42}"#,
+            r#"{"members":[null]}"#,
+            r#"{"members":[42]}"#,
+            r#"{"nextAfterId":42}"#,
+            "{",
+            "",
+        ];
+        for body in malformed {
+            *reply.lock().unwrap() = (StatusCode::OK, body.into());
+            let fault = authority
+                .manager("Bearer caller", tenant)
+                .await
+                .expect_err(body);
+            assert_eq!(fault.code, ErrorCode::Unavailable, "{body}");
+            assert_eq!(fault.reason, 9, "{body}");
+        }
+        // The caller token and page size are forwarded unchanged on every call.
+        for (authorization, body) in seen.lock().unwrap().iter() {
+            assert_eq!(authorization, "Bearer caller");
+            assert_eq!(body, &json!({"tenantId":tenant,"page":{"size":1}}));
+        }
+    }
+
+    #[tokio::test]
+    async fn manager_keeps_non_success_status_mapping() {
+        let reply = Arc::new(Mutex::new((StatusCode::OK, String::new())));
+        let authority = mock(reply.clone(), Arc::default()).await;
+        let cases = [
+            (
+                StatusCode::UNAUTHORIZED,
+                r#"{"code":"unauthenticated"}"#,
+                ErrorCode::Unauthenticated,
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                r#"{"code":"permission_denied"}"#,
+                ErrorCode::PermissionDenied,
+            ),
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                r#"{"code":"unavailable"}"#,
+                ErrorCode::Unavailable,
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "[]",
+                ErrorCode::Unavailable,
+            ),
+        ];
+        for (status, body, code) in cases {
+            *reply.lock().unwrap() = (status, body.into());
+            let fault = authority
+                .manager("Bearer caller", "01900000-0000-7000-8000-000000000002")
+                .await
+                .expect_err(body);
+            assert_eq!(fault.code, code, "{status} {body}");
+        }
+    }
 }
