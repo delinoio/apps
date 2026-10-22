@@ -11,9 +11,9 @@ pub fn rpc_router(server: Arc<Server>) -> Router {
         .add_service(server)
         .into_axum_service()
         .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10))
-        // Must stay the first interceptor: it records the received message size before any
-        // other interceptor could replace the payload.
-        .with_interceptor(crate::size::CaptureReceivedSize);
+        // Must stay the first interceptor: it measures and limits the received message before
+        // any other interceptor could replace the payload and before the lazy decode.
+        .with_interceptor(crate::size::LimitReceivedSize);
     Router::new().fallback_service(rpc)
 }
 
