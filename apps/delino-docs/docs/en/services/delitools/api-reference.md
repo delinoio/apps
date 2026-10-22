@@ -72,7 +72,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DelitoolsService/Extract" \
 
 ### Supported JSON Schema subset
 
-The schema is read as JSON Schema 2020-12. It must be a JSON object. `$schema` is optional and allowed only at the root, where DeliTools ignores its value. Every schema, including the root, each property schema and the `items` schema, needs `type`, `enum` or `const`. A schema can be at most 8 levels deep and have 256 schema nodes, and its size is limited by the operator.
+The schema is read as JSON Schema 2020-12. It must be a JSON object. `$schema` is optional and allowed only at the root. It must be a string, otherwise the schema is unsupported. DeliTools does not use the string to select a draft. Every schema, including the root, each property schema and the `items` schema, needs `type`, `enum` or `const`. A schema can be at most 8 levels deep and have 256 schema nodes, and its size is limited by the operator.
 
 | Keyword                  | Rule                                                                                                                                                            |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
