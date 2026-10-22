@@ -17,6 +17,12 @@ use sqlx::Row;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// PostgreSQL stores microseconds; truncating here keeps timestamp comparisons exact
+/// on platforms whose clock has nanosecond precision.
+fn now_micros() -> DateTime<Utc> {
+    DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap()
+}
+
 const NOTE: &str = "requires a disposable TEST_DATABASE_URL";
 
 fn event(
@@ -176,7 +182,7 @@ async fn the_schema_stores_no_content_columns_and_enforces_expiry_and_immutabili
 
     let outbox = Outbox::new(db.pool.clone());
     let request = Uuid::now_v7();
-    insert(&outbox, TENANT, request, 1, Utc::now()).await;
+    insert(&outbox, TENANT, request, 1, now_micros()).await;
     // Expiry must be exactly 30 days after creation.
     let wrong = sqlx::query("UPDATE usage_outbox SET expires_at=expires_at+interval '1 day'")
         .execute(&db.pool)
@@ -221,7 +227,7 @@ async fn usage_survives_restart_and_event_keys_never_duplicate() {
     let db = TestDb::migrated().await;
     let outbox = Outbox::new(db.pool.clone());
     let request = Uuid::now_v7();
-    let now = Utc::now();
+    let now = now_micros();
     insert(&outbox, TENANT, request, 1, now).await;
     // Storing the same attempt again (for example a repeated call) creates no second charge.
     insert(&outbox, TENANT, request, 1, now).await;
@@ -231,7 +237,7 @@ async fn usage_survives_restart_and_event_keys_never_duplicate() {
     db.pool.close().await;
     let restarted = db.reconnect().await;
     let rows = Outbox::new(restarted.clone())
-        .due(Utc::now(), 10)
+        .due(now_micros(), 10)
         .await
         .unwrap();
     assert_eq!(rows.len(), 2);
@@ -258,7 +264,7 @@ async fn delivery_reports_stable_events_and_removes_accepted_rows() {
     let h = Harness::start(Some(db.pool.clone())).await;
     let outbox = Outbox::new(db.pool.clone());
     let request = Uuid::now_v7();
-    let created = Utc::now();
+    let created = now_micros();
     insert(&outbox, TENANT, request, 2, created).await;
     let stats = delivery(&h, &db.pool).cycle(created).await.unwrap();
     assert_eq!(stats.pending, 0);
@@ -312,7 +318,7 @@ async fn failed_deliveries_retry_with_identical_identity_and_bounded_backoff() {
     let h = Harness::start(Some(db.pool.clone())).await;
     let outbox = Outbox::new(db.pool.clone());
     let request = Uuid::now_v7();
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&outbox, TENANT, request, 1, t0).await;
     let worker = delivery(&h, &db.pool);
     {
@@ -362,7 +368,7 @@ async fn backoff_grows_and_is_capped() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
     let outbox = Outbox::new(db.pool.clone());
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&outbox, TENANT, Uuid::now_v7(), 1, t0).await;
     h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
         status: 503,
@@ -393,7 +399,7 @@ async fn identity_conflicts_are_poison_and_stop_delivery_until_expiry() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
     let outbox = Outbox::new(db.pool.clone());
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&outbox, TENANT, Uuid::now_v7(), 1, t0).await;
     {
         let mut s = h.delcore.lock().unwrap();
@@ -441,7 +447,7 @@ async fn other_delcore_rejections_classify_as_retry_or_poison() {
     for (status, code, reason, state) in cases {
         let db = TestDb::migrated().await;
         let h = Harness::start(Some(db.pool.clone())).await;
-        let t0 = Utc::now();
+        let t0 = now_micros();
         insert(&Outbox::new(db.pool.clone()), TENANT, Uuid::now_v7(), 1, t0).await;
         h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
             status,
@@ -463,7 +469,7 @@ async fn other_delcore_rejections_classify_as_retry_or_poison() {
 async fn undelivered_usage_expires_exactly_thirty_days_after_first_creation() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&Outbox::new(db.pool.clone()), TENANT, Uuid::now_v7(), 1, t0).await;
     h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
         status: 503,
@@ -525,7 +531,7 @@ async fn undelivered_usage_expires_exactly_thirty_days_after_first_creation() {
 async fn delivery_on_the_last_day_still_succeeds() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&Outbox::new(db.pool.clone()), TENANT, Uuid::now_v7(), 1, t0).await;
     sqlx::query("UPDATE usage_outbox SET next_attempt_at=$1")
         .bind(t0)
@@ -546,7 +552,7 @@ async fn delivery_on_the_last_day_still_succeeds() {
 async fn rows_of_finally_deleted_tenants_are_dropped_without_delivery() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
-    let t0 = Utc::now();
+    let t0 = now_micros();
     let outbox = Outbox::new(db.pool.clone());
     insert(&outbox, TENANT, Uuid::now_v7(), 1, t0).await;
     insert(&outbox, OTHER_TENANT, Uuid::now_v7(), 1, t0).await;
@@ -572,7 +578,7 @@ async fn rows_of_finally_deleted_tenants_are_dropped_without_delivery() {
 async fn deleting_and_blocked_tenants_keep_their_usage_pending() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&Outbox::new(db.pool.clone()), TENANT, Uuid::now_v7(), 1, t0).await;
     h.delcore
         .lock()
@@ -597,7 +603,7 @@ async fn backlog_alert_metrics_follow_thresholds() {
         c.outbox.alert_backlog = 1;
     })
     .await;
-    let t0 = Utc::now();
+    let t0 = now_micros();
     insert(&Outbox::new(db.pool.clone()), TENANT, Uuid::now_v7(), 1, t0).await;
     h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
         status: 503,
@@ -668,7 +674,7 @@ async fn provider_totals_are_billed_without_double_counting_breakdowns() {
             .unwrap();
     assert!(occurred <= created && created - occurred < Duration::seconds(5));
     // Delivery reports exactly those quantities.
-    h.server.delivery().cycle(Utc::now()).await.unwrap();
+    h.server.delivery().cycle(now_micros()).await.unwrap();
     let sent: Vec<Value> = h
         .delcore
         .lock()
@@ -877,7 +883,7 @@ async fn a_restarted_instance_delivers_usage_recorded_before_the_restart() {
             .await
             .ok()
     );
-    first.server.delivery().cycle(Utc::now()).await.unwrap();
+    first.server.delivery().cycle(now_micros()).await.unwrap();
     assert_eq!(count(&db.pool, Some("pending")).await, 2);
     drop(first);
     let pool = db.reconnect().await;
