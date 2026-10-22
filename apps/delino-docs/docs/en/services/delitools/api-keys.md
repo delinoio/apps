@@ -32,8 +32,10 @@ Find the `serviceId` and the capabilities of a service in the Delcore catalog (`
 curl --request POST "https://delcore.api.delino.io/delcore.v1.DelcoreService/CreateApiKey" \
   --header "Content-Type: application/json" \
   --header "Authorization: Bearer $DELINO_TOKEN" \
-  --data '{"requestKey":"<uuid-v7>","tenantId":"<tenant-id>","ownerKind":"API_KEY_OWNER_KIND_TENANT","name":"Production translation","grants":[{"serviceId":"<deli-tools-service-id>","capabilities":["translate"]}],"expiresAt":"2027-01-01T00:00:00Z"}'
+  --data '{"requestKey":"<uuid-v7>","tenantId":"<tenant-id>","ownerKind":"API_KEY_OWNER_KIND_TENANT","name":"Production translation","grants":[{"serviceId":"<deli-tools-service-id>","capabilities":["translate"]}]}'
 ```
+
+This example sets no expiry, so the key stays valid until you revoke it. To add one, set `expiresAt` to a future RFC 3339 time.
 
 The response contains the key details and the `secret`, which begins with `dlk_`.
 
