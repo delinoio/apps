@@ -841,6 +841,99 @@ message DeleteGroupRequest {
 message DeleteGroupResponse {
   Metadata metadata = 1;
 }
+// ApiKeyOwnerKind identifies who owns a reusable API key.
+enum ApiKeyOwnerKind {
+  API_KEY_OWNER_KIND_UNSPECIFIED = 0;
+  // A personal key acts for one user inside one tenant. Execution requires the
+  // intersection of the key grants and the user's current tenant permissions.
+  API_KEY_OWNER_KIND_PERSONAL = 1;
+  // A tenant service key acts for the tenant independently of the user who
+  // issued it. Execution uses only the key grants.
+  API_KEY_OWNER_KIND_TENANT = 2;
+}
+// ApiKeyGrant allows a set of capabilities of one registered service. The
+// capabilities must be declared by the service when the key is created.
+message ApiKeyGrant {
+  string service_id = 1;
+  repeated string capabilities = 2;
+}
+// ApiKey is the metadata of a key. The secret is never part of this message.
+message ApiKey {
+  string id = 1;
+  ApiKeyOwnerKind owner_kind = 2;
+  // Tenant that the key is attributed to.
+  string tenant_id = 3;
+  // Owner of a personal key, or the user who issued a tenant key.
+  string user_id = 4;
+  string name = 5;
+  // Grants are fixed at creation.
+  repeated ApiKeyGrant grants = 6;
+  google.protobuf.Timestamp created_at = 7;
+  // Unset when the key stays valid until revoked.
+  google.protobuf.Timestamp expires_at = 8;
+  // Unset while the key is not revoked.
+  google.protobuf.Timestamp revoked_at = 9;
+}
+message CreateApiKeyRequest {
+  string request_key = 1;
+  string tenant_id = 2;
+  ApiKeyOwnerKind owner_kind = 3;
+  string name = 4;
+  repeated ApiKeyGrant grants = 5;
+  // Optional. Must be in the future when set.
+  google.protobuf.Timestamp expires_at = 6;
+}
+message CreateApiKeyResponse {
+  Metadata metadata = 1;
+  ApiKey key = 2;
+  // The generated secret. It is returned only by the first execution of the
+  // request and is empty in a replayed response. Lost secrets need a new key.
+  string secret = 3;
+}
+message ListApiKeysRequest {
+  string tenant_id = 1;
+  // Personal keys list only the caller's own keys; tenant keys require the
+  // Owner or Admin role.
+  ApiKeyOwnerKind owner_kind = 2;
+  Page page = 3;
+}
+message ListApiKeysResponse {
+  Metadata metadata = 1;
+  repeated ApiKey keys = 2;
+  string next_after_id = 3;
+}
+message RevokeApiKeyRequest {
+  string request_key = 1;
+  string tenant_id = 2;
+  string key_id = 3;
+}
+message RevokeApiKeyResponse {
+  Metadata metadata = 1;
+  ApiKey key = 2;
+}
+// AuthorizeApiKeyRequest is sent by a registered service with the authorize
+// scope. The calling service identity selects the grants that are evaluated, so
+// a service cannot authorize capabilities of another service.
+message AuthorizeApiKeyRequest {
+  // The full secret presented by the end caller.
+  string secret = 1;
+  string capability = 2;
+  // True for paid execution. The billing checks of Authorize then apply.
+  bool paid = 3;
+  string feature_key = 4;
+  map<string, AttributeValue> group_values = 5;
+}
+message AuthorizeApiKeyResponse {
+  Metadata metadata = 1;
+  bool allowed = 2;
+  repeated BlockReason reasons = 3;
+  FeatureAuthorization feature = 4;
+  // Attribution of the verified key. Empty when the secret is not valid.
+  string key_id = 5;
+  string tenant_id = 6;
+  ApiKeyOwnerKind owner_kind = 7;
+  string user_id = 8;
+}
 service DelcoreService {
   rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse);
   rpc PutMeter(PutMeterRequest) returns (PutMeterResponse);
@@ -865,6 +958,10 @@ service DelcoreService {
   rpc PutPlan(PutPlanRequest) returns (PutPlanResponse);
   rpc CreatePrice(CreatePriceRequest) returns (CreatePriceResponse);
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse);
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse);
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (RevokeApiKeyResponse);
+  rpc AuthorizeApiKey(AuthorizeApiKeyRequest) returns (AuthorizeApiKeyResponse);
   rpc ListMeterAggregates(ListMeterAggregatesRequest) returns (ListMeterAggregatesResponse);
   rpc GetMeteringStatus(GetMeteringStatusRequest) returns (GetMeteringStatusResponse);
   rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);

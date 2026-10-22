@@ -100,6 +100,18 @@ const (
 	// DelcoreServiceAuthorizeProcedure is the fully-qualified name of the DelcoreService's Authorize
 	// RPC.
 	DelcoreServiceAuthorizeProcedure = "/delcore.v1.DelcoreService/Authorize"
+	// DelcoreServiceCreateApiKeyProcedure is the fully-qualified name of the DelcoreService's
+	// CreateApiKey RPC.
+	DelcoreServiceCreateApiKeyProcedure = "/delcore.v1.DelcoreService/CreateApiKey"
+	// DelcoreServiceListApiKeysProcedure is the fully-qualified name of the DelcoreService's
+	// ListApiKeys RPC.
+	DelcoreServiceListApiKeysProcedure = "/delcore.v1.DelcoreService/ListApiKeys"
+	// DelcoreServiceRevokeApiKeyProcedure is the fully-qualified name of the DelcoreService's
+	// RevokeApiKey RPC.
+	DelcoreServiceRevokeApiKeyProcedure = "/delcore.v1.DelcoreService/RevokeApiKey"
+	// DelcoreServiceAuthorizeApiKeyProcedure is the fully-qualified name of the DelcoreService's
+	// AuthorizeApiKey RPC.
+	DelcoreServiceAuthorizeApiKeyProcedure = "/delcore.v1.DelcoreService/AuthorizeApiKey"
 	// DelcoreServiceListMeterAggregatesProcedure is the fully-qualified name of the DelcoreService's
 	// ListMeterAggregates RPC.
 	DelcoreServiceListMeterAggregatesProcedure = "/delcore.v1.DelcoreService/ListMeterAggregates"
@@ -186,6 +198,10 @@ type DelcoreServiceClient interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error)
+	ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error)
+	RevokeApiKey(context.Context, *connect.Request[v1.RevokeApiKeyRequest]) (*connect.Response[v1.RevokeApiKeyResponse], error)
+	AuthorizeApiKey(context.Context, *connect.Request[v1.AuthorizeApiKeyRequest]) (*connect.Response[v1.AuthorizeApiKeyResponse], error)
 	ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error)
 	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
@@ -368,6 +384,30 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 			connect.WithClientOptions(opts...),
 		),
+		createApiKey: connect.NewClient[v1.CreateApiKeyRequest, v1.CreateApiKeyResponse](
+			httpClient,
+			baseURL+DelcoreServiceCreateApiKeyProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("CreateApiKey")),
+			connect.WithClientOptions(opts...),
+		),
+		listApiKeys: connect.NewClient[v1.ListApiKeysRequest, v1.ListApiKeysResponse](
+			httpClient,
+			baseURL+DelcoreServiceListApiKeysProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("ListApiKeys")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeApiKey: connect.NewClient[v1.RevokeApiKeyRequest, v1.RevokeApiKeyResponse](
+			httpClient,
+			baseURL+DelcoreServiceRevokeApiKeyProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("RevokeApiKey")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeApiKey: connect.NewClient[v1.AuthorizeApiKeyRequest, v1.AuthorizeApiKeyResponse](
+			httpClient,
+			baseURL+DelcoreServiceAuthorizeApiKeyProcedure,
+			connect.WithSchema(delcoreServiceMethods.ByName("AuthorizeApiKey")),
+			connect.WithClientOptions(opts...),
+		),
 		listMeterAggregates: connect.NewClient[v1.ListMeterAggregatesRequest, v1.ListMeterAggregatesResponse](
 			httpClient,
 			baseURL+DelcoreServiceListMeterAggregatesProcedure,
@@ -522,6 +562,10 @@ type delcoreServiceClient struct {
 	putPlan              *connect.Client[v1.PutPlanRequest, v1.PutPlanResponse]
 	createPrice          *connect.Client[v1.CreatePriceRequest, v1.CreatePriceResponse]
 	authorize            *connect.Client[v1.AuthorizeRequest, v1.AuthorizeResponse]
+	createApiKey         *connect.Client[v1.CreateApiKeyRequest, v1.CreateApiKeyResponse]
+	listApiKeys          *connect.Client[v1.ListApiKeysRequest, v1.ListApiKeysResponse]
+	revokeApiKey         *connect.Client[v1.RevokeApiKeyRequest, v1.RevokeApiKeyResponse]
+	authorizeApiKey      *connect.Client[v1.AuthorizeApiKeyRequest, v1.AuthorizeApiKeyResponse]
 	listMeterAggregates  *connect.Client[v1.ListMeterAggregatesRequest, v1.ListMeterAggregatesResponse]
 	getMeteringStatus    *connect.Client[v1.GetMeteringStatusRequest, v1.GetMeteringStatusResponse]
 	checkTenantLifecycle *connect.Client[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse]
@@ -660,6 +704,26 @@ func (c *delcoreServiceClient) Authorize(ctx context.Context, req *connect.Reque
 	return c.authorize.CallUnary(ctx, req)
 }
 
+// CreateApiKey calls delcore.v1.DelcoreService.CreateApiKey.
+func (c *delcoreServiceClient) CreateApiKey(ctx context.Context, req *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error) {
+	return c.createApiKey.CallUnary(ctx, req)
+}
+
+// ListApiKeys calls delcore.v1.DelcoreService.ListApiKeys.
+func (c *delcoreServiceClient) ListApiKeys(ctx context.Context, req *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error) {
+	return c.listApiKeys.CallUnary(ctx, req)
+}
+
+// RevokeApiKey calls delcore.v1.DelcoreService.RevokeApiKey.
+func (c *delcoreServiceClient) RevokeApiKey(ctx context.Context, req *connect.Request[v1.RevokeApiKeyRequest]) (*connect.Response[v1.RevokeApiKeyResponse], error) {
+	return c.revokeApiKey.CallUnary(ctx, req)
+}
+
+// AuthorizeApiKey calls delcore.v1.DelcoreService.AuthorizeApiKey.
+func (c *delcoreServiceClient) AuthorizeApiKey(ctx context.Context, req *connect.Request[v1.AuthorizeApiKeyRequest]) (*connect.Response[v1.AuthorizeApiKeyResponse], error) {
+	return c.authorizeApiKey.CallUnary(ctx, req)
+}
+
 // ListMeterAggregates calls delcore.v1.DelcoreService.ListMeterAggregates.
 func (c *delcoreServiceClient) ListMeterAggregates(ctx context.Context, req *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error) {
 	return c.listMeterAggregates.CallUnary(ctx, req)
@@ -794,6 +858,10 @@ type DelcoreServiceHandler interface {
 	PutPlan(context.Context, *connect.Request[v1.PutPlanRequest]) (*connect.Response[v1.PutPlanResponse], error)
 	CreatePrice(context.Context, *connect.Request[v1.CreatePriceRequest]) (*connect.Response[v1.CreatePriceResponse], error)
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
+	CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error)
+	ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error)
+	RevokeApiKey(context.Context, *connect.Request[v1.RevokeApiKeyRequest]) (*connect.Response[v1.RevokeApiKeyResponse], error)
+	AuthorizeApiKey(context.Context, *connect.Request[v1.AuthorizeApiKeyRequest]) (*connect.Response[v1.AuthorizeApiKeyResponse], error)
 	ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error)
 	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
@@ -972,6 +1040,30 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("Authorize")),
 		connect.WithHandlerOptions(opts...),
 	)
+	delcoreServiceCreateApiKeyHandler := connect.NewUnaryHandler(
+		DelcoreServiceCreateApiKeyProcedure,
+		svc.CreateApiKey,
+		connect.WithSchema(delcoreServiceMethods.ByName("CreateApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceListApiKeysHandler := connect.NewUnaryHandler(
+		DelcoreServiceListApiKeysProcedure,
+		svc.ListApiKeys,
+		connect.WithSchema(delcoreServiceMethods.ByName("ListApiKeys")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceRevokeApiKeyHandler := connect.NewUnaryHandler(
+		DelcoreServiceRevokeApiKeyProcedure,
+		svc.RevokeApiKey,
+		connect.WithSchema(delcoreServiceMethods.ByName("RevokeApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	delcoreServiceAuthorizeApiKeyHandler := connect.NewUnaryHandler(
+		DelcoreServiceAuthorizeApiKeyProcedure,
+		svc.AuthorizeApiKey,
+		connect.WithSchema(delcoreServiceMethods.ByName("AuthorizeApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	delcoreServiceListMeterAggregatesHandler := connect.NewUnaryHandler(
 		DelcoreServiceListMeterAggregatesProcedure,
 		svc.ListMeterAggregates,
@@ -1146,6 +1238,14 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceCreatePriceHandler.ServeHTTP(w, r)
 		case DelcoreServiceAuthorizeProcedure:
 			delcoreServiceAuthorizeHandler.ServeHTTP(w, r)
+		case DelcoreServiceCreateApiKeyProcedure:
+			delcoreServiceCreateApiKeyHandler.ServeHTTP(w, r)
+		case DelcoreServiceListApiKeysProcedure:
+			delcoreServiceListApiKeysHandler.ServeHTTP(w, r)
+		case DelcoreServiceRevokeApiKeyProcedure:
+			delcoreServiceRevokeApiKeyHandler.ServeHTTP(w, r)
+		case DelcoreServiceAuthorizeApiKeyProcedure:
+			delcoreServiceAuthorizeApiKeyHandler.ServeHTTP(w, r)
 		case DelcoreServiceListMeterAggregatesProcedure:
 			delcoreServiceListMeterAggregatesHandler.ServeHTTP(w, r)
 		case DelcoreServiceGetMeteringStatusProcedure:
@@ -1287,6 +1387,22 @@ func (UnimplementedDelcoreServiceHandler) CreatePrice(context.Context, *connect.
 
 func (UnimplementedDelcoreServiceHandler) Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.Authorize is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) CreateApiKey(context.Context, *connect.Request[v1.CreateApiKeyRequest]) (*connect.Response[v1.CreateApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.CreateApiKey is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) ListApiKeys(context.Context, *connect.Request[v1.ListApiKeysRequest]) (*connect.Response[v1.ListApiKeysResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ListApiKeys is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) RevokeApiKey(context.Context, *connect.Request[v1.RevokeApiKeyRequest]) (*connect.Response[v1.RevokeApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.RevokeApiKey is not implemented"))
+}
+
+func (UnimplementedDelcoreServiceHandler) AuthorizeApiKey(context.Context, *connect.Request[v1.AuthorizeApiKeyRequest]) (*connect.Response[v1.AuthorizeApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.AuthorizeApiKey is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) ListMeterAggregates(context.Context, *connect.Request[v1.ListMeterAggregatesRequest]) (*connect.Response[v1.ListMeterAggregatesResponse], error) {
