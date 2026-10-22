@@ -488,6 +488,46 @@ async fn the_execution_deadline_cancels_the_call_and_returns_a_timeout() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn no_provider_call_starts_after_the_deadline_passed_while_the_attempt_was_stored() {
+    let env = Env::start(&[("EXECUTION_TIMEOUT_SECONDS", "1")], false).await;
+    let key = env.service_key().await;
+    // Storing the attempt record outlasts the one-second deadline, so the checks before the
+    // write are stale when it returns.
+    for statement in [
+        "CREATE FUNCTION slow_attempt_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(1.5); RETURN NEW; END $$",
+        "CREATE TRIGGER slow_attempt_insert BEFORE INSERT ON attempts FOR EACH ROW EXECUTE FUNCTION slow_attempt_insert()",
+    ] {
+        sqlx::query(statement).execute(&env.fx.pool).await.unwrap();
+    }
+    env.gateway.respond(good);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "deadline_exceeded",
+            reason::TIMEOUT,
+        )
+        .await;
+    // The call never started, so nothing is unknown: the attempt is settled as zero usage and
+    // the outcome is definitive.
+    let (settled, delivered): (bool, bool) =
+        sqlx::query_as("SELECT measured_usage IS NOT NULL, delivered_at IS NOT NULL FROM attempts")
+            .fetch_one(&env.fx.pool)
+            .await
+            .unwrap();
+    assert!(
+        settled && delivered,
+        "the unsent attempt is provably zero usage"
+    );
+    assert_eq!(env.gateway.chat_count(), 0, "no provider call was started");
+    let (state, error) = wait_for_request_state(&env, 2).await;
+    assert_eq!((state, error as i32), (2, reason::TIMEOUT));
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn no_provider_call_starts_after_the_deadline_passed_during_reauthorization() {
     let env = Env::start(&[("EXECUTION_TIMEOUT_SECONDS", "1")], false).await;
     let key = env.service_key().await;

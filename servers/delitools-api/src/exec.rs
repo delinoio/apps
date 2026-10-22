@@ -483,6 +483,34 @@ impl Run {
             {
                 return Ending::Failed(Fault::internal());
             }
+            // The write above can block past the deadline or while the client leaves, which makes
+            // the checks before it stale. Both checks are repeated here, with no await between
+            // them and the call below, so a ready timeout or cancellation can never race a
+            // billable provider call into flight. The call never started, so the attempt is
+            // provably zero usage and the outcome is definitive.
+            let interrupted = if *cancel.borrow() {
+                Some(canceled_fault())
+            } else if Instant::now() >= self.deadline {
+                Some(timeout_fault())
+            } else {
+                None
+            };
+            if let Some(fault) = interrupted {
+                let _ = with_store_retries(TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_PAUSE, || {
+                    db::finish_attempt(
+                        pool,
+                        attempt,
+                        Usage::Zero,
+                        ChronoDuration::zero(),
+                        store::now(),
+                    )
+                })
+                .await;
+                return Ending::Interrupted {
+                    fault,
+                    ambiguous: false,
+                };
+            }
             let user = attempt.to_string();
             let sink = AttemptSink {
                 pool: pool.clone(),
