@@ -5,11 +5,14 @@
 // a sentence through the synchronous Connect methods TranslateTextArray and
 // ExtractDataFromText.
 //
-// The default operation, all, runs both calls and needs a key or token that
-// holds both the translator and the extractor capability; with a single
-// capability the first call succeeds and is billed, and the second one fails
-// with a permission error. Select -operation translate or -operation extract
-// to run one call with a single-capability key.
+// The default operation, all, runs the translation and then the extraction and
+// needs a key or token that holds both the translator and the extractor
+// capability. With a translator-only credential the translation succeeds and
+// is billed, and the extraction fails with a permission error. With an
+// extractor-only credential the translation fails with a permission error
+// first, so nothing is billed and the extraction never runs. Select
+// -operation translate or -operation extract to run one call with a
+// single-capability key.
 //
 // Environment:
 //
