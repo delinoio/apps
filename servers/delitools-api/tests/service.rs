@@ -503,6 +503,25 @@ async fn tenant_rate_and_concurrency_limits_apply_per_tenant() {
 }
 
 #[tokio::test]
+async fn transport_bound_admits_input_that_only_escaping_makes_large() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.max_input_bytes = 200_000;
+        c.limits.max_schema_bytes = 1_000;
+    })
+    .await;
+    // 190,000 control characters stay within the input limit but encode as
+    // `\u0001` (six bytes each) on the wire, far above the decoded limit plus 64 KiB.
+    let text = "\u{1}".repeat(190_000);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&[&text])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    // A decoded input above the limit is still refused by the handler.
+    let too_large = "a".repeat(200_001);
+    let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+}
+
+#[tokio::test]
 async fn extraction_returns_schema_conformant_json_with_the_fixed_model() {
     let h = Harness::start(None).await;
     h.gateway.push(Reply::without_usage(&extracted(

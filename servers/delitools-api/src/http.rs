@@ -20,8 +20,16 @@ use std::{sync::Arc, time::Duration};
 const TRANSPORT_MARGIN: Duration = Duration::from_secs(5);
 
 pub fn router(server: Server) -> Router {
-    let limit =
-        server.config.limits.max_input_bytes + server.config.limits.max_schema_bytes + (64 << 10);
+    // One decoded byte can take six bytes on the wire (`\u00XX` for a control
+    // character), so the transport bound covers the worst-case JSON escaping of the
+    // configured input and schema limits. Handlers apply the exact limits after decoding.
+    let limit = server
+        .config
+        .limits
+        .max_input_bytes
+        .saturating_add(server.config.limits.max_schema_bytes)
+        .saturating_mul(6)
+        .saturating_add(64 << 10);
     let rpc = connectrpc::Router::new()
         .add_service(Arc::new(server.clone()))
         .into_axum_service()
