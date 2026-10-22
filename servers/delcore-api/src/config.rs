@@ -2,6 +2,10 @@
 use anyhow::{Result, ensure};
 use std::{collections::HashMap, time::Duration};
 
+// Request deduplication, pending consumer reports and audit/log records expire
+// from first creation; retries and state changes never extend this window.
+pub const TRANSIENT_RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
+
 pub const MAX_CARDINALITY: i64 = 1_000_000;
 #[derive(Clone, Default)]
 pub struct Config {
@@ -31,7 +35,6 @@ pub struct Config {
     pub deletion_grace_seconds: i64,
     pub raw_usage_retention_seconds: i64,
     pub accounting_retention_seconds: i64,
-    pub audit_retention_seconds: i64,
     pub webhook_retention_seconds: i64,
     pub backlog_alert: i64,
     pub settlement_alert_seconds: i64,
@@ -89,7 +92,6 @@ impl Config {
             deletion_grace_seconds: number("DELETION_GRACE_SECONDS")?,
             raw_usage_retention_seconds: number("RAW_USAGE_RETENTION_SECONDS")?,
             accounting_retention_seconds: number("ACCOUNTING_RETENTION_SECONDS")?,
-            audit_retention_seconds: number("AUDIT_RETENTION_SECONDS")?,
             webhook_retention_seconds: number("WEBHOOK_RETENTION_SECONDS")?,
             backlog_alert: number("BACKLOG_ALERT")?,
             settlement_alert_seconds: number("SETTLEMENT_ALERT_SECONDS")?,
@@ -145,7 +147,6 @@ impl Config {
             self.deletion_grace_seconds,
             self.raw_usage_retention_seconds,
             self.accounting_retention_seconds,
-            self.audit_retention_seconds,
             self.webhook_retention_seconds,
             self.backlog_alert,
             self.settlement_alert_seconds,
@@ -167,7 +168,8 @@ impl Config {
             "request or retry bounds exceed safety limits"
         );
         ensure!(
-            self.reporting_grace_seconds >= self.usage_lateness_seconds
+            self.usage_lateness_seconds >= TRANSIENT_RETENTION_SECONDS
+                && self.reporting_grace_seconds >= self.usage_lateness_seconds
                 && self.raw_usage_retention_seconds >= self.usage_lateness_seconds
                 && self.accounting_retention_seconds >= self.raw_usage_retention_seconds
                 && self.webhook_retention_seconds >= self.reporting_grace_seconds,
@@ -265,6 +267,7 @@ mod tests {
             ("MAX_METER_GROUP_VALUES", "1000001"),
             ("IDENTITY_KEY", ""),
             ("REPORTING_GRACE_SECONDS", "1"),
+            ("USAGE_LATENESS_SECONDS", "2591999"),
             ("ACCOUNTING_RETENTION_SECONDS", "1"),
             ("CATALOG_DIR", "."),
             ("CATALOG_DIR", "catalog/.."),
