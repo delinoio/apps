@@ -256,8 +256,9 @@ impl Call<'_> {
                     .collect()
             })
             .unwrap_or_default();
+        // An empty price list is valid for a free plan whose active version has no catalog
+        // prices; the plan-aware recurring-price and exact-set checks below reject it elsewhere.
         if uuid(plan).is_err()
-            || prices.is_empty()
             || prices.len() > 100
             || !self.config.allows_return(string(q, "returnUrl"))
         {

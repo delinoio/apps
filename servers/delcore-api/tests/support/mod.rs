@@ -12,6 +12,7 @@ use std::{collections::HashMap, sync::Arc};
 pub mod billing_domain;
 pub mod billing_safeguards;
 pub mod catalog;
+pub mod free_allowance;
 pub mod metering;
 pub mod rank_downgrade;
 
