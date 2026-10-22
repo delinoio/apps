@@ -230,3 +230,96 @@ async fn protobuf_wire_and_authentication_rejection() {
         assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
     }
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn request_expiry_is_fixed_from_creation_and_enforced_before_maintenance() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let request_key = key();
+    let mut request = json!({"requestKey":request_key,"name":"Original"});
+    let first = f.rpc("owner", "CreateTenant", request.clone()).await;
+    let original_created: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT created_at FROM requests WHERE request_key=$1")
+            .bind(&request_key)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    let replay = f.rpc("owner", "CreateTenant", request.clone()).await;
+    assert_eq!(first["tenant"]["id"], replay["tenant"]["id"]);
+    let replay_created: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT created_at FROM requests WHERE request_key=$1")
+            .bind(&request_key)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    assert_eq!(original_created, replay_created);
+    request["name"] = json!("Changed");
+    f.error("owner", "CreateTenant", request.clone(), "already_exists")
+        .await;
+    sqlx::query("UPDATE requests SET created_at=now()-interval '30 days' WHERE request_key=$1")
+        .bind(&request_key)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    let fresh = f.rpc("owner", "CreateTenant", request).await;
+    assert_ne!(first["tenant"]["id"], fresh["tenant"]["id"]);
+    assert_eq!(fresh["tenant"]["name"], "Changed");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn retention_removes_requests_and_audits_at_the_thirty_day_boundary() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let oldest = key();
+    let recent = key();
+    f.rpc(
+        "owner",
+        "CreateTenant",
+        json!({"requestKey":oldest,"name":"Old"}),
+    )
+    .await;
+    f.rpc(
+        "owner",
+        "CreateTenant",
+        json!({"requestKey":recent,"name":"Recent"}),
+    )
+    .await;
+    let now = chrono::Utc::now();
+    let cutoff = now - chrono::Duration::days(30);
+    sqlx::query("UPDATE requests SET created_at=$2 WHERE request_key=$1")
+        .bind(&oldest)
+        .bind(cutoff)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE requests SET created_at=$2 WHERE request_key=$1")
+        .bind(&recent)
+        .bind(cutoff + chrono::Duration::microseconds(1))
+        .execute(&f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE audit SET created_at=$1")
+        .bind(cutoff)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    f.worker.maintain(now).await.unwrap();
+    let (expired, retained, audits): (bool, bool, i64) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM requests WHERE request_key=$1),EXISTS(SELECT 1 FROM requests WHERE request_key=$2),(SELECT count(*) FROM audit)")
+        .bind(&oldest).bind(&recent).fetch_one(&f.db).await.unwrap();
+    assert!(!expired);
+    assert!(retained);
+    assert_eq!(audits, 0);
+    f.worker
+        .maintain(now + chrono::Duration::microseconds(1))
+        .await
+        .unwrap();
+    let retained: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM requests WHERE request_key=$1)")
+            .bind(&recent)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    assert!(!retained);
+}
