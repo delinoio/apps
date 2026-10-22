@@ -174,7 +174,7 @@ Toda solicitação também é verificada em relação ao seu tenant no Delcore. 
 
 ### Gerenciar chaves
 
-- `CreateKey`: envie `tenantId`, `kind` (`KEY_KIND_PERSONAL` ou `KEY_KIND_SERVICE`), `capabilities` e um `expiresAt` opcional.
+- `CreateKey`: envie `tenantId`, `kind` (`KEY_KIND_PERSONAL` ou `KEY_KIND_SERVICE`), `capabilities` e um `expiresAt` opcional. `capabilities` deve listar pelo menos uma capacidade, e cada uma de `CAPABILITY_TRANSLATOR` e `CAPABILITY_EXTRACTOR` no máximo uma vez. Um valor repetido retorna um erro de entrada inválida.
 - `ListKeys`: lista as chaves de um tenant que você pode gerenciar, filtradas por `kind`, com `afterId` e `pageSize` para paginação. `pageSize` é 50 por padrão quando você o omite ou envia 0. O máximo é 100, e um valor maior retorna um erro de entrada inválida. Você nunca pode listar as chaves pessoais de outro usuário. Com `KEY_KIND_PERSONAL`, você obtém as suas próprias chaves pessoais. Com `KEY_KIND_SERVICE`, você obtém as chaves de serviço do tenant, mas somente se for Proprietário ou Administrador. Sem `kind`, você obtém as suas próprias chaves pessoais e, se for Proprietário ou Administrador, também as chaves de serviço do tenant. Uma resposta contém uma página. Se `nextAfterId` não estiver vazio, há mais chaves: envie o valor dele como `afterId` na próxima solicitação e repita até `nextAfterId` ficar vazio. Um `nextAfterId` vazio significa que você tem a lista completa.
 - `RevokeKey`: envie `tenantId` e `keyId`. A revogação é idempotente: repeti-la para uma chave já revogada tem sucesso e não altera nada, então você pode reenviar a mesma solicitação com segurança após perder a resposta ou estourar o tempo limite.
 
