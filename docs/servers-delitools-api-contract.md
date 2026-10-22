@@ -109,7 +109,7 @@ Recheck authorization before duplicate disclosure and each AI attempt. Keep cred
 
 ## Logging
 
-Use structured `tracing` events with safe correlation IDs, bounded metric dimensions and OpenTelemetry. Persist safe operational event categories and correlation IDs for 30 days. Never log upstream bodies, inputs, schemas, results or secrets. A failure that stops the process is logged once as `startup_or_runtime_failure` with its redacted cause chain, so configuration, database, identity-provider, bind and serving failures stay distinguishable. Operators must apply the same 30-day TTL to exported telemetry in their collector; process output cannot enforce external retention.
+Use structured `tracing` events with safe correlation IDs, bounded metric dimensions and OpenTelemetry. Persist safe operational event categories and correlation IDs for 30 days. Never log upstream bodies, inputs, schemas, results or secrets. A failure that stops the process is logged once as `startup_or_runtime_failure` with its redacted cause chain, so configuration, database, identity-provider, bind and serving failures stay distinguishable. When logging itself cannot be initialized (an unsupported `LOG_FORMAT` or an OTLP exporter that cannot be built), no subscriber exists, so the same fields are written as one JSON line on standard error instead and the process never exits silently. Operators must apply the same 30-day TTL to exported telemetry in their collector; process output cannot enforce external retention.
 
 ## Build and Test
 

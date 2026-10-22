@@ -15,18 +15,43 @@ use std::{sync::Arc, time::Duration};
 #[tokio::main]
 async fn main() {
     if let Err(error) = run().await {
-        // Every error reaching this point was built from operator-safe text: configuration errors
-        // name the variable but never its value, database failures are reduced to "database
-        // unavailable", and configured URLs cannot carry credentials. The alternate format keeps
-        // the cause chain so operators can tell configuration, database, identity-provider, bind
-        // and serving failures apart.
+        report_failure(&error, tracing::dispatcher::has_been_set());
+        std::process::exit(1);
+    }
+}
+
+/// Report the error that stopped the process.
+///
+/// Every error reaching this point was built from operator-safe text: configuration errors name
+/// the variable but never its value, database failures are reduced to "database unavailable", and
+/// configured URLs cannot carry credentials. The alternate format keeps the cause chain so
+/// operators can tell configuration, database, identity-provider, bind and serving failures apart.
+///
+/// Logging setup itself can fail (an unsupported `LOG_FORMAT`, an OTLP exporter that cannot be
+/// built). No subscriber exists then, so a `tracing` event would vanish and the process would exit
+/// without a diagnostic. That case writes the same fields as one JSON line to stderr instead.
+fn report_failure(error: &anyhow::Error, logging_installed: bool) {
+    if logging_installed {
         tracing::error!(
-            category = "startup_or_runtime_failure",
+            category = FAILURE_CATEGORY,
             error = %format!("{error:#}"),
             "delitools-api stopped"
         );
-        std::process::exit(1);
+    } else {
+        eprintln!("{}", unlogged_failure_line(error));
     }
+}
+
+const FAILURE_CATEGORY: &str = "startup_or_runtime_failure";
+
+fn unlogged_failure_line(error: &anyhow::Error) -> String {
+    serde_json::json!({
+        "level": "ERROR",
+        "message": "delitools-api stopped",
+        "category": FAILURE_CATEGORY,
+        "error": format!("{error:#}"),
+    })
+    .to_string()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -250,6 +275,15 @@ fn authority(_config: &Config) -> anyhow::Result<Arc<dyn TenantAuthority>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failure_before_logging_exists_is_written_as_a_json_line() {
+        let error = anyhow::anyhow!("LOG_FORMAT must be text or json").context("telemetry");
+        let line: serde_json::Value = serde_json::from_str(&unlogged_failure_line(&error)).unwrap();
+        assert_eq!(line["category"], FAILURE_CATEGORY);
+        assert_eq!(line["level"], "ERROR");
+        assert_eq!(line["error"], "telemetry: LOG_FORMAT must be text or json");
+    }
 
     #[test]
     fn operator_command_compatibility() {

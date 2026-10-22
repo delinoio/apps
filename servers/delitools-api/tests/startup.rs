@@ -75,3 +75,21 @@ fn a_startup_failure_after_configuration_is_logged_with_its_safe_cause() {
     );
     assert!(!log.contains("never-logged-password"), "{log}");
 }
+
+#[test]
+fn a_logging_setup_failure_still_reaches_stderr() {
+    // An unsupported LOG_FORMAT makes telemetry initialization fail before any subscriber is
+    // installed, so the failure cannot go through `tracing`. It must still name the cause.
+    let log = rejected_startup_log("", &[("LOG_FORMAT", "yaml")]);
+    let line = log
+        .lines()
+        .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .unwrap_or_else(|| panic!("no JSON diagnostic: {log}"));
+    assert_eq!(line["category"], "startup_or_runtime_failure", "{log}");
+    assert!(
+        line["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("LOG_FORMAT must be text or json")),
+        "{log}"
+    );
+}
