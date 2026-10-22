@@ -2,7 +2,7 @@
 
 This page describes the two DeliTools methods. Both are Connect procedures on `delitools.v1.DelitoolsService` and accept JSON over HTTP `POST`. Field names are lowerCamelCase in JSON. Send `Content-Type: application/json` and `Authorization: Bearer <credential>`. See [DeliTools](/services/delitools/) for credentials and tenants.
 
-Every response includes a request ID, in the body and in the `X-Delitools-Request-Id` header. Responses do not include token usage or charges. Read those from Delcore; see [Billing](/services/delitools/billing).
+Every response that a method handler produces includes a request ID, in the body and in the `X-Delitools-Request-Id` header. A request rejected by the transport size limit (see the error table) has no request ID. Responses do not include token usage or charges. Read those from Delcore; see [Billing](/services/delitools/billing).
 
 Each call is a new execution. DeliTools has no idempotency key and no stored results. If you repeat a request, it runs again and can be charged again.
 
