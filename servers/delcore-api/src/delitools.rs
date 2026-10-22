@@ -98,6 +98,27 @@ pub async fn meter_is_call_time(db: &mut PgConnection, meter_id: &str) -> Result
     .unwrap_or(false))
 }
 
+/// Take a shared lock on the service's meter entity row. Converting a meter to
+/// call-time pricing holds the same row exclusively while it checks for usage prices,
+/// so a usage price and a conversion cannot both pass their inverse checks and
+/// commit. Call this before checking [`meter_key_is_call_time`] and keep the
+/// transaction open until the price is stored. Concurrent price creation for one
+/// meter stays possible because shared locks do not conflict.
+pub async fn lock_meter_for_usage_price(
+    db: &mut PgConnection,
+    service_id: &str,
+    meter_key: &str,
+) -> Result<()> {
+    sqlx::query(
+        "SELECT id FROM catalog_entities WHERE kind='meter' AND scope=$1 AND key=$2 FOR SHARE",
+    )
+    .bind(service_id)
+    .bind(meter_key)
+    .fetch_optional(db)
+    .await?;
+    Ok(())
+}
+
 /// Whether the service's meter with this stable key is priced at call time.
 pub async fn meter_key_is_call_time(
     db: &mut PgConnection,

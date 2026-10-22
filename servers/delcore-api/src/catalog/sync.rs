@@ -438,6 +438,8 @@ async fn apply_price(
     }
     if d.price_kind == "usage" {
         resolve(c, "meter", &service, &d.meter).await?;
+        // Serialize with a concurrent conversion of the meter through the API.
+        crate::delitools::lock_meter_for_usage_price(c, &service, &d.meter).await?;
         ensure!(
             !crate::delitools::meter_key_is_call_time(c, &service, &d.meter).await?,
             "the meter is priced at call time; usage prices do not apply"

@@ -960,6 +960,62 @@ async fn a_meter_with_usage_prices_cannot_become_call_time() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn price_creation_waits_for_an_in_flight_call_time_conversion() {
+    let f = Fixture::setup().await;
+    let s = register(&f).await;
+    let plan = f.rpc("owner", "GetCatalog", json!({})).await["plans"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare legacy meter","meter":{"serviceId":s.service,"name":"racy","key":"racy"}})).await;
+    // A conversion in flight: it holds the meter's catalog row exclusively, as the
+    // catalog write path does, and has not committed its call-time definition yet.
+    let mut conversion = f.db.begin().await.unwrap();
+    let (entity, version): (String, String) = sqlx::query_as("SELECT ce.id::text,ce.active_version_id::text FROM catalog_entities ce WHERE ce.kind='meter' AND ce.scope=$1 AND ce.key='racy' FOR UPDATE")
+        .bind(&s.service).fetch_one(&mut *conversion).await.unwrap();
+    let mut definition: Value =
+        sqlx::query_scalar("SELECT definition FROM catalog_versions WHERE id=$1::text::uuid")
+            .bind(&version)
+            .fetch_one(&mut *conversion)
+            .await
+            .unwrap();
+    definition["event_type"] = json!("racy.usage");
+    definition["value_source"] = json!(2);
+    definition["markup"] = json!("1.15");
+    let converted = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO catalog_versions(id,entity_id,semantic_hash,definition) VALUES($1,$2::text::uuid,$3,$4)")
+        .bind(converted).bind(&entity).bind(key()).bind(&definition).execute(&mut *conversion).await.unwrap();
+    sqlx::query("UPDATE catalog_entities SET active_version_id=$2 WHERE id=$1::text::uuid")
+        .bind(&entity)
+        .bind(converted)
+        .execute(&mut *conversion)
+        .await
+        .unwrap();
+    // Price creation must wait for the conversion instead of reading the old
+    // definition. Without the wait it would store a usage price for a meter that is
+    // about to be priced at call time.
+    let create = f.response("owner","CreatePrice",json!({"requestKey":key(),"reason":"plan price","price":{"planId":plan,"serviceId":s.service,"meter":"racy","unitPrice":"1","included":"5","currency":"USD"}}));
+    tokio::pin!(create);
+    let waited = tokio::time::timeout(std::time::Duration::from_millis(800), &mut create)
+        .await
+        .is_err();
+    // End the open transaction before asserting so a failure cannot block cleanup.
+    conversion.commit().await.unwrap();
+    assert!(
+        waited,
+        "price creation must wait for the in-flight conversion"
+    );
+    // After the commit it sees the call-time definition and rejects the price.
+    assert_eq!(create.await.status(), reqwest::StatusCode::BAD_REQUEST);
+    let prices: i64 = sqlx::query_scalar("SELECT count(*) FROM prices WHERE meter='racy'")
+        .fetch_one(&f.db)
+        .await
+        .unwrap();
+    assert_eq!(prices, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn committed_sample_catalog_declares_the_delitools_meters() {
     let f = Fixture::setup().await;
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("catalog");

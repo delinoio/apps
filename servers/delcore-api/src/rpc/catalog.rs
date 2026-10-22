@@ -749,6 +749,10 @@ impl Call<'_> {
                 return Err(invalid("unregistered meter"));
             }
             // Call-time priced AI usage never uses plan or add-on price versions.
+            // Serialize with a concurrent conversion of the meter, which holds its
+            // catalog row exclusively; the check below then sees its outcome.
+            crate::delitools::lock_meter_for_usage_price(self.tx, &service, string(&v, "meter"))
+                .await?;
             if crate::delitools::meter_key_is_call_time(self.tx, &service, string(&v, "meter"))
                 .await?
             {
