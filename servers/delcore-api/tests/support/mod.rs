@@ -13,6 +13,7 @@ pub mod billing_domain;
 pub mod billing_safeguards;
 pub mod catalog;
 pub mod metering;
+pub mod rank_downgrade;
 
 pub fn key() -> String {
     uuid::Uuid::now_v7().to_string()

@@ -67,6 +67,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 - Operators explicitly rank base plans for upgrade/downgrade classification.
 - Apply upgrades after successful immediate prorated payment. Add-ons follow the same immediate prorated addition rule.
 - Apply downgrades, add-on removal, and cancellation at the next renewal.
+- Classify a plan change by comparing the rank of the tenant's selected plan version with the current rank of the requested plan. A rank decrease on a tenant with a provider subscription is a paid scheduled change, even when the recurring price set is unchanged: it keeps the full recurring provider price IDs and requested version IDs in a `do_not_bill` job, and only the matching confirmed renewal installs the requested version. An unchanged recurring price set refreshes locally only for the same or a higher rank. Only a tenant without a provider subscription uses the free deferred change that installs at the free period boundary.
 - Preserve existing products and permissions if a requested upgrade payment fails.
 - Existing subscriptions retain their price version. New subscriptions and explicit plan changes select the applicable new version.
 - Included usage expires each month. An upgrade grants the prorated difference for the remaining period.
