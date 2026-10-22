@@ -274,7 +274,7 @@ Die 30 Tage beginnen, wenn der Datensatz erstmals erstellt wird. Wiederholungsve
 
 ## Datenverarbeitung durch externe Anbieter
 
-Um seine Arbeit zu erledigen, sendet DeliTools Ihren Text und bei der Extraktion Ihr Schema an das Vercel AI Gateway und von dort an den Anbieter des Modells, das Ihre Anfrage ausführt. Diese Dienste verarbeiten Daten nach ihren eigenen Richtlinien. Lesen Sie diese, bevor Sie Daten an DeliTools senden:
+Um seine Arbeit zu erledigen, sendet DeliTools Ihren Text und bei der Extraktion Ihr Schema an das Vercel AI Gateway und von dort an den Anbieter des Modells, das Ihre Anfrage ausführt. Jede Anfrage an das Gateway enthält außerdem eine zufällige Versuchs-ID (eine UUID) als Benutzerreferenz für den Anbieter, die DeliTools zum Abgleich der Nutzung verwendet. DeliTools sendet keine Mandanten-, Nutzer- oder Schlüsselkennung. Diese Dienste verarbeiten Daten nach ihren eigenen Richtlinien. Lesen Sie diese, bevor Sie Daten an DeliTools senden:
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): Jede Modellseite listet ihre Anbieter auf.

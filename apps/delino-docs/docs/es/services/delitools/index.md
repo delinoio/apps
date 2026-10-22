@@ -274,7 +274,7 @@ Los 30 días comienzan cuando el registro se crea por primera vez. Los reintento
 
 ## Tratamiento de datos por proveedores externos
 
-Para realizar su trabajo, DeliTools envía tu texto, y en la extracción tu esquema, a Vercel AI Gateway y, desde allí, al proveedor del modelo que ejecuta tu solicitud. Estos servicios tratan los datos conforme a sus propias políticas. Léelas antes de enviar datos a DeliTools:
+Para realizar su trabajo, DeliTools envía tu texto, y en la extracción tu esquema, a Vercel AI Gateway y, desde allí, al proveedor del modelo que ejecuta tu solicitud. Cada solicitud a Gateway incluye además un ID de intento aleatorio (un UUID) como referencia de usuario del proveedor, que DeliTools usa para conciliar el uso. DeliTools no envía ningún identificador de tenant, usuario ni clave. Estos servicios tratan los datos conforme a sus propias políticas. Léelas antes de enviar datos a DeliTools:
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): la página de cada modelo enumera sus proveedores.
