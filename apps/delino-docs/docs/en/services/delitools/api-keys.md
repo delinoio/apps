@@ -40,7 +40,7 @@ The response contains the key details and the `secret`, which begins with `dlk_`
 - **The secret appears only once.** Copy it into your secret manager now. Delcore keeps only a hash, and it never shows the secret in lists or in a repeated response.
 - **Lost secret.** If you lose the secret, or if the response to a repeated request has an empty `secret`, create a new key and revoke the old one.
 - **Treat it like a password.** Keep it in server-side code and out of logs, repositories and frontend bundles.
-- Each tenant can have a limited number of active keys: 20 personal keys for each user and 20 tenant keys in total. Revoked and expired keys do not count.
+- Limits: you can have 100 active personal keys for each user and tenant, and 100 active tenant keys per tenant. Revoked and expired keys do not count as active, but they stay for 30 days. A scope holds at most 500 keys of any state.
 
 Grants and the expiry time are fixed when you create a key. There is no edit, renewal or rotation call. To change a key, create a replacement with the new grants or expiry, switch your application to it, and then revoke the old key.
 
