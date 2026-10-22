@@ -95,7 +95,7 @@ DeliTools는 추출 모델의 구조화된 출력이 지원하는 JSON Schema의
 
 - 루트의 객체.
 - 타입 `object`, `array`, `string`, `number`, `integer`, `boolean`, `null`. 중첩은 최대 8단계입니다. 각 스키마 노드에는 문자열로 쓴 `type`이 정확히 하나만 있어야 합니다. `["string", "null"]` 같은 타입 배열은 거부됩니다.
-- `properties`. 모든 속성이 `required`에 나열되어야 합니다. 속성 이름은 1~256자입니다.
+- `properties`. 모든 속성이 `required`에 나열되어야 합니다. 속성 이름은 1~256자입니다. 모든 객체에는 비어 있더라도 `properties` 객체와 `required` 배열이 모두 있어야 합니다.
 - 모든 객체에서 `additionalProperties`를 `false`로 설정.
 - 배열의 `items`. 모든 배열 스키마에는 `items` 스키마가 있어야 하며, `items`가 없는 배열은 거부됩니다.
 - 모든 스키마의 `description`.

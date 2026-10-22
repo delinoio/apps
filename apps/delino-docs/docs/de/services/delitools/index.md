@@ -95,7 +95,7 @@ Unterstützt:
 
 - Ein Objekt an der Wurzel.
 - Die Typen `object`, `array`, `string`, `number`, `integer`, `boolean` und `null`, verschachtelt bis zu einer Tiefe von 8 Ebenen. Jeder Schemaknoten hat genau einen `type`, der als Zeichenfolge angegeben wird. Ein Typ-Array wie `["string", "null"]` wird abgelehnt.
-- `properties`, wobei jede Eigenschaft in `required` aufgeführt ist. Ein Eigenschaftsname hat 1 bis 256 Zeichen.
+- `properties`, wobei jede Eigenschaft in `required` aufgeführt ist. Ein Eigenschaftsname hat 1 bis 256 Zeichen. Jedes Objekt muss sowohl ein `properties`-Objekt als auch ein `required`-Array enthalten, auch wenn sie leer sind.
 - `additionalProperties` mit dem Wert `false` bei jedem Objekt.
 - `items` für Arrays. Jedes Array-Schema muss ein `items`-Schema enthalten; ein Array ohne `items` wird abgelehnt.
 - `description` bei jedem Schema.

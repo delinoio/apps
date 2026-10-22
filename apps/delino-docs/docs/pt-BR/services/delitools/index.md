@@ -95,7 +95,7 @@ Compatível:
 
 - Um objeto na raiz.
 - Os tipos `object`, `array`, `string`, `number`, `integer`, `boolean` e `null`, aninhados até uma profundidade de 8 níveis. Cada nó do esquema tem exatamente um `type`, escrito como string. Um array de tipos, como `["string", "null"]`, é rejeitado.
-- `properties`, com todas as propriedades listadas em `required`. O nome de uma propriedade tem de 1 a 256 caracteres.
+- `properties`, com todas as propriedades listadas em `required`. O nome de uma propriedade tem de 1 a 256 caracteres. Todo objeto deve conter tanto um objeto `properties` quanto um array `required`, mesmo que estejam vazios.
 - `additionalProperties` definido como `false` em todos os objetos.
 - `items` para matrizes. Todo esquema de matriz deve conter um esquema `items`; uma matriz sem `items` é rejeitada.
 - `description` em qualquer esquema.
