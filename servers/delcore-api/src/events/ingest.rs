@@ -370,14 +370,14 @@ async fn attribute_prices(
  WHERE en.tenant_id=$2::text::uuid AND p.addon_id IS NOT NULL
  AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4)
 ), applicable AS (
- SELECT p.id,p.service_id,p.meter,p.kind,a.effective_at
+ SELECT p.id,p.service_id,p.meter,p.kind,a.effective_at,1 AS versioned
  FROM products held JOIN catalog_entities product ON product.id=held.product_id
  JOIN catalog_entities pk ON pk.kind='price' AND pk.scope=product.kind||':'||product.id::text
  CROSS JOIN LATERAL (SELECT version_id,effective_at FROM catalog_price_activations
   WHERE price_id=pk.id AND effective_at<=$4 ORDER BY effective_at DESC LIMIT 1) a
  JOIN prices p ON p.id=a.version_id
  UNION ALL
- SELECT p.id,p.service_id,p.meter,p.kind,en.starts_at FROM entitlements en JOIN prices p ON p.id=en.price_id
+ SELECT p.id,p.service_id,p.meter,p.kind,en.starts_at,0 FROM entitlements en JOIN prices p ON p.id=en.price_id
  LEFT JOIN catalog_versions cv ON cv.id=p.id
  WHERE en.tenant_id=$2::text::uuid AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4)
  AND NOT EXISTS(SELECT 1 FROM catalog_price_activations a WHERE a.price_id=cv.entity_id AND a.effective_at<=$4)
@@ -386,7 +386,7 @@ INSERT INTO metering_event_prices(event_id,tenant_id,meter_id,price_id)
  SELECT $1::text::uuid,$2::text::uuid,ce.id,pr.id FROM catalog_entities ce
  CROSS JOIN LATERAL (SELECT p.id FROM applicable p
   WHERE p.service_id=$3::text::uuid AND p.meter=ce.key AND p.kind=1
-  ORDER BY p.effective_at DESC,p.id DESC LIMIT 1) pr
+  ORDER BY p.versioned DESC,p.effective_at DESC,p.id DESC LIMIT 1) pr
  WHERE ce.id=ANY($5::text[]::uuid[]) AND ce.kind='meter' AND ce.scope=$3::text"#)
         .bind(event).bind(tenant).bind(service).bind(occurred).bind(ids).execute(&mut *tx).await?;
     Ok(())
