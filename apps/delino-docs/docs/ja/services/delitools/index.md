@@ -174,7 +174,7 @@ DeliTools は、抽出モデルの構造化出力がサポートする JSON ス�
 ### キーの管理
 
 - `CreateKey`: `tenantId`、`kind`（`KEY_KIND_PERSONAL` または `KEY_KIND_SERVICE`）、`capabilities`、および任意の `expiresAt` を送信します。
-- `ListKeys`: テナントのキーを `kind` で絞り込んで一覧表示します。ページングには `afterId` と `pageSize` を使用します。
+- `ListKeys`: テナントのキーを `kind` で絞り込んで一覧表示します。ページングには `afterId` と `pageSize` を使用します。`pageSize` は、省略するか0を送信すると50になります。最大値は100で、それより大きい値は入力無効エラーになります。
 - `RevokeKey`: `tenantId` と `keyId` を送信します。
 
 ```sh

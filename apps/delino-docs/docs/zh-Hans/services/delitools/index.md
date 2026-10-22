@@ -174,7 +174,7 @@ DeliTools 仅接受提取模型的结构化输出所支持的那部分 JSON Sche
 ### 管理密钥
 
 - `CreateKey`：发送 `tenantId`、`kind`（`KEY_KIND_PERSONAL` 或 `KEY_KIND_SERVICE`）、`capabilities` 和可选的 `expiresAt`。
-- `ListKeys`：列出租户的密钥，可按 `kind` 筛选，并使用 `afterId` 和 `pageSize` 分页。
+- `ListKeys`：列出租户的密钥，可按 `kind` 筛选，并使用 `afterId` 和 `pageSize` 分页。`pageSize` 在省略或为 0 时默认为 50。最大值为 100，更大的值会返回输入无效错误。
 - `RevokeKey`：发送 `tenantId` 和 `keyId`。
 
 ```sh

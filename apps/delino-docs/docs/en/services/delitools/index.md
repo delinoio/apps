@@ -174,7 +174,7 @@ Every request is also checked against your tenant in Delcore. The tenant must be
 ### Manage keys
 
 - `CreateKey`: send `tenantId`, `kind` (`KEY_KIND_PERSONAL` or `KEY_KIND_SERVICE`), `capabilities` and an optional `expiresAt`.
-- `ListKeys`: list keys of a tenant, filtered by `kind`, with `afterId` and `pageSize` for paging.
+- `ListKeys`: list keys of a tenant, filtered by `kind`, with `afterId` and `pageSize` for paging. `pageSize` defaults to 50 when you omit it or send 0. The maximum is 100, and a larger value returns an invalid-input error.
 - `RevokeKey`: send `tenantId` and `keyId`.
 
 ```sh

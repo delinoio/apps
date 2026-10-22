@@ -174,7 +174,7 @@ Toda solicitação também é verificada em relação ao seu tenant no Delcore. 
 ### Gerenciar chaves
 
 - `CreateKey`: envie `tenantId`, `kind` (`KEY_KIND_PERSONAL` ou `KEY_KIND_SERVICE`), `capabilities` e um `expiresAt` opcional.
-- `ListKeys`: lista as chaves de um tenant, filtradas por `kind`, com `afterId` e `pageSize` para paginação.
+- `ListKeys`: lista as chaves de um tenant, filtradas por `kind`, com `afterId` e `pageSize` para paginação. `pageSize` é 50 por padrão quando você o omite ou envia 0. O máximo é 100, e um valor maior retorna um erro de entrada inválida.
 - `RevokeKey`: envie `tenantId` e `keyId`.
 
 ```sh
