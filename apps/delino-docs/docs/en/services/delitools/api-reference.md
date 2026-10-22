@@ -65,7 +65,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DelitoolsService/Extract" \
 }
 ```
 
-- **Grounded in your text.** The model must take values from the text. If the text lacks required information, the request fails with `ERROR_REASON_EXTRACTION_FAILED`. DeliTools does not invent values.
+- **Grounding is an instruction, not a check.** DeliTools tells the model to take values only from your text. When the model reports that required information is missing, the request fails with `ERROR_REASON_EXTRACTION_FAILED`. DeliTools cannot verify that a returned value came from your text, so a model can still return an invented value that follows your schema.
 - **Checked output.** DeliTools validates the result against your schema. Malformed or nonconforming output fails with `ERROR_REASON_INVALID_OUTPUT`. DeliTools does not retry to repair invalid output.
 - **Accuracy.** A result that follows the schema can still be wrong. Check results that matter.
 - **Unsupported schemas fail first.** DeliTools rejects a schema outside the supported subset before it runs the model, so such a request is not charged.
