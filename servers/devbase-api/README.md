@@ -8,7 +8,7 @@ Copy the names in `.env.example` into the operator's environment. No environment
 
 ## Database and process
 
-Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p devbase-api`. Cargo requires `protoc`. Root development builds all three servers once through process-compose; service-local development runs the already built binary.
+Build the Rust executable from the repository root with `cargo build --locked --manifest-path servers/Cargo.toml -p devbase-api`. Cargo requires `protoc`. Root development builds all three servers once through Turborepo; service-local development runs the already built binary.
 
 ```sh
 ./servers/target/debug/devbase-api migrate        # apply explicit migrations; safe to repeat
