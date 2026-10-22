@@ -318,9 +318,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_panicking_detached_body_is_an_internal_fault() {
-        let result = Server::detached(async { panic!("boom") }).await;
-        assert!(
-            matches!(result.map(|()| ()), Err(fault) if fault.reason == delino_protocol::delitools::v1::ErrorReason::ERROR_REASON_INTERNAL)
-        );
+        let result = Server::detached::<()>(async { panic!("boom") }).await;
+        let fault: Fault = result.unwrap_err();
+        assert_eq!(fault.reason, ErrorReason::ERROR_REASON_INTERNAL);
     }
 }
