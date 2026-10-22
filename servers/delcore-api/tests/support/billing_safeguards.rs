@@ -176,3 +176,178 @@ async fn free_postpaid_plans_are_rejected_without_catalog_or_audit_changes() {
         .unwrap();
     assert_eq!(count, 1);
 }
+
+/// Starts a counting provider mock and returns a worker bound to it, so cancellation tests assert
+/// on the provider requests actually sent instead of reaching the sandbox URL from `.env.example`.
+async fn mock_worker(
+    f: &Fixture,
+) -> (
+    delcore_api::worker::Worker,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = seen.clone();
+    let app = axum::Router::new().fallback(move |uri: axum::http::Uri| {
+        let recorded = recorded.clone();
+        async move {
+            recorded.lock().unwrap().push(uri.path().to_string());
+            axum::Json(json!({"data":{"id":"sub_fixture","status":"active"}}))
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let worker = delcore_api::worker::Worker::new(
+        f.db.clone(),
+        delcore_api::config::Config {
+            paddle_url: url.clone(),
+            email_url: url,
+            ..f.config.clone()
+        },
+    )
+    .unwrap();
+    (worker, seen, task)
+}
+
+/// Creates a deleting tenant that still owns a provider subscription, past reporting grace, with a
+/// queued deletion cancel job.
+async fn deleting_tenant(f: &Fixture, name: &str) -> (uuid::Uuid, uuid::Uuid) {
+    let tenant = tenant(f, name).await;
+    sqlx::query("UPDATE tenants SET external_subscription_id='sub_fixture',deleting_at=now()-interval '8 days' WHERE id=$1")
+        .bind(tenant).execute(&f.db).await.unwrap();
+    let cancel = job(f, tenant, "cancel", "pending", 0, "", "").await;
+    (tenant, cancel)
+}
+
+async fn metering_job(f: &Fixture, tenant: uuid::Uuid, state: &str, future: bool) -> uuid::Uuid {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2,'metering',$1::text,'{}',$3,0,$4,CASE WHEN $5 THEN now()+interval '7 days' ELSE now() END,now(),now())")
+        .bind(id).bind(tenant).bind(state).bind(if state == "failed" { "retry_exhausted" } else { "" }).bind(future).execute(&f.db).await.unwrap();
+    id
+}
+
+async fn attempts(f: &Fixture, id: uuid::Uuid) -> i32 {
+    sqlx::query_scalar("SELECT attempts FROM jobs WHERE id=$1")
+        .bind(id)
+        .fetch_one(&f.db)
+        .await
+        .unwrap()
+}
+
+fn cancel_requests(seen: &std::sync::Mutex<Vec<String>>) -> usize {
+    seen.lock()
+        .unwrap()
+        .iter()
+        .filter(|path| path.ends_with("/cancel"))
+        .count()
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn deleting_cancellation_waits_for_unfinished_metering_work() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let (worker, seen, mock) = mock_worker(&f).await;
+    for (kind, future) in [("failed", false), ("pending", true)] {
+        let (tenant, cancel) = deleting_tenant(&f, "Deferred cancel").await;
+        let metering = metering_job(&f, tenant, kind, future).await;
+        for _ in 0..3 {
+            worker.step().await.unwrap();
+        }
+        assert_eq!(
+            state(&f, cancel).await,
+            ("pending".into(), "final_settlement_pending".into()),
+            "{kind} metering must defer cancellation"
+        );
+        assert_eq!(
+            attempts(&f, cancel).await,
+            0,
+            "deferral keeps the retry budget"
+        );
+        assert_eq!(
+            state(&f, metering).await.0,
+            kind,
+            "metering work is untouched"
+        );
+        assert_eq!(cancel_requests(&seen), 0, "no provider cancel request");
+    }
+    // Once the metering work is done and nothing else is outstanding, cancellation proceeds.
+    let (tenant, cancel) = deleting_tenant(&f, "Released cancel").await;
+    let metering = metering_job(&f, tenant, "failed", false).await;
+    sqlx::query("UPDATE jobs SET state='done',error_category='' WHERE id=$1")
+        .bind(metering)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    let other = tenant_other_unfinished(&f).await;
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, other).await.0,
+        "failed",
+        "other tenant work is untouched"
+    );
+    assert_eq!(
+        state(&f, cancel).await,
+        ("reconcile".into(), "awaiting_provider_event".into())
+    );
+    assert_eq!(cancel_requests(&seen), 1);
+    mock.abort();
+}
+
+async fn tenant_other_unfinished(f: &Fixture) -> uuid::Uuid {
+    let other = tenant(f, "Other tenant").await;
+    metering_job(f, other, "failed", false).await
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn deleting_cancellation_still_waits_for_settlement_after_metering() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let (worker, seen, mock) = mock_worker(&f).await;
+    let (tenant, cancel) = deleting_tenant(&f, "Settlement wait").await;
+    sqlx::query("INSERT INTO ledger(id,tenant_id,kind,amount,period_start,period_end,source_key,created_at) VALUES($1,$2,'postpaid',-10,now()-interval '40 days',now()-interval '10 days','debt-fixture',now())")
+        .bind(uuid::Uuid::now_v7()).bind(tenant).execute(&f.db).await.unwrap();
+    let metering = metering_job(&f, tenant, "done", false).await;
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, cancel).await,
+        ("pending".into(), "final_settlement_pending".into())
+    );
+    assert_eq!(state(&f, metering).await.0, "done");
+    assert_eq!(
+        cancel_requests(&seen),
+        0,
+        "postpaid debt defers cancellation"
+    );
+    mock.abort();
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn ordinary_cancellation_ignores_unfinished_metering_work() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let (worker, seen, mock) = mock_worker(&f).await;
+    let (tenant, cancel) = deleting_tenant(&f, "Ordinary cancel").await;
+    sqlx::query("UPDATE tenants SET deleting_at=NULL WHERE id=$1")
+        .bind(tenant)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    metering_job(&f, tenant, "failed", false).await;
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, cancel).await,
+        ("reconcile".into(), "awaiting_provider_event".into())
+    );
+    assert_eq!(cancel_requests(&seen), 1);
+    mock.abort();
+}

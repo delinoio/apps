@@ -247,7 +247,10 @@ impl Worker {
                 }
             }
             "cancel" => {
-                let waiting:bool=sqlx::query_scalar("SELECT deleting_at IS NOT NULL AND (deleting_at>$2 OR COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)<>0 OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='settlement' AND state<>'done')) FROM tenants t WHERE id=$1").bind(uid(&j.tenant)?).bind(Utc::now()-Duration::seconds(self.config.reporting_grace_seconds)).fetch_one(&self.pool).await?;
+                // While deleting, accepted metering work (pending, deferred, failed or running) must be
+                // rated and settled before the subscription is canceled; otherwise recovered usage
+                // would produce postpaid debt that has no subscription left to collect it.
+                let waiting:bool=sqlx::query_scalar("SELECT deleting_at IS NOT NULL AND (deleting_at>$2 OR COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)<>0 OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='settlement' AND state<>'done') OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='metering' AND state<>'done')) FROM tenants t WHERE id=$1").bind(uid(&j.tenant)?).bind(Utc::now()-Duration::seconds(self.config.reporting_grace_seconds)).fetch_one(&self.pool).await?;
                 if waiting {
                     return self
                         .finish(j, "pending", "final_settlement_pending", "")
