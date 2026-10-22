@@ -348,3 +348,301 @@ async fn catalog_prices_reuse_versions_and_keep_tenant_selections() {
         assert_eq!(selected, expected.as_str().unwrap());
     }
 }
+
+/// Observable selection state of a tenant: base plan, active catalog versions and open entitlements.
+async fn selection_state(f: &Fixture, tenant: &Value) -> (String, Vec<String>, i64) {
+    let tenant = tenant.as_str().unwrap();
+    let plan: String =
+        sqlx::query_scalar("SELECT plan_id::text FROM tenants WHERE id=$1::text::uuid")
+            .bind(tenant)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    let versions: Vec<String> = sqlx::query_scalar("SELECT version_id::text FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid AND ends_at IS NULL ORDER BY version_id::text")
+        .bind(tenant)
+        .fetch_all(&f.db)
+        .await
+        .unwrap();
+    let entitlements: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM entitlements WHERE tenant_id=$1::text::uuid AND ends_at IS NULL",
+    )
+    .bind(tenant)
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    (plan, versions, entitlements)
+}
+async fn job_state(f: &Fixture, job: &Value) -> (String, String) {
+    sqlx::query_as("SELECT state,payload->>'timing' FROM jobs WHERE id=$1::text::uuid")
+        .bind(job.as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .map(|(state, timing): (String, Option<String>)| (state, timing.unwrap_or_default()))
+        .unwrap()
+}
+async fn audit_count(f: &Fixture, tenant: &Value, action: &str) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM audit WHERE tenant_id=$1::text::uuid AND action=$2")
+        .bind(tenant.as_str().unwrap())
+        .bind(action)
+        .fetch_one(&f.db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn explicit_changes_accept_price_free_free_plan_versions() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+    let svc = service(&f).await;
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT","groupBy":["region"]})).await;
+    let access = put(
+        &f,
+        "PutFeature",
+        "feature",
+        json!({"serviceId":svc["id"],"key":"api","name":"API","kind":"FEATURE_KIND_ACCESS"}),
+    )
+    .await;
+    let metered = put(&f,"PutFeature","feature",json!({"serviceId":svc["id"],"key":"limit","name":"Limit","kind":"FEATURE_KIND_METERED","meterKey":"requests"})).await;
+    let values =
+        json!([{"featureId":access["id"],"enabled":true},{"featureId":metered["id"],"limit":"2"}]);
+    let v1 = plan(&f, values.clone()).await;
+    let free_id = v1["id"].clone();
+    let alpha = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Alpha"}),
+        )
+        .await;
+    let tenant = &alpha["tenant"]["id"];
+    let mut v2values = values.clone();
+    v2values[1]["limit"] = json!("5");
+    let v2 = plan(&f, v2values).await;
+    assert_ne!(v1["activeVersionId"], v2["activeVersionId"]);
+    let group = json!({"region":{"text":"eu"}});
+    let limit = |tenant: Value| {
+        let f = &f;
+        let me = &me;
+        let group = &group;
+        async move {
+            let result = f.rpc("service","Authorize",json!({"tenantId":tenant,"userId":me["userId"],"capability":"execute","featureKey":"limit","groupValues":group})).await;
+            result["feature"]["limit"].clone()
+        }
+    };
+    let change = |tenant: Value, plan: Value, prices: Value| json!({"requestKey":key(),"tenantId":tenant,"planId":plan,"priceIds":prices,"returnUrl":f.config.return_urls[0]});
+    assert_eq!(
+        selection_state(&f, tenant).await.1,
+        vec![v1["activeVersionId"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(limit(tenant.clone()).await, "2");
+
+    // Explicit refresh with an empty list selects the active price-free version immediately.
+    let job = f
+        .rpc(
+            "owner",
+            "ChangeSubscription",
+            change(tenant.clone(), free_id.clone(), json!([])),
+        )
+        .await["jobId"]
+        .clone();
+    assert_eq!(job_state(&f, &job).await.0, "done");
+    assert_eq!(
+        audit_count(&f, tenant, "subscription.free_refresh").await,
+        1
+    );
+    assert_eq!(
+        selection_state(&f, tenant).await.1,
+        vec![v2["activeVersionId"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(limit(tenant.clone()).await, "5");
+    // A second refresh of the unchanged version keeps the selection and adds no entitlements.
+    let before = selection_state(&f, tenant).await;
+    let again = f
+        .rpc(
+            "owner",
+            "ChangeSubscription",
+            change(tenant.clone(), free_id.clone(), json!([])),
+        )
+        .await["jobId"]
+        .clone();
+    assert_eq!(job_state(&f, &again).await.0, "done");
+    assert_eq!(selection_state(&f, tenant).await, before);
+    assert_eq!(
+        audit_count(&f, tenant, "subscription.free_refresh").await,
+        2
+    );
+    assert_eq!(limit(tenant.clone()).await, "5");
+
+    // Switching to a higher-ranked price-free free plan is local and immediate.
+    let growth = put(&f,"PutPlan","plan",json!({"key":"growth","name":"Growth","rank":1,"free":true,"featureValues":[{"featureId":access["id"],"enabled":true}]})).await;
+    let job = f
+        .rpc(
+            "owner",
+            "ChangeSubscription",
+            change(tenant.clone(), growth["id"].clone(), json!([])),
+        )
+        .await["jobId"]
+        .clone();
+    assert_eq!(
+        job_state(&f, &job).await,
+        ("done".to_owned(), String::new())
+    );
+    let (plan_id, versions, entitlements) = selection_state(&f, tenant).await;
+    assert_eq!(plan_id, growth["id"].as_str().unwrap());
+    assert_eq!(
+        versions,
+        vec![growth["activeVersionId"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(entitlements, 0);
+    let payload: Value = sqlx::query_scalar("SELECT payload FROM jobs WHERE id=$1::text::uuid")
+        .bind(job.as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .unwrap();
+    assert!(
+        payload.get("external_price_ids").is_none(),
+        "no provider operation: {payload}"
+    );
+
+    // A lower-ranked price-free target is scheduled for the free period boundary.
+    let job = f
+        .rpc(
+            "owner",
+            "ChangeSubscription",
+            change(tenant.clone(), free_id.clone(), json!([])),
+        )
+        .await["jobId"]
+        .clone();
+    assert_eq!(
+        job_state(&f, &job).await,
+        ("pending".to_owned(), "free_next_period".to_owned())
+    );
+    let scheduled = selection_state(&f, tenant).await;
+    assert_eq!(scheduled.0, growth["id"].as_str().unwrap());
+    f.error(
+        "owner",
+        "ChangeSubscription",
+        change(tenant.clone(), free_id.clone(), json!([])),
+        "failed_precondition",
+    )
+    .await;
+    let due: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT available_at FROM jobs WHERE id=$1::text::uuid")
+            .bind(job.as_str().unwrap())
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    f.worker.maintain(due).await.unwrap();
+    assert_eq!(job_state(&f, &job).await.0, "done");
+    let (plan_id, versions, _) = selection_state(&f, tenant).await;
+    assert_eq!(plan_id, free_id.as_str().unwrap());
+    assert_eq!(
+        versions,
+        vec![v2["activeVersionId"].as_str().unwrap().to_owned()]
+    );
+
+    // Empty lists remain invalid when the target product needs prices.
+    let paid = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"paid","name":"Paid","rank":2,"free":false}),
+    )
+    .await;
+    let usage = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"usage","name":"Usage","rank":3,"free":true}),
+    )
+    .await;
+    let usage_price = put(&f,"CreatePrice","price",json!({"key":"requests-usd","planId":usage["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1.0","included":"2.00","currency":"USD"})).await;
+    let snapshot = selection_state(&f, tenant).await;
+    let jobs_before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM jobs WHERE tenant_id=$1::text::uuid AND kind='subscription'",
+    )
+    .bind(tenant.as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    let rejected = [
+        change(tenant.clone(), paid["id"].clone(), json!([])),
+        change(tenant.clone(), usage["id"].clone(), json!([])),
+        change(tenant.clone(), free_id.clone(), json!([usage_price["id"]])),
+        change(
+            tenant.clone(),
+            usage["id"].clone(),
+            json!([usage_price["id"], usage_price["id"]]),
+        ),
+        change(tenant.clone(), usage["id"].clone(), json!([key()])),
+        change(tenant.clone(), usage["id"].clone(), json!(vec![key(); 101])),
+        change(tenant.clone(), usage["id"].clone(), json!(["not-a-uuid"])),
+        change(tenant.clone(), json!("not-a-uuid"), json!([])),
+    ];
+    for request in rejected {
+        f.error("owner", "ChangeSubscription", request, "invalid_argument")
+            .await;
+    }
+    let mut foreign_return = change(tenant.clone(), free_id.clone(), json!([]));
+    foreign_return["returnUrl"] = json!("https://evil.example/return");
+    f.error(
+        "owner",
+        "ChangeSubscription",
+        foreign_return,
+        "invalid_argument",
+    )
+    .await;
+    assert_eq!(selection_state(&f, tenant).await, snapshot);
+    let jobs_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM jobs WHERE tenant_id=$1::text::uuid AND kind='subscription'",
+    )
+    .bind(tenant.as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    assert_eq!(jobs_before, jobs_after);
+
+    // The exact catalog price set of a free plan with usage prices is still accepted.
+    let job = f
+        .rpc(
+            "owner",
+            "ChangeSubscription",
+            change(
+                tenant.clone(),
+                usage["id"].clone(),
+                json!([usage_price["id"]]),
+            ),
+        )
+        .await["jobId"]
+        .clone();
+    assert_eq!(job_state(&f, &job).await.0, "done");
+    assert_eq!(selection_state(&f, tenant).await.2, 1);
+
+    // A tenant with an external subscription must use cancellation instead.
+    let beta = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Beta"}),
+        )
+        .await;
+    let beta_id = &beta["tenant"]["id"];
+    sqlx::query(
+        "UPDATE tenants SET external_subscription_id='sub_fixture' WHERE id=$1::text::uuid",
+    )
+    .bind(beta_id.as_str().unwrap())
+    .execute(&f.db)
+    .await
+    .unwrap();
+    let before = selection_state(&f, beta_id).await;
+    f.error(
+        "owner",
+        "ChangeSubscription",
+        change(beta_id.clone(), growth["id"].clone(), json!([])),
+        "failed_precondition",
+    )
+    .await;
+    assert_eq!(selection_state(&f, beta_id).await, before);
+}
