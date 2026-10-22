@@ -12,7 +12,7 @@ mod sampler;
 use crate::{platform::Platform, settings::Settings, telemetry::FailureKind};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinSet};
 
 pub use retention::RetentionTask;
@@ -107,6 +107,16 @@ impl Worker {
     }
 }
 
+/// Drive the transport and always tell the background tasks to stop once it returns. The
+/// transport ends early when accepting connections fails, before the shutdown future that carries
+/// the signal has completed; without this the process would wait for tasks that never stop and
+/// stay alive with no listener. A signal already sent is harmless.
+pub async fn stop_after<T>(stop: &watch::Sender<bool>, serving: impl Future<Output = T>) -> T {
+    let result = serving.await;
+    let _ = stop.send(true);
+    result
+}
+
 async fn run_task(
     platform: Arc<Platform>,
     task: Arc<dyn BackgroundTask>,
@@ -150,5 +160,27 @@ async fn run_task(
             _ = shutdown.changed() => {}
             _ = tokio::time::sleep(delay) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_transport_failure_still_stops_the_background_tasks() {
+        let (stop, stopped) = watch::channel(false);
+        let failed: std::io::Result<()> =
+            stop_after(&stop, async { Err(std::io::Error::other("accept failed")) }).await;
+        assert!(failed.is_err());
+        assert!(*stopped.borrow(), "tasks were not told to stop");
+    }
+
+    #[tokio::test]
+    async fn a_graceful_return_keeps_the_stop_signal_set() {
+        let (stop, stopped) = watch::channel(false);
+        stop.send(true).unwrap();
+        stop_after(&stop, async {}).await;
+        assert!(*stopped.borrow());
     }
 }

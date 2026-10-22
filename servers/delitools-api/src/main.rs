@@ -196,17 +196,20 @@ async fn run() -> anyhow::Result<()> {
         let _ = stop.send(true);
     };
     tracing::info!(address = %config.listen, "delitools-api listening");
-    let served = server_common::transport::serve(
-        listener,
-        app,
-        server_common::transport::Limits {
-            header: config.timeout(),
-            idle: Duration::from_secs(60),
-            write: config.timeout(),
-            // Sized for the longest live execution timeout, not the startup value.
-            shutdown: config.drain_ceiling(),
-        },
-        shutdown,
+    let served = delitools_api::worker::stop_after(
+        &stop,
+        server_common::transport::serve(
+            listener,
+            app,
+            server_common::transport::Limits {
+                header: config.timeout(),
+                idle: Duration::from_secs(60),
+                write: config.timeout(),
+                // Sized for the longest live execution timeout, not the startup value.
+                shutdown: config.drain_ceiling(),
+            },
+            shutdown,
+        ),
     )
     .await;
     // Graceful shutdown: connections drained above; now let background runs finish.
