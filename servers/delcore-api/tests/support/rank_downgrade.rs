@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Paid same-plan rank downgrades with an unchanged recurring price set.
 use super::{Fixture, key};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use delcore_api::provider::Transaction;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -88,7 +88,9 @@ async fn setup(f: &Fixture) -> Scenario {
         .unwrap()
         .to_owned();
     let initial = f.rpc("owner","ChangeSubscription",json!({"requestKey":key(),"tenantId":tenant,"planId":plan,"priceIds":[price],"returnUrl":f.config.return_urls[0]})).await["jobId"].as_str().unwrap().to_owned();
-    let period_start = Utc::now() - Duration::days(10);
+    // PostgreSQL timestamptz keeps microseconds; Linux clocks report nanoseconds, so
+    // truncate the fixture boundary to keep it equal to the persisted value.
+    let period_start = Utc::now().trunc_subsecs(6) - Duration::days(10);
     let period_end = period_start + Duration::days(30);
     let payment = transaction(
         "txn_initial",
