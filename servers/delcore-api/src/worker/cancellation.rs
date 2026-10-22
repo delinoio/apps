@@ -9,12 +9,14 @@ impl Worker {
         tenant: &str,
         at: DateTime<Utc>,
     ) -> Result<()> {
+        // Confirmed cancellation ends the subscription-scoped renewal failure in the same
+        // transaction; debt, disputes and operator blocks are separate state and stay untouched.
         let start = Utc
             .with_ymd_and_hms(at.year(), at.month(), 1, 0, 0, 0)
             .single()
             .expect("valid UTC month");
         let end = start + Months::new(1);
-        sqlx::query("UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',auto_suspended=true,period_start=$2,period_end=$3 WHERE id=$1").bind(uid(tenant)?).bind(start).bind(end).execute(&mut *tx).await?;
+        sqlx::query("UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',renewal_failed=false,auto_suspended=true,period_start=$2,period_end=$3 WHERE id=$1").bind(uid(tenant)?).bind(start).bind(end).execute(&mut *tx).await?;
         let plan: String = sqlx::query_scalar("SELECT plan_id::text FROM tenants WHERE id=$1")
             .bind(uid(tenant)?)
             .fetch_one(&mut *tx)
