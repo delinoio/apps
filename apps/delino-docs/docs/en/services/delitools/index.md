@@ -26,7 +26,7 @@ If you set `tenantId` together with an API key, it must be the tenant of that ke
 
 1. **Get a credential.** Use your Delino login token, or create an API key as described in [API keys](/services/delitools/api-keys).
 2. **Find your tenant ID and a model.** The tenant ID is part of your Delino account. The service operator sets which translation models are available.
-3. **Call the API.** All procedures are on `delitools.v1.DelitoolsService`. Set `DELITOOLS_URL` to the base URL of the DeliTools API server, for example `http://127.0.0.1:46322` for a local server.
+3. **Call the API.** All procedures are on `delitools.v1.DelitoolsService`. Set `DELITOOLS_URL` to the base URL of the DeliTools API server that your service operator gives you.
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DelitoolsService/Translate" \
