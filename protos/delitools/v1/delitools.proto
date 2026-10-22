@@ -44,7 +44,9 @@ enum ErrorReason {
   ERROR_REASON_DEPENDENCY_UNAVAILABLE = 14;
 }
 
-// ErrorDetail is attached to every Connect error.
+// ErrorDetail is attached to every error that a handler produces. A message
+// above the transport size bound is rejected before any handler runs with a
+// plain resource_exhausted error that carries no ErrorDetail.
 message ErrorDetail {
   ErrorReason reason = 1;
   string request_id = 2;

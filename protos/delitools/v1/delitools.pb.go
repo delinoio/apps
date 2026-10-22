@@ -130,7 +130,9 @@ func (ErrorReason) EnumDescriptor() ([]byte, []int) {
 	return file_delitools_v1_delitools_proto_rawDescGZIP(), []int{0}
 }
 
-// ErrorDetail is attached to every Connect error.
+// ErrorDetail is attached to every error that a handler produces. A message
+// above the transport size bound is rejected before any handler runs with a
+// plain resource_exhausted error that carries no ErrorDetail.
 type ErrorDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Reason        ErrorReason            `protobuf:"varint,1,opt,name=reason,proto3,enum=delitools.v1.ErrorReason" json:"reason,omitempty"`
