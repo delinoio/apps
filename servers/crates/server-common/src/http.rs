@@ -483,6 +483,35 @@ mod tests {
         assert!(!metrics.encode().contains("\"/other"));
     }
 
+    #[tokio::test]
+    async fn an_adapted_client_deadline_reuses_the_single_settlement() {
+        // The handler already reported `ok`, then the transport's client deadline produced a bare
+        // 504 without the DevBase trace header. The HTTP boundary replaces it with the typed
+        // timeout, and the one recorded observation is that timeout, not a second sample.
+        let metrics = Arc::new(Metrics::new(Service::DevBase));
+        let app = accounting_app(Duration::from_secs(5), metrics.clone());
+        let response = tower::ServiceExt::oneshot(
+            app,
+            Request::post("/rpc/bare-504-after-report")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let trace = response.headers()["x-devbase-trace-id"].to_str().unwrap();
+        assert!(uuid::Uuid::parse_str(trace).is_ok());
+        assert_eq!(observed(&metrics, "deadline_exceeded"), 1);
+        assert_eq!(observed(&metrics, "ok"), 0);
+        assert_eq!(
+            metrics
+                .duration
+                .with_label_values(&["GetProject"])
+                .get_sample_count(),
+            1
+        );
+    }
+
     #[test]
     fn an_abandoned_request_keeps_the_finished_handler_outcome() {
         let policy = policy(Service::DevBase, Some(|_| Some("GetProject")));
