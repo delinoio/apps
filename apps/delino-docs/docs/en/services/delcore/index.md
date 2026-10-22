@@ -1,6 +1,6 @@
 # Delcore
 
-Delcore provides shared tenants, access control and billing for Delino services. The official API server is `https://delcore.api.delino.io`. This page describes usage pricing, record expiry and the tenant state check for service developers.
+Delcore provides shared tenants, access control and billing for Delino services. The official API server is `https://delcore.api.delino.io`. This page describes API key verification, usage pricing, record expiry and the tenant state check for service developers.
 
 ## Check tenant state
 
@@ -37,3 +37,17 @@ Usage unit prices apply at the initial execution start for every customer, inclu
 Request deduplication lasts 30 days from the record's first creation. A retry does not extend this period. After expiry, the same request key can start a new operation subject to current permissions and independent payment or event identity checks. Accepted usage events retain their durable identities to prevent duplicate accounting effects.
 
 Consumer services must delete usage-delivery and reconciliation records 30 days after first creation, even when execution or usage remains unknown or a report has not reached Delcore. Retry delivery and unknown-usage lookup until that expiry, then abandon the pending charge. Do not estimate usage for billing. This can permanently lose billable usage, and an expired execution deduplication key can permit a new execution and charge. Platform audit records and operational logs also expire 30 days after creation. These limits do not delete accounting entries already accepted by Delcore or change API-key validity.
+
+## Verify an API key
+
+Delcore issues reusable personal and tenant service API keys for any registered service. Users and tenant Owners and Admins create them with a Delino login token; see [DeliTools API keys](/services/delitools/api-keys) for the user-facing flow. A key starts with `dlk_`, grants selected capabilities of selected services, and belongs to one tenant.
+
+A registered service verifies a key it receives from its callers with `delcore.v1.DelcoreService/AuthorizeApiKey`. Authenticate with your service's Logto machine-to-machine access token. The service must be registered and have the `authorize` scope.
+
+- Send the full `secret`, the `capability` being used and `paid` for paid work. You can also send a `feature_key` and `group_values` as in `Authorize`.
+- Delcore evaluates only the grants that name the calling service, so your service can never authorize another service's capabilities.
+- A malformed, unknown, revoked or expired secret, or the secret of a deleted tenant, returns an unauthenticated error and no key details. Delcore also answers this way when your own service token is rejected, so check your service credentials if every valid key fails. Treat it as an invalid credential.
+- For a valid secret, the response has `allowed`, `reasons` and the optional `feature`, plus `keyId`, `tenantId`, `ownerKind` and `userId`. A key without the capability returns `allowed: false` with `BLOCK_REASON_PERMISSION`.
+- A personal key also needs its user's current permission for the capability in the tenant. A tenant key does not depend on the user who created it. Both need an active tenant and the same billing checks as `Authorize` when `paid` is set.
+- Compare the tenant that your caller supplies, if any, with the returned `tenantId` and reject a mismatch.
+- Check every request. Do not cache a result. Treat errors, timeouts and an unavailable Delcore as no access for new paid work. An authorization result reserves nothing.

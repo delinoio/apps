@@ -33,9 +33,15 @@ const locales = registry.locales.map((locale) => {
         },
       ],
       ...Object.fromEntries(
-        services.map(({ id }) => [
+        services.map(({ id, pages }) => [
           `${prefix}/services/${id}/`,
-          [{ text: messages.overview, link: `${prefix}/services/${id}/` }],
+          [
+            { text: messages.overview, link: `${prefix}/services/${id}/` },
+            ...pages.map(({ slug, message }) => ({
+              text: messages[message],
+              link: `${prefix}/services/${id}/${slug}`,
+            })),
+          ],
         ]),
       ),
       [`${prefix}/services/`]: [
