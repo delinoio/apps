@@ -441,6 +441,77 @@ async fn execution_rpcs_are_registered_but_unimplemented_and_request_ids_are_ser
     f.finish().await;
 }
 
+/// Requests the Connect framework rejects before any handler runs (undecodable bodies, unsupported
+/// content types, unknown procedures) still answer with the typed `ErrorDetail` and the same
+/// request ID in the header and in the detail. A body over the message limit is not sent here: the
+/// server answers before it reads the body and closes the connection, so a client can see a reset
+/// instead of the reply. The unit tests in `http.rs` cover how that error is typed.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn framework_rejections_carry_the_typed_detail_and_request_id() {
+    let f = Fixture::setup().await;
+    for (path, content_type, body, code, status, reason) in [
+        (
+            "GetSettings",
+            "application/json",
+            b"{not json".to_vec(),
+            "invalid_argument",
+            400,
+            1,
+        ),
+        (
+            "GetSettings",
+            "application/proto",
+            vec![0xff, 0xff, 0xff],
+            "invalid_argument",
+            400,
+            1,
+        ),
+        (
+            "GetSettings",
+            "text/plain",
+            b"x".to_vec(),
+            "invalid_argument",
+            415,
+            1,
+        ),
+        (
+            "NoSuchProcedure",
+            "application/json",
+            b"{}".to_vec(),
+            "unimplemented",
+            404,
+            0,
+        ),
+    ] {
+        let response = f
+            .http
+            .post(format!("{}/delitools.v1.DeliToolsService/{path}", f.base))
+            .header("connect-protocol-version", "1")
+            .header("content-type", content_type)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        let reply = support::Reply {
+            status: response.status().as_u16(),
+            request_id_header: response
+                .headers()
+                .get("x-delitools-request-id")
+                .map(|v| v.to_str().unwrap().to_owned())
+                .unwrap_or_default(),
+            body: response.json().await.unwrap_or(serde_json::Value::Null),
+        };
+        assert_eq!(reply.code(), code, "{}", reply.body);
+        assert_eq!(reply.status, status, "{}", reply.body);
+        assert!(server_common::canonical_id(&reply.request_id_header));
+        let detail = reply.detail();
+        assert_eq!(detail.reason.to_i32(), reason, "{}", reply.body);
+        assert_eq!(detail.request_id, reply.request_id_header);
+    }
+    f.finish().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn health_readiness_and_metrics_endpoints() {
