@@ -187,7 +187,9 @@ impl Server {
                 };
                 if let Some(retry) = f.retry {
                     detail.retry_after = Some(buffa_types::google::protobuf::Duration {
-                        seconds: retry.as_secs() as i64,
+                        // Startup validation keeps retry delays within the protobuf Duration range, far
+                        // below i64::MAX; the checked conversion only guards against future changes.
+                        seconds: i64::try_from(retry.as_secs()).unwrap_or(i64::MAX),
                         nanos: retry.subsec_nanos() as i32,
                         ..Default::default()
                     })

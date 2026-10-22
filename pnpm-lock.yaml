@@ -301,6 +301,9 @@ importers:
       '@rsbuild/plugin-react':
         specifier: 2.0.1
         version: 2.0.1(@rsbuild/core@2.1.10)(@rspack/core@2.2.9(@swc/helpers@0.5.23))
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
       '@types/react':
         specifier: 19.2.14
         version: 19.2.14

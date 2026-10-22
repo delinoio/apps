@@ -28,7 +28,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_promises = require("node:fs/promises");
 
-// ../../node_modules/.pnpm/js-yaml@4.3.2/node_modules/js-yaml/dist/js-yaml.mjs
+// node_modules/js-yaml/dist/js-yaml.mjs
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
