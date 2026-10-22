@@ -247,7 +247,7 @@ DeliTools 保留键、输入的哈希值和状态。它不保留输入或结果�
 处理方式：
 
 - 对于 `invalid_argument`、`permission_denied`、`unauthenticated` 和 `failed_precondition` 错误，请先修正请求再重试。对于计费被阻止错误，请先解决计费阻止问题。例外是 `ERROR_REASON_PRICE_UNAVAILABLE`。它描述的是部署状态：DeliTools 会在开始任何工作或存储幂等键之前拒绝该调用，价格目录恢复后，未更改的同一请求可能会成功。
-- 提供商、超时或内部错误可以稍后重试。提供商和超时故障仍可能被计费。当第一次执行可能已经成功时，请使用幂等键以避免第二次执行。 带有 `ERROR_REASON_INTERNAL` 的 `unavailable` 错误表示 DeliTools 无法完成授权或计费检查。请同时根据错误码和原因分支处理，因为 `ERROR_REASON_INTERNAL` 也会与 `internal` 一起出现。
+- 提供商、超时或内部错误可以稍后重试。提供商和超时故障仍可能被计费。当你不确定第一次调用是否已到达 DeliTools 时（例如网络故障之后），请使用幂等键以避免第二次执行。带键的调用以错误（例如提供商错误）结束后，同一个键会返回 `ERROR_REASON_ALREADY_PROCESSED`（如果结果未知，则返回 `ERROR_REASON_UNKNOWN_OUTCOME`），并且不会启动新的执行。如需有意重新执行，请发送新的键。新的执行可能产生另一笔费用。 带有 `ERROR_REASON_INTERNAL` 的 `unavailable` 错误表示 DeliTools 无法完成授权或计费检查。请同时根据错误码和原因分支处理，因为 `ERROR_REASON_INTERNAL` 也会与 `internal` 一起出现。
 - 结果未知、处理中和已处理错误包含第一次调用的请求 ID。如果结果始终未知，请使用该 ID 联系支持。
 
 ## 数据保留
