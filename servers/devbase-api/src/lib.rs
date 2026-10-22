@@ -126,6 +126,46 @@ pub struct Server {
     users: Limiter,
     management: Limiter,
 }
+/// Converts a fault into the Connect error every DevBase failure carries: the safe trace ID in
+/// the `ErrorDetail` and the `X-Devbase-Trace-Id` header and, for rate limits, `retry_after`.
+/// Shared by the handler and by the pre-decode size interceptor so both produce the same shape.
+pub(crate) fn typed_error(f: Fault, trace: &str) -> connectrpc::ConnectError {
+    let mut detail = ErrorDetail {
+        reason: f.reason.into(),
+        trace_id: trace.to_owned(),
+        ..Default::default()
+    };
+    if let Some(retry) = f.retry {
+        detail.retry_after = Some(buffa_types::google::protobuf::Duration {
+            // Startup validation keeps retry delays within the protobuf Duration range, far
+            // below i64::MAX; the checked conversion only guards against future changes.
+            seconds: i64::try_from(retry.as_secs()).unwrap_or(i64::MAX),
+            nanos: retry.subsec_nanos() as i32,
+            ..Default::default()
+        })
+        .into();
+    }
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("X-Devbase-Trace-Id", trace.parse().unwrap());
+    if let Some(retry) = f.retry {
+        headers.insert(
+            "Retry-After",
+            retry
+                .as_secs_f64()
+                .ceil()
+                .max(1.0)
+                .to_string()
+                .parse()
+                .unwrap(),
+        );
+    }
+    f.connect()
+        .with_headers(headers)
+        .with_detail(connectrpc::ErrorDetail::from_message(
+            "devbase.v1.ErrorDetail",
+            &detail,
+        ))
+}
 impl Server {
     pub fn new(db: PgPool, authority: Authority, config: config::Config) -> Self {
         Self {
@@ -196,40 +236,7 @@ impl Server {
                     serde_json::from_value(value).map_err(|_| Fault::unavailable().connect())?;
                 Ok(Response::new(body).with_header("X-Devbase-Trace-Id", trace))
             }
-            Err(f) => {
-                let mut detail = ErrorDetail {
-                    reason: f.reason.into(),
-                    trace_id: trace.clone(),
-                    ..Default::default()
-                };
-                if let Some(retry) = f.retry {
-                    detail.retry_after = Some(buffa_types::google::protobuf::Duration {
-                        // Startup validation keeps retry delays within the protobuf Duration range, far
-                        // below i64::MAX; the checked conversion only guards against future changes.
-                        seconds: i64::try_from(retry.as_secs()).unwrap_or(i64::MAX),
-                        nanos: retry.subsec_nanos() as i32,
-                        ..Default::default()
-                    })
-                    .into();
-                }
-                let mut headers = axum::http::HeaderMap::new();
-                headers.insert("X-Devbase-Trace-Id", trace.parse().unwrap());
-                if let Some(retry) = f.retry {
-                    headers.insert(
-                        "Retry-After",
-                        retry
-                            .as_secs_f64()
-                            .ceil()
-                            .max(1.0)
-                            .to_string()
-                            .parse()
-                            .unwrap(),
-                    );
-                }
-                Err(f.connect().with_headers(headers).with_detail(
-                    connectrpc::ErrorDetail::from_message("devbase.v1.ErrorDetail", &detail),
-                ))
-            }
+            Err(f) => Err(typed_error(f, &trace)),
         }
     }
     async fn execute<Q, R>(
@@ -274,7 +281,9 @@ impl Server {
             return Err(f);
         }
         // The limit applies to the received (decompressed) message bytes, not to the decoded
-        // message, so legal JSON padding and escape expansion count toward it.
+        // message, so legal JSON padding and escape expansion count toward it. The first-position
+        // interceptor already rejects an over-limit message before decoding; this check is the
+        // fail-closed guard for a handler reached without that interceptor.
         let Some(received) = received else {
             tracing::error!(trace_id=%trace,procedure=op.name(),"received message size was not captured");
             return Err(Fault::unavailable());

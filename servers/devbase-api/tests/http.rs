@@ -317,6 +317,73 @@ async fn client_declared_deadline_is_counted_once_as_a_timeout() {
     assert_eq!(samples(&fx.server, "ListProjects").0, 1);
 }
 
+/// Raw request head for a unary POST with an explicit content type.
+fn typed_head(path: &str, content_type: &str, length: usize) -> String {
+    format!(
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: {content_type}\r\nConnect-Protocol-Version: 1\r\nAuthorization: Bearer login-token\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n"
+    )
+}
+
+#[tokio::test]
+async fn malformed_oversized_messages_get_the_typed_size_rejection_before_decoding() {
+    // Bodies between 64 KiB and the 256 KiB transport cap whose content cannot be decoded. The
+    // generated dispatcher would reject them while decoding, with a bare error and no trace
+    // header; the first-position interceptor rejects them by size before any decode.
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    let path = format!("{PREFIX}GetProject");
+    let limit = 64 << 10;
+    let mut malformed_json = br#"{"projectId": [[[["#.to_vec();
+    malformed_json.resize(limit + 1, b'x');
+    let malformed_proto = vec![0xff_u8; 256 << 10];
+    let cases: [(&str, Vec<u8>); 3] = [
+        ("application/json", malformed_json),
+        ("application/proto", vec![0xff_u8; limit + 1]),
+        ("application/proto", malformed_proto),
+    ];
+    for (n, (content_type, body)) in cases.iter().enumerate() {
+        let reply = exchange(
+            fx.addr,
+            &typed_head(&path, content_type, body.len()),
+            &[(Duration::ZERO, body)],
+        )
+        .await;
+        assert!(
+            reply.head.starts_with("HTTP/1.1 400"),
+            "{n}: {}",
+            reply.head
+        );
+        let trace = reply.header("x-devbase-trace-id").expect("trace header");
+        assert!(uuid::Uuid::parse_str(trace).is_ok());
+        // The reply is chunked: keep the JSON object between the chunk framing lines.
+        let object = &reply.body[reply.body.find('{').unwrap()..=reply.body.rfind('}').unwrap()];
+        let json: serde_json::Value = serde_json::from_str(object).unwrap();
+        assert_eq!(json["code"], "invalid_argument");
+        let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+            .decode(json["details"][0]["value"].as_str().unwrap())
+            .unwrap();
+        let detail = delino_protocol::devbase::v1::ErrorDetail::decode_from_slice(&raw).unwrap();
+        assert_eq!(detail.trace_id, trace);
+        assert_eq!(detail.reason.to_i32(), 1, "ERROR_REASON_INVALID_INPUT");
+    }
+    // Each rejection is observed once with its code and latency.
+    assert_eq!(count(&fx.server, "GetProject", "invalid_argument"), 3);
+    assert_eq!(samples(&fx.server, "GetProject").0, 3);
+    assert_eq!(count(&fx.server, "GetProject", "deadline_exceeded"), 0);
+
+    // At or below the limit a malformed body keeps the dispatcher's own decode error: no DevBase
+    // trace header, no observation.
+    let small = br#"{"projectId": [[["#;
+    let reply = exchange(
+        fx.addr,
+        &typed_head(&path, "application/json", small.len()),
+        &[(Duration::ZERO, small)],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 400"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_none());
+    assert_eq!(count(&fx.server, "GetProject", "invalid_argument"), 3);
+}
+
 #[tokio::test]
 async fn unrouted_requests_create_no_procedure_series() {
     let fx = fixture(Duration::from_millis(100), Delcore::Fail).await;
