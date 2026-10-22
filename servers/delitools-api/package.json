@@ -1,0 +1,18 @@
+{
+  "name": "@delinoio/delitools-api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/delitools-api -- portless run --name delitools-api --app-port 46322 node ../scripts/dev-api.mjs delitools",
+    "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",
+    "ci:vet": "cargo clippy --locked --manifest-path ../Cargo.toml -p delitools-api --all-targets -- -D warnings",
+    "ci:build": "cargo build --locked --manifest-path ../Cargo.toml -p delitools-api",
+    "ci:unit": "cargo test --locked --manifest-path ../Cargo.toml -p delitools-api",
+    "ci:integration": "cargo test --locked --manifest-path ../Cargo.toml -p delitools-api --test postgres -- --ignored",
+    "ci:oci": "node ../../scripts/ci/from-root.mjs docker build -f servers/delitools-api/Dockerfile -t delitools-api:validation .",
+    "build": "cargo build --locked --manifest-path ../Cargo.toml -p delitools-api",
+    "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p delitools-api"
+  }
+}

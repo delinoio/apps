@@ -1,0 +1,11 @@
+# Example model allowlist for development. Replace the meter keys with the meters that the
+# operator registered in Delcore for the DeliTools service. A model is usable only while both of
+# its meters have an active usage price in Delcore. The extraction model is fixed and must be
+# listed: openai/gpt-6-luna.
+models:
+  - model: openai/gpt-6-luna
+    input_meter_key: luna-input-tokens
+    output_meter_key: luna-output-tokens
+  - model: google/gemini-3-flash
+    input_meter_key: gemini-flash-input-tokens
+    output_meter_key: gemini-flash-output-tokens
