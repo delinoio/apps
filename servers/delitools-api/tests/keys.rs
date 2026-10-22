@@ -373,6 +373,50 @@ async fn tenants_are_isolated_and_inputs_validated() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn an_expiry_that_passes_during_authorization_is_rejected() {
+    let f = Fixture::setup().await;
+    let tenant = id();
+    let (owner, _) = f.user("owner", Some((tenant, TenantRole::Owner)));
+    // The authority answers slower than the requested lifetime.
+    f.authority
+        .set_management_delay(std::time::Duration::from_millis(1500));
+    let soon = (chrono::Utc::now() + chrono::Duration::milliseconds(700)).to_rfc3339();
+    let mut body = create(tenant, SERVICE, &[TRANSLATOR]);
+    body["expiresAt"] = json!(soon);
+    f.fails(
+        Some(&owner),
+        "CreateKey",
+        body,
+        "invalid_argument",
+        reason::INVALID_INPUT,
+    )
+    .await;
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM api_keys")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0, "no already-expired key may be stored");
+
+    // A comfortable expiry still succeeds, and the creation time is taken after authorization.
+    let before = chrono::Utc::now();
+    let later = (before + chrono::Duration::hours(1)).to_rfc3339();
+    let mut body = create(tenant, SERVICE, &[TRANSLATOR]);
+    body["expiresAt"] = json!(later);
+    f.ok(&owner, "CreateKey", body).await;
+    let created: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT created_at FROM api_keys")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert!(
+        created >= before + chrono::Duration::milliseconds(1400),
+        "created_at {created} predates the authorization call that started at {before}"
+    );
+    f.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn management_requires_a_verified_user_token() {
     let f = Fixture::setup().await;
     let tenant = id();

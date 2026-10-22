@@ -71,14 +71,19 @@ impl Platform {
         let capabilities = Capabilities::from_wire(&request.capabilities).ok_or_else(|| {
             Fault::invalid_input("capabilities must list translator and/or extractor once each")
         })?;
-        let now = now_checked();
-        let expires_at = expiry(&request, now)?;
+        // Reject a malformed or already past expiry before the authority round trip.
+        expiry(&request, now_checked())?;
         self.authorize_management(
             tenant,
             user.user_id,
             scope_for(kind).expect("kind validated above"),
         )
         .await?;
+        // The authority request can be slow. Take the creation time and judge the expiry after it
+        // completes, so a key is never created already expired and `created_at` is the real
+        // creation instant.
+        let now = now_checked();
+        let expires_at = expiry(&request, now)?;
         let generated = keys::generate();
         let row = store::keys::insert(
             &self.store.pool,

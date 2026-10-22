@@ -127,6 +127,7 @@ struct State {
     denied: HashSet<(Uuid, i32)>,
     unavailable: bool,
     execution_checks: u64,
+    management_delay: std::time::Duration,
 }
 
 /// In-memory [`TenantAuthority`]. Intended for tests and local fixtures only; state is lost on
@@ -171,6 +172,10 @@ impl InMemoryAuthority {
     }
     pub fn set_unavailable(&self, unavailable: bool) {
         self.state().unavailable = unavailable;
+    }
+    /// Make every management check take this long, like a slow authority request.
+    pub fn set_management_delay(&self, delay: std::time::Duration) {
+        self.state().management_delay = delay;
     }
     pub fn execution_checks(&self) -> u64 {
         self.state().execution_checks
@@ -217,6 +222,10 @@ impl TenantAuthority for InMemoryAuthority {
         user_id: Uuid,
         scope: ManagementScope,
     ) -> Result<Decision, AuthorityError> {
+        let delay = self.state().management_delay;
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
         let state = self.state();
         if state.unavailable {
             return Err(AuthorityError);
