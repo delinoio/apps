@@ -52,7 +52,7 @@ Production publication uses `.github/workflows/release-delino.yml` after `releas
 
 `@delino/ui` supplies shared components, styles and PostCSS configuration. Shared labels and native selects render language selection. Shared buttons preserve call-to-action links, and shared cards preserve feature articles and the illustrative correction panel. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
-Use the repository-pinned React, Rsbuild and TypeScript versions. The marketing site is independent of application runtime and billing services.
+Use the repository-pinned React, Rsbuild and TypeScript versions. Declare `@types/node` as a direct development dependency for the Node.js APIs used by `rsbuild.config.ts`; type checking must not depend on transitive type hoisting from pnpm's store layout. The marketing site is independent of application runtime and billing services.
 
 ## Change Triggers
 

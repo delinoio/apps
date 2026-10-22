@@ -75,20 +75,16 @@ export async function main(args = process.argv.slice(2)) {
 
 export function supervise(args, env = process.env) {
   return spawnDevServer(
-    "process-compose",
-    [
-      "--config",
-      "process-compose.yaml",
-      "--no-server",
-      "--disable-dotenv",
-      "up",
-      ...args,
-    ],
+    "pnpm",
+    ["exec", "turbo", "watch", "dev", "--concurrency=20", ...args],
     {
       cwd: root,
       stdio: "inherit",
       env,
     },
+    // pnpm can exit before its descendants. Keep ownership of the whole group
+    // so shutdown waits for servers and escalates if they ignore the signal.
+    { terminateProcessTree: true },
   );
 }
 
@@ -103,7 +99,7 @@ if (
       JSON.stringify({
         event: "dev_start_failed",
         message:
-          "Could not prepare Compose databases or launch workspace development. Check Docker, Compose configuration and the process-compose installation.",
+          "Could not prepare Compose databases or launch workspace development. Check Docker, Compose configuration and the workspace dependencies.",
       }),
     );
     process.exitCode = 1;

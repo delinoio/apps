@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Api, composeDatabaseUrls, databaseHandoff } from "./dev.mjs";
@@ -39,6 +40,103 @@ const fixture = (t) => {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 };
+
+for (const [signal, ignoreSignal] of [
+  ["SIGINT", false],
+  ["SIGTERM", false],
+  ["SIGINT", true],
+]) {
+  test(
+    `root supervisor cleans up descendants after ${signal}${ignoreSignal ? " even when ignored" : ""}`,
+    { skip: process.platform === "win32", timeout: 20000 },
+    async (t) => {
+      const directory = mkdtempSync(join(tmpdir(), "compose-dev-test-"));
+      const output = join(directory, "ready.json");
+      const stopped = join(directory, "stopped");
+      const leaf = join(directory, "leaf.mjs");
+      writeFileSync(
+        leaf,
+        `import { createServer } from 'node:net';
+import { writeFileSync } from 'node:fs';
+const server = createServer();
+process.on('${signal}', () => {
+  ${ignoreSignal ? "" : `writeFileSync(${JSON.stringify(stopped)}, 'stopped'); server.close();`}
+});
+server.listen(0, '127.0.0.1', () => {
+  writeFileSync(${JSON.stringify(output)}, JSON.stringify({pid: process.pid, parent: process.ppid, port: server.address().port}));
+});
+`,
+      );
+      // Model a command wrapper that exits before its server descendant.
+      writeFileSync(
+        join(directory, "pnpm"),
+        `#!${process.execPath}
+const { spawn } = require('node:child_process');
+spawn(process.execPath, [${JSON.stringify(leaf)}], {stdio: 'inherit'});
+process.on('${signal}', () => process.exit(0));
+`,
+        { mode: 0o755 },
+      );
+      const devUrl = new URL("./dev.mjs", import.meta.url).href;
+      const spawnUrl = new URL("./spawn-dev-server.mjs", import.meta.url).href;
+      const child = spawn(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { supervise } from ${JSON.stringify(devUrl)}; import { exitLikeChild } from ${JSON.stringify(spawnUrl)}; exitLikeChild(await supervise([]));`,
+        ],
+        {
+          env: {
+            ...process.env,
+            PATH: `${directory}${delimiter}${process.env.PATH}`,
+          },
+          stdio: "ignore",
+        },
+      );
+      t.after(() => {
+        child.kill("SIGKILL");
+        if (existsSync(output)) {
+          const { pid, parent } = JSON.parse(readFileSync(output, "utf8"));
+          for (const target of [pid, parent]) {
+            try {
+              process.kill(target, "SIGKILL");
+            } catch (error) {
+              if (error.code !== "ESRCH") throw error;
+            }
+          }
+        }
+        rmSync(directory, { recursive: true, force: true });
+      });
+      const deadline = Date.now() + 5000;
+      while (!existsSync(output)) {
+        assert.ok(Date.now() < deadline, "descendant did not start");
+        await delay(25);
+      }
+      const { pid, port } = JSON.parse(readFileSync(output, "utf8"));
+      const exited = once(child, "exit");
+      child.kill(signal);
+      assert.deepEqual(await exited, [null, signal]);
+      if (process.platform === "linux") {
+        // Container PID 1 may leave an exited descendant as a zombie.
+        try {
+          const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+          assert.match(stat.slice(stat.lastIndexOf(")") + 1), /^\s+[ZX]\s/u);
+        } catch (error) {
+          if (error.code !== "ENOENT" && error.code !== "ESRCH") throw error;
+        }
+      } else {
+        assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+      }
+      if (!ignoreSignal) assert.equal(readFileSync(stopped, "utf8"), "stopped");
+      const { createServer } = await import("node:net");
+      const server = createServer();
+      server.listen(port, "127.0.0.1");
+      await once(server, "listening");
+      await new Promise((resolve) => server.close(resolve));
+    },
+  );
+}
 
 test("Compose host ports and credentials determine URLs without duplicate defaults", () => {
   const config = { services: {} };
@@ -161,7 +259,7 @@ test("direct API development preserves existing environment without a Compose ha
 });
 
 test(
-  "root development stops before process-compose when Compose startup fails",
+  "root development stops before Turbo when Compose startup fails",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
@@ -190,7 +288,7 @@ test(
     );
     const result = spawnSync(
       process.execPath,
-      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--tui=false"],
+      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--ui=stream"],
       {
         env: {
           ...process.env,
@@ -264,11 +362,11 @@ test(
 );
 
 test(
-  "root development hands databases and arguments directly to process-compose and returns its failure",
+  "root development hands databases and arguments directly to Turbo and returns its failure",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
-    const output = join(directory, "process-compose.json");
+    const output = join(directory, "turbo.json");
     const config = {
       services: Object.fromEntries(
         Object.values(Api).map((api) => [
@@ -297,7 +395,7 @@ test(
       { mode: 0o755 },
     );
     writeFileSync(
-      join(directory, "process-compose"),
+      join(directory, "pnpm"),
       `#!${process.execPath}\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FIXTURE_OUTPUT, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), urls: JSON.parse(process.env.DEV_COMPOSE_DATABASE_URLS)})); process.exit(19);\n`,
       { mode: 0o755 },
     );
@@ -310,8 +408,8 @@ test(
       process.execPath,
       [
         fileURLToPath(new URL("./dev.mjs", import.meta.url)),
-        "--tui=false",
-        "delcore-api",
+        "--ui=stream",
+        "--filter=@delinoio/delcore-api",
       ],
       {
         env: {
@@ -325,13 +423,13 @@ test(
     assert.equal(result.status, 19);
     const captured = JSON.parse(readFileSync(output, "utf8"));
     assert.deepEqual(captured.args, [
-      "--config",
-      "process-compose.yaml",
-      "--no-server",
-      "--disable-dotenv",
-      "up",
-      "--tui=false",
-      "delcore-api",
+      "exec",
+      "turbo",
+      "watch",
+      "dev",
+      "--concurrency=20",
+      "--ui=stream",
+      "--filter=@delinoio/delcore-api",
     ]);
     assert.equal(
       captured.cwd,
@@ -472,11 +570,6 @@ test("root, service-local and Portless Delcore development share the catalog-app
   }
   assert.equal(turbo.tasks.dev.persistent, true);
   assert.deepEqual(turbo.globalPassThroughEnv, ["PORTLESS", "PORTLESS_*"]);
-  assert.match(read("dev.mjs"), /process-compose/u);
-  assert.match(
-    read("../process-compose.yaml"),
-    /delcore-api:[\s\S]*?command: pnpm exec turbo run dev --filter=@delinoio\/delcore-api/u,
-  );
   // Infisical injects values before Portless runs the shared API launcher.
   assert.match(
     service.scripts.dev,
@@ -486,9 +579,9 @@ test("root, service-local and Portless Delcore development share the catalog-app
   assert.equal(listen, "127.0.0.1:8080");
   // The shared builder watches code and SQL, but catalog YAML edits still
   // require an explicit API restart.
-  const processCompose = read("../process-compose.yaml");
-  assert.match(processCompose, /"\*\.rs"/u);
-  assert.match(processCompose, /"\*\.sql"/u);
-  assert.doesNotMatch(processCompose, /"\*\.ya?ml"/u);
+  const builder = turbo.tasks["//#server-build"];
+  assert.ok(builder.inputs.includes("servers/**/*.rs"));
+  assert.ok(builder.inputs.includes("servers/**/*.sql"));
+  assert.ok(!builder.inputs.some((input) => /ya?ml/u.test(input)));
   assert.deepEqual(apiCommand(Api.Delcore, {})[1], ["serve", "--dev-env"]);
 });

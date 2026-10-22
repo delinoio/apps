@@ -24,7 +24,33 @@ pub fn metadata(q: &Value) -> Result<Value> {
             "metadata must be a JSON object of at most 16 KiB",
         ));
     }
+    if contains_nul(&value) {
+        return Err(Fault::invalid("metadata must not contain U+0000"));
+    }
     Ok(value)
+}
+/// Reports whether any string value or object key holds U+0000. PostgreSQL
+/// `jsonb` cannot store that character, so it is rejected as invalid input
+/// instead of surfacing as a persistence failure. The scan is iterative and
+/// the nesting depth is already bounded by the 16 KiB size limit.
+fn contains_nul(value: &Value) -> bool {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::String(s) if s.contains('\0') => return true,
+            Value::Array(items) => pending.extend(items),
+            Value::Object(map) => {
+                for (key, item) in map {
+                    if key.contains('\0') {
+                        return true;
+                    }
+                    pending.push(item);
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 pub fn mask(q: &Value) -> Vec<&str> {
     string(q, "updateMask")
@@ -143,4 +169,56 @@ pub fn validate(op: Op, q: &Value) -> Result<()> {
         }
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn check(metadata: Value) -> Result<Value> {
+        metadata_of(json!({ "metadata": metadata }))
+    }
+    fn metadata_of(q: Value) -> Result<Value> {
+        super::metadata(&q)
+    }
+    #[test]
+    fn rejects_nul_in_values_and_keys_at_any_depth() {
+        for fixture in [
+            json!({"value":"\u{0}"}),
+            json!({"\u{0}":"value"}),
+            json!({"nested":{"value":"a\u{0}b"}}),
+            json!({"nested":{"a\u{0}b":true}}),
+            json!({"items":[0,{"value":"\u{0}"}]}),
+            json!({"items":[{"\u{0}":null}]}),
+        ] {
+            let err = check(fixture.clone()).expect_err("NUL must be rejected");
+            let message = format!("{err:?}");
+            assert!(message.contains("U+0000"), "{fixture}: {message}");
+            assert!(!message.contains("value"), "{fixture}: {message}");
+        }
+    }
+    #[test]
+    fn accepts_storage_compatible_metadata() {
+        let benign = json!({
+            "value":"한글 😀",
+            "literal":"\\u0000",
+            "items":[null,true,3,{"key":"value"}]
+        });
+        assert_eq!(check(benign.clone()).unwrap(), benign);
+        assert_eq!(metadata_of(json!({})).unwrap(), json!({}));
+        assert_eq!(metadata_of(json!({"metadata":null})).unwrap(), json!({}));
+        assert_eq!(check(json!({})).unwrap(), json!({}));
+    }
+    #[test]
+    fn keeps_size_and_type_checks() {
+        assert!(check(json!([1])).is_err());
+        assert!(check(json!("text")).is_err());
+        // `{"k":"<n>"}` serializes to n + 8 bytes.
+        let at_limit = json!({"k":"a".repeat((16 << 10) - 8)});
+        assert!(check(at_limit).is_ok());
+        let over_limit = json!({"k":"a".repeat((16 << 10) - 7)});
+        assert!(check(over_limit).is_err());
+        // Oversized input keeps reporting the size message even with NUL.
+        let oversized = json!({"k":format!("\u{0}{}", "a".repeat(16 << 10))});
+        let message = format!("{:?}", check(oversized).unwrap_err());
+        assert!(message.contains("16 KiB"), "{message}");
+    }
 }
