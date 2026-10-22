@@ -54,7 +54,7 @@ Rules:
 
 ## Extract data
 
-`ExtractDataFromText` reads text and returns JSON that follows your JSON schema. The service uses a fixed model, `gpt-6-luna`. You do not choose the model.
+`ExtractDataFromText` reads text and returns JSON that follows your JSON schema. The service uses a fixed model, `gpt-6-luna` (Gateway model ID `openai/gpt-6-luna`). You do not choose the model.
 
 | Field            | Required | Meaning                                                                                               |
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------- |

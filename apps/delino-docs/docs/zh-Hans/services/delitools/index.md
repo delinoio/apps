@@ -54,7 +54,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 
 ## 提取数据
 
-`ExtractDataFromText` 读取文本并返回遵循你的 JSON 架构的 JSON。该服务使用固定的模型 `gpt-6-luna`。你无法选择模型。
+`ExtractDataFromText` 读取文本并返回遵循你的 JSON 架构的 JSON。该服务使用固定的模型 `gpt-6-luna`（Gateway 模型 ID 为 `openai/gpt-6-luna`）。你无法选择模型。
 
 | 字段             | 必填 | 含义                                                                 |
 | ---------------- | ---- | -------------------------------------------------------------------- |

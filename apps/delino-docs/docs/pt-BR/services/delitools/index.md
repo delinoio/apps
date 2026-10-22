@@ -54,7 +54,7 @@ Regras:
 
 ## Extrair dados
 
-`ExtractDataFromText` lê um texto e retorna JSON que segue o seu esquema JSON. O serviço usa um modelo fixo, `gpt-6-luna`. Você não escolhe o modelo.
+`ExtractDataFromText` lê um texto e retorna JSON que segue o seu esquema JSON. O serviço usa um modelo fixo, `gpt-6-luna` (ID de modelo do Gateway `openai/gpt-6-luna`). Você não escolhe o modelo.
 
 | Campo            | Obrigatório | Significado                                                                                           |
 | ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
