@@ -14,8 +14,8 @@ pub use catalog::*;
 pub use period::*;
 pub use rating::*;
 
-pub const SCHEMA_VERSION: i32 = 10;
-const MIGRATIONS: [&str; 10] = [
+pub const SCHEMA_VERSION: i32 = 11;
+const MIGRATIONS: [&str; 11] = [
     include_str!("../../migrations/00001_foundation.sql"),
     include_str!("../../migrations/00002_payment_history.sql"),
     include_str!("../../migrations/00003_retention.sql"),
@@ -26,6 +26,7 @@ const MIGRATIONS: [&str; 10] = [
     include_str!("../../migrations/00008_metering_rating.sql"),
     include_str!("../../migrations/00009_metering_status.sql"),
     include_str!("../../migrations/00010_metering_attribute_retention.sql"),
+    include_str!("../../migrations/00011_call_time_prices.sql"),
 ];
 #[derive(Clone)]
 pub struct Store {
@@ -182,6 +183,60 @@ mod tests {
             .join()
             .unwrap();
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+    async fn price_history_upgrade_baselines_current_version_and_rolls_back_mutations() {
+        let db = Database::new().await;
+        let mut tx = db.pool.begin().await.unwrap();
+        sqlx::query("CREATE TABLE delcore_schema(version integer PRIMARY KEY,digest text NOT NULL,applied_at timestamptz NOT NULL)").execute(&mut *tx).await.unwrap();
+        for (index, sql) in MIGRATIONS[..10].iter().enumerate() {
+            sqlx::raw_sql(sql).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO delcore_schema VALUES($1,$2,now())")
+                .bind(index as i32 + 1)
+                .bind(hex::encode(Sha256::digest(sql.as_bytes())))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        let entity = ensure_catalog_entity(&mut tx, "price", "plan:legacy", "requests", "")
+            .await
+            .unwrap();
+        let a = select_catalog_version(&mut tx, &entity, &serde_json::json!({"unit_price":"1"}))
+            .await
+            .unwrap()
+            .0;
+        let b = select_catalog_version(&mut tx, &entity, &serde_json::json!({"unit_price":"2"}))
+            .await
+            .unwrap()
+            .0;
+        tx.commit().await.unwrap();
+        let before = chrono::Utc::now();
+        migrate(&db.pool).await.unwrap();
+        migrate(&db.pool).await.unwrap();
+        let history: Vec<(String, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as("SELECT version_id::text,effective_at FROM catalog_price_activations")
+                .fetch_all(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].0, b);
+        assert!(history[0].1 >= before);
+        let mut tx = db.pool.begin().await.unwrap();
+        select_catalog_version(&mut tx, &entity, &serde_json::json!({"unit_price":"1"}))
+            .await
+            .unwrap();
+        let restored: String = sqlx::query_scalar("SELECT version_id::text FROM catalog_price_activations ORDER BY effective_at DESC LIMIT 1")
+            .fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(restored, a);
+        tx.rollback().await.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog_price_activations")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        db.pool.close().await;
     }
 
     #[tokio::test]

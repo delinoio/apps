@@ -484,6 +484,18 @@ impl Server {
                 return Err(Fault::precondition("default free plan is not configured"));
             }
         }
+        if op.mutation() {
+            // Enforce expiry even when maintenance has not run. A replay never
+            // refreshes created_at, and current authorization still applies.
+            sqlx::query(
+                "DELETE FROM requests WHERE actor_id=$1 AND request_key=$2 AND created_at<=$3",
+            )
+            .bind(&call.actor)
+            .bind(key)
+            .bind(now - chrono::Duration::seconds(config::TRANSIENT_RETENTION_SECONDS))
+            .execute(&mut *call.tx)
+            .await?;
+        }
         if op.mutation()
             && let Some(row)=sqlx::query("SELECT fingerprint,response,EXISTS(SELECT 1 FROM tenants t WHERE t.id=requests.tenant_id AND t.deleted_at IS NOT NULL) AS removed FROM requests WHERE actor_id=$1 AND request_key=$2").bind(&call.actor).bind(key).fetch_optional(&mut *call.tx).await?{
     if row.get::<String,_>("fingerprint")!=fingerprint{return Err(Fault::conflict());}
