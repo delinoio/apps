@@ -256,13 +256,14 @@ DeliTools ne stocke jamais votre texte d’entrée, votre schéma ni les résult
 
 DeliTools stocke uniquement les données dont il a besoin pour exécuter le service et le facturer : les empreintes de vérification des clés d’API, l’utilisateur et le tenant auxquels appartient une requête, les empreintes d’entrée pour l’idempotence, les états des requêtes, les identifiants de tentatives, l’utilisation mesurée en jetons, les instantanés de prix, ainsi que des enregistrements d’audit et d’exploitation sûrs.
 
-| Données                                                             | Conservées pendant                                 |
-| ------------------------------------------------------------------- | -------------------------------------------------- |
-| Enregistrements d’idempotence                                       | 30 jours à compter de la première création         |
-| Enregistrements de livraison et de rapprochement de l’utilisation   | 30 jours à compter de la première création         |
-| Enregistrements d’audit de la plateforme et journaux d’exploitation | 30 jours à compter de la création                  |
-| Clés d’API                                                          | Non supprimées par la conservation de 30 jours     |
-| Écritures comptables acceptées dans Delcore                         | Selon les règles de conservation propres à Delcore |
+| Données                                                                  | Conservées pendant                                 |
+| ------------------------------------------------------------------------ | -------------------------------------------------- |
+| Enregistrements des requêtes d’exécution, avec ou sans clé d’idempotence | 30 jours à compter de la création                  |
+| Enregistrements d’idempotence                                            | 30 jours à compter de la première création         |
+| Enregistrements de livraison et de rapprochement de l’utilisation        | 30 jours à compter de la première création         |
+| Enregistrements d’audit de la plateforme et journaux d’exploitation      | 30 jours à compter de la création                  |
+| Clés d’API                                                               | Non supprimées par la conservation de 30 jours     |
+| Écritures comptables acceptées dans Delcore                              | Selon les règles de conservation propres à Delcore |
 
 La conservation de 30 jours ne s’applique pas aux clés d’API. Le nettoyage de conservation ne les supprime jamais. L’expiration et la révocation empêchent seulement une clé de s’authentifier ; son hachage de vérification et son attribution restent donc stockés.
 

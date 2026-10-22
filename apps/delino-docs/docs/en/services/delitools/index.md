@@ -256,13 +256,14 @@ DeliTools never stores your input text, your schema or the results. It also keep
 
 DeliTools stores only the data it needs to run the service and to bill it: verification hashes of API keys, who and which tenant a request belongs to, input hashes for idempotency, request states, attempt identifiers, measured token usage, price snapshots, and safe audit and operational records.
 
-| Data                                        | Kept for                            |
-| ------------------------------------------- | ----------------------------------- |
-| Idempotency records                         | 30 days from first creation         |
-| Usage delivery and reconciliation records   | 30 days from first creation         |
-| Platform audit records and operational logs | 30 days from creation               |
-| API keys                                    | Not deleted by the 30-day retention |
-| Accepted accounting entries in Delcore      | Under Delcore's own retention rules |
+| Data                                                          | Kept for                            |
+| ------------------------------------------------------------- | ----------------------------------- |
+| Execution request records, with or without an idempotency key | 30 days from creation               |
+| Idempotency records                                           | 30 days from first creation         |
+| Usage delivery and reconciliation records                     | 30 days from first creation         |
+| Platform audit records and operational logs                   | 30 days from creation               |
+| API keys                                                      | Not deleted by the 30-day retention |
+| Accepted accounting entries in Delcore                        | Under Delcore's own retention rules |
 
 The 30-day retention does not apply to API keys. The retention sweep never deletes them. Expiry and revocation only stop a key from authenticating, so its verification hash and attribution stay stored.
 

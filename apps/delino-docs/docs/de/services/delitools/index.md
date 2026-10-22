@@ -256,13 +256,14 @@ DeliTools speichert Ihren Eingabetext, Ihr Schema oder die Ergebnisse niemals. E
 
 DeliTools speichert nur die Daten, die es benötigt, um den Dienst zu betreiben und abzurechnen: Verifizierungs-Hashes von API-Schlüsseln, wer und welcher Mandant zu einer Anfrage gehört, Eingabe-Hashes für die Idempotenz, Anfragezustände, Versuchskennungen, gemessene Token-Nutzung, Preis-Snapshots sowie sichere Audit- und Betriebsdatensätze.
 
-| Daten                                                | Aufbewahrt für                                   |
-| ---------------------------------------------------- | ------------------------------------------------ |
-| Idempotenzdatensätze                                 | 30 Tage ab der ersten Erstellung                 |
-| Datensätze zur Zustellung und Abstimmung der Nutzung | 30 Tage ab der ersten Erstellung                 |
-| Plattform-Auditdatensätze und Betriebslogs           | 30 Tage ab der Erstellung                        |
-| API-Schlüssel                                        | Nicht durch die 30-Tage-Aufbewahrung gelöscht    |
-| Angenommene Buchungseinträge in Delcore              | Nach den eigenen Aufbewahrungsregeln von Delcore |
+| Daten                                                            | Aufbewahrt für                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------ |
+| Ausführungs-Anfragedatensätze, mit oder ohne Idempotenzschlüssel | 30 Tage ab der Erstellung                        |
+| Idempotenzdatensätze                                             | 30 Tage ab der ersten Erstellung                 |
+| Datensätze zur Zustellung und Abstimmung der Nutzung             | 30 Tage ab der ersten Erstellung                 |
+| Plattform-Auditdatensätze und Betriebslogs                       | 30 Tage ab der Erstellung                        |
+| API-Schlüssel                                                    | Nicht durch die 30-Tage-Aufbewahrung gelöscht    |
+| Angenommene Buchungseinträge in Delcore                          | Nach den eigenen Aufbewahrungsregeln von Delcore |
 
 Die 30-Tage-Aufbewahrung gilt nicht für API-Schlüssel. Die Aufbewahrungsbereinigung löscht sie nie. Ablauf und Widerruf verhindern nur, dass sich ein Schlüssel authentifiziert; sein Verifizierungs-Hash und seine Zuordnung bleiben gespeichert.
 

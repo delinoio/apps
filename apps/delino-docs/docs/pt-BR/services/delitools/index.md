@@ -256,13 +256,14 @@ O DeliTools nunca armazena seu texto de entrada, seu esquema nem os resultados. 
 
 O DeliTools armazena apenas os dados de que precisa para executar o serviço e faturá-lo: hashes de verificação de chaves de API, quem e qual tenant são donos de uma solicitação, hashes de entrada para idempotência, estados das solicitações, identificadores de tentativas, uso de tokens medido, instantâneos de preços e registros seguros de auditoria e operação.
 
-| Dados                                                    | Mantidos por                               |
-| -------------------------------------------------------- | ------------------------------------------ |
-| Registros de idempotência                                | 30 dias a partir da primeira criação       |
-| Registros de entrega e reconciliação de uso              | 30 dias a partir da primeira criação       |
-| Registros de auditoria da plataforma e logs operacionais | 30 dias a partir da criação                |
-| Chaves de API                                            | Não são excluídas pela retenção de 30 dias |
-| Lançamentos contábeis aceitos no Delcore                 | Conforme as regras de retenção do Delcore  |
+| Dados                                                                   | Mantidos por                               |
+| ----------------------------------------------------------------------- | ------------------------------------------ |
+| Registros de solicitações de execução, com ou sem chave de idempotência | 30 dias a partir da criação                |
+| Registros de idempotência                                               | 30 dias a partir da primeira criação       |
+| Registros de entrega e reconciliação de uso                             | 30 dias a partir da primeira criação       |
+| Registros de auditoria da plataforma e logs operacionais                | 30 dias a partir da criação                |
+| Chaves de API                                                           | Não são excluídas pela retenção de 30 dias |
+| Lançamentos contábeis aceitos no Delcore                                | Conforme as regras de retenção do Delcore  |
 
 A retenção de 30 dias não se aplica às chaves de API. A limpeza de retenção nunca as exclui. A expiração e a revogação apenas impedem que uma chave seja autenticada, portanto o hash de verificação e a atribuição dela continuam armazenados.
 
