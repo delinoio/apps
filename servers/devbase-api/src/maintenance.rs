@@ -74,6 +74,9 @@ impl Server {
                 tx.commit().await?;
             }
         }
+        // Count only a cycle that reaches this success boundary: a skipped authority batch is already
+        // counted in `cleanup_failures` and still completes, while any `?` above leaves this untouched.
+        self.metrics.cleanup_runs.inc();
         tracing::info!(category = "maintenance", "maintenance cycle completed");
         Ok(())
     }

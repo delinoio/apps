@@ -161,7 +161,7 @@ test("direct API development preserves existing environment without a Compose ha
 });
 
 test(
-  "root development stops before process-compose when Compose startup fails",
+  "root development stops before Turbo when Compose startup fails",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
@@ -190,7 +190,7 @@ test(
     );
     const result = spawnSync(
       process.execPath,
-      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--tui=false"],
+      [fileURLToPath(new URL("./dev.mjs", import.meta.url)), "--ui=stream"],
       {
         env: {
           ...process.env,
@@ -264,11 +264,11 @@ test(
 );
 
 test(
-  "root development hands databases and arguments directly to process-compose and returns its failure",
+  "root development hands databases and arguments directly to Turbo and returns its failure",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
-    const output = join(directory, "process-compose.json");
+    const output = join(directory, "turbo.json");
     const config = {
       services: Object.fromEntries(
         Object.values(Api).map((api) => [
@@ -297,7 +297,7 @@ test(
       { mode: 0o755 },
     );
     writeFileSync(
-      join(directory, "process-compose"),
+      join(directory, "pnpm"),
       `#!${process.execPath}\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FIXTURE_OUTPUT, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), urls: JSON.parse(process.env.DEV_COMPOSE_DATABASE_URLS)})); process.exit(19);\n`,
       { mode: 0o755 },
     );
@@ -310,8 +310,8 @@ test(
       process.execPath,
       [
         fileURLToPath(new URL("./dev.mjs", import.meta.url)),
-        "--tui=false",
-        "delcore-api",
+        "--ui=stream",
+        "--filter=@delinoio/delcore-api",
       ],
       {
         env: {
@@ -325,13 +325,13 @@ test(
     assert.equal(result.status, 19);
     const captured = JSON.parse(readFileSync(output, "utf8"));
     assert.deepEqual(captured.args, [
-      "--config",
-      "process-compose.yaml",
-      "--no-server",
-      "--disable-dotenv",
-      "up",
-      "--tui=false",
-      "delcore-api",
+      "exec",
+      "turbo",
+      "watch",
+      "dev",
+      "--concurrency=20",
+      "--ui=stream",
+      "--filter=@delinoio/delcore-api",
     ]);
     assert.equal(
       captured.cwd,
@@ -472,11 +472,6 @@ test("root, service-local and Portless Delcore development share the catalog-app
   }
   assert.equal(turbo.tasks.dev.persistent, true);
   assert.deepEqual(turbo.globalPassThroughEnv, ["PORTLESS", "PORTLESS_*"]);
-  assert.match(read("dev.mjs"), /process-compose/u);
-  assert.match(
-    read("../process-compose.yaml"),
-    /delcore-api:[\s\S]*?command: pnpm exec turbo run dev --filter=@delinoio\/delcore-api/u,
-  );
   // Infisical injects values before Portless runs the shared API launcher.
   assert.match(
     service.scripts.dev,
@@ -486,9 +481,9 @@ test("root, service-local and Portless Delcore development share the catalog-app
   assert.equal(listen, "127.0.0.1:8080");
   // The shared builder watches code and SQL, but catalog YAML edits still
   // require an explicit API restart.
-  const processCompose = read("../process-compose.yaml");
-  assert.match(processCompose, /"\*\.rs"/u);
-  assert.match(processCompose, /"\*\.sql"/u);
-  assert.doesNotMatch(processCompose, /"\*\.ya?ml"/u);
+  const builder = turbo.tasks["//#server-build"];
+  assert.ok(builder.inputs.includes("servers/**/*.rs"));
+  assert.ok(builder.inputs.includes("servers/**/*.sql"));
+  assert.ok(!builder.inputs.some((input) => /ya?ml/u.test(input)));
   assert.deepEqual(apiCommand(Api.Delcore, {})[1], ["serve", "--dev-env"]);
 });

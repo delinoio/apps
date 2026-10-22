@@ -652,3 +652,177 @@ async fn corrections_keep_existing_admission_identities_below_lowered_bounds() {
         let _ = admission(&f).await;
     }
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn call_time_prices_apply_to_existing_tenants_and_late_usage() {
+    let f = Fixture::setup().await;
+    let base = plan(&f, json!([])).await;
+    let svc = service(&f).await;
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
+    let mut price = json!({"key":"requests-usd","planId":base["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1","included":"0","currency":"USD"});
+    let a = put(&f, "CreatePrice", "price", price.clone()).await;
+    let alpha = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Alpha"}),
+        )
+        .await;
+    let alpha = &alpha["tenant"]["id"];
+    let at_a = Utc::now().to_rfc3339();
+    let first = ingest(&f, alpha, &svc["id"], "first", json!({}), &at_a).await;
+
+    price["unitPrice"] = json!("2");
+    let b = put(&f, "CreatePrice", "price", price.clone()).await;
+    let beta = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Beta"}),
+        )
+        .await;
+    let beta = &beta["tenant"]["id"];
+    let at_b = Utc::now().to_rfc3339();
+    let changed = ingest(&f, alpha, &svc["id"], "changed", json!({}), &at_b).await;
+    ingest(&f, beta, &svc["id"], "beta-b", json!({}), &at_b).await;
+
+    price["unitPrice"] = json!("1");
+    let restored = put(&f, "CreatePrice", "price", price.clone()).await;
+    assert_eq!(restored["id"], a["id"]);
+    // An old, unversioned entitlement installed by a delayed subscription
+    // transition cannot override the product's effective catalog price.
+    let legacy = key();
+    sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,'requests',100,0,'USD','',now(),1)")
+        .bind(&legacy).bind(base["id"].as_str().unwrap()).bind(svc["id"].as_str().unwrap()).execute(&f.db).await.unwrap();
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,clock_timestamp())")
+        .bind(key()).bind(alpha.as_str().unwrap()).bind(legacy).execute(&f.db).await.unwrap();
+    let at_restored = Utc::now().to_rfc3339();
+    ingest(&f, alpha, &svc["id"], "restored", json!({}), &at_restored).await;
+    ingest(&f, beta, &svc["id"], "beta-a", json!({}), &at_restored).await;
+    // Delivery and retries use the original execution start even after another
+    // activation. The currently active version must not reprice these events.
+    let late = ingest(&f, alpha, &svc["id"], "late", json!({}), &at_b).await;
+    let replay = ingest(&f, alpha, &svc["id"], "first", json!({}), &at_a).await;
+    assert_eq!(replay["eventId"], first["eventId"]);
+    f.rpc("service", "CorrectEvent", json!({"requestKey":key(),"tenantId":alpha,"eventKey":"changed","expectedRevision":1,"kind":"EVENT_CORRECTION_KIND_REPLACE","eventType":"request","attributes":{"retry":{"boolean":true}}})).await;
+    f.process_metering().await;
+
+    for (event, expected) in [(&first, &a), (&changed, &b), (&late, &b)] {
+        let attributed: String = sqlx::query_scalar(
+            "SELECT price_id::text FROM metering_event_prices WHERE event_id=$1::text::uuid",
+        )
+        .bind(event["eventId"].as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .unwrap();
+        assert_eq!(attributed, expected["id"].as_str().unwrap());
+    }
+    let alpha_charge: String = sqlx::query_scalar(
+        "SELECT (-sum(amount))::text FROM ledger WHERE tenant_id=$1::text::uuid AND kind IN ('usage','correction')",
+    )
+    .bind(alpha.as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    assert_eq!(alpha_charge, "6");
+    let beta_charge: String = sqlx::query_scalar(
+        "SELECT (-sum(amount))::text FROM ledger WHERE tenant_id=$1::text::uuid AND kind IN ('usage','correction')",
+    )
+    .bind(beta.as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    assert_eq!(beta_charge, "3");
+
+    // Reapplying the same version is not another activation.
+    put(&f, "CreatePrice", "price", price).await;
+    let activations: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM catalog_price_activations WHERE price_id=$1::text::uuid",
+    )
+    .bind(a["stableId"].as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap();
+    assert_eq!(activations, 3);
+    assert!(
+        sqlx::query(
+            "UPDATE catalog_price_activations SET effective_at=now() WHERE price_id=$1::text::uuid"
+        )
+        .bind(a["stableId"].as_str().unwrap())
+        .execute(&f.db)
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn thirty_day_expiry_preserves_accepted_accounting_and_pending_work() {
+    let f = Fixture::setup().await;
+    let base = plan(&f, json!([])).await;
+    let svc = service(&f).await;
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
+    put(&f,"CreatePrice","price",json!({"key":"requests-usd","planId":base["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1","included":"0","currency":"USD"})).await;
+    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+    let tenant = &me["tenants"][0]["id"];
+    let at = Utc::now().to_rfc3339();
+    ingest(&f, tenant, &svc["id"], "accepted", json!({}), &at).await;
+    f.process_metering().await;
+    ingest(&f, tenant, &svc["id"], "pending", json!({}), &at).await;
+    sqlx::query("UPDATE jobs SET state='failed' WHERE kind='metering' AND state='pending'")
+        .execute(&f.db)
+        .await
+        .unwrap();
+    let now = Utc::now() + chrono::Duration::days(31);
+    f.worker.maintain(now).await.unwrap();
+    let (events, ledger, failed, requests, audit): (i64, i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM metering_events),(SELECT count(*) FROM ledger WHERE kind='usage'),(SELECT count(*) FROM jobs WHERE kind='metering' AND state='failed'),(SELECT count(*) FROM requests),(SELECT count(*) FROM audit)")
+        .fetch_one(&f.db).await.unwrap();
+    assert_eq!((events, ledger, failed, requests, audit), (2, 1, 1, 0, 0));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn addon_call_time_prices_respect_product_ownership() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let svc = service(&f).await;
+    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+    let tenant = &me["tenants"][0]["id"];
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
+    let addon = put(
+        &f,
+        "PutAddOn",
+        "addOn",
+        json!({"key":"extra","name":"Extra","serviceId":svc["id"]}),
+    )
+    .await;
+    let mut price = json!({"key":"requests-usd","addOnId":addon["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1","included":"0","currency":"USD"});
+    let a = put(&f, "CreatePrice", "price", price.clone()).await;
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,clock_timestamp())")
+        .bind(key()).bind(tenant.as_str().unwrap()).bind(a["id"].as_str().unwrap()).execute(&f.db).await.unwrap();
+    let before_change = Utc::now().to_rfc3339();
+    price["unitPrice"] = json!("2");
+    let b = put(&f, "CreatePrice", "price", price).await;
+    let unrelated = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"other","name":"Other","rank":1,"free":true}),
+    )
+    .await;
+    put(&f,"CreatePrice","price",json!({"key":"requests-usd","planId":unrelated["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"100","included":"0","currency":"USD"})).await;
+    let after_change = Utc::now().to_rfc3339();
+    let old = ingest(&f, tenant, &svc["id"], "old", json!({}), &before_change).await;
+    let new = ingest(&f, tenant, &svc["id"], "new", json!({}), &after_change).await;
+    for (event, price) in [(&old, &a), (&new, &b)] {
+        let attributed: String = sqlx::query_scalar(
+            "SELECT price_id::text FROM metering_event_prices WHERE event_id=$1::text::uuid",
+        )
+        .bind(event["eventId"].as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .unwrap();
+        assert_eq!(attributed, price["id"].as_str().unwrap());
+    }
+}
