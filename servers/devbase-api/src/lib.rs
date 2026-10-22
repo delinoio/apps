@@ -242,6 +242,18 @@ impl Server {
         Q: Message + Serialize + DeserializeOwned,
         R: Message + Serialize + DeserializeOwned,
     {
+        // The size check needs no identity and no storage, so it runs before authentication: a
+        // message above the limit never consumes authorization or database resources.
+        // The limit applies to the received (decompressed) message bytes, not to the decoded
+        // message, so legal JSON padding and escape expansion count toward it.
+        let Some(received) = received else {
+            tracing::error!(trace_id=%trace,procedure=op.name(),"received message size was not captured");
+            return Err(Fault::unavailable());
+        };
+        if received > size::MAX_MESSAGE_BYTES {
+            tracing::warn!(trace_id=%trace,procedure=op.name(),received_bytes=received,limit_bytes=size::MAX_MESSAGE_BYTES,"request message exceeds size limit");
+            return Err(Fault::invalid("request exceeds 64 KiB"));
+        }
         let q = serde_json::to_value(&request)?;
         let who = self.authenticate(authorization, op, &q).await?;
         let limiter = if op.management() {
@@ -270,16 +282,6 @@ impl Server {
             );
             f.retry = Some(retry);
             return Err(f);
-        }
-        // The limit applies to the received (decompressed) message bytes, not to the decoded
-        // message, so legal JSON padding and escape expansion count toward it.
-        let Some(received) = received else {
-            tracing::error!(trace_id=%trace,procedure=op.name(),"received message size was not captured");
-            return Err(Fault::unavailable());
-        };
-        if received > size::MAX_MESSAGE_BYTES {
-            tracing::warn!(trace_id=%trace,procedure=op.name(),received_bytes=received,limit_bytes=size::MAX_MESSAGE_BYTES,"request message exceeds size limit");
-            return Err(Fault::invalid("request exceeds 64 KiB"));
         }
         // The idempotency key identifies the replay record, so it is always validated first. For a
         // mutation the remaining payload result is held until the replay lookup: a matching

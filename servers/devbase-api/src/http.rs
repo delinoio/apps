@@ -4,6 +4,19 @@ use axum::{Router, http::StatusCode, middleware, routing::get};
 use server_common::{http::Policy, telemetry};
 use std::{sync::Arc, time::Duration};
 
+/// The RPC service with its production limits and interceptors, without the outer request policy.
+/// Exposed so tests can wrap the real service stack with their own layers.
+pub fn rpc_router(server: Arc<Server>) -> Router {
+    let rpc = connectrpc::Router::new()
+        .add_service(server)
+        .into_axum_service()
+        .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10))
+        // Must stay the first interceptor: it records the received message size before any
+        // other interceptor could replace the payload.
+        .with_interceptor(crate::size::CaptureReceivedSize);
+    Router::new().fallback_service(rpc)
+}
+
 pub fn router(server: Arc<Server>) -> Router {
     let policy = Policy {
         origin: server.config.origin.clone(),
@@ -12,15 +25,9 @@ pub fn router(server: Arc<Server>) -> Router {
         metrics: server.metrics.clone(),
         procedure: Some(|path| crate::Op::from_procedure_path(path).map(crate::Op::name)),
     };
-    let rpc = connectrpc::Router::new()
-        .add_service(server.clone())
-        .into_axum_service()
-        .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10))
-        // Must stay the first interceptor: it records the received message size before any
-        // other interceptor could replace the payload.
-        .with_interceptor(crate::size::CaptureReceivedSize);
     let metrics = server.metrics.clone();
     let ready = server.db.clone();
+    let rpc = rpc_router(server);
     Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
         .route(
@@ -47,7 +54,8 @@ pub fn router(server: Arc<Server>) -> Router {
                 }
             }),
         )
-        .fallback_service(Router::new().fallback_service(rpc).layer(
-            middleware::from_fn_with_state(policy, server_common::http::middleware),
-        ))
+        .fallback_service(rpc.layer(middleware::from_fn_with_state(
+            policy,
+            server_common::http::middleware,
+        )))
 }
