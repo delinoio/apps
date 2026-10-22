@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-use crate::{Server, store};
+use crate::{Op, Server, store};
 use axum::{Router, http::StatusCode, middleware, routing::get};
 use server_common::{http::Policy, telemetry};
 use std::{sync::Arc, time::Duration};
@@ -10,6 +10,7 @@ pub fn router(server: Arc<Server>) -> Router {
         timeout: server.config.request_timeout,
         service: telemetry::Service::DevBase,
         metrics: server.metrics.clone(),
+        procedure: Some(|path| Op::from_procedure_path(path).map(Op::name)),
     };
     let rpc = connectrpc::Router::new()
         .add_service(server.clone())

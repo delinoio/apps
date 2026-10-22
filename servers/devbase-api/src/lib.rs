@@ -35,6 +35,31 @@ pub enum Op {
     DeleteEndUser,
 }
 impl Op {
+    /// Every DevBase procedure, in declaration order.
+    pub const ALL: [Op; 15] = [
+        Self::CreateProject,
+        Self::GetProject,
+        Self::ListProjects,
+        Self::UpdateProject,
+        Self::DeleteProject,
+        Self::IssueApiKey,
+        Self::GetApiKey,
+        Self::ListApiKeys,
+        Self::RevokeApiKey,
+        Self::CreateEndUser,
+        Self::GetEndUser,
+        Self::LookupEndUser,
+        Self::ListEndUsers,
+        Self::UpdateEndUser,
+        Self::DeleteEndUser,
+    ];
+    const SERVICE_PATH_PREFIX: &'static str = "/devbase.v1.DevBaseService/";
+    /// Resolves an exact Connect procedure path. Any other path, including other services,
+    /// operational routes and near matches, returns `None`.
+    pub fn from_procedure_path(path: &str) -> Option<Op> {
+        let method = path.strip_prefix(Self::SERVICE_PATH_PREFIX)?;
+        Self::ALL.into_iter().find(|op| op.name() == method)
+    }
     pub fn name(self) -> &'static str {
         match self {
             Self::CreateProject => "CreateProject",
