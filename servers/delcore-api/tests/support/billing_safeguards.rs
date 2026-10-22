@@ -211,11 +211,12 @@ async fn mock_worker(
 }
 
 /// Creates a deleting tenant that still owns a provider subscription, past reporting grace, with a
-/// queued deletion cancel job.
+/// queued deletion cancel job. Deletion started one day longer ago than the configured grace
+/// period, so the fixture stays past grace whatever the configured period is.
 async fn deleting_tenant(f: &Fixture, name: &str) -> (uuid::Uuid, uuid::Uuid) {
     let tenant = tenant(f, name).await;
-    sqlx::query("UPDATE tenants SET external_subscription_id='sub_fixture',deleting_at=now()-interval '8 days' WHERE id=$1")
-        .bind(tenant).execute(&f.db).await.unwrap();
+    sqlx::query("UPDATE tenants SET external_subscription_id='sub_fixture',deleting_at=now()-make_interval(secs=>$2::double precision) WHERE id=$1")
+        .bind(tenant).bind((f.config.reporting_grace_seconds + 86_400) as f64).execute(&f.db).await.unwrap();
     let cancel = job(f, tenant, "cancel", "pending", 0, "", "").await;
     (tenant, cancel)
 }
