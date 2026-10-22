@@ -81,8 +81,8 @@ async fn selected_plan(f: &Fixture, tenant: &Value) -> String {
         .unwrap()
 }
 async fn limit_feature(f: &Fixture, svc: &Value) -> Value {
-    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
-    put(&f,"PutFeature","feature",json!({"serviceId":svc["id"],"key":"limit","name":"Limit","kind":"FEATURE_KIND_METERED","meterKey":"requests"})).await
+    put(f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
+    put(f,"PutFeature","feature",json!({"serviceId":svc["id"],"key":"limit","name":"Limit","kind":"FEATURE_KIND_METERED","meterKey":"requests"})).await
 }
 
 #[tokio::test]
