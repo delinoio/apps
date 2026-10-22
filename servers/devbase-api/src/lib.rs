@@ -271,7 +271,17 @@ impl Server {
             tracing::warn!(trace_id=%trace,procedure=op.name(),received_bytes=received,limit_bytes=size::MAX_MESSAGE_BYTES,"request message exceeds size limit");
             return Err(Fault::invalid("request exceeds 64 KiB"));
         }
-        validation::validate(op, &q)?;
+        // The idempotency key identifies the replay record, so it is always validated first. For a
+        // mutation the remaining payload result is held until the replay lookup: a matching
+        // scrubbed record must answer `not_found` whatever the payload contains, and a routing
+        // conflict must win over a malformed payload. Reads validate the whole request here.
+        validation::validate_routing(op, &q)?;
+        let payload = if op.mutation() {
+            validation::validate_payload(op, &q)
+        } else {
+            validation::validate_payload(op, &q)?;
+            Ok(())
+        };
         if op == Op::CreateProject
             && self
                 .authority
@@ -318,9 +328,11 @@ impl Server {
         if let Some(row)=sqlx::query("SELECT operation,tenant_id,project_id,fingerprint,response,scrubbed FROM replays WHERE principal=$1 AND idempotency_key=$2").bind(&who.actor).bind(key).fetch_optional(&mut *tx).await? {
             if row.get::<String,_>("operation")!=op.name()||row.get::<uuid::Uuid,_>("tenant_id").to_string()!=who.tenant||(!who.project.is_empty()&&row.get::<Option<uuid::Uuid>,_>("project_id").is_some_and(|id|id.to_string()!=who.project)){return Err(Fault::conflict())}
             if row.get::<bool,_>("scrubbed"){return Err(Fault::missing())}
+            payload?;
             if row.get::<Vec<u8>,_>("fingerprint")!=fingerprint{return Err(Fault::conflict())}
             let bytes:Vec<u8>=row.get("response");let result=R::decode_from_slice(&bytes).map_err(|_|Fault::unavailable())?;return Ok(serde_json::to_value(result)?)
         }
+        payload?;
         let result = self.operation(&mut tx, op, &q, &who, trace).await?;
         let mut snapshot = result.body.clone();
         snapshot.as_object_mut().unwrap().remove("secret");

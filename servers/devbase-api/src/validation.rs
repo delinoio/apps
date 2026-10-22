@@ -59,7 +59,10 @@ pub fn page(q: &Value) -> Result<(i64, Option<DateTime<Utc>>, uuid::Uuid)> {
 pub fn cursor(at: DateTime<Utc>, id: uuid::Uuid) -> String {
     URL_SAFE_NO_PAD.encode(format!("{}.{id}", at.timestamp_micros()))
 }
-pub fn validate(op: Op, q: &Value) -> Result<()> {
+/// Validates the fields that identify a replay record: the idempotency key of a mutation. This
+/// must pass before any replay lookup. Everything else in the request is payload and is checked
+/// by `validate_payload`.
+pub fn validate_routing(op: Op, q: &Value) -> Result<()> {
     if op.mutation() {
         let key = string(q, "idempotencyKey");
         if !(8..=128).contains(&key.len())
@@ -70,6 +73,12 @@ pub fn validate(op: Op, q: &Value) -> Result<()> {
             return Err(Fault::invalid("invalid idempotency_key"));
         }
     }
+    Ok(())
+}
+/// Validates the non-routing payload of a request. For mutations the caller may defer this result
+/// until after the replay lookup, because a matching scrubbed replay record is decided whatever
+/// the payload contains.
+pub fn validate_payload(op: Op, q: &Value) -> Result<()> {
     match op {
         Op::CreateProject | Op::UpdateProject => identifier(string(q, "name"))?,
         Op::GetApiKey | Op::RevokeApiKey => {
@@ -143,4 +152,55 @@ pub fn validate(op: Op, q: &Value) -> Result<()> {
         }
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn routing_checks_only_the_idempotency_key() {
+        let bad_key = json!({"idempotencyKey":"short"});
+        assert!(validate_routing(Op::CreateEndUser, &bad_key).is_err());
+        assert!(validate_routing(Op::GetEndUser, &bad_key).is_ok());
+        // A payload that fails validation does not fail routing.
+        let q = json!({"idempotencyKey":"user-create","externalId":""});
+        assert!(validate_routing(Op::CreateEndUser, &q).is_ok());
+        assert!(validate_payload(Op::CreateEndUser, &q).is_err());
+    }
+    #[test]
+    fn payload_rejects_each_invalid_non_routing_field() {
+        let key = "user-update";
+        let long = "a".repeat(257);
+        for (op, q) in [
+            (
+                Op::CreateEndUser,
+                json!({"idempotencyKey":key,"externalId":""}),
+            ),
+            (Op::CreateProject, json!({"idempotencyKey":key,"name":""})),
+            (
+                Op::UpdateEndUser,
+                json!({"idempotencyKey":key,"endUserId":"x","updateMask":"name"}),
+            ),
+            (
+                Op::UpdateEndUser,
+                json!({"idempotencyKey":key,"endUserId":uuid::Uuid::now_v7().to_string(),"updateMask":""}),
+            ),
+            (
+                Op::UpdateEndUser,
+                json!({"idempotencyKey":key,"endUserId":uuid::Uuid::now_v7().to_string(),"updateMask":"unknown"}),
+            ),
+            (
+                Op::UpdateEndUser,
+                json!({"idempotencyKey":key,"endUserId":uuid::Uuid::now_v7().to_string(),"updateMask":"name","name":long}),
+            ),
+            (
+                Op::CreateEndUser,
+                json!({"idempotencyKey":key,"externalId":"e","metadata":{"k":"v".repeat(17 << 10)}}),
+            ),
+        ] {
+            assert!(validate_routing(op, &q).is_ok(), "{op:?} {q}");
+            assert!(validate_payload(op, &q).is_err(), "{op:?} {q}");
+        }
+        let valid = json!({"idempotencyKey":key,"externalId":"e"});
+        assert!(validate_payload(Op::CreateEndUser, &valid).is_ok());
+    }
 }
