@@ -264,7 +264,7 @@ test(
 );
 
 test(
-  "root development hands databases and arguments to process-compose and returns its failure",
+  "root development hands databases and arguments through Portless to process-compose and returns its failure",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
@@ -299,6 +299,17 @@ test(
     writeFileSync(
       join(directory, "process-compose"),
       `#!${process.execPath}\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FIXTURE_OUTPUT, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), urls: JSON.parse(process.env.DEV_COMPOSE_DATABASE_URLS)})); process.exit(19);\n`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(directory, "portless"),
+      `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.shift() !== '--' || args[0] !== '--supervised') process.exit(98);
+const result = spawnSync(process.execPath, [${JSON.stringify(fileURLToPath(new URL("./dev.mjs", import.meta.url)))}, ...args], { stdio: 'inherit', env: process.env });
+process.exit(result.status ?? 1);
+`,
       { mode: 0o755 },
     );
     const result = spawnSync(
@@ -442,11 +453,16 @@ test("root, service-local and Portless Delcore development share the catalog-app
   const service = JSON.parse(read("../servers/delcore-api/package.json"));
   const portless = JSON.parse(read("../portless.json"));
   const turbo = JSON.parse(read("../turbo.json"));
-  // Root development starts Compose, then process-compose, whose Delcore task
-  // runs the Turbo dev task; Portless runs the same Turbo dev tasks. Both
-  // reach the service-local dev script.
+  // Root development starts Compose, then Portless and process-compose.
+  // The supervised Delcore task runs the Turbo dev task, which reaches
+  // the same service-local dev script.
   assert.equal(root.scripts.dev, "node scripts/dev.mjs");
-  assert.equal(root.scripts["dev:portless"], "portless");
+  assert.equal(root.scripts["dev:portless"], undefined);
+  assert.notEqual(portless.turbo, false);
+  for (const [path, app] of Object.entries(portless.apps)) {
+    assert.equal(app.script ?? "dev", "dev");
+    assert.ok(JSON.parse(read(`../${path}/package.json`)).scripts.dev);
+  }
   assert.equal(turbo.tasks.dev.persistent, true);
   assert.match(read("dev.mjs"), /process-compose/u);
   assert.match(

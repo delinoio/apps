@@ -6,7 +6,6 @@
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh",
     "dev": "node scripts/dev.mjs",
-    "dev:portless": "portless",
     "build": "turbo run build",
     "test": "turbo run test",
     "i18n:check": "pnpm -r --if-present run i18n:check",
