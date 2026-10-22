@@ -191,13 +191,15 @@ impl UsageService {
         let platform = &self.platform;
         let pool = &platform.store.pool;
         let settings = platform.settings();
-        let now = store::now();
         let outcome = match self.gateway.generation(&attempt.generation_id).await {
             Ok(Lookup::Usage { model, tokens }) if model == attempt.model => Ok(tokens),
             Ok(Lookup::NotYet) => Err("not_yet"),
             Ok(_) => Err("unreadable"),
             Err(_) => Err("unavailable"),
         };
+        // Read the clock after the lookup: the network call can cross the attempt's 30-day
+        // boundary, and the storage updates below only accept an attempt still inside it.
+        let now = store::now();
         match outcome {
             Ok(tokens) => {
                 platform
@@ -214,7 +216,10 @@ impl UsageService {
                             self.deliver(confirmed).await;
                         }
                     }
-                    _ => tracing::warn!(attempt_id = %attempt.id, "confirmed usage was not stored"),
+                    _ => tracing::warn!(
+                        attempt_id = %attempt.id,
+                        "confirmed usage was not stored; the attempt expired, was already settled or storage failed"
+                    ),
                 }
             }
             Err(cause) => {

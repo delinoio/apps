@@ -476,6 +476,80 @@ async fn unknown_usage_is_reconciled_with_the_gateway_and_never_estimated() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn usage_confirmed_after_the_expiry_boundary_is_not_stored_or_delivered() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    env.gateway.sequence(vec![Script::StreamError {
+        generation: "gen_edge".into(),
+    }]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "unavailable",
+            reason::PROVIDER,
+        )
+        .await;
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM attempts ORDER BY created_at LIMIT 1")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    // created_at is immutable in production; the test schema lifts the trigger only to age rows.
+    sqlx::query("ALTER TABLE attempts DISABLE TRIGGER attempts_created_at")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    // The attempt expires two minutes from now, as if the Gateway lookup took that long.
+    sqlx::query("UPDATE attempts SET created_at=now()-interval '30 days'+interval '1 minute'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    let tokens = delitools_api::gateway::Tokens {
+        input: 10,
+        output: 2,
+        cache_read: 0,
+        cache_write: 0,
+    };
+    let after_expiry = store::now() + chrono::Duration::minutes(2);
+    assert!(
+        !store::exec::set_measured(&env.fx.pool, id, &tokens, after_expiry)
+            .await
+            .unwrap(),
+        "usage established after the boundary is abandoned"
+    );
+    let stored: bool =
+        sqlx::query_scalar("SELECT measured_usage IS NOT NULL FROM attempts WHERE id=$1")
+            .bind(id)
+            .fetch_one(&env.fx.pool)
+            .await
+            .unwrap();
+    assert!(!stored);
+    // Inside the window the same confirmation is stored, but delivery is no longer claimable
+    // once the boundary has passed.
+    assert!(
+        store::exec::set_measured(&env.fx.pool, id, &tokens, store::now())
+            .await
+            .unwrap()
+    );
+    let lease = chrono::Duration::seconds(60);
+    assert!(
+        store::exec::claim_one(&env.fx.pool, id, after_expiry, lease)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store::exec::claim_one(&env.fx.pool, id, store::now(), lease)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn failed_calls_and_unusable_output_still_bill_their_confirmed_usage() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

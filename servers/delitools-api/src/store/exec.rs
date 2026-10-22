@@ -519,17 +519,19 @@ pub async fn claim_due(
         .collect::<std::result::Result<Vec<_>, _>>()?)
 }
 
-/// Claim one specific attempt for immediate delivery if it is due.
+/// Claim one specific attempt for immediate delivery if it is due and still inside its 30-day
+/// retention window at `now`.
 pub async fn claim_one(
     pool: &PgPool,
     id: Uuid,
     now: DateTime<Utc>,
     lease: Duration,
 ) -> Result<Option<DueAttempt>> {
-    let row = sqlx::query("UPDATE attempts SET retry_at=$3,updated_at=$2 WHERE id=$1 AND delivered_at IS NULL AND measured_usage IS NOT NULL AND (retry_at IS NULL OR retry_at<=$2) RETURNING id,tenant_id,capability,model,generation_id,price_effective_at,catalog_price,occurred_at,measured_usage,delivery_failures")
+    let row = sqlx::query("UPDATE attempts SET retry_at=$3,updated_at=$2 WHERE id=$1 AND delivered_at IS NULL AND measured_usage IS NOT NULL AND (retry_at IS NULL OR retry_at<=$2) AND created_at>$4 RETURNING id,tenant_id,capability,model,generation_id,price_effective_at,catalog_price,occurred_at,measured_usage,delivery_failures")
         .bind(id)
         .bind(now)
         .bind(now + lease)
+        .bind(cutoff(now))
         .fetch_optional(pool)
         .await?;
     Ok(row.as_ref().map(due_from_row).transpose()?)
@@ -562,17 +564,20 @@ pub async fn mark_retry(
     Ok(())
 }
 
-/// Store usage confirmed by Gateway reconciliation; it is then due for delivery.
+/// Store usage confirmed by Gateway reconciliation; it is then due for delivery. `now` must be read
+/// after the Gateway lookup: usage that was not established before the 30-day boundary is
+/// abandoned with the record, so an attempt that expired during the lookup is left unchanged.
 pub async fn set_measured(
     pool: &PgPool,
     id: Uuid,
     tokens: &Tokens,
     now: DateTime<Utc>,
 ) -> Result<bool> {
-    let result = sqlx::query("UPDATE attempts SET measured_usage=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND measured_usage IS NULL")
+    let result = sqlx::query("UPDATE attempts SET measured_usage=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND measured_usage IS NULL AND created_at>$4")
         .bind(id)
         .bind(pricing::tokens_json(tokens))
         .bind(now)
+        .bind(cutoff(now))
         .execute(pool)
         .await?;
     Ok(result.rows_affected() == 1)
