@@ -39,6 +39,19 @@ struct Job {
     attempts: i64,
     payload: Value,
 }
+impl Job {
+    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            tenant: row.try_get("tenant")?,
+            kind: row.try_get("kind")?,
+            state: row.try_get("state")?,
+            attempts: i64::from(row.try_get::<i32, _>("attempts")?),
+            external_id: row.try_get("external_id")?,
+            payload: row.try_get("payload")?,
+        })
+    }
+}
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct Payload {
@@ -96,15 +109,7 @@ impl Worker {
         let mut tx = postgres::begin(&self.pool).await?;
         let row=sqlx::query("SELECT id::text,COALESCE(tenant_id::text,'') AS tenant,kind,state,attempts,external_id,payload FROM jobs WHERE state IN ('pending','reconcile') AND kind<>'metering' AND available_at<=now() ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED").fetch_optional(&mut *tx).await?;
         let Some(row) = row else { return Ok(()) };
-        let j = Job {
-            id: row.try_get("id")?,
-            tenant: row.try_get("tenant")?,
-            kind: row.try_get("kind")?,
-            state: row.try_get("state")?,
-            attempts: i64::from(row.try_get::<i32, _>("attempts")?),
-            external_id: row.try_get("external_id")?,
-            payload: row.try_get("payload")?,
-        };
+        let j = Job::from_row(&row)?;
         sqlx::query(
             "UPDATE jobs SET state='running',attempts=attempts+1,updated_at=now() WHERE id=$1",
         )
@@ -112,12 +117,45 @@ impl Worker {
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
+        self.run_claimed(&j).await
+    }
+    /// Runs the already claimed job with the given id, for integration tests that must hold
+    /// the state-transition lock between the claim and the job body. `step` cannot do that
+    /// because every phase before the job body takes the same lock.
+    #[doc(hidden)]
+    pub async fn run_running_job(&self, id: uuid::Uuid) -> Result<()> {
+        let row=sqlx::query("SELECT id::text,COALESCE(tenant_id::text,'') AS tenant,kind,state,attempts,external_id,payload FROM jobs WHERE id=$1 AND state='running'").bind(id).fetch_one(&self.pool).await?;
+        let mut j = Job::from_row(&row)?;
+        // The claim recorded the state the job was claimed from; tests claim pending work.
+        j.state = "pending".into();
+        self.run_claimed(&j).await
+    }
+    async fn run_claimed(&self, j: &Job) -> Result<()> {
+        let request_started = std::sync::atomic::AtomicBool::new(false);
         // Finishing is outside the timed request so an ambiguous outcome stays durable.
-        match tokio::time::timeout(self.config.timeout(), self.execute_job(&j)).await {
+        match tokio::time::timeout(self.config.timeout(), self.execute_job(j, &request_started))
+            .await
+        {
             Ok(result) => result,
+            // A deleting tenant's cancellation first waits on the state-transition lock for its
+            // final check. Timing out there happens before any provider request, so the outcome
+            // is not ambiguous: keep the cancellation pending, refund the attempt (see `finish`)
+            // and rerun the check on the next pass instead of reconciling a request never sent.
+            Err(_)
+                if j.kind == "cancel"
+                    && j.state != "reconcile"
+                    && !request_started.load(std::sync::atomic::Ordering::SeqCst) =>
+            {
+                tracing::warn!(
+                    kind = j.kind,
+                    "cancellation timed out before any provider request"
+                );
+                self.finish(j, "pending", "final_settlement_pending", "")
+                    .await
+            }
             Err(_) => {
                 self.retry(
-                    &j,
+                    j,
                     if matches!(j.kind.as_str(), "webhook" | "email") {
                         Error::Transient
                     } else {
@@ -156,7 +194,11 @@ impl Worker {
         })
         .await?
     }
-    async fn execute_job(&self, j: &Job) -> Result<()> {
+    async fn execute_job(
+        &self,
+        j: &Job,
+        request_started: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
         if j.kind == "webhook" {
             let Some(event) = j.payload.get("event_id").and_then(Value::as_str) else {
                 return self.finish(j, "failed", "invalid_payload", "").await;
@@ -291,6 +333,8 @@ impl Worker {
             }
             _ => return self.finish(j, "failed", "unknown_job_kind", "").await,
         }
+        // From here on a timeout may hide a request the provider already accepted.
+        request_started.store(true, std::sync::atomic::Ordering::SeqCst);
         let raw = match self.provider.request(method, &path, body).await {
             Ok(v) => v,
             Err(e) => return self.retry(j, e, false).await,
