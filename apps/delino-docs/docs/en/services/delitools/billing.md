@@ -19,7 +19,7 @@ DeliTools bills your tenant for the AI tokens that your requests use. Delcore ra
 ## What is charged
 
 - **Every attempt with known usage is charged.** This includes an attempt whose result is invalid, whose extraction fails, whose answer arrived before you canceled, or whose result never reaches you.
-- **Retries are separate attempts.** If DeliTools retries a transient provider failure and the failed attempt reported usage, both attempts are charged. A failed attempt that reported no usage costs nothing.
+- **Retries are separate attempts.** A transient provider failure (a network error or an HTTP 5xx or 429 reply) returns no usage, so DeliTools retries it without a charge for the failed try. A completed provider reply with known usage ends the attempt loop and is charged, even when its output is invalid, because DeliTools never retries to repair invalid output. A reply without usage costs nothing.
 - **Unknown usage is not charged.** If the provider does not report usable token totals, DeliTools does not estimate a charge and does not look the usage up later.
 - **Aborted calls are not charged.** If you cancel, or the execution timeout elapses, while the provider call is still running, no usage report arrives and nothing is charged, even if the provider had already started work. This is a known limit: DeliTools does not look this usage up afterwards.
 - **Usage must be recorded.** DeliTools stores the usage of every attempt before it answers. If it cannot store it, the request fails with `ERROR_REASON_DEPENDENCY_UNAVAILABLE` and you receive no result.
