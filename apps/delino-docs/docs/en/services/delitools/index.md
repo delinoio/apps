@@ -97,7 +97,7 @@ Supported:
 - The types `object`, `array`, `string`, `number`, `integer`, `boolean` and `null`, nested to a depth of 8 levels. Each schema node has exactly one `type`, written as a string. A type array, such as `["string", "null"]`, is rejected.
 - `properties`, with every property listed in `required`. A property name has 1 to 256 characters.
 - `additionalProperties` set to `false` on every object.
-- `items` for arrays.
+- `items` for arrays. Every array schema must contain an `items` schema; an array without `items` is rejected.
 - `description` on any schema.
 - `enum` with scalar values. An enum must not be empty, its values must be unique and match the `type` of the node, and an `integer` enum takes whole numbers only.
 

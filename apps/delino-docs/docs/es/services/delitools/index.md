@@ -97,7 +97,7 @@ Compatible:
 - Los tipos `object`, `array`, `string`, `number`, `integer`, `boolean` y `null`, anidados hasta una profundidad de 8 niveles. Cada nodo del esquema tiene exactamente un `type`, escrito como cadena. Se rechaza un arreglo de tipos, como `["string", "null"]`.
 - `properties`, con todas las propiedades indicadas en `required`. El nombre de una propiedad tiene de 1 a 256 caracteres.
 - `additionalProperties` establecido en `false` en todos los objetos.
-- `items` para las matrices.
+- `items` para las matrices. Todo esquema de matriz debe contener un esquema `items`; se rechaza una matriz sin `items`.
 - `description` en cualquier esquema.
 - `enum` con valores escalares. Una enumeración no puede estar vacía, sus valores deben ser únicos y coincidir con el `type` del nodo, y una enumeración `integer` solo admite números enteros.
 

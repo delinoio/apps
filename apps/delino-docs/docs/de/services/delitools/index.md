@@ -97,7 +97,7 @@ Unterstützt:
 - Die Typen `object`, `array`, `string`, `number`, `integer`, `boolean` und `null`, verschachtelt bis zu einer Tiefe von 8 Ebenen. Jeder Schemaknoten hat genau einen `type`, der als Zeichenfolge angegeben wird. Ein Typ-Array wie `["string", "null"]` wird abgelehnt.
 - `properties`, wobei jede Eigenschaft in `required` aufgeführt ist. Ein Eigenschaftsname hat 1 bis 256 Zeichen.
 - `additionalProperties` mit dem Wert `false` bei jedem Objekt.
-- `items` für Arrays.
+- `items` für Arrays. Jedes Array-Schema muss ein `items`-Schema enthalten; ein Array ohne `items` wird abgelehnt.
 - `description` bei jedem Schema.
 - `enum` mit skalaren Werten. Ein Enum darf nicht leer sein, seine Werte müssen eindeutig sein und zum `type` des Knotens passen, und ein `integer`-Enum nimmt nur ganze Zahlen an.
 
