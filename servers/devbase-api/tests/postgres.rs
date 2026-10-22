@@ -46,6 +46,8 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     let actor = uuid::Uuid::now_v7().to_string();
     let state = Arc::new(Mutex::new("TENANT_STATE_ACTIVE".to_owned()));
     let state_mock = state.clone();
+    let members = Arc::new(Mutex::new(json!({})));
+    let members_mock = members.clone();
     let actor_mock = actor.clone();
     let mock = Router::new()
         .route(
@@ -71,14 +73,19 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         )
         .route(
             "/delcore.v1.DelcoreService/ListMembers",
-            post(|h: HeaderMap| async move {
-                if h.get("authorization").and_then(|h| h.to_str().ok()) == Some("Bearer manager") {
-                    (StatusCode::OK, Json(json!({})))
-                } else {
-                    (
-                        StatusCode::FORBIDDEN,
-                        Json(json!({"code":"permission_denied"})),
-                    )
+            post(move |h: HeaderMap| {
+                let members = members_mock.clone();
+                async move {
+                    if h.get("authorization").and_then(|h| h.to_str().ok())
+                        == Some("Bearer manager")
+                    {
+                        (StatusCode::OK, Json(members.lock().unwrap().clone()))
+                    } else {
+                        (
+                            StatusCode::FORBIDDEN,
+                            Json(json!({"code":"permission_denied"})),
+                        )
+                    }
                 }
             }),
         )
@@ -191,6 +198,32 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         let body: Value = r.json().await.unwrap();
         (status, body)
     }
+    // A successful but malformed membership reply must not authorize the operation.
+    for malformed in [json!([]), json!(42), json!(null), json!({"members":[null]})] {
+        *members.lock().unwrap() = malformed.clone();
+        let rejected =
+            json!({"tenantId":tenant,"name":"Rejected","idempotencyKey":"malformed-create"});
+        let (status, v) = call(&http, &base, "CreateProject", "manager", rejected).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{malformed}: {v}");
+        assert_eq!(v["code"], "unavailable", "{malformed}");
+        let created: i64 = sqlx::query_scalar("SELECT count(*) FROM projects")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(created, 0, "{malformed}");
+    }
+    // Valid replies, including a typed member list, keep authorizing.
+    *members.lock().unwrap() = json!({"members":[{"userId":actor,"roles":["ROLE_OWNER"]}]});
+    let (status, v) = call(
+        &http,
+        &base,
+        "ListProjects",
+        "manager",
+        json!({"tenantId":tenant}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    *members.lock().unwrap() = json!({});
     let create = json!({"tenantId":tenant,"name":"Project","idempotencyKey":"project-create"});
     let (status, p) = call(&http, &base, "CreateProject", "manager", create.clone()).await;
     assert_eq!(status, StatusCode::OK, "{p}");

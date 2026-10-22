@@ -137,12 +137,27 @@ impl Authority {
         Ok(user.into())
     }
     pub async fn manager(&self, authorization: &str, tenant: &str) -> Result<()> {
-        self.call(
-            "ListMembers",
-            authorization,
-            json!({"tenantId":tenant,"page":{"size":1}}),
-        )
-        .await?;
+        let value = self
+            .call(
+                "ListMembers",
+                authorization,
+                json!({"tenantId":tenant,"page":{"size":1}}),
+            )
+            .await?;
+        // Delcore authorizes by answering the call, so a successful reply is accepted only when
+        // it is a well-formed `ListMembersResponse`. The object check is separate because the
+        // generated decoder also accepts a top-level array as an empty message. An empty member
+        // list stays valid: Delcore remains the only owner of roles.
+        if !value.is_object()
+            || serde_json::from_value::<delino_protocol::delcore::v1::ListMembersResponse>(value)
+                .is_err()
+        {
+            tracing::warn!(
+                category = "malformed_dependency_response",
+                "ListMembers reply was not a valid response"
+            );
+            return Err(Fault::unavailable());
+        }
         Ok(())
     }
     pub async fn states(&self, ids: &[String]) -> Result<Vec<TenantState>> {
@@ -217,4 +232,124 @@ pub async fn bounded_json(mut response: reqwest::Response, limit: usize) -> Resu
         bytes.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&bytes).map_err(|_| Fault::unavailable())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{Router, extract::State, http::HeaderMap, routing::post};
+    use std::sync::Arc;
+
+    type Seen = Arc<std::sync::Mutex<Vec<(String, Value)>>>;
+
+    // Serves one fixed ListMembers reply and records the caller token and request body.
+    async fn authority(status: u16, reply: &'static str) -> (Authority, Seen) {
+        let seen = Seen::default();
+        let app = Router::new()
+            .route(
+                "/delcore.v1.DelcoreService/ListMembers",
+                post(
+                    move |State(seen): State<Seen>, headers: HeaderMap, body: String| async move {
+                        let token = headers["authorization"].to_str().unwrap().to_owned();
+                        seen.lock()
+                            .unwrap()
+                            .push((token, serde_json::from_str(&body).unwrap()));
+                        (
+                            axum::http::StatusCode::from_u16(status).unwrap(),
+                            [("content-type", "application/json")],
+                            reply,
+                        )
+                    },
+                ),
+            )
+            .with_state(seen.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let authority = Authority::new(
+            reqwest::Client::new(),
+            url,
+            "http://127.0.0.1:1/token".into(),
+            "resource".into(),
+            "client".into(),
+            "secret".into(),
+        );
+        (authority, seen)
+    }
+
+    async fn manager(status: u16, reply: &'static str) -> Result<()> {
+        authority(status, reply)
+            .await
+            .0
+            .manager("Bearer caller", "tenant")
+            .await
+    }
+
+    #[tokio::test]
+    async fn manager_accepts_well_formed_replies() {
+        assert!(manager(200, "{}").await.is_ok());
+
+        assert!(manager(200, r#"{"members":[]}"#).await.is_ok());
+
+        assert!(manager(200, r#"{"members":null}"#).await.is_ok());
+
+        assert!(
+            manager(200, r#"{"metadata":null,"nextAfterId":null}"#)
+                .await
+                .is_ok()
+        );
+
+        assert!(
+            manager(
+                200,
+                r#"{"members":[{"userId":"u","roles":["ROLE_OWNER"]}]}"#
+            )
+            .await
+            .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_rejects_malformed_successful_replies() {
+        for reply in [
+            "[]",
+            "42",
+            "true",
+            "null",
+            r#""text""#,
+            r#"{"members":42}"#,
+            r#"{"members":[null]}"#,
+            r#"{"members":[42]}"#,
+            r#"{"nextAfterId":42}"#,
+            r#"{"members":[{"roles":["ROLE_UNKNOWN_VALUE"]}]}"#,
+        ] {
+            let fault = manager(200, reply).await.unwrap_err();
+            assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable, "{reply}");
+            assert_eq!(fault.reason, 9, "{reply}");
+        }
+        let fault = manager(200, "not json").await.unwrap_err();
+        assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn manager_maps_failures_and_forwards_the_caller() {
+        let fault = manager(401, r#"{"code":"unauthenticated"}"#)
+            .await
+            .unwrap_err();
+        assert_eq!(fault.code, connectrpc::ErrorCode::Unauthenticated);
+
+        let fault = manager(403, r#"{"code":"permission_denied"}"#)
+            .await
+            .unwrap_err();
+        assert_eq!(fault.code, connectrpc::ErrorCode::PermissionDenied);
+
+        let fault = manager(500, r#"{"code":"internal"}"#).await.unwrap_err();
+        assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+
+        let (authority, seen) = authority(200, "{}").await;
+        authority.manager("Bearer caller", "tenant").await.unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "Bearer caller");
+        assert_eq!(seen[0].1, json!({"tenantId":"tenant","page":{"size":1}}));
+    }
 }
