@@ -28,6 +28,12 @@ impl Config {
                 n > 0.0 && n.is_finite(),
                 "{key} must be positive and finite"
             );
+            // The longest retry delay is one token at this rate (1/rate seconds); it must fit
+            // `Duration` or the limiter cannot report it.
+            anyhow::ensure!(
+                Duration::try_from_secs_f64(1.0 / n).is_ok(),
+                "{key} must have a representable retry delay"
+            );
             Ok(n)
         }
         let c = Self {
@@ -175,5 +181,70 @@ mod tests {
 
         let result = load_with(&[("DEPENDENCY_TIMEOUT", "11s"), ("REQUEST_TIMEOUT", "10s")]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rates_accept_defaults_and_small_representable_values() {
+        let config = load_with(&[]).unwrap();
+        assert_eq!(config.user_rate, 1000.0);
+        assert_eq!(config.management_rate, 50.0);
+
+        let config =
+            load_with(&[("USER_RATE_PER_SECOND", "0.001"), ("USER_RATE_BURST", "1")]).unwrap();
+        assert_eq!(config.user_rate, 0.001);
+
+        let config = load_with(&[
+            ("MANAGEMENT_RATE_PER_SECOND", "1e-18"),
+            ("MANAGEMENT_RATE_BURST", "1"),
+        ])
+        .unwrap();
+        assert_eq!(config.management_rate, 1e-18);
+    }
+
+    #[test]
+    fn rates_reject_unrepresentable_retry_delays() {
+        let subnormal = format!("{:e}", f64::from_bits(1));
+        let below_limit = format!("{:e}", 2f64.powi(-64));
+        for key in ["USER_RATE_PER_SECOND", "MANAGEMENT_RATE_PER_SECOND"] {
+            let burst = key.replace("PER_SECOND", "BURST");
+            for value in ["1e-30", subnormal.as_str(), below_limit.as_str()] {
+                let error = load_with(&[(key, value), (burst.as_str(), "1")])
+                    .err()
+                    .unwrap_or_else(|| panic!("{key}={value} must be rejected"))
+                    .to_string();
+                assert!(error.contains(key), "{key}={value}: {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn rates_accept_exactly_the_representable_boundary() {
+        let limit = 2f64.powi(-64);
+        let above = f64::from_bits(limit.to_bits() + 1);
+        assert!(Duration::try_from_secs_f64(1.0 / limit).is_err());
+        assert!(Duration::try_from_secs_f64(1.0 / above).is_ok());
+
+        let above = format!("{above:e}");
+        let result = load_with(&[
+            ("USER_RATE_PER_SECOND", above.as_str()),
+            ("USER_RATE_BURST", "1"),
+        ]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rates_keep_existing_validation() {
+        for value in ["0", "-1", "NaN", "inf", "abc"] {
+            assert!(
+                load_with(&[("USER_RATE_PER_SECOND", value)]).is_err(),
+                "{value}"
+            );
+            assert!(
+                load_with(&[("MANAGEMENT_RATE_PER_SECOND", value)]).is_err(),
+                "{value}"
+            );
+        }
+        assert!(load_with(&[("USER_RATE_BURST", "0")]).is_err());
+        assert!(load_with(&[("USER_RATE_PER_SECOND", "10"), ("USER_RATE_BURST", "5")]).is_err());
     }
 }

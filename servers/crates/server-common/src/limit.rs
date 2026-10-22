@@ -71,4 +71,21 @@ mod tests {
         );
         assert!(!limiter.buckets.lock().unwrap().contains_key("tenant"));
     }
+
+    #[test]
+    fn exhaustion_reports_retry_delay_and_keeps_other_keys_usable() {
+        let limiter = Limiter::new(0.001, 1);
+        let start = Instant::now();
+        assert!(limiter.allow_at("tenant", start).is_ok());
+        assert_eq!(
+            limiter.allow_at("tenant", start),
+            Err(Duration::from_secs(1000))
+        );
+        assert!(limiter.allow_at("other", start).is_ok());
+        assert!(
+            limiter
+                .allow_at("tenant", start + Duration::from_secs(1000))
+                .is_ok()
+        );
+    }
 }
