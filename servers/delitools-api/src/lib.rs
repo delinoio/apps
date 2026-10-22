@@ -75,6 +75,21 @@ impl Server {
         }
     }
 
+    /// Run a state-changing RPC body to completion even when the caller stops waiting. The HTTP
+    /// policy layer drops the handler future at the request deadline, and a drop between a
+    /// database commit and the step that depends on it would leave them apart: a stored settings
+    /// change that the live settings never receive, or a stored key without its audit record. The
+    /// body runs on its own task; the caller still waits for it and only its wait can be
+    /// cancelled. A client that gave up learns nothing about the outcome except `deadline_exceeded`
+    /// and must read the state back (list keys, get settings) before retrying. Every dependency
+    /// call inside the body has its own timeout, so a detached body cannot run unbounded.
+    fn detached<R: Send + 'static>(
+        body: impl Future<Output = Result<R, Fault>> + Send + 'static,
+    ) -> impl Future<Output = Result<R, Fault>> {
+        let task = tokio::spawn(body.in_current_span());
+        async move { task.await.unwrap_or_else(|_| Err(Fault::internal())) }
+    }
+
     /// Run one RPC body, record bounded metrics and structured logs, and convert failures to
     /// typed Connect errors. Logs carry the request ID, procedure and outcome only.
     async fn finish<R>(
@@ -186,7 +201,11 @@ impl DeliToolsService for Server {
         self.finish(
             Procedure::CreateKey,
             &id,
-            self.platform.create_key(&id, &authorization, q),
+            Self::detached({
+                let platform = self.platform.clone();
+                let (id, authorization) = (id.clone(), authorization);
+                async move { platform.create_key(&id, &authorization, q).await }
+            }),
         )
         .await
     }
@@ -214,7 +233,11 @@ impl DeliToolsService for Server {
         self.finish(
             Procedure::RevokeKey,
             &id,
-            self.platform.revoke_key(&id, &authorization, q),
+            Self::detached({
+                let platform = self.platform.clone();
+                let (id, authorization) = (id.clone(), authorization);
+                async move { platform.revoke_key(&id, &authorization, q).await }
+            }),
         )
         .await
     }
@@ -241,7 +264,11 @@ impl DeliToolsService for Server {
         self.finish(
             Procedure::UpdateSettings,
             &id,
-            self.platform.update_settings(&id, &authorization, q),
+            Self::detached({
+                let platform = self.platform.clone();
+                let (id, authorization) = (id.clone(), authorization);
+                async move { platform.update_settings(&id, &authorization, q).await }
+            }),
         )
         .await
     }
@@ -258,5 +285,42 @@ impl DeliToolsService for Server {
             self.platform.inspect_request(&id, &authorization, q),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    /// Dropping the caller of a state-changing RPC, as the request deadline does, must not stop
+    /// the work that was already under way.
+    #[tokio::test]
+    async fn a_detached_body_finishes_after_its_caller_is_dropped() {
+        let finished = Arc::new(AtomicBool::new(false));
+        let waiting = Server::detached({
+            let finished = finished.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                finished.store(true, Ordering::SeqCst);
+                Ok::<_, Fault>(())
+            }
+        });
+        let timed_out = tokio::time::timeout(Duration::from_millis(10), waiting).await;
+        assert!(timed_out.is_err(), "the caller was dropped at its deadline");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            finished.load(Ordering::SeqCst),
+            "the body ran to completion"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_panicking_detached_body_is_an_internal_fault() {
+        let result = Server::detached(async { panic!("boom") }).await;
+        assert!(
+            matches!(result.map(|()| ()), Err(fault) if fault.reason == delino_protocol::delitools::v1::ErrorReason::ERROR_REASON_INTERNAL)
+        );
     }
 }
