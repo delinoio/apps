@@ -246,7 +246,7 @@ DeliTools는 키, 입력의 해시, 상태를 보관합니다. 입력이나 결�
 
 처리 방법:
 
-- `invalid_argument`, `permission_denied`, `unauthenticated`, `failed_precondition` 오류는 재시도하기 전에 요청을 고치세요. billing-blocked 오류는 요금 청구 차단을 해소하세요.
+- `invalid_argument`, `permission_denied`, `unauthenticated`, `failed_precondition` 오류는 재시도하기 전에 요청을 고치세요. billing-blocked 오류는 요금 청구 차단을 해소하세요. 예외는 `ERROR_REASON_PRICE_UNAVAILABLE`입니다. 이는 배포 상태를 나타냅니다. DeliTools는 작업을 시작하거나 멱등성 키를 저장하기 전에 호출을 거부하며, 가격 카탈로그가 복구되면 변경하지 않은 같은 요청이 나중에 성공할 수 있습니다.
 - 제공자 오류, 시간 초과, 내부 오류는 나중에 재시도할 수 있습니다. 제공자 실패와 시간 초과도 요금이 청구될 수 있습니다. 첫 실행이 성공했을 수 있다면 두 번째 실행을 피하도록 멱등성 키를 사용하세요. `ERROR_REASON_INTERNAL`과 함께 오는 `unavailable` 오류는 DeliTools가 인증 또는 요금 청구 확인을 완료하지 못했다는 뜻입니다. `ERROR_REASON_INTERNAL`은 `internal`과 함께 올 수도 있으므로 코드와 사유를 모두 기준으로 분기하세요.
 - unknown, processing, already-processed 오류에는 첫 호출의 요청 ID가 들어 있습니다. 결과가 계속 알 수 없는 상태라면 그 ID로 지원팀에 문의하세요.
 

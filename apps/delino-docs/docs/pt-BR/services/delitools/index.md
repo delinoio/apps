@@ -246,7 +246,7 @@ Todo erro tem um código Connect, um motivo estável, um ID de solicitação e u
 
 Tratamento:
 
-- Corrija a solicitação nos erros `invalid_argument`, `permission_denied`, `unauthenticated` e `failed_precondition` antes de tentar novamente. Resolva o bloqueio de faturamento em um erro de faturamento bloqueado.
+- Corrija a solicitação nos erros `invalid_argument`, `permission_denied`, `unauthenticated` e `failed_precondition` antes de tentar novamente. Resolva o bloqueio de faturamento em um erro de faturamento bloqueado. A exceção é `ERROR_REASON_PRICE_UNAVAILABLE`. Ele descreve o estado da implantação: o DeliTools rejeita a chamada antes de iniciar qualquer trabalho ou de armazenar a chave de idempotência, e a mesma solicitação, sem alterações, pode funcionar mais tarde, quando o catálogo de preços se recuperar.
 - Um erro de provedor, de tempo limite ou interno pode ser repetido mais tarde. Falhas de provedor e de tempo limite ainda podem ser faturadas. Use uma chave de idempotência para evitar uma segunda execução quando a primeira pode ter sido bem-sucedida. Um erro `unavailable` com `ERROR_REASON_INTERNAL` significa que o DeliTools não conseguiu concluir a verificação de autorização ou de faturamento. Trate o código e o motivo em conjunto, porque `ERROR_REASON_INTERNAL` também aparece com `internal`.
 - Os erros de resultado desconhecido, de processamento e de já processado contêm o ID de solicitação da primeira chamada. Entre em contato com o suporte com esse ID se o resultado continuar desconhecido.
 

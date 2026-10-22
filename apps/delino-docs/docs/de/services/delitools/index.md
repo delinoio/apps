@@ -246,7 +246,7 @@ Jeder Fehler hat einen Connect-Code, einen stabilen Grund, eine Anfrage-ID und e
 
 Behandlung:
 
-- Korrigieren Sie bei den Fehlern `invalid_argument`, `permission_denied`, `unauthenticated` und `failed_precondition` die Anfrage, bevor Sie sie wiederholen. Beheben Sie bei einem Fehler wegen gesperrter Abrechnung die Abrechnungssperre.
+- Korrigieren Sie bei den Fehlern `invalid_argument`, `permission_denied`, `unauthenticated` und `failed_precondition` die Anfrage, bevor Sie sie wiederholen. Beheben Sie bei einem Fehler wegen gesperrter Abrechnung die Abrechnungssperre. Die Ausnahme ist `ERROR_REASON_PRICE_UNAVAILABLE`. Er beschreibt den Zustand der Bereitstellung: DeliTools weist den Aufruf ab, bevor es Arbeit beginnt oder den Idempotenzschlüssel speichert, und dieselbe unveränderte Anfrage kann später gelingen, wenn der Preiskatalog wieder verfügbar ist.
 - Ein Anbieter-, Timeout- oder interner Fehler kann später wiederholt werden. Anbieter- und Timeout-Fehlschläge können dennoch abgerechnet werden. Verwenden Sie einen Idempotenzschlüssel, um eine zweite Ausführung zu vermeiden, wenn die erste möglicherweise erfolgreich war. Ein Fehler `unavailable` mit `ERROR_REASON_INTERNAL` bedeutet, dass DeliTools die Autorisierungs- oder Abrechnungsprüfung nicht abschließen konnte. Werten Sie Code und Grund gemeinsam aus, weil `ERROR_REASON_INTERNAL` auch mit `internal` auftritt.
 - Fehler wegen unbekannten Ausgangs, laufender Verarbeitung und bereits verarbeiteter Anfrage enthalten die Anfrage-ID des ersten Aufrufs. Kontaktieren Sie den Support mit dieser ID, wenn der Ausgang unbekannt bleibt.
 

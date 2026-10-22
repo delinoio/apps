@@ -246,7 +246,7 @@ Every error has a Connect code, a stable reason, a request ID and an English mes
 
 Handling:
 
-- Fix the request for `invalid_argument`, `permission_denied`, `unauthenticated` and `failed_precondition` errors before you retry. Resolve the billing block for a billing-blocked error.
+- Fix the request for `invalid_argument`, `permission_denied`, `unauthenticated` and `failed_precondition` errors before you retry. Resolve the billing block for a billing-blocked error. The exception is `ERROR_REASON_PRICE_UNAVAILABLE`. It describes the state of the deployment: DeliTools rejects the call before it starts any work or stores the idempotency key, and the same unchanged request can succeed later when the price catalog recovers.
 - A provider, timeout or internal error can be retried later. Provider and timeout failures can still be billed. Use an idempotency key to avoid a second execution when the first one may have succeeded. An `unavailable` error with `ERROR_REASON_INTERNAL` means that DeliTools could not complete the authorization or billing check. Branch on both the code and the reason, because `ERROR_REASON_INTERNAL` also appears with `internal`.
 - Unknown, processing and already-processed errors contain the request ID of the first call. Contact support with that ID if the outcome stays unknown.
 
