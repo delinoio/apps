@@ -335,32 +335,54 @@ fn enumeration(
     if values.len() > MAX_ENUM_VALUES {
         return reject(path, "the schema exceeds the provider enum value limit");
     }
-    let mut string_chars = 0;
+    let (mut string_chars, mut number_chars) = (0_usize, 0_usize);
     for value in values {
         if !scalar_of_kind(kind, value) {
             return reject(path, "enum values must match the declared type");
         }
         match value {
             Json::String(text) => string_chars += text.chars().count(),
-            other => budget.chars += other.serialize().len(),
+            other => number_chars += other.serialize().len(),
         }
     }
-    for (index, value) in values.iter().enumerate() {
-        if values[..index].iter().any(|seen| same_value(seen, value)) {
-            return reject(path, "enum values must be unique");
-        }
-    }
-    budget.enum_values += values.len();
-    budget.chars += string_chars;
+    // Every budget is checked before the uniqueness work below, which costs time proportional to
+    // the square of the value count and to the value lengths. Authenticated callers reach this
+    // code before tenant admission, so a request must not be able to buy that work with enormous
+    // values that the provider limits would reject anyway.
     if values.len() > LARGE_ENUM_VALUES && string_chars > LARGE_ENUM_STRING_CHARS {
         return reject(
             path,
             "an enum with more than 250 values is limited to 15000 string characters",
         );
     }
-    if budget.enum_values > MAX_ENUM_VALUES {
+    if budget.enum_values + values.len() > MAX_ENUM_VALUES {
         return reject(path, "the schema exceeds the provider enum value limit");
     }
+    if budget.chars + string_chars + number_chars > MAX_NAME_AND_ENUM_CHARS {
+        return reject(
+            path,
+            "the schema exceeds the provider limits for properties, enum values or name characters",
+        );
+    }
+    // Parse each number once; comparing the parsed decimals pairwise never reparses a lexeme.
+    let exact: Vec<Option<Exact>> = values
+        .iter()
+        .map(|value| match value {
+            Json::Number(lexeme) => Exact::parse(lexeme),
+            _ => None,
+        })
+        .collect();
+    for index in 1..values.len() {
+        let duplicate = (0..index).any(|seen| match (&exact[seen], &exact[index]) {
+            (Some(a), Some(b)) => a == b,
+            _ => values[seen] == values[index],
+        });
+        if duplicate {
+            return reject(path, "enum values must be unique");
+        }
+    }
+    budget.enum_values += values.len();
+    budget.chars += string_chars + number_chars;
     Ok(values.clone())
 }
 
@@ -629,6 +651,33 @@ mod tests {
         // The envelope sends two enum values of its own, so the caller has 998 left.
         ok(&enum_of(998, 4));
         assert!(bad(&enum_of(999, 4)).contains("enum value limit"));
+    }
+
+    #[test]
+    fn enum_budgets_are_checked_before_the_uniqueness_comparison() {
+        let numeric_enum = |values: &[String]| {
+            format!(
+                r#"{{"type":"object","properties":{{"a":{{"type":"integer","enum":[{}]}}}},"required":["a"],"additionalProperties":false}}"#,
+                values.join(",")
+            )
+        };
+        // Two equal numbers of 70,000 digits are duplicates, but together they exceed the
+        // 120,000-character budget: the budget error must win, so the comparison never runs on
+        // values the provider limits reject anyway.
+        let huge = "9".repeat(70_000);
+        let schema = numeric_enum(&[huge.clone(), huge]);
+        assert!(bad(&schema).contains("provider limits"), "{}", bad(&schema));
+        // Many distinct long numbers are rejected by the budget in linear time.
+        let many: Vec<String> = (0..900)
+            .map(|i| format!("{}{}", i + 1, "7".repeat(8_000)))
+            .collect();
+        let started = std::time::Instant::now();
+        let message = bad(&numeric_enum(&many));
+        assert!(message.contains("provider limits"), "{message}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // Within the budget the comparison is still exact: 10 and 1e1 are the same integer.
+        assert!(bad(&numeric_enum(&["10".into(), "1e1".into()])).contains("unique"));
+        ok(&numeric_enum(&["10".into(), "11".into()]));
     }
 
     #[test]
