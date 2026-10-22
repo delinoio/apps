@@ -280,7 +280,7 @@ Pour effectuer son travail, DeliTools envoie votre texte, et pour l’extraction
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models) : la page de chaque modèle liste ses fournisseurs.
 - La politique de données du fournisseur du modèle que vous utilisez.
 
-DeliTools ne promet aucune conservation nulle des données chez aucun fournisseur. Il ne détecte pas les données sensibles et ne les supprime pas de votre entrée. Ne soumettez pas de données que vous n’avez pas le droit de partager avec ces fournisseurs.
+DeliTools n’envoie pas l’option de conservation nulle des données du Gateway et ne choisit pas les fournisseurs selon leur politique de conservation. Il ne promet aucune conservation nulle des données chez aucun fournisseur. Il ne détecte pas les données sensibles et ne les supprime pas de votre entrée. Ne soumettez pas de données que vous n’avez pas le droit de partager avec ces fournisseurs.
 
 ## Limites
 

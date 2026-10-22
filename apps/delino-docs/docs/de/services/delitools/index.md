@@ -280,7 +280,7 @@ Um seine Arbeit zu erledigen, sendet DeliTools Ihren Text und bei der Extraktion
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): Jede Modellseite listet ihre Anbieter auf.
 - Die Datenrichtlinie des Anbieters des Modells, das Sie verwenden.
 
-DeliTools verspricht bei keinem Anbieter eine Datenaufbewahrung von null. Es erkennt keine sensiblen Daten und entfernt sie nicht aus Ihrer Eingabe. Übermitteln Sie keine Daten, die Sie nicht mit diesen Anbietern teilen dürfen.
+DeliTools sendet die Zero-Data-Retention-Option des Gateways nicht und wählt Anbieter nicht nach deren Aufbewahrungsrichtlinie aus. Es verspricht bei keinem Anbieter eine Datenaufbewahrung von null. Es erkennt keine sensiblen Daten und entfernt sie nicht aus Ihrer Eingabe. Übermitteln Sie keine Daten, die Sie nicht mit diesen Anbietern teilen dürfen.
 
 ## Grenzwerte
 

@@ -280,7 +280,7 @@ To do its work, DeliTools sends your text, and for extraction your schema, to th
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): each model page lists its providers.
 - The data policy of the provider of the model you use.
 
-DeliTools does not promise zero data retention at any provider. It does not detect sensitive data and does not remove it from your input. Do not submit data that you may not share with these providers.
+DeliTools does not send the Gateway zero-data-retention option and does not choose a provider by its retention policy. It does not promise zero data retention at any provider. It does not detect sensitive data and does not remove it from your input. Do not submit data that you may not share with these providers.
 
 ## Limits
 
