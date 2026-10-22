@@ -543,6 +543,16 @@ pub struct DueAttempt {
     pub occurred_at: DateTime<Utc>,
     pub measured_usage: Option<Value>,
     pub delivery_failures: u32,
+    /// The immutable creation time; the 30-day retention window counts from it.
+    pub created_at: DateTime<Utc>,
+}
+
+impl DueAttempt {
+    /// Whether the attempt is at or past its 30-day boundary at `now`. Such usage is abandoned
+    /// with the record, so it must not be reported even when it was claimed just before.
+    pub fn expired(&self, now: DateTime<Utc>) -> bool {
+        self.created_at <= super::retention::cutoff(now)
+    }
 }
 
 fn due_from_row(row: &PgRow) -> std::result::Result<DueAttempt, sqlx::Error> {
@@ -557,6 +567,7 @@ fn due_from_row(row: &PgRow) -> std::result::Result<DueAttempt, sqlx::Error> {
         occurred_at: row.try_get("occurred_at")?,
         measured_usage: row.try_get("measured_usage")?,
         delivery_failures: row.try_get::<i32, _>("delivery_failures")?.max(0) as u32,
+        created_at: row.try_get("created_at")?,
     })
 }
 
@@ -584,7 +595,7 @@ pub async fn claim_due(
         }
     };
     let rows = sqlx::query(&format!(
-        "WITH due AS (SELECT id FROM attempts WHERE {condition} AND (retry_at IS NULL OR retry_at<=$1) AND created_at>$4 ORDER BY retry_at NULLS FIRST,id LIMIT $3 FOR UPDATE SKIP LOCKED) UPDATE attempts SET retry_at=$2,updated_at=$1 FROM due WHERE attempts.id=due.id RETURNING attempts.id,attempts.tenant_id,attempts.capability,attempts.model,attempts.generation_id,attempts.price_effective_at,attempts.catalog_price,attempts.occurred_at,attempts.measured_usage,attempts.delivery_failures"
+        "WITH due AS (SELECT id FROM attempts WHERE {condition} AND (retry_at IS NULL OR retry_at<=$1) AND created_at>$4 ORDER BY retry_at NULLS FIRST,id LIMIT $3 FOR UPDATE SKIP LOCKED) UPDATE attempts SET retry_at=$2,updated_at=$1 FROM due WHERE attempts.id=due.id RETURNING attempts.id,attempts.tenant_id,attempts.capability,attempts.model,attempts.generation_id,attempts.price_effective_at,attempts.catalog_price,attempts.occurred_at,attempts.measured_usage,attempts.delivery_failures,attempts.created_at"
     ))
     .bind(now)
     .bind(now + lease)
@@ -606,7 +617,7 @@ pub async fn claim_one(
     now: DateTime<Utc>,
     lease: Duration,
 ) -> Result<Option<DueAttempt>> {
-    let row = sqlx::query("UPDATE attempts SET retry_at=$3,updated_at=$2 WHERE id=$1 AND delivered_at IS NULL AND measured_usage IS NOT NULL AND (retry_at IS NULL OR retry_at<=$2) AND created_at>$4 RETURNING id,tenant_id,capability,model,generation_id,price_effective_at,catalog_price,occurred_at,measured_usage,delivery_failures")
+    let row = sqlx::query("UPDATE attempts SET retry_at=$3,updated_at=$2 WHERE id=$1 AND delivered_at IS NULL AND measured_usage IS NOT NULL AND (retry_at IS NULL OR retry_at<=$2) AND created_at>$4 RETURNING id,tenant_id,capability,model,generation_id,price_effective_at,catalog_price,occurred_at,measured_usage,delivery_failures,created_at")
         .bind(id)
         .bind(now)
         .bind(now + lease)

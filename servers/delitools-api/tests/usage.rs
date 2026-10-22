@@ -1721,6 +1721,57 @@ async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn an_attempt_that_expires_while_an_earlier_report_runs_is_not_reported() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    env.delcore.fail_ingests(100);
+    translate_ok(&env, &key).await;
+    translate_ok(&env, &key).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(env.delcore.accepted().is_empty());
+    let before = env.delcore.ingest_calls().len();
+
+    // created_at is immutable in production; the test schema lifts the trigger only to age rows.
+    sqlx::query("ALTER TABLE attempts DISABLE TRIGGER attempts_created_at")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    // The later attempt is inside its window when the batch is claimed and leaves it two seconds
+    // later, while the first report of the batch is still running (it takes three seconds).
+    let ids: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM attempts ORDER BY id")
+        .fetch_all(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(ids.len(), 2);
+    sqlx::query("UPDATE attempts SET retry_at=now()-interval '1 second'")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE attempts SET created_at=now()-interval '30 days'+interval '2 seconds' WHERE id=$1",
+    )
+    .bind(ids[1])
+    .execute(&env.fx.pool)
+    .await
+    .unwrap();
+    env.delcore.fail_ingests(0);
+    env.delcore.delay_ingests(Duration::from_secs(3));
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(
+        env.delcore.ingest_calls().len(),
+        before + 1,
+        "only the first attempt was reported; the second reached its boundary before its turn"
+    );
+    assert!(
+        env.delcore.accepted().contains_key(&ids[0].to_string()),
+        "the attempt that was still inside its window was delivered"
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn pending_usage_stops_at_thirty_days_and_is_deleted_in_every_state() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

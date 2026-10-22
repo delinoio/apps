@@ -87,6 +87,17 @@ impl UsageService {
         let platform = &self.platform;
         let pool = &platform.store.pool;
         let settings = platform.settings();
+        // A claim only proves the attempt was inside its window when the batch was claimed.
+        // Earlier reports of the same batch can be slow, so check the boundary again right before
+        // this report: usage at or past 30 days is abandoned, never billed.
+        if attempt.expired(store::now()) {
+            tracing::warn!(
+                category = "usage_expired",
+                attempt_id = %attempt.id,
+                "the attempt reached its 30-day boundary before delivery; its usage is abandoned"
+            );
+            return;
+        }
         let reported = self.delcore.report(self.service_id, &attempt).await;
         // Read the clock after the report: token acquisition and ingestion can take longer than
         // the retry delay, and a delay counted from before the call would already have expired
