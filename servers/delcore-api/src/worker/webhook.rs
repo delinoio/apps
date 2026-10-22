@@ -507,6 +507,9 @@ impl Worker {
             ),
             None => (None, String::new()),
         };
+        // A failure applied to the tenant stays unresolved, so a recurring payment that occurred
+        // before it but is delivered after the association cannot clear it.
+        let mut keep_failure = false;
         if state == "canceled" && occurred.is_some_and(|at| at > paid_at) {
             tracing::warn!(
                 tenant_id = tenant,
@@ -526,13 +529,16 @@ impl Worker {
                 .bind(tenant)
                 .execute(&mut *conn)
                 .await?;
+            keep_failure = failed.is_some();
         }
         // The payment becomes the ordering watermark; the tenant now carries any retained failure.
         sqlx::query("INSERT INTO provider_objects VALUES($1,$2,'active') ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,state='active' WHERE provider_objects.occurred_at<EXCLUDED.occurred_at").bind(subscription).bind(paid_at).execute(&mut *conn).await?;
-        sqlx::query("DELETE FROM provider_objects WHERE external_id=$1")
-            .bind(format!("failure:{subscription}"))
-            .execute(&mut *conn)
-            .await?;
+        if !keep_failure {
+            sqlx::query("DELETE FROM provider_objects WHERE external_id=$1")
+                .bind(format!("failure:{subscription}"))
+                .execute(&mut *conn)
+                .await?;
+        }
         Ok(())
     }
 }

@@ -663,3 +663,94 @@ async fn transaction_payment_failure_keeps_its_occurrence_against_an_older_renew
     assert_eq!(state["failure"], Value::Null, "{state}");
     assert_eq!(s.authorize().await["allowed"], true);
 }
+
+/// Turns the seeded scenario into one whose subscription is not associated with the tenant yet
+/// and returns the pending initial-subscription job.
+async fn unassociate(s: &Scenario) -> String {
+    let tenant = Uuid::parse_str(&s.tenant).unwrap();
+    let plan: Uuid = sqlx::query_scalar("SELECT plan_id FROM tenants WHERE id=$1")
+        .bind(tenant)
+        .fetch_one(&s.f.db)
+        .await
+        .unwrap();
+    let price: Uuid = sqlx::query_scalar("SELECT id FROM prices WHERE external_price_id=$1")
+        .bind(EXTERNAL_PRICE)
+        .fetch_one(&s.f.db)
+        .await
+        .unwrap();
+    let version: Uuid =
+        sqlx::query_scalar("SELECT active_version_id FROM catalog_entities WHERE id=$1")
+            .bind(plan)
+            .fetch_one(&s.f.db)
+            .await
+            .unwrap();
+    sqlx::query("DELETE FROM entitlements WHERE tenant_id=$1")
+        .bind(tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM provider_objects WHERE external_id=$1")
+        .bind(SUBSCRIPTION)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_customer_id='',external_subscription_id='' WHERE id=$1")
+        .bind(tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    let job = key();
+    let payload = json!({"plan_id":plan,"price_ids":[price],"version_ids":[version],"external_price_ids":[EXTERNAL_PRICE]});
+    sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$3,$4,'pending',0,now(),now(),now())")
+        .bind(Uuid::parse_str(&job).unwrap()).bind(tenant).bind(format!("fixture:{job}")).bind(payload).execute(&s.f.db).await.unwrap();
+    job
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn retained_failure_survives_initial_association_against_a_recurring_payment() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    // The initial payment occurred first, then renewal A, then the failure B. Notifications for
+    // the failure arrive before the tenant is associated, the recurring completion arrives last.
+    let initial_start = s.time.days(-40);
+    let initial_at = initial_start + Duration::seconds(1);
+    s.past_due("evt_b").await;
+    assert!(!s.flag().await);
+    let data = json!({"id":"txn_initial","status":"completed","origin":"web","customer_id":CUSTOMER,"subscription_id":SUBSCRIPTION,"currency_code":"USD",
+        "custom_data":{"delcore_job_id":job,"delcore_tenant_id":s.tenant},
+        "items":[{"price":{"id":EXTERNAL_PRICE,"product_id":"pro_order"},"quantity":1}],
+        "billing_period":{"starts_at":initial_start.to_rfc3339(),"ends_at":s.time.days(0).to_rfc3339()},
+        "billed_at":initial_at.to_rfc3339()});
+    s.deliver("evt_initial", "transaction.completed", initial_at, data)
+        .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(
+        state["failure"],
+        json!({"at":s.time.past_due().to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    s.pay_a("evt_a").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
+    assert_eq!(
+        state["transactions"],
+        json!(["txn_a", "txn_initial"]),
+        "{state}"
+    );
+    // The initial association grants no usage allowance in this fixture, so the balance reason
+    // may accompany the renewal failure; the failure itself must still block paid use.
+    assert!(
+        s.authorize().await["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("BLOCK_REASON_RENEWAL"))
+    );
+    // A renewal confirmed after the failure recovers it.
+    s.pay_c("evt_c").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}
