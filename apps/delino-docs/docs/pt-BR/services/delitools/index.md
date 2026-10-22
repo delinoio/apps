@@ -32,14 +32,14 @@ Em JSON, os nomes dos campos usam lowerCamelCase e os valores de enum usam seus 
 
 `TranslateTextArray` traduz cada string de uma matriz.
 
-| Campo            | Obrigatório | Significado                                                                          |
-| ---------------- | ----------- | ------------------------------------------------------------------------------------ |
-| `tenantId`       | Sim         | O tenant que recebe a cobrança de uso.                                               |
-| `outputLanguage` | Sim         | Tag de idioma BCP 47 da tradução, por exemplo `ko`, `pt-BR` ou `zh-Hans`.            |
-| `inputLanguage`  | Não         | Tag de idioma BCP 47 da origem. Omita-a para detectar um único idioma para a matriz. |
-| `model`          | Sim         | Um modelo da lista de permissões do operador.                                        |
-| `texts`          | Sim         | As strings a traduzir.                                                               |
-| `idempotencyKey` | Não         | Consulte Idempotência.                                                               |
+| Campo            | Obrigatório | Significado                                                                                           |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Sim         | O tenant que recebe a cobrança de uso. Use o UUID versão 7 canônico dele: em minúsculas e com hifens. |
+| `outputLanguage` | Sim         | Tag de idioma BCP 47 da tradução, por exemplo `ko`, `pt-BR` ou `zh-Hans`.                             |
+| `inputLanguage`  | Não         | Tag de idioma BCP 47 da origem. Omita-a para detectar um único idioma para a matriz.                  |
+| `model`          | Sim         | Um modelo da lista de permissões do operador.                                                         |
+| `texts`          | Sim         | As strings a traduzir.                                                                                |
+| `idempotencyKey` | Não         | Consulte Idempotência.                                                                                |
 
 A resposta contém `requestId` e `texts`, as traduções na ordem original e com o comprimento original.
 
@@ -56,12 +56,12 @@ Regras:
 
 `ExtractDataFromText` lê um texto e retorna JSON que segue o seu esquema JSON. O serviço usa um modelo fixo, `gpt-6-luna`. Você não escolhe o modelo.
 
-| Campo            | Obrigatório | Significado                                                     |
-| ---------------- | ----------- | --------------------------------------------------------------- |
-| `tenantId`       | Sim         | O tenant que recebe a cobrança de uso.                          |
-| `text`           | Sim         | O texto de origem.                                              |
-| `jsonSchema`     | Sim         | Um esquema JSON, como string, que usa o subconjunto compatível. |
-| `idempotencyKey` | Não         | Consulte Idempotência.                                          |
+| Campo            | Obrigatório | Significado                                                                                           |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Sim         | O tenant que recebe a cobrança de uso. Use o UUID versão 7 canônico dele: em minúsculas e com hifens. |
+| `text`           | Sim         | O texto de origem.                                                                                    |
+| `jsonSchema`     | Sim         | Um esquema JSON, como string, que usa o subconjunto compatível.                                       |
+| `idempotencyKey` | Não         | Consulte Idempotência.                                                                                |
 
 A resposta contém `requestId` e `jsonData`, uma string JSON que o DeliTools validou em relação ao seu esquema.
 

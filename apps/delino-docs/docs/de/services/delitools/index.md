@@ -32,14 +32,14 @@ In JSON verwenden Feldnamen lowerCamelCase und Enum-Werte ihre vollständigen Na
 
 `TranslateTextArray` übersetzt jede Zeichenfolge in einem Array.
 
-| Feld             | Erforderlich | Bedeutung                                                                                               |
-| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
-| `tenantId`       | Ja           | Der Mandant, dem die Nutzung berechnet wird.                                                            |
-| `outputLanguage` | Ja           | BCP-47-Sprachtag der Übersetzung, zum Beispiel `ko`, `pt-BR` oder `zh-Hans`.                            |
-| `inputLanguage`  | Nein         | BCP-47-Sprachtag der Quelle. Lassen Sie ihn weg, damit eine Sprache für das gesamte Array erkannt wird. |
-| `model`          | Ja           | Ein Modell aus der Zulassungsliste des Betreibers.                                                      |
-| `texts`          | Ja           | Die zu übersetzenden Zeichenfolgen.                                                                     |
-| `idempotencyKey` | Nein         | Siehe Idempotenz.                                                                                       |
+| Feld             | Erforderlich | Bedeutung                                                                                                                        |
+| ---------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Ja           | Der Mandant, dem die Nutzung berechnet wird. Verwenden Sie dessen kanonische UUID Version 7: Kleinbuchstaben, mit Bindestrichen. |
+| `outputLanguage` | Ja           | BCP-47-Sprachtag der Übersetzung, zum Beispiel `ko`, `pt-BR` oder `zh-Hans`.                                                     |
+| `inputLanguage`  | Nein         | BCP-47-Sprachtag der Quelle. Lassen Sie ihn weg, damit eine Sprache für das gesamte Array erkannt wird.                          |
+| `model`          | Ja           | Ein Modell aus der Zulassungsliste des Betreibers.                                                                               |
+| `texts`          | Ja           | Die zu übersetzenden Zeichenfolgen.                                                                                              |
+| `idempotencyKey` | Nein         | Siehe Idempotenz.                                                                                                                |
 
 Die Antwort enthält `requestId` und `texts`, die Übersetzungen in der ursprünglichen Reihenfolge und mit der ursprünglichen Länge.
 
@@ -56,12 +56,12 @@ Regeln:
 
 `ExtractDataFromText` liest Text und gibt JSON zurück, das Ihrem JSON-Schema folgt. Der Dienst verwendet ein festes Modell, `gpt-6-luna`. Sie wählen das Modell nicht aus.
 
-| Feld             | Erforderlich | Bedeutung                                                                   |
-| ---------------- | ------------ | --------------------------------------------------------------------------- |
-| `tenantId`       | Ja           | Der Mandant, dem die Nutzung berechnet wird.                                |
-| `text`           | Ja           | Der Quelltext.                                                              |
-| `jsonSchema`     | Ja           | Ein JSON-Schema als Zeichenfolge, das die unterstützte Teilmenge verwendet. |
-| `idempotencyKey` | Nein         | Siehe Idempotenz.                                                           |
+| Feld             | Erforderlich | Bedeutung                                                                                                                        |
+| ---------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Ja           | Der Mandant, dem die Nutzung berechnet wird. Verwenden Sie dessen kanonische UUID Version 7: Kleinbuchstaben, mit Bindestrichen. |
+| `text`           | Ja           | Der Quelltext.                                                                                                                   |
+| `jsonSchema`     | Ja           | Ein JSON-Schema als Zeichenfolge, das die unterstützte Teilmenge verwendet.                                                      |
+| `idempotencyKey` | Nein         | Siehe Idempotenz.                                                                                                                |
 
 Die Antwort enthält `requestId` und `jsonData`, eine JSON-Zeichenfolge, die DeliTools anhand Ihres Schemas validiert hat.
 

@@ -32,14 +32,14 @@ In JSON, field names use lowerCamelCase and enum values use their full names.
 
 `TranslateTextArray` translates every string in an array.
 
-| Field            | Required | Meaning                                                                          |
-| ---------------- | -------- | -------------------------------------------------------------------------------- |
-| `tenantId`       | Yes      | The tenant that receives the usage charge.                                       |
-| `outputLanguage` | Yes      | BCP 47 language tag of the translation, for example `ko`, `pt-BR` or `zh-Hans`.  |
-| `inputLanguage`  | No       | BCP 47 language tag of the source. Omit it to detect one language for the array. |
-| `model`          | Yes      | A model from the operator's allowlist.                                           |
-| `texts`          | Yes      | The strings to translate.                                                        |
-| `idempotencyKey` | No       | See Idempotency.                                                                 |
+| Field            | Required | Meaning                                                                                               |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Yes      | The tenant that receives the usage charge. Use its canonical UUID version 7: lowercase, with hyphens. |
+| `outputLanguage` | Yes      | BCP 47 language tag of the translation, for example `ko`, `pt-BR` or `zh-Hans`.                       |
+| `inputLanguage`  | No       | BCP 47 language tag of the source. Omit it to detect one language for the array.                      |
+| `model`          | Yes      | A model from the operator's allowlist.                                                                |
+| `texts`          | Yes      | The strings to translate.                                                                             |
+| `idempotencyKey` | No       | See Idempotency.                                                                                      |
 
 The response contains `requestId` and `texts`, the translations in the original order and with the original length.
 
@@ -56,12 +56,12 @@ Rules:
 
 `ExtractDataFromText` reads text and returns JSON that follows your JSON schema. The service uses a fixed model, `gpt-6-luna`. You do not choose the model.
 
-| Field            | Required | Meaning                                                     |
-| ---------------- | -------- | ----------------------------------------------------------- |
-| `tenantId`       | Yes      | The tenant that receives the usage charge.                  |
-| `text`           | Yes      | The source text.                                            |
-| `jsonSchema`     | Yes      | A JSON schema, as a string, that uses the supported subset. |
-| `idempotencyKey` | No       | See Idempotency.                                            |
+| Field            | Required | Meaning                                                                                               |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Yes      | The tenant that receives the usage charge. Use its canonical UUID version 7: lowercase, with hyphens. |
+| `text`           | Yes      | The source text.                                                                                      |
+| `jsonSchema`     | Yes      | A JSON schema, as a string, that uses the supported subset.                                           |
+| `idempotencyKey` | No       | See Idempotency.                                                                                      |
 
 The response contains `requestId` and `jsonData`, a JSON string that DeliTools validated against your schema.
 

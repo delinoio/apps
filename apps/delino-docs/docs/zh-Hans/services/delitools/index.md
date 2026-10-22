@@ -32,14 +32,14 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 
 `TranslateTextArray` 会翻译数组中的每个字符串。
 
-| 字段             | 必填 | 含义                                                         |
-| ---------------- | ---- | ------------------------------------------------------------ |
-| `tenantId`       | 是   | 接收用量费用的租户。                                         |
-| `outputLanguage` | 是   | 译文的 BCP 47 语言标签，例如 `ko`、`pt-BR` 或 `zh-Hans`。    |
-| `inputLanguage`  | 否   | 源文本的 BCP 47 语言标签。省略它则会为整个数组检测一种语言。 |
-| `model`          | 是   | 来自操作员允许列表的模型。                                   |
-| `texts`          | 是   | 要翻译的字符串。                                             |
-| `idempotencyKey` | 否   | 请参阅幂等性。                                               |
+| 字段             | 必填 | 含义                                                                 |
+| ---------------- | ---- | -------------------------------------------------------------------- |
+| `tenantId`       | 是   | 接收用量费用的租户。请使用其规范形式的 UUID 版本 7：小写并带连字符。 |
+| `outputLanguage` | 是   | 译文的 BCP 47 语言标签，例如 `ko`、`pt-BR` 或 `zh-Hans`。            |
+| `inputLanguage`  | 否   | 源文本的 BCP 47 语言标签。省略它则会为整个数组检测一种语言。         |
+| `model`          | 是   | 来自操作员允许列表的模型。                                           |
+| `texts`          | 是   | 要翻译的字符串。                                                     |
+| `idempotencyKey` | 否   | 请参阅幂等性。                                                       |
 
 响应包含 `requestId` 和 `texts`，后者是译文，顺序和长度均与原文一致。
 
@@ -56,12 +56,12 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 
 `ExtractDataFromText` 读取文本并返回遵循你的 JSON 架构的 JSON。该服务使用固定的模型 `gpt-6-luna`。你无法选择模型。
 
-| 字段             | 必填 | 含义                                       |
-| ---------------- | ---- | ------------------------------------------ |
-| `tenantId`       | 是   | 接收用量费用的租户。                       |
-| `text`           | 是   | 源文本。                                   |
-| `jsonSchema`     | 是   | 以字符串表示、使用受支持子集的 JSON 架构。 |
-| `idempotencyKey` | 否   | 请参阅幂等性。                             |
+| 字段             | 必填 | 含义                                                                 |
+| ---------------- | ---- | -------------------------------------------------------------------- |
+| `tenantId`       | 是   | 接收用量费用的租户。请使用其规范形式的 UUID 版本 7：小写并带连字符。 |
+| `text`           | 是   | 源文本。                                                             |
+| `jsonSchema`     | 是   | 以字符串表示、使用受支持子集的 JSON 架构。                           |
+| `idempotencyKey` | 否   | 请参阅幂等性。                                                       |
 
 响应包含 `requestId` 和 `jsonData`，后者是 DeliTools 已根据你的架构验证过的 JSON 字符串。
 

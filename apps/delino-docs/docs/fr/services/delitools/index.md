@@ -32,14 +32,14 @@ Dans JSON, les noms de champs utilisent lowerCamelCase et les valeurs d’énum�
 
 `TranslateTextArray` traduit chaque chaîne d’un tableau.
 
-| Champ            | Obligatoire | Signification                                                                                    |
-| ---------------- | ----------- | ------------------------------------------------------------------------------------------------ |
-| `tenantId`       | Oui         | Le tenant qui reçoit la facturation de l’utilisation.                                            |
-| `outputLanguage` | Oui         | Balise de langue BCP 47 de la traduction, par exemple `ko`, `pt-BR` ou `zh-Hans`.                |
-| `inputLanguage`  | Non         | Balise de langue BCP 47 de la source. Omettez-la pour détecter une seule langue pour le tableau. |
-| `model`          | Oui         | Un modèle figurant dans la liste d’autorisation de l’opérateur.                                  |
-| `texts`          | Oui         | Les chaînes à traduire.                                                                          |
-| `idempotencyKey` | Non         | Consultez Idempotence.                                                                           |
+| Champ            | Obligatoire | Signification                                                                                                                 |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Oui         | Le tenant qui reçoit la facturation de l’utilisation. Utilisez son UUID version 7 canonique : en minuscules, avec des tirets. |
+| `outputLanguage` | Oui         | Balise de langue BCP 47 de la traduction, par exemple `ko`, `pt-BR` ou `zh-Hans`.                                             |
+| `inputLanguage`  | Non         | Balise de langue BCP 47 de la source. Omettez-la pour détecter une seule langue pour le tableau.                              |
+| `model`          | Oui         | Un modèle figurant dans la liste d’autorisation de l’opérateur.                                                               |
+| `texts`          | Oui         | Les chaînes à traduire.                                                                                                       |
+| `idempotencyKey` | Non         | Consultez Idempotence.                                                                                                        |
 
 La réponse contient `requestId` et `texts`, les traductions dans l’ordre d’origine et avec la longueur d’origine.
 
@@ -56,12 +56,12 @@ Règles :
 
 `ExtractDataFromText` lit un texte et renvoie du JSON conforme à votre schéma JSON. Le service utilise un modèle fixe, `gpt-6-luna`. Vous ne choisissez pas le modèle.
 
-| Champ            | Obligatoire | Signification                                                                      |
-| ---------------- | ----------- | ---------------------------------------------------------------------------------- |
-| `tenantId`       | Oui         | Le tenant qui reçoit la facturation de l’utilisation.                              |
-| `text`           | Oui         | Le texte source.                                                                   |
-| `jsonSchema`     | Oui         | Un schéma JSON, sous forme de chaîne, qui utilise le sous-ensemble pris en charge. |
-| `idempotencyKey` | Non         | Consultez Idempotence.                                                             |
+| Champ            | Obligatoire | Signification                                                                                                                 |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Oui         | Le tenant qui reçoit la facturation de l’utilisation. Utilisez son UUID version 7 canonique : en minuscules, avec des tirets. |
+| `text`           | Oui         | Le texte source.                                                                                                              |
+| `jsonSchema`     | Oui         | Un schéma JSON, sous forme de chaîne, qui utilise le sous-ensemble pris en charge.                                            |
+| `idempotencyKey` | Non         | Consultez Idempotence.                                                                                                        |
 
 La réponse contient `requestId` et `jsonData`, une chaîne JSON que DeliTools a validée par rapport à votre schéma.
 

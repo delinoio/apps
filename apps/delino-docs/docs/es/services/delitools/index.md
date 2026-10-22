@@ -32,14 +32,14 @@ En JSON, los nombres de los campos utilizan lowerCamelCase y los valores de enum
 
 `TranslateTextArray` traduce cada cadena de una matriz.
 
-| Campo            | Obligatorio | Significado                                                                                      |
-| ---------------- | ----------- | ------------------------------------------------------------------------------------------------ |
-| `tenantId`       | Sí          | El tenant que recibe el cargo por el uso.                                                        |
-| `outputLanguage` | Sí          | Etiqueta de idioma BCP 47 de la traducción, por ejemplo `ko`, `pt-BR` o `zh-Hans`.               |
-| `inputLanguage`  | No          | Etiqueta de idioma BCP 47 del origen. Omítela para detectar un único idioma para toda la matriz. |
-| `model`          | Sí          | Un modelo de la lista de permitidos del operador.                                                |
-| `texts`          | Sí          | Las cadenas que se van a traducir.                                                               |
-| `idempotencyKey` | No          | Consulta Idempotencia.                                                                           |
+| Campo            | Obligatorio | Significado                                                                                                |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Sí          | El tenant que recibe el cargo por el uso. Utiliza su UUID versión 7 canónico: en minúsculas y con guiones. |
+| `outputLanguage` | Sí          | Etiqueta de idioma BCP 47 de la traducción, por ejemplo `ko`, `pt-BR` o `zh-Hans`.                         |
+| `inputLanguage`  | No          | Etiqueta de idioma BCP 47 del origen. Omítela para detectar un único idioma para toda la matriz.           |
+| `model`          | Sí          | Un modelo de la lista de permitidos del operador.                                                          |
+| `texts`          | Sí          | Las cadenas que se van a traducir.                                                                         |
+| `idempotencyKey` | No          | Consulta Idempotencia.                                                                                     |
 
 La respuesta contiene `requestId` y `texts`, las traducciones en el orden original y con la longitud original.
 
@@ -56,12 +56,12 @@ Reglas:
 
 `ExtractDataFromText` lee un texto y devuelve JSON que sigue tu esquema JSON. El servicio utiliza un modelo fijo, `gpt-6-luna`. Tú no eliges el modelo.
 
-| Campo            | Obligatorio | Significado                                                          |
-| ---------------- | ----------- | -------------------------------------------------------------------- |
-| `tenantId`       | Sí          | El tenant que recibe el cargo por el uso.                            |
-| `text`           | Sí          | El texto de origen.                                                  |
-| `jsonSchema`     | Sí          | Un esquema JSON, como cadena, que utiliza el subconjunto compatible. |
-| `idempotencyKey` | No          | Consulta Idempotencia.                                               |
+| Campo            | Obligatorio | Significado                                                                                                |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `tenantId`       | Sí          | El tenant que recibe el cargo por el uso. Utiliza su UUID versión 7 canónico: en minúsculas y con guiones. |
+| `text`           | Sí          | El texto de origen.                                                                                        |
+| `jsonSchema`     | Sí          | Un esquema JSON, como cadena, que utiliza el subconjunto compatible.                                       |
+| `idempotencyKey` | No          | Consulta Idempotencia.                                                                                     |
 
 La respuesta contiene `requestId` y `jsonData`, una cadena JSON que DeliTools validó con tu esquema.
 
