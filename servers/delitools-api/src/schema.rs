@@ -24,7 +24,10 @@ const MAX_ENUM_VALUES: usize = 1000;
 /// The envelope `status` enum holds `extracted` and `impossible`.
 const ENVELOPE_ENUM_VALUES: usize = 2;
 const MAX_NAME_AND_ENUM_CHARS: usize = 120_000;
-const ENVELOPE_CHARS: usize = 20;
+/// Characters the envelope contributes: the property names `status` and `data` and the enum
+/// values `extracted` and `impossible`.
+const ENVELOPE_CHARS: usize =
+    "status".len() + "data".len() + STATUS_EXTRACTED.len() + STATUS_IMPOSSIBLE.len();
 const LARGE_ENUM_VALUES: usize = 250;
 const LARGE_ENUM_STRING_CHARS: usize = 15_000;
 /// Raw JSON nesting accepted while parsing (schema levels need two JSON levels each).
@@ -626,6 +629,32 @@ mod tests {
         // The envelope sends two enum values of its own, so the caller has 998 left.
         ok(&enum_of(998, 4));
         assert!(bad(&enum_of(999, 4)).contains("enum value limit"));
+    }
+
+    #[test]
+    fn the_character_budget_reserves_every_envelope_string() {
+        assert_eq!(ENVELOPE_CHARS, 29);
+        // Property names of exactly `total` characters in 200-character pieces plus a remainder.
+        let named = |total: usize| {
+            let mut names: Vec<String> = (0..total / 200)
+                .map(|i| format!("{i:04}{}", "n".repeat(196)))
+                .collect();
+            names.push(format!("r{}", "m".repeat(total % 200 - 1)));
+            let props: Vec<String> = names
+                .iter()
+                .map(|name| format!(r#""{name}":{{"type":"string"}}"#))
+                .collect();
+            let required: Vec<String> = names.iter().map(|name| format!(r#""{name}""#)).collect();
+            format!(
+                r#"{{"type":"object","properties":{{{}}},"required":[{}],"additionalProperties":false}}"#,
+                props.join(","),
+                required.join(",")
+            )
+        };
+        // 120,000 minus the 29 envelope characters is the caller's whole share.
+        let limit = MAX_NAME_AND_ENUM_CHARS - ENVELOPE_CHARS;
+        ok(&named(limit));
+        assert!(bad(&named(limit + 1)).contains("provider limits"));
     }
 
     #[test]
