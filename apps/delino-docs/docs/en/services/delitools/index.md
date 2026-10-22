@@ -35,6 +35,8 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DelitoolsService/Translate" \
   --data '{"texts":["Hello","Good morning"],"targetLanguage":"fr","model":"<model-id>"}'
 ```
 
+This example uses an API key, which carries its tenant. With a Delino login token, add `"tenantId":"<tenant-id>"` to the JSON body.
+
 In JSON, field names use lowerCamelCase. See the [API reference](/services/delitools/api-reference) for all fields, the supported schema subset and the error reasons.
 
 Call DeliTools from server-side code or the command line. Do not put an API key in frontend code: DeliTools does not support calls from browsers.
