@@ -26,7 +26,7 @@ impl ReadinessCheck for SchemaReadiness {
     }
 }
 
-/// At least one catalog price exists. The price synchronization task of the execution layer
+/// At least one model currently has a catalog price. The price synchronization task of the execution layer
 /// populates `catalog_prices`; until a synchronization succeeds, no paid execution is possible and
 /// the service reports not ready.
 pub struct CatalogPriceReadiness;
@@ -36,9 +36,12 @@ impl ReadinessCheck for CatalogPriceReadiness {
         "catalog_price"
     }
     async fn ready(&self, pool: &PgPool) -> bool {
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM catalog_prices)")
-            .fetch_one(pool)
-            .await
-            .unwrap_or(false)
+        sqlx::query_scalar::<_, bool>(&format!(
+            "SELECT {}",
+            crate::store::exec::PRICE_AVAILABLE_SQL
+        ))
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false)
     }
 }

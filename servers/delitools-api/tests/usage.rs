@@ -1178,6 +1178,131 @@ async fn catalog_synchronization_versions_prices_and_never_enables_models() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_model_without_a_matching_endpoint_loses_its_price_but_a_failed_read_keeps_it() {
+    use support::{LUNA_PRICE, SONNET_PRICE};
+    let env = Env::start(&[], true).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(10, 1, 0, 0)));
+    let publish = |translation_endpoints: Option<Vec<Value>>| {
+        let (input, output, read, write) = SONNET_PRICE;
+        let (luna_input, luna_output, luna_read, luna_write) = LUNA_PRICE;
+        let mut endpoints = vec![(
+            EXTRACTION_MODEL,
+            vec![mocks::endpoint_entry(
+                "openai",
+                luna_input,
+                luna_output,
+                luna_read,
+                luna_write,
+            )],
+        )];
+        if let Some(list) = translation_endpoints {
+            endpoints.push((TRANSLATION_MODEL, list));
+        }
+        env.gateway.set_catalog(
+            vec![
+                mocks::catalog_entry(TRANSLATION_MODEL, input, output, read, write),
+                mocks::catalog_entry(
+                    EXTRACTION_MODEL,
+                    luna_input,
+                    luna_output,
+                    luna_read,
+                    luna_write,
+                ),
+            ],
+            endpoints,
+        );
+    };
+    let withdrawals = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM catalog_prices WHERE model=$1 AND NOT priced",
+        )
+        .bind(TRANSLATION_MODEL)
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap()
+    };
+    translate_ok(&env, &key).await;
+
+    // A failed endpoint read (here a 404) is not evidence that the price is gone: the last known
+    // price stays in use.
+    publish(None);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 0);
+    translate_ok(&env, &key).await;
+
+    // A successful read that finds no active endpoint charging the public price withdraws it, so
+    // new work is rejected instead of pinning a stale route and price.
+    let (input, output, read, write) = SONNET_PRICE;
+    publish(Some(vec![
+        mocks::endpoint_entry("azure", "0.00001", output, read, write),
+        mocks::endpoint_entry("anthropic", input, output, read, write),
+    ]));
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 0, "an exact match keeps the price");
+    publish(Some(vec![mocks::endpoint_entry(
+        "azure", "0.00001", output, read, write,
+    )]));
+    for _ in 0..60 {
+        if withdrawals().await == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(withdrawals().await, 1);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "failed_precondition",
+            reason::PRICE_UNAVAILABLE,
+        )
+        .await;
+    // Repeated synchronizations do not stack withdrawals, and other models are unaffected.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 1);
+    let ready = env
+        .fx
+        .http
+        .get(format!("{}/readyz", env.fx.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ready.status(), 200, "the extraction model is still priced");
+
+    // When an endpoint charges the public price again the model is priced by a new version.
+    publish(Some(vec![mocks::endpoint_entry(
+        "anthropic",
+        input,
+        output,
+        read,
+        write,
+    )]));
+    let mut restored = false;
+    for _ in 0..60 {
+        let reply = env
+            .fx
+            .call(Some(&key), TRANSLATE, env.translate_body(&["x"], None))
+            .await;
+        if reply.code().is_empty() {
+            restored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(restored, "the price returned with the matching endpoint");
+    let versions: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog_prices WHERE model=$1")
+        .bind(TRANSLATION_MODEL)
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(versions, 3, "original price, withdrawal and restored price");
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
     use delitools_api::{
         gateway::CatalogPrice,

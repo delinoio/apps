@@ -384,7 +384,7 @@ impl BackgroundTask for PriceSyncTask {
             .map(String::as_str)
             .collect();
         wanted.insert(EXTRACTION_MODEL);
-        let (mut changed, mut refreshed, mut skipped, mut failed) = (0, 0, 0, 0);
+        let (mut changed, mut refreshed, mut skipped, mut withdrawn, mut failed) = (0, 0, 0, 0, 0);
         for model in wanted {
             let Some(price) = catalog
                 .iter()
@@ -414,13 +414,28 @@ impl BackgroundTask for PriceSyncTask {
                     Some(route) => route,
                     None => {
                         // No active provider charges the published price: the route and
-                        // therefore the price would be ambiguous, so do not price the model.
+                        // therefore the price would be ambiguous, so the model is unpriced. A
+                        // previously synchronized price is withdrawn, because it could pin an
+                        // inactive route or bill an inapplicable price. Only a successful
+                        // endpoint read withdraws; a failed read below keeps the last price.
                         skipped += 1;
                         tracing::warn!(
                             model,
                             category = "price_route_ambiguous",
                             "no active provider endpoint matches the public price"
                         );
+                        match db::record_unpriced(pool, model, &revision("", price)).await {
+                            Ok(PriceWrite::Withdrawn) => {
+                                withdrawn += 1;
+                                tracing::warn!(
+                                    model,
+                                    category = "price_withdrawn",
+                                    "the model's price was withdrawn; new executions are rejected until a provider endpoint matches the public price"
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(_) => failed += 1,
+                        }
                         continue;
                     }
                 },
@@ -431,7 +446,7 @@ impl BackgroundTask for PriceSyncTask {
             };
             match db::record_price(pool, model, &route, price, &revision(&route, price)).await {
                 Ok(PriceWrite::NewVersion) => changed += 1,
-                Ok(PriceWrite::Refreshed) => refreshed += 1,
+                Ok(PriceWrite::Refreshed | PriceWrite::Withdrawn) => refreshed += 1,
                 Err(_) => failed += 1,
             }
         }
@@ -440,6 +455,7 @@ impl BackgroundTask for PriceSyncTask {
             changed,
             refreshed,
             skipped,
+            withdrawn,
             failed,
             "catalog price synchronization finished"
         );

@@ -94,8 +94,10 @@ async fn latest_price_in(
         .bind(model)
         .execute(&mut **tx)
         .await?;
+    // A newest version that withdrew the price means the model is unpriced now, however old the
+    // previous priced version is.
     let row = sqlx::query(&format!(
-        "SELECT {PRICE_COLUMNS} FROM catalog_prices WHERE model=$1 AND effective_at<=$2 ORDER BY effective_at DESC, synced_at DESC LIMIT 1"
+        "SELECT id,model,provider_route,effective_at,input,output,cache_read,cache_write FROM (SELECT {PRICE_COLUMNS},priced FROM catalog_prices WHERE model=$1 AND effective_at<=$2 ORDER BY effective_at DESC, synced_at DESC LIMIT 1) latest WHERE priced"
     ))
     .bind(model)
     .bind(now)
@@ -104,12 +106,18 @@ async fn latest_price_in(
     Ok(row.as_ref().map(snapshot_from_row).transpose()?)
 }
 
+/// SQL predicate: at least one model whose newest price version is a real price. Readiness and
+/// the price availability gauge use it, so a catalog where every model was withdrawn is not ready.
+pub const PRICE_AVAILABLE_SQL: &str = "EXISTS(SELECT 1 FROM (SELECT DISTINCT ON (model) priced FROM catalog_prices ORDER BY model, effective_at DESC, synced_at DESC) latest WHERE priced)";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PriceWrite {
     /// A new version became effective now.
     NewVersion,
     /// The latest version is unchanged; only its synchronization time moved.
     Refreshed,
+    /// The model's price was withdrawn: it is unpriced from now on.
+    Withdrawn,
 }
 
 fn same_price(snapshot: &PriceSnapshot, route: &str, price: &CatalogPrice) -> bool {
@@ -141,14 +149,15 @@ pub async fn record_price(
     // time of a new version never precedes the start time of a request that did not see it.
     let now = super::now();
     let latest = sqlx::query(&format!(
-        "SELECT {PRICE_COLUMNS} FROM catalog_prices WHERE model=$1 ORDER BY effective_at DESC, synced_at DESC LIMIT 1"
+        "SELECT {PRICE_COLUMNS},priced FROM catalog_prices WHERE model=$1 ORDER BY effective_at DESC, synced_at DESC LIMIT 1"
     ))
     .bind(model)
     .fetch_optional(&mut *tx)
     .await?;
     if let Some(row) = &latest {
         let snapshot = snapshot_from_row(row)?;
-        if same_price(&snapshot, route, price) {
+        // A withdrawn model is never "unchanged": its price returns as a new version.
+        if row.try_get::<bool, _>("priced")? && same_price(&snapshot, route, price) {
             sqlx::query("UPDATE catalog_prices SET synced_at=$2 WHERE id=$1")
                 .bind(snapshot.id)
                 .bind(now)
@@ -172,6 +181,48 @@ pub async fn record_price(
         .await?;
     tx.commit().await?;
     Ok(PriceWrite::NewVersion)
+}
+
+/// Record that the public catalog was read successfully but no active provider endpoint charges
+/// the published flat price of `model`, so the model has no applicable route or price. A previous
+/// price is withdrawn by appending an unpriced version effective now (requests that already
+/// started keep the snapshot they froze); a model that was never priced, or is already withdrawn,
+/// only has its synchronization time refreshed.
+pub async fn record_unpriced(pool: &PgPool, model: &str, revision: &str) -> Result<PriceWrite> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(&format!("SELECT {PRICE_LOCK}"))
+        .bind(model)
+        .execute(&mut *tx)
+        .await?;
+    let now = super::now();
+    let latest = sqlx::query(
+        "SELECT id,priced FROM catalog_prices WHERE model=$1 ORDER BY effective_at DESC, synced_at DESC LIMIT 1",
+    )
+    .bind(model)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(latest) = latest else {
+        tx.rollback().await?;
+        return Ok(PriceWrite::Refreshed);
+    };
+    if !latest.try_get::<bool, _>("priced")? {
+        sqlx::query("UPDATE catalog_prices SET synced_at=$2 WHERE id=$1")
+            .bind(latest.try_get::<Uuid, _>("id")?)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(PriceWrite::Refreshed);
+    }
+    sqlx::query("INSERT INTO catalog_prices(id,model,provider_route,effective_at,input_usd_per_token,output_usd_per_token,catalog_revision,synced_at,created_at,priced) VALUES($1,$2,'',$3,0,0,$4,$3,$3,false)")
+        .bind(Uuid::now_v7())
+        .bind(model)
+        .bind(now)
+        .bind(revision)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(PriceWrite::Withdrawn)
 }
 
 // ---------------------------------------------------------------------------------------------

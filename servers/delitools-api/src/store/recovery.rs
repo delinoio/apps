@@ -34,7 +34,7 @@ pub struct Backlog {
     pub unknown_requests: i64,
     /// Undelivered attempts that expire within the alert window.
     pub nearing_expiry: i64,
-    /// Whether the catalog holds at least one synchronized price.
+    /// Whether at least one model currently has a synchronized price.
     pub price_available: bool,
 }
 
@@ -46,14 +46,15 @@ pub async fn backlog(
     // An undelivered attempt created before this instant expires within the alert window.
     let near =
         super::retention::cutoff(now) + chrono::Duration::seconds(alert_expiry_seconds.into());
-    let row = sqlx::query(
+    let row = sqlx::query(&format!(
         "SELECT \
          (SELECT count(*) FROM attempts WHERE delivered_at IS NULL AND measured_usage IS NULL) AS unknown_usage, \
          (SELECT count(*) FROM attempts WHERE delivered_at IS NULL AND measured_usage IS NOT NULL) AS pending_delivery, \
          (SELECT count(*) FROM requests WHERE state=3) AS unknown_requests, \
          (SELECT count(*) FROM attempts WHERE delivered_at IS NULL AND created_at <= $1) AS nearing_expiry, \
-         EXISTS(SELECT 1 FROM catalog_prices) AS price_available",
-    )
+         {} AS price_available",
+        super::exec::PRICE_AVAILABLE_SQL
+    ))
     .bind(near)
     .fetch_one(pool)
     .await?;
