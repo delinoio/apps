@@ -5,6 +5,7 @@ mod fingerprint;
 pub mod http;
 pub mod maintenance;
 mod operations;
+mod size;
 pub mod store;
 mod validation;
 use buffa::Message;
@@ -150,9 +151,15 @@ impl Server {
             .get("authorization")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        // Captured by the first-position interceptor from the received message bytes. A missing
+        // value (for example a handler reached without the interceptor) fails closed in `execute`.
+        let received = ctx
+            .extensions()
+            .get::<size::ReceivedMessageSize>()
+            .map(|size| size.0);
         let result = tokio::time::timeout(
             self.config.request_timeout,
-            self.execute::<Q, R>(authorization, op, q, &trace),
+            self.execute::<Q, R>(authorization, op, q, received, &trace),
         )
         .await
         .unwrap_or_else(|_| Err(Fault::unavailable()));
@@ -218,6 +225,7 @@ impl Server {
         authorization: &str,
         op: Op,
         request: Q,
+        received: Option<usize>,
         trace: &str,
     ) -> Result<Value>
     where
@@ -253,7 +261,14 @@ impl Server {
             f.retry = Some(retry);
             return Err(f);
         }
-        if request.encode_to_vec().len() > 64 << 10 {
+        // The limit applies to the received (decompressed) message bytes, not to the decoded
+        // message, so legal JSON padding and escape expansion count toward it.
+        let Some(received) = received else {
+            tracing::error!(trace_id=%trace,procedure=op.name(),"received message size was not captured");
+            return Err(Fault::unavailable());
+        };
+        if received > size::MAX_MESSAGE_BYTES {
+            tracing::warn!(trace_id=%trace,procedure=op.name(),received_bytes=received,limit_bytes=size::MAX_MESSAGE_BYTES,"request message exceeds size limit");
             return Err(Fault::invalid("request exceeds 64 KiB"));
         }
         validation::validate(op, &q)?;

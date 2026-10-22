@@ -15,7 +15,10 @@ pub fn router(server: Arc<Server>) -> Router {
     let rpc = connectrpc::Router::new()
         .add_service(server.clone())
         .into_axum_service()
-        .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10));
+        .with_limits(connectrpc::Limits::default().with_max_message_size(256 << 10))
+        // Must stay the first interceptor: it records the received message size before any
+        // other interceptor could replace the payload.
+        .with_interceptor(crate::size::CaptureReceivedSize);
     let metrics = server.metrics.clone();
     let ready = server.db.clone();
     Router::new()

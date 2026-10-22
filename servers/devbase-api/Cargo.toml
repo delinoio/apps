@@ -28,3 +28,8 @@ delino-protocol.workspace = true
 server-common.workspace = true
 subtle = "2"
 email_address = "0.2"
+
+[dev-dependencies]
+# Compresses request fixtures for the received-message size tests. Already in the lock graph
+# through connectrpc's gzip support.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
