@@ -13,7 +13,7 @@ use jsonwebtoken::{
     jwk::{Jwk, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse},
 };
 use serde::Deserialize;
-use server_common::config::safe_url;
+use server_common::{authority::bounded_json, config::safe_url};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
@@ -30,6 +30,23 @@ const MIN_REFRESH: Duration = Duration::from_secs(10);
 /// the longest delay before a removed key stops working. When the provider cannot be reached after
 /// the bound, JWT authentication fails closed; API keys do not depend on it.
 const MAX_KEY_AGE: Duration = Duration::from_secs(300);
+/// Largest OIDC discovery document read from the identity provider. Real documents are a few KiB.
+const MAX_DISCOVERY_BYTES: usize = 64 << 10;
+/// Largest key set read from the identity provider. A handful of keys is far below this. Both
+/// limits keep a faulty or compromised provider from forcing large allocations, which any
+/// unauthenticated caller could otherwise repeat through the throttled refresh path.
+const MAX_KEY_SET_BYTES: usize = 256 << 10;
+
+/// GET a JSON document from the identity provider, reading at most `limit` bytes of body.
+async fn fetch_json<T: serde::de::DeserializeOwned>(
+    http: &reqwest::Client,
+    url: &str,
+    limit: usize,
+) -> anyhow::Result<T> {
+    let response = http.get(url).send().await?.error_for_status()?;
+    let value = bounded_json(response, limit).await?;
+    Ok(serde_json::from_value(value)?)
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Credential<'a> {
@@ -151,24 +168,17 @@ impl Verifier {
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        let discovery: serde_json::Value = http
-            .get(format!(
+        let discovery: serde_json::Value = fetch_json(
+            &http,
+            &format!(
                 "{}/.well-known/openid-configuration",
                 issuer.trim_end_matches('/')
-            ))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+            ),
+            MAX_DISCOVERY_BYTES,
+        )
+        .await?;
         let jwks_url = jwks_endpoint(&discovery, issuer)?;
-        let keys = http
-            .get(&jwks_url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let keys = fetch_json(&http, &jwks_url, MAX_KEY_SET_BYTES).await?;
         Ok(Self {
             http,
             jwks_url,
@@ -211,16 +221,7 @@ impl Verifier {
         if last_fetch.elapsed() < MIN_REFRESH {
             return Err(Fault::unauthenticated());
         }
-        let fetched = async {
-            self.http
-                .get(&self.jwks_url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<JwkSet>()
-                .await
-        }
-        .await;
+        let fetched = fetch_json::<JwkSet>(&self.http, &self.jwks_url, MAX_KEY_SET_BYTES).await;
         *last_fetch = Instant::now();
         match fetched {
             Ok(set) => *self.keys.write().await = (set, Instant::now()),
@@ -466,6 +467,58 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    /// A provider response above the limit is rejected without being deserialized, both at
+    /// startup and on a refresh, and a refresh that fails this way leaves the cached keys alone.
+    #[tokio::test]
+    async fn oversized_provider_documents_are_rejected() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let provider = tokio::spawn(async move {
+            let app = axum::Router::new()
+                .route(
+                    "/small",
+                    axum::routing::get(|| async { axum::Json(json!({"keys": []})) }),
+                )
+                .route(
+                    "/large",
+                    axum::routing::get(|| async {
+                        let padding = "x".repeat(MAX_KEY_SET_BYTES);
+                        axum::Json(json!({"keys": [], "padding": padding}))
+                    }),
+                );
+            axum::serve(listener, app).await.unwrap()
+        });
+        let http = reqwest::Client::new();
+        let url = |path: &str| format!("http://{address}/{path}");
+        assert!(
+            fetch_json::<JwkSet>(&http, &url("small"), MAX_KEY_SET_BYTES)
+                .await
+                .is_ok()
+        );
+        assert!(
+            fetch_json::<JwkSet>(&http, &url("large"), MAX_KEY_SET_BYTES)
+                .await
+                .is_err()
+        );
+
+        let mut v = verifier(JwkSet { keys: Vec::new() });
+        v.jwks_url = url("large");
+        *v.refresh.lock().await = Instant::now()
+            .checked_sub(MIN_REFRESH * 2)
+            .expect("monotonic clock has run long enough");
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({"iss":v.issuer,"aud":v.audience,"sub":"user","exp":now+3600});
+        let token = jsonwebtoken::encode(
+            &Header::new(Algorithm::RS256),
+            &claims,
+            &EncodingKey::from_rsa_pem(include_bytes!("../tests/support/oidc-test-key.pem"))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(v.verify(&token).await.is_err());
+        provider.abort();
     }
 
     /// Make the cached key set older than `MAX_KEY_AGE` and the next refresh attempt eligible.
