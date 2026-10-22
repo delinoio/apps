@@ -95,7 +95,7 @@ DeliTools は、抽出モデルの構造化出力がサポートする JSON ス�
 
 - ルートのオブジェクト。
 - 型 `object`、`array`、`string`、`number`、`integer`、`boolean`、`null`。ネストは最大8階層までです。各スキーマノードの `type` は文字列1つだけです。`["string", "null"]` のような型の配列は拒否されます。
-- `properties`。すべてのプロパティが `required` に列挙されている必要があります。
+- `properties`。すべてのプロパティが `required` に列挙されている必要があります。プロパティ名は1〜256文字です。
 - すべてのオブジェクトで `additionalProperties` を `false` に設定します。
 - 配列の `items`。
 - 任意のスキーマの `description`。

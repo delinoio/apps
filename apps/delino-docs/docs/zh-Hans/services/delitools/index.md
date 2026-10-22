@@ -95,7 +95,7 @@ DeliTools 仅接受提取模型的结构化输出所支持的那部分 JSON Sche
 
 - 根部为对象。
 - 类型 `object`、`array`、`string`、`number`、`integer`、`boolean` 和 `null`，嵌套深度最多为 8 层。每个架构节点只有一个 `type`，且必须是字符串。像 `["string", "null"]` 这样的类型数组会被拒绝。
-- `properties`，且每个属性都列在 `required` 中。
+- `properties`，且每个属性都列在 `required` 中。属性名称为 1 到 256 个字符。
 - 每个对象上的 `additionalProperties` 都设置为 `false`。
 - 数组使用 `items`。
 - 任何架构上的 `description`。

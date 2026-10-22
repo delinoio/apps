@@ -95,7 +95,7 @@ Pris en charge :
 
 - Un objet à la racine.
 - Les types `object`, `array`, `string`, `number`, `integer`, `boolean` et `null`, imbriqués jusqu’à une profondeur de 8 niveaux. Chaque nœud du schéma a exactement un `type`, écrit sous forme de chaîne. Un tableau de types, comme `["string", "null"]`, est rejeté.
-- `properties`, avec chaque propriété listée dans `required`.
+- `properties`, avec chaque propriété listée dans `required`. Le nom d’une propriété comporte de 1 à 256 caractères.
 - `additionalProperties` défini sur `false` pour chaque objet.
 - `items` pour les tableaux.
 - `description` sur n’importe quel schéma.
