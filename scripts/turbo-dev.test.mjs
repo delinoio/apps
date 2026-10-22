@@ -39,7 +39,18 @@ async function watchFixture(t, filters = [], initialSource = "initial") {
       scripts: { "server-build": "node fixture.mjs build" },
     }),
   );
-  write("pnpm-workspace.yaml", "packages:\n  - servers/*\n  - apps/*\n");
+  // The fixture declares `packageManager` because Turbo requires it to detect
+  // the workspace. By default pnpm then resolves that package manager through
+  // its metadata cache and records it in the lockfile. That fails offline on
+  // fresh machines such as CI runners, and it rewrites the lockfile whenever
+  // Turbo runs a task through pnpm, which restarts the watch. The fixture only
+  // needs the running pnpm, so configure pnpm in the workspace file, not in the
+  // environment, because Turbo does not pass arbitrary variables to tasks.
+  // Remove `pmOnFail` if the fixture stops declaring `packageManager`.
+  write(
+    "pnpm-workspace.yaml",
+    "packages:\n  - servers/*\n  - apps/*\npmOnFail: ignore\n",
+  );
   write(
     "pnpm-lock.yaml",
     "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  servers/delcore-api: {}\n  servers/devbase-api: {}\n  servers/git-tracker-api: {}\n  apps/frontend: {}\n",

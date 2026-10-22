@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use server_common::config::{duration, positive, valid_origin};
 use std::time::Duration;
+/// Largest `seconds` value that google.protobuf.Duration permits (about 10,000 years).
+const MAX_RETRY_SECONDS: u64 = 315_576_000_000;
+
+/// Reports whether the exhausted-bucket retry delay `1 / rate` converts to a Duration whose whole
+/// seconds stay within the protobuf Duration range.
+fn retry_delay_fits_protobuf_duration(rate: f64) -> bool {
+    Duration::try_from_secs_f64(1.0 / rate).is_ok_and(|retry| retry.as_secs() <= MAX_RETRY_SECONDS)
+}
+
 pub struct Config {
     pub projects: i64,
     pub users: i64,
@@ -27,6 +36,14 @@ impl Config {
             anyhow::ensure!(
                 n > 0.0 && n.is_finite(),
                 "{key} must be positive and finite"
+            );
+            // The limiter reports at most 1/rate seconds as the retry delay, encoded as
+            // `ErrorDetail.retry_after` (google.protobuf.Duration). Reject rates whose reciprocal
+            // does not convert to a Duration or whose whole seconds exceed the protobuf Duration
+            // range, because such a value would make the response detail semantically invalid.
+            anyhow::ensure!(
+                retry_delay_fits_protobuf_duration(n),
+                "{key} must have a retry delay of at most {MAX_RETRY_SECONDS} seconds"
             );
             Ok(n)
         }
@@ -60,5 +77,181 @@ impl Config {
             "WEB_ORIGIN must be one exact http or https origin"
         );
         Ok(c)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Config::load reads process-global environment variables, so tests that mutate them run
+    // one at a time. Other test modules in this crate do not call Config::load.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    const ENV_KEYS: [&str; 7] = [
+        "DEPENDENCY_TIMEOUT",
+        "REQUEST_TIMEOUT",
+        "CLEANUP_INTERVAL",
+        "USER_RATE_PER_SECOND",
+        "USER_RATE_BURST",
+        "MANAGEMENT_RATE_PER_SECOND",
+        "MANAGEMENT_RATE_BURST",
+    ];
+    const RATE_KEYS: [(&str, &str); 2] = [
+        ("USER_RATE_PER_SECOND", "USER_RATE_BURST"),
+        ("MANAGEMENT_RATE_PER_SECOND", "MANAGEMENT_RATE_BURST"),
+    ];
+
+    fn load_with(settings: &[(&str, &str)]) -> anyhow::Result<Config> {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: ENV_LOCK serializes every test that touches these variables.
+        unsafe {
+            for key in ENV_KEYS {
+                std::env::remove_var(key);
+            }
+            for (key, value) in settings {
+                std::env::set_var(key, value);
+            }
+        }
+        let result = Config::load();
+        // SAFETY: still holding ENV_LOCK.
+        unsafe {
+            for key in ENV_KEYS {
+                std::env::remove_var(key);
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn rejects_cleanup_interval_that_rounds_to_zero() {
+        for value in ["0.1ns", "0.49ns", "0.0000000001s", "0ns"] {
+            let err = load_with(&[("CLEANUP_INTERVAL", value)])
+                .err()
+                .expect(value);
+            assert!(
+                err.to_string().contains("CLEANUP_INTERVAL"),
+                "{value}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_valid_cleanup_interval_and_default() {
+        let c = load_with(&[("CLEANUP_INTERVAL", "1ns")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_nanos(1));
+        let c = load_with(&[("CLEANUP_INTERVAL", "1m30s")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(90));
+        let c = load_with(&[]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(300));
+        let c = load_with(&[("CLEANUP_INTERVAL", "")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn rejects_zero_rounding_timeouts() {
+        for key in ["DEPENDENCY_TIMEOUT", "REQUEST_TIMEOUT"] {
+            let err = load_with(&[(key, "0.1ns")]).err().expect(key);
+            assert!(err.to_string().contains(key), "{key}: {err}");
+        }
+    }
+
+    #[test]
+    fn enforces_timeout_ordering() {
+        let err = load_with(&[("DEPENDENCY_TIMEOUT", "11s"), ("REQUEST_TIMEOUT", "10s")])
+            .err()
+            .expect("ordering error");
+        assert!(
+            err.to_string()
+                .contains("dependency timeout must not exceed")
+        );
+        let c = load_with(&[("DEPENDENCY_TIMEOUT", "3s"), ("REQUEST_TIMEOUT", "10s")]).unwrap();
+        assert_eq!(c.dependency_timeout, Duration::from_secs(3));
+        assert_eq!(c.request_timeout, Duration::from_secs(10));
+    }
+
+    fn rate_error(rate_key: &str, burst_key: &str, rate: &str) -> String {
+        load_with(&[(rate_key, rate), (burst_key, "1")])
+            .err()
+            .unwrap_or_else(|| panic!("{rate_key}={rate}"))
+            .to_string()
+    }
+
+    #[test]
+    fn rejects_rates_without_representable_retry_delay() {
+        let subnormal = format!("{:e}", f64::from_bits(1));
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["1e-30", subnormal.as_str()] {
+                let err = rate_error(rate_key, burst_key, value);
+                assert!(err.contains(rate_key), "{value}: {err}");
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_retry_delay_beyond_protobuf_duration_range() {
+        // 1e-18 and 1e-19 fit i64 seconds but exceed the protobuf Duration maximum.
+        assert!(Duration::try_from_secs_f64(1.0 / 1e-18).is_ok());
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["1e-18", "1e-19", "1e-12"] {
+                let err = rate_error(rate_key, burst_key, value);
+                assert!(err.contains(rate_key), "{value}: {err}");
+                assert!(err.contains("315576000000"), "{value}: {err}");
+            }
+        }
+    }
+
+    #[test]
+    fn rate_acceptance_matches_protobuf_duration_limit_at_boundary() {
+        // A retry of exactly 315576000000 seconds is the last whole-second value that fits;
+        // 1 / rate below 315576000001 seconds is accepted and anything from there is rejected.
+        let first_rejected_seconds = (MAX_RETRY_SECONDS + 1) as f64;
+        let boundary = 1.0 / first_rejected_seconds;
+        let neighbors = [
+            f64::from_bits(boundary.to_bits() - 1),
+            boundary,
+            f64::from_bits(boundary.to_bits() + 1),
+        ];
+        for (rate_key, burst_key) in RATE_KEYS {
+            for rate in neighbors {
+                let expected = 1.0 / rate < first_rejected_seconds;
+                let loaded = load_with(&[(rate_key, &format!("{rate:e}")), (burst_key, "1")]);
+                assert_eq!(loaded.is_ok(), expected, "{rate_key}={rate:e}");
+            }
+            // Explicit values on each side of the maximum.
+            let at_max = 1.0 / MAX_RETRY_SECONDS as f64;
+            let past_max = 1.0 / first_rejected_seconds * (1.0 - 1e-9);
+            load_with(&[(rate_key, &format!("{at_max:e}")), (burst_key, "1")]).unwrap();
+            let err = rate_error(rate_key, burst_key, &format!("{past_max:e}"));
+            assert!(err.contains(rate_key), "{err}");
+        }
+    }
+
+    #[test]
+    fn accepts_defaults_and_small_representable_rates() {
+        let c = load_with(&[]).unwrap();
+        assert_eq!(c.user_rate, 1000.0);
+        assert_eq!(c.management_rate, 50.0);
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["0.001", "1e-11"] {
+                load_with(&[(rate_key, value), (burst_key, "1")]).expect(value);
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_existing_rate_validation() {
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["0", "-1", "inf", "NaN", "abc"] {
+                load_with(&[(rate_key, value), (burst_key, "1")])
+                    .err()
+                    .unwrap_or_else(|| panic!("{rate_key}={value}"));
+            }
+            load_with(&[(rate_key, "1"), (burst_key, "0")])
+                .err()
+                .expect("zero burst");
+            let err = rate_error(rate_key, burst_key, "2");
+            assert!(err.contains("burst must not be smaller"), "{err}");
+        }
     }
 }

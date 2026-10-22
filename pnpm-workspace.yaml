@@ -6,6 +6,8 @@ packages:
   - servers/*
   - protos
 
+virtualStoreType: global
+
 # These versions were already locked before the pnpm 12 migration. Remove
 # these exceptions after both releases are 24 hours old (2026-10-20 06:00 UTC).
 minimumReleaseAgeExclude:
