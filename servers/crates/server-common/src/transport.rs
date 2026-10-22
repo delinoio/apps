@@ -4,7 +4,13 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo, TokioTimer},
     server::conn::auto::Builder,
 };
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::{
     net::TcpListener,
     sync::{Notify, watch},
@@ -19,6 +25,67 @@ pub struct Limits {
     pub idle: Duration,
     pub write: Duration,
     pub shutdown: Duration,
+}
+
+/// Counts the requests a connection is serving, from the moment Hyper hands one to the service
+/// until its response body has been fully sent or dropped. The count lets the connection task tell
+/// a quiet socket during a request from an idle connection between requests.
+struct Activity(watch::Sender<usize>);
+
+impl Activity {
+    fn begin(self: &Arc<Self>) -> InFlight {
+        self.0.send_modify(|count| *count += 1);
+        InFlight(self.clone())
+    }
+}
+
+struct InFlight(Arc<Activity>);
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0.0.send_modify(|count| *count -= 1);
+    }
+}
+
+/// A response body that keeps its request counted as in flight until the body ends.
+struct Tracked {
+    inner: axum::body::Body,
+    _in_flight: InFlight,
+}
+
+impl hyper::body::Body for Tracked {
+    type Data = axum::body::Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.inner).poll_frame(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// Resolves once no request has been in flight for `after`. HTTP/1 closes such a connection
+/// through its header read timer; HTTP/2 has no equivalent, and the socket read timeout is sized
+/// for a running request, so this bounds a connection that stays open between requests.
+async fn idle_between_requests(mut active: watch::Receiver<usize>, after: Duration) {
+    loop {
+        if active.wait_for(|count| *count == 0).await.is_err() {
+            return;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(after) => return,
+            changed = active.changed() => if changed.is_err() { return; },
+        }
+    }
 }
 
 fn timed_io<T: tokio::io::AsyncRead + tokio::io::AsyncWrite>(
@@ -53,9 +120,19 @@ pub async fn serve(
                 connections.spawn(async move {
                     let first_request = Arc::new(Notify::new());
                     let received = first_request.clone();
+                    let (activity, active) = watch::channel(0usize);
+                    let activity = Arc::new(Activity(activity));
                     let service = hyper::service::service_fn(move |request| {
+                        let in_flight = activity.begin();
                         received.notify_one();
-                        app.clone().oneshot(request)
+                        let response = app.clone().oneshot(request);
+                        async move {
+                            let response = response.await?;
+                            Ok::<_, std::convert::Infallible>(response.map(|inner| Tracked {
+                                inner,
+                                _in_flight: in_flight,
+                            }))
+                        }
                     });
                     let mut builder = Builder::new(TokioExecutor::new());
                     builder.http1().timer(TokioTimer::new()).header_read_timeout(limits.header).max_buf_size(16 << 10);
@@ -75,6 +152,10 @@ pub async fn serve(
                             tokio::select! {
                                 result = &mut connection => {
                                     if result.is_err() { tracing::debug!(category = "transport", "connection closed"); }
+                                    return;
+                                },
+                                _ = idle_between_requests(active, limits.header) => {
+                                    tracing::debug!(category = "idle_connection", "connection closed");
                                     return;
                                 },
                                 _ = stopped.changed() => {},
@@ -140,6 +221,62 @@ mod tests {
                 .unwrap(),
             "ok"
         );
+        stop.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+    /// A running request may keep a quiet socket for longer than the header limit, but an HTTP/2
+    /// connection that is between requests closes once that limit passes, even though the socket
+    /// read limit is much larger.
+    #[tokio::test]
+    async fn closes_http2_connections_between_requests_but_not_during_one() {
+        let limits = Limits {
+            header: Duration::from_millis(150),
+            idle: Duration::from_secs(30),
+            write: Duration::from_secs(5),
+            shutdown: Duration::from_secs(5),
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let app = Router::new().route(
+            "/slow",
+            axum::routing::get(|| async {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                "slow-ok"
+            }),
+        );
+        let server = tokio::spawn(serve(listener, app, limits, async {
+            let _ = stopped.await;
+        }));
+        let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+        // Prior-knowledge HTTP/2: the preface, empty SETTINGS and one `GET /slow` on stream 1,
+        // with an HPACK block built from the static table.
+        let mut request = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".to_vec();
+        request.extend_from_slice(&[0, 0, 0, 4, 0, 0, 0, 0, 0]);
+        let mut block = vec![0x82, 0x86, 0x04, 5];
+        block.extend_from_slice(b"/slow");
+        block.extend_from_slice(&[0x01, 9]);
+        block.extend_from_slice(b"localhost");
+        request.extend_from_slice(&[0, 0, block.len() as u8, 1, 0x05, 0, 0, 0, 1]);
+        request.extend_from_slice(&block);
+        socket.write_all(&request).await.unwrap();
+        let started = tokio::time::Instant::now();
+        let mut raw = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), socket.read_to_end(&mut raw))
+            .await
+            .expect("an idle HTTP/2 connection must be closed after the header limit")
+            .ok();
+        let elapsed = started.elapsed();
+        assert!(
+            raw.windows(7).any(|window| window == b"slow-ok"),
+            "the request outlived the header limit and still got its response"
+        );
+        assert!(elapsed >= Duration::from_millis(500), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(3), "{elapsed:?}");
         stop.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(2), server)
             .await

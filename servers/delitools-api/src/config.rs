@@ -169,7 +169,9 @@ impl Config {
     /// applies the idle limit to that read as an unconditional timeout. The idle limit therefore
     /// has to cover the longest request deadline, which is the live execution timeout plus the
     /// dependency timeout; a shorter value would close the connection of a long execution that
-    /// an operator legitimately permitted. Each request stays bounded by its own deadline.
+    /// an operator legitimately permitted. Each request stays bounded by its own deadline, and the
+    /// transport closes a connection with no request in flight after the header limit, so the
+    /// large idle value never keeps an idle connection open.
     pub fn transport_limits(&self) -> server_common::transport::Limits {
         server_common::transport::Limits {
             header: self.timeout(),
