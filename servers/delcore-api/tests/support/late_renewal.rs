@@ -884,3 +884,67 @@ async fn payment_failure_for_an_associated_tenant_is_retained_only_when_it_appli
     assert_eq!(state["renewalFailed"], false, "{state}");
     assert_eq!(state["failure"], Value::Null, "{state}");
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn payment_of_a_replaced_subscription_does_not_resolve_a_stale_past_due() {
+    let s = scenario().await;
+    // The tenant replaced an earlier subscription. Its payment is recorded for the tenant, at
+    // an instant after the current subscription's failure, but belongs to another subscription.
+    let tenant = Uuid::parse_str(&s.tenant).unwrap();
+    sqlx::query(
+        "INSERT INTO provider_transactions VALUES('txn_replaced',$1,'subscription',0,'USD',$2)",
+    )
+    .bind(tenant)
+    .bind(s.time.days(30))
+    .execute(&s.f.db)
+    .await
+    .unwrap();
+    // The informational status advances the watermark past the failure, which is delivered late.
+    s.active("evt_active").await;
+    assert!(!s.flag().await);
+    s.past_due("evt_b").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(
+        state["failure"],
+        json!({"at":s.time.past_due().to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    assert_eq!(
+        s.authorize().await["reasons"],
+        json!(["BLOCK_REASON_RENEWAL"])
+    );
+    // A payment of the current subscription after the failure still recovers it.
+    s.pay_c("evt_c").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn initial_payment_resolves_a_stale_past_due_of_its_subscription() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    let initial_start = s.time.days(-40);
+    let initial_at = initial_start + Duration::seconds(1);
+    let data = json!({"id":"txn_initial","status":"completed","origin":"web","customer_id":CUSTOMER,"subscription_id":SUBSCRIPTION,"currency_code":"USD",
+        "custom_data":{"delcore_job_id":job,"delcore_tenant_id":s.tenant},
+        "items":[{"price":{"id":EXTERNAL_PRICE,"product_id":"pro_order"},"quantity":1}],
+        "billing_period":{"starts_at":initial_start.to_rfc3339(),"ends_at":s.time.days(0).to_rfc3339()},
+        "billed_at":initial_at.to_rfc3339()});
+    s.deliver("evt_initial", "transaction.completed", initial_at, data)
+        .await;
+    // The failure occurred before the confirmed initial payment, which already resolved it.
+    s.status(
+        "evt_b",
+        "subscription.past_due",
+        "past_due",
+        initial_at - Duration::seconds(1),
+    )
+    .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}

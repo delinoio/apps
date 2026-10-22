@@ -86,6 +86,7 @@ impl Worker {
         }
         sqlx::query("INSERT INTO provider_transactions VALUES($1,$2::text::uuid,'subscription',0,$3,$4) ON CONFLICT DO NOTHING").bind(&t.id).bind(&tenant).bind(&t.currency).bind(at).execute(&mut *conn).await?;
         sqlx::query("INSERT INTO provider_objects VALUES($1,$2,'active') ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,state='active' WHERE provider_objects.occurred_at<EXCLUDED.occurred_at").bind(&t.subscription_id).bind(at).execute(&mut *conn).await?;
+        super::webhook::record_subscription_payment(conn, &t.subscription_id, at).await?;
         // The provider watermark above ignores a payment older than the latest status, so the
         // tenant failure flag needs the same ordering. A failure that occurred after this payment
         // stays until a newer confirmed renewal recovers it; an older failure is recovered here.

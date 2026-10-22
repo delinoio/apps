@@ -24,6 +24,27 @@ fn valid_job(id: &str) -> bool {
     uuid::Uuid::parse_str(id).is_ok_and(|v| v.get_version_num() == 7)
 }
 
+/// Key of the provider object that holds when a subscription's latest confirmed payment
+/// happened. `provider_transactions` is keyed by tenant and a tenant can replace its external
+/// subscription, so the payment watermark that resolves a stale failure is kept per subscription.
+fn paid_key(subscription: &str) -> String {
+    format!("paid:{subscription}")
+}
+
+/// Records a confirmed payment of `subscription` at `paid_at`, keeping the latest occurrence.
+pub(super) async fn record_subscription_payment(
+    conn: &mut PgConnection,
+    subscription: &str,
+    paid_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query("INSERT INTO provider_objects VALUES($1,$2,'paid') ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at WHERE provider_objects.occurred_at<EXCLUDED.occurred_at")
+        .bind(paid_key(subscription))
+        .bind(paid_at)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
 impl Worker {
     /// Persist a verified provider notification before acknowledging it.
     pub async fn ingest_webhook(&self, signature: &str, raw: &[u8]) -> axum::http::StatusCode {
@@ -277,6 +298,7 @@ impl Worker {
                     previous.as_ref(),
                 )
                 .await?;
+                record_subscription_payment(conn, &t.subscription_id, at).await?;
                 self.apply_retained_subscription_state(conn, &tenant, &t.subscription_id, at)
                     .await?;
             }
@@ -318,9 +340,11 @@ impl Worker {
                     None => self.retain_subscription_failure(conn, &v.id, event).await?,
                     Some(tenant) => {
                         // A later informational status leaves this watermark newer than the
-                        // failure, which only a confirmed payment at or after it can resolve.
-                        let paid_since: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_transactions WHERE tenant_id=$1::text::uuid AND kind='subscription' AND created_at>=$2)")
-                            .bind(tenant)
+                        // failure, which only a confirmed payment of this subscription at or
+                        // after it can resolve. Payments of a replaced subscription of the
+                        // same tenant never resolve it.
+                        let paid_since: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_objects WHERE external_id=$1 AND occurred_at>=$2)")
+                            .bind(paid_key(&v.id))
                             .bind(event.occurred_at)
                             .fetch_one(&mut *conn)
                             .await?;
