@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delitools.v1;
+
+option go_package = "github.com/delinoio/apps/protos/delitools/v1;delitoolsv1";
+
+// ErrorReason refines the Connect error code carried by every failure. The
+// stable reason codes are part of the public contract.
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  // The request failed validation, for example an empty text array or an invalid
+  // language tag.
+  ERROR_REASON_INVALID_INPUT = 1;
+  // The credential is missing, malformed, expired, revoked or unknown.
+  ERROR_REASON_UNAUTHENTICATED = 2;
+  // The credential lacks the service capability, grant or tenant permission.
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  // Delcore blocked paid execution, for example for a billing reason.
+  ERROR_REASON_BILLING_BLOCKED = 4;
+  // A configured input size, item count or tenant limit was exceeded.
+  ERROR_REASON_LIMIT_EXCEEDED = 5;
+  // The tenant exceeded its request rate or concurrency limit.
+  ERROR_REASON_RATE_LIMITED = 6;
+  // The requested model is not allowed or has no registered selling prices.
+  ERROR_REASON_MODEL_UNAVAILABLE = 7;
+  // The JSON Schema uses a construct outside the supported subset.
+  ERROR_REASON_UNSUPPORTED_SCHEMA = 8;
+  // The provider failed after the permitted transient retries.
+  ERROR_REASON_PROVIDER_FAILED = 9;
+  // The provider returned output that is malformed or does not conform to the
+  // contract. The server never retries to repair invalid output.
+  ERROR_REASON_INVALID_OUTPUT = 10;
+  // The input does not contain the required information.
+  ERROR_REASON_EXTRACTION_FAILED = 11;
+  // The execution timeout elapsed.
+  ERROR_REASON_TIMEOUT = 12;
+  // The caller canceled the request.
+  ERROR_REASON_CANCELED = 13;
+  // A required dependency, such as the delcore authorization check, is
+  // unavailable. Paid execution fails closed.
+  ERROR_REASON_DEPENDENCY_UNAVAILABLE = 14;
+}
+
+// ErrorDetail is attached to every Connect error.
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string request_id = 2;
+}
+
+// TranslateRequest translates every text with one model call batch. Any item
+// failure fails the whole request.
+message TranslateRequest {
+  // Tenant to bill. Required for Logto user tokens; for an API key it must be
+  // empty or equal to the tenant of the key.
+  string tenant_id = 1;
+  // One to the configured maximum number of non-empty strings.
+  repeated string texts = 2;
+  // Required BCP 47 target language tag.
+  string target_language = 3;
+  // Optional BCP 47 source language tag. When omitted the model detects it.
+  string source_language = 4;
+  // Operator-allowed Vercel AI Gateway model identifier.
+  string model = 5;
+}
+
+message TranslateResponse {
+  string request_id = 1;
+  // Translations in the order and number of the request texts.
+  repeated string translations = 2;
+}
+
+// ExtractRequest extracts one JSON value from text using the fixed extraction
+// model.
+message ExtractRequest {
+  string tenant_id = 1;
+  // Non-empty source text.
+  string text = 2;
+  // JSON Schema document, limited to the documented supported subset.
+  string json_schema = 3;
+}
+
+message ExtractResponse {
+  string request_id = 1;
+  // JSON document that conforms to the accepted schema.
+  string json = 2;
+}
+
+service DelitoolsService {
+  rpc Translate(TranslateRequest) returns (TranslateResponse);
+  rpc Extract(ExtractRequest) returns (ExtractResponse);
+}
