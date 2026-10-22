@@ -2,8 +2,9 @@
 //! Delcore integration: the production [`TenantAuthority`] and the usage reporter.
 //!
 //! Both use the service's Logto machine-to-machine identity. Authorization calls use the
-//! `authorize` scope through `server-common`'s [`Authority`]; usage reports need the registered
-//! `usage:write` scope and use their own cached token. Every failure to reach or understand
+//! `authorize` scope and usage reports the registered `usage:write` scope; each scope has its own
+//! cached token, evicted when delcore rejects it, and the calls go through `server-common`'s
+//! [`Authority`]. Every failure to reach or understand
 //! delcore is an [`AuthorityError`] so callers fail closed. Request bodies and delcore messages
 //! are never logged.
 use crate::{
@@ -99,6 +100,7 @@ struct ScopedToken {
 
 pub struct DelcoreAuthority {
     authority: Arc<Authority>,
+    authorization: ScopedToken,
     reporting: ScopedToken,
     token_url: String,
     resource: String,
@@ -122,6 +124,10 @@ impl DelcoreAuthority {
         );
         Ok(Self {
             authority: Arc::new(authority),
+            authorization: ScopedToken {
+                scope: "authorize",
+                cache: Mutex::new(None),
+            },
             reporting: ScopedToken {
                 scope: "usage:write",
                 cache: Mutex::new(None),
@@ -135,21 +141,36 @@ impl DelcoreAuthority {
 
     async fn authorize(&self, body: Value) -> Result<Decision, AuthorityError> {
         let token = self
-            .authority
-            .service_token()
+            .cached_token(&self.authorization)
             .await
             .map_err(|_| AuthorityError)?;
-        let response = self
+        let response = match self
             .authority
             .call("Authorize", &format!("Bearer {token}"), body)
             .await
-            .map_err(|_| AuthorityError)?;
+        {
+            Ok(response) => response,
+            Err(fault) => {
+                // Delcore refusing the service credential (revocation, signing-key retirement or
+                // a scope change) says the cached token is unusable. Without eviction every later
+                // check would reuse it until its advertised expiry and fail closed service-wide.
+                if credential_rejected(&fault) {
+                    self.evict(&self.authorization, &token).await;
+                }
+                return Err(AuthorityError);
+            }
+        };
         decision(&response)
     }
 
     /// Token for the reporting scope, cached until shortly before expiry.
     async fn reporting_token(&self) -> Result<String, DeliveryError> {
-        let mut cache = self.reporting.cache.lock().await;
+        self.cached_token(&self.reporting).await
+    }
+
+    /// Token for one scope, cached until shortly before its expiry.
+    async fn cached_token(&self, scoped: &ScopedToken) -> Result<String, DeliveryError> {
+        let mut cache = scoped.cache.lock().await;
         if let Some((token, expiry)) = &*cache
             && Instant::now() < *expiry
         {
@@ -163,7 +184,7 @@ impl DelcoreAuthority {
             .form(&[
                 ("grant_type", "client_credentials"),
                 ("resource", self.resource.as_str()),
-                ("scope", self.reporting.scope),
+                ("scope", scoped.scope),
             ])
             .send()
             .await
@@ -233,26 +254,31 @@ impl DelcoreAuthority {
                 // Delcore refusing the credential (revocation, rotation or a scope change) says
                 // the cached token is unusable, so the next retry must fetch a fresh one instead
                 // of reusing it until its advertised expiry.
-                if matches!(
-                    fault.code,
-                    connectrpc::ErrorCode::Unauthenticated
-                        | connectrpc::ErrorCode::PermissionDenied
-                ) {
-                    self.evict_reporting_token(&token).await;
+                if credential_rejected(&fault) {
+                    self.evict(&self.reporting, &token).await;
                 }
                 Err(DeliveryError::Rejected)
             }
         }
     }
 
-    /// Drop the cached reporting token if it is still `rejected`. A concurrent delivery may
-    /// already have replaced it with a fresh token, which must stay in use.
-    async fn evict_reporting_token(&self, rejected: &str) {
-        let mut cache = self.reporting.cache.lock().await;
+    /// Drop the cached token of `scoped` if it is still `rejected`. A concurrent call may already
+    /// have replaced it with a fresh token, which must stay in use.
+    async fn evict(&self, scoped: &ScopedToken, rejected: &str) {
+        let mut cache = scoped.cache.lock().await;
         if cache.as_ref().is_some_and(|(token, _)| token == rejected) {
             *cache = None;
         }
     }
+}
+
+/// Whether delcore refused the bearer credential itself, as opposed to failing or answering a
+/// question negatively.
+fn credential_rejected(fault: &server_common::Fault) -> bool {
+    matches!(
+        fault.code,
+        connectrpc::ErrorCode::Unauthenticated | connectrpc::ErrorCode::PermissionDenied
+    )
 }
 
 /// Whether an `IngestEventResponse` shows that delcore durably accepted the event: a nonempty

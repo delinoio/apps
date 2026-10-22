@@ -315,6 +315,47 @@ async fn a_slow_failing_delivery_backs_off_from_the_end_of_the_report() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_rejected_authorization_token_is_replaced_before_the_next_check() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    translate_ok(&env, &key).await;
+    let authorization_tokens = |env: &Env| {
+        env.delcore
+            .token_scopes()
+            .iter()
+            .filter(|scope| scope.as_str() == "authorize")
+            .count()
+    };
+    let before = authorization_tokens(&env);
+    assert_eq!(
+        before, 1,
+        "one token serves every check until it is rejected"
+    );
+    // Delcore refuses the credential once (for example after a signing-key rotation) although
+    // the cached token has not reached its advertised expiry: that check fails closed ...
+    env.delcore.fail_authorize_auth(1);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "unavailable",
+            reason::INTERNAL,
+        )
+        .await;
+    // ... and the next one obtains fresh credentials instead of failing until expiry.
+    translate_ok(&env, &key).await;
+    assert_eq!(
+        authorization_tokens(&env),
+        before + 1,
+        "the rejected authorization token was evicted"
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_rejected_reporting_token_is_replaced_before_the_next_retry() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

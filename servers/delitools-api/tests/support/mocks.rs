@@ -435,6 +435,8 @@ struct DelcoreState {
     ingest_failures: u32,
     /// Ingestions to refuse as unauthenticated, as for a revoked or rotated credential.
     ingest_auth_failures: u32,
+    /// Authorization checks to refuse as unauthenticated, as for a revoked service credential.
+    authorize_auth_failures: u32,
     /// Ingestions to answer with a success status and an unrelated body.
     ingest_malformed: u32,
     token_scopes: Vec<String>,
@@ -535,6 +537,11 @@ impl DelcoreMock {
     pub fn fail_ingest_auth(&self, count: u32) {
         lock(&self.state).ingest_auth_failures = count;
     }
+    /// Refuse the next `count` authorization checks as unauthenticated (a revoked or rotated
+    /// service credential).
+    pub fn fail_authorize_auth(&self, count: u32) {
+        lock(&self.state).authorize_auth_failures = count;
+    }
     /// Answer the next `count` ingestions with HTTP 200 and a body without acceptance fields.
     pub fn malformed_ingests(&self, count: u32) {
         lock(&self.state).ingest_malformed = count;
@@ -626,6 +633,10 @@ async fn rpc(
             None => connect_error(StatusCode::UNAUTHORIZED, "unauthenticated"),
         },
         "Authorize" => {
+            if state.authorize_auth_failures > 0 {
+                state.authorize_auth_failures -= 1;
+                return connect_error(StatusCode::UNAUTHORIZED, "unauthenticated");
+            }
             if bearer != "m2m-authorize" {
                 return connect_error(StatusCode::FORBIDDEN, "permission_denied");
             }
