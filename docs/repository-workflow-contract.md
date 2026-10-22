@@ -8,9 +8,17 @@ Shared protocol tooling lives in `protos/scripts/`: `check-breaking.mjs` runs FI
 
 Changes under `servers/scripts/` select all three API entries in both server validation matrices.
 
+## Worktree dependency sharing
+
+Root `pnpm-workspace.yaml` sets `virtualStoreType: global` so worktrees share installed package contents through pnpm's global virtual store. Each worktree retains its own `node_modules` links and dependency versions selected by its lockfile.
+
+Run `pnpm install` from each worktree root after checkout or dependency changes. pnpm reuses packages already present in the shared store. Run `pnpm store path` to locate the store; no machine-specific store path is committed. See the [pnpm worktree guide](https://pnpm.io/git-worktrees).
+
 ## Development task orchestration
 
 The pinned Turborepo dependency manages development through `turbo watch dev --concurrency=20`. No separate process supervisor is required. Frontend `dev` tasks remain persistent and use their existing HMR watchers. The three API `dev` tasks are persistent and interruptible, and each depends on the root `//#server-build` task. The concurrency limit leaves room for all ten persistent application tasks and the shared build.
+
+The root launcher forwards `SIGINT` and `SIGTERM` to the Turbo process tree and waits for its descendants even if the immediate `pnpm` process exits first. On POSIX hosts, it owns a separate process group and sends `SIGKILL` to remaining group members after a ten-second grace period. On Windows, it terminates the tree with `taskkill`. The Compose databases and shared Portless proxy keep their separate lifetimes.
 
 The root `server-build` script invokes `servers/scripts/build-rust.mjs`, the only Cargo build owner in the session. It skips compilation while the server workspace is empty. Install Cargo and `protoc` before root development. API launchers execute compiled binaries directly so they do not compete for the Cargo build lock. Selecting one API through a Turbo filter still includes the shared build dependency. See the [server Rust workspace contract](servers-rust-workspace-contract.md#shared-build-process) for inputs and scope.
 

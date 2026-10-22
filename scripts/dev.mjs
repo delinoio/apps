@@ -82,6 +82,9 @@ export function supervise(args, env = process.env) {
       stdio: "inherit",
       env,
     },
+    // pnpm can exit before its descendants. Keep ownership of the whole group
+    // so shutdown waits for servers and escalates if they ignore the signal.
+    { terminateProcessTree: true },
   );
 }
 
