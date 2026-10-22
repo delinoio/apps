@@ -670,6 +670,9 @@ pub struct AttemptInfo {
     pub generation_id: String,
     pub usage_known: bool,
     pub delivered: bool,
+    /// The parent request is still `processing`, so the attempt's own call may still be running
+    /// and will store its own generation and usage.
+    pub request_running: bool,
 }
 
 /// The retained attempt, if any. An attempt at or past its 30-day boundary is expired even before
@@ -679,7 +682,7 @@ pub async fn attempt_info(
     id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Option<AttemptInfo>> {
-    let row = sqlx::query("SELECT tenant_id,request_id,model,generation_id,measured_usage IS NOT NULL AS usage_known,delivered_at IS NOT NULL AS delivered FROM attempts WHERE id=$1 AND created_at>$2")
+    let row = sqlx::query("SELECT tenant_id,request_id,model,generation_id,measured_usage IS NOT NULL AS usage_known,delivered_at IS NOT NULL AS delivered,EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=1) AS request_running FROM attempts WHERE id=$1 AND created_at>$2")
         .bind(id)
         .bind(cutoff(now))
         .fetch_optional(pool)
@@ -692,6 +695,7 @@ pub async fn attempt_info(
             generation_id: row.try_get("generation_id")?,
             usage_known: row.try_get("usage_known")?,
             delivered: row.try_get("delivered")?,
+            request_running: row.try_get("request_running")?,
         })
     })
     .transpose()
@@ -702,8 +706,8 @@ pub enum Association {
     Associated,
     /// The generation is already attached to another retained attempt.
     GenerationInUse,
-    /// The attempt no longer qualifies (usage known, delivered, already has a generation or
-    /// reached its 30-day expiry).
+    /// The attempt no longer qualifies (usage known, delivered, already has a generation, its
+    /// request is still running or it reached its 30-day expiry).
     NotEligible,
 }
 
@@ -717,7 +721,7 @@ pub async fn associate_generation(
     now: DateTime<Utc>,
 ) -> Result<Association> {
     let mut tx = pool.begin().await?;
-    let updated = sqlx::query("UPDATE attempts SET generation_id=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND generation_id='' AND measured_usage IS NULL AND delivered_at IS NULL AND created_at>$4")
+    let updated = sqlx::query("UPDATE attempts SET generation_id=$2,retry_at=$3,updated_at=$3 WHERE id=$1 AND generation_id='' AND measured_usage IS NULL AND delivered_at IS NULL AND created_at>$4 AND NOT EXISTS(SELECT 1 FROM requests r WHERE r.id=attempts.request_id AND r.state=1)")
         .bind(attempt_id)
         .bind(generation_id)
         .bind(now)

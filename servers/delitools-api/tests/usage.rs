@@ -999,6 +999,104 @@ async fn an_attempt_at_its_expiry_boundary_cannot_be_associated_before_the_sweep
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn an_attempt_of_a_running_request_cannot_be_associated_until_the_request_ends() {
+    let env = Env::start(&[], false).await;
+    let operator = env.fx.operator();
+    // A request still processing with an attempt that has no generation or usage yet: its own
+    // call has not produced a first stream chunk.
+    let (request, attempt) = (support::id(), support::id());
+    sqlx::query("INSERT INTO requests(id,tenant_id,capability,state,model,credential_kind,created_at,updated_at) VALUES($1,$2,1,1,$3,3,now(),now())")
+        .bind(request)
+        .bind(env.tenant)
+        .bind(TRANSLATION_MODEL)
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attempts(id,request_id,tenant_id,capability,model,provider_route,price_effective_at,catalog_price,occurred_at,created_at,updated_at) VALUES($1,$2,$3,1,$4,'anthropic',now()-interval '1 minute',$5,now(),now(),now())")
+        .bind(attempt)
+        .bind(request)
+        .bind(env.tenant)
+        .bind(TRANSLATION_MODEL)
+        .bind(json!({"input_usd_per_token":"0.000003","output_usd_per_token":"0.000015"}))
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    env.gateway.set_generation(
+        "gen_unrelated",
+        Some(generation_data(
+            "gen_unrelated",
+            TRANSLATION_MODEL,
+            10,
+            2,
+            0,
+            0,
+        )),
+    );
+    let call = json!({"attemptId": attempt.to_string(), "generationId": "gen_unrelated", "reason": "operator check"});
+    let generations = |env: &Env| {
+        let pool = env.fx.pool.clone();
+        async move {
+            sqlx::query_as::<_, (i64, i64)>(
+                "SELECT (SELECT count(*) FROM attempts WHERE generation_id<>''), (SELECT count(*) FROM audit_records WHERE action='generation.associate')",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+
+    // The lookup refuses the association and leaves neither a generation nor an audit record.
+    let info = store::exec::attempt_info(&env.fx.pool, attempt, store::now())
+        .await
+        .unwrap()
+        .expect("the attempt is retained");
+    assert!(info.request_running);
+    env.fx
+        .fails(
+            Some(&operator),
+            "AssociateGeneration",
+            call.clone(),
+            "invalid_argument",
+            reason::INVALID_INPUT,
+        )
+        .await;
+    assert_eq!(generations(&env).await, (0, 0));
+
+    // The transactional update enforces the same rule against a lookup that raced the request's
+    // own state.
+    let raced = store::exec::associate_generation(
+        &env.fx.pool,
+        attempt,
+        "gen_unrelated",
+        store::audit::AuditEntry {
+            action: store::audit::Action::GenerationAssociate,
+            actor: "operator:test",
+            reason: "raced the running request",
+            request_id: support::id(),
+            tenant_id: None,
+            target_id: Some(attempt),
+            details: json!({}),
+        },
+        store::now(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(raced, store::exec::Association::NotEligible));
+    assert_eq!(generations(&env).await, (0, 0));
+
+    // Once the request has ended (here: interrupted, so its usage stays unknown) the same
+    // association is accepted.
+    sqlx::query("UPDATE requests SET state=3")
+        .execute(&env.fx.pool)
+        .await
+        .unwrap();
+    env.fx.ok(&operator, "AssociateGeneration", call).await;
+    assert_eq!(generations(&env).await, (1, 1));
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn catalog_synchronization_versions_prices_and_never_enables_models() {
     let env = Env::start(&[], true).await;
     env.wait_for_price(TRANSLATION_MODEL).await;

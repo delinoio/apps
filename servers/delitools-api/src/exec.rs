@@ -911,6 +911,13 @@ impl ExecutionService for Executor {
         let attempt = db::attempt_info(&platform.store.pool, attempt_id, store::now())
             .await?
             .ok_or_else(|| Fault::not_found("attempt not found or already expired"))?;
+        // While the request runs, its own call stores the generation and usage of this attempt; an
+        // association now would occupy that field and bill an unrelated generation.
+        if attempt.request_running {
+            return Err(Fault::invalid_input(
+                "the request of the attempt is still running",
+            ));
+        }
         if attempt.usage_known || attempt.delivered || !attempt.generation_id.is_empty() {
             return Err(Fault::invalid_input(
                 "the attempt already has a generation or confirmed usage",
