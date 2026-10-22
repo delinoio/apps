@@ -279,6 +279,48 @@ async fn exhaustion_non_transient_errors_and_zero_retries() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_failed_first_chunk_generation_write_is_repaired_when_the_call_ends() {
+    let env = Env::start(&[("MAX_AI_RETRIES", "0")], false).await;
+    let key = env.service_key().await;
+    // Fail only the first write of a generation ID, as a transient database error would. A
+    // sequence is not rolled back with the failing statement, so the second write succeeds.
+    for statement in [
+        "CREATE SEQUENCE generation_write_failures",
+        "CREATE FUNCTION fail_first_generation_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.generation_id = '' AND NEW.generation_id <> '' AND nextval('generation_write_failures') = 1 THEN RAISE EXCEPTION 'injected transient failure'; END IF; RETURN NEW; END $$",
+        "CREATE TRIGGER fail_first_generation_write BEFORE UPDATE ON attempts FOR EACH ROW EXECUTE FUNCTION fail_first_generation_write()",
+    ] {
+        sqlx::query(statement).execute(&env.fx.pool).await.unwrap();
+    }
+    // The stream delivers its first chunk (with the generation ID) and then fails, so the usage
+    // stays unknown and only the generation ID makes it reconcilable.
+    env.gateway.sequence(vec![Script::StreamError {
+        generation: "gen_repaired".into(),
+    }]);
+    env.fx
+        .fails(
+            Some(&key),
+            TRANSLATE,
+            env.translate_body(&["x"], None),
+            "unavailable",
+            reason::PROVIDER,
+        )
+        .await;
+    let (generation, scheduled): (String, bool) = sqlx::query_as(
+        "SELECT generation_id, retry_at IS NOT NULL FROM attempts WHERE measured_usage IS NULL",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(generation, "gen_repaired");
+    assert!(
+        scheduled,
+        "unknown usage with a stored generation is scheduled for reconciliation"
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn client_disconnect_cancels_the_call_stops_retries_and_usage_is_reconciled_later() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

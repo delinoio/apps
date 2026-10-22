@@ -36,7 +36,13 @@ use chrono::Duration as ChronoDuration;
 use delino_protocol::delitools::v1::*;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use tokio::{sync::watch, time::Instant};
 use uuid::Uuid;
 
@@ -271,17 +277,37 @@ impl Drop for CancelOnDrop {
 struct AttemptSink {
     pool: PgPool,
     attempt: Uuid,
+    /// Set when the first-chunk write failed, so the loop repairs it from the call outcome.
+    store_failed: AtomicBool,
 }
 #[async_trait]
 impl GenerationSink for AttemptSink {
     async fn captured(&self, generation_id: &str) {
         if !db::set_generation(&self.pool, self.attempt, generation_id, store::now()).await {
+            self.store_failed.store(true, Ordering::SeqCst);
             tracing::warn!(
                 category = "generation_not_stored",
                 attempt_id = %self.attempt,
                 "generation identifier could not be stored"
             );
         }
+    }
+}
+
+/// Store the generation ID that the finished call reported after the first-chunk write failed.
+/// Unknown usage is reconciled by generation ID, so an attempt that loses it could never be
+/// reconciled automatically and its charge would be abandoned.
+async fn repair_generation(pool: &PgPool, attempt: Uuid, generation_id: &str) {
+    let stored = with_store_retries(TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_PAUSE, || {
+        db::ensure_generation(pool, attempt, generation_id, store::now())
+    })
+    .await;
+    if stored.is_err() {
+        tracing::error!(
+            category = "generation_not_stored",
+            attempt_id = %attempt,
+            "generation identifier could not be stored after the call ended"
+        );
     }
 }
 
@@ -461,6 +487,7 @@ impl Run {
             let sink = AttemptSink {
                 pool: pool.clone(),
                 attempt,
+                store_failed: AtomicBool::new(false),
             };
             let request = ChatRequest {
                 model: &self.price.model,
@@ -505,6 +532,13 @@ impl Run {
                     ambiguous: true,
                 };
             };
+            // `finish_attempt` schedules reconciliation only for an attempt that has a generation
+            // ID, so a first-chunk write that failed is repaired before the usage is recorded.
+            if sink.store_failed.load(Ordering::SeqCst)
+                && let Some(generation_id) = outcome.generation_id.as_deref()
+            {
+                repair_generation(pool, attempt, generation_id).await;
+            }
             if db::finish_attempt(pool, attempt, outcome.usage, reconcile_delay, store::now())
                 .await
                 .is_err()

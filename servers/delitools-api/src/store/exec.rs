@@ -383,6 +383,25 @@ pub async fn set_generation(
     .is_ok_and(|r| r.rows_affected() == 1)
 }
 
+/// Store the generation ID reported by a finished call. Idempotent: it succeeds when the ID is
+/// already stored, so a failed first-chunk write can be repaired with retries.
+pub async fn ensure_generation(
+    pool: &PgPool,
+    attempt_id: Uuid,
+    generation_id: &str,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE attempts SET generation_id=$2,updated_at=$3 WHERE id=$1 AND generation_id=''",
+    )
+    .bind(attempt_id)
+    .bind(generation_id)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Record what is known about an attempt's usage once the call ended. Known usage becomes due for
 /// delivery at once; provably zero usage has nothing to report; unknown usage waits for Gateway
 /// reconciliation, which needs a generation ID.
