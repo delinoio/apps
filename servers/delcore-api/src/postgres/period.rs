@@ -39,7 +39,9 @@ pub fn period_expired_sql(tenant: &str, plan: &str, now: &str) -> String {
 /// accepted: a recorded period only proves that coverage was paid for, not that the paid
 /// subscription still applies at `at` (a confirmed early cancellation ends the selection and
 /// the entitlements while the recorded row is retained for historical accounting).
-/// - A free base plan without an active recurring entitlement uses the UTC calendar month.
+/// - A free base plan without an active recurring add-on entitlement uses the UTC calendar month.
+///   Recurring prices owned by the free base plan itself are not add-ons: tenant creation and
+///   cancellation activation grant them as entitlements, and they require no Paddle coverage.
 /// - A paid base plan, or a free base plan with an active recurring add-on, uses the recorded
 ///   Paddle period that contains `at`, and fails with `PeriodUnavailable` when none exists.
 ///
@@ -52,7 +54,7 @@ pub async fn billing_period(
     let tenant = Uuid::parse_str(tenant)?;
     // Legacy tenants without pinned history fall back to `plans.free`; current tenant state
     // never substitutes for historical evidence.
-    let applicability: Option<(bool, bool)> = sqlx::query_as("SELECT COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),p.free), EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
+    let applicability: Option<(bool, bool)> = sqlx::query_as("SELECT COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),p.free), EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
         .bind(tenant).bind(at).fetch_optional(&mut *db).await?;
     let Some((free, recurring)) = applicability else {
         return Err(PeriodUnavailable.into());

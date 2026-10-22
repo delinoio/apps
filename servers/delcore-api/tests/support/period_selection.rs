@@ -187,6 +187,40 @@ impl Scenario {
     }
 }
 
+/// Inserts a recurring (kind 2) price owned by a new add-on, or by the free base plan.
+async fn recurring_price(s: &Scenario, add_on: bool) -> Uuid {
+    let price = Uuid::now_v7();
+    let external = format!("pri_period_{price}");
+    if add_on {
+        let addon = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO addons(id,service_id,name) VALUES($1,$2::text::uuid,'period add-on')",
+        )
+        .bind(addon)
+        .bind(&s.service)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO prices(id,addon_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3::text::uuid,'usage',0,0,'USD',$4,now(),2)")
+            .bind(price)
+            .bind(addon)
+            .bind(&s.service)
+            .bind(external)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+    } else {
+        sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) SELECT $1,plan_id,service_id,meter,0,0,currency,$3,now(),2 FROM prices WHERE id=$2::text::uuid")
+            .bind(price)
+            .bind(&s.free_price)
+            .bind(external)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+    }
+    price
+}
+
 fn unavailable(result: anyhow::Result<Period>) -> bool {
     result.is_err_and(|e| e.is::<postgres::PeriodUnavailable>())
 }
@@ -319,15 +353,9 @@ async fn ingestion_authorization_and_queries_use_the_calendar_month_after_cancel
 async fn free_base_with_active_recurring_add_on_keeps_recorded_paddle_coverage() {
     let s = scenario().await;
     let t = &s.time;
-    // A recurring price on a free base stands in for an add-on. Prices are immutable, so the
-    // fixture inserts one; it only needs the pinned entitlement history, not the purchase flow.
-    let recurring = Uuid::now_v7();
-    sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) SELECT $1,plan_id,service_id,meter,0,0,currency,'pri_period_addon',now(),2 FROM prices WHERE id=$2::text::uuid")
-        .bind(recurring)
-        .bind(&s.free_price)
-        .execute(&s.f.db)
-        .await
-        .unwrap();
+    // Prices are immutable, so the fixture inserts an add-on with a recurring price; it only
+    // needs the pinned entitlement history, not the purchase flow.
+    let recurring = recurring_price(&s, true).await;
     let tenant = Uuid::parse_str(&s.tenant).unwrap();
     let addon_start = t.paid_start - Duration::days(5);
     sqlx::query("DELETE FROM entitlements WHERE tenant_id=$1")
@@ -374,6 +402,35 @@ async fn free_base_with_active_recurring_add_on_keeps_recorded_paddle_coverage()
     assert_eq!(
         s.resolve(addon_start - Duration::days(1)).await.unwrap(),
         calendar(addon_start - Duration::days(1))
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn recurring_price_of_the_free_base_plan_keeps_the_calendar_month() {
+    let s = scenario().await;
+    let t = &s.time;
+    // Tenant creation and cancellation activation grant every active base-plan price as an
+    // entitlement, so a recurring price owned by the free base plan is not an add-on and
+    // requires no Paddle coverage.
+    let recurring = recurring_price(&s, false).await;
+    let tenant = Uuid::parse_str(&s.tenant).unwrap();
+    let start = t.paid_start - Duration::days(5);
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)")
+        .bind(Uuid::now_v7())
+        .bind(tenant)
+        .bind(recurring)
+        .bind(start)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    for at in [start + Duration::days(1), t.canceled, t.after(30)] {
+        assert_eq!(s.resolve(at).await.unwrap(), calendar(at), "{at}");
+    }
+    s.ingest("free-base-recurring", "1", t.after(30)).await;
+    assert_eq!(
+        s.persisted("free-base-recurring").await,
+        calendar(t.after(30))
     );
 }
 
