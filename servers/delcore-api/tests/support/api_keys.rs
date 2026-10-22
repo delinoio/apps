@@ -1034,6 +1034,89 @@ async fn grants_cannot_be_deleted_apart_from_their_key() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn inactive_keys_are_pruned_after_the_transient_period_and_churn_is_bounded() {
+    let w = world().await;
+    let (old, _) = w
+        .issue("alice", PERSONAL, json!([grant(&w.svc, &["execute"])]))
+        .await;
+    let (recent, _) = w
+        .issue("alice", PERSONAL, json!([grant(&w.svc, &["execute"])]))
+        .await;
+    let (active, _) = w
+        .issue("alice", PERSONAL, json!([grant(&w.svc, &["execute"])]))
+        .await;
+    for id in [&old, &recent] {
+        w.f.rpc(
+            "alice",
+            "RevokeApiKey",
+            json!({"requestKey":server_common::id(),"tenantId":w.tenant,"keyId":id}),
+        )
+        .await;
+    }
+    sqlx::query("ALTER TABLE api_keys DISABLE TRIGGER api_keys_immutable")
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE api_keys SET revoked_at=now()-interval '31 days',created_at=now()-interval '32 days' WHERE id=$1::text::uuid")
+        .bind(&old)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE api_keys SET revoked_at=now()-interval '29 days',created_at=now()-interval '32 days' WHERE id=$1::text::uuid")
+        .bind(&recent)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE api_keys ENABLE TRIGGER api_keys_immutable")
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    w.f.worker.maintain(chrono::Utc::now()).await.unwrap();
+    let remaining: Vec<String> = sqlx::query_scalar("SELECT id::text FROM api_keys ORDER BY id")
+        .fetch_all(&w.f.db)
+        .await
+        .unwrap();
+    assert!(
+        !remaining.contains(&old),
+        "a key inactive for 31 days is removed"
+    );
+    assert!(remaining.contains(&recent) && remaining.contains(&active));
+    let grants: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM api_key_grants WHERE key_id=$1::text::uuid")
+            .bind(&old)
+            .fetch_one(&w.f.db)
+            .await
+            .unwrap();
+    assert_eq!(grants, 0, "the grants leave with their key");
+
+    // Churn is bounded: 500 retained rows per scope, whatever their state.
+    let inserted: i64 = sqlx::query_scalar(
+        "WITH n AS (SELECT count(*) AS c FROM api_keys WHERE user_id=$1::text::uuid AND tenant_id=$2::text::uuid AND owner_kind=1),
+         ins AS (INSERT INTO api_keys(id,tenant_id,owner_kind,user_id,name,secret_hash,created_at,revoked_at)
+          SELECT gen_random_uuid(),$2::text::uuid,1,$1::text::uuid,'churn',decode(repeat('00',32),'hex'),now()-interval '1 day',now()-interval '12 hours'
+          FROM generate_series(1,500-(SELECT c FROM n)::int) RETURNING 1)
+         SELECT count(*) FROM ins",
+    )
+    .bind(&w.alice)
+    .bind(&w.tenant)
+    .fetch_one(&w.f.db)
+    .await
+    .unwrap();
+    assert!(inserted > 0);
+    w.f.error(
+        "alice",
+        "CreateApiKey",
+        w.create_body(PERSONAL, json!([grant(&w.svc, &["execute"])])),
+        "failed_precondition",
+    )
+    .await;
+    // Another owner scope keeps its own budget.
+    w.create("member", PERSONAL, json!([grant(&w.svc, &["execute"])]))
+        .await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn active_key_count_per_owner_is_bounded() {
     let w = world().await;
     for _ in 0..100 {

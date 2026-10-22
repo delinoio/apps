@@ -102,6 +102,14 @@ impl Call<'_> {
         if active >= api_keys::MAX_ACTIVE_KEYS {
             return Err(precondition("too many active API keys; revoke one first"));
         }
+        let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM api_keys WHERE tenant_id=$1 AND owner_kind=$2::int2 AND ($2::int2=2 OR user_id=$3)")
+            .bind(uuid(tenant)?).bind(kind as i16).bind(uuid(&self.user)?)
+            .fetch_one(&mut *self.tx).await?;
+        if retained >= api_keys::MAX_RETAINED_KEYS {
+            return Err(precondition(
+                "too many retained API keys; retry after revoked or expired keys are removed",
+            ));
+        }
         let key_id = uuid::Uuid::now_v7();
         let generated = api_keys::generate(key_id);
         sqlx::query("INSERT INTO api_keys(id,tenant_id,owner_kind,user_id,name,secret_hash,created_at,expires_at) VALUES($1,$2,$3::int2,$4,$5,$6,$7,$8)")

@@ -24,6 +24,10 @@ pub const MAX_CAPABILITIES: usize = 32;
 pub const MAX_CAPABILITY_BYTES: usize = 100;
 /// Bound on keys that are still usable per owner scope.
 pub const MAX_ACTIVE_KEYS: i64 = 100;
+/// Bound on key rows of any state per owner scope. Revoked and expired keys stay
+/// for the transient retention period, so rapid create-and-revoke churn cannot
+/// grow the table without limit.
+pub const MAX_RETAINED_KEYS: i64 = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OwnerKind {

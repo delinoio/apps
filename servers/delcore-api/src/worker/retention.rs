@@ -22,6 +22,21 @@ impl Worker {
                 );
             }
         }
+        // A revoked or expired key keeps its metadata for the transient period only;
+        // the cascade removes its grants.
+        let pruned = sqlx::query("DELETE FROM api_keys WHERE LEAST(revoked_at,expires_at)<=$1")
+            .bind(transient_cutoff)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
+        if pruned > 0 {
+            tracing::info!(
+                category = "retention",
+                record_kind = "api_keys",
+                removed = pruned,
+                "inactive API keys removed"
+            );
+        }
         // Keep normalized quantities and attribution for the longer accounting
         // interval even after raw event attributes have expired.
         if self.config.accounting_retention_seconds <= 0
