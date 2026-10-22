@@ -174,7 +174,7 @@ Chaque requête est également vérifiée par rapport à votre tenant dans Delco
 ### Gérer les clés
 
 - `CreateKey` : envoyez `tenantId`, `kind` (`KEY_KIND_PERSONAL` ou `KEY_KIND_SERVICE`), `capabilities` et un `expiresAt` facultatif.
-- `ListKeys` : répertorie les clés d’un tenant, filtrées par `kind`, avec `afterId` et `pageSize` pour la pagination. `pageSize` vaut 50 par défaut si vous l’omettez ou envoyez 0. Le maximum est 100, et une valeur supérieure renvoie une erreur d’entrée non valide.
+- `ListKeys` : répertorie les clés d’un tenant que vous pouvez gérer, filtrées par `kind`, avec `afterId` et `pageSize` pour la pagination. `pageSize` vaut 50 par défaut si vous l’omettez ou envoyez 0. Le maximum est 100, et une valeur supérieure renvoie une erreur d’entrée non valide. Vous ne pouvez jamais répertorier les clés personnelles d’un autre utilisateur. Avec `KEY_KIND_PERSONAL`, vous obtenez vos propres clés personnelles. Avec `KEY_KIND_SERVICE`, vous obtenez les clés de service du tenant, mais seulement si vous êtes Owner ou Admin. Sans `kind`, vous obtenez vos propres clés personnelles et, si vous êtes Owner ou Admin, aussi les clés de service du tenant.
 - `RevokeKey` : envoyez `tenantId` et `keyId`.
 
 ```sh

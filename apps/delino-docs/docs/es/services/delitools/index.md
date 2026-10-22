@@ -174,7 +174,7 @@ Cada solicitud también se comprueba con tu tenant en Delcore. El tenant debe es
 ### Administrar claves
 
 - `CreateKey`: envía `tenantId`, `kind` (`KEY_KIND_PERSONAL` o `KEY_KIND_SERVICE`), `capabilities` y un `expiresAt` opcional.
-- `ListKeys`: enumera las claves de un tenant, filtradas por `kind`, con `afterId` y `pageSize` para la paginación. `pageSize` es 50 por defecto si lo omites o envías 0. El máximo es 100, y un valor mayor devuelve un error de entrada no válida.
+- `ListKeys`: enumera las claves de un tenant que puedes gestionar, filtradas por `kind`, con `afterId` y `pageSize` para la paginación. `pageSize` es 50 por defecto si lo omites o envías 0. El máximo es 100, y un valor mayor devuelve un error de entrada no válida. Nunca puedes enumerar las claves personales de otro usuario. Con `KEY_KIND_PERSONAL` obtienes tus propias claves personales. Con `KEY_KIND_SERVICE` obtienes las claves de servicio del tenant, pero solo si eres Owner o Admin. Sin `kind` obtienes tus propias claves personales y, si eres Owner o Admin, también las claves de servicio del tenant.
 - `RevokeKey`: envía `tenantId` y `keyId`.
 
 ```sh

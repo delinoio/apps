@@ -174,7 +174,7 @@ Every request is also checked against your tenant in Delcore. The tenant must be
 ### Manage keys
 
 - `CreateKey`: send `tenantId`, `kind` (`KEY_KIND_PERSONAL` or `KEY_KIND_SERVICE`), `capabilities` and an optional `expiresAt`.
-- `ListKeys`: list keys of a tenant, filtered by `kind`, with `afterId` and `pageSize` for paging. `pageSize` defaults to 50 when you omit it or send 0. The maximum is 100, and a larger value returns an invalid-input error.
+- `ListKeys`: list the keys of a tenant that you may manage, filtered by `kind`, with `afterId` and `pageSize` for paging. `pageSize` defaults to 50 when you omit it or send 0. The maximum is 100, and a larger value returns an invalid-input error. You can never list another user's personal keys. With `KEY_KIND_PERSONAL` you get your own personal keys. With `KEY_KIND_SERVICE` you get the tenant's service keys, but only if you are an Owner or Admin. Without `kind`, you get your own personal keys, and also the tenant's service keys if you are an Owner or Admin.
 - `RevokeKey`: send `tenantId` and `keyId`.
 
 ```sh

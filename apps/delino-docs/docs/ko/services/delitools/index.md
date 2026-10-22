@@ -174,7 +174,7 @@ DeliTools는 추출 모델의 구조화된 출력이 지원하는 JSON Schema의
 ### 키 관리
 
 - `CreateKey`: `tenantId`, `kind`(`KEY_KIND_PERSONAL` 또는 `KEY_KIND_SERVICE`), `capabilities`, 선택 사항인 `expiresAt`을 보냅니다.
-- `ListKeys`: 테넌트의 키를 `kind`로 필터링해 나열하며, `afterId`와 `pageSize`로 페이지를 나눕니다. `pageSize`는 생략하거나 0을 보내면 50이 됩니다. 최댓값은 100이며, 더 큰 값은 invalid-input 오류를 반환합니다.
+- `ListKeys`: 관리할 수 있는 테넌트의 키를 `kind`로 필터링해 나열하며, `afterId`와 `pageSize`로 페이지를 나눕니다. `pageSize`는 생략하거나 0을 보내면 50이 됩니다. 최댓값은 100이며, 더 큰 값은 invalid-input 오류를 반환합니다. 다른 사용자의 개인 키는 절대 나열할 수 없습니다. `KEY_KIND_PERSONAL`은 본인의 개인 키를 반환합니다. `KEY_KIND_SERVICE`는 테넌트의 서비스 키를 반환하며, Owner 또는 Admin만 사용할 수 있습니다. `kind`를 생략하면 본인의 개인 키를 반환하고, Owner 또는 Admin이면 테넌트의 서비스 키도 함께 반환합니다.
 - `RevokeKey`: `tenantId`와 `keyId`를 보냅니다.
 
 ```sh

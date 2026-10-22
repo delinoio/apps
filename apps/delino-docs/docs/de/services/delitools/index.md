@@ -174,7 +174,7 @@ Jede Anfrage wird außerdem anhand Ihres Mandanten in Delcore geprüft. Der Mand
 ### Schlüssel verwalten
 
 - `CreateKey`: Senden Sie `tenantId`, `kind` (`KEY_KIND_PERSONAL` oder `KEY_KIND_SERVICE`), `capabilities` und ein optionales `expiresAt`.
-- `ListKeys`: Listet die Schlüssel eines Mandanten, gefiltert nach `kind`, mit `afterId` und `pageSize` für die Seitenaufteilung. `pageSize` ist standardmäßig 50, wenn Sie es weglassen oder 0 senden. Das Maximum ist 100, und ein größerer Wert gibt einen Fehler wegen ungültiger Eingabe zurück.
+- `ListKeys`: Listet die Schlüssel eines Mandanten, die Sie verwalten dürfen, gefiltert nach `kind`, mit `afterId` und `pageSize` für die Seitenaufteilung. `pageSize` ist standardmäßig 50, wenn Sie es weglassen oder 0 senden. Das Maximum ist 100, und ein größerer Wert gibt einen Fehler wegen ungültiger Eingabe zurück. Die persönlichen Schlüssel anderer Nutzer können Sie nie auflisten. Mit `KEY_KIND_PERSONAL` erhalten Sie Ihre eigenen persönlichen Schlüssel. Mit `KEY_KIND_SERVICE` erhalten Sie die Dienstschlüssel des Mandanten, aber nur als Eigentümer oder Administrator. Ohne `kind` erhalten Sie Ihre eigenen persönlichen Schlüssel und, als Eigentümer oder Administrator, auch die Dienstschlüssel des Mandanten.
 - `RevokeKey`: Senden Sie `tenantId` und `keyId`.
 
 ```sh
