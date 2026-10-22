@@ -220,7 +220,7 @@ O DeliTools mantém a chave, um hash da entrada e o estado. Ele não mantém a e
 
 ## Erros
 
-Todo erro tem um código Connect, um motivo estável, um ID de solicitação e uma mensagem em inglês. O motivo e o ID da solicitação estão no detalhe de erro `delitools.v1.ErrorDetail`. Use o motivo, não a mensagem, no seu código.
+Todo erro retornado por um método tem um código Connect, um motivo estável, um ID de solicitação e uma mensagem em inglês. O motivo e o ID da solicitação estão no detalhe de erro `delitools.v1.ErrorDetail`. Use o motivo, não a mensagem, no seu código. Os erros que o transporte Connect gera antes de um método ser executado, por exemplo um corpo de solicitação malformado, um tipo de conteúdo sem suporte, uma mensagem grande demais ou um método desconhecido, têm um código Connect e uma mensagem, mas não têm `ErrorDetail`. O ID da solicitação continua no cabeçalho de resposta `X-Delitools-Request-Id`, que toda resposta contém. Leia o motivo em `ErrorDetail` somente quando ele estiver presente.
 
 | Motivo                               | Código Connect        | Significado                                                                                                                        |
 | ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |

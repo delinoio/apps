@@ -220,7 +220,7 @@ DeliTools conserve la clé, une empreinte de l’entrée et l’état. Il ne con
 
 ## Erreurs
 
-Chaque erreur possède un code Connect, une raison stable, un identifiant de requête et un message en anglais. La raison et l’identifiant de requête se trouvent dans le détail d’erreur `delitools.v1.ErrorDetail`. Utilisez la raison, et non le message, dans votre code.
+Chaque erreur renvoyée par une méthode possède un code Connect, une raison stable, un identifiant de requête et un message en anglais. La raison et l’identifiant de requête se trouvent dans le détail d’erreur `delitools.v1.ErrorDetail`. Utilisez la raison, et non le message, dans votre code. Les erreurs que le transport Connect produit avant l’exécution d’une méthode, par exemple un corps de requête mal formé, un type de contenu non pris en charge, un message trop volumineux ou une méthode inconnue, ont un code Connect et un message, mais pas de `ErrorDetail`. L’identifiant de requête reste présent dans l’en-tête de réponse `X-Delitools-Request-Id`, que chaque réponse contient. Lisez la raison dans `ErrorDetail` uniquement lorsqu’il est présent.
 
 | Raison                               | Code Connect          | Signification                                                                                                                       |
 | ------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |

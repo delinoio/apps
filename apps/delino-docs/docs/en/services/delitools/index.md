@@ -220,7 +220,7 @@ DeliTools keeps the key, a hash of the input and the state. It does not keep the
 
 ## Errors
 
-Every error has a Connect code, a stable reason, a request ID and an English message. The reason and the request ID are in the `delitools.v1.ErrorDetail` error detail. Use the reason, not the message, in your code.
+Every error that a method returns has a Connect code, a stable reason, a request ID and an English message. The reason and the request ID are in the `delitools.v1.ErrorDetail` error detail. Use the reason, not the message, in your code. Errors that the Connect transport raises before a method runs, for example a malformed request body, an unsupported content type, a message that is too large or an unknown method, have a Connect code and a message but no `ErrorDetail`. The request ID is still in the `X-Delitools-Request-Id` response header, which every response carries. Read the reason from `ErrorDetail` only when it is present.
 
 | Reason                               | Connect code          | Meaning                                                                                         |
 | ------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------- |

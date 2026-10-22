@@ -220,7 +220,7 @@ DeliTools speichert den Schlüssel, einen Hash der Eingabe und den Zustand. Es s
 
 ## Fehler
 
-Jeder Fehler hat einen Connect-Code, einen stabilen Grund, eine Anfrage-ID und eine englische Meldung. Der Grund und die Anfrage-ID befinden sich im Fehlerdetail `delitools.v1.ErrorDetail`. Verwenden Sie in Ihrem Code den Grund, nicht die Meldung.
+Jeder Fehler, den eine Methode zurückgibt, hat einen Connect-Code, einen stabilen Grund, eine Anfrage-ID und eine englische Meldung. Der Grund und die Anfrage-ID befinden sich im Fehlerdetail `delitools.v1.ErrorDetail`. Verwenden Sie in Ihrem Code den Grund, nicht die Meldung. Fehler, die der Connect-Transport auslöst, bevor eine Methode läuft, zum Beispiel ein fehlerhafter Anfragetext, ein nicht unterstützter Inhaltstyp, eine zu große Nachricht oder eine unbekannte Methode, haben einen Connect-Code und eine Meldung, aber kein `ErrorDetail`. Die Anfrage-ID steht weiterhin im Antwort-Header `X-Delitools-Request-Id`, den jede Antwort enthält. Lesen Sie den Grund nur dann aus `ErrorDetail`, wenn es vorhanden ist.
 
 | Grund                                | Connect-Code          | Bedeutung                                                                                                                                               |
 | ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
