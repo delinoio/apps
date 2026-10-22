@@ -277,6 +277,7 @@ The 30 days start when the record is first created. Retries and state changes do
 To do its work, DeliTools sends your text, and for extraction your schema, to the Vercel AI Gateway and from there to the provider of the model that runs your request. Each request to the Gateway also carries a random attempt ID (a UUID) as the provider user reference, which DeliTools uses to reconcile usage. DeliTools sends no tenant, user or key identifier. These services handle data under their own policies. Read them before you send data to DeliTools:
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
+- [Vercel AI Gateway security and compliance](https://vercel.com/docs/ai-gateway/security-and-compliance): Vercel's own description of how it processes and protects data.
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): each model page lists its providers.
 - The data policy of the provider of the model you use.
 

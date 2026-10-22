@@ -277,6 +277,7 @@ Os 30 dias começam quando o registro é criado pela primeira vez. Novas tentati
 Para fazer seu trabalho, o DeliTools envia seu texto, e na extração seu esquema, ao Vercel AI Gateway e, a partir dele, ao provedor do modelo que executa a sua solicitação. Cada solicitação ao Gateway também leva um ID de tentativa aleatório (um UUID) como referência de usuário do provedor, que o DeliTools usa para reconciliar o uso. O DeliTools não envia nenhum identificador de tenant, usuário ou chave. Esses serviços tratam os dados conforme suas próprias políticas. Leia-as antes de enviar dados ao DeliTools:
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
+- [Vercel AI Gateway security and compliance](https://vercel.com/docs/ai-gateway/security-and-compliance): a descrição da própria Vercel sobre como ela trata e protege os dados.
 - [Vercel AI Gateway models](https://vercel.com/ai-gateway/models): a página de cada modelo lista seus provedores.
 - A política de dados do provedor do modelo que você usa.
 
