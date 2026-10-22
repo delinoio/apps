@@ -277,7 +277,7 @@ DeliTools 仅存储运行和计费该服务所需的数据：API 密钥的验证
 
 ## 外部提供商的数据处理
 
-为了完成工作，DeliTools 会将你的文本（提取时还包括你的架构）发送到 Vercel AI Gateway，并由其转发给运行你的请求的模型的提供商。发送到 Gateway 的每个请求还带有一个随机的尝试 ID（UUID），作为提供商的用户引用，DeliTools 用它来对账用量。DeliTools 不会发送租户、用户或密钥标识符。这些服务依据各自的政策处理数据。在向 DeliTools 发送数据之前，请先阅读这些政策：
+为了完成工作，DeliTools 会将你的文本（提取时还包括你的架构）发送到 Vercel AI Gateway，并由其转发给运行你的请求的模型的提供商。发送到 Gateway 的每个请求还带有一个随机的尝试 ID（UUID），作为提供商的用户引用，DeliTools 用它来对账用量。翻译时，请求还包含你的 `outputLanguage`，以及（如果你设置了）`inputLanguage`。DeliTools 不会发送租户、用户或密钥标识符。这些服务依据各自的政策处理数据。在向 DeliTools 发送数据之前，请先阅读这些政策：
 
 - [Vercel AI Gateway 零数据保留](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway 安全与合规](https://vercel.com/docs/ai-gateway/security-and-compliance)：Vercel 自己对其如何处理和保护数据的说明。

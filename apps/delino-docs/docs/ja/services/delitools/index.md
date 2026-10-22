@@ -277,7 +277,7 @@ DeliTools が保存するのは、サービスの運用と課金に必要なデ�
 
 ## 外部プロバイダーのデータの取り扱い
 
-サービスを提供するために、DeliTools は、お客様のテキストと、抽出の場合はお客様のスキーマを、Vercel AI Gateway に送信し、そこから、お客様のリクエストを実行するモデルのプロバイダーに送信します。Gateway へのリクエストには、プロバイダーのユーザー参照として、ランダムな試行 ID（UUID）も含まれます。DeliTools はこれを利用状況の照合に使用します。DeliTools がテナント、ユーザー、キーの識別子を送信することはありません。これらのサービスは、それぞれ独自のポリシーに従ってデータを取り扱います。DeliTools にデータを送信する前に、それらを確認してください。
+サービスを提供するために、DeliTools は、お客様のテキストと、抽出の場合はお客様のスキーマを、Vercel AI Gateway に送信し、そこから、お客様のリクエストを実行するモデルのプロバイダーに送信します。Gateway へのリクエストには、プロバイダーのユーザー参照として、ランダムな試行 ID（UUID）も含まれます。DeliTools はこれを利用状況の照合に使用します。翻訳では、リクエストに `outputLanguage` と、設定した場合は `inputLanguage` も含まれます。DeliTools がテナント、ユーザー、キーの識別子を送信することはありません。これらのサービスは、それぞれ独自のポリシーに従ってデータを取り扱います。DeliTools にデータを送信する前に、それらを確認してください。
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway security and compliance](https://vercel.com/docs/ai-gateway/security-and-compliance): Vercel 自身によるデータの処理と保護方法の説明。

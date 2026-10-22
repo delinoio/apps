@@ -277,7 +277,7 @@ Les 30 jours commencent lorsque l’enregistrement est créé pour la première 
 
 ## Traitement des données par les fournisseurs externes
 
-Pour effectuer son travail, DeliTools envoie votre texte, et pour l’extraction votre schéma, au Vercel AI Gateway, puis de là au fournisseur du modèle qui exécute votre requête. Chaque requête adressée au Gateway contient aussi un identifiant de tentative aléatoire (un UUID) comme référence utilisateur du fournisseur, que DeliTools utilise pour rapprocher l’utilisation. DeliTools n’envoie aucun identifiant de tenant, d’utilisateur ou de clé. Ces services traitent les données selon leurs propres politiques. Lisez-les avant d’envoyer des données à DeliTools :
+Pour effectuer son travail, DeliTools envoie votre texte, et pour l’extraction votre schéma, au Vercel AI Gateway, puis de là au fournisseur du modèle qui exécute votre requête. Chaque requête adressée au Gateway contient aussi un identifiant de tentative aléatoire (un UUID) comme référence utilisateur du fournisseur, que DeliTools utilise pour rapprocher l’utilisation. Pour une traduction, la requête contient aussi votre `outputLanguage` et, si vous l’indiquez, votre `inputLanguage`. DeliTools n’envoie aucun identifiant de tenant, d’utilisateur ou de clé. Ces services traitent les données selon leurs propres politiques. Lisez-les avant d’envoyer des données à DeliTools :
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway security and compliance](https://vercel.com/docs/ai-gateway/security-and-compliance) : la description que Vercel donne lui-même de la façon dont il traite et protège les données.

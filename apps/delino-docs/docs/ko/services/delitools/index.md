@@ -277,7 +277,7 @@ DeliTools는 서비스를 운영하고 요금을 청구하는 데 필요한 데�
 
 ## 외부 제공자의 데이터 처리
 
-DeliTools는 작업을 수행하기 위해 사용자의 텍스트와, 추출의 경우 스키마를 Vercel AI Gateway로 보내고, 거기서 요청을 실행하는 모델의 제공자에게 보냅니다. Gateway로 보내는 각 요청에는 제공자 사용자 참조로 무작위 시도 ID(UUID)도 포함되며, DeliTools는 이를 사용량 대조에 사용합니다. DeliTools는 테넌트, 사용자, 키 식별자를 보내지 않습니다. 이 서비스들은 각자의 정책에 따라 데이터를 처리합니다. DeliTools에 데이터를 보내기 전에 정책을 읽어 보세요.
+DeliTools는 작업을 수행하기 위해 사용자의 텍스트와, 추출의 경우 스키마를 Vercel AI Gateway로 보내고, 거기서 요청을 실행하는 모델의 제공자에게 보냅니다. Gateway로 보내는 각 요청에는 제공자 사용자 참조로 무작위 시도 ID(UUID)도 포함되며, DeliTools는 이를 사용량 대조에 사용합니다. 번역의 경우 요청에는 `outputLanguage`와, 설정한 경우 `inputLanguage`도 포함됩니다. DeliTools는 테넌트, 사용자, 키 식별자를 보내지 않습니다. 이 서비스들은 각자의 정책에 따라 데이터를 처리합니다. DeliTools에 데이터를 보내기 전에 정책을 읽어 보세요.
 
 - [Vercel AI Gateway zero data retention](https://vercel.com/docs/ai-gateway/security-and-compliance/zdr)
 - [Vercel AI Gateway security and compliance](https://vercel.com/docs/ai-gateway/security-and-compliance): Vercel이 데이터를 처리하고 보호하는 방식에 대한 Vercel 자체 설명입니다.
