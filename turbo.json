@@ -129,5 +129,6 @@
       "cache": false
     }
   },
-  "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"]
+  "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"],
+  "globalPassThroughEnv": ["PORTLESS", "PORTLESS_*"]
 }

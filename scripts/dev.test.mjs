@@ -264,7 +264,7 @@ test(
 );
 
 test(
-  "root development hands databases and arguments through Portless to process-compose and returns its failure",
+  "root development hands databases and arguments directly to process-compose and returns its failure",
   { skip: process.platform === "win32" },
   (t) => {
     const directory = fixture(t);
@@ -303,13 +303,7 @@ test(
     );
     writeFileSync(
       join(directory, "portless"),
-      `#!${process.execPath}
-const { spawnSync } = require('node:child_process');
-const args = process.argv.slice(2);
-if (args.shift() !== '--' || args[0] !== '--supervised') process.exit(98);
-const result = spawnSync(process.execPath, [${JSON.stringify(fileURLToPath(new URL("./dev.mjs", import.meta.url)))}, ...args], { stdio: 'inherit', env: process.env });
-process.exit(result.status ?? 1);
-`,
+      `#!${process.execPath}\nprocess.exit(98);\n`,
       { mode: 0o755 },
     );
     const result = spawnSync(
@@ -451,35 +445,45 @@ test("root, service-local and Portless Delcore development share the catalog-app
     readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
   const root = JSON.parse(read("../package.json"));
   const service = JSON.parse(read("../servers/delcore-api/package.json"));
-  const portless = JSON.parse(read("../portless.json"));
   const turbo = JSON.parse(read("../turbo.json"));
-  // Root development starts Compose, then Portless and process-compose.
-  // The supervised Delcore task runs the Turbo dev task, which reaches
-  // the same service-local dev script.
+  // Root development delegates route registration to each workspace task.
   assert.equal(root.scripts.dev, "node scripts/dev.mjs");
-  assert.equal(root.scripts["dev:portless"], undefined);
-  assert.notEqual(portless.turbo, false);
-  for (const [path, app] of Object.entries(portless.apps)) {
-    assert.equal(app.script ?? "dev", "dev");
-    assert.ok(JSON.parse(read(`../${path}/package.json`)).scripts.dev);
+  const routes = [
+    ["apps/delidev", "delidev", 46311],
+    ["apps/delitools", "delitools", 46312],
+    ["apps/devbase", "devbase", 46313],
+    ["apps/delino-site", "delino-site", 46314],
+    ["apps/delino-docs", "delino-docs", 46315],
+    ["apps/fixkey-app", "fixkey", 46316],
+    ["apps/git-tracker", "git-tracker", 46320],
+    ["servers/delcore-api", "delcore-api", 8080],
+    ["servers/devbase-api", "devbase-api", 46317],
+    ["servers/git-tracker-api", "git-tracker-api", 46321],
+  ];
+  for (const [path, name, port] of routes) {
+    const script = JSON.parse(read(`../${path}/package.json`)).scripts.dev;
+    assert.ok(
+      script.startsWith("infisical run --env=dev --project-config-dir=../.. "),
+    );
+    assert.ok(
+      script.includes(` -- portless run --name ${name} --app-port ${port} `),
+    );
+    assert.ok(!script.includes("--force"));
   }
   assert.equal(turbo.tasks.dev.persistent, true);
+  assert.deepEqual(turbo.globalPassThroughEnv, ["PORTLESS", "PORTLESS_*"]);
   assert.match(read("dev.mjs"), /process-compose/u);
   assert.match(
     read("../process-compose.yaml"),
     /delcore-api:[\s\S]*?command: pnpm exec turbo run dev --filter=@delinoio\/delcore-api/u,
   );
-  // The service-local dev script injects Infisical values, then runs the
-  // shared launcher, which executes the compiled Delcore binary.
+  // Infisical injects values before Portless runs the shared API launcher.
   assert.match(
     service.scripts.dev,
-    /^infisical run .*--path=\/delcore-api -- node \.\.\/scripts\/dev-api\.mjs delcore$/u,
+    /^infisical run .*--path=\/delcore-api -- portless run --name delcore-api --app-port 8080 node \.\.\/scripts\/dev-api\.mjs delcore$/u,
   );
   const listen = prepareApiEnvironment(Api.Delcore, {}).env.LISTEN;
-  assert.equal(
-    portless.apps["servers/delcore-api"].appPort,
-    Number(listen.split(":")[1]),
-  );
+  assert.equal(listen, "127.0.0.1:8080");
   // The shared builder watches code and SQL, but catalog YAML edits still
   // require an explicit API restart.
   const processCompose = read("../process-compose.yaml");

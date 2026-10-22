@@ -67,17 +67,13 @@ export async function main(args = process.argv.slice(2)) {
       services: Object.values(Api),
     }),
   );
-  // Portless discovers workspace `dev` scripts and invokes root `dev` once.
-  // This internal argument enters supervision without preparing Compose again
-  // or recursively starting another Portless session.
-  return spawnDevServer("portless", ["--", "--supervised", ...args], {
-    cwd: root,
-    stdio: "inherit",
-    env: { ...process.env, [databaseHandoff]: JSON.stringify(urls) },
+  return supervise(args, {
+    ...process.env,
+    [databaseHandoff]: JSON.stringify(urls),
   });
 }
 
-export function supervise(args) {
+export function supervise(args, env = process.env) {
   return spawnDevServer(
     "process-compose",
     [
@@ -91,7 +87,7 @@ export function supervise(args) {
     {
       cwd: root,
       stdio: "inherit",
-      env: process.env,
+      env,
     },
   );
 }
@@ -101,18 +97,13 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const args = process.argv.slice(2);
-    exitLikeChild(
-      await (args[0] === "--supervised"
-        ? supervise(args.slice(1))
-        : main(args)),
-    );
+    exitLikeChild(await main());
   } catch {
     console.error(
       JSON.stringify({
         event: "dev_start_failed",
         message:
-          "Could not prepare Compose databases or launch workspace development. Check Docker, Compose configuration, Portless proxy setup and the process-compose installation.",
+          "Could not prepare Compose databases or launch workspace development. Check Docker, Compose configuration and the process-compose installation.",
       }),
     );
     process.exitCode = 1;

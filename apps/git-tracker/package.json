@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. -- rsbuild dev",
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name git-tracker --app-port 46320 rsbuild dev",
     "build": "rsbuild build && cp \"../../LICENSE\" \"../../NOTICE\" \"dist/\"",
     "typecheck": "tsc --noEmit",
     "test": "pnpm typecheck && node --test tests/*.test.mjs && pnpm build",

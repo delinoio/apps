@@ -4,7 +4,7 @@
   "private": true,
   "license": "FSL-1.1-ALv2",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/git-tracker-api -- node ../scripts/dev-api.mjs git-tracker",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/git-tracker-api -- portless run --name git-tracker-api --app-port 46321 node ../scripts/dev-api.mjs git-tracker",
     "ci:checks": "cargo test --locked --manifest-path ../Cargo.toml -p git-tracker-api",
     "build": "cargo build --locked --manifest-path ../Cargo.toml -p git-tracker-api",
     "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",

@@ -5,7 +5,7 @@
   "license": "FSL-1.1-ALv2",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/devbase-api -- node ../scripts/dev-api.mjs devbase",
+    "dev": "infisical run --env=dev --project-config-dir=../.. --path=/devbase-api -- portless run --name devbase-api --app-port 46317 node ../scripts/dev-api.mjs devbase",
     "ci:format": "cargo fmt --manifest-path ../Cargo.toml --all --check",
     "ci:vet": "cargo clippy --locked --manifest-path ../Cargo.toml -p devbase-api --all-targets -- -D warnings",
     "ci:build": "cargo build --locked --manifest-path ../Cargo.toml -p devbase-api",
