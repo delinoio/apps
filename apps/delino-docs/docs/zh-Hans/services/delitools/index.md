@@ -46,7 +46,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 规则：
 
 - 语言值为 BCP 47 标签。`outputLanguage` 为必填。不是有效 BCP 47 的标签会返回输入无效错误。
-- `texts` 不能为空，并且任何字符串都不能为空。
+- `texts` 不能为空，并且任何字符串都不能为空或仅包含空白字符。
 - 如果你设置了 `inputLanguage` 并且它与 `outputLanguage` 相同，则请求无效。
 - 如果你省略 `inputLanguage`，DeliTools 会为整个数组检测一种输入语言。混合语言的数组仍会被翻译。如果检测到的语言与 `outputLanguage` 相同，模型仍会处理每一项。DeliTools 不会原样返回未经处理的原始数组。
 - 仅接受操作员允许列表中的模型。其他模型会返回模型无效错误。存在于 Vercel AI Gateway 目录中的模型不会自动被允许。
@@ -59,7 +59,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 | 字段             | 必填 | 含义                                                                 |
 | ---------------- | ---- | -------------------------------------------------------------------- |
 | `tenantId`       | 是   | 接收用量费用的租户。请使用其规范形式的 UUID 版本 7：小写并带连字符。 |
-| `text`           | 是   | 源文本。                                                             |
+| `text`           | 是   | 源文本。不能为空，也不能仅包含空白字符。                             |
 | `jsonSchema`     | 是   | 以字符串表示、使用受支持子集的 JSON 架构。                           |
 | `idempotencyKey` | 否   | 请参阅幂等性。                                                       |
 

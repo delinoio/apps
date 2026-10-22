@@ -46,7 +46,7 @@ The response contains `requestId` and `texts`, the translations in the original 
 Rules:
 
 - Language values are BCP 47 tags. `outputLanguage` is required. A tag that is not valid BCP 47 returns an invalid-input error.
-- `texts` must not be empty, and no string may be empty.
+- `texts` must not be empty, and no string may be empty or contain only whitespace.
 - If you set `inputLanguage` and it is the same as `outputLanguage`, the request is invalid.
 - If you omit `inputLanguage`, DeliTools detects one input language for the whole array. A mixed-language array is still translated. If the detected language equals `outputLanguage`, the model still processes each item. DeliTools does not return the original array unprocessed.
 - Only models on the operator allowlist are accepted. Other models return an invalid-model error. A model that exists in the Vercel AI Gateway catalog is not allowed automatically.
@@ -59,7 +59,7 @@ Rules:
 | Field            | Required | Meaning                                                                                               |
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------- |
 | `tenantId`       | Yes      | The tenant that receives the usage charge. Use its canonical UUID version 7: lowercase, with hyphens. |
-| `text`           | Yes      | The source text.                                                                                      |
+| `text`           | Yes      | The source text. It must not be empty or contain only whitespace.                                     |
 | `jsonSchema`     | Yes      | A JSON schema, as a string, that uses the supported subset.                                           |
 | `idempotencyKey` | No       | See Idempotency.                                                                                      |
 

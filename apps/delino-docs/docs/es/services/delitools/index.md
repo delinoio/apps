@@ -46,7 +46,7 @@ La respuesta contiene `requestId` y `texts`, las traducciones en el orden origin
 Reglas:
 
 - Los valores de idioma son etiquetas BCP 47. `outputLanguage` es obligatorio. Una etiqueta que no sea BCP 47 válida devuelve un error de entrada no válida.
-- `texts` no debe estar vacío y ninguna cadena puede estar vacía.
+- `texts` no debe estar vacío y ninguna cadena puede estar vacía ni contener solo espacios en blanco.
 - Si estableces `inputLanguage` y es igual a `outputLanguage`, la solicitud no es válida.
 - Si omites `inputLanguage`, DeliTools detecta un único idioma de entrada para toda la matriz. Una matriz con varios idiomas se traduce igualmente. Si el idioma detectado es igual a `outputLanguage`, el modelo sigue procesando cada elemento. DeliTools no devuelve la matriz original sin procesar.
 - Solo se aceptan los modelos de la lista de permitidos del operador. Cualquier otro modelo devuelve un error de modelo no válido. Un modelo que existe en el catálogo de Vercel AI Gateway no está permitido automáticamente.
@@ -59,7 +59,7 @@ Reglas:
 | Campo            | Obligatorio | Significado                                                                                                |
 | ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------- |
 | `tenantId`       | Sí          | El tenant que recibe el cargo por el uso. Utiliza su UUID versión 7 canónico: en minúsculas y con guiones. |
-| `text`           | Sí          | El texto de origen.                                                                                        |
+| `text`           | Sí          | El texto de origen. No puede estar vacío ni contener solo espacios en blanco.                              |
 | `jsonSchema`     | Sí          | Un esquema JSON, como cadena, que utiliza el subconjunto compatible.                                       |
 | `idempotencyKey` | No          | Consulta Idempotencia.                                                                                     |
 

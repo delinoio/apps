@@ -46,7 +46,7 @@ Die Antwort enthält `requestId` und `texts`, die Übersetzungen in der ursprün
 Regeln:
 
 - Sprachwerte sind BCP-47-Tags. `outputLanguage` ist erforderlich. Ein Tag, das kein gültiges BCP 47 ist, gibt einen Fehler wegen ungültiger Eingabe zurück.
-- `texts` darf nicht leer sein, und keine Zeichenfolge darf leer sein.
+- `texts` darf nicht leer sein, und keine Zeichenfolge darf leer sein oder nur aus Leerraum bestehen.
 - Wenn Sie `inputLanguage` festlegen und es mit `outputLanguage` übereinstimmt, ist die Anfrage ungültig.
 - Wenn Sie `inputLanguage` weglassen, erkennt DeliTools eine Eingabesprache für das gesamte Array. Ein Array mit gemischten Sprachen wird dennoch übersetzt. Wenn die erkannte Sprache mit `outputLanguage` übereinstimmt, verarbeitet das Modell trotzdem jedes Element. DeliTools gibt das ursprüngliche Array nicht unverarbeitet zurück.
 - Es werden nur Modelle aus der Zulassungsliste des Betreibers akzeptiert. Andere Modelle geben einen Fehler wegen ungültigen Modells zurück. Ein Modell, das im Katalog des Vercel AI Gateway vorhanden ist, ist nicht automatisch zugelassen.
@@ -59,7 +59,7 @@ Regeln:
 | Feld             | Erforderlich | Bedeutung                                                                                                                        |
 | ---------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | `tenantId`       | Ja           | Der Mandant, dem die Nutzung berechnet wird. Verwenden Sie dessen kanonische UUID Version 7: Kleinbuchstaben, mit Bindestrichen. |
-| `text`           | Ja           | Der Quelltext.                                                                                                                   |
+| `text`           | Ja           | Der Quelltext. Er darf nicht leer sein und nicht nur aus Leerraum bestehen.                                                      |
 | `jsonSchema`     | Ja           | Ein JSON-Schema als Zeichenfolge, das die unterstützte Teilmenge verwendet.                                                      |
 | `idempotencyKey` | Nein         | Siehe Idempotenz.                                                                                                                |
 

@@ -46,7 +46,7 @@ A resposta contém `requestId` e `texts`, as traduções na ordem original e com
 Regras:
 
 - Os valores de idioma são tags BCP 47. `outputLanguage` é obrigatório. Uma tag que não seja BCP 47 válida retorna um erro de entrada inválida.
-- `texts` não pode estar vazio, e nenhuma string pode estar vazia.
+- `texts` não pode estar vazio, e nenhuma string pode estar vazia ou conter apenas espaços em branco.
 - Se você definir `inputLanguage` e ele for igual a `outputLanguage`, a solicitação é inválida.
 - Se você omitir `inputLanguage`, o DeliTools detecta um único idioma de entrada para toda a matriz. Uma matriz com vários idiomas ainda é traduzida. Se o idioma detectado for igual a `outputLanguage`, o modelo ainda processa cada item. O DeliTools não retorna a matriz original sem processamento.
 - Somente os modelos da lista de permissões do operador são aceitos. Outros modelos retornam um erro de modelo inválido. Um modelo que existe no catálogo do Vercel AI Gateway não é permitido automaticamente.
@@ -59,7 +59,7 @@ Regras:
 | Campo            | Obrigatório | Significado                                                                                           |
 | ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
 | `tenantId`       | Sim         | O tenant que recebe a cobrança de uso. Use o UUID versão 7 canônico dele: em minúsculas e com hifens. |
-| `text`           | Sim         | O texto de origem.                                                                                    |
+| `text`           | Sim         | O texto de origem. Ele não pode estar vazio nem conter apenas espaços em branco.                      |
 | `jsonSchema`     | Sim         | Um esquema JSON, como string, que usa o subconjunto compatível.                                       |
 | `idempotencyKey` | Não         | Consulte Idempotência.                                                                                |
 
