@@ -167,24 +167,26 @@ impl Server {
         )
         .await
         .unwrap_or_else(|_| Err(Fault::unavailable()));
-        // Record unless the outer request timeout already claimed this request (see
-        // `server_common::http::Accounting`); a missing marker means no outer middleware.
-        if accounting.is_none_or(|marker| marker.claim()) {
-            self.metrics
-                .requests
-                .with_label_values(&[
-                    op.name(),
-                    result
-                        .as_ref()
-                        .err()
-                        .map(|f| f.code.as_str())
-                        .unwrap_or("ok"),
-                ])
-                .inc();
-            self.metrics
-                .duration
-                .with_label_values(&[op.name()])
-                .observe(start.elapsed().as_secs_f64());
+        let code = result
+            .as_ref()
+            .err()
+            .map(|f| f.code.as_str())
+            .unwrap_or("ok");
+        match accounting {
+            // Behind the HTTP middleware the response that is returned decides the recorded
+            // outcome (see `server_common::http::Accounting`), so the handler only reports.
+            Some(marker) => marker.report(code, start.elapsed()),
+            // Without the middleware the handler is the only party that can record.
+            None => {
+                self.metrics
+                    .requests
+                    .with_label_values(&[op.name(), code])
+                    .inc();
+                self.metrics
+                    .duration
+                    .with_label_values(&[op.name()])
+                    .observe(start.elapsed().as_secs_f64());
+            }
         }
         tracing::info!(trace_id=%trace,procedure=op.name(),duration_ms=start.elapsed().as_millis(),success=result.is_ok(),"request completed");
         match result {

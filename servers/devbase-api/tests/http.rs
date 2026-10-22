@@ -236,10 +236,12 @@ async fn handler_errors_keep_their_single_observation_without_timeout_counts() {
 }
 
 #[tokio::test]
-async fn handler_finishing_before_the_outer_deadline_is_not_counted_again() {
-    // The handler answers a request without credentials at once and records its own outcome.
+async fn timeout_after_the_handler_finished_records_the_returned_timeout_once() {
+    // The handler answers a request without credentials at once and reports its own outcome.
     // A layer between the outer timeout and the service then keeps the finished response past the
-    // outer deadline, which stands for slow serialization or scheduling after the handler.
+    // outer deadline, which stands for slow serialization or scheduling after the handler. The
+    // client receives the 504, so the one recorded observation is the timeout, not the earlier
+    // handler outcome, and its latency spans the whole request.
     let fx = fixture(Duration::from_millis(200), Delcore::Fail).await;
     let rpc = connectrpc::Router::new()
         .add_service(fx.server.clone())
@@ -279,9 +281,39 @@ async fn handler_finishing_before_the_outer_deadline_is_not_counted_again() {
     .await;
     task.abort();
     assert_timeout_reply(&reply);
-    // Exactly one observation for the request: the handler's own, with no timeout sample.
-    assert_eq!(count(&fx.server, "ListProjects", "unauthenticated"), 1);
-    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 0);
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+    assert_eq!(count(&fx.server, "ListProjects", "unauthenticated"), 0);
+    let (n, sum) = samples(&fx.server, "ListProjects");
+    assert_eq!(n, 1);
+    assert!(sum >= 0.19, "sample must span the whole request, got {sum}");
+}
+
+#[tokio::test]
+async fn client_declared_deadline_is_counted_once_as_a_timeout() {
+    // The client's Connect-Timeout-Ms is far shorter than the server's whole-request timeout and
+    // expires while authentication waits for Delcore. The transport cancels the handler and
+    // answers 504 itself, so the handler never reports; the 504 must still be counted once.
+    let fx = fixture(Duration::from_secs(5), Delcore::Hang).await;
+    let path = format!("{PREFIX}ListProjects");
+    let body = format!(r#"{{"tenantId":"{TENANT}"}}"#);
+    let head = rpc_head(
+        &path,
+        body.len(),
+        "Authorization: Bearer login-token\r\nConnect-Timeout-Ms: 150\r\n",
+    );
+    let reply = exchange(fx.addr, &head, &[(Duration::ZERO, body.as_bytes())]).await;
+    assert!(reply.head.starts_with("HTTP/1.1 504"), "{}", reply.head);
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+    let (n, sum) = samples(&fx.server, "ListProjects");
+    assert_eq!(n, 1);
+    assert!(
+        sum >= 0.1,
+        "sample must span the client deadline, got {sum}"
+    );
+    // The cancelled handler adds nothing afterwards.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+    assert_eq!(count(&fx.server, "ListProjects", "unavailable"), 0);
     assert_eq!(samples(&fx.server, "ListProjects").0, 1);
 }
 
