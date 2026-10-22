@@ -219,11 +219,35 @@ impl DelcoreAuthority {
             }
         });
         let token = self.reporting_token().await?;
-        self.authority
+        match self
+            .authority
             .call("IngestEvent", &format!("Bearer {token}"), body)
             .await
-            .map(|_| ())
-            .map_err(|_| DeliveryError::Rejected)
+        {
+            Ok(_) => Ok(()),
+            Err(fault) => {
+                // Delcore refusing the credential (revocation, rotation or a scope change) says
+                // the cached token is unusable, so the next retry must fetch a fresh one instead
+                // of reusing it until its advertised expiry.
+                if matches!(
+                    fault.code,
+                    connectrpc::ErrorCode::Unauthenticated
+                        | connectrpc::ErrorCode::PermissionDenied
+                ) {
+                    self.evict_reporting_token(&token).await;
+                }
+                Err(DeliveryError::Rejected)
+            }
+        }
+    }
+
+    /// Drop the cached reporting token if it is still `rejected`. A concurrent delivery may
+    /// already have replaced it with a fresh token, which must stay in use.
+    async fn evict_reporting_token(&self, rejected: &str) {
+        let mut cache = self.reporting.cache.lock().await;
+        if cache.as_ref().is_some_and(|(token, _)| token == rejected) {
+            *cache = None;
+        }
     }
 }
 

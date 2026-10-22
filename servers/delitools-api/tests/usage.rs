@@ -279,6 +279,44 @@ async fn delivery_retries_with_capped_backoff_and_a_duplicate_never_creates_a_se
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_rejected_reporting_token_is_replaced_before_the_next_retry() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    // Delcore refuses the credential once (for example after rotation) although the cached token
+    // has not reached its advertised expiry.
+    env.delcore.fail_ingest_auth(1);
+    translate_ok(&env, &key).await;
+    for _ in 0..50 {
+        if env.delcore.ingest_authorizations().len() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let reporting_tokens = |env: &Env| {
+        env.delcore
+            .token_scopes()
+            .iter()
+            .filter(|scope| scope.as_str() == "usage:write")
+            .count()
+    };
+    assert_eq!(reporting_tokens(&env), 1);
+    assert!(env.delcore.accepted().is_empty());
+
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(
+        reporting_tokens(&env),
+        2,
+        "the retry obtained fresh credentials instead of reusing the rejected token"
+    );
+    assert_eq!(env.delcore.accepted().len(), 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn background_delivery_survives_restart_from_persisted_state_alone() {
     let env = Env::start(&[], false).await;
     env.seed_crash_state().await;

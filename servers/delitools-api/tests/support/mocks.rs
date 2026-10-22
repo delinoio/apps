@@ -431,6 +431,8 @@ struct DelcoreState {
     ingest_calls: Vec<Value>,
     accepted: HashMap<String, Value>,
     ingest_failures: u32,
+    /// Ingestions to refuse as unauthenticated, as for a revoked or rotated credential.
+    ingest_auth_failures: u32,
     token_scopes: Vec<String>,
     token_down: bool,
     ingest_authorizations: Vec<String>,
@@ -513,6 +515,10 @@ impl DelcoreMock {
     /// Fail the next `count` ingestions with a 503.
     pub fn fail_ingests(&self, count: u32) {
         lock(&self.state).ingest_failures = count;
+    }
+    /// Refuse the next `count` ingestions as unauthenticated (a revoked or rotated credential).
+    pub fn fail_ingest_auth(&self, count: u32) {
+        lock(&self.state).ingest_auth_failures = count;
     }
     pub fn authorize_calls(&self) -> Vec<Value> {
         lock(&self.state).authorize_calls.clone()
@@ -606,6 +612,10 @@ async fn rpc(
         }
         "IngestEvent" => {
             state.ingest_authorizations.push(bearer.clone());
+            if state.ingest_auth_failures > 0 {
+                state.ingest_auth_failures -= 1;
+                return connect_error(StatusCode::UNAUTHORIZED, "unauthenticated");
+            }
             if bearer != "m2m-usage:write" {
                 return connect_error(StatusCode::FORBIDDEN, "permission_denied");
             }
