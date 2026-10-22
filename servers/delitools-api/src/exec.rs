@@ -539,9 +539,14 @@ impl Run {
             {
                 repair_generation(pool, attempt, generation_id).await;
             }
-            if db::finish_attempt(pool, attempt, outcome.usage, reconcile_delay, store::now())
-                .await
-                .is_err()
+            // The update is idempotent. Confirmed counts exist only in memory until it succeeds,
+            // and a lookup at the Gateway may never recover them (the attempt can lack a
+            // generation ID), so a transient storage error is retried like the terminal writes.
+            if with_store_retries(TERMINAL_WRITE_ATTEMPTS, TERMINAL_WRITE_PAUSE, || {
+                db::finish_attempt(pool, attempt, outcome.usage, reconcile_delay, store::now())
+            })
+            .await
+            .is_err()
             {
                 tracing::error!(
                     category = "attempt_not_recorded",

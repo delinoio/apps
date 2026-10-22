@@ -1721,6 +1721,37 @@ async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_transient_storage_error_does_not_discard_confirmed_usage() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // No generation lookup can recover the counts: the mocked Gateway knows no generation. Fail
+    // the first two writes of measured usage, as a transient database error would.
+    for statement in [
+        "CREATE SEQUENCE usage_write_failures",
+        "CREATE FUNCTION fail_first_usage_writes() RETURNS trigger AS $$ BEGIN \
+         IF NEW.measured_usage IS NOT NULL AND nextval('usage_write_failures') <= 2 THEN \
+         RAISE EXCEPTION 'injected transient failure'; END IF; RETURN NEW; END; $$ \
+         LANGUAGE plpgsql",
+        "CREATE TRIGGER fail_usage_writes BEFORE UPDATE ON attempts FOR EACH ROW \
+         EXECUTE FUNCTION fail_first_usage_writes()",
+    ] {
+        sqlx::query(statement).execute(&env.fx.pool).await.unwrap();
+    }
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    translate_ok(&env, &key).await;
+    // The confirmed counts survived the failed writes and were delivered.
+    let events = env.wait_for_events(1).await;
+    assert_eq!(events.len(), 1);
+    let stored: bool = sqlx::query_scalar("SELECT measured_usage IS NOT NULL FROM attempts")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert!(stored);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn an_attempt_that_expires_while_an_earlier_report_runs_is_not_reported() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;
