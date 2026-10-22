@@ -533,3 +533,89 @@ async fn expiry_thirty_days_after_first_creation_permits_a_fresh_charged_executi
     assert_eq!(env.gateway.chat_count(), 3);
     env.finish().await;
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_racing_first_call_is_answered_by_the_claim_even_when_the_price_was_withdrawn() {
+    use delitools_api::{
+        platform::{CredentialKind, ExecutionPrincipal},
+        store::exec::{IdempotencyClaim, NewRequest, Start, start_request},
+    };
+    let env = Env::start(&[], false).await;
+    let principal = ExecutionPrincipal {
+        tenant_id: env.tenant,
+        capability: delino_protocol::delitools::v1::Capability::CAPABILITY_TRANSLATOR,
+        credential: CredentialKind::ServiceKey,
+        api_key_id: None,
+        user_id: None,
+    };
+    // A model without any effective price version, as after a catalog synchronization withdrew it
+    // between a loser's preliminary duplicate check and its creation transaction.
+    let model = "withdrawn/model";
+    let winner = uuid::Uuid::now_v7();
+
+    // The winner's claim is uncommitted when the loser starts, so the preliminary lookup missed it.
+    let mut winning_tx = env.fx.pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO idempotency_records(tenant_id,method,idempotency_key,request_id,input_hash,state,created_at,updated_at) VALUES($1,1,'race-key',$2,$3,1,now(),now())")
+        .bind(env.tenant)
+        .bind(winner)
+        .bind([7_u8; 32].as_slice())
+        .execute(&mut *winning_tx)
+        .await
+        .unwrap();
+    let loser = {
+        let pool = env.fx.pool.clone();
+        let principal = principal.clone();
+        tokio::spawn(async move {
+            let claim = IdempotencyClaim {
+                key: "race-key",
+                input_hash: [7; 32],
+            };
+            let request = NewRequest {
+                id: uuid::Uuid::now_v7(),
+                principal: &principal,
+                model: "withdrawn/model",
+            };
+            start_request(&pool, &request, Some(&claim), store::now()).await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !loser.is_finished(),
+        "the loser waits for the claim instead of concluding that no price exists"
+    );
+    winning_tx.commit().await.unwrap();
+    match loser.await.unwrap().unwrap() {
+        Start::Duplicate(existing) => assert_eq!(existing.request_id, winner),
+        other => panic!("the existing claim decides the call, got {other:?}"),
+    }
+
+    // A genuinely new call without a price still ends as NoPrice and releases its claim.
+    let new_call = NewRequest {
+        id: uuid::Uuid::now_v7(),
+        principal: &principal,
+        model,
+    };
+    let fresh = IdempotencyClaim {
+        key: "fresh-key",
+        input_hash: [9; 32],
+    };
+    assert_eq!(
+        start_request(&env.fx.pool, &new_call, Some(&fresh), store::now())
+            .await
+            .unwrap(),
+        Start::NoPrice
+    );
+    let (records, requests): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM idempotency_records WHERE idempotency_key='fresh-key'), (SELECT count(*) FROM requests)",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (records, requests),
+        (0, 0),
+        "no claim and no request remain"
+    );
+    env.finish().await;
+}

@@ -285,9 +285,10 @@ pub enum Start {
     Duplicate(Duplicate),
 }
 
-/// Create the request record, claiming the idempotency key in the same transaction. The frozen
-/// price is the newest version effective at `now`, selected in this transaction and persisted with
-/// the same `now` as the request's start time. A concurrent or earlier request with the same
+/// Create the request record, claiming the idempotency key in the same transaction. The key is
+/// decided first, so an existing record answers before a missing price can. The frozen price is
+/// the newest version effective at `now`, selected in this transaction and persisted with the same
+/// `now` as the request's start time. A concurrent or earlier request with the same
 /// tenant, method and key wins; a record older than the 30-day boundary is expired and replaced,
 /// so the key starts a fresh execution.
 pub async fn start_request(
@@ -299,10 +300,10 @@ pub async fn start_request(
     let principal = request.principal;
     let method = capability_db(principal.capability);
     let mut tx = pool.begin().await?;
-    let Some(price) = latest_price_in(&mut tx, request.model, now).await? else {
-        tx.rollback().await?;
-        return Ok(Start::NoPrice);
-    };
+    // Claim the idempotency key before looking up the price. A first call that raced past the
+    // preliminary duplicate check must be answered by the existing record even when a catalog
+    // synchronization withdrew the model's price in the meantime; only a genuinely new call may end
+    // as `NoPrice`, and rolling back then releases its claim.
     if let Some(claim) = claim {
         let mut attempts = 0;
         loop {
@@ -357,6 +358,10 @@ pub async fn start_request(
             return Ok(Start::Duplicate(duplicate));
         }
     }
+    let Some(price) = latest_price_in(&mut tx, request.model, now).await? else {
+        tx.rollback().await?;
+        return Ok(Start::NoPrice);
+    };
     sqlx::query("INSERT INTO requests(id,tenant_id,capability,state,model,credential_kind,api_key_id,user_id,price_id,price_effective_at,created_at,updated_at) VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10,$10)")
         .bind(request.id)
         .bind(principal.tenant_id)
