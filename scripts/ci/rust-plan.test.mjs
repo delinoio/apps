@@ -122,3 +122,31 @@ test("Cargo lockfiles preserve cargo-mono global-impact handling", () => {
     rust_test: ["core", "app"],
   });
 });
+
+test("instruction-only changes skip Rust allocation without cargo-mono", () => {
+  assert.deepEqual(
+    selectRust(
+      base,
+      [
+        "AGENTS.md",
+        "scripts/ci/AGENTS.md",
+        "apps/delitools/src-tauri/CLAUDE.md",
+      ],
+      () => {
+        assert.fail("instruction-only changes must not invoke cargo-mono");
+      },
+    ),
+    { rust_clippy: [], rust_test: [] },
+  );
+});
+
+test("instruction files do not force global Rust selection with other changes", () => {
+  assert.deepEqual(
+    planner(
+      ["scripts/ci/AGENTS.md", "crates/core/src/lib.rs"],
+      ["core"],
+      ["app", "core"],
+    ),
+    { rust_clippy: ["core"], rust_test: ["app", "core"] },
+  );
+});
