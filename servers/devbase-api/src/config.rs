@@ -62,3 +62,82 @@ impl Config {
         Ok(c)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Config::load reads process-global environment variables, so tests that mutate them run
+    // one at a time. Other test modules in this crate do not call Config::load.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    const DURATION_KEYS: [&str; 3] = ["DEPENDENCY_TIMEOUT", "REQUEST_TIMEOUT", "CLEANUP_INTERVAL"];
+
+    fn load_with(settings: &[(&str, &str)]) -> anyhow::Result<Config> {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: ENV_LOCK serializes every test that touches these variables.
+        unsafe {
+            for key in DURATION_KEYS {
+                std::env::remove_var(key);
+            }
+            for (key, value) in settings {
+                std::env::set_var(key, value);
+            }
+        }
+        let result = Config::load();
+        // SAFETY: still holding ENV_LOCK.
+        unsafe {
+            for key in DURATION_KEYS {
+                std::env::remove_var(key);
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn rejects_cleanup_interval_that_rounds_to_zero() {
+        for value in ["0.1ns", "0.49ns", "0.0000000001s", "0ns"] {
+            let err = load_with(&[("CLEANUP_INTERVAL", value)])
+                .err()
+                .expect(value);
+            assert!(
+                err.to_string().contains("CLEANUP_INTERVAL"),
+                "{value}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_valid_cleanup_interval_and_default() {
+        let c = load_with(&[("CLEANUP_INTERVAL", "1ns")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_nanos(1));
+        let c = load_with(&[("CLEANUP_INTERVAL", "1m30s")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(90));
+        let c = load_with(&[]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(300));
+        let c = load_with(&[("CLEANUP_INTERVAL", "")]).unwrap();
+        assert_eq!(c.cleanup_interval, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn rejects_zero_rounding_timeouts() {
+        for key in ["DEPENDENCY_TIMEOUT", "REQUEST_TIMEOUT"] {
+            let err = load_with(&[(key, "0.1ns")]).err().expect(key);
+            assert!(err.to_string().contains(key), "{key}: {err}");
+        }
+    }
+
+    #[test]
+    fn enforces_timeout_ordering() {
+        let err = load_with(&[("DEPENDENCY_TIMEOUT", "11s"), ("REQUEST_TIMEOUT", "10s")])
+            .err()
+            .expect("ordering error");
+        assert!(
+            err.to_string()
+                .contains("dependency timeout must not exceed")
+        );
+        let c = load_with(&[("DEPENDENCY_TIMEOUT", "3s"), ("REQUEST_TIMEOUT", "10s")]).unwrap();
+        assert_eq!(c.dependency_timeout, Duration::from_secs(3));
+        assert_eq!(c.request_timeout, Duration::from_secs(10));
+    }
+}
