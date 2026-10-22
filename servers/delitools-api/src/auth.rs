@@ -8,7 +8,10 @@ use crate::{
     error::{Fault, Result},
     keys,
 };
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, Validation,
+    jwk::{Jwk, JwkSet, KeyAlgorithm, KeyOperations, PublicKeyUse},
+};
 use serde::Deserialize;
 use server_common::config::safe_url;
 use sha2::{Digest, Sha256};
@@ -51,6 +54,30 @@ pub fn parse_credential(authorization: &str) -> Result<Credential<'_>> {
         return Ok(Credential::ApiKey(id, hash));
     }
     Ok(Credential::Jwt(token))
+}
+
+/// Whether the key set entry may verify a token signed with one of `algorithms`. The decoding key
+/// is built from the key material alone, so the entry's own restrictions have to be applied
+/// here: a key published for encryption, or without the verify operation, or declared for another
+/// algorithm, must not verify a signature even when its `kid` matches. Absent restrictions allow
+/// the use, as RFC 7517 specifies.
+fn may_verify(key: &Jwk, algorithms: &[Algorithm]) -> bool {
+    let common = &key.common;
+    common
+        .public_key_use
+        .as_ref()
+        .is_none_or(|usage| *usage == PublicKeyUse::Signature)
+        && common
+            .key_operations
+            .as_ref()
+            .is_none_or(|operations| operations.contains(&KeyOperations::Verify))
+        && common.key_algorithm.is_none_or(|declared| {
+            algorithms.iter().any(|algorithm| match algorithm {
+                Algorithm::RS256 => declared == KeyAlgorithm::RS256,
+                Algorithm::ES256 => declared == KeyAlgorithm::ES256,
+                _ => false,
+            })
+        })
 }
 
 /// Claims DeliTools trusts after signature, issuer, audience and expiry validation.
@@ -233,6 +260,9 @@ impl Verifier {
             if kid.is_some_and(|kid| key.common.key_id.as_deref() != Some(kid)) {
                 continue;
             }
+            if !may_verify(key, &validation.algorithms) {
+                continue;
+            }
             if let Ok(key) = DecodingKey::from_jwk(key)
                 && let Ok(token) = jsonwebtoken::decode::<Claims>(raw, &key, validation)
             {
@@ -382,6 +412,60 @@ mod tests {
         );
         rotating.abort();
         provider.abort();
+    }
+
+    /// A key set entry restricted to another use, operation or algorithm must not verify a token
+    /// even though its key ID matches and its key material is the signer's.
+    #[tokio::test]
+    async fn key_restrictions_in_the_key_set_are_honored() {
+        use rsa::pkcs8::DecodePrivateKey;
+        let private =
+            RsaPrivateKey::from_pkcs8_pem(include_str!("../tests/support/oidc-test-key.pem"))
+                .unwrap();
+        let signing =
+            EncodingKey::from_rsa_pem(private.to_pkcs8_pem(Default::default()).unwrap().as_bytes())
+                .unwrap();
+        let with = |restriction: serde_json::Value| {
+            let mut key = json!({
+                "kty":"RSA","kid":"k",
+                "n":URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),
+                "e":URL_SAFE_NO_PAD.encode(private.e().to_bytes_be())
+            });
+            key.as_object_mut()
+                .unwrap()
+                .extend(restriction.as_object().unwrap().clone());
+            verifier(serde_json::from_value(json!({"keys":[key]})).unwrap())
+        };
+        let now = chrono::Utc::now().timestamp();
+        let claims =
+            json!({"iss":"https://issuer.example","aud":"api","sub":"user","exp":now+3600});
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("k".into());
+        let token = jsonwebtoken::encode(&header, &claims, &signing).unwrap();
+        for allowed in [
+            json!({}),
+            json!({"use":"sig"}),
+            json!({"key_ops":["verify"]}),
+            json!({"key_ops":["sign","verify"],"alg":"RS256"}),
+        ] {
+            assert!(
+                with(allowed.clone()).verify(&token).await.is_ok(),
+                "{allowed}"
+            );
+        }
+        for rejected in [
+            json!({"use":"enc"}),
+            json!({"key_ops":["encrypt"]}),
+            json!({"key_ops":["sign"]}),
+            json!({"alg":"RS384"}),
+            json!({"alg":"ES256"}),
+            json!({"alg":"RSA-OAEP"}),
+        ] {
+            assert!(
+                with(rejected.clone()).verify(&token).await.is_err(),
+                "{rejected}"
+            );
+        }
     }
 
     /// Make the cached key set older than `MAX_KEY_AGE` and the next refresh attempt eligible.
