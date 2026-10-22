@@ -492,6 +492,7 @@ Audit records cover state changes without one row per ingested event:
 - PostgreSQL integration tests for migrations, concurrent mutations, append-only corrections, deduplication, job recovery, and retention.
 - Sample-client flows covering personal/organization tenants, invitation lifecycle, ownership transfer, group permissions, and free/paid transitions.
 - Monthly billing with multiple service meters and add-ons; frozen old prices; late usage and historical corrections.
+- Metering failure persistence against real PostgreSQL: invalid payloads, permanent faults, and retry exhaustion each commit the failed state, category, attempt count, and one `metering.failed` audit record with a UUID correlation ID in one transaction; transient deferrals write no audit record; later worker steps neither reprocess nor re-audit failed jobs and still claim other job kinds; operator listing, status, and `RetryJob` see and reset the failed job.
 - Event rating: clamped groups with shared included usage, increases and decreases from corrections and non-additive aggregates, mixed-price periods with prorated grants, postpaid reversal before credit, late closed-period adjustments with final rounding, rollback and retry idempotency, and the untyped-meter compatibility rule.
 - Manual and automatic top-ups, concurrent triggers, monthly caps, failure suspension, negative balances, and debt offsets.
 - Mocked Paddle payment, refund, dispute, duplicate, reordered, delayed, and ambiguous-response scenarios.

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use super::{Fixture, key};
 use chrono::Utc;
+use delcore_api::{config::Config, worker::Worker};
 use serde_json::{Value, json};
+use sqlx::Row;
 
 async fn put(f: &Fixture, method: &str, field: &str, value: Value) -> Value {
     let mut request = json!({"requestKey":key(),"reason":"integration parity fixture"});
@@ -347,4 +349,278 @@ async fn catalog_prices_reuse_versions_and_keep_tenant_selections() {
             .bind(tenant.as_str().unwrap()).fetch_one(&f.db).await.unwrap();
         assert_eq!(selected, expected.as_str().unwrap());
     }
+}
+
+/// Operator-visible tenant of the fixture owner.
+async fn owner_tenant(f: &Fixture) -> String {
+    f.rpc("owner", "GetCurrentUser", json!({})).await["tenants"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+/// Queue a metering job directly so a test controls payload and attempt count.
+async fn seed_job(f: &Fixture, tenant: &str, payload: Value, attempts: i32) -> uuid::Uuid {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,available_at,created_at,updated_at) VALUES($1,$2::text::uuid,'metering',$3,$4,'pending',$5,now(),now(),now())")
+        .bind(id).bind(tenant).bind(format!("metering:seed:{id}")).bind(payload).bind(attempts)
+        .execute(&f.db).await.unwrap();
+    id
+}
+struct JobRow {
+    state: String,
+    category: String,
+    attempts: i32,
+    failed: bool,
+    due: bool,
+}
+async fn job_row(f: &Fixture, id: uuid::Uuid) -> JobRow {
+    let row = sqlx::query("SELECT state,error_category,attempts,failed_at IS NOT NULL,available_at>now() FROM jobs WHERE id=$1")
+        .bind(id).fetch_one(&f.db).await.unwrap();
+    JobRow {
+        state: row.get(0),
+        category: row.get(1),
+        attempts: row.get(2),
+        failed: row.get(3),
+        due: row.get(4),
+    }
+}
+/// Audit rows are read with a uuid-typed column so a non-UUID value cannot pass.
+async fn failure_audits(
+    f: &Fixture,
+    tenant: &str,
+) -> Vec<(String, Option<String>, String, uuid::Uuid)> {
+    sqlx::query("SELECT actor_id,tenant_id::text,reason,correlation_id FROM audit WHERE action='metering.failed' AND tenant_id=$1::text::uuid ORDER BY created_at")
+        .bind(tenant).fetch_all(&f.db).await.unwrap().into_iter()
+        .map(|r| (r.get(0), r.get(1), r.get(2), r.get(3))).collect()
+}
+async fn count_failure_audits(f: &Fixture) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM audit WHERE action='metering.failed'")
+        .fetch_one(&f.db)
+        .await
+        .unwrap()
+}
+fn assert_failure_audit(
+    rows: &[(String, Option<String>, String, uuid::Uuid)],
+    tenant: &str,
+    reason: &str,
+) {
+    assert_eq!(rows.len(), 1, "exactly one metering.failed audit row");
+    assert_eq!(rows[0].0, "system:metering");
+    assert_eq!(rows[0].1.as_deref(), Some(tenant));
+    assert_eq!(rows[0].2, reason);
+    assert!(!rows[0].3.is_nil());
+}
+/// Accept one real event so a valid metering job and event row exist.
+async fn accepted_event(f: &Fixture) -> (String, uuid::Uuid) {
+    plan(f, json!([])).await;
+    let tenant = owner_tenant(f).await;
+    let svc = service(f).await;
+    put(f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT","groupBy":["region"]})).await;
+    let accepted = ingest(
+        f,
+        &json!(tenant),
+        &svc["id"],
+        "e1",
+        attrs("eu", "1", "1", "u1"),
+        &Utc::now().to_rfc3339(),
+    )
+    .await;
+    let event = accepted["eventId"].as_str().unwrap().to_owned();
+    let job =
+        sqlx::query_scalar("SELECT id FROM jobs WHERE kind='metering' AND payload->>'event_id'=$1")
+            .bind(&event)
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    (tenant, job)
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn permanent_metering_failures_commit_state_and_audit_atomically() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let tenant = owner_tenant(&f).await;
+    let invalid = seed_job(&f, &tenant, json!({}), 0).await;
+    f.process_metering().await;
+    let row = job_row(&f, invalid).await;
+    assert_eq!(
+        (
+            row.state.as_str(),
+            row.category.as_str(),
+            row.attempts,
+            row.failed
+        ),
+        ("failed", "invalid_payload", 1, true)
+    );
+    assert_failure_audit(
+        &failure_audits(&f, &tenant).await,
+        &tenant,
+        "category=invalid_payload attempts=1",
+    );
+    // A later worker pass neither reprocesses the failed job nor duplicates its audit.
+    f.process_metering().await;
+    assert_eq!(job_row(&f, invalid).await.attempts, 1);
+    assert_eq!(count_failure_audits(&f).await, 1);
+
+    let missing = seed_job(
+        &f,
+        &tenant,
+        json!({"event_id":"01900000-0000-7000-8000-000000000099"}),
+        0,
+    )
+    .await;
+    f.process_metering().await;
+    let row = job_row(&f, missing).await;
+    assert_eq!(
+        (
+            row.state.as_str(),
+            row.category.as_str(),
+            row.attempts,
+            row.failed
+        ),
+        ("failed", "metering_invalid", 1, true)
+    );
+    let audits = failure_audits(&f, &tenant).await;
+    assert_eq!(audits.len(), 2);
+    assert!(
+        audits
+            .iter()
+            .any(|a| a.2 == "category=metering_invalid attempts=1")
+    );
+    assert_ne!(
+        audits[0].3, audits[1].3,
+        "each failure gets its own correlation ID"
+    );
+
+    // Operators see the failure and RetryJob keeps its documented reset behavior.
+    let jobs = f.rpc("owner", "ListJobs", json!({})).await;
+    let listed = jobs["jobs"].as_array().unwrap();
+    for id in [invalid, missing] {
+        let item = listed.iter().find(|j| j["id"] == id.to_string()).unwrap();
+        assert_eq!(item["state"], "JOB_STATE_FAILED");
+        assert_eq!(item["attempts"], 1);
+    }
+    let status = f
+        .rpc("owner", "GetMeteringStatus", json!({"tenantId":tenant}))
+        .await;
+    assert_eq!(status["failedJobs"].to_string().trim_matches('"'), "2");
+    f.rpc(
+        "owner",
+        "RetryJob",
+        json!({"requestKey":key(),"jobId":invalid.to_string(),"reason":"operator retry after fix"}),
+    )
+    .await;
+    let row = job_row(&f, invalid).await;
+    assert_eq!((row.state.as_str(), row.attempts), ("pending", 0));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn terminal_metering_failure_does_not_starve_other_jobs_or_release_deletion() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let tenant = owner_tenant(&f).await;
+    let invalid = seed_job(&f, &tenant, json!({}), 0).await;
+    // A non-object email payload fails locally without contacting a provider.
+    let email = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2::text::uuid,'email',$3,'[]'::jsonb,now(),now(),now())")
+        .bind(email).bind(&tenant).bind(format!("email:seed:{email}")).execute(&f.db).await.unwrap();
+    f.worker
+        .step()
+        .await
+        .expect("a terminal metering failure must not fail the worker step");
+    assert_eq!(job_row(&f, invalid).await.state, "failed");
+    let row = job_row(&f, email).await;
+    assert_eq!(
+        (row.state.as_str(), row.category.as_str()),
+        ("failed", "invalid_payload")
+    );
+    f.worker.step().await.unwrap();
+    assert_eq!(job_row(&f, invalid).await.attempts, 1);
+    assert_eq!(count_failure_audits(&f).await, 1);
+    // Failed metering work keeps holding final deletion until it is recovered.
+    let held: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=$1::text::uuid AND kind<>'email' AND state<>'done')")
+        .bind(&tenant).fetch_one(&f.db).await.unwrap();
+    assert!(held);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn exhausted_metering_retries_commit_failed_state_with_audit() {
+    let f = Fixture::setup().await;
+    let (tenant, job) = accepted_event(&f).await;
+    // A trigger in this test's private schema makes applying the event fail with a
+    // database error, which is transient. A held row lock would leave the abandoned
+    // claim transaction waiting on the server and blocking the failure transaction.
+    sqlx::query("CREATE FUNCTION fail_apply() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected apply failure'; END $$")
+        .execute(&f.db).await.unwrap();
+    sqlx::query("CREATE TRIGGER fail_apply BEFORE UPDATE OF applied_revision ON metering_events FOR EACH ROW EXECUTE FUNCTION fail_apply()")
+        .execute(&f.db).await.unwrap();
+    let worker = Worker::new(
+        f.db.clone(),
+        Config {
+            retry_limit: 3,
+            ..f.config.clone()
+        },
+    )
+    .unwrap();
+
+    // Below the limit the failure defers without a terminal audit.
+    sqlx::query("UPDATE jobs SET attempts=1 WHERE id=$1")
+        .bind(job)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    assert_eq!(worker.process_metering(1).await.unwrap(), 1);
+    let row = job_row(&f, job).await;
+    assert_eq!(
+        (
+            row.state.as_str(),
+            row.category.as_str(),
+            row.attempts,
+            row.due
+        ),
+        ("pending", "metering_transient", 2, true)
+    );
+    assert_eq!(count_failure_audits(&f).await, 0);
+
+    // The attempt that reaches the limit becomes terminal in the same transaction as its audit.
+    sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
+        .bind(job)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    assert_eq!(worker.process_metering(1).await.unwrap(), 1);
+    let row = job_row(&f, job).await;
+    assert_eq!(
+        (
+            row.state.as_str(),
+            row.category.as_str(),
+            row.attempts,
+            row.failed
+        ),
+        ("failed", "retry_exhausted", 3, true)
+    );
+    assert_failure_audit(
+        &failure_audits(&f, &tenant).await,
+        &tenant,
+        "category=retry_exhausted attempts=3",
+    );
+    assert_eq!(worker.process_metering(10).await.unwrap(), 0);
+    assert_eq!(count_failure_audits(&f).await, 1);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn valid_metering_job_completes_without_failure_audit() {
+    let f = Fixture::setup().await;
+    let (_, job) = accepted_event(&f).await;
+    f.process_metering().await;
+    let row = job_row(&f, job).await;
+    assert_eq!(
+        (row.state.as_str(), row.category.as_str(), row.attempts),
+        ("done", "", 1)
+    );
+    assert_eq!(count_failure_audits(&f).await, 0);
 }

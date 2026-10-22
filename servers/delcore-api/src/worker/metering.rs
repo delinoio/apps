@@ -145,7 +145,9 @@ impl Worker {
                 .bind(&job_id).bind(state).bind(category).bind(Utc::now()+Duration::seconds(self.config.retry_seconds))
                 .execute(&mut *tx).await?.rows_affected();
             if state == "failed" && count == 1 {
-                sqlx::query("INSERT INTO audit(id,actor_id,tenant_id,action,reason,correlation_id,created_at) VALUES($1::text::uuid,'system:metering',NULLIF($2,'')::uuid,'metering.failed',$3,$4, $5)")
+                // Every UUID column is bound as text and cast explicitly: sqlx sends a Rust
+                // String as TEXT, which PostgreSQL will not assign to a uuid column.
+                sqlx::query("INSERT INTO audit(id,actor_id,tenant_id,action,reason,correlation_id,created_at) VALUES($1::text::uuid,'system:metering',NULLIF($2,'')::uuid,'metering.failed',$3,$4::text::uuid,$5)")
                     .bind(uuid::Uuid::now_v7().to_string()).bind(&tenant)
                     .bind(format!("category={category} attempts={}", attempts+1))
                     .bind(uuid::Uuid::now_v7().to_string()).bind(Utc::now()).execute(&mut *tx).await?;
