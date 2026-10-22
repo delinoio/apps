@@ -104,7 +104,7 @@ Unterstützt:
 Nicht unterstützt und vor der Ausführung abgelehnt:
 
 - Jedes Schlüsselwort außerhalb der obigen Liste, zum Beispiel `pattern`, `minimum`, `format` oder `oneOf`.
-- Optionale Eigenschaften. Jede Eigenschaft eines Objekts muss in `required` stehen.
+- Optionale Eigenschaften. Jede Eigenschaft eines Objekts muss in `required` stehen. `required` muss jede Eigenschaft genau einmal aufführen und darf keine Eigenschaft nennen, die `properties` nicht definiert.
 - `additionalProperties` mit dem Wert `true` oder fehlend.
 - Verweise: `$ref` und rekursive Schemas.
 - Schemas oberhalb der Grenzwerte des Anbieters: 5.000 Eigenschaften, 1.000 Enum-Werte oder 120.000 Zeichen für Eigenschaftsnamen und Enum-Werte zusammen. Ein Enum mit mehr als 250 Werten darf höchstens 15.000 Zeichen an Zeichenfolgenwerten enthalten.

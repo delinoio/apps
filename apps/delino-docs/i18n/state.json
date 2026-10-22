@@ -42,7 +42,7 @@
     "docs/services/delcore/index.md": "d4c6dec461b249966d5c9ebfdce87eea5633e4d02af2bd4ccd7f5bc3c6704b97",
     "docs/services/devbase/index.md": "a441574b56a6015b3f0190b1fc0d85d242ed6e2d4a1fecee54e0a55b584fc06e",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "ja": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -87,7 +87,7 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "zh-Hans": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -132,7 +132,7 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "es": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -177,7 +177,7 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "fr": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -222,7 +222,7 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "de": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -267,7 +267,7 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   },
   "pt-BR": {
     "messages/description": "728af1ad94617adc9c14f9af8c910f95a5d4094e69b73a7289ca2a379ad15296",
@@ -312,6 +312,6 @@
     "docs/services/git-tracker/index.md": "929e08a4f372c3bfc8a2450e65b1d62bbd10cc5a8b041c7210cb0ca748e34de1",
     "docs/services/index.md": "7cc01590a4983bf6d6bb0552afbc3a5f5f8b68a4eef43bb9bfc65c709b99ed16",
     "docs/services/fixkey/index.md": "7dba1980d81ff1c60bf5f5abad7de6f1f301a7db29c9c98debc33cfbc81b19b7",
-    "docs/services/delitools/index.md": "70aca174e28728382b9eabdc77f4e5f20883fc9fdcf9e68311fa6b270c18220a"
+    "docs/services/delitools/index.md": "371b994e39e5439366856ada5c2bee0e560d57c52ae01183f0d9808224f5d776"
   }
 }

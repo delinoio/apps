@@ -104,7 +104,7 @@ Compatível:
 Não compatível e rejeitado antes da execução:
 
 - Qualquer palavra-chave fora da lista acima, por exemplo `pattern`, `minimum`, `format` ou `oneOf`.
-- Propriedades opcionais. Toda propriedade de um objeto deve estar em `required`.
+- Propriedades opcionais. Toda propriedade de um objeto deve estar em `required`. `required` deve listar cada propriedade exatamente uma vez e não pode citar uma propriedade que `properties` não define.
 - `additionalProperties` definido como `true` ou ausente.
 - Referências: `$ref` e esquemas recursivos.
 - Esquemas acima dos limites do provedor: 5.000 propriedades, 1.000 valores de enum ou 120.000 caracteres de nomes de propriedades e valores de enum juntos. Um enum com mais de 250 valores pode conter no máximo 15.000 caracteres de valores de string.

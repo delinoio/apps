@@ -104,7 +104,7 @@ Pris en charge :
 Non pris en charge, et rejeté avant l’exécution :
 
 - Tout mot-clé absent de la liste ci-dessus, par exemple `pattern`, `minimum`, `format` ou `oneOf`.
-- Les propriétés facultatives. Chaque propriété d’un objet doit figurer dans `required`.
+- Les propriétés facultatives. Chaque propriété d’un objet doit figurer dans `required`. `required` doit lister chaque propriété exactement une fois et ne doit citer aucune propriété que `properties` ne définit pas.
 - `additionalProperties` défini sur `true`, ou absent.
 - Les références : `$ref` et les schémas récursifs.
 - Les schémas qui dépassent les limites du fournisseur : 5 000 propriétés, 1 000 valeurs d’énumération, ou 120 000 caractères pour les noms de propriétés et les valeurs d’énumération réunis. Une énumération de plus de 250 valeurs peut contenir au plus 15 000 caractères de valeurs de type chaîne.

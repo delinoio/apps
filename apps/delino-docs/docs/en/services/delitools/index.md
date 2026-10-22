@@ -104,7 +104,7 @@ Supported:
 Not supported, and rejected before execution:
 
 - Any keyword outside the list above, for example `pattern`, `minimum`, `format` or `oneOf`.
-- Optional properties. Every property of an object must be in `required`.
+- Optional properties. Every property of an object must be in `required`. `required` must list each property exactly once and must not name a property that `properties` does not define.
 - `additionalProperties` set to `true`, or missing.
 - References: `$ref` and recursive schemas.
 - Schemas above the provider limits: 5,000 properties, 1,000 enum values, or 120,000 characters of property names and enum values together. An enum with more than 250 values may hold at most 15,000 characters of string values.
