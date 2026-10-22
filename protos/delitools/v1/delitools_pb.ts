@@ -213,7 +213,8 @@ export enum ErrorReason {
   BILLING_BLOCKED = 4,
 
   /**
-   * A configured input size, item count or tenant limit was exceeded.
+   * A configured input size, translation item count or schema size limit was
+   * exceeded. Tenant rate and concurrency limits use ERROR_REASON_RATE_LIMITED.
    *
    * @generated from enum value: ERROR_REASON_LIMIT_EXCEEDED = 5;
    */

@@ -38,7 +38,8 @@ const (
 	ErrorReason_ERROR_REASON_PERMISSION_DENIED ErrorReason = 3
 	// Delcore blocked paid execution, for example for a billing reason.
 	ErrorReason_ERROR_REASON_BILLING_BLOCKED ErrorReason = 4
-	// A configured input size, item count or tenant limit was exceeded.
+	// A configured input size, translation item count or schema size limit was
+	// exceeded. Tenant rate and concurrency limits use ERROR_REASON_RATE_LIMITED.
 	ErrorReason_ERROR_REASON_LIMIT_EXCEEDED ErrorReason = 5
 	// The tenant exceeded its request rate or concurrency limit.
 	ErrorReason_ERROR_REASON_RATE_LIMITED ErrorReason = 6

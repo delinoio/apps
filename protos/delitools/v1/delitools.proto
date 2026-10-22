@@ -17,7 +17,8 @@ enum ErrorReason {
   ERROR_REASON_PERMISSION_DENIED = 3;
   // Delcore blocked paid execution, for example for a billing reason.
   ERROR_REASON_BILLING_BLOCKED = 4;
-  // A configured input size, item count or tenant limit was exceeded.
+  // A configured input size, translation item count or schema size limit was
+  // exceeded. Tenant rate and concurrency limits use ERROR_REASON_RATE_LIMITED.
   ERROR_REASON_LIMIT_EXCEEDED = 5;
   // The tenant exceeded its request rate or concurrency limit.
   ERROR_REASON_RATE_LIMITED = 6;
