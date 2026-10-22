@@ -86,7 +86,12 @@ impl Worker {
                 if t.origin == "subscription_recurring"
                     && let Some(period) = &t.billing_period
                 {
-                    sqlx::query("UPDATE tenants SET renewal_failed=true WHERE external_subscription_id=$1 AND external_customer_id=$2 AND period_end<=$3 AND NOT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$4)").bind(&t.subscription_id).bind(&t.customer_id).bind(period.starts_at).bind(&t.id).execute(&mut *tx).await?;
+                    let marked = sqlx::query("UPDATE tenants SET renewal_failed=true WHERE external_subscription_id=$1 AND external_customer_id=$2 AND period_end<=$3 AND NOT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$4)").bind(&t.subscription_id).bind(&t.customer_id).bind(period.starts_at).bind(&t.id).execute(&mut *tx).await?.rows_affected();
+                    if marked > 0 {
+                        // Keep the occurrence so an older renewal payment delivered later cannot clear it.
+                        self.retain_subscription_failure(&mut tx, &t.subscription_id, &event)
+                            .await?;
+                    }
                 } else if valid_job(&t.custom.job_id) {
                     sqlx::query("UPDATE jobs SET state='failed',error_category='payment_failed',updated_at=now() WHERE id=$1::text::uuid AND tenant_id::text=$2 AND state<>'done'").bind(&t.custom.job_id).bind(&t.custom.tenant_id).execute(&mut *tx).await?;
                     let changed = sqlx::query("UPDATE tenants SET auto_suspended=true WHERE id::text=$1 AND EXISTS(SELECT 1 FROM jobs WHERE id=$2::text::uuid AND kind='auto_topup' AND state='failed')").bind(&t.custom.tenant_id).bind(&t.custom.job_id).execute(&mut *tx).await?.rows_affected();

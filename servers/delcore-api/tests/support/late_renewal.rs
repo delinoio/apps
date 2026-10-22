@@ -625,3 +625,41 @@ async fn stale_past_due_after_a_newer_payment_does_not_fail_the_tenant() {
     assert_eq!(state["failure"], Value::Null, "{state}");
     assert_eq!(s.authorize().await["allowed"], true);
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn transaction_payment_failure_keeps_its_occurrence_against_an_older_renewal() {
+    let s = scenario().await;
+    // Renewal B for the period after A fails before A's completion is delivered.
+    let (starts, ends, _) = s.time.payment_c();
+    let failed_at = s.time.days(41);
+    let mut data = s.completion("txn_b", (starts, ends, failed_at));
+    data["status"] = json!("past_due");
+    s.deliver("evt_b", "transaction.payment_failed", failed_at, data)
+        .await;
+    assert!(s.flag().await);
+    assert_eq!(
+        s.state().await["failure"],
+        json!({"at":failed_at.to_rfc3339(),"state":"past_due"})
+    );
+    s.pay_a("evt_a").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
+    assert_eq!(state["transactions"], json!(["txn_a"]), "{state}");
+    assert_eq!(
+        s.authorize().await["reasons"],
+        json!(["BLOCK_REASON_RENEWAL"])
+    );
+    // A renewal confirmed after the failure recovers it.
+    s.pay(
+        "evt_d",
+        "txn_d",
+        (starts, ends, s.time.days(41) + Duration::seconds(1)),
+    )
+    .await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+    assert_eq!(s.authorize().await["allowed"], true);
+}
