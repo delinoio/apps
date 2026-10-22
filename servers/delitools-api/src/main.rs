@@ -34,12 +34,32 @@ fn report_failure(error: &anyhow::Error, logging_installed: bool) {
     if logging_installed {
         tracing::error!(
             category = FAILURE_CATEGORY,
-            error = %format!("{error:#}"),
+            error = %failure_chain(error),
             "delitools-api stopped"
         );
     } else {
         eprintln!("{}", unlogged_failure_line(error));
     }
+}
+
+/// The error and its causes joined like the alternate `anyhow` format, with each HTTP client
+/// error's request URL reduced to its origin. A configured or discovered endpoint can carry a
+/// signed query parameter or a path token, and `reqwest` repeats the full URL in its message.
+fn failure_chain(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .map(|cause| {
+            let text = cause.to_string();
+            match cause
+                .downcast_ref::<reqwest::Error>()
+                .and_then(reqwest::Error::url)
+            {
+                Some(url) => text.replace(url.as_str(), &url.origin().ascii_serialization()),
+                None => text,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 const FAILURE_CATEGORY: &str = "startup_or_runtime_failure";
@@ -49,7 +69,7 @@ fn unlogged_failure_line(error: &anyhow::Error) -> String {
         "level": "ERROR",
         "message": "delitools-api stopped",
         "category": FAILURE_CATEGORY,
-        "error": format!("{error:#}"),
+        "error": failure_chain(error),
     })
     .to_string()
 }
@@ -283,6 +303,23 @@ mod tests {
         assert_eq!(line["category"], FAILURE_CATEGORY);
         assert_eq!(line["level"], "ERROR");
         assert_eq!(line["error"], "telemetry: LOG_FORMAT must be text or json");
+    }
+
+    /// A failed identity-provider request must not write the endpoint's query or path to the log.
+    #[tokio::test]
+    async fn failure_reports_never_repeat_request_urls() {
+        let client = reqwest::Client::new();
+        let url = "http://127.0.0.1:9/oidc/jwks?X-Signature=top-secret-signature";
+        let cause = client.get(url).send().await.unwrap_err();
+        assert!(cause.to_string().contains("top-secret-signature"));
+        let error = anyhow::Error::new(cause).context("startup");
+        let text = failure_chain(&error);
+        assert!(text.starts_with("startup: "), "{text}");
+        assert!(text.contains("http://127.0.0.1:9"), "{text}");
+        assert!(!text.contains("top-secret-signature"), "{text}");
+        assert!(!text.contains("/oidc/jwks"), "{text}");
+        let line = unlogged_failure_line(&error);
+        assert!(!line.contains("top-secret-signature"), "{line}");
     }
 
     #[test]
