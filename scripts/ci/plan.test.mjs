@@ -152,11 +152,10 @@ for (const [service, key] of [
     }
   });
 }
-test("server-wide license, instructions and helpers select every server", () => {
+test("server-wide license and helpers select every server", () => {
   for (const path of [
     "servers/LICENSE",
     "servers/scripts/dev-api.mjs",
-    "servers/AGENTS.md",
     "servers/NOTICE",
   ]) {
     const selection = select([path]);
@@ -247,7 +246,7 @@ test("dependency lock selection combines with other changes", () => {
   ]) {
     assert.deepEqual(select(paths), expected);
   }
-  for (const path of ["package.json", "Cargo.toml", "go.mod", "unknown.lock"]) {
+  for (const path of ["package.json", "unknown.lock"]) {
     assert.deepEqual(
       select(["Cargo.lock", "go.sum", path]),
       select(["package.json"]),
@@ -292,5 +291,122 @@ test("Rust server matrix selects only affected services", () => {
       selectRustServers(select(paths)).map(({ service }) => service),
       expected,
     );
+  }
+});
+
+const selectedJobs = (paths) =>
+  Object.entries(select(paths))
+    .filter(([, selected]) => selected)
+    .map(([job]) => job);
+const frontends = [
+  "git_tracker",
+  "fixkey",
+  "devbase",
+  "delino_site",
+  "delino_docs",
+  "delidev",
+  "delitools",
+];
+
+for (const [paths, expected] of [
+  [["packages/ui/src/components/button.tsx"], frontends],
+  [["packages/ui/package.json"], frontends],
+  ...[
+    "Cargo.toml",
+    "Cargo.lock",
+    "prebuilt-dependencies.lock.json",
+    "scripts/tauri-cli.mjs",
+    "scripts/prebuilt-dependencies.mjs",
+    "scripts/archive.mjs",
+  ].map((path) => [[path], ["fixkey", "delidev", "delitools"]]),
+  ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
+    (path) => [
+      [path],
+      [
+        "delcore_api",
+        "devbase_api",
+        "git_tracker_api",
+        "fixkey",
+        "delidev",
+        "delitools",
+      ],
+    ],
+  ),
+  [["go.mod"], ["protocol"]],
+  [
+    ["buf.yaml"],
+    [
+      "delcore_api",
+      "devbase_api",
+      "git_tracker_api",
+      "git_tracker",
+      "protocol",
+    ],
+  ],
+  [
+    ["buf.gen.yaml"],
+    [
+      "delcore_api",
+      "devbase_api",
+      "git_tracker_api",
+      "git_tracker",
+      "protocol",
+    ],
+  ],
+  [["scripts/localization/catalog.mjs"], ["delino_site", "delino_docs"]],
+  [
+    [
+      "packages/ui/src/styles/globals.css",
+      "go.mod",
+      "servers/devbase-api/src/main.rs",
+    ],
+    ["devbase_api", ...frontends, "protocol"],
+  ],
+]) {
+  test(`shared categories select their consumers: ${paths.join(", ")}`, () => {
+    assert.deepEqual(selectedJobs(paths), expected);
+  });
+}
+
+test("instruction files are excluded before project and shared selection", () => {
+  for (const path of [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "scripts/ci/AGENTS.md",
+    "packages/ui/AGENTS.md",
+    "apps/delitools/AGENTS.md",
+    "servers/AGENTS.md",
+    "servers/delcore-api/AGENTS.md",
+    "servers/crates/server-common/AGENTS.md",
+    "protos/AGENTS.md",
+    "examples/AGENTS.md",
+    "docs/AGENTS.md",
+    "scripts/localization/AGENTS.md",
+    "apps/devbase/CLAUDE.md",
+  ]) {
+    assert.deepEqual(selectedJobs([path]), [], path);
+    assert.deepEqual(
+      select([path, "apps/devbase/src/main.tsx"]),
+      select(["apps/devbase/src/main.tsx"]),
+      path,
+    );
+  }
+  assert.deepEqual(selectedJobs(["apps/devbase/src/AGENTS.md.ts"]), [
+    "devbase",
+  ]);
+});
+
+test("unclassified shared paths retain global validation", () => {
+  for (const path of [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "turbo.json",
+    "scripts/ci/plan.mjs",
+    ".github/workflows/CI.yml",
+    "packages/unknown/package.json",
+    "unknown.lock",
+  ]) {
+    assert.ok(Object.values(select([path])).every(Boolean), path);
   }
 });

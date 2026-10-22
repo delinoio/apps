@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { lockfilePaths } from "./lockfile-paths.mjs";
 
 export function select(paths, { baseLockfile, headLockfile } = {}) {
+  paths = paths.filter((path) => !/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(path));
   if (paths.includes("pnpm-lock.yaml")) {
     const affected = lockfilePaths(baseLockfile, headLockfile);
     // Unknown ownership must retain global validation instead of skipping jobs.
@@ -17,15 +18,25 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         .concat(affected);
     }
   }
-  const nativeLock = paths.some((path) =>
-    /^(Cargo\.lock|prebuilt-dependencies\.lock\.json)$/u.test(path),
+  const sharedPatterns = {
+    frontend: /^packages\/ui\//u,
+    native:
+      /^(Cargo\.(toml|lock)$|prebuilt-dependencies\.lock\.json$|scripts\/(?:tauri-cli|prebuilt-dependencies|archive)(?:\.test)?\.mjs$)/u,
+    rust: /^(rust-toolchain(?:\.toml)?$|\.cargo\/)/u,
+    go: /^go\.(mod|sum)$/u,
+    protocol: /^buf(?:\.gen)?\.yaml$/u,
+    localization: /^scripts\/localization\//u,
+  };
+  const shared = Object.fromEntries(
+    Object.entries(sharedPatterns).map(([kind, pattern]) => [
+      kind,
+      paths.some((path) => pattern.test(path)),
+    ]),
   );
-  const goLock = paths.includes("go.sum");
-  const shared = paths.some(
+  // Unclassified shared paths retain global validation for unknown consumers.
+  const repositoryShared = paths.some(
     (path) =>
-      !/^(Cargo\.lock|go\.sum|prebuilt-dependencies\.lock\.json)$/u.test(
-        path,
-      ) &&
+      !Object.values(sharedPatterns).some((pattern) => pattern.test(path)) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
       !/^(crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$)/u.test(
         path,
@@ -40,7 +51,9 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
   return {
     delcore_api:
       serverRust ||
-      shared ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/delcore-api\/|protos\/|docs\/(?:project-delcore|servers-delcore|protos-delcore-v1-contract\.md$))/u.test(
@@ -49,7 +62,9 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     devbase_api:
       serverRust ||
-      shared ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/devbase-api\/|protos\/|examples\/devbase|docs\/(?:project-devbase|servers-devbase|protos-devbase-v1-contract\.md$))/u.test(
@@ -58,7 +73,9 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
       ),
     git_tracker_api:
       serverRust ||
-      shared ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
       serverShared ||
       paths.some((path) =>
         /^(servers\/git-tracker-api\/|protos\/|docs\/(?:project-git-tracker|servers-git-tracker|protos-git-tracker-v1-contract\.md$))/u.test(
@@ -66,48 +83,62 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         ),
       ),
     git_tracker:
-      shared ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.protocol ||
       paths.some((path) =>
         /^(apps\/git-tracker\/|actions\/git-tracker\/|protos\/|docs\/.*git-tracker)/u.test(
           path,
         ),
       ),
     fixkey:
-      shared ||
-      nativeLock ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.native ||
+      shared.rust ||
       paths.some((path) =>
         /^(apps\/fixkey-app\/|crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
           path,
         ),
       ),
     devbase:
-      shared ||
+      repositoryShared ||
+      shared.frontend ||
       paths.some((path) =>
         /^(apps\/devbase\/|docs\/(?:project-devbase|apps-devbase))/u.test(path),
       ),
     delino_site:
-      shared ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.localization ||
       paths.some((path) =>
         /^(apps\/delino-site\/|docs\/.*delino-site)/u.test(path),
       ),
     delino_docs:
-      shared ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.localization ||
       paths.some((path) =>
         /^(apps\/delino-docs\/|docs\/.*delino-docs)/u.test(path),
       ),
     delidev:
-      shared ||
-      nativeLock ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.native ||
+      shared.rust ||
       paths.some((path) => /^(apps\/delidev\/|docs\/.*delidev)/u.test(path)),
     delitools:
-      shared ||
-      nativeLock ||
+      repositoryShared ||
+      shared.frontend ||
+      shared.native ||
+      shared.rust ||
       paths.some((path) =>
         /^(apps\/delitools\/|docs\/.*delitools)/u.test(path),
       ),
     protocol:
-      shared ||
-      goLock ||
+      repositoryShared ||
+      shared.protocol ||
+      shared.go ||
       paths.some((path) =>
         /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1))/u.test(path),
       ),

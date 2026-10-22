@@ -100,7 +100,11 @@ test("single-document lockfiles and multiple changed importers retain ownership"
       baseLockfile: before,
       headLockfile: both,
     }),
-    globalSelection,
+    select([
+      "apps/delino-docs/package.json",
+      "apps/delino-site/package.json",
+      "go.mod",
+    ]),
   );
 });
 
@@ -110,7 +114,7 @@ test("shared importer edits preserve shared consumers", () => {
       baseLockfile: lockfile("packages/ui"),
       headLockfile: lockfile("packages/ui", "19.2.9"),
     }),
-    globalSelection,
+    select(["packages/ui/package.json"]),
   );
 });
 
