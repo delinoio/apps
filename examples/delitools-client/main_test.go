@@ -39,7 +39,11 @@ func (f *fakeDeliTools) authorize(name string, h http.Header) error {
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, name)
 	if h.Get("Authorization") != "Bearer test-key" {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credential"))
+		// An error without an ErrorDetail still carries the request ID in the
+		// response header.
+		err := connect.NewError(connect.CodeUnauthenticated, errors.New("invalid credential"))
+		err.Meta().Set(requestIDHeader, testRequestID)
+		return err
 	}
 	return nil
 }
@@ -208,6 +212,21 @@ func TestRunReportsTypedErrorWithoutContent(t *testing.T) {
 	want := "code=failed_precondition reason=ERROR_REASON_EXTRACTION_IMPOSSIBLE request_id=" + testRequestID
 	if got != want {
 		t.Fatalf("describe = %q, want %q", got, want)
+	}
+}
+
+func TestDescribeFallsBackToTheRequestIDHeader(t *testing.T) {
+	url := newServer(t, &fakeDeliTools{})
+	o := options{baseURL: url, credential: "wrong", tenantID: "tenant-1", outputLang: "ko", model: "model-a"}
+	client := delitoolsv1connect.NewDeliToolsServiceClient(http.DefaultClient, url)
+	e := run(context.Background(), client, o, &bytes.Buffer{})
+	got := describe(e)
+	want := "code=unauthenticated reason=ERROR_REASON_UNSPECIFIED request_id=" + testRequestID
+	if got != want {
+		t.Fatalf("describe = %q, want %q", got, want)
+	}
+	if got := describe(connect.NewError(connect.CodeInternal, errors.New("x"))); !strings.HasSuffix(got, "request_id=") {
+		t.Fatalf("an error without a detail or header has no request ID: %q", got)
 	}
 }
 

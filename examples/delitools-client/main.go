@@ -159,8 +159,14 @@ func authorized[T any](credential string, message *T) *connect.Request[T] {
 	return r
 }
 
+// requestIDHeader is the response header that carries the request ID of every
+// DeliTools response. It equals ErrorDetail.request_id when a detail exists.
+const requestIDHeader = "X-Delitools-Request-Id"
+
 // describe reports the Connect code, the stable reason and the request ID of a
-// typed DeliTools error, and never any response content.
+// DeliTools error, and never any response content. The request ID comes from
+// the typed ErrorDetail and falls back to the response header, which is the
+// only place it appears when the error has no detail.
 func describe(err error) string {
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
@@ -173,6 +179,9 @@ func describe(err error) string {
 				reason, requestID = typed.Reason, typed.RequestId
 			}
 		}
+	}
+	if requestID == "" {
+		requestID = ce.Meta().Get(requestIDHeader)
 	}
 	return fmt.Sprintf("code=%s reason=%s request_id=%s", ce.Code(), reason, requestID)
 }
