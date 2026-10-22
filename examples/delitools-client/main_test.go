@@ -262,11 +262,36 @@ func TestOptionsFromEnv(t *testing.T) {
 	if e != nil || o.credential != "t" || o.baseURL != defaultURL {
 		t.Fatalf("unexpected options %v %v", o, e)
 	}
-	o, _ = optionsFromEnv(env(map[string]string{"DELITOOLS_API_KEY": "k", "DELITOOLS_TOKEN": "t", "DELITOOLS_TENANT_ID": "x", "DELITOOLS_URL": "http://h"}))
-	if o.credential != "k" || o.baseURL != "http://h" {
+	o, _ = optionsFromEnv(env(map[string]string{"DELITOOLS_API_KEY": "k", "DELITOOLS_TOKEN": "t", "DELITOOLS_TENANT_ID": "x", "DELITOOLS_URL": "https://h"}))
+	if o.credential != "k" || o.baseURL != "https://h" {
 		t.Fatalf("API key and URL must win: %v", o)
 	}
 	if _, e := optionsFromEnv(env(map[string]string{"DELITOOLS_API_KEY": "k"})); e == nil {
 		t.Fatal("missing tenant must fail")
+	}
+}
+
+func TestOptionsFromEnvRejectsCleartextRemoteURL(t *testing.T) {
+	cases := []struct {
+		url string
+		ok  bool
+	}{
+		{"https://api.example.com", true},
+		{"http://127.0.0.1:46322", true},
+		{"http://localhost:46322", true},
+		{"http://[::1]:46322", true},
+		{"http://api.example.com", false},
+		{"http://10.0.0.5:46322", false},
+		{"http://localhost.example.com", false},
+		{"ftp://127.0.0.1", false},
+		{"api.example.com", false},
+		{"https://", false},
+	}
+	for _, c := range cases {
+		values := map[string]string{"DELITOOLS_API_KEY": "k", "DELITOOLS_TENANT_ID": "x", "DELITOOLS_URL": c.url}
+		_, e := optionsFromEnv(func(k string) string { return values[k] })
+		if (e == nil) != c.ok {
+			t.Errorf("DELITOOLS_URL=%q: ok=%v, error=%v", c.url, c.ok, e)
+		}
 	}
 }

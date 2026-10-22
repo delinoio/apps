@@ -13,7 +13,8 @@
 //
 // Environment:
 //
-//	DELITOOLS_URL        API base URL, default http://127.0.0.1:46322
+//	DELITOOLS_URL        API base URL, default http://127.0.0.1:46322; https
+//	                     is required unless the host is a loopback address
 //	DELITOOLS_API_KEY    DeliTools API key (preferred), or
 //	DELITOOLS_TOKEN      Logto user access token
 //	DELITOOLS_TENANT_ID  tenant that receives the usage charge
@@ -29,8 +30,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -152,7 +156,39 @@ func optionsFromEnv(env func(string) string) (options, error) {
 	if o.credential == "" || o.tenantID == "" {
 		return o, errors.New("DELITOOLS_API_KEY (or DELITOOLS_TOKEN) and DELITOOLS_TENANT_ID are required")
 	}
+	if e := validateBaseURL(o.baseURL); e != nil {
+		return o, e
+	}
 	return o, nil
+}
+
+// validateBaseURL keeps the credential off unencrypted connections. Every
+// request carries the API key or the access token, so the example accepts
+// https URLs, and http only for a loopback development server.
+func validateBaseURL(raw string) error {
+	u, e := url.Parse(raw)
+	if e != nil || u.Hostname() == "" {
+		return errors.New("DELITOOLS_URL must be an absolute http or https URL")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return errors.New("DELITOOLS_URL must use https unless it points to a loopback address; the credential would cross the network in clear text")
+	}
+	return errors.New("DELITOOLS_URL must be an absolute http or https URL")
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP address.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // authorized attaches the credential. Both a DeliTools API key and a Logto
