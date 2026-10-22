@@ -99,7 +99,7 @@ Supported:
 - `additionalProperties` set to `false` on every object.
 - `items` for arrays.
 - `description` on any schema.
-- `enum` with scalar values.
+- `enum` with scalar values. An enum must not be empty, its values must be unique and match the `type` of the node, and an `integer` enum takes whole numbers only.
 
 Not supported, and rejected before execution:
 

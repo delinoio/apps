@@ -99,7 +99,7 @@ DeliTools 仅接受提取模型的结构化输出所支持的那部分 JSON Sche
 - 每个对象上的 `additionalProperties` 都设置为 `false`。
 - 数组使用 `items`。
 - 任何架构上的 `description`。
-- 带标量值的 `enum`。
+- 带标量值的 `enum`。枚举不能为空，其值必须唯一并与节点的 `type` 一致，`integer` 枚举只接受整数。
 
 不支持，并会在执行前被拒绝：
 

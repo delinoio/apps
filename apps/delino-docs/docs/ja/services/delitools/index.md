@@ -99,7 +99,7 @@ DeliTools は、抽出モデルの構造化出力がサポートする JSON ス�
 - すべてのオブジェクトで `additionalProperties` を `false` に設定します。
 - 配列の `items`。
 - 任意のスキーマの `description`。
-- スカラー値の `enum`。
+- スカラー値の `enum`。enum を空にすることはできません。値は一意で、ノードの `type` と一致している必要があり、`integer` の enum には整数のみを指定できます。
 
 サポートされず、実行前に拒否されるもの:
 

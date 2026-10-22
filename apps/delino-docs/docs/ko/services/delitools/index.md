@@ -99,7 +99,7 @@ DeliTools는 추출 모델의 구조화된 출력이 지원하는 JSON Schema의
 - 모든 객체에서 `additionalProperties`를 `false`로 설정.
 - 배열의 `items`.
 - 모든 스키마의 `description`.
-- 스칼라 값을 가진 `enum`.
+- 스칼라 값을 가진 `enum`. enum은 비어 있으면 안 되고, 값은 서로 달라야 하며 노드의 `type`과 일치해야 합니다. `integer` enum에는 정수만 쓸 수 있습니다.
 
 지원하지 않으며 실행 전에 거부됨:
 

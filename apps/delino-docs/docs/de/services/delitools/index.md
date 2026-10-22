@@ -99,7 +99,7 @@ Unterstützt:
 - `additionalProperties` mit dem Wert `false` bei jedem Objekt.
 - `items` für Arrays.
 - `description` bei jedem Schema.
-- `enum` mit skalaren Werten.
+- `enum` mit skalaren Werten. Ein Enum darf nicht leer sein, seine Werte müssen eindeutig sein und zum `type` des Knotens passen, und ein `integer`-Enum nimmt nur ganze Zahlen an.
 
 Nicht unterstützt und vor der Ausführung abgelehnt:
 

@@ -99,7 +99,7 @@ Compatible:
 - `additionalProperties` establecido en `false` en todos los objetos.
 - `items` para las matrices.
 - `description` en cualquier esquema.
-- `enum` con valores escalares.
+- `enum` con valores escalares. Una enumeración no puede estar vacía, sus valores deben ser únicos y coincidir con el `type` del nodo, y una enumeración `integer` solo admite números enteros.
 
 No compatible y rechazado antes de la ejecución:
 

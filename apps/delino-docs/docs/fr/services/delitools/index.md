@@ -99,7 +99,7 @@ Pris en charge :
 - `additionalProperties` défini sur `false` pour chaque objet.
 - `items` pour les tableaux.
 - `description` sur n’importe quel schéma.
-- `enum` avec des valeurs scalaires.
+- `enum` avec des valeurs scalaires. Une énumération ne doit pas être vide, ses valeurs doivent être uniques et correspondre au `type` du nœud, et une énumération `integer` n’accepte que des nombres entiers.
 
 Non pris en charge, et rejeté avant l’exécution :
 
