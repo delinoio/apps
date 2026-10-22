@@ -54,6 +54,29 @@ impl Op {
             Self::DeleteEndUser => "DeleteEndUser",
         }
     }
+    /// Resolves an exact DevBase RPC path to its operation. Any other path, including near
+    /// misses, returns `None` so request-controlled text never becomes a metric label.
+    pub fn from_procedure_path(path: &str) -> Option<Self> {
+        let op = match path.strip_prefix("/devbase.v1.DevBaseService/")? {
+            "CreateProject" => Self::CreateProject,
+            "GetProject" => Self::GetProject,
+            "ListProjects" => Self::ListProjects,
+            "UpdateProject" => Self::UpdateProject,
+            "DeleteProject" => Self::DeleteProject,
+            "IssueApiKey" => Self::IssueApiKey,
+            "GetApiKey" => Self::GetApiKey,
+            "ListApiKeys" => Self::ListApiKeys,
+            "RevokeApiKey" => Self::RevokeApiKey,
+            "CreateEndUser" => Self::CreateEndUser,
+            "GetEndUser" => Self::GetEndUser,
+            "LookupEndUser" => Self::LookupEndUser,
+            "ListEndUsers" => Self::ListEndUsers,
+            "UpdateEndUser" => Self::UpdateEndUser,
+            "DeleteEndUser" => Self::DeleteEndUser,
+            _ => return None,
+        };
+        Some(op)
+    }
     pub fn mutation(self) -> bool {
         matches!(
             self,

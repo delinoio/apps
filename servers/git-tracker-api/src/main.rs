@@ -140,6 +140,7 @@ async fn run() -> anyhow::Result<()> {
                 timeout: Duration::from_secs(60),
                 service: telemetry::Service::GitTracker,
                 metrics: server.metrics.clone(),
+                procedure: None,
             },
             server_common::http::middleware,
         ));

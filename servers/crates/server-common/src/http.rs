@@ -6,14 +6,25 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tracing::Instrument;
+
+/// Maps a request path to a bounded procedure label. It must return `Some` only for an exact
+/// allowlisted path so that no request-controlled text ever becomes a metric label.
+pub type ProcedureResolver = fn(&str) -> Option<&'static str>;
+
 #[derive(Clone)]
 pub struct Policy {
     pub origin: String,
     pub timeout: Duration,
     pub service: Service,
     pub metrics: Arc<Metrics>,
+    /// Resolver supplied by the service adapter that owns the path allowlist. `None` disables
+    /// per-procedure accounting of outer timeouts (Git Tracker counts one outcome per response).
+    pub procedure: Option<ProcedureResolver>,
 }
 pub async fn middleware(State(policy): State<Policy>, request: Request, next: Next) -> Response {
     let origin = request.headers().get("origin").cloned();
@@ -28,9 +39,18 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
     } else {
         let span =
             tracing::info_span!("api.request",method=%request.method(),path=%request.uri().path());
+        // Capture the procedure and start time before the request is moved so that the elapsed
+        // time covers body reading as well as handler execution.
+        let procedure = policy
+            .procedure
+            .and_then(|resolve| resolve(request.uri().path()));
+        let started = Instant::now();
         match tokio::time::timeout(policy.timeout, next.run(request).instrument(span)).await {
             Ok(response) => response,
-            Err(_) => timeout_response(policy.service),
+            Err(_) => {
+                record_timeout(&policy, procedure, started);
+                timeout_response(policy.service)
+            }
         }
     };
     if let Some(origin) = origin {
@@ -74,6 +94,24 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
             .inc();
     }
     response
+}
+
+/// Records one request and one latency sample for an outer timeout of a known DevBase procedure.
+/// The cancelled handler never reaches its own accounting, so this is the only observation.
+pub fn record_timeout(policy: &Policy, procedure: Option<&'static str>, started: Instant) {
+    let (Service::DevBase, Some(procedure)) = (policy.service, procedure) else {
+        return;
+    };
+    policy
+        .metrics
+        .requests
+        .with_label_values(&[procedure, "deadline_exceeded"])
+        .inc();
+    policy
+        .metrics
+        .duration
+        .with_label_values(&[procedure])
+        .observe(started.elapsed().as_secs_f64());
 }
 
 fn timeout_response(service: Service) -> Response {
@@ -122,6 +160,7 @@ mod tests {
     #[tokio::test]
     async fn timeouts_include_correlation_for_handlers_and_slow_bodies() {
         for service in [Service::DevBase, Service::GitTracker] {
+            let metrics = Arc::new(Metrics::new(service));
             let app = Router::new()
                 .route(
                     "/rpc",
@@ -134,7 +173,8 @@ mod tests {
                         origin: "https://console.example".into(),
                         timeout: Duration::from_millis(20),
                         service,
-                        metrics: Arc::new(Metrics::new(service)),
+                        metrics: metrics.clone(),
+                        procedure: None,
                     },
                     middleware,
                 ));
@@ -174,7 +214,69 @@ mod tests {
                     assert!(headers.contains("cache-control: no-store"));
                 }
             }
+            if matches!(service, Service::GitTracker) {
+                // Each of the two timed-out requests adds exactly one outcome increment.
+                assert_eq!(
+                    metrics.requests.with_label_values(&["server_error"]).get(),
+                    2
+                );
+            } else {
+                // Without a procedure resolver nothing is attributed to a procedure.
+                assert!(!metrics.encode().contains("devbase_requests_total{"));
+            }
             task.abort();
         }
+    }
+
+    fn policy(service: Service, procedure: Option<ProcedureResolver>) -> Policy {
+        Policy {
+            origin: String::new(),
+            timeout: Duration::from_secs(1),
+            service,
+            metrics: Arc::new(Metrics::new(service)),
+            procedure,
+        }
+    }
+
+    #[test]
+    fn record_timeout_counts_only_known_devbase_procedures() {
+        let known = policy(Service::DevBase, Some(|_| Some("GetProject")));
+        let started = Instant::now() - Duration::from_millis(50);
+        record_timeout(&known, Some("GetProject"), started);
+        let requests = known
+            .metrics
+            .requests
+            .with_label_values(&["GetProject", "deadline_exceeded"]);
+        assert_eq!(requests.get(), 1);
+        let duration = known.metrics.duration.with_label_values(&["GetProject"]);
+        assert_eq!(duration.get_sample_count(), 1);
+        assert!(duration.get_sample_sum() >= 0.05);
+
+        let unresolved = policy(Service::DevBase, Some(|_| None));
+        record_timeout(&unresolved, None, started);
+        assert!(
+            !unresolved
+                .metrics
+                .encode()
+                .contains("devbase_requests_total{")
+        );
+
+        // Git Tracker keeps its single per-response outcome increment.
+        let tracker = policy(Service::GitTracker, Some(|_| Some("GetProject")));
+        record_timeout(&tracker, Some("GetProject"), started);
+        assert!(
+            !tracker
+                .metrics
+                .encode()
+                .contains("devbase_request_duration_seconds")
+        );
+        assert_eq!(
+            tracker
+                .metrics
+                .requests
+                .with_label_values(&["server_error"])
+                .get(),
+            0
+        );
     }
 }

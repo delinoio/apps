@@ -10,6 +10,7 @@ pub fn router(server: Arc<Server>) -> Router {
         timeout: server.config.request_timeout,
         service: telemetry::Service::DevBase,
         metrics: server.metrics.clone(),
+        procedure: Some(|path| crate::Op::from_procedure_path(path).map(crate::Op::name)),
     };
     let rpc = connectrpc::Router::new()
         .add_service(server.clone())

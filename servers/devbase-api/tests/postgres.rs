@@ -357,6 +357,10 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+    // Handled requests keep their own observations and never add outer-timeout counts.
+    let metrics = server.metrics.encode();
+    assert!(metrics.contains(r#"code="ok""#), "{metrics}");
+    assert!(!metrics.contains("deadline_exceeded"), "{metrics}");
     task.abort();
     mock_task.abort();
     drop(server);
