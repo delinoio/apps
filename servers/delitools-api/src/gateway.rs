@@ -422,6 +422,15 @@ fn price_of(
     write: &str,
 ) -> Option<CatalogPrice> {
     let text = |key: &str| value[key].as_str().and_then(decimal::price);
+    // A cache category may be unpublished (absent or null), which means "no price". A field that
+    // is present but not a valid price is a malformed entry, not an unpublished category: it
+    // would otherwise pin a route whose cache usage can never be reported, so the whole price is
+    // rejected (`Err`) and the model stays unpriced.
+    let optional = |key: &str| match &value[key] {
+        Value::Null => Ok(None),
+        Value::String(text) => decimal::price(text).map(Some).ok_or(()),
+        _ => Err(()),
+    };
     let tiered = [
         "input_tiers",
         "output_tiers",
@@ -433,8 +442,8 @@ fn price_of(
     Some(CatalogPrice {
         input: text(input)?,
         output: text(output)?,
-        cache_read: text(read),
-        cache_write: text(write),
+        cache_read: optional(read).ok()?,
+        cache_write: optional(write).ok()?,
         tiered,
     })
 }
@@ -880,6 +889,38 @@ mod tests {
                 .price
                 .is_none()
         );
+        // An unpublished cache category (absent or null) is "no price"; a present but invalid
+        // one makes the whole entry unusable instead of silently becoming "unpublished".
+        let cache = |read: Value, write: Value| {
+            let pricing =
+                json!({"input":"1","output":"2","input_cache_read":read,"input_cache_write":write});
+            parse_model(&json!({"id":"a/b","type":"language","pricing":pricing}))
+                .unwrap()
+                .price
+        };
+        let published = cache(json!("0.5"), json!(null)).unwrap();
+        assert_eq!(published.cache_read.as_deref(), Some("0.5"));
+        assert_eq!(published.cache_write, None);
+        for malformed in [
+            json!("-1"),
+            json!("abc"),
+            json!(""),
+            json!(0.5),
+            json!("1".repeat(80)),
+        ] {
+            assert!(
+                cache(malformed.clone(), json!(null)).is_none(),
+                "{malformed}"
+            );
+            assert!(
+                cache(json!(null), malformed.clone()).is_none(),
+                "{malformed}"
+            );
+        }
+        let endpoint_cache = parse_endpoint(&json!({"provider_name":"openai","status":0,
+            "pricing":{"prompt":"1","completion":"2","input_cache_read":"-1"}}))
+        .unwrap();
+        assert!(endpoint_cache.price.is_none());
         let endpoint = parse_endpoint(&json!({"provider_name":"openai","status":0,
             "pricing":{"prompt":"0.0000001","completion":"0.0000005"}}))
         .unwrap();
