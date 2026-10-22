@@ -924,20 +924,38 @@ async fn a_meter_with_usage_prices_cannot_become_call_time() {
     std::fs::write(directory.join("service.yaml"), "kind: service\nkey: delitools\nname: delitools\nclient_id: service\ncapabilities: [translator, extractor]\nscopes: [authorize, usage:write, usage:read]\n").unwrap();
     std::fs::write(directory.join("meter.yaml"), "kind: meter\nservice: delitools\nkey: legacy\nevent_type: legacy.usage\naggregation: sum\nvalue_source: ai_token_usd\nmarkup: \"1.15\"\n").unwrap();
     let metrics = delcore_api::telemetry::Metrics::default();
-    let result = delcore_api::catalog::sync(&f.db, &directory, &metrics).await;
+    // Run the synchronization on a single-connection pool of its own. sqlx queues the
+    // rollback of the rejected synchronization on its pooled connection until that
+    // connection is next used, and the session would stay idle in a transaction that
+    // holds the catalog lock and blocks the fixture's schema cleanup. With one
+    // connection, the next acquisition is that very connection, so the rollback ends
+    // before the pool is closed. Never end sessions by database instead: parallel
+    // fixtures share one database and differ only by schema.
+    let search = f.schema.clone();
+    let sync_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(move |conn, _| {
+            let search = search.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO {search}"))
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&f.database_url)
+        .await
+        .unwrap();
+    let result = delcore_api::catalog::sync(&sync_pool, &directory, &metrics).await;
     std::fs::remove_dir_all(&directory).unwrap();
     let error = format!(
         "{:#}",
         result.expect_err("a priced meter cannot become call-time")
     );
     assert!(error.contains("usage prices"), "{error}");
-    // sqlx queues the rollback of the rejected synchronization on its pooled
-    // connection until that connection is next used. End the leftover session so it
-    // cannot block the fixture's schema cleanup.
-    sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND pid<>pg_backend_pid()")
-        .execute(&f.db)
-        .await
-        .unwrap();
+    // Acquiring the only connection flushes the queued rollback.
+    drop(sync_pool.acquire().await.unwrap());
+    sync_pool.close().await;
 }
 
 #[tokio::test]
