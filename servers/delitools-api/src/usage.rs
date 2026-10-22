@@ -297,6 +297,10 @@ pub struct PriceSyncTask {
     pub gateway: Arc<Gateway>,
 }
 
+/// The revision label of a version that withdraws the price of a model the catalog no longer
+/// publishes (as opposed to one withdrawn because no endpoint matches its published price).
+const UNPUBLISHED_REVISION: &str = "unpublished";
+
 /// The unchanged-price revision digest stored with each version.
 fn revision(route: &str, price: &CatalogPrice) -> String {
     let mut hasher = Sha256::new();
@@ -401,6 +405,22 @@ impl BackgroundTask for PriceSyncTask {
                     category = "price_not_published",
                     "no public price for model"
                 );
+                // The catalog was read successfully and no longer publishes a usable language
+                // model price (the model is omitted, lost its pricing or is not a language
+                // model), so a previously synchronized price is withdrawn. Only a failed catalog
+                // read keeps the last known prices.
+                match db::record_unpriced(pool, model, UNPUBLISHED_REVISION).await {
+                    Ok(PriceWrite::Withdrawn) => {
+                        withdrawn += 1;
+                        tracing::warn!(
+                            model,
+                            category = "price_withdrawn",
+                            "the model's price was withdrawn; new executions are rejected until the catalog publishes a price again"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(_) => failed += 1,
+                }
                 continue;
             };
             if price.tiered {

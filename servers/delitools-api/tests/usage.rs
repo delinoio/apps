@@ -1437,6 +1437,160 @@ async fn a_model_without_a_matching_endpoint_loses_its_price_but_a_failed_read_k
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_model_the_catalog_stops_publishing_loses_its_price_but_a_failed_fetch_keeps_it() {
+    use support::{LUNA_PRICE, SONNET_PRICE};
+    let env = Env::start(&[], true).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(10, 1, 0, 0)));
+    let (input, output, read, write) = SONNET_PRICE;
+    let (luna_input, luna_output, luna_read, luna_write) = LUNA_PRICE;
+    // The extraction model is always published and has a matching endpoint; the translation
+    // model is published as given, with a matching endpoint.
+    let publish = |translation: Option<Value>| {
+        let mut entries = vec![mocks::catalog_entry(
+            EXTRACTION_MODEL,
+            luna_input,
+            luna_output,
+            luna_read,
+            luna_write,
+        )];
+        entries.extend(translation);
+        env.gateway.set_catalog(
+            entries,
+            vec![
+                (
+                    EXTRACTION_MODEL,
+                    vec![mocks::endpoint_entry(
+                        "openai",
+                        luna_input,
+                        luna_output,
+                        luna_read,
+                        luna_write,
+                    )],
+                ),
+                (
+                    TRANSLATION_MODEL,
+                    vec![mocks::endpoint_entry(
+                        "anthropic",
+                        input,
+                        output,
+                        read,
+                        write,
+                    )],
+                ),
+            ],
+        );
+    };
+    let priced = || mocks::catalog_entry(TRANSLATION_MODEL, input, output, read, write);
+    let withdrawals = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM catalog_prices WHERE model=$1 AND NOT priced",
+        )
+        .bind(TRANSLATION_MODEL)
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap()
+    };
+    let until_withdrawals = |expected: i64| {
+        let withdrawals = &withdrawals;
+        async move {
+            for _ in 0..60 {
+                if withdrawals().await == expected {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            assert_eq!(withdrawals().await, expected);
+        }
+    };
+    let rejected = || async {
+        env.fx
+            .fails(
+                Some(&key),
+                TRANSLATE,
+                env.translate_body(&["x"], None),
+                "failed_precondition",
+                reason::PRICE_UNAVAILABLE,
+            )
+            .await;
+    };
+    publish(Some(priced()));
+    translate_ok(&env, &key).await;
+
+    // A failed catalog fetch is no evidence that the price is gone: the last known price stays.
+    env.gateway.models_fail.store(true, Ordering::SeqCst);
+    publish(None);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 0);
+    translate_ok(&env, &key).await;
+    env.gateway.models_fail.store(false, Ordering::SeqCst);
+
+    // A successfully read catalog that omits the model withdraws its price.
+    until_withdrawals(1).await;
+    rejected().await;
+    // Repeated synchronizations do not stack withdrawals.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(withdrawals().await, 1);
+
+    // Publishing the model again prices it by a new version.
+    publish(Some(priced()));
+    let mut restored = false;
+    for _ in 0..60 {
+        if env
+            .fx
+            .call(Some(&key), TRANSLATE, env.translate_body(&["x"], None))
+            .await
+            .code()
+            .is_empty()
+        {
+            restored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(restored, "the price returned with the published model");
+
+    // A listed model that lost its pricing, or is no longer a language model, loses its price.
+    publish(Some(
+        json!({"id": TRANSLATION_MODEL, "object": "model", "type": "language"}),
+    ));
+    until_withdrawals(2).await;
+    rejected().await;
+    publish(Some(priced()));
+    let mut restored = false;
+    for _ in 0..60 {
+        if env
+            .fx
+            .call(Some(&key), TRANSLATE, env.translate_body(&["x"], None))
+            .await
+            .code()
+            .is_empty()
+        {
+            restored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(restored);
+    let mut embedding = priced();
+    embedding["type"] = json!("embedding");
+    publish(Some(embedding));
+    until_withdrawals(3).await;
+    rejected().await;
+    // The extraction model is still priced, so the service stays ready.
+    let ready = env
+        .fx
+        .http
+        .get(format!("{}/readyz", env.fx.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ready.status(), 200);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
     use delitools_api::{
         gateway::CatalogPrice,
