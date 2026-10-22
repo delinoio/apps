@@ -436,6 +436,30 @@ async fn recurring_price_of_the_free_base_plan_keeps_the_calendar_month() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn recurring_entitlement_lookup_uses_the_tenant_window_index() {
+    let s = scenario().await;
+    let mut tx = s.f.db.begin().await.unwrap();
+    // The planner may prefer a sequential scan on an almost empty table; forbid it so the plan
+    // proves that the lookup can use an index on the tenant and validity window.
+    sqlx::query("SET LOCAL enable_seqscan = off")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let plan: Vec<String> = sqlx::query_scalar("EXPLAIN SELECT EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=$1 AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2))")
+        .bind(Uuid::parse_str(&s.tenant).unwrap())
+        .bind(s.time.now)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    // Release the transaction before asserting: fixture cleanup drops the schema and would
+    // otherwise wait for it when the assertion fails.
+    tx.rollback().await.unwrap();
+    let plan = plan.join("\n");
+    assert!(plan.contains("entitlements_tenant_window"), "{plan}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn missing_paid_coverage_keeps_the_unavailable_period_failure_in_every_consumer() {
     let s = scenario().await;
     let t = &s.time;
