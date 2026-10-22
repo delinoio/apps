@@ -279,6 +279,42 @@ async fn delivery_retries_with_capped_backoff_and_a_duplicate_never_creates_a_se
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_slow_failing_delivery_backs_off_from_the_end_of_the_report() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    // The report takes longer than the initial retry delay (one second) and then fails.
+    env.delcore.delay_ingests(Duration::from_millis(1500));
+    env.delcore.fail_ingests(1);
+    translate_ok(&env, &key).await;
+    let mut remaining = None;
+    for _ in 0..100 {
+        let row = sqlx::query_as::<_, (i32, Option<f64>)>(
+            "SELECT delivery_failures, EXTRACT(EPOCH FROM (retry_at - clock_timestamp()))::float8 FROM attempts",
+        )
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+        if row.0 == 1 {
+            remaining = row.1;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let remaining = remaining.expect("the failed delivery was recorded");
+    assert!(
+        remaining > 0.5,
+        "the retry is scheduled a full delay after the failed report, not from its start: {remaining}s left"
+    );
+    // Not yet due, so a background run does not resend the attempt.
+    env.delcore.delay_ingests(Duration::ZERO);
+    usage_service(&env).run_deliveries().await.unwrap();
+    assert_eq!(env.delcore.ingest_calls().len(), 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_rejected_reporting_token_is_replaced_before_the_next_retry() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

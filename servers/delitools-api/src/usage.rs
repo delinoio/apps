@@ -87,8 +87,12 @@ impl UsageService {
         let platform = &self.platform;
         let pool = &platform.store.pool;
         let settings = platform.settings();
+        let reported = self.delcore.report(self.service_id, &attempt).await;
+        // Read the clock after the report: token acquisition and ingestion can take longer than
+        // the retry delay, and a delay counted from before the call would already have expired
+        // when the failure is recorded, so the next batch would resend the attempt at once.
         let now = store::now();
-        match self.delcore.report(self.service_id, &attempt).await {
+        match reported {
             Ok(()) => {
                 if db::mark_delivered(pool, attempt.id, now).await.is_ok() {
                     platform

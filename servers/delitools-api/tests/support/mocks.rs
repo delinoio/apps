@@ -440,6 +440,8 @@ struct DelcoreState {
     ingest_authorizations: Vec<String>,
     /// Paid checks to let through immediately, then the delay applied to every later paid check.
     paid_delay: Option<(usize, Duration)>,
+    /// Delay applied to every ingestion before it is answered.
+    ingest_delay: Option<Duration>,
 }
 
 pub struct DelcoreMock {
@@ -510,6 +512,10 @@ impl DelcoreMock {
     /// check by `delay`. Management checks are never delayed.
     pub fn delay_paid_authorizations_after(&self, skip: usize, delay: Duration) {
         lock(&self.state).paid_delay = Some((skip, delay));
+    }
+    /// Hold every ingestion for `delay` before answering it, as a slow delcore would.
+    pub fn delay_ingests(&self, delay: Duration) {
+        lock(&self.state).ingest_delay = Some(delay);
     }
     pub fn set_token_down(&self, down: bool) {
         lock(&self.state).token_down = down;
@@ -596,6 +602,12 @@ async fn rpc(
                 None => None,
             }
         };
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+    }
+    if method == "IngestEvent" {
+        let delay = lock(&mock.state).ingest_delay;
         if let Some(delay) = delay {
             tokio::time::sleep(delay).await;
         }
