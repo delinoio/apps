@@ -311,6 +311,8 @@ impl Worker {
                     .bind(&tenant)
                     .execute(&mut *conn)
                     .await?;
+                // Keep the occurrence so an older renewal payment delivered later cannot clear it.
+                self.retain_subscription_failure(conn, &v.id, event).await?;
             }
             "canceled" => self.activate_free(conn, &tenant, event.occurred_at).await?,
             _ => {}

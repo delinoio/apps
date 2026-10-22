@@ -82,7 +82,32 @@ impl Worker {
         }
         sqlx::query("INSERT INTO provider_transactions VALUES($1,$2::text::uuid,'subscription',0,$3,$4) ON CONFLICT DO NOTHING").bind(&t.id).bind(&tenant).bind(&t.currency).bind(at).execute(&mut *conn).await?;
         sqlx::query("INSERT INTO provider_objects VALUES($1,$2,'active') ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,state='active' WHERE provider_objects.occurred_at<EXCLUDED.occurred_at").bind(&t.subscription_id).bind(at).execute(&mut *conn).await?;
-        sqlx::query("UPDATE tenants SET period_start=$2,period_end=$3,renewal_failed=false WHERE id=$1::text::uuid").bind(&tenant).bind(period.starts_at).bind(period.ends_at).execute(&mut *conn).await?;
+        // The provider watermark above ignores a payment older than the latest status, so the
+        // tenant failure flag needs the same ordering. A failure that occurred after this payment
+        // stays until a newer confirmed renewal recovers it; an older failure is recovered here.
+        // The failure is kept in its own row because an informational status can replace the
+        // subscription row's state after the failure.
+        let failure_key = format!("failure:{}", t.subscription_id);
+        let failed_at: Option<DateTime<Utc>> =
+            sqlx::query_scalar("SELECT occurred_at FROM provider_objects WHERE external_id=$1")
+                .bind(&failure_key)
+                .fetch_optional(&mut *conn)
+                .await?;
+        let failure_is_newer = failed_at.is_some_and(|failed| failed > at);
+        sqlx::query("UPDATE tenants SET period_start=$2,period_end=$3,renewal_failed=renewal_failed AND $4 WHERE id=$1::text::uuid").bind(&tenant).bind(period.starts_at).bind(period.ends_at).bind(failure_is_newer).execute(&mut *conn).await?;
+        if failure_is_newer {
+            tracing::warn!(
+                tenant_id = %tenant,
+                subscription_id = %t.subscription_id,
+                transaction_id = %t.id,
+                "kept newer subscription payment failure after an older renewal payment"
+            );
+        } else {
+            sqlx::query("DELETE FROM provider_objects WHERE external_id=$1")
+                .bind(&failure_key)
+                .execute(&mut *conn)
+                .await?;
+        }
         postgres::allowances::grant_allowances(
             conn,
             &tenant,
