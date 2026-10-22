@@ -240,7 +240,15 @@ async fn independent_restrictions_survive_confirmed_cancellation() {
         ("deletion", "BLOCK_REASON_DELETING"),
     ] {
         let s = scenario().await;
-        s.run(Order::PaymentFirst).await;
+        // Seed the restriction after the failure is recorded and before the cancellation is
+        // delivered, so the cancellation transaction runs against a tenant that already has it.
+        s.payment("evt_payment").await;
+        s.status("evt_past_due", "past_due", s.time.past_due())
+            .await;
+        assert!(
+            s.flag().await,
+            "{restriction}: failure precedes cancellation"
+        );
         let tenant = Uuid::parse_str(&s.tenant).unwrap();
         match restriction {
             "debt" => {
@@ -272,6 +280,8 @@ async fn independent_restrictions_survive_confirmed_cancellation() {
                     .unwrap();
             }
         }
+        s.status("evt_canceled", "canceled", s.time.canceled())
+            .await;
         let result = s.authorize(true).await;
         // The protocol JSON omits `allowed` when it is false.
         assert!(
