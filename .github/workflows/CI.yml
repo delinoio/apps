@@ -24,6 +24,9 @@ jobs:
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
       protocol: ${{ steps.plan.outputs.protocol }}
       fixkey: ${{ steps.plan.outputs.fixkey }}
+      tooling: ${{ steps.plan.outputs.tooling }}
+      shared_ui: ${{ steps.plan.outputs.shared_ui }}
+      workflows: ${{ steps.plan.outputs.workflows }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -100,8 +103,95 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
-  validate:
+  tooling:
     needs: changes
+    if: needs.changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: tooling
+        run: pnpm test:tooling
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: tooling
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-tooling-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
+  shared-ui:
+    needs: changes
+    if: needs.changes.outputs.shared_ui == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: shared-ui
+        run: pnpm --filter @delino/ui test
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: shared-ui
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-shared-ui-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
+  workflows:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     env:
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
@@ -119,10 +209,6 @@ jobs:
           go-version-file: go.mod
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: tooling
-        run: pnpm test:tooling
-      - id: shared-ui
-        run: pnpm --filter @delino/ui test
       - id: workflows
         run: go tool actionlint -shellcheck=''
       - name: Save pnpm cache after successful main validation
@@ -134,7 +220,7 @@ jobs:
       - name: Record validation
         if: ${{ always() }}
         env:
-          VALIDATION_JOB: validate
+          VALIDATION_JOB: workflows
           VALIDATION_RESULT: ${{ job.status }}
           VALIDATION_STEPS: ${{ toJSON(steps) }}
         run: node scripts/ci/record-validation.mjs
@@ -142,7 +228,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: validation-validate-${{ github.run_attempt }}
+          name: validation-workflows-${{ github.run_attempt }}
           path: .ci-evidence/
           include-hidden-files: true
           if-no-files-found: error
@@ -550,10 +636,21 @@ jobs:
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: native-prerequisites
-        name: Install Linux native prerequisites
+        name: Install selected crates' Linux native prerequisites
+        if: contains(fromJSON(env.RUST_PACKAGES), 'delidev-desktop') || contains(fromJSON(env.RUST_PACKAGES), 'delitools-shell') || contains(fromJSON(env.RUST_PACKAGES), 'fixkey')
+        env:
+          CEF_SHELL: ${{ contains(fromJSON(env.RUST_PACKAGES), 'delidev-desktop') || contains(fromJSON(env.RUST_PACKAGES), 'delitools-shell') }}
+          FIXKEY_DESKTOP: ${{ contains(fromJSON(env.RUST_PACKAGES), 'fixkey') }}
         run: |-
+          packages=()
+          if [[ "$CEF_SHELL" == 'true' ]]; then
+            packages+=(clang cmake libgbm-dev libgtk-4-dev libx11-dev libxtst-dev ninja-build xdg-desktop-portal xdg-desktop-portal-gtk zenity)
+          fi
+          if [[ "$FIXKEY_DESKTOP" == 'true' ]]; then
+            packages+=(libayatana-appindicator3-dev libgtk-3-dev libwebkit2gtk-4.1-dev)
+          fi
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y "${packages[@]}"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -594,16 +691,20 @@ jobs:
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
   rust-test:
-    name: Rust Test
+    name: Rust Test (${{ matrix.package }})
     needs: changes
     if: needs.changes.outputs.rust_test != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.changes.outputs.rust_test) }}
     env:
       TURBO_TEAM: ${{ vars.TURBO_TEAM }}
       TURBO_TOKEN: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && secrets.TURBO_TOKEN || '' }}
       # Withhold the write-capable token from PRs and non-main manual runs.
       TURBO_CACHE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.TURBO_TEAM != '' && secrets.TURBO_TOKEN != '' && (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
-      RUST_PACKAGES: ${{ needs.changes.outputs.rust_test }}
+      RUST_PACKAGES: ${{ format('["{0}"]', matrix.package) }}
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
     steps:
@@ -619,23 +720,18 @@ jobs:
           toolchain: nightly-2026-09-28
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - id: native-prerequisites
-        name: Install Linux native prerequisites
-        run: |-
-          sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
       - id: delidev-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delidev-desktop')
+        if: matrix.package == 'delidev-desktop'
         run: pnpm exec turbo run build:frontend --filter=delidev-desktop
       - id: delitools-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'delitools-shell')
+        if: matrix.package == 'delitools-shell'
         run: pnpm exec turbo run build:frontend --filter=delitools
       - id: fixkey-build
-        if: contains(fromJSON(needs.changes.outputs.rust_test), 'fixkey')
+        if: matrix.package == 'fixkey'
         run: pnpm exec turbo run build:frontend --filter=fixkey-desktop
       - id: test
         run: node scripts/ci/rust-check.mjs test
@@ -645,21 +741,6 @@ jobs:
         with:
           path: ${{ steps.node.outputs.cache-path }}
           key: ${{ steps.node.outputs.cache-key }}
-      - name: Record validation
-        if: ${{ always() }}
-        env:
-          VALIDATION_JOB: rust-test
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATION_STEPS: ${{ toJSON(steps) }}
-        run: node scripts/ci/record-validation.mjs
-      - name: Preserve validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: validation-rust-test-${{ github.run_attempt }}
-          path: .ci-evidence/
-          include-hidden-files: true
-          if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/fixkey-app/dist" "apps/git-tracker/dist"
@@ -802,7 +883,9 @@ jobs:
     if: ${{ always() }}
     needs:
       - changes
-      - validate
+      - tooling
+      - shared-ui
+      - workflows
       - check-formatting
       - delidev-frontend
       - fixkey-frontend
@@ -827,7 +910,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, validate: true, 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', 'fixkey-frontend': selection.fixkey === 'true', 'fixkey-desktop': selection.fixkey === 'true' && process.env.EVENT_NAME === 'push', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

@@ -21,9 +21,18 @@ impl Worker {
             .expect("valid month");
         let end = start + Months::new(1);
         // Free plans use calendar months, including tenants created mid-month.
-        sqlx::query(&format!("UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND {} AND t.external_subscription_id='' AND t.period_end<=$3", postgres::selected_plan_bool_sql("t", "p", "free"))).bind(start).bind(end).bind(now).execute(&mut *tx).await?;
-        let free: Vec<String> = sqlx::query_scalar(&format!("SELECT t.id::text FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE {} AND t.external_subscription_id='' AND t.deleted_at IS NULL", postgres::selected_plan_bool_sql("t", "p", "free"))).fetch_all(&mut *tx).await?;
-        for tenant in free {
+        // Only a period that actually advances here is a renewal. Tenants that
+        // already hold the current period were initialized by creation,
+        // confirmed free activation, or an earlier renewal, so re-deriving their
+        // grants from today's mutable entitlements would double-grant a meter
+        // that an explicit refresh added after the period began.
+        let renewed: Vec<(String, bool)> = sqlx::query_as(&format!("UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND {} AND t.external_subscription_id='' AND t.period_end<=$3 RETURNING t.id::text,(t.deleted_at IS NULL)", postgres::selected_plan_bool_sql("t", "p", "free"))).bind(start).bind(end).bind(now).fetch_all(&mut *tx).await?;
+        // The grants share this transaction, so a failed renewal leaves both the
+        // period and its grants uncommitted and the next pass retries them once.
+        for (tenant, active) in renewed {
+            if !active {
+                continue;
+            }
             postgres::grant_allowances(
                 &mut tx,
                 &tenant,
