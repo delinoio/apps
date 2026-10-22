@@ -1,6 +1,6 @@
 # Delcore API contract
 
-The Rust runtime belongs to the [server Rust workspace](servers-rust-workspace-contract.md). Root development uses process-compose with the existing workspace launcher.
+The Rust runtime belongs to the [server Rust workspace](servers-rust-workspace-contract.md). Root development uses Turborepo watch mode with the existing workspace launcher.
 
 ## Scope
 
@@ -572,9 +572,9 @@ The root [development Compose procedure](repository-workflow-contract.md#local-d
 
 The development command first injects Infisical `dev` variables from `/delcore-api` using the local root project configuration. CLI installation, authentication and project access are required; follow the [environment contract](repository-environment-contract.md#local-development-injection).
 
-Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. Root process-compose builds the server workspace through `server-build`; the launcher executes the compiled `delcore-api` binary directly. Before a service-local launch, run `cargo build --locked --manifest-path servers/Cargo.toml --workspace --bins` from the repository root. Install `protoc` before compiling. Copy the service-local `.env.example` to the ignored `servers/delcore-api/.env`, replace placeholders, and choose policy values. Injected/process variables override this file. Keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.
+Run `pnpm dev` at the repository root for all development servers, or from `servers/delcore-api` for this API only. Root Turbo development builds the server workspace through `//#server-build`; the launcher executes the compiled `delcore-api` binary directly. Before a service-local launch, run `cargo build --locked --manifest-path servers/Cargo.toml --workspace --bins` from the repository root. Install `protoc` before compiling. Copy the service-local `.env.example` to the ignored `servers/delcore-api/.env`, replace placeholders, and choose policy values. Injected/process variables override this file. Keep credentials outside Git. Use `127.0.0.1:8080` for the local listener. A port conflict fails server startup; no alternate port is selected.
 
-Prepare PostgreSQL and apply the existing explicit migration command before starting. Check the [development catalog](#development-catalog) and restart the API after YAML edits; the shared builder does not watch YAML. An absent, empty, invalid, or database-incompatible catalog stops development startup without partial application. Development startup retains configuration validation, authentication and schema compatibility checks. Stop with `Ctrl+C`; process-compose owns shutdown. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
+Prepare PostgreSQL and apply the existing explicit migration command before starting. Check the [development catalog](#development-catalog) and restart the API after YAML edits; the shared builder does not watch YAML. An absent, empty, invalid, or database-incompatible catalog stops development startup without partial application. Development startup retains configuration validation, authentication and schema compatibility checks. Stop with `Ctrl+C`; Turbo owns shutdown. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
 
 ## Catalog and metering operations
 

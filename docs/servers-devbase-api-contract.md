@@ -1,6 +1,6 @@
 # DevBase API server contract
 
-The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses process-compose with one shared Cargo builder and direct binary launchers.
+The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses Turborepo watch mode with one shared Cargo builder and direct binary launchers.
 
 ## Scope
 
