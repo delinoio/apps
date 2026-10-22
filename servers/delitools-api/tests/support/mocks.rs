@@ -433,6 +433,8 @@ struct DelcoreState {
     ingest_failures: u32,
     /// Ingestions to refuse as unauthenticated, as for a revoked or rotated credential.
     ingest_auth_failures: u32,
+    /// Ingestions to answer with a success status and an unrelated body.
+    ingest_malformed: u32,
     token_scopes: Vec<String>,
     token_down: bool,
     ingest_authorizations: Vec<String>,
@@ -519,6 +521,10 @@ impl DelcoreMock {
     /// Refuse the next `count` ingestions as unauthenticated (a revoked or rotated credential).
     pub fn fail_ingest_auth(&self, count: u32) {
         lock(&self.state).ingest_auth_failures = count;
+    }
+    /// Answer the next `count` ingestions with HTTP 200 and a body without acceptance fields.
+    pub fn malformed_ingests(&self, count: u32) {
+        lock(&self.state).ingest_malformed = count;
     }
     pub fn authorize_calls(&self) -> Vec<Value> {
         lock(&self.state).authorize_calls.clone()
@@ -623,6 +629,10 @@ async fn rpc(
             if state.ingest_failures > 0 {
                 state.ingest_failures -= 1;
                 return connect_error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            }
+            if state.ingest_malformed > 0 {
+                state.ingest_malformed -= 1;
+                return Json(json!({})).into_response();
             }
             let event = &body["event"];
             let key = event["eventKey"].as_str().unwrap_or("").to_owned();

@@ -317,6 +317,44 @@ async fn a_rejected_reporting_token_is_replaced_before_the_next_retry() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_success_status_without_acceptance_fields_does_not_settle_the_report() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    translating(&env, Some(UsageSpec::full(100, 20, 30, 10)));
+    env.delcore.malformed_ingests(1);
+    translate_ok(&env, &key).await;
+    for _ in 0..50 {
+        if env.delcore.ingest_calls().len() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (failures, delivered): (i32, bool) =
+        sqlx::query_as("SELECT delivery_failures, delivered_at IS NOT NULL FROM attempts")
+            .fetch_one(&env.fx.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (failures, delivered),
+        (1, false),
+        "a body without eventId and revision is a failed delivery that is retried"
+    );
+    assert!(env.delcore.accepted().is_empty());
+
+    env.make_due().await;
+    usage_service(&env).run_deliveries().await.unwrap();
+    let delivered: bool = sqlx::query_scalar("SELECT delivered_at IS NOT NULL FROM attempts")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert!(delivered);
+    assert_eq!(env.delcore.accepted().len(), 1);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn background_delivery_survives_restart_from_persisted_state_alone() {
     let env = Env::start(&[], false).await;
     env.seed_crash_state().await;

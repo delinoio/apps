@@ -224,7 +224,11 @@ impl DelcoreAuthority {
             .call("IngestEvent", &format!("Bearer {token}"), body)
             .await
         {
-            Ok(_) => Ok(()),
+            // An HTTP 2xx is not durable acceptance by itself: an intermediary or a schema drift
+            // can answer with an unrelated body, and an attempt marked delivered is never sent
+            // again.
+            Ok(response) if accepted(&response) => Ok(()),
+            Ok(_) => Err(DeliveryError::InvalidResponse),
             Err(fault) => {
                 // Delcore refusing the credential (revocation, rotation or a scope change) says
                 // the cached token is unusable, so the next retry must fetch a fresh one instead
@@ -251,6 +255,15 @@ impl DelcoreAuthority {
     }
 }
 
+/// Whether an `IngestEventResponse` shows that delcore durably accepted the event: a nonempty
+/// event ID and the revision of an original event (DeliTools never corrects events).
+pub fn accepted(response: &Value) -> bool {
+    response["eventId"]
+        .as_str()
+        .is_some_and(|id| !id.is_empty())
+        && response["revision"].as_i64() == Some(1)
+}
+
 /// Why a usage report did not reach delcore. Every variant is retried until the record expires.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeliveryError {
@@ -258,6 +271,8 @@ pub enum DeliveryError {
     Unavailable,
     /// Delcore answered with an error.
     Rejected,
+    /// Delcore answered with a success status but without the acceptance fields.
+    InvalidResponse,
     /// The attempt carries no confirmed usage.
     UsageUnknown,
     /// Measured usage needs a category the frozen price does not publish.
@@ -269,6 +284,7 @@ impl DeliveryError {
         match self {
             Self::Unavailable => "unavailable",
             Self::Rejected => "rejected",
+            Self::InvalidResponse => "invalid_response",
             Self::UsageUnknown => "usage_unknown",
             Self::MissingCategoryPrice => "missing_category_price",
         }
@@ -355,6 +371,24 @@ mod tests {
             assert_eq!(body["paid"], false);
             assert!(body.get("capability").is_none());
             assert_eq!(body["userId"], user.to_string());
+        }
+    }
+
+    #[test]
+    fn only_a_complete_acceptance_settles_a_report() {
+        assert!(accepted(&json!({"eventId": "event-1", "revision": 1})));
+        for response in [
+            json!({}),
+            json!(null),
+            json!([]),
+            json!({"eventId": "", "revision": 1}),
+            json!({"eventId": "event-1"}),
+            json!({"revision": 1}),
+            json!({"eventId": "event-1", "revision": 2}),
+            json!({"eventId": "event-1", "revision": "1"}),
+            json!({"eventId": 7, "revision": 1}),
+        ] {
+            assert!(!accepted(&response), "{response}");
         }
     }
 
