@@ -107,6 +107,7 @@ Not supported, and rejected before execution:
 - Optional properties. Every property of an object must be in `required`. `required` must list each property exactly once and must not name a property that `properties` does not define.
 - `additionalProperties` set to `true`, or missing.
 - References: `$ref` and recursive schemas.
+- Duplicate member names in any JSON object of the schema. `jsonSchema` must be one valid JSON document without duplicate keys.
 - Schemas above the provider limits: 4,998 properties in total, 998 enum values, or 119,971 characters of property names and enum values together. The provider allows 5,000 properties and 120,000 characters in total, and DeliTools reserves the rest for its response envelope. An enum with more than 250 values may hold at most 15,000 characters of string values.
 
 A supported schema:

@@ -107,6 +107,7 @@ Não compatível e rejeitado antes da execução:
 - Propriedades opcionais. Toda propriedade de um objeto deve estar em `required`. `required` deve listar cada propriedade exatamente uma vez e não pode citar uma propriedade que `properties` não define.
 - `additionalProperties` definido como `true` ou ausente.
 - Referências: `$ref` e esquemas recursivos.
+- Nomes de membro duplicados em qualquer objeto JSON do esquema. `jsonSchema` deve ser um único documento JSON válido, sem chaves duplicadas.
 - Esquemas acima dos limites do provedor: 4.998 propriedades no total, 998 valores de enum ou 119.971 caracteres de nomes de propriedades e valores de enum juntos. O provedor permite 5.000 propriedades e 120.000 caracteres no total, e o DeliTools reserva o restante para o seu envelope de resposta. Um enum com mais de 250 valores pode conter no máximo 15.000 caracteres de valores de string.
 
 Um esquema compatível:

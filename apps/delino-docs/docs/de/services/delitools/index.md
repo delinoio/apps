@@ -107,6 +107,7 @@ Nicht unterstützt und vor der Ausführung abgelehnt:
 - Optionale Eigenschaften. Jede Eigenschaft eines Objekts muss in `required` stehen. `required` muss jede Eigenschaft genau einmal aufführen und darf keine Eigenschaft nennen, die `properties` nicht definiert.
 - `additionalProperties` mit dem Wert `true` oder fehlend.
 - Verweise: `$ref` und rekursive Schemas.
+- Doppelte Elementnamen in einem JSON-Objekt des Schemas. `jsonSchema` muss ein einziges gültiges JSON-Dokument ohne doppelte Schlüssel sein.
 - Schemas oberhalb der Grenzwerte des Anbieters: 4.998 Eigenschaften insgesamt, 998 Enum-Werte oder 119.971 Zeichen für Eigenschaftsnamen und Enum-Werte zusammen. Der Anbieter erlaubt insgesamt 5.000 Eigenschaften und 120.000 Zeichen; DeliTools reserviert den Rest für seine Antworthülle. Ein Enum mit mehr als 250 Werten darf höchstens 15.000 Zeichen an Zeichenfolgenwerten enthalten.
 
 Ein unterstütztes Schema:
