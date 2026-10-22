@@ -272,7 +272,9 @@ impl Server {
         } else {
             &self.users
         };
-        let rate_key = if op.management() {
+        // A routing conflict carries the verified recorded project, which is absent when the
+        // record belongs to a tenant-level operation; the recorded tenant then keys the bucket.
+        let rate_key = if op.management() || who.project.is_empty() {
             &who.tenant
         } else {
             &who.project
@@ -293,6 +295,13 @@ impl Server {
             );
             f.retry = Some(retry);
             return Err(f);
+        }
+        // A login-token mutation with a malformed target that matched an existing replay record
+        // is a conflict. It is returned only after authentication, authorization and rate
+        // limiting, so repeating it consumes the same tenant or project bucket as a well-formed
+        // conflict.
+        if who.routing_conflict {
+            return Err(Fault::conflict());
         }
         // The idempotency key identifies the replay record, so it is always validated first. For a
         // mutation the remaining payload result is held until the replay lookup: a matching

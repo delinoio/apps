@@ -11,6 +11,11 @@ pub struct Identity {
     pub tenant: String,
     pub project: String,
     pub key: Option<uuid::Uuid>,
+    /// Set for a login-token mutation whose malformed target matched an existing replay record of
+    /// the same caller: the request is a routing conflict (`already_exists`). `tenant` and
+    /// `project` then hold the verified recorded values, so the caller can still be rate limited
+    /// before the conflict is returned.
+    pub routing_conflict: bool,
 }
 pub fn parse_key(raw: &str) -> Result<(uuid::Uuid, String)> {
     let rest = raw
@@ -60,10 +65,15 @@ pub async fn usable(
 }
 impl Server {
     /// Routing-only lookup of the caller's own unexpired replay record by caller and idempotency
-    /// key alone, reading only the tenant ID. The caller validates the key first.
-    async fn replay_tenant(&self, identity: &str, q: &Value) -> Result<Option<uuid::Uuid>> {
-        Ok(sqlx::query_scalar(
-            "SELECT tenant_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3",
+    /// key alone, reading only the recorded tenant and project IDs. The caller validates the key
+    /// first.
+    async fn replay_route(
+        &self,
+        identity: &str,
+        q: &Value,
+    ) -> Result<Option<(uuid::Uuid, Option<uuid::Uuid>)>> {
+        Ok(sqlx::query_as(
+            "SELECT tenant_id,project_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3",
         )
         .bind(format!("user:{identity}"))
         .bind(string(q, "idempotencyKey"))
@@ -119,17 +129,21 @@ impl Server {
                 tenant,
                 project: project.into(),
                 key: Some(id),
+                routing_conflict: false,
             });
         }
         let authorization = format!("Bearer {}", parts[1]);
         let mut user = None;
+        // The verified project of the matching replay record when the target was deferred.
+        let mut recorded_project = None;
         let tenant = if defer_target {
             let identity = self.authority.identify(&authorization).await?;
             crate::validation::validate_routing(op, q)?;
-            let Some(recorded) = self.replay_tenant(&identity, q).await? else {
+            let Some((recorded, project)) = self.replay_route(&identity, q).await? else {
                 return Err(Fault::invalid("target must be a canonical UUID v7"));
             };
             user = Some(identity);
+            recorded_project = project;
             recorded.to_string()
         } else if !requested_tenant.is_empty() {
             requested_tenant.to_owned()
@@ -150,8 +164,8 @@ impl Server {
                     // rejected as `invalid_argument` before any replay storage access. Authentication
                     // above still wins, and the caller validates the key again for found projects.
                     crate::validation::validate_routing(op, q)?;
-                    let t = self
-                        .replay_tenant(&identity, q)
+                    let (t, _) = self
+                        .replay_route(&identity, q)
                         .await?
                         .ok_or_else(Fault::missing)?;
                     user = Some(identity);
@@ -189,13 +203,24 @@ impl Server {
         if defer_target {
             // The caller is authorized for the recorded tenant; the malformed target cannot match
             // the record, so the replay comparison would end in a conflict whatever the payload.
-            return Err(Fault::conflict());
+            // The conflict is returned by the caller after rate limiting, which is keyed by the
+            // verified recorded tenant and project instead of the malformed target.
+            return Ok(Identity {
+                actor: format!("user:{user}"),
+                tenant,
+                project: recorded_project
+                    .map(|id| id.to_string())
+                    .unwrap_or_default(),
+                key: None,
+                routing_conflict: true,
+            });
         }
         Ok(Identity {
             actor: format!("user:{user}"),
             tenant,
             project: project.into(),
             key: None,
+            routing_conflict: false,
         })
     }
 }
