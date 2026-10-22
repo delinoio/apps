@@ -129,6 +129,33 @@ impl Worker {
             }
         }
     }
+    /// Reports whether the subscription cancellation of a deleting tenant must keep waiting.
+    ///
+    /// While deleting, accepted metering work (pending, deferred, failed or running) must be rated
+    /// and settled before the subscription is canceled; otherwise recovered usage would produce
+    /// postpaid debt that has no subscription left to collect it.
+    ///
+    /// The check takes the same transaction lock as event acceptance and reads the clock only after
+    /// holding it. A reporting request admitted before this check commits its metering job first,
+    /// so the check sees it. A request that waits for this transaction takes its own timestamp
+    /// afterwards (see `Server::execute`), finds the grace period ended and is rejected. The
+    /// provider request that follows stays outside the lock. Public so integration tests can
+    /// exercise the lock ordering directly.
+    pub async fn deleting_cancellation_waits(&self, tenant: uuid::Uuid) -> Result<bool> {
+        let grace = self.config.reporting_grace_seconds;
+        tokio::time::timeout(self.config.timeout(), async {
+            let mut tx = postgres::begin(&self.pool).await?;
+            let cutoff = Utc::now() - Duration::seconds(grace);
+            let waiting: bool = sqlx::query_scalar("SELECT deleting_at IS NOT NULL AND (deleting_at>$2 OR COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)<>0 OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='settlement' AND state<>'done') OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='metering' AND state<>'done')) FROM tenants t WHERE id=$1")
+                .bind(tenant)
+                .bind(cutoff)
+                .fetch_one(&mut *tx)
+                .await?;
+            tx.commit().await?;
+            Ok::<_, anyhow::Error>(waiting)
+        })
+        .await?
+    }
     async fn execute_job(&self, j: &Job) -> Result<()> {
         if j.kind == "webhook" {
             let Some(event) = j.payload.get("event_id").and_then(Value::as_str) else {
@@ -247,10 +274,7 @@ impl Worker {
                 }
             }
             "cancel" => {
-                // While deleting, accepted metering work (pending, deferred, failed or running) must be
-                // rated and settled before the subscription is canceled; otherwise recovered usage
-                // would produce postpaid debt that has no subscription left to collect it.
-                let waiting:bool=sqlx::query_scalar("SELECT deleting_at IS NOT NULL AND (deleting_at>$2 OR COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)<>0 OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='settlement' AND state<>'done') OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='metering' AND state<>'done')) FROM tenants t WHERE id=$1").bind(uid(&j.tenant)?).bind(Utc::now()-Duration::seconds(self.config.reporting_grace_seconds)).fetch_one(&self.pool).await?;
+                let waiting = self.deleting_cancellation_waits(uid(&j.tenant)?).await?;
                 if waiting {
                     return self
                         .finish(j, "pending", "final_settlement_pending", "")

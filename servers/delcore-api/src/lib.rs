@@ -430,13 +430,17 @@ impl Server {
         }
         let raw = request.encode_to_vec();
         let fingerprint = fingerprint::fingerprint(op, &raw)?;
-        let now = server_common::now();
         let mut tx = self.db.begin().await?;
         // Single-instance v1 serializes state transitions, matching worker transactions.
         // Remove only together with per-aggregate locks and concurrency regression tests.
         sqlx::query("SELECT pg_advisory_xact_lock(41820003)")
             .execute(&mut *tx)
             .await?;
+        // Read the clock only while holding the lock. A request that waited here must not be
+        // validated against a timestamp from before the transactions it waited for. In particular,
+        // a deleting tenant's cancellation check runs under this lock and relies on a later
+        // reporting request seeing the ended grace period.
+        let now = server_common::now();
         let mut call = rpc::Call {
             tx: &mut tx,
             identity,

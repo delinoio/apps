@@ -522,3 +522,47 @@ async fn addon_call_time_prices_respect_product_ownership() {
         assert_eq!(attributed, price["id"].as_str().unwrap());
     }
 }
+
+/// A reporting request that read its timestamp before waiting for the state-transition lock must
+/// be validated against the time at which it actually holds the lock. Otherwise it could commit a
+/// metering job after the deleting tenant's final cancellation check already ran.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn event_waiting_for_the_state_lock_is_validated_after_reporting_grace_ends() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+    let tenant = &me["tenants"][0]["id"];
+    let svc = service(&f).await;
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT","valueAttribute":"","groupBy":[]})).await;
+    // Reporting grace ends two seconds from now.
+    sqlx::query("UPDATE tenants SET deleting_at=now()-make_interval(secs=>$1::double precision)+interval '2 seconds' WHERE id=$2::text::uuid")
+        .bind(f.config.reporting_grace_seconds as f64).bind(tenant.as_str().unwrap()).execute(&f.db).await.unwrap();
+    // The event occurred before deletion started and is still inside the lateness window when the
+    // request starts, so a timestamp from before the lock wait would accept it.
+    let occurred = (Utc::now() - chrono::Duration::seconds(f.config.usage_lateness_seconds)
+        + chrono::Duration::milliseconds(1500))
+    .to_rfc3339();
+    let mut holder = f.db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(41820003)")
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    // The request starts inside the grace period but only gets the lock after it has ended.
+    let release = async {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        holder.commit().await.unwrap();
+    };
+    let request = f.error("service","IngestEvent",json!({"requestKey":key(),"event":{"tenantId":tenant,"serviceId":svc["id"],"eventKey":"late","eventType":"request","occurredAt":occurred,"attributes":{}}}),"failed_precondition");
+    let ((), error) = tokio::join!(release, request);
+    let message = error["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("grace") || message.contains("lateness"),
+        "expected a reporting window rejection: {error}"
+    );
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM metering_events")
+        .fetch_one(&f.db)
+        .await
+        .unwrap();
+    assert_eq!(events, 0, "the late request must leave no accepted event");
+}

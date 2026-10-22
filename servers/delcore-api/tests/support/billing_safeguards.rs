@@ -298,6 +298,42 @@ async fn deleting_cancellation_waits_for_unfinished_metering_work() {
     mock.abort();
 }
 
+/// An already admitted reporting request holds the state-transition lock and commits a new
+/// metering job. The final cancellation check must wait for it and then see the job, instead of
+/// reading a snapshot from before the commit and canceling the subscription.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn deleting_cancellation_check_waits_for_an_admitted_reporting_transaction() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let (worker, seen, mock) = mock_worker(&f).await;
+    let (tenant, _cancel) = deleting_tenant(&f, "Fenced cancel").await;
+    let worker = std::sync::Arc::new(worker);
+    let mut admitted = f.db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(41820003)")
+        .execute(&mut *admitted)
+        .await
+        .unwrap();
+    let check = tokio::spawn({
+        let worker = worker.clone();
+        async move { worker.deleting_cancellation_waits(tenant).await.unwrap() }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert!(
+        !check.is_finished(),
+        "the final check must wait for the admitted reporting transaction"
+    );
+    sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2,'metering',$1::text,'{}','pending',0,'',now(),now(),now())")
+        .bind(uuid::Uuid::now_v7()).bind(tenant).execute(&mut *admitted).await.unwrap();
+    admitted.commit().await.unwrap();
+    assert!(
+        check.await.unwrap(),
+        "the check must observe the job committed by the admitted request"
+    );
+    assert_eq!(cancel_requests(&seen), 0);
+    mock.abort();
+}
+
 async fn tenant_other_unfinished(f: &Fixture) -> uuid::Uuid {
     let other = tenant(f, "Other tenant").await;
     metering_job(f, other, "failed", false).await
