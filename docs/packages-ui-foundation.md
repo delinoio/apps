@@ -52,7 +52,7 @@ Primitives do not log user input. Apps own structured business and failure event
 
 ## Build and Test
 
-Run `pnpm test` in `packages/ui` for type checks, interaction tests and CSS compilation checks. Run `pnpm test` in each affected app. CI validates the shared package in the existing tooling job and selects all app checks for shared package changes. Builds and jsdom tests do not establish native or browser acceptance.
+Run `pnpm test` in `packages/ui` for type checks, interaction tests and CSS compilation checks. Run `pnpm test` in each affected app. CI validates the shared package in the affected `shared-ui` job and selects all app checks for shared package changes. Builds and jsdom tests do not establish native or browser acceptance.
 
 ## Dependencies and Integrations
 
