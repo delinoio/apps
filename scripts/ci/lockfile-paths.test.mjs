@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { lockfilePaths } from "./lockfile-paths.mjs";
-import { select } from "./plan.mjs";
+import { select, selectChecks } from "./plan.mjs";
 
 const manager = `---
 lockfileVersion: '9.0'
@@ -100,7 +100,11 @@ test("single-document lockfiles and multiple changed importers retain ownership"
       baseLockfile: before,
       headLockfile: both,
     }),
-    globalSelection,
+    select([
+      "apps/delino-docs/package.json",
+      "apps/delino-site/package.json",
+      "go.mod",
+    ]),
   );
 });
 
@@ -110,7 +114,7 @@ test("shared importer edits preserve shared consumers", () => {
       baseLockfile: lockfile("packages/ui"),
       headLockfile: lockfile("packages/ui", "19.2.9"),
     }),
-    globalSelection,
+    select(["packages/ui/package.json"]),
   );
 });
 
@@ -195,7 +199,10 @@ test("planner CLI compares committed revisions rather than worktree lockfiles", 
     event: "ci_selection",
     base,
     head,
-    selected: select(["apps/delino-docs/package.json"]),
+    selected: {
+      ...select(["apps/delino-docs/package.json"]),
+      ...selectChecks(["apps/delino-docs/package.json"]),
+    },
   });
   assert.match(readFileSync(output, "utf8"), /^delcore_api=false$/mu);
   assert.match(readFileSync(output, "utf8"), /^delino_docs=true$/mu);
