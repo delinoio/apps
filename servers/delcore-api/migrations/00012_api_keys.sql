@@ -46,3 +46,15 @@ CREATE TRIGGER api_keys_immutable BEFORE UPDATE ON api_keys
  FOR EACH ROW EXECUTE FUNCTION api_key_immutable();
 CREATE TRIGGER api_key_grants_immutable BEFORE UPDATE ON api_key_grants
  FOR EACH ROW EXECUTE FUNCTION api_key_immutable();
+
+-- A grant can leave only together with its key. The cascade of a key deletion
+-- runs after the key row is gone, so a surviving parent means a direct delete.
+CREATE FUNCTION api_key_grant_delete_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF EXISTS(SELECT 1 FROM api_keys WHERE id=OLD.key_id) THEN
+  RAISE EXCEPTION 'API key grants are immutable';
+ END IF;
+ RETURN OLD;
+END $$;
+CREATE TRIGGER api_key_grants_delete_guard BEFORE DELETE ON api_key_grants
+ FOR EACH ROW EXECUTE FUNCTION api_key_grant_delete_guard();

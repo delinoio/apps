@@ -996,6 +996,44 @@ async fn tenant_deletion_removes_keys_and_blocks_use_while_deleting() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn grants_cannot_be_deleted_apart_from_their_key() {
+    let w = world().await;
+    let (id, _) = w
+        .issue("alice", PERSONAL, json!([grant(&w.svc, &["execute"])]))
+        .await;
+    for sql in [
+        "DELETE FROM api_key_grants WHERE key_id=$1::text::uuid",
+        "UPDATE api_key_grants SET capabilities=ARRAY['other'] WHERE key_id=$1::text::uuid",
+    ] {
+        assert!(
+            sqlx::query(sql).bind(&id).execute(&w.f.db).await.is_err(),
+            "{sql}"
+        );
+    }
+    let grants: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM api_key_grants WHERE key_id=$1::text::uuid")
+            .bind(&id)
+            .fetch_one(&w.f.db)
+            .await
+            .unwrap();
+    assert_eq!(grants, 1);
+    // Deleting the key still removes its grants through the cascade.
+    sqlx::query("DELETE FROM api_keys WHERE id=$1::text::uuid")
+        .bind(&id)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    let grants: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM api_key_grants WHERE key_id=$1::text::uuid")
+            .bind(&id)
+            .fetch_one(&w.f.db)
+            .await
+            .unwrap();
+    assert_eq!(grants, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn active_key_count_per_owner_is_bounded() {
     let w = world().await;
     for _ in 0..100 {
