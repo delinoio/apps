@@ -348,3 +348,307 @@ async fn catalog_prices_reuse_versions_and_keep_tenant_selections() {
         assert_eq!(selected, expected.as_str().unwrap());
     }
 }
+
+/// Admission rows that bound meter cardinality, in a comparable form.
+#[derive(Debug, PartialEq)]
+struct Admission {
+    periods: Vec<i64>,
+    groups: Vec<(String, i64, i64)>,
+    values: Vec<(String, String, String, i64)>,
+}
+async fn admission(f: &Fixture) -> Admission {
+    Admission {
+        periods: sqlx::query_scalar("SELECT groups FROM metering_admission_periods ORDER BY 1")
+            .fetch_all(&f.db)
+            .await
+            .unwrap(),
+        groups: sqlx::query_as("SELECT encode(group_digest,'hex'),events,distinct_values FROM metering_admission_groups ORDER BY 1")
+            .fetch_all(&f.db)
+            .await
+            .unwrap(),
+        values: sqlx::query_as("SELECT encode(group_digest,'hex'),value_kind,value,events FROM metering_admission_values ORDER BY 1,2,3")
+            .fetch_all(&f.db)
+            .await
+            .unwrap(),
+    }
+}
+/// Revisions, contributions and queued jobs that a rejected correction must not touch.
+async fn durable(f: &Fixture) -> (Vec<(String, i32)>, i64, i64) {
+    (
+        sqlx::query_as("SELECT event_key,latest_revision FROM metering_events ORDER BY 1")
+            .fetch_all(&f.db)
+            .await
+            .unwrap(),
+        sqlx::query_scalar("SELECT count(*) FROM metering_contributions")
+            .fetch_one(&f.db)
+            .await
+            .unwrap(),
+        sqlx::query_scalar("SELECT count(*) FROM jobs WHERE kind='metering'")
+            .fetch_one(&f.db)
+            .await
+            .unwrap(),
+    )
+}
+fn domain_attrs(
+    region: &str,
+    latency: &str,
+    user: &str,
+    bytes: &str,
+) -> std::collections::BTreeMap<String, delcore_api::metering::Value> {
+    use delcore_api::metering::Value;
+    [
+        ("region", Value::string(region)),
+        ("bytes", Value::number(bytes).unwrap()),
+        ("latency", Value::number(latency).unwrap()),
+        ("user", Value::string(user)),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect()
+}
+/// Lowered bounds are applied through the library API because the fixture server keeps
+/// the configured limits; the stored state is exactly what an earlier, larger bound left.
+struct Lowered<'a> {
+    f: &'a Fixture,
+    tenant: String,
+    service: String,
+    policy: delcore_api::events::Policy,
+    occurred: chrono::DateTime<Utc>,
+}
+impl Lowered<'_> {
+    async fn correct(
+        &self,
+        key: &str,
+        expected: i32,
+        kind: delcore_api::metering::RevisionKind,
+        attributes: std::collections::BTreeMap<String, delcore_api::metering::Value>,
+    ) -> Result<delcore_api::events::Accepted, delcore_api::Fault> {
+        let mut tx = delcore_api::postgres::begin(&self.f.db).await.unwrap();
+        let result = delcore_api::events::correct(
+            &mut tx,
+            Utc::now(),
+            &self.policy,
+            delcore_api::events::Correction {
+                tenant_id: self.tenant.clone(),
+                service_id: self.service.clone(),
+                key: key.into(),
+                expected_revision: expected,
+                kind,
+                event_type: if attributes.is_empty() {
+                    String::new()
+                } else {
+                    "request".into()
+                },
+                attributes,
+            },
+        )
+        .await;
+        // Roll back explicitly so a rejection releases its locks before the next call.
+        if result.is_ok() {
+            tx.commit().await.unwrap();
+        } else {
+            tx.rollback().await.unwrap();
+        }
+        result
+    }
+    async fn ingest(
+        &self,
+        key: &str,
+        attributes: std::collections::BTreeMap<String, delcore_api::metering::Value>,
+    ) -> Result<delcore_api::events::Accepted, delcore_api::Fault> {
+        let mut tx = delcore_api::postgres::begin(&self.f.db).await.unwrap();
+        let result = delcore_api::events::ingest(
+            &mut tx,
+            Utc::now(),
+            &self.policy,
+            delcore_api::events::Input {
+                tenant_id: self.tenant.clone(),
+                service_id: self.service.clone(),
+                key: key.into(),
+                event_type: "request".into(),
+                occurred_at: self.occurred,
+                attributes,
+            },
+        )
+        .await;
+        // Roll back explicitly so a rejection releases its locks before the next call.
+        if result.is_ok() {
+            tx.commit().await.unwrap();
+        } else {
+            tx.rollback().await.unwrap();
+        }
+        result
+    }
+}
+const CARDINALITY_EXCEEDED: i32 = 10;
+const STALE_REVISION: i32 = 7;
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn corrections_keep_existing_admission_identities_below_lowered_bounds() {
+    use delcore_api::metering::RevisionKind::{Cancel, Replace};
+    // Each case varies one identity: the group for COUNT, or the retained typed value
+    // inside one group for UNIQUE_COUNT, MIN and MAX.
+    for (aggregation, attribute, by_group) in [
+        ("COUNT", "", true),
+        ("UNIQUE_COUNT", "user", false),
+        ("MIN", "latency", false),
+        ("MAX", "latency", false),
+    ] {
+        let f = Fixture::setup().await;
+        plan(&f, json!([])).await;
+        let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+        let tenant = &me["tenants"][0]["id"];
+        let svc = service(&f).await;
+        put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"m","name":"m","eventType":"request","aggregation":format!("METER_AGGREGATION_{aggregation}"),"valueAttribute":attribute,"groupBy":["region"]})).await;
+        // Identity `n` is group r<n> for COUNT, otherwise value n inside group "eu".
+        let identity = |n: u32, bytes: &str| {
+            let (region, latency, user) = if by_group {
+                (format!("r{n}"), "1".to_owned(), "u1".to_owned())
+            } else {
+                ("eu".to_owned(), n.to_string(), format!("u{n}"))
+            };
+            domain_attrs(&region, &latency, &user, bytes)
+        };
+        let rpc_identity = |n: u32| {
+            let (region, latency, user) = if by_group {
+                (format!("r{n}"), "1".to_owned(), "u1".to_owned())
+            } else {
+                ("eu".to_owned(), n.to_string(), format!("u{n}"))
+            };
+            attrs(&region, "0", &latency, &user)
+        };
+        let occurred = Utc::now();
+        for n in 1..=3 {
+            ingest(
+                &f,
+                tenant,
+                &svc["id"],
+                &format!("k{n}"),
+                rpc_identity(n),
+                &occurred.to_rfc3339(),
+            )
+            .await;
+        }
+        let state = Lowered {
+            f: &f,
+            tenant: tenant.as_str().unwrap().into(),
+            service: svc["id"].as_str().unwrap().into(),
+            policy: delcore_api::events::Policy {
+                lateness: chrono::Duration::seconds(f.config.usage_lateness_seconds),
+                reporting_grace: chrono::Duration::seconds(f.config.reporting_grace_seconds),
+                limits: delcore_api::metering::Limits {
+                    max_groups_per_meter: 1,
+                    max_distinct_values_per_group: 1,
+                },
+            },
+            occurred,
+        };
+        let initial = admission(&f).await;
+        let (group_rows, value_rows) = if by_group { (3, 0) } else { (1, 3) };
+        assert_eq!(initial.groups.len(), group_rows, "{aggregation}");
+        assert_eq!(initial.values.len(), value_rows, "{aggregation}");
+        assert_eq!(initial.periods, vec![group_rows as i64], "{aggregation}");
+        if by_group {
+            assert!(initial.groups.iter().all(|g| g.1 == 1 && g.2 == 0));
+        } else {
+            assert_eq!((initial.groups[0].1, initial.groups[0].2), (3, 3));
+            assert!(initial.values.iter().all(|v| v.3 == 1));
+        }
+
+        // The sole reference of an over-bound identity can be replaced while keeping it.
+        let moved = state
+            .correct("k1", 1, Replace, identity(1, "7"))
+            .await
+            .unwrap();
+        assert_eq!(moved.revision, 2, "{aggregation}");
+        assert_eq!(admission(&f).await, initial, "{aggregation}");
+        let replay = state
+            .correct("k1", 1, Replace, identity(1, "7"))
+            .await
+            .unwrap();
+        assert_eq!(replay.revision, 2, "{aggregation}");
+        assert_eq!(admission(&f).await, initial, "{aggregation}");
+        let stale = state
+            .correct("k1", 1, Replace, identity(1, "8"))
+            .await
+            .unwrap_err();
+        assert_eq!(stale.reason, STALE_REVISION, "{aggregation}");
+        f.process_metering().await;
+        assert_eq!(
+            aggregate(&f, tenant, "m").await.len(),
+            group_rows,
+            "{aggregation}"
+        );
+
+        // A genuinely new group or value, even in a retained group, is still bounded.
+        let before = (admission(&f).await, durable(&f).await);
+        let rejected = state
+            .correct("k1", 2, Replace, identity(4, "7"))
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.reason, CARDINALITY_EXCEEDED, "{aggregation}");
+        assert_eq!((admission(&f).await, durable(&f).await), before);
+        let rejected = state.ingest("k5", identity(5, "0")).await.unwrap_err();
+        assert_eq!(rejected.reason, CARDINALITY_EXCEEDED, "{aggregation}");
+        assert_eq!((admission(&f).await, durable(&f).await), before);
+
+        // Another event may join an existing identity, which then has two references.
+        state.ingest("k4", identity(2, "0")).await.unwrap();
+        let shared = admission(&f).await;
+        assert_eq!(shared.groups.iter().map(|g| g.1).sum::<i64>(), 4);
+        assert_eq!(shared.periods, initial.periods);
+        state
+            .correct("k4", 1, Replace, identity(2, "9"))
+            .await
+            .unwrap();
+        assert_eq!(admission(&f).await, shared, "{aggregation}");
+        state
+            .correct("k4", 2, Cancel, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(admission(&f).await, initial, "{aggregation}");
+
+        // Removing identities releases capacity, so the sole identity can move.
+        for key in ["k2", "k3"] {
+            state
+                .correct(key, 1, Cancel, Default::default())
+                .await
+                .unwrap();
+        }
+        let single = admission(&f).await;
+        assert_eq!(single.periods, vec![1], "{aggregation}");
+        assert_eq!(single.groups.len(), 1, "{aggregation}");
+        assert_eq!(single.values.len(), value_rows.min(1), "{aggregation}");
+        state
+            .correct("k1", 2, Replace, identity(4, "7"))
+            .await
+            .unwrap();
+        let moved = admission(&f).await;
+        assert_eq!(moved.periods, vec![1], "{aggregation}");
+        assert_eq!(moved.groups.len(), 1, "{aggregation}");
+        assert_eq!(moved.values.len(), value_rows.min(1), "{aggregation}");
+        assert_ne!(moved, single, "the moved identity must replace the old one");
+        state
+            .correct("k1", 3, Cancel, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            admission(&f).await,
+            Admission {
+                periods: vec![0],
+                groups: vec![],
+                values: vec![]
+            },
+            "{aggregation}"
+        );
+        // Reintroduction is checked against the current bound.
+        state.ingest("k6", identity(6, "0")).await.unwrap();
+        let rejected = state.ingest("k7", identity(7, "0")).await.unwrap_err();
+        assert_eq!(rejected.reason, CARDINALITY_EXCEEDED, "{aggregation}");
+        f.process_metering().await;
+        // The worker's empty-queue probe leaves its rollback pending until the pool reuses
+        // that connection; run a query so the fixture schema can be dropped.
+        let _ = admission(&f).await;
+    }
+}

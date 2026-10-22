@@ -457,8 +457,50 @@ pub(super) async fn load_contributions(
         .collect()
 }
 
+/// How a removed contribution relates to the replacement of the same correction.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Retention {
+    /// The group and every retained value are shared; admission rows stay as committed.
+    Identity,
+    /// Only the group is shared; the retained value moves to another typed value.
+    Group,
+}
+
+/// Pair removed and added contributions of one meter that keep an admission identity.
+/// Returns, per removed index, the paired added index and what is shared. Unpaired
+/// contributions are released and acquired in full.
+fn pair_retained(
+    removed: &[Contribution],
+    added: &[Contribution],
+) -> Vec<Option<(usize, Retention)>> {
+    let mut used = vec![false; added.len()];
+    let mut pairs = vec![None; removed.len()];
+    for retention in [Retention::Identity, Retention::Group] {
+        for (i, r) in removed.iter().enumerate() {
+            if pairs[i].is_some() {
+                continue;
+            }
+            let found = added.iter().enumerate().position(|(j, a)| {
+                !used[j]
+                    && a.meter_id == r.meter_id
+                    && a.group_key == r.group_key
+                    && (retention == Retention::Group
+                        || !metering::retains_values(r.aggregation)
+                        || (a.value.kind == r.value.kind && a.value.text == r.value.text))
+            });
+            if let Some(j) = found {
+                used[j] = true;
+                pairs[i] = Some((j, retention));
+            }
+        }
+    }
+    pairs
+}
+
 // Lock period rows in a stable order. Account for accepted, unprocessed revisions,
-// releasing old groups first so replacements need only destination capacity.
+// releasing removed identities first so replacements need only destination capacity.
+// Identities that the previous and replacement revisions share keep their rows and
+// counts, so a bound lowered below existing usage never rejects a retained identity.
 async fn admit(
     tx: &mut PgConnection,
     tenant: &str,
@@ -478,11 +520,28 @@ async fn admit(
         let n:i64 = sqlx::query_scalar("SELECT groups FROM metering_admission_periods WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3 FOR UPDATE").bind(tenant).bind(id).bind(period).fetch_one(&mut *tx).await?;
         groups.insert(id.clone(), n);
     }
-    for c in removed {
-        release(tx, tenant, period, c, &mut groups).await?;
+    let pairs = pair_retained(removed, added);
+    let mut retained = vec![None; added.len()];
+    for (j, retention) in pairs.iter().flatten() {
+        retained[*j] = Some(*retention);
     }
-    for c in added {
-        acquire(tx, tenant, period, c, &mut groups, limits).await?;
+    for (i, c) in removed.iter().enumerate() {
+        match pairs[i] {
+            Some((_, Retention::Identity)) => {}
+            Some((_, Retention::Group)) => {
+                release(tx, tenant, period, c, &mut groups, true).await?
+            }
+            None => release(tx, tenant, period, c, &mut groups, false).await?,
+        }
+    }
+    for (j, c) in added.iter().enumerate() {
+        match retained[j] {
+            Some(Retention::Identity) => {}
+            Some(Retention::Group) => {
+                acquire(tx, tenant, period, c, &mut groups, limits, true).await?
+            }
+            None => acquire(tx, tenant, period, c, &mut groups, limits, false).await?,
+        }
     }
     for id in ids {
         sqlx::query("UPDATE metering_admission_periods SET groups=$4 WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3").bind(tenant).bind(&id).bind(period).bind(groups[&id]).execute(&mut *tx).await?;
@@ -496,6 +555,7 @@ async fn release(
     period: DateTime<Utc>,
     c: &Contribution,
     groups: &mut BTreeMap<String, i64>,
+    keep_group: bool,
 ) -> Result<()> {
     let digest = group_digest(&c.group_key);
     let row = sqlx::query("SELECT events,distinct_values FROM metering_admission_groups WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3 AND group_digest=$4 FOR UPDATE").bind(tenant).bind(&c.meter_id).bind(period).bind(&digest).fetch_one(&mut *tx).await?;
@@ -519,7 +579,10 @@ async fn release(
             .execute(&mut *tx)
             .await?;
     }
-    if events == 1 {
+    if keep_group {
+        // The replacement keeps this group, so only its distinct-value count changes.
+        sqlx::query("UPDATE metering_admission_groups SET distinct_values=$5 WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3 AND group_digest=$4").bind(tenant).bind(&c.meter_id).bind(period).bind(&digest).bind(distinct).execute(&mut *tx).await?;
+    } else if events == 1 {
         sqlx::query("DELETE FROM metering_admission_groups WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3 AND group_digest=$4").bind(tenant).bind(&c.meter_id).bind(period).bind(&digest).execute(&mut *tx).await?;
         *groups.get_mut(&c.meter_id).unwrap() -= 1;
     } else {
@@ -535,11 +598,17 @@ async fn acquire(
     c: &Contribution,
     groups: &mut BTreeMap<String, i64>,
     limits: &metering::Limits,
+    existing_group: bool,
 ) -> Result<()> {
     let digest = group_digest(&c.group_key);
     let current:Option<i64> = sqlx::query_scalar("SELECT distinct_values FROM metering_admission_groups WHERE tenant_id=$1::text::uuid AND meter_id=$2::text::uuid AND period_start=$3 AND group_digest=$4 FOR UPDATE").bind(tenant).bind(&c.meter_id).bind(period).bind(&digest).fetch_optional(&mut *tx).await?;
     let distinct = current.unwrap_or(0);
-    if current.is_none() {
+    if existing_group {
+        // A correction keeps the group; release left it in place with its event count.
+        if current.is_none() {
+            return Err(permanent("retained admission group is missing"));
+        }
+    } else if current.is_none() {
         if limits.max_groups_per_meter > 0 && groups[&c.meter_id] + 1 > limits.max_groups_per_meter
         {
             return Err(reject_limit(
@@ -581,6 +650,50 @@ async fn acquire(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn contribution(
+        meter: &str,
+        aggregation: metering::Aggregation,
+        group: &str,
+        value: &str,
+    ) -> Contribution {
+        Contribution {
+            meter_id: meter.into(),
+            meter_key: meter.into(),
+            aggregation,
+            group_key: group.into(),
+            group_values: BTreeMap::new(),
+            value: metering::Value::string(value),
+        }
+    }
+
+    #[test]
+    fn corrections_pair_shared_admission_identities() {
+        use metering::Aggregation::{Count, UniqueCount};
+        let old = [
+            contribution("count", Count, "a", ""),
+            contribution("users", UniqueCount, "a", "u1"),
+            contribution("moved", Count, "a", ""),
+        ];
+        let new = [
+            contribution("users", UniqueCount, "a", "u2"),
+            contribution("count", Count, "a", ""),
+            contribution("moved", Count, "b", ""),
+        ];
+        assert_eq!(
+            pair_retained(&old, &new),
+            vec![
+                Some((1, Retention::Identity)),
+                Some((0, Retention::Group)),
+                None
+            ]
+        );
+        assert_eq!(
+            pair_retained(&old[1..2], &[contribution("users", UniqueCount, "a", "u1")]),
+            vec![Some((0, Retention::Identity))]
+        );
+        assert_eq!(pair_retained(&old, &[]), vec![None; 3]);
+    }
 
     #[test]
     fn event_keys_use_byte_bounds() {
