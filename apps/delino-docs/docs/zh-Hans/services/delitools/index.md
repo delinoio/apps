@@ -175,7 +175,7 @@ DeliTools 仅接受提取模型的结构化输出所支持的那部分 JSON Sche
 ### 管理密钥
 
 - `CreateKey`：发送 `tenantId`、`kind`（`KEY_KIND_PERSONAL` 或 `KEY_KIND_SERVICE`）、`capabilities` 和可选的 `expiresAt`。
-- `ListKeys`：列出你有权管理的租户密钥，可按 `kind` 筛选，并使用 `afterId` 和 `pageSize` 分页。`pageSize` 在省略或为 0 时默认为 50。最大值为 100，更大的值会返回输入无效错误。你永远无法列出其他用户的个人密钥。使用 `KEY_KIND_PERSONAL` 会返回你自己的个人密钥。使用 `KEY_KIND_SERVICE` 会返回租户的服务密钥，但仅限所有者或管理员。省略 `kind` 时会返回你自己的个人密钥，如果你是所有者或管理员，还会返回租户的服务密钥。
+- `ListKeys`：列出你有权管理的租户密钥，可按 `kind` 筛选，并使用 `afterId` 和 `pageSize` 分页。`pageSize` 在省略或为 0 时默认为 50。最大值为 100，更大的值会返回输入无效错误。你永远无法列出其他用户的个人密钥。使用 `KEY_KIND_PERSONAL` 会返回你自己的个人密钥。使用 `KEY_KIND_SERVICE` 会返回租户的服务密钥，但仅限所有者或管理员。省略 `kind` 时会返回你自己的个人密钥，如果你是所有者或管理员，还会返回租户的服务密钥。一次响应包含一页。如果 `nextAfterId` 不为空，说明还有更多密钥：将其值作为 `afterId` 放入下一个请求，并重复，直到 `nextAfterId` 为空。`nextAfterId` 为空表示你已获得完整列表。
 - `RevokeKey`：发送 `tenantId` 和 `keyId`。
 
 ```sh
