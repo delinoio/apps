@@ -23,3 +23,5 @@
 - [DevBase protocol](../docs/protos-devbase-v1-contract.md)
 - [DevBase server](../docs/servers-devbase-api-contract.md)
 - [Git Tracker protocol](../docs/protos-git-tracker-v1-contract.md)
+- [DeliTools protocol](../docs/protos-delitools-v1-contract.md)
+- [DeliTools server](../docs/servers-delitools-api-contract.md)

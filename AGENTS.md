@@ -56,7 +56,7 @@
 
 ## Monorepo Structure Map
 
-- `servers/`: Delcore, DevBase and Git Tracker services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
+- `servers/`: Delcore, DevBase, Git Tracker and DeliTools services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
 - `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
 - `docs/`: Source of truth for project contracts and repository documentation.
@@ -65,9 +65,11 @@
 - `apps/delino-docs`: Public documentation app for Delino services.
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
+- `servers/delitools-api`: DeliTools translation and extraction API; its protocol is `protos/delitools/v1`.
 - `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
 - `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
+- `protos/delitools/v1`: DeliTools schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.
 - `scripts/`: Shared build and development support.
 - `scripts/localization/`: Local ChatGPT translation generation and offline validation for Delino Site and Delino Docs; follow its scoped instructions.
