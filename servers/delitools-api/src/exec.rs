@@ -668,19 +668,9 @@ impl Executor {
             .admission
             .admit(principal.tenant_id, &settings, &platform.metrics)?;
 
-        // Only an operator-allowlisted model with a synchronized public price can execute.
-        let price = db::latest_price(&platform.store.pool, &plan.model, store::now())
-            .await?
-            .ok_or_else(|| {
-                platform.metrics.failure(Failure::MissingPrice);
-                tracing::warn!(
-                    category = "price_unavailable",
-                    request_id = %request_id,
-                    "new execution rejected: no catalog price"
-                );
-                Fault::price_unavailable()
-            })?;
-
+        // Only an operator-allowlisted model with a synchronized public price can execute. The
+        // price is selected and frozen in the transaction that persists the request start, with
+        // one start time for both, so a catalog update racing the start cannot split them.
         let claim = plan.key.as_deref().map(|key| IdempotencyClaim {
             key,
             input_hash: plan.input_hash,
@@ -691,18 +681,30 @@ impl Executor {
                 id: request_id,
                 principal: &principal,
                 model: &plan.model,
-                price: &price,
             },
             claim.as_ref(),
             store::now(),
         )
         .await?;
-        if let Start::Duplicate(existing) = start {
-            // The call lost the atomic claim and did no work, so it must not consume the tenant's
-            // request-rate budget; a burst of racing duplicates could otherwise exhaust it.
-            permit.refund_rate();
-            return Err(duplicate_fault(&existing, &plan.input_hash));
-        }
+        let price = match start {
+            Start::Started(price) => price,
+            Start::NoPrice => {
+                platform.metrics.failure(Failure::MissingPrice);
+                tracing::warn!(
+                    category = "price_unavailable",
+                    request_id = %request_id,
+                    "new execution rejected: no catalog price"
+                );
+                return Err(Fault::price_unavailable());
+            }
+            Start::Duplicate(existing) => {
+                // The call lost the atomic claim and did no work, so it must not consume the
+                // tenant's request-rate budget; a burst of racing duplicates could otherwise
+                // exhaust it.
+                permit.refund_rate();
+                return Err(duplicate_fault(&existing, &plan.input_hash));
+            }
+        };
 
         let (tx, rx) = watch::channel(false);
         let mut guard = CancelOnDrop { tx, armed: true };

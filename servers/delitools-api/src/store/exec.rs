@@ -76,19 +76,30 @@ fn snapshot_from_row(row: &PgRow) -> std::result::Result<PriceSnapshot, sqlx::Er
 
 const PRICE_COLUMNS: &str = "id,model,provider_route,effective_at,input_usd_per_token::text AS input,output_usd_per_token::text AS output,cache_read_usd_per_token::text AS cache_read,cache_write_usd_per_token::text AS cache_write";
 
-/// The newest price version of a model effective at `now`. This is the snapshot a request freezes
-/// at its initial start.
-pub async fn latest_price(
-    pool: &PgPool,
+/// Serializes the writers of one model's price versions against the requests that freeze one.
+/// Price synchronization takes it exclusively and a request start takes it shared, so a new
+/// version is either committed before a request selects its price or becomes effective after the
+/// request's start time.
+const PRICE_LOCK: &str = "pg_advisory_xact_lock(hashtext($1))";
+const PRICE_LOCK_SHARED: &str = "pg_advisory_xact_lock_shared(hashtext($1))";
+
+/// The newest price version of a model effective at `now`, read inside the transaction of the
+/// request start (after the shared price lock), so the snapshot and the persisted start time agree.
+async fn latest_price_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     model: &str,
     now: DateTime<Utc>,
 ) -> Result<Option<PriceSnapshot>> {
+    sqlx::query(&format!("SELECT {PRICE_LOCK_SHARED}"))
+        .bind(model)
+        .execute(&mut **tx)
+        .await?;
     let row = sqlx::query(&format!(
         "SELECT {PRICE_COLUMNS} FROM catalog_prices WHERE model=$1 AND effective_at<=$2 ORDER BY effective_at DESC, synced_at DESC LIMIT 1"
     ))
     .bind(model)
     .bind(now)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **tx)
     .await?;
     Ok(row.as_ref().map(snapshot_from_row).transpose()?)
 }
@@ -110,21 +121,25 @@ fn same_price(snapshot: &PriceSnapshot, route: &str, price: &CatalogPrice) -> bo
 }
 
 /// Record the synchronized public price of one model route. A changed price becomes a new version
-/// effective at `now`; requests that already started keep the snapshot they froze.
+/// effective when it is written; requests that already started keep the snapshot they froze.
 pub async fn record_price(
     pool: &PgPool,
     model: &str,
     route: &str,
     price: &CatalogPrice,
     revision: &str,
-    now: DateTime<Utc>,
 ) -> Result<PriceWrite> {
     let mut tx = pool.begin().await?;
-    // Serialize concurrent writers of one model without a table lock.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+    // Serialize concurrent writers of one model, and requests that freeze its price, without a
+    // table lock.
+    sqlx::query(&format!("SELECT {PRICE_LOCK}"))
         .bind(model)
         .execute(&mut *tx)
         .await?;
+    // Read the clock only after the lock is held. A request that started earlier was committed
+    // first (or is blocked behind this transaction with an earlier start time), so the effective
+    // time of a new version never precedes the start time of a request that did not see it.
+    let now = super::now();
     let latest = sqlx::query(&format!(
         "SELECT {PRICE_COLUMNS} FROM catalog_prices WHERE model=$1 ORDER BY effective_at DESC, synced_at DESC LIMIT 1"
     ))
@@ -167,7 +182,6 @@ pub struct NewRequest<'a> {
     pub id: Uuid,
     pub principal: &'a ExecutionPrincipal,
     pub model: &'a str,
-    pub price: &'a PriceSnapshot,
 }
 
 pub struct IdempotencyClaim<'a> {
@@ -213,13 +227,18 @@ pub async fn peek_duplicate(
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Start {
-    Started,
+    /// The request was created with this price version frozen.
+    Started(PriceSnapshot),
+    /// The model has no price effective at the start time; nothing was created or claimed.
+    NoPrice,
     Duplicate(Duplicate),
 }
 
-/// Create the request record, claiming the idempotency key in the same transaction. A concurrent
-/// or earlier request with the same tenant, method and key wins; a record older than the 30-day
-/// boundary is expired and replaced, so the key starts a fresh execution.
+/// Create the request record, claiming the idempotency key in the same transaction. The frozen
+/// price is the newest version effective at `now`, selected in this transaction and persisted with
+/// the same `now` as the request's start time. A concurrent or earlier request with the same
+/// tenant, method and key wins; a record older than the 30-day boundary is expired and replaced,
+/// so the key starts a fresh execution.
 pub async fn start_request(
     pool: &PgPool,
     request: &NewRequest<'_>,
@@ -229,6 +248,10 @@ pub async fn start_request(
     let principal = request.principal;
     let method = capability_db(principal.capability);
     let mut tx = pool.begin().await?;
+    let Some(price) = latest_price_in(&mut tx, request.model, now).await? else {
+        tx.rollback().await?;
+        return Ok(Start::NoPrice);
+    };
     if let Some(claim) = claim {
         let mut attempts = 0;
         loop {
@@ -291,13 +314,13 @@ pub async fn start_request(
         .bind(principal.credential.to_db())
         .bind(principal.api_key_id)
         .bind(principal.user_id)
-        .bind(request.price.id)
-        .bind(request.price.effective_at)
+        .bind(price.id)
+        .bind(price.effective_at)
         .bind(now)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Start::Started)
+    Ok(Start::Started(price))
 }
 
 /// Terminal (or interrupted) state of a request, mirrored onto its idempotency record.

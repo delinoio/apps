@@ -1178,6 +1178,136 @@ async fn catalog_synchronization_versions_prices_and_never_enables_models() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_request_freezes_the_price_effective_at_its_persisted_start_time() {
+    use delitools_api::{
+        gateway::CatalogPrice,
+        platform::{CredentialKind, ExecutionPrincipal},
+        store::exec::{NewRequest, Start, record_price, start_request},
+    };
+    let env = Env::start(&[], false).await;
+    let principal = ExecutionPrincipal {
+        tenant_id: env.tenant,
+        capability: delino_protocol::delitools::v1::Capability::CAPABILITY_TRANSLATOR,
+        credential: CredentialKind::ServiceKey,
+        api_key_id: None,
+        user_id: None,
+    };
+    // Price changes race request starts. Each request must freeze the version that was effective
+    // at the start time stored on the request, whatever the interleaving.
+    let mut tasks = tokio::task::JoinSet::new();
+    for round in 0..40_u32 {
+        let pool = env.fx.pool.clone();
+        tasks.spawn(async move {
+            let price = CatalogPrice {
+                input: format!("0.00001{round:02}"),
+                output: "0.00002".into(),
+                cache_read: None,
+                cache_write: None,
+                tiered: false,
+            };
+            record_price(&pool, TRANSLATION_MODEL, "anthropic", &price, "race")
+                .await
+                .unwrap();
+        });
+        for _ in 0..3 {
+            let pool = env.fx.pool.clone();
+            let principal = principal.clone();
+            tasks.spawn(async move {
+                let request = NewRequest {
+                    id: uuid::Uuid::now_v7(),
+                    principal: &principal,
+                    model: TRANSLATION_MODEL,
+                };
+                let started = start_request(&pool, &request, None, store::now())
+                    .await
+                    .unwrap();
+                assert!(matches!(started, Start::Started(_)));
+            });
+        }
+    }
+    while let Some(done) = tasks.join_next().await {
+        done.unwrap();
+    }
+    let mismatched: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM requests r WHERE r.price_id IS DISTINCT FROM (SELECT p.id FROM catalog_prices p WHERE p.model=r.model AND p.effective_at<=r.created_at ORDER BY p.effective_at DESC, p.synced_at DESC LIMIT 1)",
+    )
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        mismatched, 0,
+        "every request froze the price of its start time"
+    );
+    let (requests, versions): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM requests), (SELECT count(*) FROM catalog_prices WHERE model=$1)",
+    )
+    .bind(TRANSLATION_MODEL)
+    .fetch_one(&env.fx.pool)
+    .await
+    .unwrap();
+    assert_eq!(requests, 120, "before the waiting start below");
+    assert!(
+        versions > 10,
+        "the test really changed the price: {versions}"
+    );
+
+    // A request start waits for a price writer that holds the model lock and then keeps the
+    // version that was effective at its own start time, not the one committed meanwhile.
+    let mut writer = env.fx.pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(TRANSLATION_MODEL)
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let waiting = {
+        let pool = env.fx.pool.clone();
+        let principal = principal.clone();
+        tokio::spawn(async move {
+            let request = NewRequest {
+                id: uuid::Uuid::now_v7(),
+                principal: &principal,
+                model: TRANSLATION_MODEL,
+            };
+            start_request(&pool, &request, None, store::now()).await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !waiting.is_finished(),
+        "the start waits for the price writer instead of reading around it"
+    );
+    sqlx::query("INSERT INTO catalog_prices(id,model,provider_route,effective_at,input_usd_per_token,output_usd_per_token,synced_at,created_at) VALUES($1,$2,'anthropic',clock_timestamp(),0.5,0.5,now(),now())")
+        .bind(uuid::Uuid::now_v7())
+        .bind(TRANSLATION_MODEL)
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    writer.commit().await.unwrap();
+    let Start::Started(frozen) = waiting.await.unwrap().unwrap() else {
+        panic!("the request started");
+    };
+    assert_ne!(
+        frozen.input, "0.5",
+        "a version that became effective after the start time is not frozen"
+    );
+
+    // A model without any effective version creates nothing and claims nothing.
+    let none = NewRequest {
+        id: uuid::Uuid::now_v7(),
+        principal: &principal,
+        model: "unknown/model",
+    };
+    assert_eq!(
+        start_request(&env.fx.pool, &none, None, store::now())
+            .await
+            .unwrap(),
+        Start::NoPrice
+    );
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn pending_usage_stops_at_thirty_days_and_is_deleted_in_every_state() {
     let env = Env::start(&[], false).await;
     let key = env.service_key().await;

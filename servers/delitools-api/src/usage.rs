@@ -429,16 +429,7 @@ impl BackgroundTask for PriceSyncTask {
                     continue;
                 }
             };
-            match db::record_price(
-                pool,
-                model,
-                &route,
-                price,
-                &revision(&route, price),
-                store::now(),
-            )
-            .await
-            {
+            match db::record_price(pool, model, &route, price, &revision(&route, price)).await {
                 Ok(PriceWrite::NewVersion) => changed += 1,
                 Ok(PriceWrite::Refreshed) => refreshed += 1,
                 Err(_) => failed += 1,
