@@ -74,7 +74,6 @@
         "CARGO_TARGET_DIR"
       ],
       "dependsOn": ["//#server-build"],
-      "interruptible": true,
       "inputs": [
         "package.json",
         "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
@@ -110,7 +109,6 @@
         "CARGO_TARGET_DIR"
       ],
       "dependsOn": ["//#server-build"],
-      "interruptible": true,
       "inputs": [
         "package.json",
         "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
@@ -141,7 +139,6 @@
         "CARGO_TARGET_DIR"
       ],
       "dependsOn": ["//#server-build"],
-      "interruptible": true,
       "inputs": [
         "package.json",
         "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
@@ -184,8 +181,5 @@
     }
   },
   "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"],
-  "globalPassThroughEnv": ["PORTLESS", "PORTLESS_*"],
-  "futureFlags": {
-    "watchUsingTaskInputs": true
-  }
+  "globalPassThroughEnv": ["PORTLESS", "PORTLESS_*"]
 }

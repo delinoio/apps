@@ -425,7 +425,7 @@ test(
     assert.deepEqual(captured.args, [
       "exec",
       "turbo",
-      "watch",
+      "run",
       "dev",
       "--concurrency=20",
       "--ui=stream",
@@ -577,8 +577,7 @@ test("root, service-local and Portless Delcore development share the catalog-app
   );
   const listen = prepareApiEnvironment(Api.Delcore, {}).env.LISTEN;
   assert.equal(listen, "127.0.0.1:8080");
-  // The shared builder watches code and SQL, but catalog YAML edits still
-  // require an explicit API restart.
+  // Build inputs include code and SQL. Catalog edits apply at API startup.
   const builder = turbo.tasks["//#server-build"];
   assert.ok(builder.inputs.includes("servers/**/*.rs"));
   assert.ok(builder.inputs.includes("servers/**/*.sql"));
