@@ -20,7 +20,7 @@ Schema subset: object roots, nested object/array/string/number/integer/boolean/n
 
 Message semantics:
 
-- `TranslateTextArrayRequest`: `tenant_id` (UUID v7), required `output_language`, optional `input_language` (both BCP 47; identical explicit tags, compared case-insensitively, are invalid), `model` from the operator allowlist, a non-empty `texts` array without empty or whitespace-only items, and an optional `idempotency_key` of 1 to 256 visible ASCII characters. The response returns `texts` with the original order and length, or an error; never a partial array.
+- `TranslateTextArrayRequest`: `tenant_id` (UUID v7), required `output_language`, optional `input_language` (both BCP 47, ASCII and at most 64 bytes; identical explicit tags, compared case-insensitively, are invalid), `model` from the operator allowlist, a non-empty `texts` array without empty or whitespace-only items, and an optional `idempotency_key` of 1 to 256 visible ASCII characters. The response returns `texts` with the original order and length, or an error; never a partial array.
 - `ExtractDataFromTextRequest`: `tenant_id`, non-empty `text`, the `json_schema` text and an optional `idempotency_key`. The response `json_data` is the validated value as compact JSON with unchanged number spellings.
 - `AssociateGenerationRequest`: operator-only `attempt_id`, Gateway `generation_id` and a 3 to 1000 character `reason`; it carries no tokens, prices or fees.
 - `ErrorDetail.request_id` equals the response header. For the processing, already-processed and unknown-outcome reasons it is the ID of the existing request that holds the idempotency key; for every other error it is the ID of the current call.

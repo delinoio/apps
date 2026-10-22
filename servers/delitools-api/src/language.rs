@@ -5,6 +5,8 @@
 //! translate a well-formed tag. Tags compare case-insensitively, so `en-US` and `EN-us` are the
 //! same language for the identical-language rule.
 
+/// Longest accepted tag. RFC 5646 section 4.4.1 lets a protocol bound tag length provided it
+/// accepts at least 35 characters; 64 bytes is the documented DeliTools limit.
 const MAX_TAG_BYTES: usize = 64;
 
 /// RFC 5646 irregular grandfathered tags, which do not match the regular grammar.
@@ -147,6 +149,18 @@ mod tests {
         }
         assert_eq!(normalize("EN-us"), normalize("en-US"));
         assert_ne!(normalize("en"), normalize("en-US"));
+    }
+
+    #[test]
+    fn the_documented_length_limit_is_the_only_cap_on_a_well_formed_tag() {
+        // RFC 5646 requires at least 35 characters; DeliTools accepts up to 64 bytes.
+        let longest = format!("x{}", "-abcdefgh".repeat(7));
+        assert_eq!(longest.len(), MAX_TAG_BYTES);
+        assert!(normalize(&longest).is_some());
+        let too_long = format!("x{}", "-abcdefgh".repeat(8));
+        assert!(normalize(&too_long).is_none());
+        let thirty_five = "zh-cmn-Hans-CN-1901-u-ca-chinese";
+        assert!(thirty_five.len() <= 35 && normalize(thirty_five).is_some());
     }
 
     #[test]

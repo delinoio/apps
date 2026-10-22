@@ -228,7 +228,7 @@ Every response and error carries a server-issued UUID v7 request ID in `X-Delito
 
 ### Translator rules
 
-- `outputLanguage` is required. `outputLanguage` and, when present, `inputLanguage` must be well-formed BCP 47 tags (RFC 5646 syntax, including private-use and the irregular grandfathered tags; registry membership is not checked). Tags compare case-insensitively after validation, so `en-US` and `EN-us` are identical explicit languages and are rejected; `en` and `en-US` differ.
+- `outputLanguage` is required. `outputLanguage` and, when present, `inputLanguage` must be well-formed BCP 47 tags (RFC 5646 syntax, including private-use and the irregular grandfathered tags; registry membership is not checked). A tag must be ASCII and at most 64 bytes long (RFC 5646 section 4.4.1 allows a protocol to bound tag length when it accepts at least 35 characters); a longer tag is `INVALID_INPUT` even if it is otherwise well-formed. Tags compare case-insensitively after validation, so `en-US` and `EN-us` are identical explicit languages and are rejected; `en` and `en-US` differ.
 - `texts` must not be empty, must not exceed `maxTranslationItems` (`LIMIT`) and must not contain an empty or whitespace-only item. The summed UTF-8 length must not exceed `maxInputBytes` (`LIMIT`).
 - `model` must be in the operator allowlist `translationModels` (`INVALID_MODEL` otherwise, including an unknown, empty or merely cataloged model) and must have a synchronized price (`PRICE_UNAVAILABLE`).
 - Without `inputLanguage` the prompt omits the source language, so the model detects one language for the whole array. A detected language equal to the output language, and mixed-language arrays, are still processed by the model; the service never returns the source array unprocessed.
