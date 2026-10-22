@@ -153,7 +153,7 @@ An unsupported schema, because `note` is optional and `pattern` is not supported
 - Every success and every error contains a request ID, a UUID version 7. Include it when you ask for support. Success responses contain only the result and the request ID. They do not contain the model, token counts or the charge. See Billing to inspect usage.
 - DeliTools retries transient AI provider errors, up to a limit that the operator sets. It does not retry malformed output and never switches to another model on its own.
 - If you cancel the call or disconnect, DeliTools tries to cancel the AI call and stops further retries. Usage that already happened is still measured and billed.
-- The operator sets the limits for input size, translation item count, execution timeout, request rate per tenant and concurrent requests per tenant. These are deployment settings, not fixed product limits. A request over a limit returns a limit error.
+- The operator sets the limits for input size, translation item count, execution timeout, request rate per tenant and concurrent requests per tenant. These are deployment settings, not fixed product limits. A request over a limit returns a limit error. The exception is the execution timeout: a call that runs past it returns a timeout error (`ERROR_REASON_TIMEOUT`).
 
 ## Authentication and API keys
 
@@ -283,4 +283,4 @@ DeliTools does not promise zero data retention at any provider. It does not dete
 
 ## Limits
 
-The operator of the DeliTools API server sets the limits for input size, the number of items in a translation, the execution timeout, requests per minute per tenant, concurrent requests per tenant, the number of AI retries and the translation model allowlist. These are deployment settings and can change. They are not fixed product limits, and DeliTools makes no throughput or availability guarantee. A request that exceeds a limit returns `ERROR_REASON_LIMIT` or, for an invalid model, `ERROR_REASON_INVALID_MODEL`. Ask the operator of your deployment for its current values.
+The operator of the DeliTools API server sets the limits for input size, the number of items in a translation, the execution timeout, requests per minute per tenant, concurrent requests per tenant, the number of AI retries and the translation model allowlist. These are deployment settings and can change. They are not fixed product limits, and DeliTools makes no throughput or availability guarantee. A request that exceeds a limit returns `ERROR_REASON_LIMIT`, except that a call that runs past the execution timeout returns `ERROR_REASON_TIMEOUT`. For an invalid model, it returns `ERROR_REASON_INVALID_MODEL`. Ask the operator of your deployment for its current values.
