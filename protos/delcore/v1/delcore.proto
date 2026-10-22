@@ -928,7 +928,8 @@ message AuthorizeApiKeyResponse {
   bool allowed = 2;
   repeated BlockReason reasons = 3;
   FeatureAuthorization feature = 4;
-  // Attribution of the verified key. Empty when the secret is not valid.
+  // Attribution of the verified key. An invalid secret fails with an
+  // unauthenticated error instead, so attribution is never leaked.
   string key_id = 5;
   string tenant_id = 6;
   ApiKeyOwnerKind owner_kind = 7;

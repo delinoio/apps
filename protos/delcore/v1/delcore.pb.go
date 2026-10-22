@@ -8867,7 +8867,8 @@ type AuthorizeApiKeyResponse struct {
 	Allowed  bool                   `protobuf:"varint,2,opt,name=allowed,proto3" json:"allowed,omitempty"`
 	Reasons  []BlockReason          `protobuf:"varint,3,rep,packed,name=reasons,proto3,enum=delcore.v1.BlockReason" json:"reasons,omitempty"`
 	Feature  *FeatureAuthorization  `protobuf:"bytes,4,opt,name=feature,proto3" json:"feature,omitempty"`
-	// Attribution of the verified key. Empty when the secret is not valid.
+	// Attribution of the verified key. An invalid secret fails with an
+	// unauthenticated error instead, so attribution is never leaked.
 	KeyId         string          `protobuf:"bytes,5,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
 	TenantId      string          `protobuf:"bytes,6,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	OwnerKind     ApiKeyOwnerKind `protobuf:"varint,7,opt,name=owner_kind,json=ownerKind,proto3,enum=delcore.v1.ApiKeyOwnerKind" json:"owner_kind,omitempty"`

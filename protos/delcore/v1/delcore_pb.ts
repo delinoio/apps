@@ -3767,7 +3767,8 @@ export type AuthorizeApiKeyResponse = Message<"delcore.v1.AuthorizeApiKeyRespons
   feature?: FeatureAuthorization | undefined;
 
   /**
-   * Attribution of the verified key. Empty when the secret is not valid.
+   * Attribution of the verified key. An invalid secret fails with an
+   * unauthenticated error instead, so attribution is never leaked.
    *
    * @generated from field: string key_id = 5;
    */
