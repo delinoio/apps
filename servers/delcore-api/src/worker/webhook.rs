@@ -295,8 +295,28 @@ impl Worker {
                 .fetch_optional(&mut *conn)
                 .await?;
         if previous.is_some_and(|p| event.occurred_at <= p) {
-            if tenant.is_none() && v.status == "past_due" {
-                self.retain_subscription_failure(conn, &v.id, event).await?;
+            if v.status == "past_due" {
+                match &tenant {
+                    None => self.retain_subscription_failure(conn, &v.id, event).await?,
+                    Some(tenant) => {
+                        // A later informational status leaves this watermark newer than the
+                        // failure, which only a confirmed payment at or after it can resolve.
+                        let paid_since: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_transactions WHERE tenant_id=$1::text::uuid AND kind='subscription' AND created_at>=$2)")
+                            .bind(tenant)
+                            .bind(event.occurred_at)
+                            .fetch_one(&mut *conn)
+                            .await?;
+                        if !paid_since {
+                            sqlx::query(
+                                "UPDATE tenants SET renewal_failed=true WHERE id=$1::text::uuid",
+                            )
+                            .bind(tenant)
+                            .execute(&mut *conn)
+                            .await?;
+                            self.retain_subscription_failure(conn, &v.id, event).await?;
+                        }
+                    }
+                }
             }
             return Ok(());
         }

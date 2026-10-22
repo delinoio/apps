@@ -576,3 +576,52 @@ async fn reconciled_renewal_is_ordered_by_provider_billing_time() {
     assert_eq!(state["renewalFailed"], false, "{state}");
     assert_eq!(state["failure"], Value::Null, "{state}");
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn stale_past_due_after_a_later_active_status_still_fails_the_tenant() {
+    let s = scenario().await;
+    // The informational status is newer than the failure, so the failure is stale by the
+    // watermark, but no payment resolved it.
+    s.active("evt_active").await;
+    assert!(!s.flag().await);
+    s.past_due("evt_b").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(
+        state["failure"],
+        json!({"at":s.time.past_due().to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    assert_eq!(
+        state["subscription"],
+        json!({"at":s.time.active().to_rfc3339(),"state":"active"}),
+        "{state}"
+    );
+    assert_eq!(
+        s.authorize().await["reasons"],
+        json!(["BLOCK_REASON_RENEWAL"])
+    );
+    // An older renewal leaves the failure, a newer one recovers it.
+    s.pay_a("evt_a").await;
+    assert!(s.flag().await);
+    s.pay_c("evt_c").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+    assert_eq!(s.authorize().await["allowed"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn stale_past_due_after_a_newer_payment_does_not_fail_the_tenant() {
+    let s = scenario().await;
+    s.pay_c("evt_c").await;
+    assert!(!s.flag().await);
+    // The failure occurred before the confirmed renewal, which already resolved it.
+    s.past_due("evt_b").await;
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+    assert_eq!(s.authorize().await["allowed"], true);
+}
