@@ -419,7 +419,10 @@ impl Call<'_> {
         if plan == string(&t, "planId") && !added && !removed && !external.is_empty() {
             let old:Vec<String>=sqlx::query_scalar("SELECT p.external_price_id FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.kind=2 ORDER BY p.external_price_id").bind(uuid(tenant)?).fetch_all(&mut *self.tx).await?;
             external.sort();
-            local_refresh = old == external;
+            // Only a non-decreasing rank may refresh locally. A rank decrease keeps the provider
+            // subscription and must wait for the confirmed renewal through the paid
+            // `do_not_bill` job, even when the recurring price set is unchanged.
+            local_refresh = old == external && new_rank >= old_rank;
         }
         let key = format!("request:{}", string(q, "requestKey"));
         if (free && external.is_empty()) || local_refresh {
