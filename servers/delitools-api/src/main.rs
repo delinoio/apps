@@ -201,13 +201,8 @@ async fn run() -> anyhow::Result<()> {
         server_common::transport::serve(
             listener,
             app,
-            server_common::transport::Limits {
-                header: config.timeout(),
-                idle: Duration::from_secs(60),
-                write: config.timeout(),
-                // Sized for the longest live execution timeout, not the startup value.
-                shutdown: config.drain_ceiling(),
-            },
+            // Sized for the longest live execution timeout, not the startup value.
+            config.transport_limits(),
             shutdown,
         ),
     )

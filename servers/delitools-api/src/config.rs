@@ -163,6 +163,21 @@ impl Config {
     pub fn drain_ceiling(&self) -> Duration {
         self.timeout() + Duration::from_secs(u64::from(MAX_EXECUTION_TIMEOUT_SECONDS))
     }
+
+    /// Socket limits for the shared transport. While a handler runs, the connection keeps a
+    /// socket read pending without receiving bytes (to notice a disconnect), and the transport
+    /// applies the idle limit to that read as an unconditional timeout. The idle limit therefore
+    /// has to cover the longest request deadline, which is the live execution timeout plus the
+    /// dependency timeout; a shorter value would close the connection of a long execution that
+    /// an operator legitimately permitted. Each request stays bounded by its own deadline.
+    pub fn transport_limits(&self) -> server_common::transport::Limits {
+        server_common::transport::Limits {
+            header: self.timeout(),
+            idle: self.drain_ceiling(),
+            write: self.timeout(),
+            shutdown: self.drain_ceiling(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -268,6 +283,21 @@ mod tests {
         );
         settings.execution_timeout_seconds = MAX_EXECUTION_TIMEOUT_SECONDS + 1;
         assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn the_idle_read_limit_covers_the_longest_request_deadline() {
+        let config = load(&example()).unwrap();
+        let limits = config.transport_limits();
+        let longest_request =
+            config.timeout() + Duration::from_secs(u64::from(MAX_EXECUTION_TIMEOUT_SECONDS));
+        assert!(
+            limits.idle >= longest_request,
+            "a quiet socket read must outlive a request that runs to its deadline"
+        );
+        assert!(limits.shutdown >= longest_request);
+        assert_eq!(limits.header, config.timeout());
+        assert_eq!(limits.write, config.timeout());
     }
 
     #[test]
