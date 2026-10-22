@@ -33,13 +33,28 @@ impl Worker {
             if !active {
                 continue;
             }
+            // A retained paid period that starts at the month start moves the free period start
+            // to the cancellation instant. The tenant row and the grant follow the same period
+            // that billing-period resolution returns, so the grant is never keyed by the paid
+            // period.
+            let period = postgres::period::free_period(&mut tx, &tenant, now).await?;
+            if period.start != start {
+                sqlx::query("UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1::text::uuid AND period_start=$4 AND period_end=$5")
+                    .bind(&tenant)
+                    .bind(period.start)
+                    .bind(period.end)
+                    .bind(start)
+                    .bind(end)
+                    .execute(&mut *tx)
+                    .await?;
+            }
             postgres::grant_allowances(
                 &mut tx,
                 &tenant,
-                start,
-                end,
-                start,
-                &format!("free:{tenant}:{}", start.format("%Y-%m")),
+                period.start,
+                period.end,
+                period.start,
+                &period.source_key,
                 None,
             )
             .await?;

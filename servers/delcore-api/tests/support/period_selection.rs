@@ -45,6 +45,26 @@ impl Timeline {
             canceled,
         }
     }
+    /// Paid period aligned to a UTC month start, cancelled in the middle of that month.
+    ///
+    /// The paid start is the most recent month start (or the one before while the current month
+    /// is younger than three days), so every event stays inside the accepted lateness window.
+    fn aligned() -> Self {
+        let now = Utc::now().trunc_subsecs(0);
+        let this_month = calendar(now).0;
+        let (paid_start, canceled) = if now >= this_month + Duration::days(3) {
+            (this_month, this_month + Duration::days(2))
+        } else {
+            let previous = this_month - Months::new(1);
+            (previous, previous + Duration::days(15))
+        };
+        Self {
+            now,
+            paid_start,
+            paid_end: paid_start + Months::new(1),
+            canceled,
+        }
+    }
     /// An occurrence before the cancellation that is still reported after it.
     fn before(&self, hours: i64) -> DateTime<Utc> {
         self.canceled - Duration::hours(hours)
@@ -69,6 +89,10 @@ struct Scenario {
 }
 
 async fn scenario() -> Scenario {
+    scenario_at(Timeline::now()).await
+}
+
+async fn scenario_at(time: Timeline) -> Scenario {
     let f = Fixture::setup().await;
     let service = f.service().await;
     f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":service,"name":"usage","key":"usage","eventType":"request","aggregation":"METER_AGGREGATION_SUM","valueAttribute":"units","groupBy":["region"]}})).await;
@@ -99,7 +123,7 @@ async fn scenario() -> Scenario {
         service,
         free_price,
         job,
-        time: Timeline::now(),
+        time,
     }
 }
 
@@ -346,6 +370,242 @@ async fn ingestion_authorization_and_queries_use_the_calendar_month_after_cancel
     for row in paid_ledger {
         assert!(after.contains(&row), "paid ledger row changed: {row}");
     }
+}
+
+/// A retained paid period that starts at a UTC month start collides with the calendar period
+/// of a mid-month cancellation. The free period then starts at the cancellation instant.
+async fn aligned_scenario() -> Scenario {
+    let s = scenario_at(Timeline::aligned()).await;
+    // The fixture tenant is created now. Its creation-month free grant would sit at the paid
+    // start when the paid period belongs to the current month, which a tenant that predates the
+    // paid period cannot have; remove it so only the cancellation grants the free allowance.
+    sqlx::query(
+        "DELETE FROM allowance_grants WHERE tenant_id=$1::text::uuid AND source_key LIKE 'free:%'",
+    )
+    .bind(&s.tenant)
+    .execute(&s.f.db)
+    .await
+    .unwrap();
+    s
+}
+
+impl Scenario {
+    /// Free allowance grants as `(period_start, period_end, amount)`.
+    async fn free_grants(&self) -> Vec<(DateTime<Utc>, DateTime<Utc>, String)> {
+        sqlx::query_as("SELECT period_start,period_end,amount::text FROM allowance_grants WHERE tenant_id=$1::text::uuid AND source_key LIKE 'free:%' ORDER BY period_start,source_key")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap()
+    }
+    async fn tenant_period(&self) -> Period {
+        sqlx::query_as("SELECT period_start,period_end FROM tenants WHERE id=$1::text::uuid")
+            .bind(&self.tenant)
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn month_aligned_paid_period_and_free_usage_use_distinct_period_keys() {
+    let s = aligned_scenario().await;
+    let t = &s.time;
+    s.subscribe().await;
+    assert_eq!(t.paid_start, calendar(t.paid_start).0, "aligned fixture");
+    // The recorded period is postpaid, so inheriting its policy would be observable.
+    sqlx::query("UPDATE billing_periods SET postpaid=true WHERE tenant_id=$1::text::uuid")
+        .bind(&s.tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    let paid = (t.paid_start, t.paid_end);
+    // The free period runs from the cancellation to the end of the same UTC month.
+    let free = (t.canceled, calendar(t.canceled).1);
+    assert_ne!(free.0, paid.0);
+    s.ingest("paid-before", "20", t.before(12)).await;
+    s.f.process_metering().await;
+    s.cancel().await;
+    let paid_ledger = s.ledger().await;
+    let paid_rows = s.recorded().await;
+
+    // The paid period applies before the cancellation; the free period starts at it.
+    assert_eq!(s.resolve(t.before(24)).await.unwrap(), paid);
+    assert_eq!(
+        s.resolve(t.canceled - Duration::seconds(1)).await.unwrap(),
+        paid
+    );
+    assert_eq!(s.resolve(t.canceled).await.unwrap(), free);
+    assert_eq!(s.resolve(t.after(30)).await.unwrap(), free);
+    // The next UTC month is a plain calendar month again.
+    assert_eq!(s.resolve(free.1).await.unwrap(), calendar(free.1));
+    assert_eq!(s.tenant_period().await, free);
+
+    // A delayed event that occurred before the cancellation keeps its paid attribution.
+    s.ingest("paid-late", "5", t.before(6)).await;
+    assert_eq!(s.persisted("paid-late").await, paid);
+    s.ingest("free-1", "3", t.after(30)).await;
+    assert_eq!(s.persisted("free-1").await, free);
+    s.f.process_metering().await;
+
+    // Aggregates are keyed separately: the paid units never count in the free period.
+    let paid_aggregates = s.aggregates(Some(t.before(6))).await;
+    assert_eq!(paid_aggregates.len(), 1, "{paid_aggregates:?}");
+    assert_eq!(paid_aggregates[0]["value"], "25");
+    let free_aggregates = s.aggregates(Some(t.after(30))).await;
+    assert_eq!(free_aggregates.len(), 1, "{free_aggregates:?}");
+    assert_eq!(free_aggregates[0]["value"], "3");
+    let keys: Vec<DateTime<Utc>> = sqlx::query_scalar("SELECT DISTINCT period_start FROM metering_aggregates WHERE tenant_id=$1::text::uuid ORDER BY period_start")
+        .bind(&s.tenant).fetch_all(&s.f.db).await.unwrap();
+    assert_eq!(keys, vec![paid.0, free.0]);
+
+    // The full free allowance is granted once for exactly the free period, not prorated.
+    assert_eq!(
+        s.free_grants().await,
+        vec![(free.0, free.1, "10".to_owned())]
+    );
+
+    // Authorization reads the free aggregate against the free limit when the fixture clock
+    // is in the cancellation month.
+    if calendar(t.now) == calendar(t.canceled) {
+        let result = s.authorize().await;
+        assert_eq!(result["allowed"], true, "{result}");
+        assert_eq!(result["feature"]["usage"], "3", "{result}");
+        assert_eq!(result["feature"]["limit"], "10", "{result}");
+        assert_eq!(
+            result["feature"]["periodStart"],
+            free.0.to_rfc3339().replace("+00:00", "Z"),
+            "{result}"
+        );
+    }
+
+    // The paid rows and their postpaid policy stay intact; free usage never inherits them.
+    assert_eq!(s.recorded().await, paid_rows);
+    let mut conn = s.f.db.acquire().await.unwrap();
+    assert!(
+        !postgres::period_postpaid(&mut conn, &s.tenant, free.0)
+            .await
+            .unwrap()
+    );
+    assert!(
+        postgres::period_postpaid(&mut conn, &s.tenant, paid.0)
+            .await
+            .unwrap()
+    );
+    let after = s.ledger().await;
+    assert!(
+        after.iter().all(|row| !row.contains("postpaid")),
+        "{after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .filter(|row| row.contains(&free.0.to_string()))
+            .all(|row| row.starts_with("grant") || row.starts_with("credit")),
+        "free units inside the free allowance must not be charged: {after:?}"
+    );
+    for row in paid_ledger {
+        assert!(after.contains(&row), "paid ledger row changed: {row}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn maintenance_keeps_the_cancellation_free_grant_and_rolls_over_to_the_calendar() {
+    let s = aligned_scenario().await;
+    let t = &s.time;
+    s.subscribe().await;
+    s.cancel().await;
+    let free = (t.canceled, calendar(t.canceled).1);
+    let grant = (free.0, free.1, "10".to_owned());
+    assert_eq!(s.free_grants().await, vec![grant.clone()]);
+
+    // Repeated maintenance inside the free period keeps the one grant and the tenant period.
+    for minutes in [60, 90] {
+        s.f.worker.maintain(t.after(minutes)).await.unwrap();
+        assert_eq!(s.free_grants().await, vec![grant.clone()]);
+        assert_eq!(s.tenant_period().await, free);
+    }
+
+    // The next UTC month starts at its calendar bounds with its own full grant.
+    let next = calendar(free.1);
+    s.f.worker
+        .maintain(next.0 + Duration::hours(1))
+        .await
+        .unwrap();
+    assert_eq!(s.tenant_period().await, next);
+    assert_eq!(
+        s.free_grants().await,
+        vec![grant, (next.0, next.1, "10".to_owned())]
+    );
+    assert_eq!(s.resolve(next.0).await.unwrap(), next);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn month_aligned_recurring_add_on_period_moves_the_free_start_to_the_entitlement_end() {
+    let s = aligned_scenario().await;
+    let t = &s.time;
+    let recurring = recurring_price(&s, true).await;
+    let tenant = Uuid::parse_str(&s.tenant).unwrap();
+    sqlx::query("DELETE FROM entitlements WHERE tenant_id=$1")
+        .bind(tenant)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1,$2,$3,$4,$5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(tenant)
+    .bind(recurring)
+    .bind(t.paid_start - Duration::days(5))
+    .bind(t.canceled)
+    .execute(&s.f.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO billing_periods(tenant_id,starts_at,ends_at,postpaid) VALUES($1,$2,$3,false)",
+    )
+    .bind(tenant)
+    .bind(t.paid_start)
+    .bind(t.paid_end)
+    .execute(&s.f.db)
+    .await
+    .unwrap();
+    let paid = (t.paid_start, t.paid_end);
+    let free = (t.canceled, calendar(t.canceled).1);
+    assert_eq!(s.resolve(t.before(24)).await.unwrap(), paid);
+    assert_eq!(s.resolve(t.canceled).await.unwrap(), free);
+    assert_eq!(s.resolve(t.after(30)).await.unwrap(), free);
+    assert_eq!(s.resolve(free.1).await.unwrap(), calendar(free.1));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn free_period_never_reuses_a_paid_start_even_when_the_paid_period_follows_the_cancellation()
+{
+    let s = aligned_scenario().await;
+    let t = &s.time;
+    // A renewal recorded after the cancellation, for a period that starts at a month start:
+    // the cancellation does not fall inside the month, so the free start cannot be derived
+    // from it and moves one microsecond past the retained paid start.
+    let month = calendar(t.canceled).1;
+    sqlx::query(
+        "INSERT INTO billing_periods(tenant_id,starts_at,ends_at,postpaid) VALUES($1::text::uuid,$2,$3,false)",
+    )
+    .bind(&s.tenant)
+    .bind(month)
+    .bind(month + Months::new(1))
+    .execute(&s.f.db)
+    .await
+    .unwrap();
+    let start = month + Duration::microseconds(1);
+    let expected = (start, month + Months::new(1));
+    assert_eq!(
+        s.resolve(month + Duration::days(3)).await.unwrap(),
+        expected
+    );
+    // The month before it has no retained paid start and keeps the calendar bounds.
+    assert_eq!(s.resolve(t.canceled).await.unwrap(), calendar(t.canceled));
 }
 
 #[tokio::test]

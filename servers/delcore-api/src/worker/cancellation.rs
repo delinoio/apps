@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use super::*;
-use chrono::{DateTime, Datelike, Months, TimeZone};
+use chrono::DateTime;
 use sqlx::PgConnection;
 impl Worker {
     pub(super) async fn activate_free(
@@ -11,12 +11,7 @@ impl Worker {
     ) -> Result<()> {
         // Confirmed cancellation ends the subscription-scoped renewal failure in the same
         // transaction; debt, disputes and operator blocks are separate state and stay untouched.
-        let start = Utc
-            .with_ymd_and_hms(at.year(), at.month(), 1, 0, 0, 0)
-            .single()
-            .expect("valid UTC month");
-        let end = start + Months::new(1);
-        sqlx::query("UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',renewal_failed=false,auto_suspended=true,period_start=$2,period_end=$3 WHERE id=$1").bind(uid(tenant)?).bind(start).bind(end).execute(&mut *tx).await?;
+        sqlx::query("UPDATE tenants SET plan_id=(SELECT id FROM plans WHERE is_default AND free),external_subscription_id='',renewal_failed=false,auto_suspended=true WHERE id=$1").bind(uid(tenant)?).execute(&mut *tx).await?;
         let plan: String = sqlx::query_scalar("SELECT plan_id::text FROM tenants WHERE id=$1")
             .bind(uid(tenant)?)
             .fetch_one(&mut *tx)
@@ -35,6 +30,17 @@ impl Worker {
             .execute(&mut *tx)
             .await?;
         }
+        // The free period is derived after the paid selection and entitlements ended, because a
+        // retained paid period that starts at the calendar month start moves the free period
+        // start to this cancellation. The tenant row, the allowance grant and every later
+        // metering lookup use this one period so no allowance is keyed by the paid period.
+        let period = postgres::period::free_period(tx, tenant, at).await?;
+        sqlx::query("UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1")
+            .bind(uid(tenant)?)
+            .bind(period.start)
+            .bind(period.end)
+            .execute(&mut *tx)
+            .await?;
         // Confirmed cancellation completes failed intents too, allowing final deletion.
         let completed=sqlx::query("UPDATE jobs SET state='done',error_category='',updated_at=now() WHERE tenant_id=$1 AND kind='cancel' AND state IN ('pending','running','reconcile','failed')").bind(uid(tenant)?).execute(&mut *tx).await?.rows_affected();
         tracing::info!(
@@ -45,10 +51,10 @@ impl Worker {
         postgres::grant_allowances(
             tx,
             tenant,
-            start,
-            end,
+            period.start,
+            period.end,
             at,
-            &format!("free:{tenant}:{}", start.format("%Y-%m")),
+            &period.source_key,
             None,
         )
         .await?;
