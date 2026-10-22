@@ -9,6 +9,7 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
+use delino_protocol::delcore::v1::DELCORE_SERVICE_SERVICE_NAME;
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -29,6 +30,32 @@ struct Policy {
 fn log_rejection(rejected_in_window: i64) -> bool {
     u64::try_from(rejected_in_window).is_ok_and(u64::is_power_of_two)
 }
+/// Selects the headers that decide how a rate rejection is rendered.
+///
+/// A genuine Delcore RPC (a POST under the generated `delcore.v1.DelcoreService`
+/// path) keeps its request headers, so the connectrpc renderer answers in the
+/// caller's protocol: Connect unary gets the HTTP 429 JSON error, while gRPC,
+/// gRPC-Web and Connect-streaming callers get their protocol framing
+/// (`grpc-status` trailers or an end-stream envelope) carrying
+/// `resource_exhausted`, which their clients decode as a typed error. Every
+/// other request, including health, readiness, metrics, webhook and unknown
+/// paths, is rendered without headers so it stays HTTP 429 with the typed Connect
+/// JSON body whatever its content type; probes, webhook senders and proxies
+/// only see the HTTP status and must not receive a 200 for a rejection.
+fn rejection_render_headers(request: &Request) -> axum::http::HeaderMap {
+    let is_rpc = request.method() == axum::http::Method::POST
+        && request
+            .uri()
+            .path()
+            .strip_prefix('/')
+            .and_then(|path| path.strip_prefix(DELCORE_SERVICE_SERVICE_NAME))
+            .is_some_and(|rest| rest.starts_with('/'));
+    if is_rpc {
+        request.headers().clone()
+    } else {
+        axum::http::HeaderMap::new()
+    }
+}
 async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next) -> Response {
     let (allowed, rejected_in_window) = {
         let mut state = policy.window.lock().unwrap_or_else(|e| e.into_inner());
@@ -48,6 +75,7 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
         .headers_mut()
         .insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
     let request_headers = request.headers().clone();
+    let render_headers = rejection_render_headers(&request);
     if !allowed {
         // Log only the correlation ID, category and sampled count; never headers or
         // request data. The log is sampled so that it stays bounded under load.
@@ -55,18 +83,16 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
             tracing::warn!(correlation_id = %correlation, category="rate_limited", rejected_in_window, "request rate limit exceeded");
         }
         // The schema has no rate-limit reason, so use ERROR_REASON_UNSPECIFIED (0).
-        // Render with empty request headers so the unary Connect representation is
-        // always used: for a gRPC or Connect-streaming content type the request
-        // headers would select an HTTP 200 trailers-only or end-stream rendering,
-        // which would hide the rejection from health probes, webhook callers and
-        // proxies. Every rejection must stay HTTP 429 with the typed JSON body.
+        // Only genuine Delcore RPCs are rendered in the caller's protocol; all
+        // other requests get the HTTP 429 unary JSON body. See
+        // `rejection_render_headers`.
         return crate::Fault::new(
             connectrpc::ErrorCode::ResourceExhausted,
             0,
             "request rate limit exceeded",
         )
         .with_correlation(&correlation)
-        .into_http_response(&axum::http::HeaderMap::new())
+        .into_http_response(&render_headers)
         .map(axum::body::Body::new);
     }
     match tokio::time::timeout(
@@ -155,8 +181,14 @@ mod tests {
     use super::*;
     use axum::body::Bytes;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    /// Serializes the tests that emit warnings. The sampling test counts warnings
+    /// through a thread-local subscriber; a callsite first hit by a concurrent test
+    /// thread without a subscriber can cache a "never" interest and hide the
+    /// warnings from it. Remove this lock if the tests stop sharing callsites.
+    static WARNING_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     #[tokio::test]
     async fn rate_bounds_and_slow_bodies_are_enforced() {
+        let _serial = WARNING_TESTS.lock().await;
         let app = Router::new()
             .route("/", post(|_: Bytes| async { StatusCode::OK }))
             .layer(middleware::from_fn_with_state(
@@ -191,6 +223,7 @@ mod tests {
     }
     #[tokio::test]
     async fn handler_timeouts_keep_connect_details_and_server_correlation() {
+        let _serial = WARNING_TESTS.lock().await;
         use base64::Engine;
         use buffa::Message;
         let app = Router::new()
@@ -249,6 +282,7 @@ mod tests {
     }
     #[tokio::test]
     async fn rate_rejections_keep_typed_errors_and_server_correlation() {
+        let _serial = WARNING_TESTS.lock().await;
         use std::sync::atomic::{AtomicUsize, Ordering};
         for content_type in ["application/json", "application/proto"] {
             let calls = Arc::new(AtomicUsize::new(0));
@@ -316,6 +350,7 @@ mod tests {
     }
     #[tokio::test]
     async fn rate_rejections_stay_429_for_every_route_and_content_type() {
+        let _serial = WARNING_TESTS.lock().await;
         let app = Router::new()
             .route("/healthz", get(|| async { StatusCode::OK }))
             .route("/webhooks/paddle", post(|| async { StatusCode::OK }))
@@ -379,6 +414,164 @@ mod tests {
         }
         task.abort();
     }
+    const RPC_PATH: &str = "/delcore.v1.DelcoreService/ListTenants";
+    /// Starts a limit-1 app with an RPC-shaped route and non-RPC routes, and
+    /// consumes the only admitted request of the window.
+    async fn exhausted_app() -> (String, tokio::task::JoinHandle<()>) {
+        let app = Router::new()
+            .route(RPC_PATH, post(|| async { StatusCode::OK }))
+            .route(RPC_PATH, get(|| async { StatusCode::OK }))
+            .route(
+                "/delcore.v1.DelcoreServiceX/Other",
+                post(|| async { StatusCode::OK }),
+            )
+            .route("/readyz", get(|| async { StatusCode::OK }))
+            .route("/metrics", get(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(
+                Policy {
+                    timeout: Duration::from_secs(30),
+                    limit: 1,
+                    window: Arc::new(Mutex::new((Instant::now(), 0))),
+                },
+                bounded,
+            ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert_eq!(
+            reqwest::get(format!("{base}/readyz"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        (base, task)
+    }
+    fn correlation_of(response: &reqwest::Response, label: &str) -> String {
+        let correlation = response.headers()["X-Delcore-Correlation-Id"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert_ne!(correlation, "untrusted-client-value", "{label}");
+        assert!(server_common::canonical_id(&correlation), "{label}");
+        correlation
+    }
+    #[tokio::test]
+    async fn rpc_rate_rejections_use_the_callers_protocol_framing() {
+        let _serial = WARNING_TESTS.lock().await;
+        let (base, task) = exhausted_app().await;
+        let client = reqwest::Client::new();
+        let post_rpc = |content_type: Option<&'static str>| {
+            let mut request = client
+                .post(format!("{base}{RPC_PATH}"))
+                .header("X-Delcore-Correlation-Id", "untrusted-client-value")
+                .body("{}");
+            if let Some(content_type) = content_type {
+                request = request.header("content-type", content_type);
+            }
+            request.send()
+        };
+        // Connect unary, with or without a content type: HTTP 429 and a JSON body.
+        for content_type in [None, Some("application/json"), Some("application/proto")] {
+            let label = format!("connect unary {content_type:?}");
+            let response = post_rpc(content_type).await.unwrap();
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{label}");
+            assert_eq!(
+                response.headers()["content-type"],
+                "application/json",
+                "{label}"
+            );
+            let correlation = correlation_of(&response, &label);
+            let body: serde_json::Value = response.json().await.unwrap();
+            assert_eq!(body["code"], "resource_exhausted", "{label}");
+            assert_eq!(decode_detail(&body).correlation_id, correlation, "{label}");
+        }
+        // Connect streaming: HTTP 200 with an end-stream envelope carrying the error.
+        for content_type in ["application/connect+proto", "application/connect+json"] {
+            let response = post_rpc(Some(content_type)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{content_type}");
+            assert_eq!(response.headers()["content-type"], content_type);
+            let correlation = correlation_of(&response, content_type);
+            let body = response.bytes().await.unwrap();
+            assert_eq!(body[0], 0x02, "{content_type}: end-stream flag");
+            let end: serde_json::Value = serde_json::from_slice(&body[5..]).unwrap();
+            assert_eq!(end["error"]["code"], "resource_exhausted", "{content_type}");
+            assert_eq!(
+                decode_detail(&end["error"]).correlation_id,
+                correlation,
+                "{content_type}"
+            );
+        }
+        // gRPC: HTTP 200 trailers-only response with grpc-status RESOURCE_EXHAUSTED (8).
+        for content_type in ["application/grpc", "application/grpc+proto"] {
+            let response = post_rpc(Some(content_type)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{content_type}");
+            // The renderer normalizes the bare gRPC type to its proto codec form.
+            assert_eq!(response.headers()["content-type"], "application/grpc+proto");
+            assert_eq!(response.headers()["grpc-status"], "8", "{content_type}");
+            assert!(
+                !response.headers()["grpc-message"].is_empty(),
+                "{content_type}"
+            );
+            correlation_of(&response, content_type);
+        }
+        // gRPC-Web: HTTP 200 with a trailer frame in the body.
+        for content_type in ["application/grpc-web", "application/grpc-web+proto"] {
+            let response = post_rpc(Some(content_type)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{content_type}");
+            assert_eq!(
+                response.headers()["content-type"],
+                "application/grpc-web+proto"
+            );
+            correlation_of(&response, content_type);
+            let body = response.bytes().await.unwrap();
+            assert_eq!(body[0], 0x80, "{content_type}: trailer flag");
+            let trailers = std::str::from_utf8(&body[5..]).unwrap();
+            assert!(trailers.contains("grpc-status: 8"), "{trailers:?}");
+            assert!(trailers.contains("grpc-status-details-bin"), "{trailers:?}");
+        }
+        task.abort();
+    }
+    #[tokio::test]
+    async fn non_rpc_requests_stay_429_even_with_rpc_content_types_or_lookalike_paths() {
+        let _serial = WARNING_TESTS.lock().await;
+        let (base, task) = exhausted_app().await;
+        let client = reqwest::Client::new();
+        let requests = [
+            (reqwest::Method::GET, "/readyz"),
+            (reqwest::Method::GET, "/metrics"),
+            // A GET is not a gRPC or streaming RPC, and a service-name prefix is not the service.
+            (reqwest::Method::GET, RPC_PATH),
+            (reqwest::Method::POST, "/delcore.v1.DelcoreServiceX/Other"),
+            (reqwest::Method::POST, "/other.v1.Service/Method"),
+            (reqwest::Method::POST, "/unknown"),
+        ];
+        for content_type in [
+            "application/grpc",
+            "application/grpc+proto",
+            "application/grpc-web+proto",
+            "application/connect+proto",
+            "application/connect+json",
+        ] {
+            for (method, path) in &requests {
+                let label = format!("{method} {path} {content_type}");
+                let response = client
+                    .request(method.clone(), format!("{base}{path}"))
+                    .header("content-type", content_type)
+                    .header("X-Delcore-Correlation-Id", "untrusted-client-value")
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{label}");
+                assert!(response.headers().get("grpc-status").is_none(), "{label}");
+                let correlation = correlation_of(&response, &label);
+                let body: serde_json::Value = response.json().await.unwrap();
+                assert_eq!(body["code"], "resource_exhausted", "{label}");
+                assert_eq!(decode_detail(&body).correlation_id, correlation, "{label}");
+            }
+        }
+        task.abort();
+    }
     #[test]
     fn rejection_logging_is_bounded_per_window() {
         let logged: Vec<i64> = (1..=1_000_000).filter(|n| log_rejection(*n)).collect();
@@ -390,6 +583,7 @@ mod tests {
     }
     #[tokio::test]
     async fn rate_rejection_warnings_are_sampled_while_every_response_is_rejected() {
+        let _serial = WARNING_TESTS.lock().await;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tracing_subscriber::prelude::*;
         struct CountWarnings(Arc<AtomicUsize>);
