@@ -73,7 +73,11 @@ pub async fn middleware(
         match tokio::time::timeout(policy.timeout, next.run(request).instrument(span)).await {
             Ok(response) => {
                 if is_untyped_client_deadline(policy.service, &response) {
-                    record_timeout(&policy, procedure, started);
+                    // Same exactly-once rule as the outer timeout: a handler that recorded its
+                    // outcome before the transport deadline fired owns the request's metrics.
+                    if accounting.claim() {
+                        record_timeout(&policy, procedure, started);
+                    }
                     timeout_response(policy.service)
                 } else {
                     response
@@ -286,6 +290,52 @@ mod tests {
         assert!(accounting.claim());
         assert!(!other.claim());
         assert!(!accounting.claim());
+    }
+
+    #[tokio::test]
+    async fn client_deadline_response_is_not_counted_after_the_handler_recorded() {
+        use tower::ServiceExt;
+        // The handler stands for the transport producing an untyped 504 for the client deadline;
+        // `claimed` states whether the service handler had already recorded its own outcome.
+        for claimed in [false, true] {
+            let metrics = Arc::new(Metrics::new(Service::DevBase));
+            let app = Router::new()
+                .route(
+                    "/rpc",
+                    post(move |request: Request| async move {
+                        if claimed {
+                            let marker = request.extensions().get::<Accounting>().unwrap();
+                            assert!(marker.claim());
+                        }
+                        StatusCode::GATEWAY_TIMEOUT
+                    }),
+                )
+                .layer(axum::middleware::from_fn_with_state(
+                    Policy {
+                        origin: String::new(),
+                        timeout: Duration::from_secs(5),
+                        service: Service::DevBase,
+                        metrics: metrics.clone(),
+                        procedure: Some(|_| Some("GetProject")),
+                    },
+                    middleware,
+                ));
+            let request = Request::post("/rpc")
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let response = app.oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+            assert!(response.headers().contains_key("x-devbase-trace-id"));
+            let series = metrics
+                .requests
+                .with_label_values(&["GetProject", "deadline_exceeded"])
+                .get();
+            let samples = metrics
+                .duration
+                .with_label_values(&["GetProject"])
+                .get_sample_count();
+            assert_eq!((series, samples), if claimed { (0, 0) } else { (1, 1) });
+        }
     }
 
     fn policy(service: Service, procedure: Option<ProcedureResolver>) -> Policy {
