@@ -14,9 +14,15 @@ use std::{sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
-    if run().await.is_err() {
+    if let Err(error) = run().await {
+        // Every error reaching this point was built from operator-safe text: configuration errors
+        // name the variable but never its value, database failures are reduced to "database
+        // unavailable", and configured URLs cannot carry credentials. The alternate format keeps
+        // the cause chain so operators can tell configuration, database, identity-provider, bind
+        // and serving failures apart.
         tracing::error!(
             category = "startup_or_runtime_failure",
+            error = %format!("{error:#}"),
             "delitools-api stopped"
         );
         std::process::exit(1);
@@ -76,7 +82,9 @@ async fn run() -> anyhow::Result<()> {
     let config = Arc::new(Config::load().inspect_err(|error| {
         tracing::error!(category = "invalid_configuration", %error, "configuration rejected");
     })?);
-    let store = tokio::time::timeout(config.timeout(), Store::open(&config.database_url)).await??;
+    let store = tokio::time::timeout(config.timeout(), Store::open(&config.database_url))
+        .await
+        .map_err(|_| anyhow::anyhow!("database connection timed out"))??;
     store.check_schema().await?;
     let mut lock = store.acquire_instance().await?;
 

@@ -53,3 +53,25 @@ fn an_unreadable_dotenv_file_is_reported_and_stops_startup() {
         "{log}"
     );
 }
+
+#[test]
+fn a_startup_failure_after_configuration_is_logged_with_its_safe_cause() {
+    // The documented example is a valid configuration. Its database refuses connections, so
+    // startup fails after configuration loading, a stage that has no dedicated log of its own.
+    // A one-second dependency timeout keeps the connection retries short.
+    let log = rejected_startup_log(
+        include_str!("../.env.example"),
+        &[
+            (
+                "DATABASE_URL",
+                "postgres://delitools:never-logged-password@127.0.0.1:1/delitools",
+            ),
+            ("TIMEOUT_SECONDS", "1"),
+        ],
+    );
+    assert!(
+        log.contains("startup_or_runtime_failure") && log.contains("database connection timed out"),
+        "{log}"
+    );
+    assert!(!log.contains("never-logged-password"), "{log}");
+}
