@@ -176,7 +176,7 @@ Every request is also checked against your tenant in Delcore. For `TranslateText
 
 - `CreateKey`: send `tenantId`, `kind` (`KEY_KIND_PERSONAL` or `KEY_KIND_SERVICE`), `capabilities` and an optional `expiresAt`.
 - `ListKeys`: list the keys of a tenant that you may manage, filtered by `kind`, with `afterId` and `pageSize` for paging. `pageSize` defaults to 50 when you omit it or send 0. The maximum is 100, and a larger value returns an invalid-input error. You can never list another user's personal keys. With `KEY_KIND_PERSONAL` you get your own personal keys. With `KEY_KIND_SERVICE` you get the tenant's service keys, but only if you are an Owner or Admin. Without `kind`, you get your own personal keys, and also the tenant's service keys if you are an Owner or Admin. A response holds one page. If `nextAfterId` is not empty, more keys exist: send its value as `afterId` in the next request and repeat until `nextAfterId` is empty. An empty `nextAfterId` means that you have the complete list.
-- `RevokeKey`: send `tenantId` and `keyId`.
+- `RevokeKey`: send `tenantId` and `keyId`. Revocation is idempotent: repeating it for a key that is already revoked succeeds and changes nothing, so you can safely send the same request again after a lost response or a timeout.
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \

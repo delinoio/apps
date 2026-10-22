@@ -176,7 +176,7 @@ Chaque requête est également vérifiée par rapport à votre tenant dans Delco
 
 - `CreateKey` : envoyez `tenantId`, `kind` (`KEY_KIND_PERSONAL` ou `KEY_KIND_SERVICE`), `capabilities` et un `expiresAt` facultatif.
 - `ListKeys` : répertorie les clés d’un tenant que vous pouvez gérer, filtrées par `kind`, avec `afterId` et `pageSize` pour la pagination. `pageSize` vaut 50 par défaut si vous l’omettez ou envoyez 0. Le maximum est 100, et une valeur supérieure renvoie une erreur d’entrée non valide. Vous ne pouvez jamais répertorier les clés personnelles d’un autre utilisateur. Avec `KEY_KIND_PERSONAL`, vous obtenez vos propres clés personnelles. Avec `KEY_KIND_SERVICE`, vous obtenez les clés de service du tenant, mais seulement si vous êtes Owner ou Admin. Sans `kind`, vous obtenez vos propres clés personnelles et, si vous êtes Owner ou Admin, aussi les clés de service du tenant. Une réponse contient une page. Si `nextAfterId` n’est pas vide, il existe d’autres clés : envoyez sa valeur comme `afterId` dans la requête suivante et répétez jusqu’à ce que `nextAfterId` soit vide. Un `nextAfterId` vide signifie que vous avez la liste complète.
-- `RevokeKey` : envoyez `tenantId` et `keyId`.
+- `RevokeKey` : envoyez `tenantId` et `keyId`. La révocation est idempotente : la répéter pour une clé déjà révoquée réussit et ne change rien, vous pouvez donc renvoyer la même requête sans risque après une réponse perdue ou un délai dépassé.
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \

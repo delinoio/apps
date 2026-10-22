@@ -176,7 +176,7 @@ Jede Anfrage wird außerdem anhand Ihres Mandanten in Delcore geprüft. Für `Tr
 
 - `CreateKey`: Senden Sie `tenantId`, `kind` (`KEY_KIND_PERSONAL` oder `KEY_KIND_SERVICE`), `capabilities` und ein optionales `expiresAt`.
 - `ListKeys`: Listet die Schlüssel eines Mandanten, die Sie verwalten dürfen, gefiltert nach `kind`, mit `afterId` und `pageSize` für die Seitenaufteilung. `pageSize` ist standardmäßig 50, wenn Sie es weglassen oder 0 senden. Das Maximum ist 100, und ein größerer Wert gibt einen Fehler wegen ungültiger Eingabe zurück. Die persönlichen Schlüssel anderer Nutzer können Sie nie auflisten. Mit `KEY_KIND_PERSONAL` erhalten Sie Ihre eigenen persönlichen Schlüssel. Mit `KEY_KIND_SERVICE` erhalten Sie die Dienstschlüssel des Mandanten, aber nur als Eigentümer oder Administrator. Ohne `kind` erhalten Sie Ihre eigenen persönlichen Schlüssel und, als Eigentümer oder Administrator, auch die Dienstschlüssel des Mandanten. Eine Antwort enthält eine Seite. Ist `nextAfterId` nicht leer, gibt es weitere Schlüssel: Senden Sie seinen Wert in der nächsten Anfrage als `afterId` und wiederholen Sie dies, bis `nextAfterId` leer ist. Ein leeres `nextAfterId` bedeutet, dass Sie die vollständige Liste haben.
-- `RevokeKey`: Senden Sie `tenantId` und `keyId`.
+- `RevokeKey`: Senden Sie `tenantId` und `keyId`. Der Widerruf ist idempotent: Wiederholen Sie ihn für einen bereits widerrufenen Schlüssel, ist das erfolgreich und ändert nichts. Sie können dieselbe Anfrage also nach einer verlorenen Antwort oder einem Timeout gefahrlos erneut senden.
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \

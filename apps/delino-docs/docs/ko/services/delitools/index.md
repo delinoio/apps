@@ -176,7 +176,7 @@ DeliTools는 추출 모델의 구조화된 출력이 지원하는 JSON Schema의
 
 - `CreateKey`: `tenantId`, `kind`(`KEY_KIND_PERSONAL` 또는 `KEY_KIND_SERVICE`), `capabilities`, 선택 사항인 `expiresAt`을 보냅니다.
 - `ListKeys`: 관리할 수 있는 테넌트의 키를 `kind`로 필터링해 나열하며, `afterId`와 `pageSize`로 페이지를 나눕니다. `pageSize`는 생략하거나 0을 보내면 50이 됩니다. 최댓값은 100이며, 더 큰 값은 invalid-input 오류를 반환합니다. 다른 사용자의 개인 키는 절대 나열할 수 없습니다. `KEY_KIND_PERSONAL`은 본인의 개인 키를 반환합니다. `KEY_KIND_SERVICE`는 테넌트의 서비스 키를 반환하며, Owner 또는 Admin만 사용할 수 있습니다. `kind`를 생략하면 본인의 개인 키를 반환하고, Owner 또는 Admin이면 테넌트의 서비스 키도 함께 반환합니다. 응답에는 한 페이지가 담깁니다. `nextAfterId`가 비어 있지 않으면 키가 더 있습니다. 그 값을 다음 요청의 `afterId`로 보내고, `nextAfterId`가 빌 때까지 반복합니다. `nextAfterId`가 비어 있으면 전체 목록을 받은 것입니다.
-- `RevokeKey`: `tenantId`와 `keyId`를 보냅니다.
+- `RevokeKey`: `tenantId`와 `keyId`를 보냅니다. 폐기는 멱등입니다. 이미 폐기된 키에 대해 반복해도 성공하며 아무것도 바뀌지 않으므로, 응답이 유실되거나 시간 초과가 발생하면 같은 요청을 안전하게 다시 보낼 수 있습니다.
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \

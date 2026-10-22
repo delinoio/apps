@@ -176,7 +176,7 @@ DeliTools は、抽出モデルの構造化出力がサポートする JSON ス�
 
 - `CreateKey`: `tenantId`、`kind`（`KEY_KIND_PERSONAL` または `KEY_KIND_SERVICE`）、`capabilities`、および任意の `expiresAt` を送信します。
 - `ListKeys`: 管理できるテナントのキーを `kind` で絞り込んで一覧表示します。ページングには `afterId` と `pageSize` を使用します。`pageSize` は、省略するか0を送信すると50になります。最大値は100で、それより大きい値は入力無効エラーになります。他のユーザーの個人キーを一覧表示することはできません。`KEY_KIND_PERSONAL` では自分の個人キーが返されます。`KEY_KIND_SERVICE` ではテナントのサービスキーが返されますが、Owner または Admin の場合に限ります。`kind` を省略すると、自分の個人キーが返され、Owner または Admin の場合はテナントのサービスキーも返されます。1回のレスポンスには1ページ分が含まれます。`nextAfterId` が空でない場合は、さらにキーがあります。その値を次のリクエストの `afterId` として送信し、`nextAfterId` が空になるまで繰り返します。`nextAfterId` が空であれば、一覧は完全です。
-- `RevokeKey`: `tenantId` と `keyId` を送信します。
+- `RevokeKey`: `tenantId` と `keyId` を送信します。失効は冪等です。すでに失効しているキーに対して繰り返しても成功し、何も変わりません。そのため、レスポンスが失われた場合やタイムアウトした場合は、同じリクエストを安全に再送できます。
 
 ```sh
 curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
