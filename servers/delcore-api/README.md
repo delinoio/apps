@@ -15,7 +15,7 @@ The [project index](../../docs/project-delcore.md), [server contract](../../docs
 
 ## Configuration and startup
 
-Copy `.env.example` to an uncommitted `.env` in the service working directory, replace every placeholder, restrict file permissions and choose policy limits for your deployment. The example retention periods are examples, not a statement of legal requirements. Keep the identity key stable across updates: it derives the stored identity reference. Loss or unplanned rotation prevents identity matching.
+Copy `.env.example` to an uncommitted `.env` in the service working directory, replace every placeholder, restrict file permissions and choose policy limits for your deployment. Request deduplication and audit records expire after a fixed 30 days from creation. Configure external operational log collection for the same lifetime. Other example retention periods are deployment choices, not a statement of legal requirements. Keep the identity key stable across updates: it derives the stored identity reference. Loss or unplanned rotation prevents identity matching.
 
 ```sh
 ../target/debug/delcore-api migrate --dev-env
@@ -28,24 +28,24 @@ With `DEVELOPMENT=true`, normal startup reads the [split-file YAML catalog](cata
 
 Files restore declared fields changed through operator APIs. Omitted entities remain in the database. Unchanged content reuses stable IDs and versions, and returning from definition A to B to A reselects A for future subscriptions without moving existing subscriptions. Meter definitions cannot change in place; declare a new meter key instead. See [catalog version pinning](../../docs/servers-delcore-api-contract.md#catalog-version-pinning). To recover from invalid YAML or a catalog constraint, correct the files or conflicting declaration and restart. If PostgreSQL is unavailable, restore database service first. YAML edits alone do not restart the API; restart the API task. Production startup and `migrate` do not read the catalog. Keep real credentials out of catalog files.
 
-Outside development, bootstrap the service catalog and default free plan through the operator APIs with a user token carrying the dedicated operator role; production startup has no automatic catalog application and there are no standalone catalog commands. Create registered meters before creating usage prices. Register all prices before marking the free plan as the default. Price versions are immutable. Existing entitlements refer to their chosen price version. Keep fixed recurring prices separate from usage prices.
+Outside development, bootstrap the service catalog and default free plan through the operator APIs with a user token carrying the dedicated operator role; production startup has no automatic catalog application and there are no standalone catalog commands. Create registered meters before creating usage prices. Register all prices before marking the free plan as the default. Price versions are immutable. Existing entitlements retain their selected product terms; usage unit prices follow the execution start. Keep fixed recurring prices separate from usage prices.
 
-| Settings                                                      | Purpose                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| `LISTEN`, `DATABASE_URL`                                      | HTTP listener and authoritative PostgreSQL connection  |
-| `ISSUER`, `AUDIENCE`, `OPERATOR_ROLE`, `IDENTITY_KEY`         | Authentication and stable identity matching            |
-| `PADDLE_*`                                                    | Billing API, credit product and webhook authentication |
-| `EMAIL_*`                                                     | Cloudflare REST account, sender and authentication     |
-| `RETURN_URLS`                                                 | Exact consumer URL allowlist                           |
-| `TIMEOUT_SECONDS`, `MAX_PAYLOAD_BYTES`, `REQUESTS_PER_MINUTE` | Bounded HTTP and provider work                         |
-| `RETRY_LIMIT`, `RETRY_SECONDS`                                | Durable retry limits and delay                         |
-| `INVITATION_SECONDS`, `USAGE_LATENESS_SECONDS`                | Invitation expiry and accepted reporting lateness      |
-| `REPORTING_GRACE_SECONDS`, `DELETION_GRACE_SECONDS`           | Final reporting and deletion delays                    |
-| `*_RETENTION_SECONDS`                                         | Explicit retention policy inputs                       |
-| `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                   | Operational alert thresholds                           |
-| `MAX_METER_GROUPS`, `MAX_METER_GROUP_VALUES`                  | Event admission bounds per tenant meter period         |
-| `DEVELOPMENT`                                                 | Permit loopback HTTP provider URLs for local fixtures  |
-| `CATALOG_DIR`                                                 | Optional development YAML catalog directory            |
+| Settings                                                                                   | Purpose                                                     |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `LISTEN`, `DATABASE_URL`                                                                   | HTTP listener and authoritative PostgreSQL connection       |
+| `ISSUER`, `AUDIENCE`, `OPERATOR_ROLE`, `IDENTITY_KEY`                                      | Authentication and stable identity matching                 |
+| `PADDLE_*`                                                                                 | Billing API, credit product and webhook authentication      |
+| `EMAIL_*`                                                                                  | Cloudflare REST account, sender and authentication          |
+| `RETURN_URLS`                                                                              | Exact consumer URL allowlist                                |
+| `TIMEOUT_SECONDS`, `MAX_PAYLOAD_BYTES`, `REQUESTS_PER_MINUTE`                              | Bounded HTTP and provider work                              |
+| `RETRY_LIMIT`, `RETRY_SECONDS`                                                             | Durable retry limits and delay                              |
+| `INVITATION_SECONDS`, `USAGE_LATENESS_SECONDS`                                             | Invitation expiry and reporting lateness (at least 30 days) |
+| `REPORTING_GRACE_SECONDS`, `DELETION_GRACE_SECONDS`                                        | Final reporting and deletion delays                         |
+| `RAW_USAGE_RETENTION_SECONDS`, `ACCOUNTING_RETENTION_SECONDS`, `WEBHOOK_RETENTION_SECONDS` | Accepted raw usage, accounting and webhook retention        |
+| `BACKLOG_ALERT`, `SETTLEMENT_ALERT_SECONDS`                                                | Operational alert thresholds                                |
+| `MAX_METER_GROUPS`, `MAX_METER_GROUP_VALUES`                                               | Event admission bounds per tenant meter period              |
+| `DEVELOPMENT`                                                                              | Permit loopback HTTP provider URLs for local fixtures       |
+| `CATALOG_DIR`                                                                              | Optional development YAML catalog directory                 |
 
 All billing uses USD with two decimal places for currency minor units. Currency and minor-unit precision are fixed and have no configuration settings.
 
@@ -72,6 +72,8 @@ To check a catalog feature before execution, add its `feature_key` to `Authorize
 Post-execution reporting cannot guarantee zero overspend under concurrency. A non-postpaid tenant may incur negative credits; the next top-up offsets that debt. Monetary values are decimal strings. Prorated included quantities are floored to 0.000001; monetary products keep full precision until cumulative service/meter period totals are rounded half-up to currency minor units. Occurrence timestamps are normalized to PostgreSQL microsecond precision. Credits pay usage only. Fixed subscription and add-on fees remain Paddle charges. Negative postpaid corrections carry forward against later usage. On cancellation, refund any remaining usage overpayment through Paddle. Select the original usage transaction item; an approved refund clears the settlement hold after webhook processing. A fixed subscription fee refund does not clear usage debt. Keep the transaction item attribution when restoring a backup; an unverified refund must remain under operator review.
 
 Payment requests return a durable job ID. Poll `ListBillingHistory` for payment state and checkout URLs. A checkout return is not proof of payment. One-time charges use Paddle price metadata to correlate the resulting transaction; the subscription response itself never grants credits. Recover payment failures through the payment provider and inspect independently enforced blocking reasons.
+
+Usage unit prices follow the initial execution start for every subscriber. A later catalog price applies to later executions by existing customers too. Late reports and corrections keep the original price attribution; recurring payment prices, features and included-usage grants keep their selected subscription terms. Consumers keep delivery and reconciliation records for 30 days from creation, then delete them even if usage is unresolved or undelivered. Accepted Delcore accounting is retained separately.
 
 ## Operations and recovery
 
