@@ -62,3 +62,118 @@ impl Config {
         Ok(c)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Every environment variable that `Config::load` reads.
+    const CONFIG_KEYS: &[&str] = &[
+        "MAX_PROJECTS_PER_TENANT",
+        "MAX_USERS_PER_PROJECT",
+        "MAX_ACTIVE_KEYS_PER_PROJECT",
+        "USER_RATE_PER_SECOND",
+        "USER_RATE_BURST",
+        "MANAGEMENT_RATE_PER_SECOND",
+        "MANAGEMENT_RATE_BURST",
+        "DEPENDENCY_TIMEOUT",
+        "REQUEST_TIMEOUT",
+        "CLEANUP_INTERVAL",
+        "WEB_ORIGIN",
+        "LISTEN",
+    ];
+
+    // The process environment is shared by all test threads, so tests that load configuration
+    // serialize on this lock.
+    static ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+    struct RestoreEnvironment(Vec<(&'static str, Option<String>)>);
+
+    impl Drop for RestoreEnvironment {
+        fn drop(&mut self) {
+            for (key, value) in self.0.drain(..) {
+                // SAFETY: callers hold the ENVIRONMENT lock, which serializes every test that
+                // reads or writes these variables.
+                unsafe {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
+        }
+    }
+
+    /// Loads `Config` with only `vars` set among the variables it reads, then restores the
+    /// previous process environment. Reuse this helper for any test that needs `Config::load`.
+    fn load_with(vars: &[(&str, &str)]) -> anyhow::Result<Config> {
+        let _lock = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
+        let _restore = RestoreEnvironment(
+            CONFIG_KEYS
+                .iter()
+                .map(|key| (*key, std::env::var(key).ok()))
+                .collect(),
+        );
+        // SAFETY: the ENVIRONMENT lock is held; see RestoreEnvironment.
+        unsafe {
+            for key in CONFIG_KEYS {
+                std::env::remove_var(key);
+            }
+            for (key, value) in vars {
+                std::env::set_var(key, value);
+            }
+        }
+        Config::load()
+    }
+
+    #[test]
+    fn cleanup_interval_defaults_and_accepts_positive_values() {
+        let config = load_with(&[]).unwrap();
+        assert_eq!(config.cleanup_interval, Duration::from_secs(300));
+
+        let config = load_with(&[("CLEANUP_INTERVAL", "")]).unwrap();
+        assert_eq!(config.cleanup_interval, Duration::from_secs(300));
+
+        let config = load_with(&[("CLEANUP_INTERVAL", "1ns")]).unwrap();
+        assert_eq!(config.cleanup_interval, Duration::from_nanos(1));
+
+        let config = load_with(&[("CLEANUP_INTERVAL", "0.5ns")]).unwrap();
+        assert_eq!(config.cleanup_interval, Duration::from_nanos(1));
+
+        let config = load_with(&[("CLEANUP_INTERVAL", "1m30s")]).unwrap();
+        assert_eq!(config.cleanup_interval, Duration::from_secs(90));
+    }
+
+    #[test]
+    fn cleanup_interval_rejects_values_that_round_to_zero() {
+        for value in ["0.1ns", "0.49ns", "0.0000000001s", "0ns"] {
+            let error = load_with(&[("CLEANUP_INTERVAL", value)])
+                .err()
+                .unwrap_or_else(|| panic!("{value} must be rejected"))
+                .to_string();
+            assert!(error.contains("CLEANUP_INTERVAL"), "{value}: {error}");
+        }
+    }
+
+    #[test]
+    fn cleanup_interval_rejects_malformed_values() {
+        for value in ["-1ns", "garbage", "NaNs", "infs"] {
+            assert!(
+                load_with(&[("CLEANUP_INTERVAL", value)]).is_err(),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn timeouts_keep_their_ordering_check() {
+        let config =
+            load_with(&[("DEPENDENCY_TIMEOUT", "3s"), ("REQUEST_TIMEOUT", "10s")]).unwrap();
+        assert_eq!(config.dependency_timeout, Duration::from_secs(3));
+        assert_eq!(config.request_timeout, Duration::from_secs(10));
+
+        let result = load_with(&[("DEPENDENCY_TIMEOUT", "11s"), ("REQUEST_TIMEOUT", "10s")]);
+        assert!(result.is_err());
+    }
+}
