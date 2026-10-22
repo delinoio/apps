@@ -533,3 +533,46 @@ async fn independent_restrictions_remain_alongside_the_preserved_failure() {
         );
     }
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn reconciled_renewal_is_ordered_by_provider_billing_time() {
+    let s = scenario().await;
+    // Reconciliation applies the payment at the current time, long after it was billed. A failure
+    // that occurred after billing but before reconciliation must still be newer than the payment.
+    let (starts, ends, billed) = s.time.payment_a();
+    s.status(
+        "evt_b",
+        "subscription.past_due",
+        "past_due",
+        billed + Duration::minutes(1),
+    )
+    .await;
+    assert!(s.flag().await);
+    let mut data = s.completion("txn_a", (starts, ends, billed));
+    data["billed_at"] = json!(billed.to_rfc3339());
+    let t: delcore_api::provider::Transaction = serde_json::from_value(data).unwrap();
+    s.f.worker.apply_transaction(t, Utc::now()).await.unwrap();
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], true, "{state}");
+    assert_eq!(state["end"], ends.to_rfc3339(), "{state}");
+    assert_eq!(state["transactions"], json!(["txn_a"]), "{state}");
+    assert_eq!(
+        state["failure"],
+        json!({"at":(billed + Duration::minutes(1)).to_rfc3339(),"state":"past_due"}),
+        "{state}"
+    );
+    assert_eq!(
+        s.authorize().await["reasons"],
+        json!(["BLOCK_REASON_RENEWAL"])
+    );
+    // A renewal billed after the failure still recovers it.
+    let (starts, ends, _) = s.time.payment_c();
+    let mut data = s.completion("txn_c", (starts, ends, starts));
+    data["billed_at"] = json!((billed + Duration::minutes(2)).to_rfc3339());
+    let t: delcore_api::provider::Transaction = serde_json::from_value(data).unwrap();
+    s.f.worker.apply_transaction(t, Utc::now()).await.unwrap();
+    let state = s.state().await;
+    assert_eq!(state["renewalFailed"], false, "{state}");
+    assert_eq!(state["failure"], Value::Null, "{state}");
+}

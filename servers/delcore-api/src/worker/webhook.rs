@@ -141,7 +141,10 @@ impl Worker {
                 item.price.product_id != self.config.paddle_credit_product_id
                     || item.price.custom.job_id.is_empty()
             });
-            return self.renew(conn, &t, at).await;
+            // Order the renewal by when the provider billed it, like the initial payment, so a
+            // reconciled payment is not compared with newer failures by its processing time.
+            let paid_at = t.confirmed_at(at);
+            return self.renew(conn, &t, paid_at).await;
         }
         if !valid_job(&t.custom.job_id) {
             return Ok(());
