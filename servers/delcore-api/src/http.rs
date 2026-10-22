@@ -21,14 +21,25 @@ struct Policy {
     limit: i64,
     window: Arc<Mutex<(Instant, i64)>>,
 }
+/// Decides whether the Nth rejected request of one window writes a diagnostic.
+/// Logging only the 1st, 2nd, 4th, 8th, ... rejection keeps the log volume of an
+/// exhausted window logarithmic in the request volume, so the limiter does not
+/// turn a traffic spike into unbounded synchronous log I/O. Every rejected
+/// response still carries its own correlation ID.
+fn log_rejection(rejected_in_window: i64) -> bool {
+    u64::try_from(rejected_in_window).is_ok_and(u64::is_power_of_two)
+}
 async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next) -> Response {
-    let allowed = {
+    let (allowed, rejected_in_window) = {
         let mut state = policy.window.lock().unwrap_or_else(|e| e.into_inner());
         if state.0.elapsed() >= Duration::from_secs(60) {
             *state = (Instant::now(), 0)
         }
         state.1 = state.1.saturating_add(1);
-        state.1 <= policy.limit
+        (
+            state.1 <= policy.limit,
+            state.1.saturating_sub(policy.limit.max(0)),
+        )
     };
     // Generate the server correlation ID before admission so that every response,
     // including a rate rejection, carries it. Any client-supplied value is replaced.
@@ -38,8 +49,11 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
         .insert("X-Delcore-Correlation-Id", correlation.parse().unwrap());
     let request_headers = request.headers().clone();
     if !allowed {
-        // Log only the correlation ID and category; never headers or request data.
-        tracing::warn!(correlation_id = %correlation, category="rate_limited", "request rate limit exceeded");
+        // Log only the correlation ID, category and sampled count; never headers or
+        // request data. The log is sampled so that it stays bounded under load.
+        if log_rejection(rejected_in_window) {
+            tracing::warn!(correlation_id = %correlation, category="rate_limited", rejected_in_window, "request rate limit exceeded");
+        }
         // The schema has no rate-limit reason, so use ERROR_REASON_UNSPECIFIED (0).
         // Render with empty request headers so the unary Connect representation is
         // always used: for a gRPC or Connect-streaming content type the request
@@ -363,6 +377,71 @@ mod tests {
                 assert_eq!(decode_detail(&body).correlation_id, correlation, "{label}");
             }
         }
+        task.abort();
+    }
+    #[test]
+    fn rejection_logging_is_bounded_per_window() {
+        let logged: Vec<i64> = (1..=1_000_000).filter(|n| log_rejection(*n)).collect();
+        assert_eq!(logged.len(), 20, "{logged:?}");
+        assert_eq!(&logged[..5], &[1, 2, 4, 8, 16]);
+        assert!(!log_rejection(0));
+        assert!(!log_rejection(-1));
+        assert!(!log_rejection(3));
+    }
+    #[tokio::test]
+    async fn rate_rejection_warnings_are_sampled_while_every_response_is_rejected() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tracing_subscriber::prelude::*;
+        struct CountWarnings(Arc<AtomicUsize>);
+        impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CountWarnings {
+            fn on_event(
+                &self,
+                event: &tracing::Event<'_>,
+                _: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                if *event.metadata().level() == tracing::Level::WARN {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }
+        let warnings = Arc::new(AtomicUsize::new(0));
+        // The default test runtime is single-threaded, so the thread-local default
+        // subscriber also covers the connection tasks spawned by `axum::serve`.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::registry().with(CountWarnings(warnings.clone())),
+        );
+        let app = Router::new()
+            .route("/", post(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(
+                Policy {
+                    timeout: Duration::from_secs(30),
+                    limit: 1,
+                    window: Arc::new(Mutex::new((Instant::now(), 0))),
+                },
+                bounded,
+            ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        assert_eq!(
+            client.post(&url).send().await.unwrap().status(),
+            StatusCode::OK
+        );
+        let mut correlations = std::collections::HashSet::new();
+        for _ in 0..9 {
+            let response = client.post(&url).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            correlations.insert(
+                response.headers()["X-Delcore-Correlation-Id"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+        }
+        // Rejections 1, 2, 4 and 8 of the nine log; every response keeps its own ID.
+        assert_eq!(warnings.load(Ordering::SeqCst), 4);
+        assert_eq!(correlations.len(), 9);
         task.abort();
     }
     #[tokio::test]
