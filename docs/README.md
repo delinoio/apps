@@ -63,6 +63,8 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [Project index](project-delitools.md)
 - [Application and mobile distribution](apps-delitools-foundation.md)
+- [API server](servers-delitools-api-contract.md)
+- [Connect protocol](protos-delitools-v1-contract.md)
 
 ### devbase
 

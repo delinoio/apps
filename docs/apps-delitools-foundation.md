@@ -2,7 +2,7 @@
 
 ## Scope
 
-`apps/delitools` owns the desktop, mobile and web application for useful end-user tools. Usage-based billing belongs to delcore. The web application domain is `https://delitools.delino.io`. The mobile release workflow owns signed build artifacts and test-channel uploads.
+`apps/delitools` owns the desktop, mobile and web application for useful end-user tools. Usage-based billing belongs to delcore. The paid translation and extraction API is a separate server owned by the [DeliTools API server contract](servers-delitools-api-contract.md); this application does not host or call it. The web application domain is `https://delitools.delino.io`. The mobile release workflow owns signed build artifacts and test-channel uploads.
 
 ## Runtime and Language
 
@@ -18,7 +18,7 @@ The title is `DeliTools`; the application identifier is `io.delino.delitools`. D
 
 `pnpm dev` serves the frontend on fixed loopback port 46312 and fails on conflicts. `pnpm dev:desktop` starts the desktop host. `pnpm mobile:android:init` and `pnpm mobile:ios:init` generate native projects; `pnpm dev:android` and `pnpm dev:ios` launch mobile development. Mobile build commands are `pnpm build:android` and `pnpm build:ios`. Local Android release builds remain unsigned when no upload keystore is supplied; the release workflow still requires and validates signing credentials.
 
-The shared frontend also runs as a standalone web application. Cloudflare Pages builds it from the repository root with `pnpm --filter delitools build` and publishes `apps/delitools/dist`. Include root `LICENSE` and `NOTICE` in web distributions. Domain binding and deployment require separate platform configuration. Future billable tools use server-side delcore authorization and metering; the scaffold does not implement billing or API clients.
+The shared frontend also runs as a standalone web application. Cloudflare Pages builds it from the repository root with `pnpm --filter delitools build` and publishes `apps/delitools/dist`. Include root `LICENSE` and `NOTICE` in web distributions. Domain binding and deployment require separate platform configuration. Billable tools use server-side delcore authorization and metering; the scaffold does not implement billing or API clients, and the DeliTools API server is not part of the application build or release.
 
 Web publication uses `.github/workflows/release-delitools.yml` and the `delitools-production` environment after shared release preparation. A DeliTools version tag deploys only the web build. Mobile distribution remains a separate main dispatch with its own build number and opt-in uploads. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
 
@@ -55,6 +55,8 @@ Keep the project index, workspace registrations, owning instructions and workflo
 ## References
 
 - [Project index](project-delitools.md)
+- [API server contract](servers-delitools-api-contract.md)
+- [Protocol contract](protos-delitools-v1-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Workflow contract](repository-workflow-contract.md)
 - [Tauri Android signing](https://v2.tauri.app/distribute/sign/android/)
