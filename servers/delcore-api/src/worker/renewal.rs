@@ -48,8 +48,12 @@ impl Worker {
         if customer != t.customer_id || period.starts_at < previous_end {
             return Ok(());
         }
-        let change = sqlx::query("SELECT id::text,payload FROM jobs WHERE tenant_id=$1::text::uuid AND kind='subscription' AND state IN ('reconcile','running') AND payload->>'timing'='do_not_bill' ORDER BY created_at LIMIT 1")
-            .bind(&tenant).fetch_optional(&mut *conn).await?;
+        // A scheduled change takes effect only at a renewal whose billing period starts at or after
+        // the request (`created_at`). A delayed notification for a period that began earlier
+        // already contained the old subscription, so it must not consume the change. It renews
+        // the current entitlements below and leaves the change for the next renewal.
+        let change = sqlx::query("SELECT id::text,payload FROM jobs WHERE tenant_id=$1::text::uuid AND kind='subscription' AND state IN ('reconcile','running') AND payload->>'timing'='do_not_bill' AND created_at<=$2 ORDER BY created_at LIMIT 1")
+            .bind(&tenant).bind(period.starts_at).fetch_optional(&mut *conn).await?;
         if let Some(change) = change {
             let change_id: String = change.try_get(0)?;
             let p: super::webhook::PaymentPayload = serde_json::from_value(change.try_get(1)?)?;
