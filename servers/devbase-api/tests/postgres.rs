@@ -330,6 +330,90 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     ]).await;
     let (_, active_update) = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"name":"Updated","updateMask":"name","version":"1","idempotencyKey":"user-update"})).await;
     assert_eq!(active_update["endUser"], updated["endUser"]);
+    // Metadata that PostgreSQL jsonb cannot store is invalid input. It must be
+    // rejected before any mutation and leave counters, replays and audits alone.
+    async fn snapshot(db: &sqlx::PgPool, pid: &str, uid: &str) -> (i64, i64, i64, i64, i64, Value) {
+        let pid = uuid::Uuid::parse_str(pid).unwrap();
+        let uid = uuid::Uuid::parse_str(uid).unwrap();
+        let count = |sql: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .fetch_one(db)
+                .await
+                .unwrap()
+        };
+        let user_count: i64 = sqlx::query_scalar("SELECT user_count FROM projects WHERE id=$1")
+            .bind(pid)
+            .fetch_one(db)
+            .await
+            .unwrap();
+        let (version, metadata): (i64, Value) =
+            sqlx::query_as("SELECT version,metadata FROM end_users WHERE id=$1")
+                .bind(uid)
+                .fetch_one(db)
+                .await
+                .unwrap();
+        (
+            count("SELECT count(*) FROM end_users").await,
+            user_count,
+            count("SELECT count(*) FROM replays").await,
+            count("SELECT count(*) FROM audit_events").await,
+            version,
+            metadata,
+        )
+    }
+    let nul_fixtures = [
+        json!({"value":"\u{0}"}),
+        json!({"\u{0}":"value"}),
+        json!({"nested":{"value":"a\u{0}b"}}),
+        json!({"nested":{"a\u{0}b":true}}),
+        json!({"items":[0,{"value":"\u{0}"}]}),
+        json!({"items":[{"\u{0}":null}]}),
+    ];
+    let before = snapshot(&db, &pid, &uid).await;
+    for (n, fixture) in nul_fixtures.iter().enumerate() {
+        let create_nul = json!({"projectId":pid,"externalId":format!("nul-{n}"),"metadata":fixture,"idempotencyKey":format!("nul-create-{n}")});
+        let (status, body) = call(&http, &base, "CreateEndUser", &secret, create_nul).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{fixture}: {body}");
+        assert_eq!(body["code"], "invalid_argument", "{fixture}: {body}");
+        assert!(!body["details"].as_array().unwrap().is_empty());
+        assert_eq!(body["message"], "metadata must not contain U+0000");
+        let update_nul = json!({"projectId":pid,"endUserId":uid,"metadata":fixture,"updateMask":"metadata","version":"2","idempotencyKey":format!("nul-update-{n}")});
+        let (status, body) = call(&http, &base, "UpdateEndUser", &secret, update_nul).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{fixture}: {body}");
+        assert_eq!(body["code"], "invalid_argument", "{fixture}: {body}");
+        assert!(!body["details"].as_array().unwrap().is_empty());
+        assert_eq!(body["message"], "metadata must not contain U+0000");
+        assert_eq!(snapshot(&db, &pid, &uid).await, before, "{fixture}");
+    }
+    let trace = http
+        .post(format!("{base}/CreateEndUser"))
+        .bearer_auth(&secret)
+        .header("Connect-Protocol-Version", "1")
+        .json(&json!({"projectId":pid,"externalId":"nul-trace","metadata":nul_fixtures[0],"idempotencyKey":"nul-trace"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(trace.status(), StatusCode::BAD_REQUEST);
+    assert!(trace.headers().contains_key("x-devbase-trace-id"));
+    // Unmasked metadata is not validated: a name-only update ignores it.
+    let (status, name_only) = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"name":"Ignored NUL","metadata":nul_fixtures[0],"updateMask":"name","version":"2","idempotencyKey":"nul-name-only"})).await;
+    assert_eq!(status, StatusCode::OK, "{name_only}");
+    assert_eq!(name_only["endUser"]["version"], "3");
+    assert_eq!(name_only["endUser"]["metadata"], a.1["endUser"]["metadata"]);
+    // Corrected retries succeed with the rejected key and with a fresh key.
+    let unicode =
+        json!({"value":"한글 😀","literal":"\\u0000","items":[null,true,3.0,{"key":"value"}]});
+    let (status, retry) = call(&http, &base, "CreateEndUser", &secret, json!({"projectId":pid,"externalId":"nul-0","metadata":unicode,"idempotencyKey":"nul-create-0"})).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    assert_eq!(retry["endUser"]["metadata"], unicode);
+    let (status, retry) = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"metadata":unicode,"updateMask":"metadata","version":"3","idempotencyKey":"nul-update-0"})).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    assert_eq!(retry["endUser"]["metadata"], unicode);
+    let (status, retry) = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"metadata":{},"updateMask":"metadata","version":"4","idempotencyKey":"nul-clear"})).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    assert_eq!(retry["endUser"]["metadata"], json!({}));
+    let (status, retry) = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"metadata":{"k":"v"},"updateMask":"metadata","version":"5","idempotencyKey":"nul-restore"})).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
     let (_, stale) = call(
         &http,
         &base,
@@ -344,7 +428,7 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         &base,
         "DeleteEndUser",
         &secret,
-        json!({"projectId":pid,"endUserId":uid,"version":"2","idempotencyKey":"user-delete"}),
+        json!({"projectId":pid,"endUserId":uid,"version":"6","idempotencyKey":"user-delete"}),
     )
     .await;
     assert!(deleted.get("code").is_none(), "{deleted}");
