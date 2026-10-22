@@ -28,6 +28,12 @@ impl Config {
                 n > 0.0 && n.is_finite(),
                 "{key} must be positive and finite"
             );
+            // The limiter reports at most 1/rate seconds as the retry delay and converts it to a
+            // Duration; reject rates whose reciprocal overflows or does not fit a Duration.
+            anyhow::ensure!(
+                Duration::try_from_secs_f64(1.0 / n).is_ok(),
+                "{key} must have a representable retry delay"
+            );
             Ok(n)
         }
         let c = Self {
@@ -71,13 +77,25 @@ mod tests {
     // Config::load reads process-global environment variables, so tests that mutate them run
     // one at a time. Other test modules in this crate do not call Config::load.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
-    const DURATION_KEYS: [&str; 3] = ["DEPENDENCY_TIMEOUT", "REQUEST_TIMEOUT", "CLEANUP_INTERVAL"];
+    const ENV_KEYS: [&str; 7] = [
+        "DEPENDENCY_TIMEOUT",
+        "REQUEST_TIMEOUT",
+        "CLEANUP_INTERVAL",
+        "USER_RATE_PER_SECOND",
+        "USER_RATE_BURST",
+        "MANAGEMENT_RATE_PER_SECOND",
+        "MANAGEMENT_RATE_BURST",
+    ];
+    const RATE_KEYS: [(&str, &str); 2] = [
+        ("USER_RATE_PER_SECOND", "USER_RATE_BURST"),
+        ("MANAGEMENT_RATE_PER_SECOND", "MANAGEMENT_RATE_BURST"),
+    ];
 
     fn load_with(settings: &[(&str, &str)]) -> anyhow::Result<Config> {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // SAFETY: ENV_LOCK serializes every test that touches these variables.
         unsafe {
-            for key in DURATION_KEYS {
+            for key in ENV_KEYS {
                 std::env::remove_var(key);
             }
             for (key, value) in settings {
@@ -87,7 +105,7 @@ mod tests {
         let result = Config::load();
         // SAFETY: still holding ENV_LOCK.
         unsafe {
-            for key in DURATION_KEYS {
+            for key in ENV_KEYS {
                 std::env::remove_var(key);
             }
         }
@@ -139,5 +157,68 @@ mod tests {
         let c = load_with(&[("DEPENDENCY_TIMEOUT", "3s"), ("REQUEST_TIMEOUT", "10s")]).unwrap();
         assert_eq!(c.dependency_timeout, Duration::from_secs(3));
         assert_eq!(c.request_timeout, Duration::from_secs(10));
+    }
+
+    fn rate_error(rate_key: &str, burst_key: &str, rate: &str) -> String {
+        load_with(&[(rate_key, rate), (burst_key, "1")])
+            .err()
+            .unwrap_or_else(|| panic!("{rate_key}={rate}"))
+            .to_string()
+    }
+
+    #[test]
+    fn rejects_rates_without_representable_retry_delay() {
+        let subnormal = format!("{:e}", f64::from_bits(1));
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["1e-30", subnormal.as_str()] {
+                let err = rate_error(rate_key, burst_key, value);
+                assert!(err.contains(rate_key), "{value}: {err}");
+            }
+        }
+    }
+
+    #[test]
+    fn rate_acceptance_matches_duration_conversion_at_boundary() {
+        let boundary = 2_f64.powi(-64);
+        let neighbors = [
+            f64::from_bits(boundary.to_bits() - 1),
+            boundary,
+            f64::from_bits(boundary.to_bits() + 1),
+        ];
+        for (rate_key, burst_key) in RATE_KEYS {
+            for rate in neighbors {
+                let accepted = Duration::try_from_secs_f64(1.0 / rate).is_ok();
+                let loaded = load_with(&[(rate_key, &format!("{rate:e}")), (burst_key, "1")]);
+                assert_eq!(loaded.is_ok(), accepted, "{rate_key}={rate:e}");
+            }
+        }
+    }
+
+    #[test]
+    fn accepts_defaults_and_small_representable_rates() {
+        let c = load_with(&[]).unwrap();
+        assert_eq!(c.user_rate, 1000.0);
+        assert_eq!(c.management_rate, 50.0);
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["0.001", "1e-18"] {
+                load_with(&[(rate_key, value), (burst_key, "1")]).expect(value);
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_existing_rate_validation() {
+        for (rate_key, burst_key) in RATE_KEYS {
+            for value in ["0", "-1", "inf", "NaN", "abc"] {
+                load_with(&[(rate_key, value), (burst_key, "1")])
+                    .err()
+                    .unwrap_or_else(|| panic!("{rate_key}={value}"));
+            }
+            load_with(&[(rate_key, "1"), (burst_key, "0")])
+                .err()
+                .expect("zero burst");
+            let err = rate_error(rate_key, burst_key, "2");
+            assert!(err.contains("burst must not be smaller"), "{err}");
+        }
     }
 }
