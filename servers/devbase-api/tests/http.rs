@@ -236,6 +236,56 @@ async fn handler_errors_keep_their_single_observation_without_timeout_counts() {
 }
 
 #[tokio::test]
+async fn handler_finishing_before_the_outer_deadline_is_not_counted_again() {
+    // The handler answers a request without credentials at once and records its own outcome.
+    // A layer between the outer timeout and the service then keeps the finished response past the
+    // outer deadline, which stands for slow serialization or scheduling after the handler.
+    let fx = fixture(Duration::from_millis(200), Delcore::Fail).await;
+    let rpc = connectrpc::Router::new()
+        .add_service(fx.server.clone())
+        .into_axum_service();
+    let slow = Router::new()
+        .fallback_service(rpc)
+        .layer(axum::middleware::from_fn(
+            |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                let response = next.run(request).await;
+                tokio::time::sleep(Duration::from_millis(600)).await;
+                response
+            },
+        ));
+    let app = Router::new()
+        .fallback_service(slow)
+        .layer(axum::middleware::from_fn_with_state(
+            server_common::http::Policy {
+                origin: ORIGIN.into(),
+                timeout: Duration::from_millis(200),
+                service: server_common::telemetry::Service::DevBase,
+                metrics: fx.server.metrics.clone(),
+                procedure: Some(|path| Op::from_procedure_path(path).map(Op::name)),
+            },
+            server_common::http::middleware,
+        ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let path = format!("{PREFIX}ListProjects");
+    let body = format!(r#"{{"tenantId":"{TENANT}"}}"#);
+    let reply = exchange(
+        addr,
+        &rpc_head(&path, body.len(), ""),
+        &[(Duration::ZERO, body.as_bytes())],
+    )
+    .await;
+    task.abort();
+    assert_timeout_reply(&reply);
+    // Exactly one observation for the request: the handler's own, with no timeout sample.
+    assert_eq!(count(&fx.server, "ListProjects", "unauthenticated"), 1);
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 0);
+    assert_eq!(samples(&fx.server, "ListProjects").0, 1);
+}
+
+#[tokio::test]
 async fn unrouted_requests_create_no_procedure_series() {
     let fx = fixture(Duration::from_millis(100), Delcore::Fail).await;
     let unknown = [
