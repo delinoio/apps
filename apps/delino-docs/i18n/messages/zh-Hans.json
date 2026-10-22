@@ -33,5 +33,9 @@
   "theme.promptCopyText": "复制提示词",
   "theme.promptCopiedText": "已复制",
   "theme.promptExpandText": "展开",
-  "theme.promptCollapseText": "收起"
+  "theme.promptCollapseText": "收起",
+  "apiReference": "API 参考",
+  "apiKeys": "API 密钥",
+  "billing": "账单",
+  "troubleshooting": "故障排除"
 }

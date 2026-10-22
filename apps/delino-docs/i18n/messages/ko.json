@@ -33,5 +33,9 @@
   "theme.promptCopyText": "프롬프트 복사",
   "theme.promptCopiedText": "복사됨",
   "theme.promptExpandText": "펼치기",
-  "theme.promptCollapseText": "접기"
+  "theme.promptCollapseText": "접기",
+  "apiReference": "API 참조",
+  "apiKeys": "API 키",
+  "billing": "결제",
+  "troubleshooting": "문제 해결"
 }

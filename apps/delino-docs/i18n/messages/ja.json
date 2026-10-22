@@ -33,5 +33,9 @@
   "theme.promptCopyText": "プロンプトをコピー",
   "theme.promptCopiedText": "コピーしました",
   "theme.promptExpandText": "展開",
-  "theme.promptCollapseText": "折りたたむ"
+  "theme.promptCollapseText": "折りたたむ",
+  "apiReference": "APIリファレンス",
+  "apiKeys": "APIキー",
+  "billing": "請求",
+  "troubleshooting": "トラブルシューティング"
 }

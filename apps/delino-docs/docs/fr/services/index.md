@@ -1,8 +1,9 @@
 # Services
 
-- [Delcore](/fr/services/delcore/) : vérifiez l’état d’un locataire depuis un service enregistré.
-- [DevBase](/fr/services/devbase/) : gérez les utilisateurs finaux de vos applications.
-- [Git Tracker](/fr/services/git-tracker/) : suivez les mesures des commits et les régressions.
-- [FixKey](/fr/services/fixkey/) : corrigez les mots coréens et anglais saisis avec la mauvaise disposition de clavier.
+- [Delcore](/fr/services/delcore/) : vérifier l’état d’un tenant depuis un service enregistré.
+- [DevBase](/fr/services/devbase/) : gérer les utilisateurs finaux de vos applications.
+- [Git Tracker](/fr/services/git-tracker/) : suivre les mesures et les régressions liées aux commits.
+- [FixKey](/fr/services/fixkey/) : corriger les mots coréens et anglais saisis avec une disposition de clavier incorrecte.
+- [DeliTools](/fr/services/delitools/) : traduire des textes et extraire du JSON à partir de texte à l’aide d’API payantes.
 
-Consultez [Bien démarrer](/fr/guide/getting-started) pour une introduction au site de documentation.
+Consultez [Premiers pas](/fr/guide/getting-started) pour une introduction au site de documentation.

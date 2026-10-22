@@ -33,5 +33,9 @@
   "theme.promptCopyText": "Copiar prompt",
   "theme.promptCopiedText": "Copiado",
   "theme.promptExpandText": "Expandir",
-  "theme.promptCollapseText": "Recolher"
+  "theme.promptCollapseText": "Recolher",
+  "apiReference": "Referência da API",
+  "apiKeys": "Chaves de API",
+  "billing": "Faturamento",
+  "troubleshooting": "Solução de problemas"
 }
