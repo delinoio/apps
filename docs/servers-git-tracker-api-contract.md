@@ -1,6 +1,6 @@
 # Git Tracker Server
 
-The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses Turborepo watch mode with one shared Cargo builder and direct binary launchers.
+The Rust runtime follows the [server Rust workspace contract](servers-rust-workspace-contract.md). Root development uses `turbo run dev` with one shared Cargo builder and direct binary launchers.
 
 ## Scope
 
@@ -163,6 +163,6 @@ The development command first injects Infisical `dev` variables from `/git-track
 
 Run `pnpm dev` at the repository root for all development servers, or from `servers/git-tracker-api` for this API only. The script executes `servers/target/debug/git-tracker-api` after the shared builder completes. Build the server workspace first for service-local development. Configure the existing environment variables in the shell or the ignored `servers/git-tracker-api/.env`, using the service-local `.env.example` as a guide. Prepare PostgreSQL, the schema and required provider configuration before starting. The launcher does not provision dependencies or bypass startup checks.
 
-Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; the launcher forwards the signal to the Rust server for graceful shutdown. See the [workflow contract](repository-workflow-contract.md) for watcher scope and generated output.
+Keep the local API listener at `127.0.0.1:46321` and the web origin at `http://127.0.0.1:46320`. A port conflict fails server startup; no alternate port is selected. Stop with `Ctrl+C`; the launcher forwards the signal to the Rust server for graceful shutdown. See the [workflow contract](repository-workflow-contract.md) for build, restart and generated-output behavior.
 
 Rust validation and protocol generation ownership follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.
