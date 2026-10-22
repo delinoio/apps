@@ -27,7 +27,7 @@ uuid.workspace = true
 tracing-subscriber.workspace = true
 prometheus = "0.14"
 opentelemetry = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
 tracing-opentelemetry = "0.32"
 dotenvy = "0.15"
