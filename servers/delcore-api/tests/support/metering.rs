@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use super::{Fixture, key};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 
 async fn put(f: &Fixture, method: &str, field: &str, value: Value) -> Value {
@@ -46,6 +46,43 @@ async fn ingest(
     occurred: &str,
 ) -> Value {
     f.rpc("service","IngestEvent",json!({"requestKey":key(),"event":{"tenantId":tenant,"serviceId":service,"eventKey":event,"eventType":"request","occurredAt":occurred,"attributes":attributes}})).await
+}
+
+async fn change(f: &Fixture, tenant: &Value, plan: &Value, prices: Value) -> Value {
+    f.rpc("owner","ChangeSubscription",json!({"requestKey":key(),"tenantId":tenant,"planId":plan["id"],"priceIds":prices,"returnUrl":f.config.return_urls[0]})).await
+}
+async fn change_error(f: &Fixture, tenant: &Value, plan: &Value, prices: Value, code: &str) {
+    f.error("owner","ChangeSubscription",json!({"requestKey":key(),"tenantId":tenant,"planId":plan["id"],"priceIds":prices,"returnUrl":f.config.return_urls[0]}),code).await;
+}
+async fn limit(f: &Fixture, tenant: &Value, user: &Value) -> Value {
+    f.rpc("service","Authorize",json!({"tenantId":tenant,"userId":user,"capability":"execute","featureKey":"limit","groupValues":{}})).await["feature"]["limit"].clone()
+}
+async fn job_state(f: &Fixture, job: &Value) -> String {
+    sqlx::query_scalar("SELECT state FROM jobs WHERE id=$1::text::uuid")
+        .bind(job.as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .unwrap()
+}
+async fn count(f: &Fixture, table: &str, tenant: &Value) -> i64 {
+    sqlx::query_scalar(&format!(
+        "SELECT count(*) FROM {table} WHERE tenant_id=$1::text::uuid"
+    ))
+    .bind(tenant.as_str().unwrap())
+    .fetch_one(&f.db)
+    .await
+    .unwrap()
+}
+async fn selected_plan(f: &Fixture, tenant: &Value) -> String {
+    sqlx::query_scalar("SELECT plan_id::text FROM tenants WHERE id=$1::text::uuid")
+        .bind(tenant.as_str().unwrap())
+        .fetch_one(&f.db)
+        .await
+        .unwrap()
+}
+async fn limit_feature(f: &Fixture, svc: &Value) -> Value {
+    put(&f,"PutMeter","meter",json!({"serviceId":svc["id"],"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"})).await;
+    put(&f,"PutFeature","feature",json!({"serviceId":svc["id"],"key":"limit","name":"Limit","kind":"FEATURE_KIND_METERED","meterKey":"requests"})).await
 }
 
 #[tokio::test]
@@ -347,4 +384,127 @@ async fn catalog_prices_reuse_versions_and_keep_tenant_selections() {
             .bind(tenant.as_str().unwrap()).fetch_one(&f.db).await.unwrap();
         assert_eq!(selected, expected.as_str().unwrap());
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn price_free_free_plans_change_versions_with_empty_prices() {
+    let f = Fixture::setup().await;
+    plan(&f, json!([])).await;
+    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
+    let svc = service(&f).await;
+    let feature = limit_feature(&f, &svc).await;
+    let values = |n: &str| json!([{"featureId":feature["id"],"limit":n}]);
+    let v1 = plan(&f, values("2")).await;
+    let alpha = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Alpha"}),
+        )
+        .await;
+    let tenant = &alpha["tenant"]["id"];
+    let v2 = plan(&f, values("5")).await;
+    assert_ne!(v1["activeVersionId"], v2["activeVersionId"]);
+    assert_eq!(limit(&f, tenant, &me["userId"]).await, "2");
+
+    let refresh = change(&f, tenant, &v2, json!([])).await;
+    assert_eq!(job_state(&f, &refresh["jobId"]).await, "done");
+    assert_eq!(limit(&f, tenant, &me["userId"]).await, "5");
+    let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM audit WHERE tenant_id=$1::text::uuid AND action='subscription.free_refresh'").bind(tenant.as_str().unwrap()).fetch_one(&f.db).await.unwrap();
+    assert_eq!(audits, 1);
+
+    let higher = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"plus","name":"Plus","rank":5,"free":true,"featureValues":values("9")}),
+    )
+    .await;
+    let upgrade = change(&f, tenant, &higher, json!([])).await;
+    assert_eq!(job_state(&f, &upgrade["jobId"]).await, "done");
+    assert_eq!(selected_plan(&f, tenant).await, higher["id"]);
+    assert_eq!(limit(&f, tenant, &me["userId"]).await, "9");
+
+    let downgrade = change(&f, tenant, &v2, json!([])).await;
+    assert_eq!(job_state(&f, &downgrade["jobId"]).await, "pending");
+    assert_eq!(selected_plan(&f, tenant).await, higher["id"]);
+    assert_eq!(limit(&f, tenant, &me["userId"]).await, "9");
+    // Move the scheduled period boundary into the past instead of the clock forward.
+    sqlx::query("UPDATE jobs SET available_at=$2 WHERE id=$1::text::uuid")
+        .bind(downgrade["jobId"].as_str().unwrap())
+        .bind(Utc::now() - Duration::minutes(1))
+        .execute(&f.db)
+        .await
+        .unwrap();
+    f.worker.maintain(Utc::now()).await.unwrap();
+    assert_eq!(job_state(&f, &downgrade["jobId"]).await, "done");
+    assert_eq!(selected_plan(&f, tenant).await, v2["id"]);
+    assert_eq!(limit(&f, tenant, &me["userId"]).await, "5");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn empty_price_changes_require_price_free_free_plans() {
+    let f = Fixture::setup().await;
+    let free = plan(&f, json!([])).await;
+    let svc = service(&f).await;
+    limit_feature(&f, &svc).await;
+    let paid = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"pro","name":"Pro","rank":10,"free":false}),
+    )
+    .await;
+    let priced = put(
+        &f,
+        "PutPlan",
+        "plan",
+        json!({"key":"priced","name":"Priced","rank":1,"free":true}),
+    )
+    .await;
+    let price = put(&f,"CreatePrice","price",json!({"key":"requests-usd","planId":priced["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1","included":"2","currency":"USD"})).await;
+    let alpha = f
+        .rpc(
+            "owner",
+            "CreateTenant",
+            json!({"requestKey":key(),"name":"Alpha"}),
+        )
+        .await;
+    let tenant = &alpha["tenant"]["id"];
+    let before = (
+        selected_plan(&f, tenant).await,
+        count(&f, "jobs", tenant).await,
+        count(&f, "entitlements", tenant).await,
+    );
+    change_error(&f, tenant, &paid, json!([]), "invalid_argument").await;
+    change_error(&f, tenant, &priced, json!([]), "invalid_argument").await;
+    change_error(&f, tenant, &free, json!([price["id"]]), "invalid_argument").await;
+    change_error(
+        &f,
+        tenant,
+        &priced,
+        json!([price["id"], price["id"]]),
+        "invalid_argument",
+    )
+    .await;
+    let many: Vec<String> = (0..101).map(|_| key()).collect();
+    change_error(&f, tenant, &priced, json!(many), "invalid_argument").await;
+    let after = (
+        selected_plan(&f, tenant).await,
+        count(&f, "jobs", tenant).await,
+        count(&f, "entitlements", tenant).await,
+    );
+    assert_eq!(before, after);
+
+    sqlx::query(
+        "UPDATE tenants SET external_subscription_id='sub_external' WHERE id=$1::text::uuid",
+    )
+    .bind(tenant.as_str().unwrap())
+    .execute(&f.db)
+    .await
+    .unwrap();
+    change_error(&f, tenant, &free, json!([]), "failed_precondition").await;
+    assert_eq!(count(&f, "jobs", tenant).await, before.1);
 }

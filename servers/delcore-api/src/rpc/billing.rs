@@ -257,7 +257,6 @@ impl Call<'_> {
             })
             .unwrap_or_default();
         if uuid(plan).is_err()
-            || prices.is_empty()
             || prices.len() > 100
             || !self.config.allows_return(string(q, "returnUrl"))
         {
