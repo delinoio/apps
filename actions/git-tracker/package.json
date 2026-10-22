@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild main.mjs --bundle --platform=node --target=node24 --format=cjs --outfile=action.cjs",
+    "build": "esbuild main.mjs --bundle --preserve-symlinks --platform=node --target=node24 --format=cjs --outfile=action.cjs",
     "test": "node --test *.test.mjs",
     "ci:checks": "pnpm test && pnpm build && git diff --exit-code -- action.cjs"
   },

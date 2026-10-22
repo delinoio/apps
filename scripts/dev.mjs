@@ -76,12 +76,15 @@ export async function main(args = process.argv.slice(2)) {
 export function supervise(args, env = process.env) {
   return spawnDevServer(
     "pnpm",
-    ["exec", "turbo", "watch", "dev", "--concurrency=20", ...args],
+    ["exec", "turbo", "run", "dev", "--concurrency=20", ...args],
     {
       cwd: root,
       stdio: "inherit",
       env,
     },
+    // pnpm can exit before its descendants. Keep ownership of the whole group
+    // so shutdown waits for servers and escalates if they ignore the signal.
+    { terminateProcessTree: true },
   );
 }
 
