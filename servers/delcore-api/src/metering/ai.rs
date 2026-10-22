@@ -93,10 +93,32 @@ pub fn price_effective_at(attributes: &BTreeMap<String, Value>) -> Result<DateTi
         })
 }
 
-/// A replacement report keeps the per-token prices frozen by the accepted report:
-/// a price present in both must be identical. A category the accepted report did
-/// not price may gain a price, and a price may be omitted when the replacement
-/// reports no tokens for the category (the token rules reject any other omission).
+/// The per-token prices an event has frozen over its accepted revisions, given in
+/// revision order. The first revision that prices a category freezes that price; a
+/// later revision may omit the price while it reports no tokens for the category,
+/// but it can never change it, so the first price is also the latest accepted one.
+/// Reading only the latest revision would forget a price omitted there.
+pub fn frozen_prices<'a>(
+    revisions: impl IntoIterator<Item = &'a BTreeMap<String, Value>>,
+) -> BTreeMap<String, Value> {
+    let mut frozen = BTreeMap::new();
+    for attributes in revisions {
+        for category in TOKEN_CATEGORIES {
+            if let Some(price) = attributes.get(category.price) {
+                frozen
+                    .entry(category.price.to_owned())
+                    .or_insert_with(|| price.clone());
+            }
+        }
+    }
+    frozen
+}
+
+/// A replacement report keeps the per-token prices frozen by the accepted
+/// revisions (see [`frozen_prices`]): a price present in both must be identical. A
+/// category the accepted report did not price may gain a price, and a price may be
+/// omitted when the replacement reports no tokens for the category (the token rules
+/// reject any other omission).
 pub fn frozen_prices_unchanged(
     accepted: &BTreeMap<String, Value>,
     replacement: &BTreeMap<String, Value>,
@@ -435,6 +457,37 @@ mod tests {
         dropped.remove("cache_write_usd_per_token");
         dropped.remove("cache_write_tokens");
         assert!(frozen_prices_unchanged(&accepted, &dropped).is_ok());
+    }
+    #[test]
+    fn a_price_omitted_in_an_intermediate_revision_stays_frozen() {
+        let first = full();
+        // Revision 2 reports no cache write tokens and so legally omits the price.
+        let mut second = first.clone();
+        second.remove("cache_write_usd_per_token");
+        second.remove("cache_write_tokens");
+        // Revision 3 reports cache write tokens again, now with another price.
+        let mut third = first.clone();
+        third.insert(
+            "cache_write_usd_per_token".into(),
+            Value::number("0.000009").unwrap(),
+        );
+        // The latest revision alone cannot see the price, the whole chain can.
+        assert!(frozen_prices_unchanged(&second, &third).is_ok());
+        let frozen = frozen_prices([&first, &second]);
+        assert_eq!(frozen.len(), 4);
+        assert!(frozen_prices_unchanged(&frozen, &third).is_err());
+        // The unchanged price is still accepted, and so is a price first set later.
+        let mut restored = first.clone();
+        restored.insert("input_tokens".into(), Value::number("7").unwrap());
+        assert!(frozen_prices_unchanged(&frozen, &restored).is_ok());
+        let unpriced = report(&[("output_tokens", "1")], &[("output_usd_per_token", "1")]);
+        let mut gained = unpriced.clone();
+        gained.insert("input_usd_per_token".into(), Value::number("5").unwrap());
+        let frozen = frozen_prices([&unpriced, &gained]);
+        assert_eq!(frozen["input_usd_per_token"], Value::number("5").unwrap());
+        let mut repriced = gained.clone();
+        repriced.insert("input_usd_per_token".into(), Value::number("6").unwrap());
+        assert!(frozen_prices_unchanged(&frozen, &repriced).is_err());
     }
     #[test]
     fn price_effective_time_is_parsed() {

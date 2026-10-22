@@ -406,8 +406,10 @@ fn matches_call_time(meters: &[Meter], matched: &[Contribution]) -> bool {
 }
 
 /// A replacement of an accepted AI usage report corrects the measured usage only.
-/// Its per-token prices stay those frozen when the report was accepted, so a
-/// correction can never reprice earlier usage.
+/// Its per-token prices stay those frozen by the accepted revisions, so a
+/// correction can never reprice earlier usage. A revision may omit the price of a
+/// category without tokens, so the frozen prices come from the whole accepted
+/// chain and not only from the latest revision.
 async fn check_frozen_prices(
     tx: &mut PgConnection,
     event: &str,
@@ -419,14 +421,18 @@ async fn check_frozen_prices(
     if !matches_call_time(meters, matched) {
         return Ok(());
     }
-    let raw: Json = sqlx::query_scalar(
-        "SELECT attributes FROM metering_event_revisions WHERE event_id=$1::text::uuid AND revision=$2",
+    let history: Vec<Json> = sqlx::query_scalar(
+        "SELECT attributes FROM metering_event_revisions WHERE event_id=$1::text::uuid AND revision<=$2 ORDER BY revision",
     )
     .bind(event)
     .bind(accepted_revision)
-    .fetch_one(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-    metering::ai::frozen_prices_unchanged(&decode_values(&raw)?, attributes)
+    let revisions = history
+        .iter()
+        .map(decode_values)
+        .collect::<Result<Vec<_>>>()?;
+    metering::ai::frozen_prices_unchanged(&metering::ai::frozen_prices(&revisions), attributes)
         .map_err(|e| reject(Reason::InvalidAttribute, &e.to_string()))
 }
 

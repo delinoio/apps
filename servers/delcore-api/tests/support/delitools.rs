@@ -261,6 +261,55 @@ async fn later_prices_corrections_and_replays_reconcile_the_ledger() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn frozen_prices_hold_across_revisions_that_omit_them() {
+    let f = Fixture::setup().await;
+    let s = register(&f).await;
+    let tenant = tenant_of(&f, "owner").await;
+    credit(&f, &tenant, "100").await;
+    let effective = (Utc::now() - Duration::days(2)).to_rfc3339();
+    let ingest = json!({"requestKey":key(),"event":{"tenantId":tenant,"serviceId":s.service,"eventKey":"chain","eventType":TRANSLATOR,"occurredAt":Utc::now().to_rfc3339(),"attributes":attrs(["1000","","",""],["0.000001","","",""],&effective)}});
+    f.rpc("service", "IngestEvent", ingest).await;
+    let correct = |revision: i64, tokens: [&str; 4], prices: [&str; 4]| json!({"requestKey":key(),"tenantId":tenant,"eventKey":"chain","expectedRevision":revision,"kind":"EVENT_CORRECTION_KIND_REPLACE","eventType":TRANSLATOR,"attributes":attrs(tokens,prices,&effective)});
+    // Revision 2 reports no input tokens, so it legally omits the input price.
+    assert_eq!(
+        f.rpc(
+            "service",
+            "CorrectEvent",
+            correct(1, ["", "500", "", ""], ["", "0.00001", "", ""])
+        )
+        .await["revision"],
+        2
+    );
+    // Revision 3 reports input tokens again. The price frozen by revision 1 still
+    // holds, although the latest revision no longer carries it.
+    f.error(
+        "service",
+        "CorrectEvent",
+        correct(2, ["1000", "500", "", ""], ["0.000003", "0.00001", "", ""]),
+        "invalid_argument",
+    )
+    .await;
+    assert_eq!(
+        f.rpc(
+            "service",
+            "CorrectEvent",
+            correct(2, ["2000", "500", "", ""], ["0.000001", "0.00001", "", ""])
+        )
+        .await["revision"],
+        3
+    );
+    // The output price of revision 2 is frozen as well.
+    f.error(
+        "service",
+        "CorrectEvent",
+        correct(3, ["2000", "500", "", ""], ["0.000001", "0.00002", "", ""]),
+        "invalid_argument",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn missing_or_malformed_price_evidence_is_rejected_without_estimates() {
     let f = Fixture::setup().await;
     let s = register(&f).await;
