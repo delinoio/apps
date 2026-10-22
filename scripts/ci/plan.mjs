@@ -4,8 +4,11 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lockfilePaths } from "./lockfile-paths.mjs";
 
-export function select(paths, { baseLockfile, headLockfile } = {}) {
-  paths = paths.filter((path) => !/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(path));
+export const isInstructionPath = (path) =>
+  /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(path);
+
+function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
+  paths = paths.filter((path) => !isInstructionPath(path));
   if (paths.includes("pnpm-lock.yaml")) {
     const affected = lockfilePaths(baseLockfile, headLockfile);
     // Unknown ownership must retain global validation instead of skipping jobs.
@@ -18,6 +21,10 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         .concat(affected);
     }
   }
+  return paths;
+}
+
+function classifyShared(paths) {
   const sharedPatterns = {
     frontend: /^packages\/ui\//u,
     native:
@@ -42,6 +49,31 @@ export function select(paths, { baseLockfile, headLockfile } = {}) {
         path,
       ),
   );
+  return { shared, repositoryShared };
+}
+
+export function selectChecks(paths, lockfiles) {
+  paths = affectedPaths(paths, lockfiles);
+  const { shared, repositoryShared } = classifyShared(paths);
+  return {
+    tooling:
+      repositoryShared ||
+      paths.some((path) =>
+        /^(\.github\/|scripts\/|prebuilt-dependencies\.lock\.json$|servers\/(?:[^/]+\/)?scripts\/|apps\/[^/]+\/package\.json$|apps\/fixkey-app\/scripts\/release\/|apps\/delitools\/scripts\/)/u.test(
+          path,
+        ),
+      ),
+    shared_ui: repositoryShared || shared.frontend,
+    workflows:
+      repositoryShared ||
+      shared.go ||
+      paths.some((path) => /^\.github\//u.test(path)),
+  };
+}
+
+export function select(paths, lockfiles) {
+  paths = affectedPaths(paths, lockfiles);
+  const { shared, repositoryShared } = classifyShared(paths);
   const serverShared = paths.some((path) =>
     /^servers\/(?:[^/]+$|scripts\/)/u.test(path),
   );
@@ -214,7 +246,10 @@ if (
       );
     }
   }
-  const selected = select(paths, lockfiles);
+  const selected = {
+    ...select(paths, lockfiles),
+    ...selectChecks(paths, lockfiles),
+  };
   console.log(JSON.stringify({ event: "ci_selection", base, head, selected }));
   appendFileSync(
     process.env.GITHUB_OUTPUT,

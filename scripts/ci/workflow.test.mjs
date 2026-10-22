@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import yaml from "js-yaml";
+import { select, selectChecks } from "./plan.mjs";
 
 const workflow = yaml.load(
   readFileSync(
@@ -43,6 +44,9 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
     ["fixkey-frontend", "fixkey"],
+    ["tooling", "tooling"],
+    ["shared-ui", "shared_ui"],
+    ["workflows", "workflows"],
   ]) {
     assert.equal(
       workflow.jobs[id].if,
@@ -205,7 +209,9 @@ test("all CI formatting checks belong to Check Formatting", () => {
 
 test("validation evidence and main-only cache saves survive the job split", () => {
   for (const id of [
-    "validate",
+    "tooling",
+    "shared-ui",
+    "workflows",
     "check-formatting",
     "git-tracker-clients",
     "rust-servers",
@@ -262,6 +268,9 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "true",
     delidev: "true",
     delitools: "true",
+    tooling: "true",
+    shared_ui: "true",
+    workflows: "true",
     protocol: "true",
   };
   assert.equal(run(needs).status, 0);
@@ -291,6 +300,9 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "false",
     delidev: "false",
     delitools: "false",
+    tooling: "true",
+    shared_ui: "true",
+    workflows: "true",
     protocol: "true",
   };
   for (const id of [
@@ -473,4 +485,92 @@ test("Rust server Clippy runs independently with the affected-service matrix", (
       .name,
     /validation-rust-servers-clippy-.*matrix.service/u,
   );
+});
+
+test("shared checks allocate independent jobs from planner outputs", () => {
+  assert.equal(workflow.jobs.validate, undefined);
+  for (const [id, key, command] of [
+    ["tooling", "tooling", "pnpm test:tooling"],
+    ["shared-ui", "shared_ui", "pnpm --filter @delino/ui test"],
+    ["workflows", "workflows", "go tool actionlint -shellcheck=''"],
+  ]) {
+    assert.equal(
+      workflow.jobs.changes.outputs[key],
+      "${{ steps.plan.outputs." + key + " }}",
+    );
+    assert.equal(
+      workflow.jobs[id].if,
+      `needs.changes.outputs.${key} == 'true'`,
+    );
+    assert.equal(
+      workflow.jobs[id].steps.find((step) => step.id === id).run,
+      command,
+    );
+    for (const other of ["tooling", "shared-ui", "workflows"].filter(
+      (other) => other !== id,
+    )) {
+      assert.ok(!workflow.jobs[id].steps.some((step) => step.id === other));
+    }
+  }
+  const script = workflow.jobs["ci-result"].steps[0].run
+    .split("\n")
+    .slice(1, -1)
+    .join("\n");
+  for (const paths of [
+    ["AGENTS.md", "servers/AGENTS.md"],
+    ["packages/ui/src/components/button.tsx"],
+    ["scripts/localization/catalog.mjs"],
+    [".github/workflows/release-fixkey.yml"],
+    ["go.mod"],
+    ["apps/devbase/src/main.tsx"],
+  ]) {
+    const selection = { ...select(paths), ...selectChecks(paths) };
+    const needs = Object.fromEntries(
+      workflow.jobs["ci-result"].needs.map((id) => [id, { result: "skipped" }]),
+    );
+    const jobOwners = {
+      tooling: "tooling",
+      "shared-ui": "shared_ui",
+      workflows: "workflows",
+      "git-tracker-clients": "git_tracker",
+      "fixkey-frontend": "fixkey",
+      "fixkey-desktop": "fixkey",
+      "devbase-frontend": "devbase",
+      "delino-site-frontend": "delino_site",
+      "delino-docs-frontend": "delino_docs",
+      "delidev-frontend": "delidev",
+      "delitools-frontend": "delitools",
+      protocol: "protocol",
+    };
+    for (const [id, key] of Object.entries(jobOwners))
+      needs[id].result = selection[key] ? "success" : "skipped";
+    needs.changes = {
+      result: "success",
+      outputs: {
+        ...Object.fromEntries(
+          Object.entries(selection).map(([key, value]) => [key, String(value)]),
+        ),
+        rust_clippy: "[]",
+        rust_test: "[]",
+        rust_servers: "[]",
+      },
+    };
+    needs["check-formatting"].result = "success";
+    const run = (input) =>
+      spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+        env: {
+          ...process.env,
+          EVENT_NAME: "push",
+          NEEDS: JSON.stringify(input),
+        },
+        encoding: "utf8",
+      });
+    assert.equal(run(needs).status, 0, paths.join(", "));
+    for (const id of ["tooling", "shared-ui", "workflows"]) {
+      const changed = structuredClone(needs);
+      changed[id].result =
+        needs[id].result === "success" ? "skipped" : "success";
+      assert.notEqual(run(changed).status, 0, `${paths}: ${id}`);
+    }
+  }
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { select, selectRustServers } from "./plan.mjs";
+import { select, selectRustServers, selectChecks } from "./plan.mjs";
 
 test("isolated projects select only their validation", () => {
   assert.deepEqual(select(["apps/delitools/src/main.tsx"]), {
@@ -409,4 +409,32 @@ test("unclassified shared paths retain global validation", () => {
   ]) {
     assert.ok(Object.values(select([path])).every(Boolean), path);
   }
+});
+
+test("shared validation checks select only affected check categories", () => {
+  for (const [paths, expected] of [
+    [
+      ["AGENTS.md", "scripts/ci/AGENTS.md", "packages/ui/CLAUDE.md"],
+      [false, false, false],
+    ],
+    [["apps/devbase/src/main.tsx"], [false, false, false]],
+    [["packages/ui/src/components/button.tsx"], [false, true, false]],
+    [["scripts/localization/catalog.mjs"], [true, false, false]],
+    [["servers/scripts/dev-api.mjs"], [true, false, false]],
+    [["apps/fixkey-app/scripts/release/fixkey.mjs"], [true, false, false]],
+    [["apps/delitools/scripts/mobile-workflow.test.mjs"], [true, false, false]],
+    [[".github/workflows/release-fixkey.yml"], [true, false, true]],
+    [["go.sum"], [false, false, true]],
+    [
+      ["packages/ui/package.json", "scripts/localization/catalog.mjs"],
+      [true, true, false],
+    ],
+    [["package.json"], [true, true, true]],
+    [["pnpm-lock.yaml"], [true, true, true]],
+  ])
+    assert.deepEqual(
+      Object.values(selectChecks(paths)),
+      expected,
+      paths.join(", "),
+    );
 });

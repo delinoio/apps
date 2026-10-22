@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { lockfilePaths } from "./lockfile-paths.mjs";
-import { select } from "./plan.mjs";
+import { select, selectChecks } from "./plan.mjs";
 
 const manager = `---
 lockfileVersion: '9.0'
@@ -199,7 +199,10 @@ test("planner CLI compares committed revisions rather than worktree lockfiles", 
     event: "ci_selection",
     base,
     head,
-    selected: select(["apps/delino-docs/package.json"]),
+    selected: {
+      ...select(["apps/delino-docs/package.json"]),
+      ...selectChecks(["apps/delino-docs/package.json"]),
+    },
   });
   assert.match(readFileSync(output, "utf8"), /^delcore_api=false$/mu);
   assert.match(readFileSync(output, "utf8"), /^delino_docs=true$/mu);

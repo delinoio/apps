@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isInstructionPath } from "./plan.mjs";
 
 export function selectRust(
   base,
@@ -17,6 +18,10 @@ export function selectRust(
       }),
     ),
 ) {
+  const relevant = paths.filter((path) => !isInstructionPath(path));
+  if (paths.length && !relevant.length)
+    return { rust_clippy: [], rust_test: [] };
+  paths = relevant;
   const direct = run("changed", "--base", base, "--direct-only");
   const affected = run("changed", "--base", base);
   // cargo-mono uses merge-base. A rewritten push history must not omit changes
