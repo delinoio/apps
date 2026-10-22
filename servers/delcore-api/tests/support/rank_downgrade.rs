@@ -208,6 +208,69 @@ async fn paid_rank_downgrade_with_unchanged_prices_waits_for_confirmed_renewal()
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn rank_downgrade_ignores_a_renewal_that_predates_the_request() {
+    let f = Fixture::setup().await;
+    let initial = setup(&f).await;
+    // The confirmed period already ended before the request: the provider renewed it, but the
+    // renewal notification has not been processed yet. Truncate to microseconds because
+    // PostgreSQL timestamptz drops the nanoseconds of the Linux clock.
+    let ended = Utc::now().trunc_subsecs(6) - Duration::hours(1);
+    let s = Scenario {
+        period_start: ended - Duration::days(30),
+        period_end: ended,
+        ..initial
+    };
+    sqlx::query("UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1")
+        .bind(uuid(&s.tenant))
+        .bind(s.period_start)
+        .bind(s.period_end)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    let (job, version_b) = request_downgrade(&f, &s).await;
+    sqlx::query("UPDATE jobs SET state='reconcile' WHERE id=$1")
+        .bind(uuid(&job))
+        .execute(&f.db)
+        .await
+        .unwrap();
+
+    // The delayed renewal began before the request, so it renews the old subscription and
+    // leaves the requested version and the scheduled change untouched.
+    let late = renewal(&s, "txn_delayed", "completed", &[EXTERNAL_PRICE]);
+    let next_end = late.billing_period.as_ref().unwrap().ends_at;
+    f.worker.apply_transaction(late, Utc::now()).await.unwrap();
+    assert_eq!(selected(&f, &s.tenant, &s.plan).await.0, s.version_a);
+    assert_eq!(job_row(&f, &job).await.0, "reconcile");
+    let period_end: DateTime<Utc> =
+        sqlx::query_scalar("SELECT period_end FROM tenants WHERE id=$1")
+            .bind(uuid(&s.tenant))
+            .fetch_one(&f.db)
+            .await
+            .unwrap();
+    assert_eq!(period_end, next_end);
+
+    // The next renewal begins after the request and installs the requested version.
+    let following = transaction(
+        "txn_following",
+        "subscription_recurring",
+        "completed",
+        next_end,
+        next_end + Duration::days(30),
+        &[EXTERNAL_PRICE],
+        json!({}),
+    );
+    f.worker
+        .apply_transaction(following, Utc::now())
+        .await
+        .unwrap();
+    let (version, starts) = selected(&f, &s.tenant, &s.plan).await;
+    assert_eq!(version, version_b);
+    assert_eq!(starts, next_end);
+    assert_eq!(job_row(&f, &job).await.0, "done");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn rank_downgrade_is_not_activated_without_matching_confirmed_payment() {
     let f = Fixture::setup().await;
     let s = setup(&f).await;
