@@ -46,7 +46,14 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
             .and_then(|resolve| resolve(request.uri().path()));
         let started = Instant::now();
         match tokio::time::timeout(policy.timeout, next.run(request).instrument(span)).await {
-            Ok(response) => response,
+            Ok(response) => {
+                if is_untyped_client_deadline(policy.service, &response) {
+                    record_timeout(&policy, procedure, started);
+                    timeout_response(policy.service)
+                } else {
+                    response
+                }
+            }
             Err(_) => {
                 record_timeout(&policy, procedure, started);
                 timeout_response(policy.service)
@@ -112,6 +119,21 @@ pub fn record_timeout(policy: &Policy, procedure: Option<&'static str>, started:
         .duration
         .with_label_values(&[procedure])
         .observe(started.elapsed().as_secs_f64());
+}
+
+/// Detects the bare `deadline_exceeded` response that the Connect transport synthesizes when a
+/// client's `Connect-Timeout-Ms` expires first. The transport cancels the handler at that point,
+/// so the DevBase error conversion never runs and the response lacks the typed detail and trace
+/// header. Handler-produced errors always carry the trace header and the handler never reports
+/// `deadline_exceeded`, so a 504 without the header can only come from that transport path.
+///
+/// Adapting the response here is deterministic whichever timer fires first. A second, slightly
+/// earlier timer would race the transport's own timer inside one runtime clock tick. Git Tracker
+/// is unaffected: it installs no client-deadline handling of this kind.
+fn is_untyped_client_deadline(service: Service, response: &Response) -> bool {
+    matches!(service, Service::DevBase)
+        && response.status() == StatusCode::GATEWAY_TIMEOUT
+        && !response.headers().contains_key("x-devbase-trace-id")
 }
 
 fn timeout_response(service: Service) -> Response {
@@ -278,5 +300,75 @@ mod tests {
                 .get(),
             0
         );
+    }
+
+    #[tokio::test]
+    async fn untyped_client_deadline_responses_are_adapted_for_devbase_only() {
+        // `/bare` mimics the response the Connect transport produces when a client deadline
+        // expires first; `/typed` is a 504 that already carries the DevBase trace header.
+        let app = |service: Service| {
+            Router::new()
+                .route(
+                    "/bare",
+                    post(|| async {
+                        (
+                            StatusCode::GATEWAY_TIMEOUT,
+                            [("Content-Type", "application/json")],
+                            r#"{"code":"deadline_exceeded","message":"request timeout"}"#,
+                        )
+                    }),
+                )
+                .route(
+                    "/typed",
+                    post(|| async {
+                        (
+                            StatusCode::GATEWAY_TIMEOUT,
+                            [("X-Devbase-Trace-Id", "existing-trace")],
+                            "typed",
+                        )
+                    }),
+                )
+                .layer(axum::middleware::from_fn_with_state(
+                    policy(service, Some(|_| Some("GetProject"))),
+                    middleware,
+                ))
+        };
+        let send = |app: Router, path: &'static str| async move {
+            let response = tower::ServiceExt::oneshot(
+                app,
+                Request::post(path).body(axum::body::Body::empty()).unwrap(),
+            )
+            .await
+            .unwrap();
+            let (parts, body) = response.into_parts();
+            let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+            (parts, body)
+        };
+
+        // DevBase: the bare response becomes the typed timeout and is counted once.
+        let app_devbase = app(Service::DevBase);
+        let (parts, body) = send(app_devbase.clone(), "/bare").await;
+        assert_eq!(parts.status, StatusCode::GATEWAY_TIMEOUT);
+        let trace = parts.headers["x-devbase-trace-id"].to_str().unwrap();
+        assert!(uuid::Uuid::parse_str(trace).is_ok());
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "deadline_exceeded");
+        let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+            .decode(body["details"][0]["value"].as_str().unwrap())
+            .unwrap();
+        let detail = delino_protocol::devbase::v1::ErrorDetail::decode_from_slice(&raw).unwrap();
+        assert_eq!(detail.trace_id, trace);
+
+        // DevBase: a 504 that already carries the trace header is passed through unchanged.
+        let (parts, body) = send(app_devbase, "/typed").await;
+        assert_eq!(parts.headers["x-devbase-trace-id"], "existing-trace");
+        assert_eq!(&body[..], b"typed");
+
+        // Git Tracker: the same bare response is never rewritten.
+        let (parts, body) = send(app(Service::GitTracker), "/bare").await;
+        assert_eq!(parts.status, StatusCode::GATEWAY_TIMEOUT);
+        assert!(!parts.headers.contains_key("x-devbase-trace-id"));
+        assert!(!parts.headers.contains_key("x-correlation-id"));
+        assert!(String::from_utf8_lossy(&body).contains("request timeout"));
     }
 }

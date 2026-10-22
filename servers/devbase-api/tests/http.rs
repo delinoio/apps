@@ -282,6 +282,159 @@ async fn unrouted_requests_create_no_procedure_series() {
     );
 }
 
+/// Asserts the typed client-deadline reply and returns its trace.
+fn assert_typed_deadline(reply: &Reply, untrusted: Option<&str>) -> String {
+    assert_timeout_reply(reply);
+    let trace = reply.header("x-devbase-trace-id").unwrap();
+    let parsed = uuid::Uuid::parse_str(trace).unwrap();
+    assert_eq!(parsed.get_version_num(), 7, "trace must be a UUID v7");
+    if let Some(untrusted) = untrusted {
+        assert_ne!(trace, untrusted);
+    }
+    assert_eq!(reply.header("content-type"), Some("application/json"));
+    let body: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
+    assert!(!body["message"].as_str().unwrap().is_empty());
+    let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(body["details"][0]["value"].as_str().unwrap())
+        .unwrap();
+    let detail = delino_protocol::devbase::v1::ErrorDetail::decode_from_slice(&raw).unwrap();
+    assert_eq!(
+        detail.reason,
+        delino_protocol::devbase::v1::ErrorReason::ERROR_REASON_DEPENDENCY_UNAVAILABLE
+    );
+    trace.to_owned()
+}
+
+#[tokio::test]
+async fn client_deadline_while_the_handler_is_pending_is_typed() {
+    // The global timeout is far longer than the client deadline and Delcore never answers, so
+    // only the client's Connect-Timeout-Ms can end the request.
+    let fx = fixture(Duration::from_secs(10), Delcore::Hang).await;
+    let path = format!("{PREFIX}ListProjects");
+    let body = format!(r#"{{"tenantId":"{TENANT}"}}"#);
+    let extra = format!(
+        "Authorization: Bearer manager\r\nConnect-Timeout-Ms: 50\r\nX-Devbase-Trace-Id: untrusted-client-value\r\nOrigin: {ORIGIN}\r\n"
+    );
+    let started = std::time::Instant::now();
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&path, body.len(), &extra),
+        &[(Duration::ZERO, body.as_bytes())],
+    )
+    .await;
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the shorter client deadline must apply"
+    );
+    let trace = assert_typed_deadline(&reply, Some("untrusted-client-value"));
+    assert!(!trace.is_empty());
+    // Allowed-origin responses keep exact CORS metadata and expose the populated trace header.
+    assert_eq!(reply.header("access-control-allow-origin"), Some(ORIGIN));
+    assert_eq!(reply.header("vary"), Some("Origin"));
+    assert!(
+        reply
+            .header("access-control-expose-headers")
+            .unwrap()
+            .contains("X-Devbase-Trace-Id")
+    );
+    // The adapted response is the single observation of the cancelled request.
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+    assert_eq!(samples(&fx.server, "ListProjects").0, 1);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+    assert_eq!(samples(&fx.server, "ListProjects").0, 1);
+}
+
+#[tokio::test]
+async fn client_deadline_is_typed_for_protobuf_requests() {
+    let fx = fixture(Duration::from_secs(10), Delcore::Hang).await;
+    let path = format!("{PREFIX}ListProjects");
+    let request = delino_protocol::devbase::v1::ListProjectsRequest {
+        tenant_id: TENANT.into(),
+        ..Default::default()
+    };
+    let body = request.encode_to_vec();
+    let head = rpc_head(
+        &path,
+        body.len(),
+        "Authorization: Bearer manager\r\nConnect-Timeout-Ms: 50\r\nX-Devbase-Trace-Id: untrusted-client-value\r\n",
+    )
+    .replace(
+        "Content-Type: application/json",
+        "Content-Type: application/proto",
+    );
+    let reply = exchange(fx.addr, &head, &[(Duration::ZERO, body.as_slice())]).await;
+    assert_typed_deadline(&reply, Some("untrusted-client-value"));
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+}
+
+#[tokio::test]
+async fn client_deadline_covers_a_partially_delivered_body() {
+    let fx = fixture(Duration::from_secs(10), Delcore::Hang).await;
+    let path = format!("{PREFIX}ListProjects");
+    let body = format!(r#"{{"tenantId":"{TENANT}"}}"#);
+    let (first, _rest) = body.as_bytes().split_at(5);
+    // The announced body never completes, so the deadline must expire during body receipt.
+    let head = rpc_head(
+        &path,
+        body.len(),
+        "Authorization: Bearer manager\r\nConnect-Timeout-Ms: 50\r\n",
+    );
+    let started = std::time::Instant::now();
+    let reply = exchange(fx.addr, &head, &[(Duration::ZERO, first)]).await;
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_typed_deadline(&reply, None);
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 1);
+}
+
+#[tokio::test]
+async fn deadline_adaptation_leaves_other_responses_unchanged() {
+    let fx = fixture(Duration::from_secs(10), Delcore::Fail).await;
+    let path = format!("{PREFIX}ListProjects");
+    let body = format!(r#"{{"tenantId":"{TENANT}"}}"#);
+
+    // A generous client deadline with a failing dependency keeps its handler-typed 503.
+    let head = rpc_head(
+        &path,
+        body.len(),
+        "Authorization: Bearer manager\r\nConnect-Timeout-Ms: 5000\r\n",
+    );
+    let reply = exchange(fx.addr, &head, &[(Duration::ZERO, body.as_bytes())]).await;
+    assert!(reply.head.starts_with("HTTP/1.1 503"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_some());
+    assert_eq!(count(&fx.server, "ListProjects", "deadline_exceeded"), 0);
+
+    // An immediate authentication error keeps its typed 401.
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&path, body.len(), ""),
+        &[(Duration::ZERO, body.as_bytes())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 401"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_some());
+
+    // A message above 256 KiB keeps the plain transport rejection without detail or trace.
+    let large = vec![b'x'; (256 << 10) + 1];
+    let head = rpc_head(
+        &path,
+        large.len(),
+        "Authorization: Bearer manager\r\nConnect-Timeout-Ms: 5000\r\n",
+    );
+    let reply = exchange(fx.addr, &head, &[(Duration::ZERO, large.as_slice())]).await;
+    assert!(!reply.head.starts_with("HTTP/1.1 504"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_none());
+    assert!(reply.head.starts_with("HTTP/1.1 429"), "{}", reply.head);
+    // The body may be chunk-framed, so parse only the JSON object it contains.
+    let (start, end) = (
+        reply.body.find('{').unwrap(),
+        reply.body.rfind('}').unwrap(),
+    );
+    let body: serde_json::Value = serde_json::from_str(&reply.body[start..=end]).unwrap();
+    assert_eq!(body["code"], "resource_exhausted");
+    assert!(body.get("details").is_none());
+}
+
 #[test]
 fn procedure_allowlist_matches_operation_names() {
     use Op::*;
