@@ -14,7 +14,7 @@
 //!   the last known prices indefinitely.
 use crate::{
     delcore::DelcoreAuthority,
-    gateway::{CatalogPrice, EXTRACTION_MODEL, Gateway, Lookup},
+    gateway::{CatalogPrice, EXTRACTION_MODEL, Endpoint, Gateway, Lookup},
     platform::Platform,
     pricing,
     store::{
@@ -310,6 +310,28 @@ fn revision(route: &str, price: &CatalogPrice) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// The provider route a flat public price can be pinned to: the alphabetically first active
+/// endpoint whose own price equals the public one. An endpoint with context tiers never matches,
+/// because requests are billed from the flat model snapshot and would be mispriced once usage
+/// crossed an endpoint tier.
+fn flat_route(endpoints: &[Endpoint], price: &CatalogPrice) -> Option<String> {
+    endpoints
+        .iter()
+        .filter(|endpoint| {
+            endpoint.active
+                && endpoint.price.as_ref().is_some_and(|p| {
+                    !p.tiered
+                        && p.input == price.input
+                        && p.output == price.output
+                        && p.cache_read == price.cache_read
+                        && p.cache_write == price.cache_write
+                })
+        })
+        .map(|endpoint| endpoint.provider.as_str())
+        .min()
+        .map(str::to_owned)
+}
+
 #[async_trait]
 impl BackgroundTask for PriceSyncTask {
     fn name(&self) -> TaskName {
@@ -388,36 +410,20 @@ impl BackgroundTask for PriceSyncTask {
                 continue;
             }
             let route = match self.gateway.endpoints(model).await {
-                Ok(endpoints) => {
-                    let mut matching: Vec<&str> = endpoints
-                        .iter()
-                        .filter(|endpoint| {
-                            endpoint.active
-                                && endpoint.price.as_ref().is_some_and(|p| {
-                                    p.input == price.input
-                                        && p.output == price.output
-                                        && p.cache_read == price.cache_read
-                                        && p.cache_write == price.cache_write
-                                })
-                        })
-                        .map(|endpoint| endpoint.provider.as_str())
-                        .collect();
-                    matching.sort_unstable();
-                    match matching.first() {
-                        Some(route) => (*route).to_owned(),
-                        None => {
-                            // No active provider charges the published price: the route and
-                            // therefore the price would be ambiguous, so do not price the model.
-                            skipped += 1;
-                            tracing::warn!(
-                                model,
-                                category = "price_route_ambiguous",
-                                "no active provider endpoint matches the public price"
-                            );
-                            continue;
-                        }
+                Ok(endpoints) => match flat_route(&endpoints, price) {
+                    Some(route) => route,
+                    None => {
+                        // No active provider charges the published price: the route and
+                        // therefore the price would be ambiguous, so do not price the model.
+                        skipped += 1;
+                        tracing::warn!(
+                            model,
+                            category = "price_route_ambiguous",
+                            "no active provider endpoint matches the public price"
+                        );
+                        continue;
                     }
-                }
+                },
                 Err(_) => {
                     failed += 1;
                     continue;
@@ -503,5 +509,56 @@ mod tests {
         ] {
             assert_ne!(base, revision("openai", &changed));
         }
+    }
+
+    fn price(tiered: bool) -> CatalogPrice {
+        CatalogPrice {
+            input: "0.000003".into(),
+            output: "0.000015".into(),
+            cache_read: Some("0.0000003".into()),
+            cache_write: None,
+            tiered,
+        }
+    }
+    fn endpoint(provider: &str, active: bool, price: Option<CatalogPrice>) -> Endpoint {
+        Endpoint {
+            provider: provider.into(),
+            active,
+            price,
+        }
+    }
+
+    #[test]
+    fn the_first_active_flat_endpoint_with_the_public_price_is_pinned() {
+        let public = price(false);
+        let endpoints = [
+            endpoint("zeta", true, Some(price(false))),
+            endpoint("alpha", false, Some(price(false))),
+            endpoint(
+                "beta",
+                true,
+                Some(CatalogPrice {
+                    input: "0.000004".into(),
+                    ..price(false)
+                }),
+            ),
+            endpoint("gamma", true, None),
+            endpoint("eta", true, Some(price(false))),
+        ];
+        assert_eq!(flat_route(&endpoints, &public).as_deref(), Some("eta"));
+        assert_eq!(flat_route(&[], &public), None);
+    }
+
+    #[test]
+    fn a_tiered_endpoint_never_matches_a_flat_public_price() {
+        let public = price(false);
+        let tiered_only = [endpoint("alpha", true, Some(price(true)))];
+        assert_eq!(flat_route(&tiered_only, &public), None);
+        // A flat endpoint is still chosen even when an earlier provider has tiers.
+        let mixed = [
+            endpoint("alpha", true, Some(price(true))),
+            endpoint("beta", true, Some(price(false))),
+        ];
+        assert_eq!(flat_route(&mixed, &public).as_deref(), Some("beta"));
     }
 }
