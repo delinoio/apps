@@ -17,7 +17,7 @@ use axum::{
     Router,
     body::Body,
     extract::{Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
@@ -46,7 +46,7 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
     let mut response = match tokio::time::timeout(deadline, next.run(request).instrument(span))
         .await
     {
-        Ok(response) => typed_transport_error(response, &request_id, &request_headers).await,
+        Ok(response) => typed_transport_error(response, &request_id).await,
         Err(_) => {
             tracing::warn!(request_id = %request_id, category = "deadline_exceeded", "request deadline exceeded");
             Fault::new(
@@ -64,6 +64,28 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
 
 /// Largest error body inspected for normalization. Connect error bodies are small JSON objects.
 const MAX_ERROR_BODY_BYTES: usize = 64 << 10;
+
+/// The Connect code the framework used for an HTTP status, for a body too large to read. Codes
+/// that share a status (`invalid_argument`, `failed_precondition` and `out_of_range` all use 400)
+/// resolve to the first listed, which is the code the framework itself produces for undecodable
+/// input. A status no Connect code maps to is an internal fault.
+fn code_for_status(status: StatusCode) -> ErrorCode {
+    [
+        ErrorCode::InvalidArgument,
+        ErrorCode::Unauthenticated,
+        ErrorCode::PermissionDenied,
+        ErrorCode::NotFound,
+        ErrorCode::AlreadyExists,
+        ErrorCode::ResourceExhausted,
+        ErrorCode::Unimplemented,
+        ErrorCode::Unavailable,
+        ErrorCode::DeadlineExceeded,
+        ErrorCode::Canceled,
+    ]
+    .into_iter()
+    .find(|code| code.http_status() == status)
+    .unwrap_or(ErrorCode::Internal)
+}
 
 /// The typed fault for a failure the Connect framework produced before a handler ran. The
 /// framework message is dropped because decoder errors can quote request content; the Connect
@@ -93,11 +115,7 @@ fn transport_fault(code: ErrorCode) -> Fault {
 /// `ErrorDetail` and request ID that handler failures carry. Handler failures already hold a detail and pass through unchanged, as
 /// do successes and responses of other shapes (health, readiness, metrics, and the status-only
 /// gRPC and streaming forms, which this service does not document).
-async fn typed_transport_error(
-    response: Response,
-    request_id: &str,
-    request_headers: &HeaderMap,
-) -> Response {
+async fn typed_transport_error(response: Response, request_id: &str) -> Response {
     let status = response.status();
     // The framework answers an unsupported content type with a bare 415 and no body, because no
     // Connect protocol was negotiated that could carry an error.
@@ -114,28 +132,32 @@ async fn typed_transport_error(
         return response;
     }
     let (mut parts, body) = response.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, MAX_ERROR_BODY_BYTES).await else {
-        return Fault::internal()
-            .into_connect(request_id)
-            .into_http_response(request_headers)
-            .map(Body::new);
+    let (parsed, bytes) = match axum::body::to_bytes(body, MAX_ERROR_BODY_BYTES).await {
+        Ok(bytes) => (
+            serde_json::from_slice::<serde_json::Value>(&bytes).ok(),
+            Some(bytes),
+        ),
+        // The body exceeds the inspection cap, for example a decoder diagnostic that quotes a very
+        // long caller-controlled field name. The body cannot be trusted or parsed, so keep the
+        // framework's HTTP status, derive the Connect code from it and replace the body.
+        Err(_) => (None, None),
     };
-    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
     let has_detail = parsed
         .as_ref()
         .and_then(|error| error["details"].as_array())
         .is_some_and(|details| !details.is_empty());
-    if has_detail {
+    if let (true, Some(bytes)) = (has_detail, bytes) {
         return Response::from_parts(parts, Body::from(bytes));
     }
     let code = if unsupported_media_type {
         ErrorCode::InvalidArgument
-    } else {
-        parsed
-            .as_ref()
-            .and_then(|error| error["code"].as_str())
+    } else if let Some(error) = parsed.as_ref() {
+        error["code"]
+            .as_str()
             .and_then(|code| code.parse::<ErrorCode>().ok())
             .unwrap_or(ErrorCode::Internal)
+    } else {
+        code_for_status(status)
     };
     tracing::warn!(
         request_id = %request_id,
@@ -205,6 +227,7 @@ pub fn router(server: Arc<Server>) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderMap;
     use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
     use buffa::Message;
     use delino_protocol::delitools::v1::ErrorDetail;
@@ -258,8 +281,7 @@ mod tests {
             ),
         ] {
             let code = error.code;
-            let response =
-                typed_transport_error(framework_error(error), &id, &HeaderMap::new()).await;
+            let response = typed_transport_error(framework_error(error), &id).await;
             assert_eq!(response.status(), status, "{code:?}");
             assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
             let length = response.headers()[header::CONTENT_LENGTH].clone();
@@ -278,6 +300,40 @@ mod tests {
         serde_json::to_vec(body).unwrap().len()
     }
 
+    /// A framework error body above the inspection cap keeps the framework's HTTP status and the
+    /// Connect code that status implies, instead of becoming an internal fault.
+    #[tokio::test]
+    async fn an_oversized_framework_error_keeps_its_status_and_code() {
+        let id = server_common::id();
+        let quoted = "secret-value".repeat(MAX_ERROR_BODY_BYTES / 4);
+        assert!(quoted.len() > MAX_ERROR_BODY_BYTES);
+        for (error, reason, status) in [
+            (
+                connectrpc::ConnectError::invalid_argument(format!("unknown field `{quoted}`")),
+                ErrorReason::ERROR_REASON_INVALID_INPUT,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                connectrpc::ConnectError::resource_exhausted(quoted.clone()),
+                ErrorReason::ERROR_REASON_LIMIT,
+                StatusCode::TOO_MANY_REQUESTS,
+            ),
+        ] {
+            let code = error.code;
+            let framework = framework_error(error);
+            let response = typed_transport_error(framework, &id).await;
+            assert_eq!(response.status(), status, "{code:?}");
+            let body = body_json(response).await;
+            assert_eq!(body["code"], code.as_str());
+            assert!(!body.to_string().contains("secret-value"), "{code:?}");
+            assert_eq!(detail_of(&body).reason, reason, "{code:?}");
+        }
+        assert_eq!(
+            code_for_status(StatusCode::IM_A_TEAPOT),
+            ErrorCode::Internal
+        );
+    }
+
     /// An unsupported content type is answered with a bare 415. It gains a typed error body and
     /// keeps its status and its `Accept-Post` hint.
     #[tokio::test]
@@ -288,7 +344,7 @@ mod tests {
             .header("accept-post", "application/json")
             .body(Body::empty())
             .unwrap();
-        let response = typed_transport_error(bare, &id, &HeaderMap::new()).await;
+        let response = typed_transport_error(bare, &id).await;
         assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
         assert_eq!(response.headers()["accept-post"], "application/json");
         assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
@@ -306,7 +362,7 @@ mod tests {
         let id = server_common::id();
         let handler_id = server_common::id();
         let fault = Fault::forbidden().into_connect(&handler_id);
-        let response = typed_transport_error(framework_error(fault), &id, &HeaderMap::new()).await;
+        let response = typed_transport_error(framework_error(fault), &id).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let detail = detail_of(&body_json(response).await);
         assert_eq!(detail.reason, ErrorReason::ERROR_REASON_FORBIDDEN);
@@ -314,13 +370,11 @@ mod tests {
 
         let ok = Response::new(Body::from("{}"));
         assert_eq!(
-            typed_transport_error(ok, &id, &HeaderMap::new())
-                .await
-                .status(),
+            typed_transport_error(ok, &id).await.status(),
             StatusCode::OK
         );
         let unavailable = (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response();
-        let response = typed_transport_error(unavailable, &id, &HeaderMap::new()).await;
+        let response = typed_transport_error(unavailable, &id).await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
