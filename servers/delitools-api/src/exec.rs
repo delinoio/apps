@@ -668,63 +668,75 @@ impl Executor {
             .admission
             .admit(principal.tenant_id, &settings, &platform.metrics)?;
 
-        // Only an operator-allowlisted model with a synchronized public price can execute. The
-        // price is selected and frozen in the transaction that persists the request start, with
-        // one start time for both, so a catalog update racing the start cannot split them.
-        let claim = plan.key.as_deref().map(|key| IdempotencyClaim {
-            key,
-            input_hash: plan.input_hash,
-        });
-        let start = db::start_request(
-            &platform.store.pool,
-            &NewRequest {
-                id: request_id,
-                principal: &principal,
-                model: &plan.model,
-            },
-            claim.as_ref(),
-            store::now(),
-        )
-        .await?;
-        let price = match start {
-            Start::Started(price) => price,
-            Start::NoPrice => {
-                platform.metrics.failure(Failure::MissingPrice);
-                tracing::warn!(
-                    category = "price_unavailable",
-                    request_id = %request_id,
-                    "new execution rejected: no catalog price"
-                );
-                return Err(Fault::price_unavailable());
-            }
-            Start::Duplicate(existing) => {
-                // The call lost the atomic claim and did no work, so it must not consume the
-                // tenant's request-rate budget; a burst of racing duplicates could otherwise
-                // exhaust it.
-                permit.refund_rate();
-                return Err(duplicate_fault(&existing, &plan.input_hash));
-            }
-        };
-
+        // Everything from here on, including the request creation, runs in a spawned task. The
+        // creation commits a `processing` request and its idempotency record; if the client
+        // disconnected while that commit was in flight, a handler-bound creation would be dropped
+        // before any task existed that could finalize the record, and retries with the key would
+        // answer `PROCESSING` until the record expired. The task always reaches the terminal
+        // write, and a disconnect only cancels the attempt loop through the guard.
         let (tx, rx) = watch::channel(false);
         let mut guard = CancelOnDrop { tx, armed: true };
         let tenant = principal.tenant_id;
         let capability = plan.capability;
         let key = plan.key.clone();
         let panic_key = plan.key.clone();
-        let run = Run {
-            platform: platform.clone(),
-            gateway: self.gateway.clone(),
-            usage: self.usage.clone(),
-            request_id,
-            principal,
-            settings: settings.clone(),
-            price,
-            plan,
-            deadline: started + Duration::from_secs(u64::from(settings.execution_timeout_seconds)),
-        };
+        let task_platform = platform.clone();
+        let gateway = self.gateway.clone();
+        let usage = self.usage.clone();
         let pipeline = tokio::spawn(async move {
             // The permit is released when the pipeline ends, not when the client leaves.
+            let permit = permit;
+            let platform = task_platform;
+            // Only an operator-allowlisted model with a synchronized public price can execute.
+            // The price is selected and frozen in the transaction that persists the request
+            // start, with one start time for both, so a catalog update racing the start cannot
+            // split them.
+            let claim = plan.key.as_deref().map(|key| IdempotencyClaim {
+                key,
+                input_hash: plan.input_hash,
+            });
+            let start = db::start_request(
+                &platform.store.pool,
+                &NewRequest {
+                    id: request_id,
+                    principal: &principal,
+                    model: &plan.model,
+                },
+                claim.as_ref(),
+                store::now(),
+            )
+            .await?;
+            let price = match start {
+                Start::Started(price) => price,
+                Start::NoPrice => {
+                    platform.metrics.failure(Failure::MissingPrice);
+                    tracing::warn!(
+                        category = "price_unavailable",
+                        request_id = %request_id,
+                        "new execution rejected: no catalog price"
+                    );
+                    return Err(Fault::price_unavailable());
+                }
+                Start::Duplicate(existing) => {
+                    // The call lost the atomic claim and did no work, so it must not consume the
+                    // tenant's request-rate budget; a burst of racing duplicates could otherwise
+                    // exhaust it.
+                    permit.refund_rate();
+                    return Err(duplicate_fault(&existing, &plan.input_hash));
+                }
+            };
+            let run = Run {
+                platform,
+                gateway,
+                usage,
+                request_id,
+                principal,
+                settings: settings.clone(),
+                price,
+                plan,
+                deadline: started
+                    + Duration::from_secs(u64::from(settings.execution_timeout_seconds)),
+            };
             let _permit = permit;
             let mut cancel = rx;
             let ending = run.attempt_loop(&mut cancel).await;

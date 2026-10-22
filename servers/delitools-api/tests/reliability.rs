@@ -399,6 +399,60 @@ async fn client_disconnect_cancels_the_call_stops_retries_and_usage_is_reconcile
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_disconnect_during_request_creation_still_finalizes_the_committed_request() {
+    let env = Env::start(&[], false).await;
+    let key = env.service_key().await;
+    // Make the COMMIT of the request-creation transaction slow: the deferred constraint trigger
+    // runs while the commit is in flight, which is the window in which the client can leave after
+    // the database accepted the commit but before the handler learned about it.
+    for statement in [
+        "CREATE FUNCTION slow_request_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(1); RETURN NULL; END $$",
+        "CREATE CONSTRAINT TRIGGER slow_request_commit AFTER INSERT ON requests DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION slow_request_commit()",
+    ] {
+        sqlx::query(statement).execute(&env.fx.pool).await.unwrap();
+    }
+    env.gateway.respond(good);
+    let call = spawn_call(
+        &env,
+        &key,
+        env.translate_body(&["x"], Some("key-disconnect")),
+    );
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    call.abort();
+    // The creation commits in the background and the request must not stay `processing`.
+    let mut settled = None;
+    for _ in 0..100 {
+        settled = sqlx::query_as::<_, (i16, i16)>("SELECT state, error_reason FROM requests")
+            .fetch_optional(&env.fx.pool)
+            .await
+            .unwrap()
+            .filter(|(state, _)| *state != 1);
+        if settled.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (state, reason_code) = settled.expect("the committed request was finalized");
+    assert_eq!(state, 2);
+    assert_eq!(
+        reason_code, 16,
+        "the call that nobody waits for ends as canceled"
+    );
+    let record_state: i16 = sqlx::query_scalar("SELECT state FROM idempotency_records")
+        .fetch_one(&env.fx.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        record_state, 2,
+        "a retry with the key is not answered with PROCESSING"
+    );
+    assert_eq!(env.gateway.chat_count(), 0, "no provider call was started");
+    assert_eq!(env.fx.platform.admission.running(env.tenant), 0);
+    env.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn the_execution_deadline_cancels_the_call_and_returns_a_timeout() {
     let env = Env::start(&[("EXECUTION_TIMEOUT_SECONDS", "1")], false).await;
     let key = env.service_key().await;
