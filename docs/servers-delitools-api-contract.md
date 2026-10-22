@@ -67,7 +67,7 @@ Authentication and authorization run before request validation, rate limits and 
 
 ### Limits and rate control
 
-All limits are configured and validated at startup (see [environment configuration](#environment-configuration)); the server rejects missing, non-positive or contradictory values. Defaults and bounds:
+All limits are configured and validated at startup (see [environment configuration](#environment-configuration)); the server rejects missing, contradictory or out-of-range values; every limit must be positive except `DELITOOLS_MAX_RETRIES`, which may be 0 to disable retries. Defaults and bounds:
 
 | Limit                                 | Setting                                                           | Default | Bound                            |
 | ------------------------------------- | ----------------------------------------------------------------- | ------- | -------------------------------- |
@@ -258,7 +258,7 @@ Optional with defaults:
 | `DELITOOLS_OUTBOX_ALERT_BACKLOG`, `DELITOOLS_OUTBOX_ALERT_AGE`                                    | 1000, `15m`                       |
 | `LOG_FORMAT`                                                                                      | `text`                            |
 
-Durations use forms such as `250ms`, `3s`, `5m` and `1h30m`. Standard `OTEL_*` and `NO_COLOR` keep their names; PostgreSQL integration tests read `TEST_DATABASE_URL`. The Go example reads `DELITOOLS_URL` and `DELITOOLS_TOKEN`. Reject missing, non-positive or contradictory values at startup without printing them. Commit only safe placeholders in `servers/delitools-api/.env.example` and `servers/delitools-api/models.example.yaml`; real configuration stays outside Git.
+Durations use forms such as `250ms`, `3s`, `5m` and `1h30m`. Standard `OTEL_*` and `NO_COLOR` keep their names; PostgreSQL integration tests read `TEST_DATABASE_URL`. The Go example reads `DELITOOLS_URL` and `DELITOOLS_TOKEN`. Reject missing, contradictory or out-of-range values at startup without printing them; only `DELITOOLS_MAX_RETRIES` accepts 0. Commit only safe placeholders in `servers/delitools-api/.env.example` and `servers/delitools-api/models.example.yaml`; real configuration stays outside Git.
 
 ## Local development
 
