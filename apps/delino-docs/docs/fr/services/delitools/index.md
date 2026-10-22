@@ -186,7 +186,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
 ```
 
 - **Secret à usage unique.** La réponse de `CreateKey` contient le `secret` une seule fois. DeliTools stocke uniquement une empreinte de vérification et ne peut pas afficher à nouveau le secret. Si vous perdez une clé, créez-en une nouvelle. Conservez le secret dans un gestionnaire de secrets.
-- **Expiration.** `expiresAt` est facultatif. Une clé sans expiration reste valide jusqu’à sa révocation. Une clé personnelle exige aussi que son propriétaire conserve l’accès au tenant. Une clé de service ne dépend pas de l’utilisateur qui l’a créée : retirer cet utilisateur ne l’arrête donc pas. Révoquez la clé de service ou donnez-lui une expiration.
+- **Expiration.** `expiresAt` est facultatif. Si vous l’envoyez, il doit se situer dans le futur ; sinon, `CreateKey` renvoie une erreur d’entrée non valide. Une clé sans expiration reste valide jusqu’à sa révocation. Une clé personnelle exige aussi que son propriétaire conserve l’accès au tenant. Une clé de service ne dépend pas de l’utilisateur qui l’a créée : retirer cet utilisateur ne l’arrête donc pas. Révoquez la clé de service ou donnez-lui une expiration.
 - **Révocation.** Après la révocation d’une clé, ou après la perte d’une autorisation par l’utilisateur d’une clé personnelle ou d’un jeton de connexion, les nouvelles requêtes sont rejetées et un appel en cours n’effectue plus de nouvelle tentative d’IA. Un appel déjà en cours peut se terminer. Son utilisation est facturée.
 
 ## Facturation

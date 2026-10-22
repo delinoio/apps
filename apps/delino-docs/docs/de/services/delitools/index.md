@@ -186,7 +186,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
 ```
 
 - **Einmaliges Geheimnis.** Die Antwort auf `CreateKey` enthält das `secret` einmalig. DeliTools speichert nur einen Verifizierungs-Hash und kann das Geheimnis nicht erneut anzeigen. Wenn Sie einen Schlüssel verlieren, erstellen Sie einen neuen. Bewahren Sie das Geheimnis in einer Geheimnisverwaltung auf.
-- **Ablauf.** `expiresAt` ist optional. Ein Schlüssel ohne Ablaufzeit bleibt gültig, bis Sie ihn widerrufen. Ein persönlicher Schlüssel erfordert außerdem, dass sein Besitzer weiterhin Zugriff auf den Mandanten hat. Ein Dienstschlüssel hängt nicht von dem Nutzer ab, der ihn erstellt hat; das Entfernen dieses Nutzers stoppt ihn daher nicht: Widerrufen Sie den Dienstschlüssel oder versehen Sie ihn mit einer Ablaufzeit.
+- **Ablauf.** `expiresAt` ist optional. Wenn Sie es senden, muss es in der Zukunft liegen, sonst gibt `CreateKey` einen Fehler wegen ungültiger Eingabe zurück. Ein Schlüssel ohne Ablaufzeit bleibt gültig, bis Sie ihn widerrufen. Ein persönlicher Schlüssel erfordert außerdem, dass sein Besitzer weiterhin Zugriff auf den Mandanten hat. Ein Dienstschlüssel hängt nicht von dem Nutzer ab, der ihn erstellt hat; das Entfernen dieses Nutzers stoppt ihn daher nicht: Widerrufen Sie den Dienstschlüssel oder versehen Sie ihn mit einer Ablaufzeit.
 - **Widerruf.** Nachdem Sie einen Schlüssel widerrufen haben oder nachdem der Nutzer eines persönlichen Schlüssels oder Anmeldetokens die Berechtigung verliert, werden neue Anfragen abgelehnt, und ein laufender Aufruf unternimmt keine weiteren KI-Wiederholungsversuche. Ein bereits laufender Aufruf kann abgeschlossen werden. Seine Nutzung wird abgerechnet.
 
 ## Abrechnung

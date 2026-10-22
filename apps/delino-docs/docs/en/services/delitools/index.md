@@ -186,7 +186,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
 ```
 
 - **One-time secret.** The response of `CreateKey` contains the `secret` one time. DeliTools stores only a verification hash and cannot show the secret again. If you lose a key, create a new one. Keep the secret in a secret manager.
-- **Expiry.** `expiresAt` is optional. A key without an expiry stays valid until you revoke it. A personal key also needs its owner to keep access to the tenant. A service key does not depend on the user who created it, so removing that user does not stop it: revoke the service key or give it an expiry.
+- **Expiry.** `expiresAt` is optional. If you send it, it must be a time in the future, or `CreateKey` returns an invalid-input error. A key without an expiry stays valid until you revoke it. A personal key also needs its owner to keep access to the tenant. A service key does not depend on the user who created it, so removing that user does not stop it: revoke the service key or give it an expiry.
 - **Revocation.** After you revoke a key, or after the user of a personal key or login token loses permission, new requests are rejected and a running call makes no more AI retry attempts. A call that is already running can finish. Its usage is billed.
 
 ## Billing

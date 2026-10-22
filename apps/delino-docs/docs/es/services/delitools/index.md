@@ -186,7 +186,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/CreateKey" \
 ```
 
 - **Secreto de un solo uso.** La respuesta de `CreateKey` contiene el `secret` una sola vez. DeliTools almacena únicamente un hash de verificación y no puede volver a mostrar el secreto. Si pierdes una clave, crea una nueva. Guarda el secreto en un gestor de secretos.
-- **Caducidad.** `expiresAt` es opcional. Una clave sin caducidad sigue siendo válida hasta que la revoques. Una clave personal también requiere que su propietario conserve el acceso al tenant. Una clave de servicio no depende del usuario que la creó, por lo que eliminar a ese usuario no la detiene: revoca la clave de servicio o asígnale una caducidad.
+- **Caducidad.** `expiresAt` es opcional. Si lo envías, debe ser un momento futuro; de lo contrario, `CreateKey` devuelve un error de entrada no válida. Una clave sin caducidad sigue siendo válida hasta que la revoques. Una clave personal también requiere que su propietario conserve el acceso al tenant. Una clave de servicio no depende del usuario que la creó, por lo que eliminar a ese usuario no la detiene: revoca la clave de servicio o asígnale una caducidad.
 - **Revocación.** Después de revocar una clave, o después de que el usuario de una clave personal o de un token de inicio de sesión pierda el permiso, las nuevas solicitudes se rechazan y una llamada en curso no realiza más intentos de reintento a la IA. Una llamada que ya está en curso puede terminar. Su uso se factura.
 
 ## Facturación
