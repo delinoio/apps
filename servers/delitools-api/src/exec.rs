@@ -698,6 +698,9 @@ impl Executor {
         )
         .await?;
         if let Start::Duplicate(existing) = start {
+            // The call lost the atomic claim and did no work, so it must not consume the tenant's
+            // request-rate budget; a burst of racing duplicates could otherwise exhaust it.
+            permit.refund_rate();
             return Err(duplicate_fault(&existing, &plan.input_hash));
         }
 

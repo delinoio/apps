@@ -33,6 +33,21 @@ pub struct Admission {
 pub struct Permit {
     state: Arc<Mutex<State>>,
     tenant: Uuid,
+    /// The minute window whose request count this permit incremented.
+    minute: i64,
+}
+impl Permit {
+    /// Give back the request-rate budget this permit consumed, for a call that did no work (a
+    /// duplicate that lost the atomic idempotency claim). Only the window the permit counted in
+    /// is adjusted; the concurrency slot is released when the permit is dropped.
+    pub fn refund_rate(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((window, count)) = state.windows.get_mut(&self.tenant)
+            && *window == self.minute
+        {
+            *count = count.saturating_sub(1);
+        }
+    }
 }
 impl Drop for Permit {
     fn drop(&mut self) {
@@ -80,6 +95,7 @@ impl Admission {
         Ok(Permit {
             state: self.state.clone(),
             tenant,
+            minute,
         })
     }
 
@@ -133,6 +149,34 @@ mod tests {
                 .unwrap(),
         );
         assert!(metrics.encode().contains("tenant_rate"));
+    }
+
+    #[test]
+    fn a_refunded_permit_gives_back_its_rate_budget_only_in_its_own_window() {
+        let admission = Admission::new();
+        let metrics = Metrics::new();
+        let settings = limited(1, 10);
+        let tenant = Uuid::now_v7();
+        let t = 6000;
+        let duplicate = admission.admit_at(tenant, &settings, t, &metrics).unwrap();
+        assert!(admission.admit_at(tenant, &settings, t, &metrics).is_err());
+        duplicate.refund_rate();
+        drop(duplicate);
+        // The refund restored the budget, so the next distinct call is admitted.
+        let next = admission.admit_at(tenant, &settings, t, &metrics).unwrap();
+        // A refund after the minute rolled over must not reduce the new window's count.
+        let stale = admission
+            .admit_at(tenant, &limited(5, 10), t + 60, &metrics)
+            .unwrap();
+        next.refund_rate();
+        let tight = limited(1, 10);
+        assert!(
+            admission
+                .admit_at(tenant, &tight, t + 60, &metrics)
+                .is_err(),
+            "the new window still counts the call admitted in it"
+        );
+        drop((next, stale));
     }
 
     #[test]
