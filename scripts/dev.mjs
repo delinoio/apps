@@ -78,6 +78,9 @@ export async function main(args = process.argv.slice(2)) {
 }
 
 export function supervise(args) {
+  // Portless starts this command in a detached process group, so the TUI
+  // cannot control the foreground terminal. Keep log output as the default
+  // until Portless can preserve terminal control for its workspace command.
   return spawnDevServer(
     "process-compose",
     [
@@ -85,6 +88,7 @@ export function supervise(args) {
       "process-compose.yaml",
       "--no-server",
       "--disable-dotenv",
+      "--tui=false",
       "up",
       ...args,
     ],

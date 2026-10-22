@@ -335,6 +335,7 @@ process.exit(result.status ?? 1);
       "process-compose.yaml",
       "--no-server",
       "--disable-dotenv",
+      "--tui=false",
       "up",
       "--tui=false",
       "delcore-api",
