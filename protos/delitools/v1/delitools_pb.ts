@@ -242,7 +242,9 @@ export enum ErrorReason {
   UNSUPPORTED_SCHEMA = 8,
 
   /**
-   * The provider failed after the permitted transient retries.
+   * The provider failed. Either transient failures exhausted the permitted
+   * retries (Connect code unavailable), or the Gateway permanently rejected the
+   * request without a retry (Connect code internal).
    *
    * @generated from enum value: ERROR_REASON_PROVIDER_FAILED = 9;
    */

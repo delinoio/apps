@@ -47,7 +47,9 @@ const (
 	ErrorReason_ERROR_REASON_MODEL_UNAVAILABLE ErrorReason = 7
 	// The JSON Schema uses a construct outside the supported subset.
 	ErrorReason_ERROR_REASON_UNSUPPORTED_SCHEMA ErrorReason = 8
-	// The provider failed after the permitted transient retries.
+	// The provider failed. Either transient failures exhausted the permitted
+	// retries (Connect code unavailable), or the Gateway permanently rejected the
+	// request without a retry (Connect code internal).
 	ErrorReason_ERROR_REASON_PROVIDER_FAILED ErrorReason = 9
 	// The provider returned output that is malformed or does not conform to the
 	// contract. The server never retries to repair invalid output.
