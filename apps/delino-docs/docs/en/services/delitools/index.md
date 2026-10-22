@@ -107,7 +107,7 @@ Not supported, and rejected before execution:
 - Optional properties. Every property of an object must be in `required`. `required` must list each property exactly once and must not name a property that `properties` does not define.
 - `additionalProperties` set to `true`, or missing.
 - References: `$ref` and recursive schemas.
-- Schemas above the provider limits: 5,000 properties, 1,000 enum values, or 120,000 characters of property names and enum values together. An enum with more than 250 values may hold at most 15,000 characters of string values.
+- Schemas above the provider limits: 4,998 properties in total, 1,000 enum values, or 119,980 characters of property names and enum values together. The provider allows 5,000 properties and 120,000 characters in total, and DeliTools reserves the rest for its response envelope. An enum with more than 250 values may hold at most 15,000 characters of string values.
 
 A supported schema:
 

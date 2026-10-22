@@ -107,7 +107,7 @@ Non pris en charge, et rejeté avant l’exécution :
 - Les propriétés facultatives. Chaque propriété d’un objet doit figurer dans `required`. `required` doit lister chaque propriété exactement une fois et ne doit citer aucune propriété que `properties` ne définit pas.
 - `additionalProperties` défini sur `true`, ou absent.
 - Les références : `$ref` et les schémas récursifs.
-- Les schémas qui dépassent les limites du fournisseur : 5 000 propriétés, 1 000 valeurs d’énumération, ou 120 000 caractères pour les noms de propriétés et les valeurs d’énumération réunis. Une énumération de plus de 250 valeurs peut contenir au plus 15 000 caractères de valeurs de type chaîne.
+- Les schémas qui dépassent les limites du fournisseur : 4 998 propriétés au total, 1 000 valeurs d’énumération, ou 119 980 caractères pour les noms de propriétés et les valeurs d’énumération réunis. Le fournisseur autorise 5 000 propriétés et 120 000 caractères au total, et DeliTools réserve le reste pour son enveloppe de réponse. Une énumération de plus de 250 valeurs peut contenir au plus 15 000 caractères de valeurs de type chaîne.
 
 Un schéma pris en charge :
 
