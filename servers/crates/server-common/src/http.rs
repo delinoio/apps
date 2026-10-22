@@ -7,7 +7,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::{
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tracing::Instrument;
@@ -26,7 +29,25 @@ pub struct Policy {
     /// per-procedure accounting of outer timeouts (Git Tracker counts one outcome per response).
     pub procedure: Option<ProcedureResolver>,
 }
-pub async fn middleware(State(policy): State<Policy>, request: Request, next: Next) -> Response {
+
+/// Exactly-once marker for the request metrics of a known DevBase procedure. The middleware
+/// stores one in the request extensions; the first party that calls [`Accounting::claim`] (the
+/// service handler when it finishes, or the outer timeout) records the request, so a handler
+/// that finishes just before the outer deadline is not counted a second time as a timeout.
+#[derive(Clone, Default)]
+pub struct Accounting(Arc<AtomicBool>);
+impl Accounting {
+    /// Returns `true` for the first caller only.
+    pub fn claim(&self) -> bool {
+        !self.0.swap(true, Ordering::AcqRel)
+    }
+}
+
+pub async fn middleware(
+    State(policy): State<Policy>,
+    mut request: Request,
+    next: Next,
+) -> Response {
     let origin = request.headers().get("origin").cloned();
     if let Some(origin) = &origin
         && (policy.origin.is_empty() || origin.as_bytes() != policy.origin.as_bytes())
@@ -44,6 +65,10 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
         let procedure = policy
             .procedure
             .and_then(|resolve| resolve(request.uri().path()));
+        let accounting = Accounting::default();
+        if procedure.is_some() {
+            request.extensions_mut().insert(accounting.clone());
+        }
         let started = Instant::now();
         match tokio::time::timeout(policy.timeout, next.run(request).instrument(span)).await {
             Ok(response) => {
@@ -55,7 +80,10 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
                 }
             }
             Err(_) => {
-                record_timeout(&policy, procedure, started);
+                // A handler that already recorded its own outcome owns the request's metrics.
+                if accounting.claim() {
+                    record_timeout(&policy, procedure, started);
+                }
                 timeout_response(policy.service)
             }
         }
@@ -104,7 +132,8 @@ pub async fn middleware(State(policy): State<Policy>, request: Request, next: Ne
 }
 
 /// Records one request and one latency sample for an outer timeout of a known DevBase procedure.
-/// The cancelled handler never reaches its own accounting, so this is the only observation.
+/// A cancelled handler never reaches its own accounting; callers claim [`Accounting`] first so a
+/// handler that finished earlier is not counted twice.
 pub fn record_timeout(policy: &Policy, procedure: Option<&'static str>, started: Instant) {
     let (Service::DevBase, Some(procedure)) = (policy.service, procedure) else {
         return;
@@ -248,6 +277,15 @@ mod tests {
             }
             task.abort();
         }
+    }
+
+    #[test]
+    fn accounting_is_claimed_once_across_clones() {
+        let accounting = Accounting::default();
+        let other = accounting.clone();
+        assert!(accounting.claim());
+        assert!(!other.claim());
+        assert!(!accounting.claim());
     }
 
     fn policy(service: Service, procedure: Option<ProcedureResolver>) -> Policy {

@@ -157,27 +157,35 @@ impl Server {
             .extensions()
             .get::<size::ReceivedMessageSize>()
             .map(|size| size.0);
+        let accounting = ctx
+            .extensions()
+            .get::<server_common::http::Accounting>()
+            .cloned();
         let result = tokio::time::timeout(
             self.config.request_timeout,
             self.execute::<Q, R>(authorization, op, q, received, &trace),
         )
         .await
         .unwrap_or_else(|_| Err(Fault::unavailable()));
-        self.metrics
-            .requests
-            .with_label_values(&[
-                op.name(),
-                result
-                    .as_ref()
-                    .err()
-                    .map(|f| f.code.as_str())
-                    .unwrap_or("ok"),
-            ])
-            .inc();
-        self.metrics
-            .duration
-            .with_label_values(&[op.name()])
-            .observe(start.elapsed().as_secs_f64());
+        // Record unless the outer request timeout already claimed this request (see
+        // `server_common::http::Accounting`); a missing marker means no outer middleware.
+        if accounting.is_none_or(|marker| marker.claim()) {
+            self.metrics
+                .requests
+                .with_label_values(&[
+                    op.name(),
+                    result
+                        .as_ref()
+                        .err()
+                        .map(|f| f.code.as_str())
+                        .unwrap_or("ok"),
+                ])
+                .inc();
+            self.metrics
+                .duration
+                .with_label_values(&[op.name()])
+                .observe(start.elapsed().as_secs_f64());
+        }
         tracing::info!(trace_id=%trace,procedure=op.name(),duration_ms=start.elapsed().as_millis(),success=result.is_ok(),"request completed");
         match result {
             Ok(mut value) => {

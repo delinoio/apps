@@ -23,7 +23,7 @@ const rootPackage = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url)),
 );
 
-async function watchFixture(t, filters = [], initialSource = "initial") {
+async function runFixture(t, filters = [], initialSource = "initial") {
   const directory = mkdtempSync(join(tmpdir(), "turbo-dev-test-"));
   const write = (path, content) => {
     const target = join(directory, path);
@@ -43,8 +43,8 @@ async function watchFixture(t, filters = [], initialSource = "initial") {
   // the workspace. By default pnpm then resolves that package manager through
   // its metadata cache and records it in the lockfile. That fails offline on
   // fresh machines such as CI runners, and it rewrites the lockfile whenever
-  // Turbo runs a task through pnpm, which restarts the watch. The fixture only
-  // needs the running pnpm, so configure pnpm in the workspace file, not in the
+  // Turbo runs a task through pnpm. The fixture only needs the running pnpm,
+  // so configure pnpm in the workspace file, not in the
   // environment, because Turbo does not pass arbitrary variables to tasks.
   // Remove `pmOnFail` if the fixture stops declaring `packageManager`.
   write(
@@ -136,7 +136,7 @@ if (service === 'build') {
   assert.equal(resolved.status, 0);
   const child = spawn(
     resolved.stdout.trim(),
-    ["watch", "dev", "--concurrency=20", "--ui=stream", ...filters],
+    ["run", "dev", "--concurrency=20", "--ui=stream", ...filters],
     {
       cwd: directory,
       env: {
@@ -150,6 +150,7 @@ if (service === 'build') {
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  const completion = once(child, "close");
   let output = "";
   child.stdout.on("data", (data) => {
     output += data;
@@ -201,14 +202,24 @@ if (service === 'build') {
       `Timed out waiting for Turbo events: ${JSON.stringify(events())}\n${output}`,
     );
   };
-  return { child, events, wait, write, output: () => output };
+  const waitForExit = async () => {
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 10000);
+    try {
+      const [code, signal] = await completion;
+      assert.equal(signal, null, output);
+      return code;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  return { child, events, wait, write, waitForExit, output: () => output };
 }
 
 test(
-  "Turbo watches the shared build before restarting APIs and leaves frontend HMR running",
+  "Turbo builds once before API startup and does not restart tasks on source edits",
   { skip: process.platform === "win32", timeout: 60000 },
   async (t) => {
-    const fixture = await watchFixture(t);
+    const fixture = await runFixture(t);
     let events = await fixture.wait(
       (events) => events.filter((event) => event.kind === "start").length === 4,
     );
@@ -227,49 +238,23 @@ test(
           index > built,
       ),
     );
-    fixture.write("servers/delcore-api/src/main.rs", "second");
-    events = await fixture.wait(
-      (events) =>
-        events.filter(
-          (event) => event.kind === "start" && event.revision === "second",
-        ).length === 3,
-    );
-    assert.equal(events.filter((event) => event.kind === "build").length, 2);
-    assert.equal(
-      events.filter(
-        (event) => event.kind === "start" && event.service === "frontend",
-      ).length,
-      1,
-    );
-    fixture.write("servers/delcore-api/catalog/example.yaml", "changed");
-    fixture.write("servers/target/generated.rs", "ignored");
+    for (const path of [
+      "servers/delcore-api/src/main.rs",
+      "servers/crates/server-common/src/lib.rs",
+      "servers/delcore-api/migrations/fixture.sql",
+      "servers/Cargo.toml",
+      "servers/Cargo.lock",
+      "protos/delcore/v1/fixture.proto",
+      "servers/delcore-api/catalog/example.yaml",
+      "servers/target/generated.rs",
+    ]) {
+      fixture.write(path, "changed");
+    }
     await delay(800);
-    assert.equal(
-      fixture.events().filter((event) => event.kind === "build").length,
-      2,
-    );
-    assert.equal(
-      fixture.events().filter((event) => event.kind === "start").length,
-      7,
-    );
-    fixture.write("servers/delcore-api/src/main.rs", "fail");
-    await fixture.wait((events) =>
-      events.some((event) => event.kind === "build-failed"),
-    );
-    await delay(300);
-    fixture.write("servers/delcore-api/src/main.rs", "recovered");
-    events = await fixture.wait(
-      (events) =>
-        events.filter(
-          (event) => event.kind === "start" && event.revision === "recovered",
-        ).length === 3,
-    );
-    assert.equal(
-      events.filter(
-        (event) => event.kind === "start" && event.service === "frontend",
-      ).length,
-      1,
-    );
+    events = fixture.events();
+    assert.equal(events.filter((event) => event.kind === "build").length, 1);
+    assert.equal(events.filter((event) => event.kind === "start").length, 4);
+    assert.equal(events.filter((event) => event.kind === "stop").length, 0);
     const closed = once(fixture.child, "close");
     fixture.child.kill("SIGINT");
     await closed;
@@ -282,7 +267,7 @@ test(
   "Turbo includes the shared build when selecting one API",
   { skip: process.platform === "win32", timeout: 30000 },
   async (t) => {
-    const fixture = await watchFixture(t, ["--filter=@delinoio/delcore-api"]);
+    const fixture = await runFixture(t, ["--filter=@delinoio/delcore-api"]);
     const events = await fixture.wait((events) =>
       events.some((event) => event.kind === "start"),
     );
@@ -298,95 +283,51 @@ test(
 );
 
 test(
-  "Turbo cancels sibling APIs on a runtime failure and can recover on the next source edit",
+  "Turbo ends the run and stops sibling tasks on an API failure",
   { skip: process.platform === "win32", timeout: 30000 },
   async (t) => {
-    const fixture = await watchFixture(t);
-    let events = await fixture.wait(
+    const fixture = await runFixture(t);
+    const events = await fixture.wait(
       (events) => events.filter((event) => event.kind === "start").length === 4,
     );
     const crashed = events.find(
       (event) => event.kind === "start" && event.service === "delcore",
     );
     process.kill(crashed.pid, "SIGUSR2");
-    await fixture.wait((events) =>
-      events.some((event) => event.kind === "crash"),
-    );
-    await fixture.wait((events) =>
-      ["devbase", "git-tracker"].every((service) =>
-        events.some(
+    assert.notEqual(await fixture.waitForExit(), 0);
+    const finalEvents = fixture.events();
+    assert.ok(finalEvents.some((event) => event.kind === "crash"));
+    for (const service of ["devbase", "git-tracker", "frontend"]) {
+      assert.ok(
+        finalEvents.some(
           (event) => event.kind === "stop" && event.service === service,
         ),
-      ),
-    );
-    assert.equal(fixture.child.exitCode, null);
-    fixture.write("servers/delcore-api/src/main.rs", "after-crash");
-    events = await fixture.wait(
-      (events) =>
-        events.filter(
-          (event) => event.kind === "start" && event.revision === "after-crash",
-        ).length === 3,
+      );
+    }
+    assert.equal(
+      finalEvents.filter((event) => event.kind === "build").length,
+      1,
     );
     assert.equal(
-      events.filter(
-        (event) => event.kind === "start" && event.service === "frontend",
-      ).length,
-      1,
+      finalEvents.filter((event) => event.kind === "start").length,
+      4,
     );
   },
 );
 
 test(
-  "Turbo blocks API startup after an initial build failure and retries on an edit",
+  "Turbo blocks API startup and ends the run after an initial build failure",
   { skip: process.platform === "win32", timeout: 30000 },
   async (t) => {
-    const fixture = await watchFixture(t, [], "fail");
-    await fixture.wait((events) =>
-      events.some((event) => event.kind === "build-failed"),
-    );
-    await delay(300);
+    const fixture = await runFixture(t, [], "fail");
+    assert.notEqual(await fixture.waitForExit(), 0);
+    const events = fixture.events();
+    assert.ok(events.some((event) => event.kind === "build-failed"));
+    assert.equal(events.filter((event) => event.kind === "build").length, 1);
     assert.ok(
-      fixture
-        .events()
+      events
         .filter((event) => event.kind === "start")
         .every((event) => event.service === "frontend"),
     );
-    fixture.write("servers/delcore-api/src/main.rs", "fixed");
-    await fixture.wait(
-      (events) =>
-        events.filter(
-          (event) => event.kind === "start" && event.revision === "fixed",
-        ).length === 3,
-    );
-  },
-);
-
-test(
-  "Turbo rebuilds a selected API for shared Rust, SQL, Cargo and protocol inputs",
-  { skip: process.platform === "win32", timeout: 30000 },
-  async (t) => {
-    const fixture = await watchFixture(t, ["--filter=@delinoio/delcore-api"]);
-    await fixture.wait((events) =>
-      events.some((event) => event.kind === "start"),
-    );
-    let builds = 1;
-    for (const path of [
-      "servers/crates/server-common/src/lib.rs",
-      "servers/delcore-api/migrations/fixture.sql",
-      "servers/Cargo.toml",
-      "servers/Cargo.lock",
-      "protos/delcore/v1/fixture.proto",
-    ]) {
-      fixture.write(path, "changed");
-      builds += 1;
-      await fixture.wait(
-        (events) =>
-          events.filter((event) => event.kind === "start").length === builds,
-      );
-      assert.equal(
-        fixture.events().filter((event) => event.kind === "build").length,
-        builds,
-      );
-    }
   },
 );
