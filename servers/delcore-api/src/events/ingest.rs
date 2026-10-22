@@ -108,6 +108,7 @@ pub async fn ingest(
         },
     )?;
     check_price_snapshots(&meters, &added, &input.attributes, input.occurred_at)?;
+    check_reported_spelling(&meters, &added, &input.reported_numbers)?;
     admit(tx, &input.tenant_id, start, &[], &added, &policy.limits).await?;
     let id = new_id();
     let meter_ids: Vec<String> = meters.iter().map(|m| m.id.clone()).collect();
@@ -241,6 +242,7 @@ pub async fn correct(
             },
         )?;
         check_price_snapshots(&meters, &added, &c.attributes, occurred)?;
+        check_reported_spelling(&meters, &added, &c.reported_numbers)?;
         check_frozen_prices(tx, &id, latest, &meters, &added, &c.attributes).await?;
         added
     } else {
@@ -403,6 +405,25 @@ fn matches_call_time(meters: &[Meter], matched: &[Contribution]) -> bool {
     matched
         .iter()
         .any(|c| meters.iter().any(|m| m.id == c.meter_id && m.call_time()))
+}
+
+/// AI usage evidence must arrive in canonical numeric spelling: `1.0` and `0.0100`
+/// are malformed, not `1` and `0.01`. Only events that reach a call-time meter are
+/// AI evidence; the same attribute names on any other meter keep the generic rule
+/// that valid decimals are canonicalized.
+fn check_reported_spelling(
+    meters: &[Meter],
+    matched: &[Contribution],
+    reported: &BTreeMap<String, String>,
+) -> Result<()> {
+    if !matches_call_time(meters, matched) {
+        return Ok(());
+    }
+    for (name, text) in reported {
+        metering::ai::check_numeric_spelling(name, text)
+            .map_err(|e| reject(Reason::InvalidAttribute, &e.to_string()))?;
+    }
+    Ok(())
 }
 
 /// A replacement of an accepted AI usage report corrects the measured usage only.

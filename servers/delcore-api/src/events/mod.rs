@@ -92,6 +92,10 @@ pub struct Input {
     pub event_type: String,
     pub occurred_at: DateTime<Utc>,
     pub attributes: BTreeMap<String, metering::Value>,
+    /// Numeric attribute text exactly as the caller reported it, before `attributes`
+    /// canonicalized the numbers. Only events that reach a call-time meter are
+    /// checked against it.
+    pub reported_numbers: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug)]
 pub struct Correction {
@@ -102,6 +106,8 @@ pub struct Correction {
     pub kind: metering::RevisionKind,
     pub event_type: String,
     pub attributes: BTreeMap<String, metering::Value>,
+    /// See [`Input::reported_numbers`].
+    pub reported_numbers: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct Accepted {
@@ -345,6 +351,7 @@ mod tests {
                 ("a".into(), metering::Value::number("1.50").unwrap()),
                 ("b".into(), metering::Value::string("<&>\u{2028}")),
             ]),
+            reported_numbers: BTreeMap::new(),
         };
         let go_json = r#"["event","t","s","k","use","2026-01-02T03:04:05.000006Z",[["a","number","1.5"],["b","string","\u003c\u0026\u003e\u2028"]]]"#;
         assert_eq!(

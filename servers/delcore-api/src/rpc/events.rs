@@ -64,23 +64,16 @@ pub fn wire_attributes(input: &BTreeMap<String, metering::Value>) -> Value {
             .collect(),
     )
 }
+/// Numeric attribute text exactly as reported. `attributes` canonicalizes every
+/// number, so the spelling check of AI usage evidence needs the original text.
+fn reported_numbers(raw: &Value) -> BTreeMap<String, String> {
+    raw.as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, v)| Some((name.clone(), v.get("number")?.as_str()?.to_owned())))
+        .collect()
+}
 impl Call<'_> {
-    /// DeliTools numeric usage evidence must arrive in canonical spelling, but
-    /// `attributes` canonicalizes every number. Check the reported text first; only
-    /// the registered DeliTools service can match a call-time meter.
-    async fn check_ai_evidence_spelling(&mut self, raw: &Value) -> Result<()> {
-        if !crate::delitools::is_delitools(self.tx, &self.service).await? {
-            return Ok(());
-        }
-        for (name, v) in raw.as_object().into_iter().flatten() {
-            if let Some(text) = v.get("number").and_then(Value::as_str) {
-                metering::ai::check_numeric_spelling(name, text).map_err(|e| {
-                    events::reject(events::Reason::InvalidAttribute, &e.to_string())
-                })?;
-            }
-        }
-        Ok(())
-    }
     fn event_policy(&self) -> events::Policy {
         events::Policy {
             lateness: Duration::seconds(self.config.usage_lateness_seconds),
@@ -105,7 +98,6 @@ impl Call<'_> {
                 {
                     return Err(invalid("invalid event attribution or occurrence"));
                 }
-                self.check_ai_evidence_spelling(&e["attributes"]).await?;
                 let input = events::Input {
                     tenant_id: string(e, "tenantId").into(),
                     service_id: self.service.clone(),
@@ -113,6 +105,7 @@ impl Call<'_> {
                     event_type: string(e, "eventType").into(),
                     occurred_at,
                     attributes: attributes(&e["attributes"])?,
+                    reported_numbers: reported_numbers(&e["attributes"]),
                 };
                 let policy = self.event_policy();
                 let a = events::ingest(self.tx, self.now, &policy, input).await?;
@@ -134,7 +127,6 @@ impl Call<'_> {
                         _ => return Err(invalid("correction kind must be replace or cancel")),
                     },
                 };
-                self.check_ai_evidence_spelling(&q["attributes"]).await?;
                 let c = events::Correction {
                     tenant_id: string(q, "tenantId").into(),
                     service_id: self.service.clone(),
@@ -147,6 +139,7 @@ impl Call<'_> {
                     kind,
                     event_type: string(q, "eventType").into(),
                     attributes: attributes(&q["attributes"])?,
+                    reported_numbers: reported_numbers(&q["attributes"]),
                 };
                 let policy = self.event_policy();
                 let a = events::correct(self.tx, self.now, &policy, c).await?;

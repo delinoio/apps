@@ -261,6 +261,43 @@ async fn later_prices_corrections_and_replays_reconcile_the_ledger() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn the_spelling_rule_applies_only_to_events_that_reach_a_call_time_meter() {
+    let f = Fixture::setup().await;
+    let s = register(&f).await;
+    let tenant = tenant_of(&f, "owner").await;
+    credit(&f, &tenant, "100").await;
+    // An ordinary attribute-backed meter of the same service may use the AI evidence
+    // attribute names; its numbers keep the generic rule and are canonicalized.
+    f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare plain meter","meter":{"serviceId":s.service,"name":"plain","key":"plain","eventType":"plain.usage","aggregation":"METER_AGGREGATION_SUM","valueAttribute":"input_tokens"}})).await;
+    let at = Utc::now().to_rfc3339();
+    let event = |id: &str, kind: &str, attributes: Value| json!({"requestKey":key(),"event":{"tenantId":tenant,"serviceId":s.service,"eventKey":id,"eventType":kind,"occurredAt":at,"attributes":attributes}});
+    let plain = json!({"input_tokens":{"number":"1.0"},"input_usd_per_token":{"number":"0.0100"}});
+    f.rpc(
+        "service",
+        "IngestEvent",
+        event("plain", "plain.usage", plain.clone()),
+    )
+    .await;
+    let correction = json!({"requestKey":key(),"tenantId":tenant,"eventKey":"plain","expectedRevision":1,"kind":"EVENT_CORRECTION_KIND_REPLACE","eventType":"plain.usage","attributes":{"input_tokens":{"number":"2.0"}}});
+    assert_eq!(
+        f.rpc("service", "CorrectEvent", correction).await["revision"],
+        2
+    );
+    // The same spellings in a call-time report are malformed evidence.
+    let effective = (Utc::now() - Duration::hours(1)).to_rfc3339();
+    let mut ai = attrs(["1", "", "", ""], ["0.01", "", "", ""], &effective);
+    ai["input_tokens"] = json!({"number":"1.0"});
+    f.error(
+        "service",
+        "IngestEvent",
+        event("ai", TRANSLATOR, ai),
+        "invalid_argument",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn frozen_prices_hold_across_revisions_that_omit_them() {
     let f = Fixture::setup().await;
     let s = register(&f).await;
@@ -1172,6 +1209,7 @@ async fn accepted_events_and_ledger_are_independent_of_consumer_deletion_windows
         event_type: TRANSLATOR.into(),
         occurred_at: chrono::DateTime::from_timestamp_micros(microsecond).unwrap(),
         attributes,
+        reported_numbers: Default::default(),
     };
     let replay = events::ingest(
         &mut tx,
