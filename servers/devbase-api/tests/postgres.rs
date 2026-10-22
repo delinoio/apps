@@ -641,6 +641,23 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         vec![json!({"tenantId":tenant,"name":"","idempotencyKey":"project-fresh-invalid"})],
     )
     .await;
+    // A login-token mutation for a deleted or missing project validates the idempotency key before
+    // the routing-only replay lookup, so a malformed key is `invalid_argument`, not `not_found`,
+    // and no replay row is read or changed.
+    for key in ["short", "bad key with spaces", "key/with/slash"] {
+        for target in [pid.clone(), uuid::Uuid::now_v7().to_string()] {
+            expect_all(
+                &http,
+                &base,
+                &db,
+                "DeleteProject",
+                "manager",
+                "invalid_argument",
+                vec![json!({"projectId":target,"version":"1","idempotencyKey":key})],
+            )
+            .await;
+        }
+    }
     let (_, new) = call(
         &http,
         &base,

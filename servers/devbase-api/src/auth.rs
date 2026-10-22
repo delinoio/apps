@@ -120,6 +120,10 @@ impl Server {
                     if !op.mutation() {
                         return Err(Fault::missing());
                     }
+                    // The routing-only lookup is keyed by the idempotency key, so a malformed key is
+                    // rejected as `invalid_argument` before any replay storage access. Authentication
+                    // above still wins, and the caller validates the key again for found projects.
+                    crate::validation::validate_routing(op, q)?;
                     let t:uuid::Uuid=sqlx::query_scalar("SELECT tenant_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3").bind(format!("user:{identity}")).bind(string(q,"idempotencyKey")).bind(now()).fetch_optional(&self.db).await?.ok_or_else(Fault::missing)?;
                     user = Some(identity);
                     t.to_string()
