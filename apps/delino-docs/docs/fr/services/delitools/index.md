@@ -256,16 +256,18 @@ DeliTools ne stocke jamais votre texte d’entrée, votre schéma ni les résult
 
 DeliTools stocke uniquement les données dont il a besoin pour exécuter le service et le facturer : les empreintes de vérification des clés d’API, l’utilisateur et le tenant auxquels appartient une requête, les empreintes d’entrée pour l’idempotence, les états des requêtes, les identifiants de tentatives, l’utilisation mesurée en jetons, les instantanés de prix, ainsi que des enregistrements d’audit et d’exploitation sûrs.
 
-| Données                                                                  | Conservées pendant                                 |
-| ------------------------------------------------------------------------ | -------------------------------------------------- |
-| Enregistrements des requêtes d’exécution, avec ou sans clé d’idempotence | 30 jours à compter de la création                  |
-| Enregistrements d’idempotence                                            | 30 jours à compter de la première création         |
-| Enregistrements de livraison et de rapprochement de l’utilisation        | 30 jours à compter de la première création         |
-| Enregistrements d’audit de la plateforme et journaux d’exploitation      | 30 jours à compter de la création                  |
-| Clés d’API                                                               | Non supprimées par la conservation de 30 jours     |
-| Écritures comptables acceptées dans Delcore                              | Selon les règles de conservation propres à Delcore |
+| Données                                                                                 | Conservées pendant                                 |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Enregistrements des requêtes d’exécution, avec ou sans clé d’idempotence                | 30 jours à compter de la création                  |
+| Enregistrements d’idempotence                                                           | 30 jours à compter de la première création         |
+| Enregistrements de livraison et de rapprochement de l’utilisation                       | 30 jours à compter de la première création         |
+| Enregistrements d’audit de la plateforme et enregistrements d’événements d’exploitation | 30 jours à compter de la création                  |
+| Clés d’API                                                                              | Non supprimées par la conservation de 30 jours     |
+| Écritures comptables acceptées dans Delcore                                             | Selon les règles de conservation propres à Delcore |
 
 La conservation de 30 jours ne s’applique pas aux clés d’API. Le nettoyage de conservation ne les supprime jamais. L’expiration et la révocation empêchent seulement une clé de s’authentifier ; son hachage de vérification et son attribution restent donc stockés.
+
+Le nettoyage de conservation ne supprime que les enregistrements que DeliTools stocke dans sa propre base de données. Si l’opérateur exporte des journaux ou des traces vers un collecteur, celui-ci les conserve selon ses propres règles de conservation. DeliTools exige de l’opérateur qu’il y applique les mêmes 30 jours, mais le service ne peut pas l’imposer. La télémétrie exportée ne contient jamais votre entrée, votre schéma ni les résultats.
 
 Les 30 jours commencent lorsque l’enregistrement est créé pour la première fois. Les nouvelles tentatives et les changements d’état ne les prolongent pas. DeliTools supprime un enregistrement à son expiration, quel que soit son état, y compris les requêtes qui ne se sont pas terminées et l’utilisation qui n’est pas encore livrée. Vous acceptez deux risques :
 

@@ -261,11 +261,13 @@ DeliTools stores only the data it needs to run the service and to bill it: verif
 | Execution request records, with or without an idempotency key | 30 days from creation               |
 | Idempotency records                                           | 30 days from first creation         |
 | Usage delivery and reconciliation records                     | 30 days from first creation         |
-| Platform audit records and operational logs                   | 30 days from creation               |
+| Platform audit records and operational event records          | 30 days from creation               |
 | API keys                                                      | Not deleted by the 30-day retention |
 | Accepted accounting entries in Delcore                        | Under Delcore's own retention rules |
 
 The 30-day retention does not apply to API keys. The retention sweep never deletes them. Expiry and revocation only stop a key from authenticating, so its verification hash and attribution stay stored.
+
+The retention sweep deletes only the records that DeliTools stores in its own database. If the operator exports logs or traces to a collector, that collector keeps them under its own retention rules. DeliTools requires the operator to apply the same 30 days there, but the service cannot enforce it. Exported telemetry never contains your input, schema or results.
 
 The 30 days start when the record is first created. Retries and state changes do not extend them. DeliTools deletes a record when it expires in every state, including requests that did not finish and usage that is not yet delivered. You accept two risks:
 

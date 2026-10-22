@@ -256,16 +256,18 @@ O DeliTools nunca armazena seu texto de entrada, seu esquema nem os resultados. 
 
 O DeliTools armazena apenas os dados de que precisa para executar o serviço e faturá-lo: hashes de verificação de chaves de API, quem e qual tenant são donos de uma solicitação, hashes de entrada para idempotência, estados das solicitações, identificadores de tentativas, uso de tokens medido, instantâneos de preços e registros seguros de auditoria e operação.
 
-| Dados                                                                   | Mantidos por                               |
-| ----------------------------------------------------------------------- | ------------------------------------------ |
-| Registros de solicitações de execução, com ou sem chave de idempotência | 30 dias a partir da criação                |
-| Registros de idempotência                                               | 30 dias a partir da primeira criação       |
-| Registros de entrega e reconciliação de uso                             | 30 dias a partir da primeira criação       |
-| Registros de auditoria da plataforma e logs operacionais                | 30 dias a partir da criação                |
-| Chaves de API                                                           | Não são excluídas pela retenção de 30 dias |
-| Lançamentos contábeis aceitos no Delcore                                | Conforme as regras de retenção do Delcore  |
+| Dados                                                                    | Mantidos por                               |
+| ------------------------------------------------------------------------ | ------------------------------------------ |
+| Registros de solicitações de execução, com ou sem chave de idempotência  | 30 dias a partir da criação                |
+| Registros de idempotência                                                | 30 dias a partir da primeira criação       |
+| Registros de entrega e reconciliação de uso                              | 30 dias a partir da primeira criação       |
+| Registros de auditoria da plataforma e registros de eventos operacionais | 30 dias a partir da criação                |
+| Chaves de API                                                            | Não são excluídas pela retenção de 30 dias |
+| Lançamentos contábeis aceitos no Delcore                                 | Conforme as regras de retenção do Delcore  |
 
 A retenção de 30 dias não se aplica às chaves de API. A limpeza de retenção nunca as exclui. A expiração e a revogação apenas impedem que uma chave seja autenticada, portanto o hash de verificação e a atribuição dela continuam armazenados.
+
+A limpeza de retenção exclui apenas os registros que o DeliTools armazena em seu próprio banco de dados. Se o operador exporta logs ou traces para um coletor, o coletor os mantém conforme suas próprias regras de retenção. O DeliTools exige que o operador aplique ali os mesmos 30 dias, mas o serviço não pode impor isso. A telemetria exportada nunca contém sua entrada, seu esquema nem os resultados.
 
 Os 30 dias começam quando o registro é criado pela primeira vez. Novas tentativas e mudanças de estado não os prorrogam. O DeliTools exclui um registro quando ele expira em qualquer estado, inclusive solicitações que não terminaram e uso que ainda não foi entregue. Você aceita dois riscos:
 
