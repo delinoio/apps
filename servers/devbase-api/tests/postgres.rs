@@ -658,6 +658,68 @@ async fn postgres_wire_authorization_replays_and_deletion() {
             .await;
         }
     }
+    // A malformed mutation target is not validated before the replay lookup. It differs from the
+    // recorded tenant or project, so an existing record answers `already_exists` after the
+    // authority checks, whatever the operation or payload.
+    expect_all(
+        &http,
+        &base,
+        &db,
+        "DeleteProject",
+        "manager",
+        "already_exists",
+        vec![
+            json!({"projectId":"not-a-uuid","version":"1","idempotencyKey":"project-delete"}),
+            json!({"version":"1","idempotencyKey":"project-delete"}),
+        ],
+    )
+    .await;
+    expect_all(&http, &base, &db, "UpdateProject", "manager", "already_exists", vec![
+        json!({"projectId":"not-a-uuid","name":"","version":"1","idempotencyKey":"project-create"}),
+    ]).await;
+    expect_all(
+        &http,
+        &base,
+        &db,
+        "CreateProject",
+        "manager",
+        "already_exists",
+        vec![
+            json!({"tenantId":"not-a-uuid","name":"","idempotencyKey":"project-create"}),
+            json!({"name":"Project","idempotencyKey":"project-create"}),
+        ],
+    )
+    .await;
+    // Without a replay record, an expired or fresh key keeps `invalid_argument`. An unknown
+    // caller is still `unauthenticated`, and a malformed key is rejected before the lookup.
+    expect_all(&http, &base, &db, "DeleteProject", "manager", "invalid_argument", vec![
+        json!({"projectId":"not-a-uuid","version":"1","idempotencyKey":"project-fresh-malformed"}),
+        json!({"projectId":"not-a-uuid","version":"1","idempotencyKey":"short"}),
+    ]).await;
+    expect_all(&http, &base, &db, "CreateProject", "manager", "invalid_argument", vec![
+        json!({"tenantId":"not-a-uuid","name":"Project","idempotencyKey":"project-fresh-malformed"}),
+    ]).await;
+    expect_all(
+        &http,
+        &base,
+        &db,
+        "DeleteProject",
+        "stranger",
+        "unauthenticated",
+        vec![json!({"projectId":"not-a-uuid","version":"1","idempotencyKey":"project-delete"})],
+    )
+    .await;
+    // Reads have no replay record and keep rejecting a malformed target at once.
+    expect_all(
+        &http,
+        &base,
+        &db,
+        "GetProject",
+        "manager",
+        "invalid_argument",
+        vec![json!({"projectId":"not-a-uuid"})],
+    )
+    .await;
     let (_, new) = call(
         &http,
         &base,

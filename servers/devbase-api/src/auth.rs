@@ -59,6 +59,18 @@ pub async fn usable(
     Ok(row)
 }
 impl Server {
+    /// Routing-only lookup of the caller's own unexpired replay record by caller and idempotency
+    /// key alone, reading only the tenant ID. The caller validates the key first.
+    async fn replay_tenant(&self, identity: &str, q: &Value) -> Result<Option<uuid::Uuid>> {
+        Ok(sqlx::query_scalar(
+            "SELECT tenant_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3",
+        )
+        .bind(format!("user:{identity}"))
+        .bind(string(q, "idempotencyKey"))
+        .bind(now())
+        .fetch_optional(&self.db)
+        .await?)
+    }
     pub async fn authenticate(&self, authorization: &str, op: Op, q: &Value) -> Result<Identity> {
         let parts: Vec<_> = authorization.split_whitespace().collect();
         if parts.len() != 2 || !parts[0].eq_ignore_ascii_case("Bearer") {
@@ -71,10 +83,16 @@ impl Server {
         } else {
             project
         };
-        if !server_common::canonical_id(target) {
+        let canonical = server_common::canonical_id(target);
+        let key_auth = parts[1].starts_with("dbk_");
+        // A login-token mutation with a malformed target is decided after the replay lookup,
+        // because only the idempotency key is validated before it: an existing record makes the
+        // target a different tenant or project (`already_exists`), no record makes it invalid.
+        let defer_target = !canonical && op.mutation() && !key_auth;
+        if !canonical && !defer_target {
             return Err(Fault::invalid("target must be a canonical UUID v7"));
         }
-        if parts[1].starts_with("dbk_") {
+        if key_auth {
             let (id, secret) = parse_key(parts[1])?;
             let mut db = self.db.acquire().await?;
             let row = usable(&mut db, id, false).await?;
@@ -105,7 +123,15 @@ impl Server {
         }
         let authorization = format!("Bearer {}", parts[1]);
         let mut user = None;
-        let tenant = if !requested_tenant.is_empty() {
+        let tenant = if defer_target {
+            let identity = self.authority.identify(&authorization).await?;
+            crate::validation::validate_routing(op, q)?;
+            let Some(recorded) = self.replay_tenant(&identity, q).await? else {
+                return Err(Fault::invalid("target must be a canonical UUID v7"));
+            };
+            user = Some(identity);
+            recorded.to_string()
+        } else if !requested_tenant.is_empty() {
             requested_tenant.to_owned()
         } else {
             let found: Option<uuid::Uuid> =
@@ -124,7 +150,10 @@ impl Server {
                     // rejected as `invalid_argument` before any replay storage access. Authentication
                     // above still wins, and the caller validates the key again for found projects.
                     crate::validation::validate_routing(op, q)?;
-                    let t:uuid::Uuid=sqlx::query_scalar("SELECT tenant_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3").bind(format!("user:{identity}")).bind(string(q,"idempotencyKey")).bind(now()).fetch_optional(&self.db).await?.ok_or_else(Fault::missing)?;
+                    let t = self
+                        .replay_tenant(&identity, q)
+                        .await?
+                        .ok_or_else(Fault::missing)?;
                     user = Some(identity);
                     t.to_string()
                 }
@@ -156,6 +185,11 @@ impl Server {
             && !(op.degraded() && matches!(state, TenantState::Blocked | TenantState::Deleting))
         {
             return Err(Fault::denied());
+        }
+        if defer_target {
+            // The caller is authorized for the recorded tenant; the malformed target cannot match
+            // the record, so the replay comparison would end in a conflict whatever the payload.
+            return Err(Fault::conflict());
         }
         Ok(Identity {
             actor: format!("user:{user}"),
