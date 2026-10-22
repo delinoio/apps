@@ -81,6 +81,35 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
+    "@delinoio/delitools-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "LISTEN",
+        "DELCORE_URL",
+        "DELCORE_RESOURCE",
+        "LOGTO_TOKEN_URL",
+        "CLIENT_ID",
+        "CLIENT_SECRET",
+        "DELITOOLS_*",
+        "AI_GATEWAY_*",
+        "DEPENDENCY_TIMEOUT",
+        "LOG_FORMAT",
+        "OTEL_*",
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
+      ],
+      "dependsOn": ["//#server-build"],
+      "interruptible": true,
+      "inputs": [
+        "package.json",
+        "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
+        "$TURBO_ROOT$/scripts/dev.mjs",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
+      ]
+    },
     "@delinoio/devbase-api#dev": {
       "cache": false,
       "persistent": true,

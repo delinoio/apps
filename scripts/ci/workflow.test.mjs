@@ -258,7 +258,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   );
   needs.changes.outputs = {
     rust_servers:
-      '[{"service":"delcore-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
+      '[{"service":"delcore-api"},{"service":"delitools-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
     rust_clippy: '["fixkey-core"]',
     rust_test: '["fixkey-core", "fixkey"]',
     git_tracker: "true",
@@ -290,7 +290,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   }
   needs.changes.outputs = {
     rust_servers:
-      '[{"service":"delcore-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
+      '[{"service":"delcore-api"},{"service":"delitools-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
     rust_clippy: "[]",
     rust_test: "[]",
     git_tracker: "false",

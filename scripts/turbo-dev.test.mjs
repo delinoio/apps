@@ -53,13 +53,13 @@ async function runFixture(t, filters = [], initialSource = "initial") {
   );
   write(
     "pnpm-lock.yaml",
-    "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  servers/delcore-api: {}\n  servers/devbase-api: {}\n  servers/git-tracker-api: {}\n  apps/frontend: {}\n",
+    "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  servers/delcore-api: {}\n  servers/delitools-api: {}\n  servers/devbase-api: {}\n  servers/git-tracker-api: {}\n  apps/frontend: {}\n",
   );
   write(".gitignore", ".turbo/\n.fixture/\nnode_modules/\nservers/target/\n");
   write("turbo.json", JSON.stringify(config));
   write("servers/delcore-api/src/main.rs", initialSource);
   write("servers/delcore-api/catalog/example.yaml", "initial");
-  for (const api of ["delcore", "devbase", "git-tracker"]) {
+  for (const api of ["delcore", "delitools", "devbase", "git-tracker"]) {
     write(
       `servers/${api}-api/package.json`,
       JSON.stringify({
@@ -221,7 +221,7 @@ test(
   async (t) => {
     const fixture = await runFixture(t);
     let events = await fixture.wait(
-      (events) => events.filter((event) => event.kind === "start").length === 4,
+      (events) => events.filter((event) => event.kind === "start").length === 5,
     );
     for (const event of events.filter((event) => event.kind === "start")) {
       assert.equal(
@@ -253,7 +253,7 @@ test(
     await delay(800);
     events = fixture.events();
     assert.equal(events.filter((event) => event.kind === "build").length, 1);
-    assert.equal(events.filter((event) => event.kind === "start").length, 4);
+    assert.equal(events.filter((event) => event.kind === "start").length, 5);
     assert.equal(events.filter((event) => event.kind === "stop").length, 0);
     const closed = once(fixture.child, "close");
     fixture.child.kill("SIGINT");
@@ -288,7 +288,7 @@ test(
   async (t) => {
     const fixture = await runFixture(t);
     const events = await fixture.wait(
-      (events) => events.filter((event) => event.kind === "start").length === 4,
+      (events) => events.filter((event) => event.kind === "start").length === 5,
     );
     const crashed = events.find(
       (event) => event.kind === "start" && event.service === "delcore",
@@ -297,7 +297,7 @@ test(
     assert.notEqual(await fixture.waitForExit(), 0);
     const finalEvents = fixture.events();
     assert.ok(finalEvents.some((event) => event.kind === "crash"));
-    for (const service of ["devbase", "git-tracker", "frontend"]) {
+    for (const service of ["delitools", "devbase", "git-tracker", "frontend"]) {
       assert.ok(
         finalEvents.some(
           (event) => event.kind === "stop" && event.service === service,
@@ -310,7 +310,7 @@ test(
     );
     assert.equal(
       finalEvents.filter((event) => event.kind === "start").length,
-      4,
+      5,
     );
   },
 );

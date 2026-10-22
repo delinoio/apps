@@ -16,6 +16,7 @@ export function prepareApiEnvironment(api, source = process.env) {
     // parent shell or Infisical value supplies LISTEN.
     LISTEN: {
       [Api.Delcore]: "127.0.0.1:8080",
+      [Api.DeliTools]: "127.0.0.1:46322",
       [Api.DevBase]: "127.0.0.1:46317",
       [Api.GitTracker]: "127.0.0.1:46321",
     }[api],
@@ -35,6 +36,7 @@ export function apiCommand(api, source = process.env) {
   const target = resolve(serverRoot, source.CARGO_TARGET_DIR || "target");
   const binary = {
     [Api.Delcore]: "delcore-api",
+    [Api.DeliTools]: "delitools-api",
     [Api.DevBase]: "devbase-api",
     [Api.GitTracker]: "git-tracker-api",
   }[api];

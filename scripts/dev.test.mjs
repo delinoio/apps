@@ -24,6 +24,8 @@ import {
 const urls = {
   [Api.Delcore]:
     "postgres://delcore:fixture@127.0.0.1:15432/delcore?sslmode=disable",
+  [Api.DeliTools]:
+    "postgres://delitools:fixture@127.0.0.1:15435/delitools?sslmode=disable",
   [Api.DevBase]:
     "postgres://devbase:fixture@127.0.0.1:15434/devbase?sslmode=disable",
   [Api.GitTracker]:
@@ -31,6 +33,7 @@ const urls = {
 };
 const listeners = {
   [Api.Delcore]: "127.0.0.1:8080",
+  [Api.DeliTools]: "127.0.0.1:46322",
   [Api.DevBase]: "127.0.0.1:46317",
   [Api.GitTracker]: "127.0.0.1:46321",
 };
@@ -179,6 +182,22 @@ test("Git Tracker overrides injected DATABASE_URL while preserving provider sett
   assert.equal(prepared.env[databaseHandoff], undefined);
 });
 
+test("DeliTools overrides injected DATABASE_URL while preserving its provider and Gateway settings", () => {
+  const prepared = prepareApiEnvironment(Api.DeliTools, {
+    ...handoff,
+    DATABASE_URL: "postgres://remote/shared",
+    CLIENT_SECRET: "fixture-provider",
+    AI_GATEWAY_API_KEY: "fixture-gateway",
+    DELITOOLS_MODELS: "fixture-models.yaml",
+  });
+  assert.equal(prepared.env.DATABASE_URL, urls[Api.DeliTools]);
+  assert.equal(prepared.env.CLIENT_SECRET, "fixture-provider");
+  assert.equal(prepared.env.AI_GATEWAY_API_KEY, "fixture-gateway");
+  assert.equal(prepared.env.DELITOOLS_MODELS, "fixture-models.yaml");
+  assert.equal(prepared.env.LISTEN, "127.0.0.1:46322");
+  assert.equal(prepared.env[databaseHandoff], undefined);
+});
+
 test("DevBase overrides injected DATABASE_URL while preserving its provider settings", () => {
   const prepared = prepareApiEnvironment(Api.DevBase, {
     ...handoff,
@@ -236,6 +255,10 @@ test("API development listeners stay distinct despite shared and local LISTEN va
       assert.equal(
         prepareApiEnvironment(Api.DevBase, source).env.LISTEN,
         "127.0.0.1:46317",
+      );
+      assert.equal(
+        prepareApiEnvironment(Api.DeliTools, source).env.LISTEN,
+        "127.0.0.1:46322",
       );
     }
   }
@@ -512,7 +535,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   const config = JSON.parse(
     readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
   );
-  for (const service of ["delcore", "devbase", "git-tracker"]) {
+  for (const service of ["delcore", "delitools", "devbase", "git-tracker"]) {
     assert.ok(
       config.tasks[`@delinoio/${service}-api#dev`].passThroughEnv.includes(
         "CARGO_TARGET_DIR",
@@ -522,6 +545,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
   const target = join(tmpdir(), "server-target-fixture");
   for (const [api, binary] of [
     [Api.Delcore, "delcore-api"],
+    [Api.DeliTools, "delitools-api"],
     [Api.DevBase, "devbase-api"],
     [Api.GitTracker, "git-tracker-api"],
   ]) {
@@ -555,6 +579,7 @@ test("root, service-local and Portless Delcore development share the catalog-app
     ["apps/fixkey-app", "fixkey", 46316],
     ["apps/git-tracker", "git-tracker", 46320],
     ["servers/delcore-api", "delcore-api", 8080],
+    ["servers/delitools-api", "delitools-api", 46322],
     ["servers/devbase-api", "devbase-api", 46317],
     ["servers/git-tracker-api", "git-tracker-api", 46321],
   ];

@@ -950,6 +950,7 @@ jobs:
           go build -o "$RUNNER_TEMP/delcore-client" ./examples/delcore-client
           go build -o "$RUNNER_TEMP/git-tracker-client" ./examples/git-tracker-client
           go build -o "$RUNNER_TEMP/devbase-client" ./examples/devbase-client
+          go build -o "$RUNNER_TEMP/delitools-client" ./examples/delitools-client
           pnpm --filter devbase-client-ts typecheck
           pnpm exec buf lint
           pnpm proto:generate

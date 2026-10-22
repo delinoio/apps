@@ -352,6 +352,7 @@ test("Delino releases publish server images with narrowly scoped package access"
   assert.equal(jobs.images.environment, undefined);
   assert.deepEqual(jobs.images.strategy.matrix.server, [
     "delcore-api",
+    "delitools-api",
     "devbase-api",
     "git-tracker-api",
   ]);
