@@ -45,7 +45,7 @@ The response contains `requestId` and `texts`, the translations in the original 
 
 Rules:
 
-- Language values are BCP 47 tags. `outputLanguage` is required. A tag that is not valid BCP 47 returns an invalid-input error.
+- Language values are BCP 47 tags. `outputLanguage` is required. A tag that is not valid BCP 47, is not ASCII or is longer than 64 bytes returns an invalid-input error.
 - `texts` must not be empty, and no string may be empty or contain only whitespace.
 - If you set `inputLanguage` and it is the same as `outputLanguage`, the request is invalid.
 - If you omit `inputLanguage`, DeliTools detects one input language for the whole array. A mixed-language array is still translated. If the detected language equals `outputLanguage`, the model still processes each item. DeliTools does not return the original array unprocessed.

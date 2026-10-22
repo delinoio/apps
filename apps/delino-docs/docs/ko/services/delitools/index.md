@@ -45,7 +45,7 @@ JSON에서 필드 이름은 lowerCamelCase를 쓰고, 열거형 값은 전체 �
 
 규칙:
 
-- 언어 값은 BCP 47 태그입니다. `outputLanguage`는 필수입니다. 올바른 BCP 47이 아닌 태그는 invalid-input 오류를 반환합니다.
+- 언어 값은 BCP 47 태그입니다. `outputLanguage`는 필수입니다. 올바른 BCP 47이 아니거나 ASCII가 아니거나 64바이트를 넘는 태그는 invalid-input 오류를 반환합니다.
 - `texts`는 비어 있으면 안 되며, 빈 문자열이나 공백만 있는 문자열도 허용되지 않습니다.
 - `inputLanguage`를 지정했는데 `outputLanguage`와 같으면 요청이 올바르지 않습니다.
 - `inputLanguage`를 생략하면 DeliTools가 배열 전체에 대해 하나의 입력 언어를 감지합니다. 여러 언어가 섞인 배열도 번역됩니다. 감지된 언어가 `outputLanguage`와 같더라도 모델은 각 항목을 처리합니다. DeliTools는 원래 배열을 처리하지 않은 채 반환하지 않습니다.

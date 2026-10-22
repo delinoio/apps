@@ -45,7 +45,7 @@ La respuesta contiene `requestId` y `texts`, las traducciones en el orden origin
 
 Reglas:
 
-- Los valores de idioma son etiquetas BCP 47. `outputLanguage` es obligatorio. Una etiqueta que no sea BCP 47 válida devuelve un error de entrada no válida.
+- Los valores de idioma son etiquetas BCP 47. `outputLanguage` es obligatorio. Una etiqueta que no sea BCP 47 válida, que no sea ASCII o que supere los 64 bytes devuelve un error de entrada no válida.
 - `texts` no debe estar vacío y ninguna cadena puede estar vacía ni contener solo espacios en blanco.
 - Si estableces `inputLanguage` y es igual a `outputLanguage`, la solicitud no es válida.
 - Si omites `inputLanguage`, DeliTools detecta un único idioma de entrada para toda la matriz. Una matriz con varios idiomas se traduce igualmente. Si el idioma detectado es igual a `outputLanguage`, el modelo sigue procesando cada elemento. DeliTools no devuelve la matriz original sin procesar.

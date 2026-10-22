@@ -45,7 +45,7 @@ La réponse contient `requestId` et `texts`, les traductions dans l’ordre d’
 
 Règles :
 
-- Les valeurs de langue sont des balises BCP 47. `outputLanguage` est obligatoire. Une balise qui n’est pas une balise BCP 47 valide renvoie une erreur d’entrée non valide.
+- Les valeurs de langue sont des balises BCP 47. `outputLanguage` est obligatoire. Une balise qui n’est pas une balise BCP 47 valide, qui n’est pas en ASCII ou qui dépasse 64 octets renvoie une erreur d’entrée non valide.
 - `texts` ne doit pas être vide, et aucune chaîne ne peut être vide ni ne contenir que des espaces.
 - Si vous définissez `inputLanguage` et qu’elle est identique à `outputLanguage`, la requête n’est pas valide.
 - Si vous omettez `inputLanguage`, DeliTools détecte une seule langue d’entrée pour l’ensemble du tableau. Un tableau multilingue est tout de même traduit. Si la langue détectée est égale à `outputLanguage`, le modèle traite quand même chaque élément. DeliTools ne renvoie pas le tableau d’origine sans traitement.

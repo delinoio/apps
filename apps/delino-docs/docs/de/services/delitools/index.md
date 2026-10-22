@@ -45,7 +45,7 @@ Die Antwort enthält `requestId` und `texts`, die Übersetzungen in der ursprün
 
 Regeln:
 
-- Sprachwerte sind BCP-47-Tags. `outputLanguage` ist erforderlich. Ein Tag, das kein gültiges BCP 47 ist, gibt einen Fehler wegen ungültiger Eingabe zurück.
+- Sprachwerte sind BCP-47-Tags. `outputLanguage` ist erforderlich. Ein Tag, das kein gültiges BCP 47 ist, nicht nur aus ASCII-Zeichen besteht oder länger als 64 Byte ist, gibt einen Fehler wegen ungültiger Eingabe zurück.
 - `texts` darf nicht leer sein, und keine Zeichenfolge darf leer sein oder nur aus Leerraum bestehen.
 - Wenn Sie `inputLanguage` festlegen und es mit `outputLanguage` übereinstimmt, ist die Anfrage ungültig.
 - Wenn Sie `inputLanguage` weglassen, erkennt DeliTools eine Eingabesprache für das gesamte Array. Ein Array mit gemischten Sprachen wird dennoch übersetzt. Wenn die erkannte Sprache mit `outputLanguage` übereinstimmt, verarbeitet das Modell trotzdem jedes Element. DeliTools gibt das ursprüngliche Array nicht unverarbeitet zurück.

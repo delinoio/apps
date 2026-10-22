@@ -45,7 +45,7 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DeliToolsService/TranslateTextA
 
 规则：
 
-- 语言值为 BCP 47 标签。`outputLanguage` 为必填。不是有效 BCP 47 的标签会返回输入无效错误。
+- 语言值为 BCP 47 标签。`outputLanguage` 为必填。不是有效 BCP 47、不是 ASCII 或超过 64 字节的标签会返回输入无效错误。
 - `texts` 不能为空，并且任何字符串都不能为空或仅包含空白字符。
 - 如果你设置了 `inputLanguage` 并且它与 `outputLanguage` 相同，则请求无效。
 - 如果你省略 `inputLanguage`，DeliTools 会为整个数组检测一种输入语言。混合语言的数组仍会被翻译。如果检测到的语言与 `outputLanguage` 相同，模型仍会处理每一项。DeliTools 不会原样返回未经处理的原始数组。
