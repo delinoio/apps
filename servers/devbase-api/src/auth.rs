@@ -67,19 +67,33 @@ impl Server {
     /// Routing-only lookup of the caller's own unexpired replay record by caller and idempotency
     /// key alone, reading only the recorded tenant and project IDs. The caller validates the key
     /// first.
+    ///
+    /// The lookup takes the same transaction-scoped advisory lock on the caller and key as a
+    /// mutation, so a valid request with this key that is still executing finishes first: its
+    /// replay row is then visible (or it rolled back and there is none) before the record is
+    /// treated as absent.
     async fn replay_route(
         &self,
         identity: &str,
         q: &Value,
     ) -> Result<Option<(uuid::Uuid, Option<uuid::Uuid>)>> {
-        Ok(sqlx::query_as(
+        let principal = format!("user:{identity}");
+        let key = string(q, "idempotencyKey");
+        let mut tx = self.db.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("{principal}|{key}"))
+            .execute(&mut *tx)
+            .await?;
+        let route = sqlx::query_as(
             "SELECT tenant_id,project_id FROM replays WHERE principal=$1 AND idempotency_key=$2 AND expires_at>$3",
         )
-        .bind(format!("user:{identity}"))
-        .bind(string(q, "idempotencyKey"))
+        .bind(&principal)
+        .bind(key)
         .bind(now())
-        .fetch_optional(&self.db)
-        .await?)
+        .fetch_optional(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(route)
     }
     pub async fn authenticate(&self, authorization: &str, op: Op, q: &Value) -> Result<Identity> {
         let parts: Vec<_> = authorization.split_whitespace().collect();
