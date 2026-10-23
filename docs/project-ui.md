@@ -19,7 +19,7 @@ Provide reusable shadcn/ui primitives and theme tokens for every application.
 
 ## Cross-Domain Invariants
 
-TypeScript and React replace the default Go language because this package renders UI in existing React applications. The package has no deployment, native bindings, backend or application state. All six apps depend on the same workspace package. FixKey settings and candidate controls and Delino Site forms, calls to action and cards use shared primitives. Empty application roots and Rspress-owned theme controls retain their existing rendering. Apps retain ownership of screen composition and behavior.
+TypeScript and React replace the default Go language because this package renders UI in existing React applications. The package has no deployment, native bindings, backend or application state. All remaining apps depend on the same workspace package. Delino Site forms, calls to action and cards use shared primitives. Empty application roots and Rspress-owned theme controls retain their existing rendering. Apps retain ownership of screen composition and behavior.
 
 ## Change Policy
 

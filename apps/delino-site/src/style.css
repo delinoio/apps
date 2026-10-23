@@ -103,24 +103,13 @@ select {
 .skip-link:focus {
   top: 10px;
 }
-.hero {
-  text-align: center;
-  padding: 76px 24px 64px;
-  background: radial-gradient(ellipse at 50% 75%, #eaf2ff, transparent 65%);
-}
-.eyebrow {
-  color: #2566c6;
-  font-size: 12px;
-  letter-spacing: 1.7px;
-  font-weight: 700;
-  margin: 0 0 24px;
-}
 h1,
 h2,
 h3,
 p {
   overflow-wrap: break-word;
 }
+
 h1 {
   font-size: clamp(38px, 5.5vw, 68px);
   line-height: 1.15;
@@ -128,21 +117,11 @@ h1 {
   margin: 0;
   font-weight: 750;
 }
+
 h1 span {
   color: #3182f6;
 }
-.hero-body {
-  max-width: 610px;
-  margin: 26px auto;
-  font-size: 18px;
-  color: #617084;
-}
-.actions {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
+
 .button {
   display: inline-flex;
   justify-content: center;
@@ -153,235 +132,17 @@ h1 span {
   font-weight: 600;
   font-size: 15px;
 }
+
 .button:hover {
   text-decoration: none;
   filter: brightness(0.95);
 }
+
 .primary {
   color: #fff;
   background: #246ee0;
 }
-.secondary {
-  background: #eaf0f8;
-  color: #324965;
-}
-.hero-note {
-  font-size: 12px;
-  color: #667589;
-  margin: 16px 0 42px;
-}
-.demo {
-  max-width: 744px;
-  margin: auto;
-  text-align: left;
-  border: 1px solid #dce5f1;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 24px 64px #224d8d12;
-  overflow: hidden;
-}
-.demo-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 17px 22px;
-  border-bottom: 1px solid #edf0f5;
-  color: #6b7789;
-  font-size: 11px;
-}
-.window-dots {
-  display: flex;
-  gap: 6px;
-}
-.window-dots i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #dfe5ec;
-}
-.demo-brand {
-  font-weight: 700;
-  color: #526174;
-}
-.demo-content {
-  display: grid;
-  grid-template-columns: 1fr 56px 1fr;
-  align-items: center;
-  text-align: center;
-  padding: 36px 24px 16px;
-}
-.demo-label {
-  font-size: 12px;
-  color: #68768a;
-}
-.typed,
-.corrected {
-  font-size: 43px;
-  font-weight: 600;
-  letter-spacing: -1px;
-  margin: 12px 0;
-}
-.typed {
-  color: #8b96a6;
-}
-.corrected {
-  color: #246ee0;
-}
-.conversion {
-  color: #246ee0;
-  background: #edf4ff;
-  border-radius: 50%;
-  width: 38px;
-  height: 38px;
-  line-height: 36px;
-  margin: auto;
-}
-.caret {
-  display: inline-block;
-  height: 36px;
-  width: 2px;
-  background: #3182f6;
-  margin-left: 5px;
-  vertical-align: middle;
-}
-.demo-note {
-  text-align: center;
-  color: #6b7789;
-  font-size: 11px;
-  padding: 0 16px 16px;
-}
-.section {
-  max-width: 1100px;
-  padding: 80px 32px;
-  margin: auto;
-  scroll-margin-top: 24px;
-}
-h2 {
-  font-size: clamp(27px, 3vw, 38px);
-  line-height: 1.3;
-  letter-spacing: -1.3px;
-  margin: 0 0 18px;
-}
-h3 {
-  font-size: 19px;
-  line-height: 1.45;
-  letter-spacing: -0.4px;
-  margin: 18px 0 10px;
-}
-.section-intro,
-.feature p,
-.steps p,
-.faq p,
-.closing p {
-  color: #617084;
-  font-size: 15px;
-}
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-top: 36px;
-}
-.feature {
-  background: #f7f9fc;
-  padding: 28px;
-  border-radius: 16px;
-}
-.feature-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 13px;
-  background: #e6efff;
-  color: #2566c6;
-  font-size: 21px;
-  font-weight: 600;
-}
-.feature p {
-  margin: 0;
-}
-.how {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr;
-  gap: 80px;
-  border-top: 1px solid #edf0f5;
-}
-.steps {
-  padding: 0;
-  list-style: none;
-  margin: 0;
-}
-.steps li {
-  display: flex;
-  align-items: baseline;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-.step-number {
-  font-size: 13px;
-  font-weight: 700;
-  color: #3182f6;
-}
-.steps h3 {
-  margin: 0;
-}
-.steps p {
-  margin: 8px 0 0;
-}
-.faq {
-  display: grid;
-  grid-template-columns: 1fr 1.5fr;
-  gap: 60px;
-  border-top: 1px solid #edf0f5;
-}
-details {
-  border-bottom: 1px solid #e6ebf1;
-  padding: 20px 0;
-}
-details:first-child {
-  padding-top: 0;
-}
-summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 16px;
-}
-details p {
-  margin-bottom: 0;
-}
-.closing {
-  text-align: center;
-  background: #f3f7fe;
-  padding: 64px 24px;
-}
-.key-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  width: 56px;
-  height: 56px;
-  background: white;
-  box-shadow: 0 4px 0 #dce7f6;
-  border: 1px solid #dce7f6;
-  border-radius: 13px;
-  color: #246ee0;
-  font-size: 27px;
-  font-weight: 700;
-  margin-bottom: 28px;
-}
-.key-logo span {
-  font-size: 15px;
-  align-self: flex-end;
-  padding-bottom: 7px;
-}
-.closing p {
-  margin: 0 auto 26px;
-  max-width: 520px;
-}
+
 footer {
   max-width: 1100px;
   margin: auto;
@@ -392,6 +153,17 @@ footer {
   font-size: 12px;
   color: #617084;
 }
+
+.button {
+  height: auto;
+  white-space: normal;
+}
+
+body {
+  background: transparent;
+  color: inherit;
+}
+
 @media (max-width: 700px) {
   .site-header {
     padding: 16px 20px;
@@ -400,34 +172,8 @@ footer {
   nav {
     display: none;
   }
-  .hero {
-    padding-top: 48px;
-  }
   h1 {
     letter-spacing: -1.6px;
-  }
-  .hero-body {
-    font-size: 16px;
-  }
-  .feature-grid,
-  .how,
-  .faq {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-  .section {
-    padding: 52px 24px;
-  }
-  .typed,
-  .corrected {
-    font-size: 32px;
-  }
-  .demo-content {
-    padding: 24px 12px 12px;
-    grid-template-columns: 1fr 40px 1fr;
-  }
-  .demo-brand {
-    display: none;
   }
   footer {
     flex-wrap: wrap;
@@ -438,28 +184,7 @@ footer {
   }
 }
 
-.button {
-  height: auto;
-  white-space: normal;
-}
-.demo,
-.feature {
-  display: block;
-}
-.demo {
-  padding: 0;
-}
-.feature {
-  border: 0;
-  box-shadow: none;
-}
-
-body {
-  background: transparent;
-  color: inherit;
-}
-
-/* Company styles stay scoped so the FixKey landing page retains its layout. */
+/* Company page styles. */
 .company-home {
   color: #202b3c;
   background: #fff;
@@ -672,32 +397,6 @@ body {
   gap: 8px 24px;
   margin-top: auto;
   font-size: 14px;
-}
-.company-keycaps {
-  display: flex;
-  height: 100%;
-  justify-content: center;
-  align-items: center;
-  gap: 24px;
-}
-.company-keycaps span {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  width: 76px;
-  height: 80px;
-  color: #101827;
-  background: #fff;
-  border: 1px solid #e1e7ef;
-  border-radius: 14px;
-  box-shadow: 0 4px 0 #dce5f1;
-  font-size: 32px;
-  font-weight: 600;
-}
-.company-keycaps i {
-  color: #7388a5;
-  font-size: 30px;
-  font-style: normal;
 }
 .company-availability {
   margin: 16px 0 0;

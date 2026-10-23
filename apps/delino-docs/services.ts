@@ -3,7 +3,6 @@ export enum ServiceId {
   Delcore = "delcore",
   DevBase = "devbase",
   GitTracker = "git-tracker",
-  FixKey = "fixkey",
   DeliTools = "delitools",
 }
 
@@ -32,7 +31,6 @@ export const services: readonly Service[] = [
   { id: ServiceId.Delcore, name: "Delcore", pages: [] },
   { id: ServiceId.DevBase, name: "DevBase", pages: [] },
   { id: ServiceId.GitTracker, name: "Git Tracker", pages: [] },
-  { id: ServiceId.FixKey, name: "FixKey", pages: [] },
   {
     id: ServiceId.DeliTools,
     name: "DeliTools",

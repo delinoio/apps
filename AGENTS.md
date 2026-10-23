@@ -28,7 +28,6 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
-- FixKey releases must not require a native-acceptance revision variable or comparison. Keep immutable source validation, signing and protected publication gates in the owning release workflow.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Development `dev` and `dev:*` scripts must inject Infisical development variables through the local root project configuration. Follow [environment ownership](docs/repository-environment-contract.md) for CLI setup and secret boundaries.
 - Run root `pnpm dev` to expose the frontends and Rust APIs through Portless named local URLs, with Turborepo running workspace development. Each frontend and API `dev` script owns its Portless route; the root launcher must start `pnpm exec turbo run dev` directly after database preparation. For one app, run `pnpm dev` from the owning app to serve its frontend or `pnpm dev:desktop` to launch its native shell. Keep the documented fixed loopback ports and fail on conflicts. Follow the [repository workflow](docs/repository-workflow-contract.md) and owning application contracts.
@@ -66,8 +65,6 @@
 - `apps/delidev`: DeliDev desktop shell and native host.
 - `apps/delitools`: DeliTools desktop/mobile/web application and mobile release helpers.
 - `servers/delitools-api`: DeliTools translation and extraction API; its protocol is `protos/delitools/v1`.
-- `apps/fixkey-app`: Standalone FixKey desktop product and native shell.
-- `crates/fixkey-core`: FixKey correction engine and platform adapters.
 - `protos/delcore/v1`: Delcore schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/delitools/v1`: DeliTools schemas, generated Go and TypeScript messages and Connect bindings.
 - `protos/devbase/v1`: DevBase schemas, generated Go and TypeScript messages and Connect bindings.

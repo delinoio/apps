@@ -44,7 +44,6 @@ enum ProjectId {
   DelinoDocs = "delino-docs",
   DeliDev = "delidev",
   DeliTools = "delitools",
-  FixKey = "fixkey",
   Ui = "ui",
 }
 ```
@@ -72,7 +71,6 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | DevBase frontend     | `46313` | `apps/devbase/rsbuild.config.ts`                                                | [Web application](apps-devbase-web-contract.md)        |
 | Delino Site frontend | `46314` | `apps/delino-site/rsbuild.config.ts`                                            | [Web application](apps-delino-site-web-contract.md)    |
 | Delino Docs frontend | `46315` | `apps/delino-docs/rspress.config.ts`                                            | [Documentation app](apps-delino-docs-web-contract.md)  |
-| FixKey frontend      | `46316` | `apps/fixkey-app/rsbuild.config.ts`                                             | [Desktop application](apps-fixkey-desktop-contract.md) |
 | DevBase API          | `46317` | `LISTEN` in `servers/devbase-api/.env.example`; runtime default matches         | [Server](servers-devbase-api-contract.md)              |
 | Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                            | [Web application](apps-git-tracker-web-contract.md)    |
 | Git Tracker API      | `46321` | `LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches     | [Server](servers-git-tracker-api-contract.md)          |

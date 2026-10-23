@@ -576,7 +576,6 @@ test("root, service-local and Portless Delcore development share the catalog-app
     ["apps/devbase", "devbase", 46313],
     ["apps/delino-site", "delino-site", 46314],
     ["apps/delino-docs", "delino-docs", 46315],
-    ["apps/fixkey-app", "fixkey", 46316],
     ["apps/git-tracker", "git-tracker", 46320],
     ["servers/delcore-api", "delcore-api", 8080],
     ["servers/delitools-api", "delitools-api", 46322],

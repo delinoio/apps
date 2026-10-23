@@ -18,7 +18,7 @@
     "format:check": "node scripts/ci/format-changed.mjs",
     "proto:generate": "buf generate",
     "proto:lint": "buf lint && buf format --diff --exit-code",
-    "test:tooling": "node --test scripts/*.test.mjs scripts/localization/*.test.mjs scripts/ci/*.test.mjs scripts/release/*.test.mjs apps/fixkey-app/scripts/release/*.test.mjs apps/delitools/scripts/mobile-workflow.test.mjs",
+    "test:tooling": "node --test scripts/*.test.mjs scripts/localization/*.test.mjs scripts/ci/*.test.mjs scripts/release/*.test.mjs apps/delitools/scripts/mobile-workflow.test.mjs",
     "server-build": "node servers/scripts/build-rust.mjs"
   },
   "devDependencies": {

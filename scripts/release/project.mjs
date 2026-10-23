@@ -8,7 +8,6 @@ export const Project = Object.freeze({
   Devbase: "devbase",
   Delino: "delino",
   Delitools: "delitools",
-  Fixkey: "fixkey",
 });
 export const Bump = Object.freeze({
   Patch: "patch",
@@ -17,7 +16,6 @@ export const Bump = Object.freeze({
 });
 const nativePackages = Object.freeze({
   delitools: "delitools-shell",
-  fixkey: "fixkey",
 });
 const stable = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 function requireValue(condition, message) {
@@ -53,7 +51,7 @@ export function releaseTag(project, version) {
 function releaseApps(project) {
   return project === Project.Delino
     ? ["delino-site", "delino-docs"]
-    : [project === Project.Fixkey ? "fixkey-app" : project];
+    : [project];
 }
 export function versionChanges(project, bump, read) {
   requireProject(project);
@@ -61,10 +59,7 @@ export function versionChanges(project, bump, read) {
   const packageFile = `apps/${apps[0]}/package.json`;
   const source = read(packageFile);
   const manifest = JSON.parse(source);
-  requireValue(
-    manifest.name === (project === Project.Fixkey ? "fixkey-desktop" : apps[0]),
-    "Package identity mismatch",
-  );
+  requireValue(manifest.name === apps[0], "Package identity mismatch");
   const previous = manifest.version;
   const version = bumpVersion(previous, bump);
   const changes = {};
@@ -80,8 +75,7 @@ export function versionChanges(project, bump, read) {
   for (const app of apps) {
     const file = `apps/${app}/package.json`;
     requireValue(
-      JSON.parse(read(file)).name ===
-        (project === Project.Fixkey ? "fixkey-desktop" : app),
+      JSON.parse(read(file)).name === app,
       "Package identity mismatch",
     );
     replaceJson(file);
@@ -290,10 +284,7 @@ export function validateReleaseSource(directory, project, tag) {
     const manifest = JSON.parse(
       git(directory, "show", `${revision}:apps/${app}/package.json`),
     );
-    requireValue(
-      manifest.name === (project === Project.Fixkey ? "fixkey-desktop" : app),
-      "Package identity mismatch",
-    );
+    requireValue(manifest.name === app, "Package identity mismatch");
     requireValue(
       manifest.version === version,
       "Tag and source version disagree",

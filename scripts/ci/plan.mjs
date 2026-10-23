@@ -44,10 +44,7 @@ function classifyShared(paths) {
   const repositoryShared = paths.some(
     (path) =>
       !Object.values(sharedPatterns).some((pattern) => pattern.test(path)) &&
-      !/^(apps|actions|protos|examples|docs|servers)\//u.test(path) &&
-      !/^(crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$)/u.test(
-        path,
-      ),
+      !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
   );
   return { shared, repositoryShared };
 }
@@ -59,7 +56,7 @@ export function selectChecks(paths, lockfiles) {
     tooling:
       repositoryShared ||
       paths.some((path) =>
-        /^(\.github\/|scripts\/|prebuilt-dependencies\.lock\.json$|servers\/(?:[^/]+\/)?scripts\/|apps\/[^/]+\/package\.json$|apps\/fixkey-app\/scripts\/release\/|apps\/delitools\/scripts\/)/u.test(
+        /^(\.github\/|scripts\/|prebuilt-dependencies\.lock\.json$|servers\/(?:[^/]+\/)?scripts\/|apps\/[^/]+\/package\.json$|apps\/delitools\/scripts\/)/u.test(
           path,
         ),
       ),
@@ -131,16 +128,6 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       paths.some((path) =>
         /^(apps\/git-tracker\/|actions\/git-tracker\/|protos\/|docs\/.*git-tracker)/u.test(
-          path,
-        ),
-      ),
-    fixkey:
-      repositoryShared ||
-      shared.frontend ||
-      shared.native ||
-      shared.rust ||
-      paths.some((path) =>
-        /^(apps\/fixkey-app\/|crates\/fixkey-core\/|\.github\/workflows\/release-fixkey\.yml$|docs\/.*fixkey)/u.test(
           path,
         ),
       ),

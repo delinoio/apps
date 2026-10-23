@@ -26,7 +26,7 @@ This project owns the marketing website. DevBase and DeliTools remain separate a
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
 
-`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; the other registered languages use `/<language>/`, such as `/ko/` and `/ja/`. Other registered languages use the same prefixed route convention. FixKey marketing pages use `/{locale}/products/fix-key/`, including an explicit English entry, and provide `/products/fix-key/` as an English alias. The web contract owns product content and navigation behavior.
+`i18n/` owns language registration, text catalogs and translation fingerprints. Shared local generation in `scripts/localization/` also serves Delino Docs. English uses `/`; the other registered languages use `/<language>/`, such as `/ko/` and `/ja/`. Other registered languages use the same prefixed route convention. The web contract owns product content and navigation behavior.
 
 ## Change Policy
 

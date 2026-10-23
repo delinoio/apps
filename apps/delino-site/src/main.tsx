@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import registry from "../i18n/locales.json";
 import type source from "../i18n/messages/en.json";
 import "./style.css";
-import { FixKey } from "./fix-key";
 import { Home } from "./home";
 
 const catalogs = import.meta.webpackContext("../i18n/messages", {
@@ -18,32 +17,20 @@ async function main() {
       ?.lang ?? registry.sourceLang;
   const messages = (await catalogs(`./${lang}.json`)) as typeof source;
   const prefix = lang === registry.sourceLang ? "/" : `/${lang}/`;
-  const isProduct = /\/products\/fix-key\/?$/.test(window.location.pathname);
   createRoot(document.getElementById("root")!).render(
     <>
       <a className="skip-link" href="#content">
         {messages["common.skipContent"]}
       </a>
-      <header className={`site-header${isProduct ? "" : " company-header"}`}>
+      <header className="site-header company-header">
         <a className="brand" href={prefix}>
           delino<span className="brand-dot">.</span>
         </a>
-        {isProduct && (
-          <nav aria-label="FixKey">
-            <a href="#features">{messages["fixkey.features"]}</a>
-            <a href="#how-it-works">{messages["fixkey.howItWorks"]}</a>
-          </nav>
-        )}
-        {!isProduct && (
-          <nav
-            className="company-nav"
-            aria-label={messages["delino.navigation"]}
-          >
-            <a href="#about">{messages["delino.navAbout"]}</a>
-            <a href="#products">{messages["delino.navProducts"]}</a>
-            <a href="#approach">{messages["delino.navApproach"]}</a>
-          </nav>
-        )}
+        <nav className="company-nav" aria-label={messages["delino.navigation"]}>
+          <a href="#about">{messages["delino.navAbout"]}</a>
+          <a href="#products">{messages["delino.navProducts"]}</a>
+          <a href="#approach">{messages["delino.navApproach"]}</a>
+        </nav>
         <Label>
           {messages["common.language"]}
           <NativeSelect
@@ -53,7 +40,7 @@ async function main() {
               const path =
                 selected === registry.sourceLang ? "/" : `/${selected}/`;
               window.location.assign(
-                `${isProduct ? `/${selected}/products/fix-key/` : path}${window.location.search}${window.location.hash}`,
+                `${path}${window.location.search}${window.location.hash}`,
               );
             }}
           >
@@ -66,23 +53,15 @@ async function main() {
         </Label>
       </header>
       <main id="content">
-        {isProduct ? (
-          <FixKey messages={messages} />
-        ) : (
-          <Home messages={messages} lang={lang} prefix={prefix} />
-        )}
+        <Home messages={messages} prefix={prefix} />
       </main>
-      <footer className={isProduct ? undefined : "company-footer"}>
-        {isProduct ? (
-          <span>{messages["common.footerNote"]}</span>
-        ) : (
-          <div className="company-footer-brand">
-            <a className="brand" href={prefix}>
-              delino<span className="brand-dot">.</span>
-            </a>
-            <span>{messages["delino.footerTagline"]}</span>
-          </div>
-        )}
+      <footer className="company-footer">
+        <div className="company-footer-brand">
+          <a className="brand" href={prefix}>
+            delino<span className="brand-dot">.</span>
+          </a>
+          <span>{messages["delino.footerTagline"]}</span>
+        </div>
         <div>
           <a href={`https://docs.delino.io${prefix}`}>
             {messages["common.documentation"]}
@@ -91,7 +70,7 @@ async function main() {
             {messages["common.sourceCode"]}
           </a>
         </div>
-        {!isProduct && <small>{messages["common.footerNote"]}</small>}
+        <small>{messages["common.footerNote"]}</small>
       </footer>
     </>,
   );

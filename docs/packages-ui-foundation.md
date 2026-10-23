@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/ui` owns `@delino/ui`, shared by DevBase, Delino Site, Delino Docs, DeliDev, DeliTools and FixKey.
+`packages/ui` owns `@delino/ui`, shared by DevBase, Delino Site, Delino Docs, DeliDev and DeliTools.
 
 ## Runtime and Language
 

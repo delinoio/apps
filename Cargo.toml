@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 exclude = ["servers"]
-members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "apps/fixkey-app/src-tauri", "crates/fixkey-core"]
+members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri"]
 
 [patch.crates-io]
 # Match the upstream CEF/winit patch so menus and runtime windows share one dpi type.
@@ -47,13 +47,3 @@ cargo_common_metadata = "allow"
 multiple_crate_versions = "allow"
 # The task scheduling workflow is a single-threaded async task, so Send bounds are unnecessary.
 future_not_send = "allow"
-
-
-[workspace.dependencies]
-base64 = "0.22.1"
-serde = "1.0.219"
-sha2 = "0.11.0"
-tempfile = "3.14.0"
-thiserror = "2"
-tracing = "0.1.43"
-windows-sys = "0.61"

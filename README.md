@@ -1,6 +1,6 @@
 # Delino Apps
 
-DevBase, Delino website, DeliDev, DeliTools, FixKey, Git Tracker, shared protocols and consumer examples, and the Delcore and Git Tracker servers.
+DevBase, Delino website, DeliDev, DeliTools, Git Tracker, shared protocols and consumer examples, and the Delcore and Git Tracker servers.
 
 This repository contains clients and servers in one checkout.
 

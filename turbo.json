@@ -175,9 +175,6 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "fixkey-desktop#build": {
-      "cache": false
-    },
     "//#server-build": {
       "cache": false,
       "inputs": [

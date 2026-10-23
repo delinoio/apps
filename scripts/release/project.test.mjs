@@ -47,17 +47,12 @@ test("stable bumps reset lower components and reject malformed or overflowing ve
 for (const project of Object.values(Project)) {
   test(`${project} changes only its synchronized source versions`, () => {
     const plan = versionChanges(project, Bump.Patch, read);
-    const app =
-      project === Project.Delino
-        ? "delino-site"
-        : project === Project.Fixkey
-          ? "fixkey-app"
-          : project;
+    const app = project === Project.Delino ? "delino-site" : project;
     assert.equal(
       JSON.parse(plan.changes[`apps/${app}/package.json`]).version,
       plan.version,
     );
-    const native = [Project.Delitools, Project.Fixkey].includes(project);
+    const native = project === Project.Delitools;
     assert.equal(
       Object.keys(plan.changes).length,
       native ? 4 : project === Project.Delino ? 2 : 1,
@@ -68,7 +63,7 @@ for (const project of Object.values(Project)) {
           .version,
         plan.version,
       );
-      const entry = project === Project.Fixkey ? "fixkey" : "delitools-shell";
+      const entry = "delitools-shell";
       assert.equal(
         plan.changes["Cargo.lock"].replace(
           `name = "${entry}"\nversion = "${plan.version}"`,
@@ -150,7 +145,7 @@ test("an atomic release can resume after main advances without another version b
     /inputs changed/u,
   );
   assert.throws(
-    () => prepareRelease({ ...options, project: Project.Fixkey }),
+    () => prepareRelease({ ...options, project: Project.Delitools }),
     /inputs changed/u,
   );
   git(options.directory, "tag", "--delete", result.tag);
@@ -184,7 +179,7 @@ test("workflow run IDs do not match a longer run ID prefix", (t) => {
   assert.equal(prepareRelease(options).resumed, false);
 });
 
-for (const project of [Project.Delino, Project.Delitools, Project.Fixkey]) {
+for (const project of [Project.Delino, Project.Delitools]) {
   test(`${project} can resume all committed version updates`, (t) => {
     const options = { ...fixture(t), project };
     const result = prepareRelease(options);
@@ -192,11 +187,10 @@ for (const project of [Project.Delino, Project.Delitools, Project.Fixkey]) {
   });
 }
 
-for (const project of [Project.Devbase, Project.Delino, Project.Fixkey]) {
+for (const project of [Project.Devbase, Project.Delino]) {
   test(`${project} source validation rejects branch names, wrong versions and tags outside main`, (t) => {
     const options = { ...fixture(t), project };
-    const validate =
-      project === Project.Fixkey ? validateReleaseSource : validateWebSource;
+    const validate = validateReleaseSource;
     const result = prepareRelease(options);
     // Recovery must resolve the original tagged source even after main advances.
     git(options.directory, "commit", "--allow-empty", "-m", "Advance main");
@@ -226,12 +220,7 @@ for (const project of [Project.Devbase, Project.Delino, Project.Fixkey]) {
       /Tag and source version disagree/u,
     );
     git(options.directory, "checkout", "-b", "unmerged");
-    const app =
-      project === Project.Delino
-        ? "delino-site"
-        : project === Project.Fixkey
-          ? "fixkey-app"
-          : project;
+    const app = project === Project.Delino ? "delino-site" : project;
     const file = `apps/${app}/package.json`;
     const manifest = JSON.parse(
       readFileSync(join(options.directory, file), "utf8"),

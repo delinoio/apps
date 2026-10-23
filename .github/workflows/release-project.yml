@@ -8,7 +8,7 @@ on:
         description: Project to version and tag
         required: true
         type: choice
-        options: [devbase, delino, delitools, fixkey]
+        options: [devbase, delino, delitools]
       bump:
         description: Stable SemVer increment
         required: true

@@ -5,15 +5,9 @@ import { readFileSync } from "node:fs";
 import registry from "./i18n/locales.json";
 
 const entries = Object.fromEntries(
-  registry.locales.flatMap(({ lang }) => [
-    [
-      lang === registry.sourceLang ? "index" : `${lang}/index`,
-      "./src/main.tsx",
-    ],
-    [`${lang}/products/fix-key/index`, "./src/main.tsx"],
-    ...(lang === registry.sourceLang
-      ? [["products/fix-key/index", "./src/main.tsx"]]
-      : []),
+  registry.locales.map(({ lang }) => [
+    lang === registry.sourceLang ? "index" : `${lang}/index`,
+    "./src/main.tsx",
   ]),
 );
 
@@ -32,14 +26,11 @@ export default defineConfig({
           "utf8",
         ),
       ) as typeof en;
-      const product = entryName.includes("products/fix-key");
       return {
         ...parameters,
         lang,
-        title: product ? messages["fixkey.title"] : "Delino",
-        description: product
-          ? messages["fixkey.description"]
-          : messages["delino.description"],
+        title: "Delino",
+        description: messages["delino.description"],
       };
     },
   },

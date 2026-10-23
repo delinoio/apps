@@ -26,16 +26,7 @@ const workflow = yaml.load(
 test("ordinary CI preserves affected-only dispatch and Linux allocation", () => {
   assert.equal(workflow.on.workflow_dispatch, null);
   for (const [id, job] of Object.entries(workflow.jobs)) {
-    if (id === "fixkey-desktop") {
-      assert.deepEqual(job.strategy.matrix.os, [
-        "ubuntu-latest",
-        "windows-2022",
-      ]);
-      assert.equal(
-        job.if,
-        "github.event_name == 'push' && needs.changes.outputs.fixkey == 'true'",
-      );
-    } else assert.equal(job["runs-on"], "ubuntu-latest");
+    assert.equal(job["runs-on"], "ubuntu-latest");
   }
   for (const [id, owner] of [
     ["devbase-frontend", "devbase"],
@@ -44,7 +35,6 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
     ["protocol", "protocol"],
-    ["fixkey-frontend", "fixkey"],
     ["tooling", "tooling"],
     ["shared-ui", "shared_ui"],
     ["workflows", "workflows"],
@@ -77,7 +67,6 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     for (const [owner, pkg] of [
       ["delidev", "delidev-desktop"],
       ["delitools", "delitools-shell"],
-      ["fixkey", "fixkey"],
     ]) {
       const build = steps.find((step) => step.id === `${owner}-build`);
       assert.equal(
@@ -88,7 +77,7 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
       );
       assert.equal(
         build.run,
-        `pnpm exec turbo run build:frontend --filter=${owner === "fixkey" ? "fixkey-desktop" : owner === "delitools" ? "delitools" : "delidev-desktop"}`,
+        `pnpm exec turbo run build:frontend --filter=${owner === "delitools" ? "delitools" : "delidev-desktop"}`,
       );
       assert.ok(steps.indexOf(build) < steps.indexOf(command));
     }
@@ -136,20 +125,12 @@ require("node:fs").appendFileSync(process.env.APT_TEST_OUTPUT, JSON.stringify(pr
       fromJSON: JSON.parse,
       contains: (values, value) => values.includes(value),
     });
-  for (const packages of [
-    [],
-    ["fixkey-core"],
-    ["delidev-desktop"],
-    ["delitools-shell"],
-    ["fixkey"],
-    ["fixkey-core", "fixkey", "delidev-desktop"],
-  ]) {
+  for (const packages of [[], ["delidev-desktop"], ["delitools-shell"]]) {
     const cef = packages.some((pkg) =>
       ["delidev-desktop", "delitools-shell"].includes(pkg),
     );
-    const fixkey = packages.includes("fixkey");
-    assert.equal(evaluate(step.if, packages), cef || fixkey);
-    if (!cef && !fixkey) continue;
+    assert.equal(evaluate(step.if, packages), cef);
+    if (!cef) continue;
     rmSync(output, { force: true });
     const result = spawnSync(
       "bash",
@@ -194,7 +175,7 @@ require("node:fs").appendFileSync(process.env.APT_TEST_OUTPUT, JSON.stringify(pr
       "libgtk-3-dev",
       "libayatana-appindicator3-dev",
     ])
-      assert.equal(install.includes(pkg), fixkey, `${packages}: ${pkg}`);
+      assert.equal(install.includes(pkg), false, `${packages}: ${pkg}`);
   }
 });
 
@@ -240,7 +221,7 @@ test("write-capable remote cache credentials stay in trusted main jobs", () => {
   ];
   const evaluate = (expression, context) =>
     runInNewContext(expression.slice(3, -2).trim(), context);
-  for (const id of ["fixkey-desktop", "rust-clippy", "rust-test"]) {
+  for (const id of ["rust-clippy", "rust-test"]) {
     const job = workflow.jobs[id];
     for (const scenario of scenarios) {
       const context = {
@@ -269,7 +250,7 @@ test("write-capable remote cache credentials stay in trusted main jobs", () => {
     }
   }
   for (const [id, job] of Object.entries(workflow.jobs)) {
-    if (["fixkey-desktop", "rust-clippy", "rust-test"].includes(id)) continue;
+    if (["rust-clippy", "rust-test"].includes(id)) continue;
     assert.equal(job.env?.TURBO_TOKEN, undefined, id);
   }
 });
@@ -327,8 +308,6 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delitools-frontend",
     "rust-clippy",
     "protocol",
-    "fixkey-frontend",
-    "fixkey-desktop",
   ]) {
     const steps = workflow.jobs[id].steps;
     assert.equal(
@@ -362,10 +341,9 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   needs.changes.outputs = {
     rust_servers:
       '[{"service":"delcore-api"},{"service":"delitools-api"},{"service":"devbase-api"},{"service":"git-tracker-api"}]',
-    rust_clippy: '["fixkey-core"]',
-    rust_test: '["fixkey-core", "fixkey"]',
+    rust_clippy: '["delidev-desktop"]',
+    rust_test: '["delidev-desktop", "delitools-shell"]',
     git_tracker: "true",
-    fixkey: "true",
     devbase: "true",
     delino_site: "true",
     delino_docs: "true",
@@ -397,7 +375,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     rust_clippy: "[]",
     rust_test: "[]",
     git_tracker: "false",
-    fixkey: "false",
     devbase: "false",
     delino_site: "false",
     delino_docs: "false",
@@ -417,13 +394,11 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delitools-frontend",
     "rust-clippy",
     "rust-test",
-    "fixkey-frontend",
-    "fixkey-desktop",
   ])
     needs[id].result = "skipped";
   assert.equal(run(needs).status, 0);
   // The test job can be selected independently from Clippy.
-  needs.changes.outputs.rust_test = '["fixkey"]';
+  needs.changes.outputs.rust_test = '["delitools-shell"]';
   assert.notEqual(run(needs).status, 0);
   needs["rust-test"].result = "success";
   assert.equal(run(needs).status, 0);
@@ -623,7 +598,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
     ["AGENTS.md", "servers/AGENTS.md"],
     ["packages/ui/src/components/button.tsx"],
     ["scripts/localization/catalog.mjs"],
-    [".github/workflows/release-fixkey.yml"],
     ["go.mod"],
     ["apps/devbase/src/main.tsx"],
   ]) {
@@ -636,8 +610,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "shared-ui": "shared_ui",
       workflows: "workflows",
       "git-tracker-clients": "git_tracker",
-      "fixkey-frontend": "fixkey",
-      "fixkey-desktop": "fixkey",
       "devbase-frontend": "devbase",
       "delino-site-frontend": "delino_site",
       "delino-docs-frontend": "delino_docs",

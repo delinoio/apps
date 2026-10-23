@@ -38,15 +38,15 @@ test("Rust execution scopes packages, preserves strict flags and rejects empty s
       },
     );
   for (const check of ["test", "clippy"]) {
-    const result = run(check, ["fixkey-core", "fixkey"]);
+    const result = run(check, ["delidev-desktop", "delitools-shell"]);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(readFileSync(output, "utf8")), [
       check,
       "--locked",
       "-p",
-      "fixkey-core",
+      "delidev-desktop",
       "-p",
-      "fixkey",
+      "delitools-shell",
       "--all-targets",
       ...(check === "clippy" ? ["--all-features", "--", "-D", "warnings"] : []),
     ]);
@@ -56,7 +56,7 @@ test("Rust execution scopes packages, preserves strict flags and rejects empty s
     ["test", []],
     ["test", ["--workspace"]],
     ["test", null],
-    ["invalid", ["fixkey-core"]],
+    ["invalid", ["delidev-desktop"]],
   ]) {
     assert.notEqual(run(check, packages).status, 0);
   }

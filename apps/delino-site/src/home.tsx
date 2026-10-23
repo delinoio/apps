@@ -74,11 +74,9 @@ function CommitIllustration() {
 
 export function Home({
   messages: m,
-  lang,
   prefix,
 }: {
   messages: typeof source;
-  lang: string;
   prefix: string;
 }) {
   const docs = `https://docs.delino.io${prefix}`;
@@ -146,29 +144,6 @@ export function Home({
                   </a>
                   <a href="https://github.com/delinoio/apps">
                     {m["delino.viewSource"]} <span aria-hidden="true">↗</span>
-                  </a>
-                </div>
-              </div>
-            </article>
-          </Card>
-          <Card asChild>
-            <article className="company-product">
-              <figure className="company-product-art">
-                <div className="company-keycaps" aria-hidden="true">
-                  <span lang="ko">한</span>
-                  <i>→</i>
-                  <span lang="en">A</span>
-                </div>
-                <figcaption>{m["delino.illustrativeExample"]}</figcaption>
-              </figure>
-              <div className="company-product-copy">
-                <p className="company-category">{m["delino.everydayWork"]}</p>
-                <h3>FixKey</h3>
-                <p>{m["delino.fixkeyBody"]}</p>
-                <div className="company-product-links">
-                  <a href={`/${lang}/products/fix-key/`}>
-                    {m["delino.exploreFixkey"]}{" "}
-                    <span aria-hidden="true">→</span>
                   </a>
                 </div>
               </div>

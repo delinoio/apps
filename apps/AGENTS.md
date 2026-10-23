@@ -12,7 +12,7 @@
 
 - Write all source and comments in English.
 
-- Project-specific scripts and their tests live under the owning app’s `scripts/` directory. FixKey release helpers live in `fixkey-app/scripts/release/`; shared repository helpers remain in root `scripts/`.
+- Project-specific scripts and their tests live under the owning app’s `scripts/` directory; shared repository helpers remain in root `scripts/`.
 
 ## Owning contracts
 
@@ -29,6 +29,4 @@
 - [project-delino-docs](../docs/project-delino-docs.md)
 - [apps-delino-docs-web-contract](../docs/apps-delino-docs-web-contract.md)
 
-- [FixKey product](../docs/project-fixkey.md)
-- [FixKey desktop](../docs/apps-fixkey-desktop-contract.md)
 - [Git Tracker web](../docs/apps-git-tracker-web-contract.md)

@@ -9,7 +9,6 @@ test("isolated projects select only their validation", () => {
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
-    fixkey: false,
     devbase: false,
     delino_site: false,
     delino_docs: false,
@@ -23,7 +22,6 @@ test("isolated projects select only their validation", () => {
     devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
-    fixkey: false,
     devbase: false,
     delino_site: false,
     delino_docs: false,
@@ -37,7 +35,6 @@ test("isolated projects select only their validation", () => {
     devbase_api: true,
     git_tracker_api: true,
     git_tracker: true,
-    fixkey: true,
     devbase: true,
     delino_site: true,
     delino_docs: true,
@@ -65,7 +62,6 @@ for (const [project, key] of [
         devbase_api: key === "devbase" && path === "docs/project-devbase.md",
         git_tracker_api: false,
         git_tracker: false,
-        fixkey: false,
         devbase: key === "devbase",
         delino_site: key === "delino_site",
         delino_docs: key === "delino_docs",
@@ -84,7 +80,6 @@ test("consumer examples select protocol validation without native runners", () =
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
-    fixkey: false,
     devbase: false,
     delino_site: false,
     delino_docs: false,
@@ -94,31 +89,6 @@ test("consumer examples select protocol validation without native runners", () =
   });
 });
 
-for (const path of [
-  "apps/fixkey-app/src/App.tsx",
-  "crates/fixkey-core/src/lib.rs",
-  "apps/fixkey-app/scripts/release/fixkey.mjs",
-  ".github/workflows/release-fixkey.yml",
-  "docs/project-fixkey.md",
-]) {
-  test(`standalone FixKey ownership: ${path}`, () => {
-    assert.deepEqual(select([path]), {
-      delcore_api: false,
-      delitools_api: false,
-      devbase_api: false,
-      git_tracker_api: false,
-      git_tracker: false,
-      fixkey: true,
-      devbase: false,
-      delino_site: false,
-      delino_docs: false,
-      delidev: false,
-      delitools: false,
-      protocol: false,
-    });
-  });
-}
-
 test("Git Tracker clients and Action avoid unrelated runners", () => {
   for (const path of [
     "apps/git-tracker/src/main.tsx",
@@ -127,7 +97,6 @@ test("Git Tracker clients and Action avoid unrelated runners", () => {
   ]) {
     const selection = select([path]);
     assert.equal(selection.git_tracker, true);
-    assert.equal(selection.fixkey, false);
     assert.equal(selection.protocol, false);
   }
 });
@@ -153,7 +122,6 @@ for (const [service, key] of [
       ])
         if (other !== key) assert.equal(selection[other], false, path);
       for (const frontend of [
-        "fixkey",
         "devbase",
         "delino_site",
         "delino_docs",
@@ -175,7 +143,6 @@ test("server-wide license and helpers select every server", () => {
     assert.equal(selection.delitools_api, true);
     assert.equal(selection.devbase_api, true);
     assert.equal(selection.git_tracker_api, true);
-    assert.equal(selection.fixkey, false);
   }
 });
 
@@ -194,7 +161,6 @@ test("protocol contract changes select their owning server", () => {
     assert.equal(selection[owner], true, path);
     assert.equal(selection[other], false, path);
     for (const frontend of [
-      "fixkey",
       "devbase",
       "delino_site",
       "delino_docs",
@@ -214,7 +180,6 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       devbase_api: false,
       git_tracker_api: false,
       git_tracker: false,
-      fixkey: true,
       devbase: false,
       delino_site: false,
       delino_docs: false,
@@ -232,7 +197,6 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     devbase_api: false,
     git_tracker_api: false,
     git_tracker: false,
-    fixkey: false,
     devbase: false,
     delino_site: false,
     delino_docs: false,
@@ -318,7 +282,6 @@ const selectedJobs = (paths) =>
     .map(([job]) => job);
 const frontends = [
   "git_tracker",
-  "fixkey",
   "devbase",
   "delino_site",
   "delino_docs",
@@ -336,7 +299,7 @@ for (const [paths, expected] of [
     "scripts/tauri-cli.mjs",
     "scripts/prebuilt-dependencies.mjs",
     "scripts/archive.mjs",
-  ].map((path) => [[path], ["fixkey", "delidev", "delitools"]]),
+  ].map((path) => [[path], ["delidev", "delitools"]]),
   ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
     (path) => [
       [path],
@@ -345,7 +308,6 @@ for (const [paths, expected] of [
         "delitools_api",
         "devbase_api",
         "git_tracker_api",
-        "fixkey",
         "delidev",
         "delitools",
       ],
@@ -442,9 +404,7 @@ test("shared validation checks select only affected check categories", () => {
     [["packages/ui/src/components/button.tsx"], [false, true, false]],
     [["scripts/localization/catalog.mjs"], [true, false, false]],
     [["servers/scripts/dev-api.mjs"], [true, false, false]],
-    [["apps/fixkey-app/scripts/release/fixkey.mjs"], [true, false, false]],
     [["apps/delitools/scripts/mobile-workflow.test.mjs"], [true, false, false]],
-    [[".github/workflows/release-fixkey.yml"], [true, false, true]],
     [["go.sum"], [false, false, true]],
     [
       ["packages/ui/package.json", "scripts/localization/catalog.mjs"],
