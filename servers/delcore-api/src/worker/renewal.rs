@@ -123,6 +123,9 @@ impl Worker {
             None,
         )
         .await?;
+        // A free grant that already sits at the renewed period start must not add its
+        // allowance to the paid period; see `separate_free_grants`.
+        postgres::period::separate_free_grants(conn, &tenant, period.starts_at).await?;
         sqlx::query(&format!("INSERT INTO billing_periods SELECT t.id,$2,$3,{} FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1::text::uuid ON CONFLICT DO NOTHING",postgres::period::selected_plan_bool_sql("t","p","postpaid"))).bind(&tenant).bind(period.starts_at).bind(period.ends_at).execute(&mut *conn).await?;
         Ok(())
     }

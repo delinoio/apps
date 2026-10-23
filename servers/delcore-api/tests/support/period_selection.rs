@@ -377,8 +377,9 @@ async fn ingestion_authorization_and_queries_use_the_calendar_month_after_cancel
 async fn aligned_scenario() -> Scenario {
     let s = scenario_at(Timeline::aligned()).await;
     // The fixture tenant is created now. Its creation-month free grant would sit at the paid
-    // start when the paid period belongs to the current month, which a tenant that predates the
-    // paid period cannot have; remove it so only the cancellation grants the free allowance.
+    // start when the paid period belongs to the current month. These cancellation scenarios
+    // isolate the post-cancellation free grant, so they remove it; the paid-activation tests
+    // below keep it because they cover a free grant that predates the paid period.
     sqlx::query(
         "DELETE FROM allowance_grants WHERE tenant_id=$1::text::uuid AND source_key LIKE 'free:%'",
     )
@@ -807,4 +808,148 @@ async fn missing_paid_coverage_keeps_the_unavailable_period_failure_in_every_con
         "invalid_argument",
     )
     .await;
+}
+
+const FREE_ALLOWANCE: &str = "10";
+
+impl Scenario {
+    /// Allowance grants keyed by `period_start` as `(source_key, amount)`.
+    async fn grants_at(&self, start: DateTime<Utc>) -> Vec<(String, String)> {
+        sqlx::query_as("SELECT source_key,amount::text FROM allowance_grants WHERE tenant_id=$1::text::uuid AND period_start=$2 ORDER BY source_key")
+            .bind(&self.tenant).bind(start).fetch_all(&self.f.db).await.unwrap()
+    }
+    /// Records a free usage grant of the full month as maintenance or tenant creation does. The
+    /// fixture tenant already holds its creation-month grant, so the same key keeps its identity and
+    /// only takes the earlier application time of a tenant that predates the period.
+    async fn seed_free_grant(&self, start: DateTime<Utc>, key: &str) {
+        let (month_start, month_end) = (start, calendar(start).1);
+        sqlx::query("INSERT INTO allowance_grants(id,tenant_id,service_id,meter,amount,period_start,period_end,applied_at,source_key) VALUES($1,$2::text::uuid,$3::text::uuid,'usage',$4::numeric,$5,$6,$7,$8) ON CONFLICT(source_key) DO UPDATE SET applied_at=EXCLUDED.applied_at")
+            .bind(Uuid::now_v7()).bind(&self.tenant).bind(&self.service).bind(FREE_ALLOWANCE).bind(month_start).bind(month_end).bind(month_start).bind(format!("{key}:{}:usage", self.service))
+            .execute(&self.f.db).await.unwrap();
+    }
+    fn month_grant_key(&self, start: DateTime<Utc>) -> String {
+        format!("free:{}:{}", self.tenant, start.format("%Y-%m"))
+    }
+    /// Sum of the usage-related ledger rows of the paid period, as charged amounts.
+    async fn charged(&self, start: DateTime<Utc>) -> f64 {
+        let net: f64 = sqlx::query_scalar("SELECT -COALESCE(sum(amount),0)::float8 FROM ledger WHERE tenant_id=$1::text::uuid AND period_start=$2 AND kind IN ('usage','correction','postpaid')")
+            .bind(&self.tenant).bind(start).fetch_one(&self.f.db).await.unwrap();
+        net
+    }
+}
+
+/// A free tenant that already received its monthly grant starts a paid subscription whose
+/// provider period begins at the same UTC month start. Rating sums every grant of a period
+/// start, so the free allowance must leave that key when paid coverage takes over.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn free_grant_that_predates_a_month_aligned_paid_period_does_not_add_to_its_allowance() {
+    // No grant is deleted: the tenant keeps the grant it received before the subscription.
+    let s = scenario_at(Timeline::aligned()).await;
+    let t = &s.time;
+    assert_eq!(t.paid_start, calendar(t.paid_start).0, "aligned fixture");
+    let key = s.month_grant_key(t.paid_start);
+    s.seed_free_grant(t.paid_start, &key).await;
+    let before = s.grants_at(t.paid_start).await;
+    assert_eq!(before.len(), 1, "{before:?}");
+    assert!(before[0].0.starts_with(&key), "{before:?}");
+    assert_eq!(before[0].1, FREE_ALLOWANCE);
+
+    s.subscribe().await;
+
+    // Only the paid allowance is keyed by the paid start; the free grant keeps its amount at
+    // the free period start that follows paid coverage.
+    let paid = s.grants_at(t.paid_start).await;
+    assert_eq!(paid.len(), 1, "{paid:?}");
+    assert!(paid[0].0.starts_with("payment:"), "{paid:?}");
+    assert_eq!(paid[0].1, "1000");
+    let moved = t.paid_start + Duration::microseconds(1);
+    let free = s.grants_at(moved).await;
+    assert_eq!(free.len(), 1, "{free:?}");
+    assert!(
+        free[0]
+            .0
+            .starts_with(&format!("{key}:{}:", moved.timestamp_micros())),
+        "{free:?}"
+    );
+    assert_eq!(free[0].1, FREE_ALLOWANCE);
+
+    // Paid usage is rated against the paid allowance only: 1005 units over 1000 included.
+    s.ingest("paid-1", "1005", t.before(12)).await;
+    s.f.process_metering().await;
+    assert_eq!(s.persisted("paid-1").await, (t.paid_start, t.paid_end));
+    assert_eq!(s.charged(t.paid_start).await, 5.0);
+
+    // The later cancellation resolves to a free key of its own; the moved grant is not repeated.
+    s.cancel().await;
+    let free_grants = s.free_grants().await;
+    assert_eq!(
+        free_grants
+            .iter()
+            .filter(|grant| grant.0 == t.paid_start || grant.0 == moved)
+            .count(),
+        1,
+        "{free_grants:?}"
+    );
+    assert_eq!(s.grants_at(t.paid_start).await, paid);
+}
+
+/// Usage rated against the free grant before the paid period was recorded is charged again
+/// without that grant once the paid period starts at the same key.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn usage_rated_before_a_month_aligned_paid_period_is_rerated_without_the_free_grant() {
+    // The paid period starts at the start of the current month, so free usage accepted now
+    // shares its key. The recorded cancellation time is unused.
+    let now = Utc::now().trunc_subsecs(0);
+    let start = calendar(now).0;
+    let s = scenario_at(Timeline {
+        now,
+        paid_start: start,
+        paid_end: start + Months::new(1),
+        canceled: start + Duration::days(1),
+    })
+    .await;
+    let t = &s.time;
+    s.seed_free_grant(t.paid_start, &s.month_grant_key(t.paid_start))
+        .await;
+    // Free usage between the paid allowance (1000) and the paid plus free allowance (1010).
+    s.ingest("early", "1005", Utc::now()).await;
+    s.f.process_metering().await;
+    assert_eq!(
+        s.charged(t.paid_start).await,
+        995.0,
+        "free usage over 10 included units"
+    );
+
+    s.subscribe().await;
+
+    // The paid allowance alone covers 1000 of the 1005 units.
+    assert_eq!(s.charged(t.paid_start).await, 5.0);
+    let paid = s.grants_at(t.paid_start).await;
+    assert_eq!(paid.len(), 1, "{paid:?}");
+    assert!(paid[0].0.starts_with("payment:"), "{paid:?}");
+}
+
+/// The derived free key may already hold the grant, for example from a cancellation at the
+/// paid start instant. The free grant is then not granted twice.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn moving_a_free_grant_replays_an_existing_grant_of_the_derived_key() {
+    let s = scenario_at(Timeline::aligned()).await;
+    let t = &s.time;
+    let key = s.month_grant_key(t.paid_start);
+    s.seed_free_grant(t.paid_start, &key).await;
+    let moved = t.paid_start + Duration::microseconds(1);
+    s.seed_free_grant(moved, &format!("{key}:{}", moved.timestamp_micros()))
+        .await;
+
+    s.subscribe().await;
+
+    let paid = s.grants_at(t.paid_start).await;
+    assert_eq!(paid.len(), 1, "{paid:?}");
+    assert!(paid[0].0.starts_with("payment:"), "{paid:?}");
+    let free = s.grants_at(moved).await;
+    assert_eq!(free.len(), 1, "{free:?}");
+    assert_eq!(free[0].1, FREE_ALLOWANCE);
 }

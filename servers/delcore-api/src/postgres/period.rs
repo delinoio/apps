@@ -138,3 +138,86 @@ pub async fn free_period(
         ),
     })
 }
+
+/// Moves free allowance grants away from the start of a paid period that takes over.
+///
+/// A free grant is keyed by `(tenant, period_start)` like every other row of a period. When a
+/// paid period is recorded whose start equals the start of an earlier free grant, for example a
+/// tenant that already received its monthly grant before a subscription whose provider period
+/// begins at the same UTC month start, rating would sum the free allowance into the paid
+/// period. The free period of that month is therefore re-derived the way [`free_period`] derives
+/// it once paid coverage is retained: it starts one microsecond after the colliding start and
+/// keeps its full amount, so no free allowance is keyed by the paid period start. The grant
+/// keeps its identity and amount for the audit trail, and a later cancellation that resolves to
+/// the same key replays this grant instead of granting the allowance twice.
+///
+/// Rated periods of the paid period are reconciled afterwards, so usage that was rated against
+/// the free allowance is charged against the paid allowance only. Call this after the paid
+/// allowance grant was recorded: the grant already reduces the charge, and this call appends
+/// only the remaining difference.
+pub async fn separate_free_grants(
+    db: &mut PgConnection,
+    tenant: &str,
+    paid_start: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let tenant_id = Uuid::parse_str(tenant)?;
+    let prefix = format!("free:{tenant}:");
+    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as("SELECT id,service_id,meter,source_key FROM allowance_grants WHERE tenant_id=$1 AND period_start=$2 AND starts_with(source_key,$3) ORDER BY id")
+        .bind(tenant_id)
+        .bind(paid_start)
+        .bind(&prefix)
+        .fetch_all(&mut *db)
+        .await?;
+    let start = paid_start + Duration::microseconds(1);
+    for (id, service, meter, source_key) in rows {
+        // Keys read `free:<tenant>:<year-month>[:<period start micros>]:<service>:<meter>`.
+        let identity = format!(":{service}:{meter}");
+        let Some(base) = source_key.strip_suffix(&identity) else {
+            tracing::warn!(
+                tenant_id = %tenant,
+                grant_id = %id,
+                "free allowance grant key does not match its meter; left in place"
+            );
+            continue;
+        };
+        let month: Vec<&str> = base.splitn(4, ':').take(3).collect();
+        let key = format!("{}:{}", month.join(":"), start.timestamp_micros());
+        let moved_key = format!("{key}{identity}");
+        let replayed: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM allowance_grants WHERE source_key=$1)")
+                .bind(&moved_key)
+                .fetch_one(&mut *db)
+                .await?;
+        if replayed {
+            // The grant of the derived period already exists, so this one only repeats it.
+            sqlx::query("DELETE FROM allowance_grants WHERE id=$1")
+                .bind(id)
+                .execute(&mut *db)
+                .await?;
+        } else {
+            sqlx::query("UPDATE allowance_grants SET period_start=$2,source_key=$3 WHERE id=$1")
+                .bind(id)
+                .bind(start)
+                .bind(&moved_key)
+                .execute(&mut *db)
+                .await?;
+        }
+        tracing::info!(
+            tenant_id = %tenant,
+            grant_id = %id,
+            replayed,
+            "moved free allowance grant off a paid period start"
+        );
+        super::rating::reconcile_granted_periods(
+            db,
+            &format!("{id}:retired"),
+            tenant,
+            &service.to_string(),
+            &meter,
+            paid_start,
+            Utc::now(),
+        )
+        .await?;
+    }
+    Ok(())
+}

@@ -298,6 +298,9 @@ impl Worker {
                     previous.as_ref(),
                 )
                 .await?;
+                // A free grant that already sits at the paid period start must not add its
+                // allowance to the paid period; see `separate_free_grants`.
+                postgres::period::separate_free_grants(conn, &tenant, start).await?;
                 record_subscription_payment(conn, &t.subscription_id, at).await?;
                 self.apply_retained_subscription_state(conn, &tenant, &t.subscription_id, at)
                     .await?;
