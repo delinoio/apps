@@ -75,6 +75,22 @@ impl Worker {
                     tx.commit().await?;
                     return self.finish(&j, "done", "", &j.external_id).await;
                 }
+                // The `request_started` marker is written before the provider request, so an
+                // interruption in the short window between the two also lands here although
+                // nothing was sent. An accepted cancellation always shows as a scheduled
+                // cancellation on the still-active subscription, so without one the request
+                // never took effect: return the job to pending to rerun the final check and send
+                // it. The attempt stays counted so a provider that never reports the schedule
+                // cannot make this loop look like a fresh job.
+                if raw["scheduled_change"]["action"] != "cancel" {
+                    tracing::warn!(
+                        kind = j.kind,
+                        "cancellation is not scheduled at the provider; sending it again"
+                    );
+                    return self
+                        .finish(&j, "pending", "cancellation_not_scheduled", "")
+                        .await;
+                }
                 return self
                     .finish(&j, "reconcile", "awaiting_renewal", &j.external_id)
                     .await;

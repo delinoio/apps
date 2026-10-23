@@ -192,8 +192,18 @@ async fn mock_worker(
     let app = axum::Router::new().fallback(move |uri: axum::http::Uri| {
         let recorded = recorded.clone();
         async move {
-            recorded.lock().unwrap().push(uri.path().to_string());
-            axum::Json(json!({"data":{"id":"sub_fixture","status":"active"}}))
+            let mut paths = recorded.lock().unwrap();
+            paths.push(uri.path().to_string());
+            // Like the provider, report a scheduled cancellation once a cancel request arrived.
+            let scheduled = paths.iter().any(|path| path.ends_with("/cancel"));
+            let change = if scheduled {
+                json!({"action":"cancel"})
+            } else {
+                serde_json::Value::Null
+            };
+            axum::Json(
+                json!({"data":{"id":"sub_fixture","status":"active","scheduled_change":change}}),
+            )
         }
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -492,6 +502,76 @@ async fn deleting_cancellation_interrupted_after_the_request_is_reconciled() {
     }
     assert_eq!(attempts(&f, started).await, 1, "the attempt stays counted");
     assert_eq!(cancel_requests(&seen), 0, "recovery sends nothing");
+    mock.abort();
+}
+
+/// The `request_started` marker is persisted before the provider request, so a crash right after
+/// that write leaves a reconciled cancellation that never reached the provider. Reconciliation
+/// must tell the two apart through the provider's scheduled cancellation: without one it returns
+/// the job to pending and the cancel is sent once, with one it keeps waiting for the renewal.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn deleting_cancellation_marked_started_but_never_sent_is_resent_once() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let (worker, seen, mock) = mock_worker(&f, f.config.timeout_seconds).await;
+    let (_tenant, cancel) = deleting_tenant(&f, "Marked but unsent cancel").await;
+    // Only the cancellation is ready, so the real claim selects it.
+    sqlx::query("UPDATE jobs SET state='done' WHERE id<>$1 AND kind<>'metering'")
+        .bind(cancel)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    assert_eq!(worker.claim_next_job().await.unwrap(), Some(cancel));
+    // The marker write committed, then the process stopped before the request began.
+    sqlx::query("UPDATE jobs SET error_category='request_started' WHERE id=$1")
+        .bind(cancel)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    worker.recover().await.unwrap();
+    assert_eq!(state(&f, cancel).await.0, "reconcile");
+    assert_eq!(cancel_requests(&seen), 0, "nothing reached the provider");
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, cancel).await,
+        ("pending".into(), "cancellation_not_scheduled".into()),
+        "no scheduled cancellation means the request never took effect"
+    );
+    assert_eq!(cancel_requests(&seen), 0, "reconciliation only reads");
+    sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
+        .bind(cancel)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, cancel).await,
+        ("reconcile".into(), "awaiting_provider_event".into())
+    );
+    assert_eq!(cancel_requests(&seen), 1, "the cancel is sent exactly once");
+    // The provider now reports the scheduled cancellation, so reconciliation keeps waiting.
+    sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
+        .bind(cancel)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    for _ in 0..3 {
+        worker.step().await.unwrap();
+    }
+    assert_eq!(
+        state(&f, cancel).await,
+        ("reconcile".into(), "awaiting_renewal".into())
+    );
+    assert_eq!(
+        cancel_requests(&seen),
+        1,
+        "a scheduled cancel is not resent"
+    );
     mock.abort();
 }
 
