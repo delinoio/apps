@@ -378,6 +378,60 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     }
     let c=call(&server,&space,"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap()["connection"].clone();
     let cid = c["id"].as_str().unwrap();
+    // Block reconciliation after its candidate query, then commit a reconnect.
+    // It must inspect the replacement state after acquiring the space lock.
+    let race_run = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(race_run).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(json!({"id":race_run,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"1","runAttempt":1}})).execute(&db).await.unwrap();
+    sqlx::query("UPDATE perfine_connections SET active=false,data=jsonb_set(data,'{state}','\"CONNECTION_STATE_DISCONNECTED\"') WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+    let worker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let mut reconnect = admin.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(&space)
+        .execute(&mut *reconnect)
+        .await
+        .unwrap();
+    *grants.lock().unwrap() = vec!["manage".into(), "experiment".into()];
+    let replacement = async {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND wait_event='advisory')")
+                    .bind(worker_pid).fetch_one(&admin).await.unwrap();
+                if waiting { break; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("reconciliation must reach the held space lock");
+        sqlx::query(&format!(
+            "UPDATE {schema}.perfine_connections SET active=true,data=$2 WHERE id=$1"
+        ))
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&c)
+        .execute(&mut *reconnect)
+        .await
+        .unwrap();
+        reconnect.commit().await.unwrap();
+    };
+    let (result, ()) = tokio::join!(server.maintain(), replacement);
+    result.unwrap();
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(race_run)
+        .execute(&db)
+        .await
+        .unwrap();
+    *grants.lock().unwrap() = vec!["manage".into()];
+
     assert!(
         call(
             &server,

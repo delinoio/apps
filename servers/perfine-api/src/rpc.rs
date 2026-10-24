@@ -1412,13 +1412,23 @@ impl Server {
         Ok(cancellations)
     }
     async fn reconcile_executions(&self) -> Result<()> {
-        let rows=sqlx::query("SELECT DISTINCT c.id,c.space,c.owner_subject,c.data FROM perfine_connections c JOIN perfine_experiments e ON e.connection=c.id WHERE e.data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND e.data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED') LIMIT 100").fetch_all(&self.db).await?;
+        let rows=sqlx::query("SELECT DISTINCT c.id,c.space FROM perfine_connections c JOIN perfine_experiments e ON e.connection=c.id WHERE e.data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND e.data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED') LIMIT 100").fetch_all(&self.db).await?;
         for row in rows {
             let mut tx = self.db.begin().await?;
             let space: uuid::Uuid = row.get("space");
             lock(&mut tx, &space.to_string()).await?;
-            let mut c: Value = row.get("data");
-            let subject: String = row.get("owner_subject");
+            // The candidate query runs before the space lock. A reconnect may have
+            // replaced both authority and connection state while this worker waited.
+            let current = sqlx::query(
+                "SELECT data,owner_subject FROM perfine_connections WHERE id=$1 AND space=$2",
+            )
+            .bind(row.get::<uuid::Uuid, _>("id"))
+            .bind(space)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let Some(current) = current else { continue };
+            let mut c: Value = current.get("data");
+            let subject: String = current.get("owner_subject");
             let active = matches!(self.authority.states(&[space.to_string()]).await,Ok(states) if states==[server_common::authority::TenantState::Active]);
             let grant = if let Ok(token) = self.authority.service_token().await {
                 self.authority.call("Authorize",&format!("Bearer {token}"),json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false})).await.is_ok_and(|v|v["allowed"]==true)
