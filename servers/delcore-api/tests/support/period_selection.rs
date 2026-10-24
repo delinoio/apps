@@ -953,3 +953,316 @@ async fn moving_a_free_grant_replays_an_existing_grant_of_the_derived_key() {
     assert_eq!(free.len(), 1, "{free:?}");
     assert_eq!(free[0].1, FREE_ALLOWANCE);
 }
+
+/// Cancel-job reconciliation reads the canceled subscription from the provider. The projection
+/// must use the provider's `canceled_at`, never the observation time or `updated_at`.
+mod reconciled_cancellation {
+    use super::*;
+    use delcore_api::{config::Config, worker::Worker};
+    use std::sync::{Arc, Mutex};
+
+    /// A worker whose provider answers every GET with the body currently stored in `response`.
+    async fn provider(
+        s: &Scenario,
+        response: Arc<Mutex<Value>>,
+    ) -> (Worker, tokio::task::JoinHandle<()>) {
+        let app = axum::Router::new().fallback(move || {
+            let body = response.lock().unwrap().clone();
+            async move { axum::Json(json!({ "data": body })) }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let worker = Worker::new(
+            s.f.db.clone(),
+            Config {
+                paddle_url: url.clone(),
+                email_url: url,
+                ..s.f.config.clone()
+            },
+        )
+        .unwrap();
+        (worker, task)
+    }
+
+    fn canceled_body(canceled_at: Value, updated_at: DateTime<Utc>) -> Value {
+        json!({"id":SUBSCRIPTION,"status":"canceled","canceled_at":canceled_at,
+            "updated_at":updated_at.to_rfc3339(),"scheduled_change":null})
+    }
+
+    /// Queues a cancel job that was already sent and now waits for reconciliation, and marks
+    /// every other job done so the worker step claims exactly this one.
+    async fn queue_cancel(s: &Scenario) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query("UPDATE jobs SET state='done' WHERE kind<>'metering'")
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,external_id,error_category,available_at,created_at,updated_at) VALUES($1,$2::text::uuid,'cancel',$1::text,'{}','reconcile',1,$3,'awaiting_provider_event',now()-interval '1 hour',now(),now())")
+            .bind(id).bind(&s.tenant).bind(SUBSCRIPTION).execute(&s.f.db).await.unwrap();
+        id
+    }
+
+    /// Makes the job ready again and runs one worker step.
+    async fn reconcile(s: &Scenario, worker: &Worker, job: Uuid) -> (String, String) {
+        sqlx::query("UPDATE jobs SET available_at=now()-interval '1 hour' WHERE id=$1")
+            .bind(job)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        worker.step().await.unwrap();
+        sqlx::query_as("SELECT state,error_category FROM jobs WHERE id=$1")
+            .bind(job)
+            .fetch_one(&s.f.db)
+            .await
+            .unwrap()
+    }
+
+    /// Every row that records the tenant's subscription state, selection, entitlement, grant and
+    /// billing history, as comparable text.
+    async fn history(s: &Scenario) -> Vec<String> {
+        let mut rows = Vec::new();
+        for (name, query) in [
+            (
+                "tenant",
+                "SELECT x::text FROM tenants x WHERE id=$1::text::uuid",
+            ),
+            (
+                "selection",
+                "SELECT x::text FROM tenant_catalog_selections x WHERE tenant_id=$1::text::uuid",
+            ),
+            (
+                "entitlement",
+                "SELECT x::text FROM entitlements x WHERE tenant_id=$1::text::uuid",
+            ),
+            (
+                "grant",
+                "SELECT x::text FROM allowance_grants x WHERE tenant_id=$1::text::uuid",
+            ),
+            (
+                "period",
+                "SELECT x::text FROM billing_periods x WHERE tenant_id=$1::text::uuid",
+            ),
+            (
+                "ledger",
+                "SELECT x::text FROM ledger x WHERE tenant_id=$1::text::uuid",
+            ),
+        ] {
+            let mut found: Vec<String> = sqlx::query_scalar(query)
+                .bind(&s.tenant)
+                .fetch_all(&s.f.db)
+                .await
+                .unwrap();
+            found.sort();
+            rows.extend(found.into_iter().map(|row| format!("{name}:{row}")));
+        }
+        rows.push(format!("watermark:{:?}", s.watermark().await));
+        rows
+    }
+
+    impl Scenario {
+        async fn watermark(&self) -> Option<(DateTime<Utc>, String)> {
+            sqlx::query_as("SELECT occurred_at,state FROM provider_objects WHERE external_id=$1")
+                .bind(SUBSCRIPTION)
+                .fetch_optional(&self.f.db)
+                .await
+                .unwrap()
+        }
+        /// `(starts_at, ends_at)` of every entitlement, newest start last.
+        async fn entitlement_windows(&self) -> Vec<(DateTime<Utc>, Option<DateTime<Utc>>)> {
+            sqlx::query_as("SELECT starts_at,ends_at FROM entitlements WHERE tenant_id=$1::text::uuid ORDER BY starts_at,ends_at NULLS LAST")
+                .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap()
+        }
+        async fn selection_windows(&self) -> Vec<(DateTime<Utc>, Option<DateTime<Utc>>)> {
+            sqlx::query_as("SELECT starts_at,ends_at FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid ORDER BY starts_at,ends_at NULLS LAST")
+                .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap()
+        }
+    }
+
+    /// Delivers the real cancellation notification with the provider's occurrence time.
+    async fn webhook(s: &Scenario, id: &str) {
+        s.deliver(
+            id,
+            "subscription.canceled",
+            s.time.canceled,
+            json!({"id":SUBSCRIPTION,"status":"canceled"}),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn delayed_canceled_get_records_the_provider_cancellation_boundary() {
+        let s = scenario().await;
+        let t = &s.time;
+        s.subscribe().await;
+        // Cancellation, provider update and observation are three distinct instants.
+        let updated_at = t.canceled + Duration::hours(1);
+        let response = Arc::new(Mutex::new(canceled_body(
+            json!(t.canceled.to_rfc3339()),
+            updated_at,
+        )));
+        let (worker, mock) = provider(&s, response).await;
+        let job = queue_cancel(&s).await;
+        let paid = (t.paid_start, t.paid_end);
+        let observed = Utc::now();
+        assert!(observed - t.canceled >= Duration::hours(2));
+
+        assert_eq!(reconcile(&s, &worker, job).await.0, "done");
+
+        // The watermark, selections and entitlements move at the cancellation, not later.
+        let watermark = s.watermark().await.unwrap();
+        assert_eq!(watermark, (t.canceled, "canceled".to_string()));
+        assert_eq!(
+            s.selection_windows().await,
+            vec![(t.paid_start, Some(t.canceled)), (t.canceled, None),]
+        );
+        let entitlements = s.entitlement_windows().await;
+        assert!(
+            entitlements.contains(&(t.paid_start, Some(t.canceled))),
+            "{entitlements:?}"
+        );
+        assert!(
+            entitlements.contains(&(t.canceled, None)),
+            "{entitlements:?}"
+        );
+        assert!(
+            entitlements
+                .iter()
+                .all(|(start, end)| *start == t.paid_start
+                    || *start == t.canceled
+                    || end.is_some_and(|end| end <= t.canceled)),
+            "{entitlements:?}"
+        );
+        assert_eq!(s.tenant_period().await, calendar(t.canceled));
+
+        // Inclusive start and exclusive end: before is paid, the instant and the gap up to the
+        // observation time are free.
+        assert_eq!(s.resolve(t.before(1)).await.unwrap(), paid);
+        assert_eq!(
+            s.resolve(t.canceled - Duration::seconds(1)).await.unwrap(),
+            paid
+        );
+        for at in [t.canceled, t.after(30), t.after(90)] {
+            assert_eq!(s.resolve(at).await.unwrap(), calendar(at), "{at}");
+        }
+        // Late usage is attributed by the true boundary.
+        s.ingest("late-paid", "4", t.before(1)).await;
+        s.ingest("late-free", "2", t.after(90)).await;
+        assert_eq!(s.persisted("late-paid").await, paid);
+        assert_eq!(s.persisted("late-free").await, calendar(t.after(90)));
+
+        // The real notification and its replays neither shift the transition nor add windows.
+        let reconciled = history(&s).await;
+        webhook(&s, "evt_canceled").await;
+        assert_eq!(history(&s).await, reconciled, "real notification");
+        webhook(&s, "evt_canceled_again").await;
+        assert_eq!(history(&s).await, reconciled, "replayed notification");
+        assert_eq!(s.watermark().await.unwrap().0, t.canceled);
+        mock.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn canceled_get_at_the_paid_period_end_resolves_free_not_unavailable() {
+        let now = Utc::now().trunc_subsecs(0);
+        let paid_end = now - Duration::hours(2);
+        let paid_start = paid_end - Duration::days(20) - Duration::minutes(37);
+        let s = scenario_at(Timeline {
+            now,
+            paid_start,
+            paid_end,
+            canceled: paid_end,
+        })
+        .await;
+        let t = &s.time;
+        s.subscribe().await;
+        let response = Arc::new(Mutex::new(canceled_body(
+            json!(t.canceled.to_rfc3339()),
+            t.canceled + Duration::minutes(5),
+        )));
+        let (worker, mock) = provider(&s, response).await;
+        let job = queue_cancel(&s).await;
+        assert_eq!(reconcile(&s, &worker, job).await.0, "done");
+
+        let paid = (t.paid_start, t.paid_end);
+        assert_eq!(
+            s.resolve(t.canceled - Duration::seconds(1)).await.unwrap(),
+            paid
+        );
+        for at in [t.canceled, t.after(30), t.after(90)] {
+            let period = s.resolve(at).await;
+            assert_eq!(period.unwrap(), calendar(at), "{at}");
+        }
+        s.ingest("after-end", "1", t.after(30)).await;
+        assert_eq!(s.persisted("after-end").await, calendar(t.after(30)));
+
+        let reconciled = history(&s).await;
+        webhook(&s, "evt_canceled").await;
+        assert_eq!(history(&s).await, reconciled);
+        mock.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn canceled_get_without_a_valid_cancellation_time_changes_nothing() {
+        let s = scenario().await;
+        let t = &s.time;
+        s.subscribe().await;
+        let updated_at = t.canceled + Duration::hours(1);
+        let response = Arc::new(Mutex::new(Value::Null));
+        let (worker, mock) = provider(&s, response.clone()).await;
+        let job = queue_cancel(&s).await;
+        let before = history(&s).await;
+        let invalid = [
+            ("missing", {
+                let mut body = canceled_body(Value::Null, updated_at);
+                body.as_object_mut().unwrap().remove("canceled_at");
+                body
+            }),
+            ("null", canceled_body(Value::Null, updated_at)),
+            ("malformed", canceled_body(json!("yesterday"), updated_at)),
+            ("number", canceled_body(json!(1_760_000_000), updated_at)),
+            (
+                "future",
+                canceled_body(
+                    json!((Utc::now() + Duration::hours(1)).to_rfc3339()),
+                    updated_at,
+                ),
+            ),
+        ];
+        for (name, body) in invalid {
+            *response.lock().unwrap() = body;
+            assert_eq!(
+                reconcile(&s, &worker, job).await,
+                ("reconcile".into(), "payment_ambiguous".into()),
+                "{name}"
+            );
+            assert_eq!(history(&s).await, before, "{name}");
+        }
+        // The provider eventually reports a usable time, and the same job then completes.
+        *response.lock().unwrap() = canceled_body(json!(t.canceled.to_rfc3339()), updated_at);
+        assert_eq!(reconcile(&s, &worker, job).await.0, "done");
+        assert_eq!(s.watermark().await.unwrap().0, t.canceled);
+        assert_eq!(s.resolve(t.after(90)).await.unwrap(), calendar(t.after(90)));
+        mock.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn scheduled_cancellation_keeps_waiting_for_the_renewal() {
+        let s = scenario().await;
+        s.subscribe().await;
+        let response = Arc::new(Mutex::new(json!({"id":SUBSCRIPTION,"status":"active",
+            "canceled_at":null,"scheduled_change":{"action":"cancel"}})));
+        let (worker, mock) = provider(&s, response).await;
+        let job = queue_cancel(&s).await;
+        let before = history(&s).await;
+        assert_eq!(
+            reconcile(&s, &worker, job).await,
+            ("reconcile".into(), "awaiting_renewal".into())
+        );
+        assert_eq!(history(&s).await, before);
+        mock.abort();
+    }
+}

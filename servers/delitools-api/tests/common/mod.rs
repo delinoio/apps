@@ -35,6 +35,7 @@ use std::{
 pub const SERVICE_ID: &str = "019b0000-0000-7000-8000-0000000000aa";
 pub const TENANT: &str = "019b0000-0000-7000-8000-0000000000b1";
 pub const OTHER_TENANT: &str = "019b0000-0000-7000-8000-0000000000b2";
+pub const VALID_EVENT_ID: &str = "01900000-0000-7000-8000-000000000001";
 pub const USER: &str = "019b0000-0000-7000-8000-0000000000c1";
 pub const USER_TOKEN: &str = "user-token";
 pub const KEY_SECRET: &str =
@@ -51,6 +52,8 @@ pub enum Reply {
     },
     Status(u16),
     RetryAfter(u16, u64),
+    /// A status with a verbatim `Retry-After` header value, such as an HTTP-date.
+    RetryAfterRaw(u16, String),
     Garbage,
     /// Never answers; the request ends only when the caller aborts it.
     Hang,
@@ -157,6 +160,13 @@ async fn gateway_handler(
                 )
                     .into_response();
             }
+            Reply::RetryAfterRaw(code, value) => {
+                return (
+                    StatusCode::from_u16(code).unwrap(),
+                    [("retry-after", value)],
+                )
+                    .into_response();
+            }
             Reply::Garbage => return (StatusCode::OK, "<html>not json</html>").into_response(),
             Reply::Hang => {
                 let _guard = DropCounter(state.clone());
@@ -176,10 +186,57 @@ pub enum Ingest {
         code: &'static str,
         reason: Option<i32>,
     },
+    /// A Connect error with an arbitrary JSON body, such as unrelated `details`.
+    Raw {
+        status: u16,
+        body: Value,
+    },
 }
+
+/// Holds every `IngestEvent` request on arrival (counted in `entered`, before it is recorded in
+/// `DelcoreState::ingested`) until the test opens it, so a test can fence a delivery worker while its call is in flight.
+pub struct IngestBarrier {
+    pub entered: AtomicUsize,
+    pub dropped: AtomicUsize,
+    pub release: tokio::sync::Semaphore,
+}
+
+impl IngestBarrier {
+    /// A barrier that holds every call until [`IngestBarrier::open`] adds permits.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            entered: AtomicUsize::new(0),
+            dropped: AtomicUsize::new(0),
+            release: tokio::sync::Semaphore::new(0),
+        })
+    }
+    /// Lets every current and future call through.
+    pub fn open(&self) {
+        self.release.add_permits(1 << 20);
+    }
+}
+
+struct BarrierDrop(Arc<IngestBarrier>);
+impl Drop for BarrierDrop {
+    fn drop(&mut self) {
+        self.0.dropped.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Test hook run inside a Delcore mock handler, for example to advance a test clock.
+pub type Hook = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Default)]
 pub struct DelcoreState {
+    /// Runs inside every `Authorize` call, before the reply is sent.
+    pub authorize_hook: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub ingest_barrier: Option<Arc<IngestBarrier>>,
+    /// Runs when a token request arrives, before the token is issued.
+    pub on_token: Option<Hook>,
+    /// Runs when a `GetTenantStates` request arrives, before it is answered.
+    pub on_tenant_states: Option<Hook>,
+    /// Runs when an `IngestEvent` request arrives, after it is recorded and before it is answered.
+    pub on_ingest: Option<Hook>,
     pub users: HashMap<String, String>,
     /// Reply body for `Authorize`; `script` entries take precedence.
     pub authorize: Value,
@@ -226,6 +283,10 @@ fn service_ok(headers: &HeaderMap) -> bool {
 }
 
 async fn token(State(state): State<Delcore>, headers: HeaderMap, body: String) -> Response {
+    let hook = state.lock().unwrap().on_token.clone();
+    if let Some(hook) = hook {
+        hook();
+    }
     let mut s = state.lock().unwrap();
     s.token_calls += 1;
     let expected = format!(
@@ -251,6 +312,30 @@ async fn delcore_method(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    // The barrier is awaited before the state lock is taken, so a held call never blocks the mock.
+    if method == "IngestEvent" {
+        let barrier = state.lock().unwrap().ingest_barrier.clone();
+        if let Some(barrier) = barrier {
+            barrier.entered.fetch_add(1, Ordering::SeqCst);
+            let _guard = BarrierDrop(barrier.clone());
+            if let Ok(permit) = barrier.release.acquire().await {
+                permit.forget();
+            }
+        }
+    }
+    let hook = {
+        let s = state.lock().unwrap();
+        match method.as_str() {
+            "GetTenantStates" => s.on_tenant_states.clone(),
+            "IngestEvent" => s.on_ingest.clone(),
+            _ => None,
+        }
+    };
+    if method == "GetTenantStates"
+        && let Some(hook) = &hook
+    {
+        hook();
+    }
     let mut s = state.lock().unwrap();
     if s.down {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -272,6 +357,9 @@ async fn delcore_method(
     match method.as_str() {
         "Authorize" => {
             s.authorize_calls.push(body);
+            if let Some(hook) = s.authorize_hook.clone() {
+                hook();
+            }
             if let Some((status, reply)) = s.authorize_script.pop_front() {
                 return (StatusCode::from_u16(status).unwrap(), Json(reply)).into_response();
             }
@@ -321,13 +409,21 @@ async fn delcore_method(
                 .or_else(|| s.ingest_default.clone())
                 .unwrap_or(Ingest::Ok);
             s.ingested.push(body);
+            if let Some(hook) = &hook {
+                hook();
+            }
             match reply {
-                Ingest::Ok => Json(json!({"eventId": "e", "revision": 1})).into_response(),
+                Ingest::Ok => {
+                    Json(json!({"eventId": VALID_EVENT_ID, "revision": 1})).into_response()
+                }
                 Ingest::Error {
                     status,
                     code,
                     reason,
                 } => connect_error(status, code, reason),
+                Ingest::Raw { status, body } => {
+                    (StatusCode::from_u16(status).unwrap(), Json(body)).into_response()
+                }
             }
         }
         "GetTenantStates" => {
@@ -515,6 +611,19 @@ impl LogCapture {
     }
 }
 
+/// Serves through the production shared transport instead of `axum::serve`, so its idle-read,
+/// header and write bounds apply.
+async fn serve_transport(router: Router, limits: server_common::transport::Limits) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        server_common::transport::serve(listener, router, limits, std::future::pending())
+            .await
+            .unwrap()
+    });
+    format!("http://{addr}")
+}
+
 /// A pool that never connects; for tests that must not touch PostgreSQL.
 pub fn unused_pool() -> sqlx::PgPool {
     sqlx::postgres::PgPoolOptions::new()
@@ -529,6 +638,25 @@ impl Harness {
     }
 
     pub async fn start_with(db: Option<sqlx::PgPool>, tweak: impl FnOnce(&mut Config)) -> Self {
+        Self::start_inner(db, None, tweak).await
+    }
+
+    /// Starts DeliTools behind the production shared transport with the given socket idle-read
+    /// interval. Header, write and shutdown bounds follow the production derivation from the
+    /// (tweaked) execution timeout.
+    pub async fn start_transport(
+        db: Option<sqlx::PgPool>,
+        idle: Duration,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
+        Self::start_inner(db, Some(idle), tweak).await
+    }
+
+    async fn start_inner(
+        db: Option<sqlx::PgPool>,
+        idle: Option<Duration>,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
         let delcore: Delcore = Arc::new(Mutex::new(DelcoreState {
             users: HashMap::from([(USER_TOKEN.to_owned(), USER.to_owned())]),
             authorize: allow(),
@@ -555,7 +683,23 @@ impl Harness {
         let mut config = config(&delcore_url, &gateway_url);
         tweak(&mut config);
         let server = Server::new(db.unwrap_or_else(unused_pool), config.clone()).unwrap();
-        let base = serve(http::router(server.clone())).await;
+        let router = http::router(server.clone());
+        let base = match idle {
+            None => serve(router).await,
+            Some(idle) => {
+                let execution = config.limits.execution_timeout;
+                serve_transport(
+                    router,
+                    server_common::transport::Limits {
+                        header: Duration::from_secs(5),
+                        idle,
+                        write: execution + Duration::from_secs(5),
+                        shutdown: execution,
+                    },
+                )
+                .await
+            }
+        };
         Self {
             base,
             delcore,
