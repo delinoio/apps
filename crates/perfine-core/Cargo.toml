@@ -14,9 +14,11 @@ thiserror = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
 tracing = "0.1"
 fs2 = "0.4"
-
-[dev-dependencies]
+flate2 = "1"
+prost = "0.14"
 tempfile = "3"
+
+
 
 # Standalone metadata: this crate is also consumed from the independent server workspace.
 [lints]

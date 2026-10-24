@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "contract_revision": "c6ffb27733e231a914f947ecb95244205b8e1160",
+  "purpose": "Real project inputs for adapter integration; this manifest is not an engine evidence manifest or a verdict.",
+  "driver": "run.py",
+  "invocation": [
+    "python3",
+    "{fixture_root}/run.py",
+    "{action}",
+    "{language}",
+    "--variant",
+    "{variant}",
+    "--case",
+    "{case}",
+    "--out",
+    "{new_output_directory}"
+  ],
+  "actions": [
+    "prepare",
+    "check",
+    "measure"
+  ],
+  "platform_gate": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "exploratory_override": "--allow-unsupported-host (Go and JavaScript only)"
+  },
+  "workload": {
+    "id": "byte-pair-count-v1",
+    "function": "count_pairs / CountPairs / countPairs",
+    "domain": "Byte arrays up to 4096 elements; count unordered equal-value index pairs.",
+    "generator": "values[i] = (17*i + floor(i/7)) % 256",
+    "native_iterations": 100,
+    "javascript_warmup_iterations": 2000,
+    "javascript_measured_iterations": 2000,
+    "go_iterations": "testing.B calibration; 1s benchtime for measurement",
+    "cases": [
+      {
+        "id": "bulk",
+        "size": 1024,
+        "frequency": 1,
+        "protected": false
+      },
+      {
+        "id": "protected",
+        "size": 128,
+        "frequency": 1,
+        "protected": true
+      }
+    ],
+    "frequencies": "Equal weights are fixture declarations, not observed production frequencies."
+  },
+  "hypothesis": "Replace repeated pair comparisons with a 256-bin histogram on a profile-attributed count_pairs hot path. No improvement is guaranteed without measurement.",
+  "correctness": "Independent fixed examples: empty, singleton, distinct values, mixed 0/255, 100 repeated values, complete byte alphabet. The driver also checks native/Node workload checksums.",
+  "transformation": {
+    "method": "Replace only kernel source in the materialized project. Keep harness, cases, flags and correctness tests identical.",
+    "baseline": "quadratic pair scan",
+    "candidate": "linear histogram",
+    "scope": "Algorithmic optimization fixture; representative of duplicate counting, not every language ecosystem."
+  },
+  "toolchain_policy": {
+    "python": "3.9+",
+    "rust": "rustc with edition 2021 and std::hint::black_box (1.66+); exact version recorded at execution",
+    "c": "C11 compiler; exact version recorded at execution",
+    "cpp": "C++17 compiler; exact version recorded at execution",
+    "zig": "0.15.2 exactly",
+    "go": "1.24+; GOTOOLCHAIN=local; exact version recorded at execution",
+    "javascript": "Node 24.x, normal JIT; exact version recorded at execution",
+    "gungraun": "0.19.4 with matching gungraun-runner",
+    "valgrind": "installed version recorded; no automatic native support claim"
+  },
+  "projects": [
+    {
+      "language": "rust",
+      "directory": "rust",
+      "baseline_source": "rust/baseline.rs",
+      "candidate_source": "rust/candidate.rs",
+      "target_source": "kernel.rs",
+      "correctness_source": "rust/correctness.rs",
+      "profile_routes": [
+        "callgrind",
+        "gungraun"
+      ],
+      "metric": {
+        "name": "Ir",
+        "unit": "instructions"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    },
+    {
+      "language": "c",
+      "directory": "c",
+      "baseline_source": "c/baseline.c",
+      "candidate_source": "c/candidate.c",
+      "target_source": "kernel.c",
+      "correctness_source": "c/correctness.c",
+      "profile_routes": [
+        "callgrind",
+        "gungraun"
+      ],
+      "metric": {
+        "name": "Ir",
+        "unit": "instructions"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    },
+    {
+      "language": "cpp",
+      "directory": "cpp",
+      "baseline_source": "cpp/baseline.cpp",
+      "candidate_source": "cpp/candidate.cpp",
+      "target_source": "kernel.cpp",
+      "correctness_source": "cpp/correctness.cpp",
+      "profile_routes": [
+        "callgrind",
+        "gungraun"
+      ],
+      "metric": {
+        "name": "Ir",
+        "unit": "instructions"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    },
+    {
+      "language": "zig",
+      "directory": "zig",
+      "baseline_source": "zig/baseline.zig",
+      "candidate_source": "zig/candidate.zig",
+      "target_source": "kernel.zig",
+      "correctness_source": "zig/correctness.zig",
+      "profile_routes": [
+        "callgrind",
+        "gungraun"
+      ],
+      "metric": {
+        "name": "Ir",
+        "unit": "instructions"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    },
+    {
+      "language": "go",
+      "directory": "go",
+      "baseline_source": "go/baseline.go",
+      "candidate_source": "go/candidate.go",
+      "target_source": "kernel.go",
+      "correctness_source": "go/correctness_test.go",
+      "profile_routes": [
+        "go-pprof"
+      ],
+      "metric": {
+        "name": "ns_per_op",
+        "unit": "ns/op"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    },
+    {
+      "language": "javascript",
+      "directory": "javascript",
+      "baseline_source": "javascript/baseline.mjs",
+      "candidate_source": "javascript/candidate.mjs",
+      "target_source": "kernel.mjs",
+      "correctness_source": "javascript/correctness.test.mjs",
+      "profile_routes": [
+        "node-cpu-profile"
+      ],
+      "metric": {
+        "name": "ns_per_op",
+        "unit": "ns/op"
+      },
+      "native_route_status": "requires_execution",
+      "dependencies": "standard library only; optional Gungraun route downloads pinned harness dependency and transitive crates"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "candidate",
+      "base_variant": "baseline",
+      "head_variant": "candidate",
+      "cases": [
+        "bulk",
+        "protected"
+      ],
+      "expected": "correctness passes; engine determines measured verdict"
+    },
+    {
+      "id": "same-source",
+      "base_variant": "baseline",
+      "head_variant": "baseline",
+      "cases": [
+        "bulk",
+        "protected"
+      ],
+      "expected": "same-source infrastructure comparison, not an optimization"
+    },
+    {
+      "id": "regression",
+      "base_variant": "candidate",
+      "head_variant": "baseline",
+      "cases": [
+        "bulk"
+      ],
+      "expected": "reverse transformation intended to regress; engine must inspect actual measurements"
+    },
+    {
+      "id": "protected-case",
+      "base_variant": "candidate",
+      "head_variant": "baseline",
+      "cases": [
+        "protected"
+      ],
+      "protected_cases": [
+        "protected"
+      ],
+      "expected": "exercise protected regression handling if measurements show regression"
+    },
+    {
+      "id": "no-candidate",
+      "base_variant": "baseline",
+      "head_variant": null,
+      "cases": [
+        "bulk",
+        "protected"
+      ],
+      "candidate_proposals": [],
+      "expected": "no_candidate; do not fabricate head measurements"
+    },
+    {
+      "id": "missing-profile",
+      "base_variant": "baseline",
+      "head_variant": "candidate",
+      "cases": [
+        "bulk"
+      ],
+      "artifact_mutation": {
+        "operation": "omit",
+        "field": "profile_artifacts"
+      },
+      "expected": "missing evidence; cannot establish profile-backed optimization"
+    }
+  ],
+  "artifacts": {
+    "result": "result.json",
+    "commands": "command-NN.stdout.txt and command-NN.stderr.txt",
+    "materialized_sources": "project/",
+    "raw_profiles": [
+      "callgrind.out",
+      "cpu.pprof",
+      "cpu.cpuprofile",
+      "cargo-target/**/callgrind*.out*"
+    ],
+    "retention": "Caller-owned output directory, never committed. Do not treat smoke timings as acceptance."
+  },
+  "limitations": [
+    "Fixture checks do not run the shared engine or assign policy verdicts.",
+    "Timing requires an explicit engine policy before automatic evaluation.",
+    "Native profile routes require successful Linux x86_64 runs for every language, toolchain and route.",
+    "No synthetic measurements are supplied. Missing-profile and no-candidate scenarios are input mutations for the engine test consumer.",
+    "Driver timeouts bound individual fixture commands; the engine owns experiment limits, isolation and credential policy.",
+    "prepare creates source files only; the driver does not commit candidate sources or create branches. The engine owns immutable source revision tracking."
+  ],
+  "sources": [
+    "https://docs.rs/gungraun/0.19.4/gungraun/struct.Command.html",
+    "https://gungraun.github.io/gungraun/latest/html/benchmarks/binary_benchmarks/quickstart.html",
+    "https://valgrind.org/docs/manual/cl-manual.html",
+    "https://ziglang.org/documentation/0.15.2/",
+    "https://pkg.go.dev/cmd/go#hdr-Testing_flags",
+    "https://go.dev/wiki/Performance",
+    "https://nodejs.org/api/cli.html#--cpu-prof"
+  ]
+}

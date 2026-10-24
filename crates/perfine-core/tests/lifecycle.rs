@@ -446,3 +446,46 @@ fn fractional_configuration_survives_durable_json_roundtrip() {
     );
     reopened.resume(&request(), &id, &frozen, 101).unwrap();
 }
+
+#[test]
+fn delayed_admission_uses_current_transaction_time_and_original_deadline() {
+    let f = fixture();
+    let e = engine(&f);
+    let other = fixture();
+    e.create(&request(), other.experiment.clone(), other.cfg, 110)
+        .unwrap();
+    e.start_candidate_at(
+        &request(),
+        &f.experiment,
+        f.candidate.clone(),
+        sha('d'),
+        workspace(0),
+        &f.base,
+        &f.baseline,
+        &BTreeSet::from([name("src/hot.rs")]),
+        101,
+        111,
+    )
+    .unwrap();
+    let candidate = e.status(&f.experiment).unwrap().candidates[&f.candidate].clone();
+    assert_eq!(candidate.started_at, 101);
+    assert_eq!(
+        candidate.deadline,
+        101 + f.cfg.config().limits.candidate_duration_seconds
+    );
+    assert!(
+        e.start_candidate_at(
+            &request(),
+            &f.experiment,
+            ResourceId::generate(),
+            sha('d'),
+            workspace(1),
+            &f.base,
+            &f.baseline,
+            &BTreeSet::from([name("src/hot.rs")]),
+            112,
+            111
+        )
+        .is_err()
+    );
+}

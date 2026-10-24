@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "Shared fixtures expose helpers used by different integration suites"
+)]
 use perfine_core::{evidence::*, lifecycle::*, policy::*, types::*};
 use std::collections::{BTreeMap, BTreeSet};
 pub fn name(s: &str) -> Name {
