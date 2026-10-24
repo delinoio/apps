@@ -18,6 +18,7 @@ pub mod late_renewal;
 pub mod metering;
 pub mod period_selection;
 pub mod rank_downgrade;
+pub mod reconcile_pagination;
 pub mod subscription_cancellation;
 
 pub fn key() -> String {

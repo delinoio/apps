@@ -417,7 +417,31 @@ impl Worker {
         Ok(())
     }
     async fn finish(&self, j: &Job, state: &str, category: &str, external: &str) -> Result<()> {
-        tokio::time::timeout(self.config.timeout(),async{let mut tx=postgres::begin(&self.pool).await?;sqlx::query("UPDATE jobs SET state=$2,error_category=CASE WHEN $3='provider_billing_window' AND error_category='provider_rejected' THEN error_category ELSE $3 END,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,attempts=CASE WHEN $3 IN ('provider_billing_window','final_settlement_pending') THEN greatest(attempts-1,0) ELSE attempts END,updated_at=now() WHERE id=$1 AND state='running'").bind(uid(&j.id)?).bind(state).bind(category).bind(external).bind(Utc::now()+Duration::seconds(self.config.retry_seconds)).execute(&mut *tx).await?;if j.kind=="auto_topup"&&state=="failed"{sqlx::query("UPDATE tenants SET auto_suspended=true WHERE id=$1").bind(uid(&j.tenant)?).execute(&mut *tx).await?;maintenance::notify(&mut tx,&j.tenant,&format!("auto_failed:{}",j.id),"Automatic top-up failed","Automatic top-ups are suspended. Review your payment settings.",Utc::now()).await?}tx.commit().await?;Ok::<_,anyhow::Error>(())}).await?
+        self.finish_scan(j, state, category, external, reconcile::ScanWrite::Keep)
+            .await
+    }
+    /// Finishes a claimed job like `finish` and updates the transaction scan checkpoint in the same
+    /// statement, so progress and job state never disagree after a crash.
+    async fn finish_scan(
+        &self,
+        j: &Job,
+        state: &str,
+        category: &str,
+        external: &str,
+        scan: reconcile::ScanWrite,
+    ) -> Result<()> {
+        let (mode, checkpoint) = match scan {
+            reconcile::ScanWrite::Keep => ("keep", Value::Null),
+            reconcile::ScanWrite::Clear => ("clear", Value::Null),
+            reconcile::ScanWrite::Set(value) => ("set", value),
+        };
+        // A scan continues immediately; other deferrals wait for the retry interval.
+        let available = if category == reconcile::SCAN_PENDING {
+            Utc::now()
+        } else {
+            Utc::now() + Duration::seconds(self.config.retry_seconds)
+        };
+        tokio::time::timeout(self.config.timeout(),async{let mut tx=postgres::begin(&self.pool).await?;sqlx::query("UPDATE jobs SET payload=CASE $6::text WHEN 'clear' THEN (CASE WHEN jsonb_typeof(payload)='object' THEN payload-'reconcile_scan' ELSE payload END) WHEN 'set' THEN (CASE WHEN jsonb_typeof(payload)='object' THEN payload ELSE '{}'::jsonb END)||jsonb_build_object('reconcile_scan',$7::jsonb) ELSE payload END,state=$2,error_category=CASE WHEN $3='provider_billing_window' AND error_category='provider_rejected' THEN error_category ELSE $3 END,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,attempts=CASE WHEN $3 IN ('provider_billing_window','final_settlement_pending','reconcile_scan_pending') THEN greatest(attempts-1,0) ELSE attempts END,updated_at=now() WHERE id=$1 AND state='running'").bind(uid(&j.id)?).bind(state).bind(category).bind(external).bind(available).bind(mode).bind(checkpoint).execute(&mut *tx).await?;if j.kind=="auto_topup"&&state=="failed"{sqlx::query("UPDATE tenants SET auto_suspended=true WHERE id=$1").bind(uid(&j.tenant)?).execute(&mut *tx).await?;maintenance::notify(&mut tx,&j.tenant,&format!("auto_failed:{}",j.id),"Automatic top-up failed","Automatic top-ups are suspended. Review your payment settings.",Utc::now()).await?}tx.commit().await?;Ok::<_,anyhow::Error>(())}).await?
     }
     async fn retry(&self, j: &Job, error: Error, reconcile: bool) -> Result<()> {
         let (mut state, mut category) = ("pending", "provider_transient");
