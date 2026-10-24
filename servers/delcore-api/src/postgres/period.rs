@@ -22,6 +22,20 @@ pub fn selected_plan_bool_sql(tenant: &str, plan: &str, field: &str) -> String {
         "COALESCE((SELECT (cv.definition->>'{field}')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL),{plan}.{field})"
     )
 }
+/// Reports whether the tenant's plan was postpaid at the instant `at`.
+///
+/// A billing period records its policy when it is created, so a period recovered from a late
+/// payment must record the policy that applied when it began, not the policy of today's plan:
+/// the plan selection pinned at `at` wins, then the plan owning a recurring price the tenant held
+/// at `at` (tenants without pinned history), then the tenant's current plan.
+pub async fn postpaid_at(
+    db: &mut PgConnection,
+    tenant: &str,
+    at: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    sqlx::query_scalar("SELECT COALESCE((SELECT (cv.definition->>'postpaid')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),(SELECT pl.postpaid FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=t.id AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2) ORDER BY en.starts_at DESC LIMIT 1),p.postpaid) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
+        .bind(Uuid::parse_str(tenant)?).bind(at).fetch_one(db).await.map_err(Into::into)
+}
 pub fn selected_plan_rank_sql(tenant: &str, plan: &str) -> String {
     format!(
         "COALESCE((SELECT (cv.definition->>'rank')::integer FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL),{plan}.rank)"

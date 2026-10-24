@@ -100,6 +100,88 @@ impl Worker {
         Ok(true)
     }
 
+    /// Records the accounting of a confirmed renewal whose period began before the tenant's
+    /// current period ended, delivered after a newer renewal was applied.
+    ///
+    /// Current bounds, selections, entitlements, scheduled changes and the provider and failure
+    /// watermarks describe the newest period and stay untouched. Only the history the late payment
+    /// proves is recorded: the transaction, its billing period with the policy that applied when it
+    /// began, and its period-start allowance. The recurring prices and allowances come from the
+    /// entitlements held at the period start; today's terms never rewrite an older period.
+    /// A transaction or period that is already recorded is a duplicate and changes nothing, and a
+    /// period that reaches into the current one cannot be told apart from it, so it is rejected.
+    async fn record_historical_renewal(
+        &self,
+        conn: &mut PgConnection,
+        t: &Transaction,
+        at: DateTime<Utc>,
+        tenant: &str,
+        current_start: DateTime<Utc>,
+    ) -> Result<()> {
+        let Some(period) = &t.billing_period else {
+            return Ok(());
+        };
+        let reject = |reason: &str| {
+            tracing::warn!(
+                tenant_id = %tenant,
+                subscription_id = %t.subscription_id,
+                transaction_id = %t.id,
+                reason,
+                "rejected historical renewal"
+            );
+            Ok(())
+        };
+        if period.ends_at > current_start {
+            return reject("period reaches into the current billing period");
+        }
+        let recorded: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM provider_transactions WHERE external_id=$1) OR EXISTS(SELECT 1 FROM billing_periods WHERE tenant_id=$2::text::uuid AND starts_at<$4 AND ends_at>$3)")
+            .bind(&t.id).bind(tenant).bind(period.starts_at).bind(period.ends_at).fetch_one(&mut *conn).await?;
+        if recorded {
+            tracing::debug!(
+                tenant_id = %tenant,
+                transaction_id = %t.id,
+                "ignored historical renewal that is already recorded"
+            );
+            return Ok(());
+        }
+        let expected: Vec<String> = sqlx::query_scalar("SELECT p.external_price_id FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1::text::uuid AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2) AND p.kind=2 ORDER BY p.id")
+            .bind(tenant).bind(period.starts_at).fetch_all(&mut *conn).await?;
+        if !matches_prices(t, &expected) {
+            return reject("renewal items differ from the entitlements held at the period start");
+        }
+        let postpaid = postgres::period::postpaid_at(conn, tenant, period.starts_at).await?;
+        sqlx::query("INSERT INTO provider_transactions VALUES($1,$2::text::uuid,'subscription',0,$3,$4) ON CONFLICT DO NOTHING").bind(&t.id).bind(tenant).bind(&t.currency).bind(at).execute(&mut *conn).await?;
+        postgres::allowances::grant_allowances_held_at(
+            conn,
+            tenant,
+            period.starts_at,
+            period.ends_at,
+            period.starts_at,
+            &format!("renewal:{}", t.id),
+        )
+        .await?;
+        postgres::period::separate_free_grants(conn, tenant, period.starts_at).await?;
+        sqlx::query(
+            "INSERT INTO billing_periods VALUES($1::text::uuid,$2,$3,$4) ON CONFLICT DO NOTHING",
+        )
+        .bind(tenant)
+        .bind(period.starts_at)
+        .bind(period.ends_at)
+        .bind(postpaid)
+        .execute(&mut *conn)
+        .await?;
+        tracing::info!(
+            tenant_id = %tenant,
+            subscription_id = %t.subscription_id,
+            transaction_id = %t.id,
+            period_start = %period.starts_at,
+            period_end = %period.ends_at,
+            postpaid,
+            "recorded historical renewal delivered after a newer period"
+        );
+        Ok(())
+    }
+
     pub(super) async fn renew(
         &self,
         conn: &mut PgConnection,
@@ -113,7 +195,7 @@ impl Worker {
         {
             return Ok(());
         }
-        let Some(row) = sqlx::query("SELECT id::text,external_customer_id,period_end FROM tenants WHERE external_subscription_id=$1 AND deleted_at IS NULL")
+        let Some(row) = sqlx::query("SELECT id::text,external_customer_id,period_end,period_start FROM tenants WHERE external_subscription_id=$1 AND deleted_at IS NULL")
             .bind(&t.subscription_id).fetch_optional(&mut *conn).await? else {
             if self.awaits_initial_association(conn, t).await? {
                 tracing::info!(
@@ -130,8 +212,17 @@ impl Worker {
         let tenant: String = row.try_get(0)?;
         let customer: String = row.try_get(1)?;
         let previous_end: DateTime<Utc> = row.try_get(2)?;
-        if customer != t.customer_id || period.starts_at < previous_end {
+        let current_start: DateTime<Utc> = row.try_get(3)?;
+        if customer != t.customer_id {
             return Ok(());
+        }
+        // A period that began before the current one ends is history: it must not move the
+        // current state backwards, but a payment that was never recorded still owes its
+        // accounting.
+        if period.starts_at < previous_end {
+            return self
+                .record_historical_renewal(conn, t, at, &tenant, current_start)
+                .await;
         }
         // A scheduled change takes effect only at a renewal whose billing period starts at or after
         // the request (`created_at`). A delayed notification for a period that began earlier

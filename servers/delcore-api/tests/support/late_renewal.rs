@@ -1394,3 +1394,403 @@ async fn deferred_renewal_keeps_a_newer_failure_after_association() {
     assert_eq!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
     assert_eq!(state["renewalFailed"], true, "{state}");
 }
+
+// Historical renewals: a confirmed payment for a period that began before the tenant's current
+// period ends is accounted for exactly once without moving current state.
+
+const ALLOWANCE_METER: &str = "usage";
+const REGION: &str = "eu";
+
+impl Scenario {
+    async fn service_id(&self) -> String {
+        sqlx::query_scalar("SELECT service_id::text FROM prices WHERE external_price_id=$1")
+            .bind(EXTERNAL_PRICE)
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+    /// Adds a continuously held usage allowance of `included` units priced at 1 per unit and
+    /// declares the meter so usage can be ingested. Returns the price identifier.
+    async fn allowance(&self, included: i64) -> Uuid {
+        let service = self.service_id().await;
+        let plan: Uuid = sqlx::query_scalar("SELECT plan_id FROM tenants WHERE id=$1::text::uuid")
+            .bind(&self.tenant)
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap();
+        self.f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":service,"name":ALLOWANCE_METER,"key":ALLOWANCE_METER,"eventType":"request","aggregation":"METER_AGGREGATION_SUM","valueAttribute":"units","groupBy":["region"]}})).await;
+        self.insert_allowance(plan, included, self.time.days(-40), None)
+            .await
+    }
+    async fn insert_allowance(
+        &self,
+        plan: Uuid,
+        included: i64,
+        from: DateTime<Utc>,
+        until: Option<DateTime<Utc>>,
+    ) -> Uuid {
+        let service = self.service_id().await;
+        let price = Uuid::now_v7();
+        sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3::text::uuid,$4,1,$5,'USD',$6,now(),1)")
+            .bind(price).bind(plan).bind(&service).bind(ALLOWANCE_METER).bind(included).bind(format!("allowance_{price}")).execute(&self.f.db).await.unwrap();
+        sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1,$2::text::uuid,$3,$4,$5)")
+            .bind(Uuid::now_v7()).bind(&self.tenant).bind(price).bind(from).bind(until).execute(&self.f.db).await.unwrap();
+        price
+    }
+    /// Payment accounting without generated identifiers: grants, periods and transactions.
+    async fn accounting(&self) -> Value {
+        let grants: Vec<String> = sqlx::query_scalar("SELECT period_start::text||'|'||period_end::text||'|'||applied_at::text||'|'||amount::text||'|'||substr(source_key,1,length('renewal:txn_a')) FROM allowance_grants WHERE tenant_id=$1::text::uuid AND NOT starts_with(source_key,'free:') ORDER BY period_start,source_key")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        let periods: Vec<String> = sqlx::query_scalar("SELECT starts_at::text||'|'||ends_at::text||'|'||postpaid::text FROM billing_periods WHERE tenant_id=$1::text::uuid ORDER BY starts_at")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        let transactions: Vec<String> = sqlx::query_scalar("SELECT external_id FROM provider_transactions WHERE tenant_id=$1::text::uuid ORDER BY external_id")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        json!({"grants":grants,"periods":periods,"transactions":transactions})
+    }
+    /// Current-state projections that historical insertion must not change.
+    async fn projections(&self) -> Value {
+        let tenant: (String, String, String, bool) = sqlx::query_as("SELECT plan_id::text,period_start::text,period_end::text,renewal_failed FROM tenants WHERE id=$1::text::uuid")
+            .bind(&self.tenant).fetch_one(&self.f.db).await.unwrap();
+        let entitlements: Vec<String> = sqlx::query_scalar("SELECT price_id::text||'|'||starts_at::text||'|'||COALESCE(ends_at::text,'') FROM entitlements WHERE tenant_id=$1::text::uuid ORDER BY price_id")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        let selections: Vec<String> = sqlx::query_scalar("SELECT product_id::text||'|'||version_id::text||'|'||starts_at::text||'|'||COALESCE(ends_at::text,'') FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid ORDER BY product_id,starts_at")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        let jobs: Vec<String> = sqlx::query_scalar("SELECT kind||'|'||state||'|'||error_category FROM jobs WHERE tenant_id=$1::text::uuid ORDER BY id")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        let objects: Vec<String> = sqlx::query_scalar("SELECT external_id||'|'||occurred_at::text||'|'||state FROM provider_objects ORDER BY external_id")
+            .fetch_all(&self.f.db).await.unwrap();
+        json!({"tenant":[tenant.0,tenant.1,tenant.2,tenant.3.to_string()],
+            "entitlements":entitlements,"selections":selections,"jobs":jobs,"objects":objects})
+    }
+    async fn resolve(&self, at: DateTime<Utc>) -> anyhow::Result<(DateTime<Utc>, DateTime<Utc>)> {
+        let mut conn = self.f.db.acquire().await?;
+        delcore_api::postgres::billing_period(&mut conn, &self.tenant, at).await
+    }
+    async fn ingest(&self, event: &str, units: &str, at: DateTime<Utc>) {
+        let service = self.service_id().await;
+        self.f.rpc("service","IngestEvent",json!({"requestKey":key(),"event":{"tenantId":self.tenant,"serviceId":service,"eventKey":event,"eventType":"request","occurredAt":at.to_rfc3339(),"attributes":{"region":{"text":REGION},"units":{"number":units}}}})).await;
+    }
+    async fn period_of(&self, event: &str) -> (DateTime<Utc>, DateTime<Utc>) {
+        sqlx::query_as("SELECT period_start,period_end FROM metering_events WHERE tenant_id=$1::text::uuid AND event_key=$2")
+            .bind(&self.tenant).bind(event).fetch_one(&self.f.db).await.unwrap()
+    }
+}
+
+/// B (the renewal after A) arrives first and A arrives later: both orders retain the same payment
+/// records, billing periods and allowances, and the current period stays B.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn newer_then_older_delivery_retains_the_same_history_as_older_then_newer() {
+    let mut finals = Vec::new();
+    for newer_first in [true, false] {
+        let s = scenario().await;
+        s.allowance(10).await;
+        if newer_first {
+            s.pay_c("evt_c").await;
+            assert_eq!(s.state().await["transactions"], json!(["txn_c"]));
+            s.pay_a("evt_a").await;
+        } else {
+            s.pay_a("evt_a").await;
+            s.pay_c("evt_c").await;
+        }
+        let label = format!("newerFirst={newer_first}");
+        let accounting = s.accounting().await;
+        assert_eq!(
+            accounting["transactions"],
+            json!(["txn_a", "txn_c"]),
+            "{label}"
+        );
+        assert_eq!(
+            accounting["periods"].as_array().unwrap().len(),
+            2,
+            "{label}"
+        );
+        assert_eq!(accounting["grants"].as_array().unwrap().len(), 2, "{label}");
+        let state = s.state().await;
+        assert_eq!(state["start"], s.time.payment_c().0.to_rfc3339(), "{label}");
+        assert_eq!(state["end"], s.time.payment_c().1.to_rfc3339(), "{label}");
+        finals.push((accounting, s.projections().await));
+    }
+    assert_eq!(finals[0].0["transactions"], finals[1].0["transactions"]);
+    assert_eq!(finals[0].0["periods"], finals[1].0["periods"]);
+    // Both periods grant the full allowance at their start, whatever the delivery order.
+    assert_eq!(finals[0].0["grants"], finals[1].0["grants"]);
+    // Only identifiers differ between the two databases; compare the shape of the projections.
+    assert_eq!(finals[0].1["tenant"][1], finals[1].1["tenant"][1]);
+    assert_eq!(finals[0].1["tenant"][2], finals[1].1["tenant"][2]);
+    assert_eq!(
+        finals[0].1["entitlements"].as_array().unwrap().len(),
+        finals[1].1["entitlements"].as_array().unwrap().len()
+    );
+    assert_eq!(finals[0].1["objects"], finals[1].1["objects"]);
+}
+
+/// Usage inside the recovered period is accepted and resolves to the recovered period.
+/// Without the recovered payment the same occurrence stays unavailable.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn late_usage_in_a_recovered_period_resolves_against_that_period() {
+    let s = scenario().await;
+    s.allowance(10).await;
+    s.pay_c("evt_c").await;
+    let usage_at = s.time.days(1);
+    assert!(
+        s.resolve(usage_at)
+            .await
+            .is_err_and(|e| e.is::<delcore_api::postgres::PeriodUnavailable>()),
+        "unpaid missing coverage stays unavailable"
+    );
+    s.pay_a("evt_a").await;
+    let (starts, ends, _) = s.time.payment_a();
+    assert_eq!(s.resolve(usage_at).await.unwrap(), (starts, ends));
+    s.ingest("late_usage", "14", usage_at).await;
+    assert_eq!(s.period_of("late_usage").await, (starts, ends));
+    s.f.process_metering().await;
+    // The recovered period's own allowance of 10 absorbs the usage, leaving 4 units charged.
+    let charged: f64 = sqlx::query_scalar("SELECT -COALESCE(sum(amount),0)::float8 FROM ledger WHERE tenant_id=$1::text::uuid AND period_start=$2")
+        .bind(&s.tenant).bind(starts).fetch_one(&s.f.db).await.unwrap();
+    assert!((charged - 4.0).abs() < 1e-9, "unexpected charge {charged}");
+    let other: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM ledger WHERE tenant_id=$1::text::uuid AND period_start=$2",
+    )
+    .bind(&s.tenant)
+    .bind(s.time.payment_c().0)
+    .fetch_one(&s.f.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        other, 0,
+        "recovered usage must not touch the current period"
+    );
+}
+
+/// Replaying the recovered payment under the original or a fresh event identifier adds nothing.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn replayed_historical_renewal_adds_no_accounting() {
+    let s = scenario().await;
+    s.allowance(10).await;
+    s.pay_c("evt_c").await;
+    s.pay_a("evt_a").await;
+    let accounting = s.accounting().await;
+    let projections = s.projections().await;
+    let grants: i64 = s.count("allowance_grants").await;
+    let ledger: i64 = s.count("ledger").await;
+    s.f.worker.process_webhook("evt_a").await.unwrap();
+    s.pay_a("evt_a_fresh").await;
+    // The same period under another transaction identifier is covered already.
+    s.pay("evt_a_other_txn", "txn_a_other", s.time.payment_a())
+        .await;
+    assert_eq!(s.accounting().await, accounting);
+    assert_eq!(s.projections().await, projections);
+    assert_eq!(s.count("allowance_grants").await, grants);
+    assert_eq!(s.count("ledger").await, ledger);
+}
+
+/// A failure while recording the historical period rolls the webhook back; the retry succeeds.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn historical_renewal_is_atomic_and_retryable() {
+    let s = scenario().await;
+    s.allowance(10).await;
+    s.pay_c("evt_c").await;
+    let before = (s.accounting().await, s.projections().await);
+    sqlx::query("CREATE OR REPLACE FUNCTION fixture_fail_period() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'fixture period failure'; END $$ LANGUAGE plpgsql")
+        .execute(&s.f.db).await.unwrap();
+    sqlx::query("CREATE TRIGGER fixture_fail_period BEFORE INSERT ON billing_periods FOR EACH ROW EXECUTE FUNCTION fixture_fail_period()")
+        .execute(&s.f.db).await.unwrap();
+    let a = s.time.payment_a();
+    let data = s.completion("txn_a", a);
+    assert!(
+        s.try_deliver("evt_a", "transaction.completed", a.2, data)
+            .await
+            .is_err()
+    );
+    assert_eq!((s.accounting().await, s.projections().await), before);
+    let processed: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT processed_at FROM webhooks WHERE event_id='evt_a'")
+            .fetch_one(&s.f.db)
+            .await
+            .unwrap();
+    assert!(processed.is_none());
+    sqlx::query("DROP TRIGGER fixture_fail_period ON billing_periods")
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    // The restarted worker retries the same stored event.
+    s.f.worker.process_webhook("evt_a").await.unwrap();
+    let accounting = s.accounting().await;
+    assert_eq!(accounting["transactions"], json!(["txn_a", "txn_c"]));
+    assert_eq!(accounting["periods"].as_array().unwrap().len(), 2);
+    assert_eq!(accounting["grants"].as_array().unwrap().len(), 2);
+}
+
+/// A scheduled change that the newer renewal installed does not rewrite the older period: the
+/// recovered period keeps the allowance and the postpaid policy held when it began.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn recovered_period_keeps_the_terms_held_when_it_began() {
+    let s = scenario().await;
+    let tenant = Uuid::parse_str(&s.tenant).unwrap();
+    let old_plan: Uuid = sqlx::query_scalar("SELECT plan_id FROM tenants WHERE id=$1")
+        .bind(tenant)
+        .fetch_one(&s.f.db)
+        .await
+        .unwrap();
+    let old_recurring: Uuid =
+        sqlx::query_scalar("SELECT id FROM prices WHERE external_price_id=$1")
+            .bind(EXTERNAL_PRICE)
+            .fetch_one(&s.f.db)
+            .await
+            .unwrap();
+    let service = Uuid::parse_str(&s.service_id().await).unwrap();
+    s.allowance(10).await;
+    // The held allowance of 10 ends where the scheduled change takes effect.
+    let change = s.time.days(40);
+    sqlx::query("UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND price_id IN (SELECT id FROM prices WHERE kind=1)")
+        .bind(tenant).bind(change).execute(&s.f.db).await.unwrap();
+    sqlx::query("UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL")
+        .bind(tenant)
+        .bind(change)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    // The new terms: another plan with a different recurring price, allowance 20, not postpaid.
+    let new_plan = Uuid::now_v7();
+    sqlx::query("INSERT INTO plans(id,name,rank,free,postpaid,is_default) SELECT $1,'scale',rank+100,false,false,false FROM plans WHERE id=$2")
+        .bind(new_plan).bind(old_plan).execute(&s.f.db).await.unwrap();
+    let new_recurring = Uuid::now_v7();
+    sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3,'base',5,0,'USD','pri_new_terms',now(),2)")
+        .bind(new_recurring).bind(new_plan).bind(service).execute(&s.f.db).await.unwrap();
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)")
+        .bind(Uuid::now_v7())
+        .bind(tenant)
+        .bind(new_recurring)
+        .bind(change)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    s.insert_allowance(new_plan, 20, change, None).await;
+    // The newer period C is already current under the new terms.
+    sqlx::query("UPDATE tenants SET plan_id=$2,period_start=$3,period_end=$4 WHERE id=$1")
+        .bind(tenant)
+        .bind(new_plan)
+        .bind(change)
+        .bind(s.time.days(80))
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    let _ = old_recurring;
+    let projections = s.projections().await;
+    // The older period was paid under the old recurring price and allowance.
+    s.pay_a("evt_a").await;
+    let accounting = s.accounting().await;
+    assert_eq!(accounting["transactions"], json!(["txn_a"]));
+    let grants = accounting["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{accounting}");
+    assert!(grants[0].as_str().unwrap().contains("|10|"), "{accounting}");
+    let periods = accounting["periods"].as_array().unwrap();
+    assert_eq!(periods.len(), 1, "{accounting}");
+    assert!(
+        periods[0].as_str().unwrap().ends_with("|true"),
+        "{accounting}"
+    );
+    assert_eq!(s.projections().await, projections);
+    // The new recurring price was not held when A began, so it cannot pay for A.
+    let mut other = s.completion(
+        "txn_a_new_terms",
+        (s.time.days(-40), s.time.days(0), s.time.days(0)),
+    );
+    other["items"][0]["price"]["id"] = json!("pri_new_terms");
+    s.deliver(
+        "evt_a_new_terms",
+        "transaction.completed",
+        s.time.days(0) + Duration::seconds(2),
+        other,
+    )
+    .await;
+    assert_eq!(s.accounting().await, accounting);
+}
+
+/// Invalid payments and unpaid missing periods are rejected without any accounting or state change.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn invalid_historical_renewals_record_nothing() {
+    let s = scenario().await;
+    s.allowance(10).await;
+    s.pay_c("evt_c").await;
+    let accounting = s.accounting().await;
+    let projections = s.projections().await;
+    let a = s.time.payment_a();
+    let mut mismatches = Vec::new();
+    let mut customer = s.completion("txn_customer", a);
+    customer["customer_id"] = json!("ctm_other");
+    mismatches.push(customer);
+    let mut subscription = s.completion("txn_subscription", a);
+    subscription["subscription_id"] = json!("sub_other");
+    mismatches.push(subscription);
+    let mut currency = s.completion("txn_currency", a);
+    currency["currency_code"] = json!("EUR");
+    mismatches.push(currency);
+    let mut items = s.completion("txn_items", a);
+    items["items"][0]["price"]["id"] = json!("pri_other");
+    mismatches.push(items);
+    let mut quantity = s.completion("txn_quantity", a);
+    quantity["items"][0]["quantity"] = json!(2);
+    mismatches.push(quantity);
+    let mut pending = s.completion("txn_status", a);
+    pending["status"] = json!("billed");
+    mismatches.push(pending);
+    let mut inverted = s.completion("txn_inverted", a);
+    inverted["billing_period"] = json!({"starts_at":a.1.to_rfc3339(),"ends_at":a.0.to_rfc3339()});
+    mismatches.push(inverted);
+    // A period reaching into the current one is not history.
+    let overlapping = s.completion("txn_overlap", (s.time.days(10), s.time.days(50), a.2));
+    mismatches.push(overlapping);
+    for (index, data) in mismatches.into_iter().enumerate() {
+        s.deliver(
+            &format!("evt_invalid_{index}"),
+            "transaction.completed",
+            a.2 + Duration::seconds(index as i64),
+            data,
+        )
+        .await;
+        assert_eq!(s.accounting().await, accounting, "mismatch {index}");
+        assert_eq!(s.projections().await, projections, "mismatch {index}");
+    }
+    // No payment confirmed the gap, so usage inside it has no period.
+    assert!(
+        s.resolve(s.time.days(1))
+            .await
+            .is_err_and(|e| e.is::<delcore_api::postgres::PeriodUnavailable>())
+    );
+}
+
+/// A newer failure, status and independent restrictions survive the recovery of an older period.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn historical_renewal_keeps_newer_failure_and_watermarks() {
+    let s = scenario().await;
+    s.allowance(10).await;
+    s.pay_c("evt_c").await;
+    s.past_due("evt_b").await;
+    s.active("evt_active").await;
+    // The failure at day 20 predates renewal C, which already resolved it.
+    assert!(!s.flag().await);
+    let failed_at = s.time.days(41);
+    s.status("evt_failed", "subscription.past_due", "past_due", failed_at)
+        .await;
+    assert!(s.flag().await);
+    let projections = s.projections().await;
+    s.pay_a("evt_a").await;
+    assert_eq!(s.projections().await, projections);
+    assert!(s.flag().await);
+    assert_eq!(
+        s.accounting().await["transactions"],
+        json!(["txn_a", "txn_c"])
+    );
+    assert_eq!(
+        s.authorize().await["reasons"],
+        json!(["BLOCK_REASON_RENEWAL"])
+    );
+}

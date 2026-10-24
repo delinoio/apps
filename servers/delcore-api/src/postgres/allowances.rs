@@ -6,12 +6,19 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub type Allowances = HashMap<String, Decimal>;
-async fn current_allowances_inner(
+/// Sums the usage allowances of the entitlements the tenant holds now, or, when `as_of` is set,
+/// of the entitlements held at that instant. Starts are inclusive and ends are exclusive.
+async fn allowances_inner(
     db: &mut PgConnection,
     tenant: &str,
+    as_of: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Allowances> {
-    let rows:Vec<(String,String,String)> = sqlx::query_as("SELECT p.service_id::text,p.meter,sum(p.included)::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.kind=1 GROUP BY p.service_id,p.meter")
-        .bind(Uuid::parse_str(tenant)?).fetch_all(db).await?;
+    let rows:Vec<(String,String,String)> = match as_of {
+        None => sqlx::query_as("SELECT p.service_id::text,p.meter,sum(p.included)::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.ends_at IS NULL AND p.kind=1 GROUP BY p.service_id,p.meter")
+            .bind(Uuid::parse_str(tenant)?).fetch_all(db).await?,
+        Some(at) => sqlx::query_as("SELECT p.service_id::text,p.meter,sum(p.included)::text FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2) AND p.kind=1 GROUP BY p.service_id,p.meter")
+            .bind(Uuid::parse_str(tenant)?).bind(at).fetch_all(db).await?,
+    };
     rows.into_iter()
         .map(|(service, meter, amount)| {
             Ok((format!("{service}\0{meter}"), Decimal::parse(&amount)?))
@@ -27,8 +34,9 @@ async fn grant_allowances_inner(
     at: DateTime<Utc>,
     source: &str,
     previous: Option<&Allowances>,
+    as_of: Option<DateTime<Utc>>,
 ) -> anyhow::Result<()> {
-    let current = current_allowances_inner(db, tenant).await?;
+    let current = allowances_inner(db, tenant, as_of).await?;
     for (key, mut amount) in current {
         if let Some(previous) = previous {
             amount = amount.sub(previous.get(&key).unwrap_or(&Decimal::zero()));
@@ -69,9 +77,7 @@ async fn grant_allowances_inner(
 }
 
 pub async fn current_allowances(db: &mut PgConnection, tenant: &str) -> crate::Result<Allowances> {
-    current_allowances_inner(db, tenant)
-        .await
-        .map_err(Into::into)
+    allowances_inner(db, tenant, None).await.map_err(Into::into)
 }
 #[allow(clippy::too_many_arguments)]
 pub async fn grant_allowances(
@@ -83,7 +89,25 @@ pub async fn grant_allowances(
     source: &str,
     previous: Option<&Allowances>,
 ) -> crate::Result<()> {
-    grant_allowances_inner(db, tenant, start, end, at, source, previous)
+    grant_allowances_inner(db, tenant, start, end, at, source, previous, None)
+        .await
+        .map_err(Into::into)
+}
+
+/// Grants the full allowances the tenant held at `held_at` for the period `[start, end)`.
+///
+/// A late payment for an already ended period must grant what the tenant held when that period
+/// began, not what it holds now: later plan changes never rewrite older periods. The grant is
+/// keyed by `source`, so repeating the call adds nothing.
+pub async fn grant_allowances_held_at(
+    db: &mut PgConnection,
+    tenant: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    held_at: DateTime<Utc>,
+    source: &str,
+) -> crate::Result<()> {
+    grant_allowances_inner(db, tenant, start, end, held_at, source, None, Some(held_at))
         .await
         .map_err(Into::into)
 }
