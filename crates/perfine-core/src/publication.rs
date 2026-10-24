@@ -157,6 +157,18 @@ impl<S: Store> Engine<S> {
             now,
             &("publish", approval, binding),
             |db| {
+                let attempts: u32 = db
+                    .approvals
+                    .values()
+                    .filter(|a| {
+                        a.binding.experiment == binding.experiment
+                            && a.binding.candidate == binding.candidate
+                    })
+                    .map(|a| u32::from(a.dispatch_attempts))
+                    .sum();
+                if attempts >= 2 {
+                    return Err(Error::Limit);
+                }
                 if db.approvals.values().any(|a| {
                     a.id != *approval
                         && a.binding.experiment == binding.experiment

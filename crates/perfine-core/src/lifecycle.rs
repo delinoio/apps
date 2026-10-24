@@ -150,6 +150,7 @@ pub struct Tombstone {
     pub cleanup_pending: bool,
     pub cleanup_failures: u64,
     pub cleanup_workspaces: Vec<Workspace>,
+    pub cleanup_evidence: std::collections::BTreeSet<Fingerprint>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Receipt {
@@ -646,6 +647,17 @@ impl<S: Store> Engine<S> {
                 Tombstone {
                     cleanup_pending: true,
                     cleanup_failures: 0,
+                    cleanup_evidence: exp
+                        .completed_steps
+                        .values()
+                        .cloned()
+                        .chain(
+                            exp.candidates
+                                .values()
+                                .filter_map(|c| c.evaluation.as_ref())
+                                .flat_map(|e| e.evidence_fingerprints.iter().cloned()),
+                        )
+                        .collect(),
                     cleanup_workspaces: exp.candidates.into_values().map(|c| c.workspace).collect(),
                 },
             );
@@ -666,6 +678,7 @@ impl<S: Store> Engine<S> {
                 if succeeded {
                     t.cleanup_pending = false;
                     t.cleanup_workspaces.clear();
+                    t.cleanup_evidence.clear();
                     db.approvals.retain(|_, a| &a.binding.experiment != id);
                 } else {
                     t.cleanup_failures = t.cleanup_failures.saturating_add(1);
