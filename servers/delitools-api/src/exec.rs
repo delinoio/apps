@@ -154,6 +154,11 @@ impl Inner {
                     }
                 }
             }
+            // No attempt may start once the request deadline has passed; check it explicitly rather
+            // than relying on the poll order of the `select!` below.
+            if Instant::now() >= job.deadline {
+                return Err(self.stopped(Stop::TimedOut));
+            }
             // Biased: cancellation, including the instance fence, is observed before the Gateway
             // future is first polled, so no attempt starts once the job is canceled.
             let outcome = tokio::select! {

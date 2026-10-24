@@ -96,6 +96,7 @@ External individuals and organizations, CI jobs and service operators.
 - For transient upload/completion network or server errors, retry at most three times. After retries, fail the job by default; permit configuration to warn and pass instead.
 - Maintain one PR comment. Each upload updates the cumulative results of the latest registered execution on the PR's latest commit; completion updates the completion state. Older commit/execution updates must not replace the latest comment contents. Earlier results remain available through web history.
 - PR comment publication/update failure produces a warning only. It does not invalidate stored measurements, change the regression result, or independently fail CI.
+- Optional PR comment publication runs inline after persistence within one absolute cutoff fixed at request ingress, which an outermost HTTP middleware stamps when the headers arrive and before the Connect service reads or decodes the body (a handler without that stamp skips publication instead of starting a new budget): the earlier of the declared Connect client deadline and the 30 second Action response envelope, minus a 2 second response reserve. Do not restart the budget after the commit. Pool acquisition, the repository lock, the reread, installation tokens, PR lookup, every comment page and the final POST/PATCH share that cutoff. A request whose budget is already exhausted after persistence skips publication. Expiry drops the publication transaction to release the repository lock, leaves committed state unchanged, and yields the same warning and GitHub failure accounting as a returned publication error. Cancellation cannot prove that GitHub discarded an accepted POST/PATCH. Global server and Action timeouts are not increased for publication, and mandatory failures stay request failures.
 
 ### Deletion, telemetry, operations, and security
 
@@ -136,6 +137,8 @@ Check current space permissions on protected operations. Verify GitHub signature
 ## Logging
 
 Use correlation IDs and bounded error categories. Server logs use `tracing`; Action logs and summaries describe failures without credentials.
+
+Every response carries `X-Correlation-Id`, including a timeout. A client `Connect-Timeout-Ms` deadline shorter than the 60-second request timeout applies as the client's absolute deadline. When it expires before the handler finishes, the transport cancels the handler and the HTTP boundary replaces its bare 504 with the same result as the whole-request timeout: HTTP 504, Connect `deadline_exceeded`, a server-generated UUID in `X-Correlation-Id` and one safe structured timeout warning that logs the same ID without credentials or payload data. The response carries no DevBase typed detail or `X-Devbase-Trace-Id`, keeps `Cache-Control: no-store`, and counts once as `server_error`. A 504 that already carries `X-Correlation-Id` passes through unchanged.
 
 ## Build and Test
 

@@ -237,17 +237,20 @@ fn record_outcome(policy: &Policy, procedure: Option<&'static str>, code: &str, 
 
 /// Detects the bare `deadline_exceeded` response that the Connect transport synthesizes when a
 /// client's `Connect-Timeout-Ms` expires first. The transport cancels the handler at that point,
-/// so the DevBase error conversion never runs and the response lacks the typed detail and trace
-/// header. Handler-produced errors always carry the trace header and the handler never reports
-/// `deadline_exceeded`, so a 504 without the header can only come from that transport path.
+/// so the service error conversion never runs and the response lacks the service's correlation
+/// header (`X-Devbase-Trace-Id` for DevBase, `X-Correlation-Id` for Git Tracker) and, for DevBase,
+/// the typed detail. Handler-produced errors always carry that header and the handler never
+/// reports `deadline_exceeded`, so a 504 without the header can only come from that transport
+/// path. A 504 that already carries the header is passed through unchanged.
 ///
 /// Adapting the response here is deterministic whichever timer fires first. A second, slightly
-/// earlier timer would race the transport's own timer inside one runtime clock tick. Git Tracker
-/// is unaffected: it installs no client-deadline handling of this kind.
+/// earlier timer would race the transport's own timer inside one runtime clock tick.
 fn is_untyped_client_deadline(service: Service, response: &Response) -> bool {
-    matches!(service, Service::DevBase)
-        && response.status() == StatusCode::GATEWAY_TIMEOUT
-        && !response.headers().contains_key("x-devbase-trace-id")
+    let header = match service {
+        Service::DevBase => "x-devbase-trace-id",
+        Service::GitTracker => "x-correlation-id",
+    };
+    response.status() == StatusCode::GATEWAY_TIMEOUT && !response.headers().contains_key(header)
 }
 
 fn timeout_response(service: Service) -> Response {
@@ -623,10 +626,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn untyped_client_deadline_responses_are_adapted_for_devbase_only() {
+    async fn untyped_client_deadline_responses_are_adapted_for_both_services() {
         // `/bare` mimics the response the Connect transport produces when a client deadline
-        // expires first; `/typed` is a 504 that already carries the DevBase trace header.
-        let app = |service: Service| {
+        // expires first; `/typed` is a 504 that already carries the service's correlation header.
+        let app = |policy: Policy| {
             Router::new()
                 .route(
                     "/bare",
@@ -643,15 +646,15 @@ mod tests {
                     post(|| async {
                         (
                             StatusCode::GATEWAY_TIMEOUT,
-                            [("X-Devbase-Trace-Id", "existing-trace")],
+                            [
+                                ("X-Devbase-Trace-Id", "existing-trace"),
+                                ("X-Correlation-Id", "existing-trace"),
+                            ],
                             "typed",
                         )
                     }),
                 )
-                .layer(axum::middleware::from_fn_with_state(
-                    policy(service, Some(|_| Some("GetProject"))),
-                    middleware,
-                ))
+                .layer(axum::middleware::from_fn_with_state(policy, middleware))
         };
         let send = |app: Router, path: &'static str| async move {
             let response = tower::ServiceExt::oneshot(
@@ -666,7 +669,7 @@ mod tests {
         };
 
         // DevBase: the bare response becomes the typed timeout and is counted once.
-        let app_devbase = app(Service::DevBase);
+        let app_devbase = app(policy(Service::DevBase, Some(|_| Some("GetProject"))));
         let (parts, body) = send(app_devbase.clone(), "/bare").await;
         assert_eq!(parts.status, StatusCode::GATEWAY_TIMEOUT);
         let trace = parts.headers["x-devbase-trace-id"].to_str().unwrap();
@@ -684,12 +687,86 @@ mod tests {
         assert_eq!(parts.headers["x-devbase-trace-id"], "existing-trace");
         assert_eq!(&body[..], b"typed");
 
-        // Git Tracker: the same bare response is never rewritten.
-        let (parts, body) = send(app(Service::GitTracker), "/bare").await;
+        // Git Tracker: the same bare response gets a server-generated correlation ID, one
+        // matching safe warning, no DevBase detail or header, `no-store` and one metric increment.
+        let logs = capture_logs();
+        let metrics = Arc::new(Metrics::new(Service::GitTracker));
+        let git_tracker = app(Policy {
+            origin: "https://console.example".into(),
+            metrics: metrics.clone(),
+            ..policy(Service::GitTracker, None)
+        });
+        let response = tower::ServiceExt::oneshot(
+            git_tracker.clone(),
+            Request::post("/bare")
+                .header("Origin", "https://console.example")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let (parts, body) = response.into_parts();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         assert_eq!(parts.status, StatusCode::GATEWAY_TIMEOUT);
+        let trace = parts.headers["x-correlation-id"].to_str().unwrap();
+        assert!(uuid::Uuid::parse_str(trace).is_ok());
         assert!(!parts.headers.contains_key("x-devbase-trace-id"));
-        assert!(!parts.headers.contains_key("x-correlation-id"));
-        assert!(String::from_utf8_lossy(&body).contains("request timeout"));
+        assert_eq!(parts.headers["cache-control"], "no-store");
+        assert_eq!(
+            parts.headers["access-control-expose-headers"],
+            "X-Correlation-Id"
+        );
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "deadline_exceeded");
+        assert_eq!(body["message"], "request deadline exceeded");
+        assert!(body.get("details").is_none());
+        assert_eq!(
+            metrics.requests.with_label_values(&["server_error"]).get(),
+            1
+        );
+        let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("request deadline exceeded"), "{logs}");
+        assert!(logs.contains(trace), "{logs}");
+        assert_eq!(
+            logs.matches("request deadline exceeded").count(),
+            1,
+            "{logs}"
+        );
+
+        // Git Tracker: a 504 that already carries its correlation ID is passed through unchanged
+        // and still counts once.
+        let (parts, body) = send(git_tracker, "/typed").await;
+        assert_eq!(parts.headers["x-correlation-id"], "existing-trace");
+        assert_eq!(&body[..], b"typed");
+        assert_eq!(
+            metrics.requests.with_label_values(&["server_error"]).get(),
+            2
+        );
+    }
+
+    /// Installs a thread-local subscriber that records formatted log lines. The test runtime is
+    /// single-threaded, so the guard also covers the in-process request futures.
+    fn capture_logs() -> Arc<Mutex<Vec<u8>>> {
+        #[derive(Clone)]
+        struct Sink(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Sink {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let sink = Sink(logs.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || sink.clone())
+            .finish();
+        // Leak the guard for the rest of this test thread; each test owns its thread.
+        std::mem::forget(tracing::subscriber::set_default(subscriber));
+        logs
     }
 
     /// Records every span the middleware creates as exported span data: the span name and each
