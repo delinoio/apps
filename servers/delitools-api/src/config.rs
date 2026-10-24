@@ -264,6 +264,9 @@ impl Config {
             self.outbox.backoff_min <= self.outbox.backoff_max,
             "DELITOOLS_OUTBOX_BACKOFF_MIN must not exceed DELITOOLS_OUTBOX_BACKOFF_MAX"
         );
+        // A bound that cannot form a calendar deadline would make every retry fail to schedule.
+        ensure_schedulable("DELITOOLS_OUTBOX_BACKOFF_MIN", self.outbox.backoff_min)?;
+        ensure_schedulable("DELITOOLS_OUTBOX_BACKOFF_MAX", self.outbox.backoff_max)?;
         ensure!(
             self.outbox.batch <= 500,
             "DELITOOLS_OUTBOX_BATCH must not exceed 500"
@@ -275,6 +278,22 @@ impl Config {
         self.models.require_extraction_model()?;
         Ok(())
     }
+}
+
+/// Rejects a backoff bound that cannot be added to the current time as a calendar deadline.
+///
+/// Both the conversion to a signed chrono delta and the checked calendar addition must succeed.
+/// The error names the setting only and never prints its value.
+fn ensure_schedulable(key: &str, bound: Duration) -> Result<()> {
+    let schedulable = chrono::Duration::from_std(bound)
+        .ok()
+        .and_then(|delta| server_common::now().checked_add_signed(delta))
+        .is_some();
+    ensure!(
+        schedulable,
+        "{key} is too large to schedule a retry deadline"
+    );
+    Ok(())
 }
 
 /// Parses durations such as `250ms`, `5s`, `2m` or `1h30m`.
@@ -395,6 +414,10 @@ pub(crate) mod tests {
             ("DELITOOLS_MAX_RETRIES", "-1"),
             ("DELITOOLS_RETRY_BASE_DELAY", "1h"),
             ("DELITOOLS_OUTBOX_BACKOFF_MIN", "2h"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MIN", "10000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MIN", "10000000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MAX", "10000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MAX", "10000000000000000s"),
             ("DELITOOLS_OUTBOX_BATCH", "1000"),
             ("AI_GATEWAY_BASE_URL", "http://gateway.example/v1"),
             ("DELCORE_URL", "ftp://delcore"),
@@ -405,6 +428,41 @@ pub(crate) mod tests {
             env.insert(key.into(), value.into());
             assert!(load(&env).is_err(), "{key}={value}");
         }
+    }
+
+    #[test]
+    fn unschedulable_backoff_bounds_fail_loading_and_validation_without_panicking() {
+        let dir = tempdir();
+        for secs in ["10000000000000s", "10000000000000000s"] {
+            let mut env = base_env(&dir);
+            env.insert("DELITOOLS_OUTBOX_BACKOFF_MIN".into(), secs.into());
+            env.insert("DELITOOLS_OUTBOX_BACKOFF_MAX".into(), secs.into());
+            let message = format!("{:#}", load(&env).unwrap_err());
+            assert!(
+                message.contains("DELITOOLS_OUTBOX_BACKOFF_MIN"),
+                "{message}"
+            );
+            assert!(!message.contains(secs), "{message}");
+
+            let mut valid = load(&base_env(&dir)).unwrap();
+            valid.outbox.backoff_min = Duration::from_secs(5);
+            valid.outbox.backoff_max =
+                Duration::from_secs(secs.trim_end_matches('s').parse().unwrap());
+            let message = format!("{:#}", valid.validate().unwrap_err());
+            assert!(
+                message.contains("DELITOOLS_OUTBOX_BACKOFF_MAX"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn large_representable_backoff_bounds_are_accepted() {
+        let dir = tempdir();
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_OUTBOX_BACKOFF_MIN".into(), "1440h".into());
+        env.insert("DELITOOLS_OUTBOX_BACKOFF_MAX".into(), "5184000s".into());
+        assert!(load(&env).is_ok());
     }
 
     #[test]

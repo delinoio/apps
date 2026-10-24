@@ -313,6 +313,54 @@ async fn delivery_reports_stable_events_and_removes_accepted_rows() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn unschedulable_retry_deadline_fails_the_cycle_and_keeps_the_row_pending() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start(Some(db.pool.clone())).await;
+    let outbox = Outbox::new(db.pool.clone());
+    let t0 = now_micros();
+    insert(&outbox, TENANT, Uuid::now_v7(), 1, t0).await;
+    // Startup validation rejects these bounds; bypass it to prove the worker's own defense.
+    let mut worker = delivery(&h, &db.pool);
+    worker.settings.backoff_min = std::time::Duration::from_secs(10_000_000_000_000);
+    worker.settings.backoff_max = worker.settings.backoff_min;
+    h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
+        status: 503,
+        code: "unavailable",
+        reason: None,
+    });
+    let before: Vec<(String, i32, String)> = sqlx::query_as(
+        "SELECT state,delivery_attempts,expires_at::text FROM usage_outbox ORDER BY event_key",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        worker.cycle(t0).await,
+        Err(delitools_api::outbox::CycleError::Schedule(_))
+    ));
+    let after: Vec<(String, i32, String)> = sqlx::query_as(
+        "SELECT state,delivery_attempts,expires_at::text FROM usage_outbox ORDER BY event_key",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        before, after,
+        "the row is neither deleted, poisoned nor re-expired"
+    );
+    assert_eq!(count(&db.pool, Some("pending")).await, 2);
+    // The next cycle with representable bounds runs normally.
+    h.delcore.lock().unwrap().ingest_default = None;
+    delivery(&h, &db.pool)
+        .cycle(t0 + Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(count(&db.pool, None).await, 0);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn failed_deliveries_retry_with_identical_identity_and_bounded_backoff() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;

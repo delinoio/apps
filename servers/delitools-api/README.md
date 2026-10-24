@@ -144,7 +144,7 @@ Copy the names in `.env.example` into the operator's environment. Development mo
 | `DELITOOLS_PRICE_CACHE_TTL`                                       | `30s`                             | Reuse of a successful price check. A missing price is re-read after 5 seconds.                   |
 | `DELITOOLS_OUTBOX_INTERVAL`                                       | `5s`                              | Delivery cycle interval.                                                                         |
 | `DELITOOLS_OUTBOX_BATCH`                                          | 50 (max 500)                      | Rows per cycle.                                                                                  |
-| `DELITOOLS_OUTBOX_BACKOFF_MIN`, `DELITOOLS_OUTBOX_BACKOFF_MAX`    | `5s`, `15m`                       | Delivery backoff bounds.                                                                         |
+| `DELITOOLS_OUTBOX_BACKOFF_MIN`, `DELITOOLS_OUTBOX_BACKOFF_MAX`    | `5s`, `15m`                       | Delivery backoff bounds; startup rejects a bound too large to form a calendar retry deadline.    |
 | `DELITOOLS_OUTBOX_ALERT_BACKLOG`, `DELITOOLS_OUTBOX_ALERT_AGE`    | 1000, `15m`                       | Alert thresholds.                                                                                |
 | `LOG_FORMAT`, `NO_COLOR`, `OTEL_EXPORTER_OTLP_ENDPOINT`           | text, color, off                  | Logs are ANSI colored by default; `NO_COLOR=1` disables it and `LOG_FORMAT=json` emits JSON.     |
 

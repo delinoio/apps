@@ -40,6 +40,57 @@ pub enum Outcome {
     TenantDeleted,
 }
 
+/// A retry deadline that cannot be represented, so the row cannot be rescheduled.
+///
+/// Carries no content: the category is bounded and the configured values are never printed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScheduleError;
+
+impl ScheduleError {
+    /// Bounded log category of this failure.
+    pub const CATEGORY: &'static str = "usage_schedule";
+}
+
+impl std::fmt::Display for ScheduleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("usage retry deadline is not representable")
+    }
+}
+
+impl std::error::Error for ScheduleError {}
+
+/// Failure of one delivery cycle.
+#[derive(Debug)]
+pub enum CycleError {
+    /// PostgreSQL access failed.
+    Database(sqlx::Error),
+    /// A retry deadline could not be formed; the affected row stays pending.
+    Schedule(ScheduleError),
+}
+
+impl std::fmt::Display for CycleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Database(e) => write!(f, "usage outbox database error: {e}"),
+            Self::Schedule(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for CycleError {}
+
+impl From<sqlx::Error> for CycleError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Database(e)
+    }
+}
+
+impl From<ScheduleError> for CycleError {
+    fn from(e: ScheduleError) -> Self {
+        Self::Schedule(e)
+    }
+}
+
 /// What to persist after an [`Outcome`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -64,23 +115,29 @@ pub fn backoff(failed_deliveries: i32, settings: &OutboxSettings) -> Duration {
 }
 
 /// Pure state machine of a pending row. `delivery_attempts` counts deliveries tried before this one.
+///
+/// A retry fails with [`ScheduleError`] when its backoff cannot be converted to a calendar
+/// delta or added to `now`. Startup validation rejects such bounds, so this is a defense that
+/// keeps the worker alive and the row pending instead of panicking.
 pub fn transition(
     outcome: Outcome,
     delivery_attempts: i32,
     now: DateTime<Utc>,
     settings: &OutboxSettings,
-) -> Transition {
-    match outcome {
+) -> Result<Transition, ScheduleError> {
+    Ok(match outcome {
         Outcome::Delivered | Outcome::TenantDeleted => Transition::Delete,
         Outcome::Poison(category) => Transition::Poison { category },
-        Outcome::Retry(category) => Transition::Reschedule {
-            delivery_attempts: delivery_attempts.saturating_add(1),
-            next_attempt_at: now
-                + chrono::Duration::from_std(backoff(delivery_attempts, settings))
-                    .unwrap_or(chrono::Duration::days(1)),
-            category,
-        },
-    }
+        Outcome::Retry(category) => {
+            let delta = chrono::Duration::from_std(backoff(delivery_attempts, settings))
+                .map_err(|_| ScheduleError)?;
+            Transition::Reschedule {
+                delivery_attempts: delivery_attempts.saturating_add(1),
+                next_attempt_at: now.checked_add_signed(delta).ok_or(ScheduleError)?,
+                category,
+            }
+        }
+    })
 }
 
 /// True when a row created at `created_at` is expired at `now`. The boundary instant is expired.
@@ -275,7 +332,7 @@ pub struct Delivery {
 
 impl Delivery {
     /// Runs one expiry, tenant-lifecycle and delivery cycle at `now`.
-    pub async fn cycle(&self, now: DateTime<Utc>) -> Result<Stats, sqlx::Error> {
+    pub async fn cycle(&self, now: DateTime<Utc>) -> Result<Stats, CycleError> {
         let expired = self.outbox.expire(now).await?;
         if expired > 0 {
             self.metrics.expired.inc_by(expired);
@@ -336,7 +393,16 @@ impl Delivery {
                 }
                 _ => {}
             }
-            let next = transition(outcome, row.delivery_attempts, now, &self.settings);
+            // An impossible deadline leaves the row untouched and ends this cycle; the next
+            // cycle runs normally.
+            let next = transition(outcome, row.delivery_attempts, now, &self.settings)
+                .inspect_err(|_| {
+                    tracing::error!(
+                        category = ScheduleError::CATEGORY,
+                        alert = true,
+                        "usage retry deadline is not representable; the row stays pending"
+                    );
+                })?;
             self.outbox.apply(row.id, &next, now).await?;
         }
         let stats = self.outbox.stats(now).await?;
@@ -419,11 +485,11 @@ mod tests {
     fn delivered_and_deleted_tenants_remove_the_row() {
         let s = settings();
         assert_eq!(
-            transition(Outcome::Delivered, 3, at(0), &s),
+            transition(Outcome::Delivered, 3, at(0), &s).unwrap(),
             Transition::Delete
         );
         assert_eq!(
-            transition(Outcome::TenantDeleted, 0, at(0), &s),
+            transition(Outcome::TenantDeleted, 0, at(0), &s).unwrap(),
             Transition::Delete
         );
     }
@@ -432,7 +498,7 @@ mod tests {
     fn retryable_failures_reschedule_with_growing_backoff() {
         let s = settings();
         assert_eq!(
-            transition(Outcome::Retry("unavailable"), 0, at(100), &s),
+            transition(Outcome::Retry("unavailable"), 0, at(100), &s).unwrap(),
             Transition::Reschedule {
                 delivery_attempts: 1,
                 next_attempt_at: at(105),
@@ -440,7 +506,7 @@ mod tests {
             }
         );
         assert_eq!(
-            transition(Outcome::Retry("unavailable"), 2, at(100), &s),
+            transition(Outcome::Retry("unavailable"), 2, at(100), &s).unwrap(),
             Transition::Reschedule {
                 delivery_attempts: 3,
                 next_attempt_at: at(120),
@@ -450,10 +516,44 @@ mod tests {
     }
 
     #[test]
+    fn unrepresentable_retry_deadlines_are_errors_not_panics() {
+        for secs in [10_000_000_000_000_u64, 10_000_000_000_000_000, u64::MAX] {
+            let mut s = settings();
+            s.backoff_min = Duration::from_secs(secs);
+            s.backoff_max = Duration::from_secs(secs);
+            assert_eq!(
+                transition(Outcome::Retry("unavailable"), 0, server_common::now(), &s),
+                Err(ScheduleError),
+                "{secs}"
+            );
+            // Non-retry outcomes never need a deadline.
+            assert_eq!(
+                transition(Outcome::Delivered, 0, server_common::now(), &s),
+                Ok(Transition::Delete)
+            );
+        }
+    }
+
+    #[test]
+    fn large_representable_backoffs_still_schedule() {
+        let mut s = settings();
+        s.backoff_min = Duration::from_secs(60 * 86_400);
+        s.backoff_max = s.backoff_min;
+        assert_eq!(
+            transition(Outcome::Retry("unavailable"), 0, at(100), &s),
+            Ok(Transition::Reschedule {
+                delivery_attempts: 1,
+                next_attempt_at: at(100 + 60 * 86_400),
+                category: "unavailable"
+            })
+        );
+    }
+
+    #[test]
     fn poison_stops_delivery_without_rescheduling() {
         let s = settings();
         assert_eq!(
-            transition(Outcome::Poison("identity_conflict"), 1, at(0), &s),
+            transition(Outcome::Poison("identity_conflict"), 1, at(0), &s).unwrap(),
             Transition::Poison {
                 category: "identity_conflict"
             }
@@ -480,7 +580,7 @@ mod tests {
         let first = at(0);
         let mut deliveries = 0;
         for _ in 0..40 {
-            match transition(Outcome::Retry("unavailable"), deliveries, first, &s) {
+            match transition(Outcome::Retry("unavailable"), deliveries, first, &s).unwrap() {
                 Transition::Reschedule {
                     delivery_attempts, ..
                 } => deliveries = delivery_attempts,
