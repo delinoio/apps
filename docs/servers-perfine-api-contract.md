@@ -135,3 +135,5 @@ The versioned uncertainty and frozen configuration mapping is defined in the [pr
 Confirmed deleted spaces release active repository bindings even when they contain no experiments or preparations. Connection records remain available for cancellation and object-cleanup retries. Blocked spaces retain their bindings.
 
 Structured uploads accept only the exact engine bundle and normalized artifacts inspected through its verified run references. Unreferenced structured files are rejected, including for baseline-only uploads; declaring that a file contains no source snippets does not bypass this check.
+
+A bundle may reuse an identical validated baseline manifest as a comparison base. Bind each run ID to the complete manifest fingerprint and reject changed observations under the same ID. Same-SHA validation and repeat measurement identity rules remain enforced by the shared engine.

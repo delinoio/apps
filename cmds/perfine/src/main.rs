@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
+mod bundle;
 mod config;
+#[allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
+    reason = "Canonical generated protocol code is owned by the generator"
+)]
+mod protocol {
+    connectrpc::include_generated!();
+}
 mod local;
 mod mcp;
 mod remote;
@@ -60,6 +72,10 @@ pub(crate) enum Command {
         experiment: String,
         #[arg(long)]
         candidate: String,
+        #[arg(long)]
+        review: Option<PathBuf>,
+        #[arg(long)]
+        confirm_review: Option<String>,
     },
     Status {
         #[arg(long)]
@@ -83,7 +99,10 @@ pub(crate) enum Command {
         #[arg(long)]
         experiment: String,
         #[arg(long)]
-        envelope: PathBuf,
+        candidate: Option<String>,
+        #[arg(long, default_value_t = 0)]
+        #[serde(default)]
+        consent_revision: u64,
         #[arg(long)]
         endpoint: String,
         #[arg(long)]
@@ -136,6 +155,10 @@ impl App {
                 | Command::Cancel { .. }
                 | Command::Upload { .. }
                 | Command::Publish { .. }
+                | Command::Compare {
+                    review: Some(_),
+                    ..
+                }
         ) {
             self.claim_request(request, &invocation.command)?;
         }
@@ -157,21 +180,36 @@ impl App {
             Command::Compare {
                 experiment,
                 candidate,
-            } => self.compare(&experiment, &candidate),
+                review,
+                confirm_review,
+            } => review.map_or_else(
+                || self.compare(&experiment, &candidate),
+                |path| {
+                    self.review(
+                        &experiment,
+                        &candidate,
+                        request,
+                        &path,
+                        confirm_review.as_deref(),
+                    )
+                },
+            ),
             Command::Cancel {
                 experiment,
                 immediate,
             } => self.cancel(&experiment, request, immediate),
             Command::Upload {
                 experiment,
-                envelope,
+                candidate,
+                consent_revision,
                 endpoint,
                 space,
                 connection,
             } => self.upload(
                 &experiment,
                 request,
-                &envelope,
+                candidate.as_deref(),
+                consent_revision,
                 &endpoint,
                 &space,
                 &connection,

@@ -38,7 +38,9 @@ Use structured request/experiment correlation and redact secrets/raw evidence. D
 
 ## Build and Test
 
-Provide automated npm contents, standalone binary/checksum, Action runtime/distribution layout, immutable SHA, `vX.Y.Z` tag, no-moving-major-tag, and third-party notice checks. Run `pnpm test` and `pnpm build` in the implemented Action/package directories, plus root `cargo test` after Rust changes. Remove generated `dist` directories from the final worktree. Live npm/GitHub/App/OIDC/AI checks are not a first-release blocker and remain unperformed unless actually executed.
+Provide automated npm contents, standalone binary/checksum, Action runtime/distribution layout, immutable SHA, `vX.Y.Z` tag, no-moving-major-tag, and third-party notice checks. Run `pnpm test` and `pnpm build` in the implemented Action/package directories, plus root `cargo test` after Rust changes. Remove generated `dist` directories from the final worktree. CI and release preparation install the actual npm archive offline into a disposable directory and extract the standalone archive. Verify checksums, notices and provenance, run both executables with `--version`, and require the structured `doctor` missing-configuration diagnostic. This smoke check does not establish profiler readiness or live registry installation.
+
+Live npm/GitHub/App/OIDC/AI checks are not a first-release blocker and remain unperformed unless actually executed.
 
 Automated verification is the first-release gate. Follow the acceptance criteria and test scenarios in the [project index](project-perfine.md). Record source revision, commands, results, and unperformed checks in PR/CI evidence. Fixtures, mocked integrations, builds, and packaging do not establish live or native acceptance.
 
@@ -56,3 +58,41 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## Concrete distribution interface
+
+All release components use version `0.1.0` until a coordinated version change. The Rust package and executable are both `perfine`. The npm launcher executes its bundled `runtime/perfine` after checking `runtime/SHA256SUMS`. It does not download binaries during installation. Release builds target Linux x86_64 GNU on Ubuntu 24.04; users need a compatible GNU runtime (glibc 2.39 or later). Other platforms fail with an explicit unsupported-platform error.
+
+`packages/perfine/scripts/build.mjs` stages npm, standalone and Action layouts under ignored `packages/perfine/dist/release`. The default input is `target/release/perfine`; `PERFINE_BINARY`, `PERFINE_NOTICES` and `PERFINE_OUTPUT` provide explicit packaging inputs for fixture tests or release automation. Real release builds obtain dependency license texts from the locked Cargo dependency graph. Default builds regenerate notices on every invocation; an existing generated notice file is not a cache. Missing license texts fail preparation unless a reviewed supplement in `packages/perfine/license-supplements/manifest.json` matches the exact crate name, version, registry source, repository, license expression and crate VCS revision. Supplements preserve the original upstream text, immutable source URL and SHA-256 checksum; changed or unknown dependencies fail closed. Remove a supplement when an upgraded crate ships its license texts. Ubuntu distribution and release builds install `protobuf-compiler` and `libprotobuf-dev`, then verify `protoc` and the required well-known proto includes before building the CLI. Fixtures must label their substitute binaries and notices as fixtures. Every layout includes the root Apache license and notice, dependency license texts, binary checksum and source provenance. The standalone tarball and npm tarball also have release-level checksums. Action output includes `action.cjs`, `action.yml`, `ACTION_NOTICES` and `runtime/`, with no tracked `dist` directory. The monorepo commits the Action bundle and its bundled dependency notices; the Rust binary is generated only for distribution.
+
+### Action and CLI integration
+
+The Action accepts `command: measure`, an explicit UUID v7 `experiment`, and complete v1 YAML in `config`. It writes the exact YAML bytes to a private temporary file and invokes:
+
+```text
+perfine --repository <checkout> --config <private-file> --json measure --experiment <uuid-v7>
+```
+
+`config-sha256` is the exact YAML checksum. The Rust CLI validates required limits, workload, tools, immutable conditions and Docker isolation. The Action supplies a fresh home and an environment allowlist; it does not pass runner GitHub, OIDC or AI credentials to the CLI. The workflow must check out the declared source with `persist-credentials: false`, provision the trusted digest-pinned images and workload dependencies, and supply the experiment identifier. The generated manual workflow remains owned by the CLI. No Action command publishes candidates.
+
+The current adapter accepts only local authentication files. That implementation does not establish support for Codex API-key authentication or Claude setup-token authentication inside the agent container. Cloud `optimize` and `resume` fail closed with the local CLI alternative until the adapter implements and tests the official unattended route. Do not substitute an exported local cached login or invent an auth-file format. Any later enabling change must preserve the Docker adapter's isolated agent role, candidate environment allowlist and mounts, and independent upload/publication roles.
+
+### Separate OIDC upload stage
+
+Use a fresh upload job with `id-token: write`, no AI/publication secrets and no candidate execution. The upload Action accepts `command: upload`, `experiment`, `envelope`, `artifacts`, `space`, `connection` and a stable UUID v7 `request-id`. The envelope contains the v1 Connect `specification` and `manifest`; the artifact directory contains regular files named by their SHA-256. The Action checks declared hashes and sizes before requesting credentials. It rejects source-bearing evidence and requires explicit secret screening. Upload never deletes local evidence.
+
+Request an Actions OIDC token for audience `https://perfine.api.delino.io`. Check repository name/ID, run ID/attempt, source SHA, workflow SHA/ref and manual event against the runner context before transfer. Send the token only to the fixed Perfine endpoint using `Authorization: Actions <token>` with Connect JSON `BeginUpload` and `CompleteUpload`. Include the exact `githubExecution` binding. Token parsing on the runner is a consistency check; the server must independently verify its signature, issuer, audience, expiry, live repository connection, actor authority and execution binding. The two RPCs use the same UUID request ID within their separate method scopes; do not append a suffix. Signed storage PUT requests receive only permitted storage headers, never the OIDC token. A required `content-length` must equal the verified artifact byte count; duplicate header names are rejected. An incomplete completion response fails the stage and retains evidence for manual resend. This path does not provide raw-source consent management or export AI credentials to the service.
+
+### Release preparation and exact commit verification
+
+The dedicated `release-perfine.yml` workflow runs only by manual dispatch from main. Its input `vX.Y.Z` selects an existing immutable source tag `perfine@vX.Y.Z`; preparation verifies main ancestry and matching core, CLI, Action and npm versions. Its default `publish: false` builds and preserves reviewable artifacts without registry or repository publication. Publication requires an explicit `publish: true` dispatch and the protected `perfine-production` environment. Configure required reviewers, main-only deployment restrictions, `PERFINE_DISTRIBUTION_TOKEN` with contents-write authority only for the existing `delinoio/perfine-action` repository, and `PERFINE_NPM_TOKEN` for the npm package. The owning job uses the source repository token for its GitHub Release. Do not create the external repository implicitly.
+
+Action publication creates only an exact `vX.Y.Z` tag. It never updates a distribution branch, creates a moving major tag, force-pushes or replaces a tag. On retry, an existing tag must match every staged byte and source provenance. A different candidate requires a new version. After pushing, fetch the tag from the fixed distribution repository and verify its exact commit, layout, notices, binary checksum and source provenance. Return the verified SHA in `action-release.json` and the workflow's `action-commit` output. Generated workflows must use that SHA, never a source-monorepo SHA or a placeholder.
+
+The independent verification command is:
+
+```text
+PERFINE_RELEASE_TAG=vX.Y.Z PERFINE_ACTION_COMMIT=<exact-distribution-sha> PERFINE_SOURCE_COMMIT=<exact-source-sha> pnpm --dir packages/perfine release:verify
+```
+
+This command performs read-only fetches from the official Action repository and returns the verified record. It cannot manufacture a release SHA. Registry and GitHub Release publication do not overwrite existing versions/assets. After a partial publication failure, inspect which immutable artifacts exist before retrying; reconcile npm/GitHub outcomes manually instead of replacing them. Packaging fixtures do not establish npm installation, native profiler, live OIDC, provider-account or release acceptance.

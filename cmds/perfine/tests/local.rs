@@ -5,6 +5,21 @@ use perfine_core::{
 };
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
+// Dropped capabilities also remove root's DAC override. Bind mounts must use
+// the host owner's identity so CI's non-root checkout can write build output.
+fn fixture_user() -> String {
+    // Docker Desktop virtualizes bind ownership; its existing emulation fixture
+    // uses the VM's root identity rather than the macOS account UID.
+    if !cfg!(target_os = "linux") {
+        return "0:0".into();
+    }
+    let identity = |flag| {
+        let output = Command::new("id").arg(flag).output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    format!("{}:{}", identity("-u"), identity("-g"))
+}
 fn git(path: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .arg("-C")
@@ -55,7 +70,7 @@ fn setup(mode: &str) -> (tempfile::TempDir, Value) {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "fixture"]);
     let sha = git(&repo, &["rev-parse", "HEAD"]);
-    let docker = json!({"executable":std::env::var("PERFINE_TEST_DOCKER").unwrap_or_else(|_| "/usr/local/bin/docker".into()),"image":std::env::var("PERFINE_TEST_IMAGE").unwrap(),"dependency_names":["cc-valgrind"],"user":"0:0","memory_bytes":1_073_741_824_u64,"cpus":1,"process_limit":128,"command_timeout_seconds":60});
+    let docker = json!({"executable":std::env::var("PERFINE_TEST_DOCKER").unwrap_or_else(|_| "/usr/local/bin/docker".into()),"image":std::env::var("PERFINE_TEST_IMAGE").unwrap(),"dependency_names":["cc-valgrind"],"user":fixture_user(),"memory_bytes":1_073_741_824_u64,"cpus":1,"process_limit":128,"command_timeout_seconds":60});
     let auth = temp.path().join("fixture-auth.json");
     fs::write(&auth, "{}").unwrap();
     let mut agent_docker = docker.clone();
@@ -282,4 +297,182 @@ fn publication_reconciles_lost_response(
         fs::read_to_string(dir.join("attempts")).unwrap(),
         "attempt\n"
     );
+}
+
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn interrupted_candidate_resumes_same_workspace_without_duplicate_candidate() {
+    interrupted_candidate_resume(false, false);
+}
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn interrupted_implementation_resumes_original_admission() {
+    interrupted_candidate_resume(true, false);
+}
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn admitted_candidate_resumes_after_start_deadline() {
+    interrupted_candidate_resume(false, true);
+}
+fn interrupted_candidate_resume(before_admission: bool, expire_start: bool) {
+    use std::{
+        process::Stdio,
+        thread,
+        time::{Duration, Instant},
+    };
+    let (temp, mut config) = setup("pass");
+    let repo = temp.path().join("repo");
+    config["experiment"]["limits"]["candidate_duration_seconds"] = json!(240);
+    if expire_start {
+        config["experiment"]["limits"]["start_duration_seconds"] = json!(60);
+    }
+    config["adapter"]["build"].as_array_mut().unwrap().insert(
+        0,
+        command(
+            "/bin/sh",
+            &["-c", "if grep -Fq 'counts[256]' kernel.c; then sleep 5; fi"],
+        ),
+    );
+    fs::write(
+        repo.join("perfine.yaml"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    let id = ResourceId::generate();
+    let log_path = temp.path().join("child.log");
+    let log = fs::File::create(&log_path).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_perfine"))
+        .arg("--repository")
+        .arg(&repo)
+        .args(["--json", "optimize", "--experiment", id.as_str()])
+        .stdout(Stdio::from(log.try_clone().unwrap()))
+        .stderr(Stdio::from(log))
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let candidate = loop {
+        assert!(started.elapsed() < Duration::from_secs(120));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "{}",
+            fs::read_to_string(&log_path).unwrap()
+        );
+        if before_admission {
+            let path = repo.join(".perfine").join(id.as_str()).join("journal.json");
+            if let Ok(bytes) = fs::read(path) {
+                let journal: Value = serde_json::from_slice(&bytes).unwrap();
+                if let Some(attempt) = journal["attempts"]
+                    .as_object()
+                    .and_then(|a| a.values().next())
+                {
+                    break (
+                        attempt["candidate"].as_str().unwrap().to_owned(),
+                        json!({"workspace":attempt["workspace"],"head":config["experiment"]["incremental_base"]}),
+                    );
+                }
+            }
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+        let status = run(&repo, &["status", "--experiment", id.as_str()]);
+        if let Ok(v) = serde_json::from_slice::<Value>(&status.stdout)
+            && let Some(candidates) = v["result"]["experiment"]["candidates"].as_object()
+            && let Some((id, c)) = candidates.iter().next()
+            && c["state"] == "running"
+        {
+            break (id.clone(), c.clone());
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    child.kill().unwrap();
+    child.wait().unwrap();
+    // The prior container finishes before reattachment; no overlapping measurements.
+    thread::sleep(Duration::from_secs(7));
+    if expire_start {
+        wait_for_start_deadline(&repo, &id);
+    }
+    let resumed = run(&repo, &["resume", "--experiment", id.as_str()]);
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stdout)
+    );
+    let v: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    let candidates = v["result"]["experiment"]["candidates"].as_object().unwrap();
+    assert_eq!(candidates.len(), 1);
+    let completed = &candidates[&candidate.0];
+    assert_eq!(completed["state"], "completed", "{v}");
+    assert_eq!(completed["workspace"], candidate.1["workspace"]);
+    if before_admission {
+        assert_ne!(completed["head"], candidate.1["head"]);
+    } else {
+        assert_eq!(completed["head"], candidate.1["head"]);
+    }
+    assert_eq!(completed["evaluation"]["verdict"], "pass");
+}
+
+fn wait_for_start_deadline(repo: &Path, id: &ResourceId) {
+    let status = run(repo, &["status", "--experiment", id.as_str()]);
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    let deadline = status["result"]["experiment"]["start_deadline"]
+        .as_u64()
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(deadline.saturating_sub(now) <= 60);
+    std::thread::sleep(std::time::Duration::from_secs(
+        deadline.saturating_sub(now) + 1,
+    ));
+}
+
+#[path = "support/six_languages.rs"]
+mod six_languages;
+
+#[test]
+#[ignore = "requires provisioned measurement image; verifies real Actions-bound manifests"]
+fn actions_measurement_retains_execution_and_rejects_changed_attempt() {
+    use perfine_core::{adapters::ArtifactStore, evidence::Manifest, types::Fingerprint};
+    let (temp, _) = setup("none");
+    let repo = temp.path().join("repo");
+    let id = ResourceId::generate();
+    let invoke = |command: &str, attempt: &str| {
+        Command::new(env!("CARGO_BIN_EXE_perfine"))
+            .arg("--repository")
+            .arg(&repo)
+            .arg("--json")
+            .args([command, "--experiment", id.as_str()])
+            .env("PERFINE_GITHUB_RUN_ID", "42")
+            .env("PERFINE_GITHUB_RUN_ATTEMPT", attempt)
+            .output()
+            .unwrap()
+    };
+    let result = invoke("measure", "2");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let path = repo.join(".perfine").join(id.as_str()).join("journal.json");
+    let before = fs::read(&path).unwrap();
+    let journal: Value = serde_json::from_slice(&before).unwrap();
+    let expected = json!({"provider":"github","workflow_run":"42","attempt":2});
+    assert_eq!(journal["external_execution"], expected);
+    let runs = journal["runs"].as_object().unwrap();
+    assert!(runs.len() >= 2);
+    let artifacts = ArtifactStore::new(repo.join(".perfine/artifacts")).unwrap();
+    for record in runs.values() {
+        let hash: Fingerprint = serde_json::from_value(record["artifact"].clone()).unwrap();
+        let manifest: Manifest = serde_json::from_slice(&artifacts.get(&hash).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(manifest.identity.external_execution).unwrap(),
+            expected
+        );
+        assert_eq!(record["identity"]["external_execution"], expected);
+    }
+    let changed = invoke("resume", "3");
+    assert!(!changed.status.success());
+    assert!(String::from_utf8_lossy(&changed.stdout).contains("GitHub execution identity changed"));
+    assert_eq!(fs::read(&path).unwrap(), before);
 }

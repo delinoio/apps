@@ -230,6 +230,16 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  actions/perfine:
+    dependencies:
+      js-yaml:
+        specifier: 4.3.2
+        version: 4.3.2
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+
   apps/delidev:
     dependencies:
       '@delino/ui':
@@ -498,6 +508,8 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  packages/perfine: {}
 
   packages/ui:
     dependencies:

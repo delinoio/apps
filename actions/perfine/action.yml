@@ -1,0 +1,33 @@
+name: Perfine
+description: Run an immutable Perfine measurement or a separate OIDC evidence upload
+inputs:
+  command:
+    description: measure or upload; cloud optimize is unavailable
+    required: true
+  config:
+    description: Complete v1 Perfine YAML configuration, inline in the manual workflow
+    required: false
+  experiment:
+    description: Explicit UUID v7 experiment identifier, also used for manual resend
+    required: true
+  envelope:
+    description: Upload-only path to the screened Connect evidence envelope
+    required: false
+  artifacts:
+    description: Upload-only path to the content-addressed artifact directory
+    required: false
+  space:
+    description: Upload-only connected space UUID
+    required: false
+  connection:
+    description: Upload-only repository connection UUID
+    required: false
+  request-id:
+    description: Upload-only stable UUID v7 request identifier for manual resend
+    required: false
+outputs:
+  config-sha256:
+    description: SHA-256 of the immutable inline configuration
+runs:
+  using: node24
+  main: action.cjs

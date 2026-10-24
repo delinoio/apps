@@ -268,7 +268,7 @@ test("API development listeners stay distinct despite shared and local LISTEN va
 });
 
 test("direct API development preserves existing environment without a Compose handoff", () => {
-  for (const api of Object.values(Api)) {
+  for (const api of Object.keys(listeners)) {
     const source = {
       ISSUER: "https://fixture.invalid",
       DATABASE_URL: "postgres://remote/shared",
