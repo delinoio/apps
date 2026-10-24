@@ -91,6 +91,13 @@ pub struct Samples {
 }
 impl Samples {
     pub fn mean(&self) -> f64 {
+        // Constant instruction counts must remain exact across repetition counts.
+        // Dividing each sample first can introduce rounding even for identical runs.
+        if let Some(first) = self.values.first()
+            && self.values.iter().all(|value| value == first)
+        {
+            return *first;
+        }
         self.values
             .iter()
             .map(|v| v / self.values.len() as f64)
