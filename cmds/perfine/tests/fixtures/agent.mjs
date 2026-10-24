@@ -7,6 +7,7 @@ const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
 const mode = process.argv.includes("--model")
   ? process.argv[process.argv.indexOf("--model") + 1]
   : "pass";
+const source = Object.keys(context.sources).find((path) => path.startsWith("kernel."));
 let answer;
 if (context.profile) {
   answer = {
@@ -16,14 +17,14 @@ if (context.profile) {
         : [
             {
               explanation: "Replace repeated pair counting with a frequency table",
-              source_paths: ["kernel.c"],
+              source_paths: [source],
               profile_evidence: context.profile.raw_artifacts,
             },
           ],
   };
 } else {
-  const optimized = fs.readFileSync("/fixture/candidate.c", "utf8");
-  const baseline = context.sources["kernel.c"];
+  const optimized = fs.readFileSync(`/fixture/${mode === "reverse" ? "baseline" : "candidate"}.${source.split(".").at(-1)}`, "utf8");
+  const baseline = context.sources[source];
   const regression = baseline.replace(
     "return pairs;",
     "for (volatile unsigned i = 0; i < 4000000; ++i) {} return pairs;",
@@ -31,7 +32,7 @@ if (context.profile) {
   answer = {
     edits: [
       {
-        path: "kernel.c",
+        path: source,
         content: mode === "regression" ? regression : optimized,
       },
     ],
