@@ -1,0 +1,33 @@
+# Troubleshooting
+
+Start with `perfine --version`, `perfine --help`, and, after completing configuration, `perfine doctor`. Retain the request ID, experiment ID, exact command, and diagnostic message when reporting a problem. Remove credentials, signed URLs, source snippets, and raw private evidence from reports.
+
+| Symptom                                              | Recovery                                                                                                                                                                                                |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm version or Action release is missing             | Wait for a verified release. Do not substitute an unrelated package or arbitrary SHA.                                                                                                                   |
+| Unsupported platform or glibc error                  | Use Linux x86_64 with glibc 2.39 or later; the npm launcher also needs Node.js 24 or later. A macOS build host does not establish macOS execution support.                                              |
+| Checksum mismatch                                    | Re-download or reinstall the exact version from a trusted release. Do not disable verification.                                                                                                         |
+| Invalid or incomplete configuration                  | Complete the generated template with actual source SHAs, workload confirmation, inputs, policy, adapter recipe, and all limits. Do not use sample hashes as real evidence.                              |
+| Docker image or dependency missing                   | Provision the digest-pinned image and its tools first. Candidate execution cannot download dependencies. Check numeric user and writable build paths.                                                   |
+| Profiler path, symbols, or source coverage missing   | Check declared profile outputs, debug/source mappings, required paths, and tool versions. Preserve partial evidence; do not rename cases to hide missing results.                                       |
+| Go profiling cannot write its binary                 | Configure the test binary output under `/build`. The measured source checkout is read-only.                                                                                                             |
+| Node result does not match expectations              | Verify the benchmark JSON field, unit, warmup, and normal JIT conditions. Do not infer benchmark time from CPU profile duration.                                                                        |
+| Local agent cannot authenticate                      | Use the AI CLI's supported local file authentication and the dedicated agent image. Keychain-only login is not automatically exported. Never send AI credentials to hosting.                            |
+| No candidate                                         | Inspect the profile and workload coverage. No supported hypothesis or empty edits can be a normal completed result.                                                                                     |
+| Inconclusive result                                  | Inspect variability, repeat results, missing evidence, and profile conflicts. Keep the outcome inconclusive when evidence disagrees.                                                                    |
+| Resume fingerprint mismatch                          | Start a new experiment for changed source, inputs, tools, environment, or policy. Do not edit stored fingerprints or reset deadlines.                                                                   |
+| Upload incomplete or rejected                        | Preserve local results. Check grants, connection, quota, artifact eligibility, consent, hashes, and sizes. Native opaque formats may remain local-only. See [manual resend](/services/perfine/hosting). |
+| Permission denied                                    | Check the exact independent space grant and current repository authority. Management does not imply experiment or publish permission.                                                                   |
+| Cloud unavailable                                    | Run the local CLI. Credentials do not enable an unsupported cloud adapter.                                                                                                                              |
+| Approval stale                                       | Review the current target/base/SHA/title/body and approve again. Remeasure if production content changed.                                                                                               |
+| Publication outcome uncertain                        | Inspect the exact GitHub target and existing drafts. Wait for reconciliation before retrying; avoid duplicate creation.                                                                                 |
+| Actions cancellation failed                          | Open the direct run link and cancel through GitHub with current authority. Retain completed evidence.                                                                                                   |
+| Deleted evidence still reachable through an old link | Existing signed links may work for up to 15 minutes. New reads and new links are blocked; downloaded copies cannot be recalled.                                                                         |
+
+## Compatibility and limitations
+
+Configuration, JSON output, evidence, MCP, and RPC interfaces use major version 1. Unsupported major versions are rejected. Do not repair a version error by relabeling incompatible evidence as v1; use matching tools and migration guidance for the new major version.
+
+Local and hosted evaluation use the same policy rules, but hosted privacy checks can exclude evidence that is valid locally. A local pass does not automatically become a hosted pass. Keep incomplete and unavailable states visible.
+
+Verification covers only the tools, runtime conditions, cases, and evidence actually tested. Automated fixtures, parser samples, package builds, and mock integrations do not establish native profiler performance, live authentication, installation from a published registry, or deployed-service acceptance. There is no numerical SLA or dedicated support program in this release.

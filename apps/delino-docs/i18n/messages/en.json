@@ -37,5 +37,12 @@
   "theme.promptCopyText": "Copy Prompt",
   "theme.promptCopiedText": "Copied",
   "theme.promptExpandText": "Expand",
-  "theme.promptCollapseText": "Collapse"
+  "theme.promptCollapseText": "Collapse",
+  "perfineSetup": "Install and configure",
+  "perfineCli": "CLI workflow",
+  "perfineAdapters": "Language adapters",
+  "perfinePolicies": "Policies and evidence",
+  "perfineHosting": "Private hosting and uploads",
+  "perfinePublication": "Draft PR approval",
+  "perfineGithubActions": "GitHub Actions"
 }
