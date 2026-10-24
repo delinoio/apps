@@ -19,6 +19,6 @@ The first execution target is Linux x86_64. Rust, C, C++, Zig, Go, and JavaScrip
 
 ## Availability and limits
 
-These pages describe the v1 interfaces. Confirm that the exact package or release asset exists before installing it. Packaging checks do not prove that npm or GitHub release publication has occurred. Cloud AI optimization is currently unavailable; use the local CLI. Upload currently needs a prepared envelope, and some native artifact formats cannot be accepted by hosting. See the upload guide before relying on hosted evaluation.
+These pages describe the v1 interfaces. Confirm that the exact package or release asset exists before installing it. Packaging checks do not prove that npm or GitHub release publication has occurred. Cloud AI optimization is currently unavailable; use the local CLI. The CLI prepares upload evidence automatically; unknown artifact formats and evidence that fails privacy checks remain ineligible for hosting. See the upload guide before relying on hosted evaluation.
 
 The dashboard address is [perfine.delino.io](https://perfine.delino.io). These instructions do not certify a live deployment, GitHub account integration, AI account integration, or native profiler run. UI, CLI, and Perfine documentation are English; source code and user input can use other languages.
