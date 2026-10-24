@@ -96,3 +96,5 @@ source remains read-only and host credentials remain outside execution mounts.
 ### Interrupted workspace reattachment
 
 The Docker adapter writes a host-owned ownership record outside candidate mounts after preparing an isolated checkout. Reattachment checks the original request and Docker configuration, direct canonical workspace paths, branch, clean source, pinned-base ancestry, absent remotes and Git alternates, and active container mounts. Reject changed or legacy workspaces without the record. Refuse reattachment while a container uses the retained source or build directory. Reattachment preserves the original checkout and build directory; it does not reset deadlines or authorize new candidate work.
+
+A retained agent hypothesis can be restored after restart only against its original available raw profile hashes, positive-cost measured source paths, safe edit paths and clean task-owned source. The adapter binds the restored hypothesis to current source hashes before implementation. The CLI must first verify that the checkout still equals the pinned base.
