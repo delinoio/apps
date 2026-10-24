@@ -1008,6 +1008,24 @@ async fn unmatched_procedures_get_a_fixed_typed_not_found_without_echo() {
     // The adaptation logs a bounded category with the trace and never the selector.
     let logged = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     assert!(logged.contains("unknown_procedure"), "{logged}");
+    // The production router's `api.request` span is part of every event's context, so a span
+    // that recorded the raw request path would leak the selector here.
+    for sentinel in [
+        "alice",
+        "bob",
+        "example.test",
+        "private",
+        "customer",
+        "carol",
+        "NoSuchProcedure",
+        "OtherService",
+        "%40",
+    ] {
+        assert!(
+            !logged.contains(sentinel),
+            "log leaked {sentinel}: {logged}"
+        );
+    }
 
     // Known procedures keep their own outcomes: a typed authentication error with accounting,
     // an unsupported method on a known procedure and a rejected Origin.
