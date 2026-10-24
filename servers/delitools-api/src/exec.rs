@@ -18,6 +18,11 @@
 //!    interpreted, so failed, invalid or canceled-after-response attempts are still billed.
 //!    Missing or invalid usage is counted and logged, never estimated.
 //! 5. Output is validated; invalid output is final (no repair retry, no model substitution).
+//!
+//! Cancellation has two sources: the caller (handler drop) and the service-wide fence that closes
+//! when the process loses the instance lock. Each job's token is a child of the fence, so both end
+//! provider calls and retries the same way, and neither blocks the storing of confirmed usage; the
+//! fence only bounds that storing by `DEPENDENCY_TIMEOUT` so the old process can exit.
 
 use crate::{
     Inner,
@@ -131,7 +136,10 @@ async fn race_provider<F: Future>(
         started.store(true, Ordering::Relaxed);
         call.await
     };
+    // Biased: cancellation, including the instance fence, is observed before the provider future is
+    // first polled, so no attempt starts once the job is canceled.
     tokio::select! {
+        biased;
         _ = cancel.cancelled() => Err(Interrupted { stop: Stop::Canceled, started: started.load(Ordering::Relaxed) }),
         _ = tokio::time::sleep_until(deadline) => Err(Interrupted { stop: Stop::TimedOut, started: started.load(Ordering::Relaxed) }),
         result = call => Ok(result),
@@ -142,6 +150,7 @@ impl Inner {
     /// Sleeps for `wait` unless canceled or past the deadline.
     async fn pause(&self, job: &Job, wait: Duration) -> Result<(), Stop> {
         tokio::select! {
+            biased;
             _ = job.cancel.cancelled() => Err(Stop::Canceled),
             _ = tokio::time::sleep_until(job.deadline) => Err(Stop::TimedOut),
             _ = tokio::time::sleep(wait) => Ok(()),
@@ -204,6 +213,7 @@ impl Inner {
                 self.pause(job, wait).await.map_err(|s| self.stopped(s))?;
                 // Revocation, expiry, permission loss or a billing block stops further attempts.
                 tokio::select! {
+                    biased;
                     _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
                     _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
                     checked = self.auth.recheck(&job.principal) => {
@@ -337,30 +347,48 @@ impl Inner {
             return Ok(());
         }
         let tenant = Uuid::parse_str(&job.principal.tenant_id).map_err(|_| ApiError::internal())?;
-        for tries in 0..3u64 {
-            match self
-                .outbox
-                .insert_attempt(
-                    tenant,
-                    job.request_id,
-                    attempt,
-                    job.started_at,
-                    &events,
-                    server_common::now(),
-                )
-                .await
-            {
-                Ok(()) => {
-                    for event in &events {
-                        self.metrics
-                            .usage_persisted
-                            .with_label_values(&[event.direction.as_str()])
-                            .inc();
+        let persist = async {
+            for tries in 0..3u64 {
+                match self
+                    .outbox
+                    .insert_attempt(
+                        tenant,
+                        job.request_id,
+                        attempt,
+                        job.started_at,
+                        &events,
+                        server_common::now(),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        for event in &events {
+                            self.metrics
+                                .usage_persisted
+                                .with_label_values(&[event.direction.as_str()])
+                                .inc();
+                        }
+                        return true;
                     }
-                    return Ok(());
+                    Err(_) => tokio::time::sleep(Duration::from_millis(50 * (tries + 1))).await,
                 }
-                Err(_) => tokio::time::sleep(Duration::from_millis(50 * (tries + 1))).await,
             }
+            false
+        };
+        // Confirmed usage is stored whatever cancels the job. Once the instance fence closes,
+        // the old process may only finish this accounting step within `DEPENDENCY_TIMEOUT`; the
+        // rows already written stay in the outbox for the replacement to deliver.
+        let fence = self.fence.clone();
+        let bound = async {
+            fence.cancelled().await;
+            tokio::time::sleep(self.config.dependency_timeout).await;
+        };
+        let stored = tokio::select! {
+            stored = persist => stored,
+            _ = bound => false,
+        };
+        if stored {
+            return Ok(());
         }
         self.metrics.persist_failures.inc();
         tracing::error!(
