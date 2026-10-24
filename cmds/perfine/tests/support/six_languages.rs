@@ -4,6 +4,7 @@ use super::{command, git, run, setup};
 use perfine_core::{
     adapters::{ArtifactStore, measurement::verify_local},
     evidence::{Manifest, validate_baseline},
+    interfaces::Language,
     policy::{DeclaredPolicy, Objective, Policy, Uncertainty},
     types::{ResourceId, digest},
 };
@@ -70,7 +71,15 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
     cfg["experiment"]["limits"]["candidate_duration_seconds"] = json!(900);
     cfg["docker"]["command_timeout_seconds"] = json!(300);
     cfg["docker"]["memory_bytes"] = json!(4_294_967_296_u64);
-    cfg["adapter"]["language"] = json!(language);
+    cfg["adapter"]["language"] = json!(match language {
+        "rust" => Language::Rust,
+        "c" => Language::C,
+        "cpp" => Language::Cpp,
+        "zig" => Language::Zig,
+        "go" => Language::Go,
+        "javascript" => Language::JavaScript,
+        _ => unreachable!(),
+    });
     cfg["adapter"]["discovery_files"] = json!([kernel]);
     let mut build = vec![];
     let (tool, probe, correctness) = match language {
