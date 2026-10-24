@@ -174,6 +174,7 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
                 "env",
                 &[
                     "GOCACHE=/build/go-cache",
+                    "GOTMPDIR=/build/go-tmp",
                     "GOTOOLCHAIN=local",
                     "go",
                     "test",
@@ -190,6 +191,11 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
         ),
         _ => unreachable!(),
     };
+    if language == "go" {
+        // The sandbox mounts /tmp without execute permission. Go runs its test
+        // binary from GOTMPDIR even with -o; keep it in this task's build mount.
+        build.push(command("mkdir", &["-p", "/build/go-tmp"]));
+    }
     cfg["adapter"]["build"] = json!(build);
     cfg["adapter"]["correctness"]["project-tests"] = correctness;
     cfg["adapter"]["tool_probes"] = json!({tool:command(tool, &[probe])});
@@ -217,7 +223,7 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
     for (case, size) in [("bulk", "1024"), ("protected", "128")] {
         let workload = if language == "go" {
             let bench = format!("^BenchmarkPairs$/{case}$");
-            json!({"command":command("env", &["GOCACHE=/build/go-cache", "GOTOOLCHAIN=local", "GOMAXPROCS=1", "go", "test", "-run=^$", "-bench", &bench, "-benchtime=1s", "-count=1", "-cpuprofile=/build/cpu.pprof", "-o", "/build/pairs.test"]), "profiles":["cpu.pprof"], "format":"pprof", "output":{"kind":"go_benchmark", "benchmark":format!("BenchmarkPairs/{case}"), "unit":"ns/op"}})
+            json!({"command":command("env", &["GOCACHE=/build/go-cache", "GOTMPDIR=/build/go-tmp", "GOTOOLCHAIN=local", "GOMAXPROCS=1", "go", "test", "-run=^$", "-bench", &bench, "-benchtime=1s", "-count=1", "-cpuprofile=/build/cpu.pprof", "-o", "/build/pairs.test"]), "profiles":["cpu.pprof"], "format":"pprof", "output":{"kind":"go_benchmark", "benchmark":format!("BenchmarkPairs/{case}"), "unit":"ns/op"}})
         } else if language == "javascript" {
             json!({"command":command("node", &["--cpu-prof", "--cpu-prof-interval=100", "--cpu-prof-dir=/build", "--cpu-prof-name=cpu.cpuprofile", "benchmark.mjs", size]), "profiles":["cpu.cpuprofile"], "format":"node_cpu", "output":{"kind":"node_benchmark", "value_field":"ns_per_op", "unit":"ns/op"}})
         } else {
