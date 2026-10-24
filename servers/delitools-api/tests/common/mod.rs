@@ -176,6 +176,11 @@ pub enum Ingest {
         code: &'static str,
         reason: Option<i32>,
     },
+    /// A Connect error with an arbitrary JSON body, such as unrelated `details`.
+    Raw {
+        status: u16,
+        body: Value,
+    },
 }
 
 #[derive(Default)]
@@ -328,6 +333,9 @@ async fn delcore_method(
                     code,
                     reason,
                 } => connect_error(status, code, reason),
+                Ingest::Raw { status, body } => {
+                    (StatusCode::from_u16(status).unwrap(), Json(body)).into_response()
+                }
             }
         }
         "GetTenantStates" => {
