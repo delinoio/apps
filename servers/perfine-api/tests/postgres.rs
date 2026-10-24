@@ -264,7 +264,8 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         .unwrap();
     let search = schema.clone();
     let db = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(3))
         .after_connect(move |c, _| {
             let search = search.clone();
             Box::pin(async move {

@@ -235,6 +235,22 @@ impl Server {
         trace: &str,
     ) -> Result<Value> {
         let space = string(q, "spaceId");
+        // Count admission before reserving a transaction connection. A second pool
+        // acquisition under the space lock can deadlock an exhausted pool.
+        if mutation(op)
+            && !matches!(
+                op,
+                "DeleteExperiment"
+                    | "DisconnectRepository"
+                    | "CancelExperiment"
+                    | "SetRawArtifactConsent"
+            )
+        {
+            let count:i64=sqlx::query_scalar("INSERT INTO perfine_rate(space,requests) VALUES($1,1) ON CONFLICT(space) DO UPDATE SET requests=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN 1 ELSE perfine_rate.requests+1 END,window_started=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN now() ELSE perfine_rate.window_started END RETURNING requests").bind(id(space)?).fetch_one(&self.db).await?;
+            if count > self.rate {
+                return Err(Fault::quota());
+            }
+        }
         let mut tx = self.db.begin().await?;
         // Serialize space quota reservations and lifecycle mutations across all replicas.
         lock(&mut tx, space).await?;
@@ -281,18 +297,6 @@ impl Server {
                         | "ConnectRepository"
                 ) {
                     return Ok(row.get("response"));
-                }
-            }
-            if !matches!(
-                op,
-                "DeleteExperiment"
-                    | "DisconnectRepository"
-                    | "CancelExperiment"
-                    | "SetRawArtifactConsent"
-            ) {
-                let count:i64=sqlx::query_scalar("INSERT INTO perfine_rate(space,requests) VALUES($1,1) ON CONFLICT(space) DO UPDATE SET requests=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN 1 ELSE perfine_rate.requests+1 END,window_started=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN now() ELSE perfine_rate.window_started END RETURNING requests").bind(id(space)?).fetch_one(&self.db).await?;
-                if count > self.rate {
-                    return Err(Fault::quota());
                 }
             }
         }
