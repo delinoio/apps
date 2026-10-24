@@ -218,7 +218,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         fail_delete.clone(),
         actor.clone(),
     );
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone());async move{
+    let pulls = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let creates = Arc::new(Mutex::new(0u32));
+    let (p, posts) = (pulls.clone(), creates.clone());
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -228,6 +231,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    "/delcore.v1.DelcoreService/GetCurrentUser"=>json!({"userId":act}),
    "/delcore.v1.DelcoreService/GetTenantStates"=>json!({"states":q["tenantIds"].as_array().unwrap().iter().map(|id|json!({"tenantId":id,"state":*st.lock().unwrap()})).collect::<Vec<_>>()}),
    "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v)})},
+   "/repos/owner/repo/pulls" if method=="POST"=>{
+    assert_eq!(q["draft"],true);*posts.lock().unwrap()+=1;
+    p.lock().unwrap().push(json!({"number":1,"html_url":"https://github.com/owner/repo/pull/1","title":q["title"],"body":q["body"],"draft":true,"head":{"sha":"d".repeat(40)},"base":{"sha":"a".repeat(40)}}));
+    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+   },
+   "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
+   "/repos/owner/repo"=>json!({"id":42}),
+   "/repos/owner/repo/commits/main"=>json!({"sha":"a".repeat(40)}),
+   "/repos/owner/repo/commits/candidate"=>json!({"sha":"d".repeat(40)}),
+   path if path.starts_with("/repos/owner/repo/compare/")=>json!({"total_commits":1,"status":"ahead","files":[{"filename":"src/hot.rs","status":"modified"}]}),
    "/user"=>json!({"id":7}),
    "/repositories/42"=>json!({"id":42,"full_name":"owner/repo","permissions":{"admin":true}}),
    "/app/installations/1/access_tokens"=>json!({"token":"fixture-installation"}),
@@ -241,7 +254,8 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
-    let server = Server {
+    let mut server = Server {
+        metrics: Default::default(),
         db: db.clone(),
         authority: Authority::new(
             http.clone(),
@@ -310,6 +324,97 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let eid = uid();
     let (spec, m, bytes) = fixture(&eid);
     let q = json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"});
+    let original_quota = server.quota;
+    server.quota = 1;
+    assert!(
+        call(&server, &space, "BeginUpload", q.clone())
+            .await
+            .is_err()
+    );
+    server.quota = original_quota;
+    let mut raw = m.clone();
+    raw["artifacts"].as_array_mut().unwrap().push(json!({"name":"raw","kind":"ARTIFACT_KIND_RAW_PROFILE","mediaType":"text/plain","sizeBytes":"2","sha256":perfine_api::hash(b"{}"),"completion":"COMPLETION_STATE_COMPLETE","containsSourceSnippets":true}));
+    fn checksum(m: &mut Value) {
+        let mut typed: delino_protocol::perfine::v1::EvidenceManifest =
+            serde_json::from_value(m.clone()).unwrap();
+        typed.manifest_sha256.clear();
+        typed.manifest_sha256 = perfine_api::hash(&typed.encode_to_vec());
+        *m = serde_json::to_value(typed).unwrap();
+    }
+    checksum(&mut raw);
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "CheckUploadEligibility",
+            json!({"connectionId":cid,"manifest":raw})
+        )
+        .await
+        .unwrap()["eligibleForCompleteEvaluation"],
+        false
+    );
+    call(&server,&space,"SetRawArtifactConsent",json!({"connectionId":cid,"expectedRevision":"0","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"]})).await.unwrap();
+    assert!(
+        call(
+            &server,
+            &space,
+            "SetRawArtifactConsent",
+            json!({"connectionId":cid,"expectedRevision":"0"})
+        )
+        .await
+        .is_err()
+    );
+    raw["consentRevision"] = json!("1");
+    raw["runStartedAt"] = json!(chrono::Utc::now().to_rfc3339());
+    checksum(&mut raw);
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "CheckUploadEligibility",
+            json!({"connectionId":cid,"manifest":raw})
+        )
+        .await
+        .unwrap()["eligibleForCompleteEvaluation"],
+        true
+    );
+    call(
+        &server,
+        &space,
+        "SetRawArtifactConsent",
+        json!({"connectionId":cid,"expectedRevision":"1","allowedKinds":[]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "CheckUploadEligibility",
+            json!({"connectionId":cid,"manifest":raw})
+        )
+        .await
+        .unwrap()["eligibleForCompleteEvaluation"],
+        false
+    );
+    let page = call(
+        &server,
+        &space,
+        "ListCloudTools",
+        json!({"connectionId":cid,"page":{"pageSize":1}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page["tools"].as_array().unwrap().len(), 1);
+    let second = call(
+        &server,
+        &space,
+        "ListCloudTools",
+        json!({"connectionId":cid,"page":{"pageSize":1,"cursor":page["page"]["nextCursor"]}}),
+    )
+    .await
+    .unwrap();
+    assert_ne!(page["tools"][0]["toolId"], second["tools"][0]["toolId"]);
     let begin = call(&server, &space, "BeginUpload", q.clone())
         .await
         .unwrap();
@@ -356,6 +461,104 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap()
             .contains("X-Amz-Expires=900")
     );
+    *grants.lock().unwrap() = vec!["publish".into()];
+    let draft = json!({"targetRepository":c["repository"],"headRepository":c["repository"],"baseRef":"main","headRef":"candidate","baseSha":"a".repeat(40),"headSha":"d".repeat(40),"title":"Optimize measured path","body":"Verified fixture evidence","candidateId":m["candidateId"],"evidenceManifestSha256":m["manifestSha256"]});
+    let approval = call(
+        &server,
+        &space,
+        "ApproveDraft",
+        json!({"experimentId":eid,"draft":draft}),
+    )
+    .await
+    .unwrap();
+    let aid = approval["approval"]["id"].as_str().unwrap();
+    let request = uid();
+    let mut approved =
+        json!({"requestId":request,"spaceId":space,"experimentId":eid,"draft":draft});
+    let first = server
+        .execute(
+            "Bearer fixture",
+            "",
+            "ApproveDraft",
+            approved.clone(),
+            &request,
+        )
+        .await
+        .unwrap();
+    let replay = server
+        .execute(
+            "Bearer fixture",
+            "",
+            "ApproveDraft",
+            approved.clone(),
+            &request,
+        )
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    approved["draft"]["title"] = json!("Different");
+    assert!(
+        server
+            .execute("Bearer fixture", "", "ApproveDraft", approved, &request)
+            .await
+            .is_err()
+    );
+
+    let mut changed = draft.clone();
+    changed["title"] = json!("Changed");
+    assert!(
+        call(
+            &server,
+            &space,
+            "PublishDraft",
+            json!({"approvalId":aid,"expectedDraft":changed})
+        )
+        .await
+        .is_err()
+    );
+    call(
+        &server,
+        &space,
+        "PublishDraft",
+        json!({"approvalId":aid,"expectedDraft":draft}),
+    )
+    .await
+    .unwrap();
+    server.maintain().await.unwrap();
+    let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
+        .await
+        .unwrap();
+    assert_eq!(
+        status["publication"]["state"],
+        "PUBLICATION_STATE_RECONCILING"
+    );
+    server.maintain().await.unwrap();
+    let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
+        .await
+        .unwrap();
+    assert_eq!(
+        status["publication"]["state"],
+        "PUBLICATION_STATE_PUBLISHED"
+    );
+    assert_eq!(*creates.lock().unwrap(), 1);
+    let again = call(
+        &server,
+        &space,
+        "ApproveDraft",
+        json!({"experimentId":eid,"draft":draft}),
+    )
+    .await
+    .unwrap();
+    call(
+        &server,
+        &space,
+        "PublishDraft",
+        json!({"approvalId":again["approval"]["id"],"expectedDraft":draft}),
+    )
+    .await
+    .unwrap();
+    server.maintain().await.unwrap();
+    assert_eq!(*creates.lock().unwrap(), 1);
     // A still-valid staging PUT must not change accepted bytes.
     http.put(begin["targets"][0]["signedPutUrl"].as_str().unwrap())
         .body("corrupt")

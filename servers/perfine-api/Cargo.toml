@@ -28,3 +28,7 @@ jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 hmac = "0.12"
 
 perfine-core = { path = "../../crates/perfine-core" }
+
+[dev-dependencies]
+rsa = "0.9"
+base64.workspace = true

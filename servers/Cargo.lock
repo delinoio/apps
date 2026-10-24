@@ -2185,6 +2185,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "buffa",
  "buffa-types",
  "chrono",
@@ -2195,6 +2196,7 @@ dependencies = [
  "jsonwebtoken",
  "perfine-core",
  "reqwest 0.12.28",
+ "rsa",
  "serde",
  "serde_json",
  "server-common",

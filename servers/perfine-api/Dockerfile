@@ -10,6 +10,7 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=build /src/servers/target/release/perfine-api /perfine-api
 COPY servers/LICENSE servers/NOTICE /licenses/servers/
 COPY LICENSE NOTICE /licenses/protocols/
+COPY LICENSE NOTICE /licenses/perfine-core/
 USER 65532:65532
 EXPOSE 46323
 ENTRYPOINT ["/perfine-api"]
