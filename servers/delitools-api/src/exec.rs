@@ -227,6 +227,8 @@ impl Inner {
                     }
                 }
             }
+            // `race_provider` refuses to start an attempt at or after the request deadline and
+            // once the job is canceled, so no separate pre-check is needed here.
             let outcome = self.provider_attempt(job, &request).await?;
             let completion = match outcome {
                 Ok(completion) => completion,
