@@ -357,15 +357,21 @@ fn screen(bytes: &[u8]) -> Result<()> {
         "artifact exceeds privacy inspection limit"
     );
     if bytes.starts_with(&[0x1f, 0x8b]) {
-        let mut decoded = Vec::new();
-        flate2::read::GzDecoder::new(bytes)
-            .take(LIMIT + 1)
-            .read_to_end(&mut decoded)?;
+        let mut decoder = flate2::bufread::GzDecoder::new(bytes);
+        let header = decoder.header().context("invalid gzip header")?;
+        ensure!(header.extra().is_none(), "unsupported gzip extra metadata");
+        // Original compressed bytes are uploaded, including metadata outside pprof.
+        for text in [header.filename(), header.comment()].into_iter().flatten() {
+            screen_text(std::str::from_utf8(text).context("invalid gzip metadata")?)?;
+        }
+        let mut payload = Vec::new();
+        decoder.by_ref().take(LIMIT + 1).read_to_end(&mut payload)?;
         ensure!(
-            decoded.len() as u64 <= LIMIT,
-            "decoded artifact exceeds privacy inspection limit"
+            payload.len() as u64 <= LIMIT,
+            "payload artifact exceeds privacy inspection limit"
         );
-        return screen_text(&String::from_utf8_lossy(&decoded));
+        ensure!(decoder.into_inner().is_empty(), "trailing gzip content");
+        return screen_text(&String::from_utf8_lossy(&payload));
     }
     screen_text(&String::from_utf8_lossy(bytes))?;
     // Inspect escaped JSON strings too, without discarding duplicate object keys.
@@ -640,6 +646,29 @@ impl<'de> serde::de::Visitor<'de> for PrivacyScan {
 mod tests {
     use std::io::Write;
 
+    #[test]
+    fn privacy_checks_original_gzip_metadata_and_trailing_bytes() {
+        fn gzip(builder: flate2::GzBuilder) -> Vec<u8> {
+            let mut stream = builder.write(Vec::new(), flate2::Compression::default());
+            stream.write_all(b"safe profile payload").unwrap();
+            stream.finish().unwrap()
+        }
+        let safe = gzip(
+            flate2::GzBuilder::new()
+                .filename("cpu.pprof")
+                .comment("profile"),
+        );
+        assert!(super::screen(&safe).is_ok());
+        for bytes in [
+            gzip(flate2::GzBuilder::new().filename("ghp_fixture")),
+            gzip(flate2::GzBuilder::new().comment("authorization: bearer fixture")),
+            gzip(flate2::GzBuilder::new().extra(b"opaque".to_vec())),
+            [safe.clone(), b"trailing".to_vec()].concat(),
+            [safe.clone(), safe].concat(),
+        ] {
+            assert!(super::screen(&bytes).is_err());
+        }
+    }
     #[test]
     fn privacy_checks_escaped_duplicate_fields_and_compressed_bytes() {
         assert!(super::screen(br#"{"value":"\u0067hp_hidden","value":"safe"}"#).is_err());
