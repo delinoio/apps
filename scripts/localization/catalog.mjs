@@ -135,26 +135,85 @@ export function validateTranslation(source, target, markdown = false) {
   );
 }
 
-export function localizeLinks(text, lang, sourceLang) {
-  if (lang === sourceLang) return text;
-  const prefix = `/${lang}`;
-  // Example URLs inside code are literal content, even when they look like Markdown links.
-  const protectedCode = [];
+export function documentRoute(path) {
+  return (
+    `/${path}`
+      .replace(/\.(?:md|html)$/u, "")
+      .replace(/\/index$/u, "/")
+      .replace(/\/$/u, "") || "/"
+  );
+}
+
+function maskCode(text, replace) {
+  const code = [];
   const masked = text.replace(
     /^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$|`+[^`\n]+`+/gmu,
-    (code) => {
-      const index = protectedCode.push(code) - 1;
-      return `\u0000CODE${index}\u0000`;
-    },
+    (value) => `\u0000CODE${code.push(value) - 1}\u0000`,
   );
-  return masked
-    .replace(/(\]\()\/(?!\/)/gu, `$1${prefix}/`)
-    .replace(/(^\s*(?:-\s*)?link:\s*["']?)\/(?!\/)/gmu, `$1${prefix}/`)
-    .replace(/(^\[[^\]\n]+\]:\s*)\/(?!\/)/gmu, `$1${prefix}/`)
-    .replace(
-      /\u0000CODE(\d+)\u0000/gu,
-      (_token, index) => protectedCode[Number(index)],
+  return replace(masked).replace(
+    /\u0000CODE(\d+)\u0000/gu,
+    (_token, index) => code[Number(index)],
+  );
+}
+
+function translationSource(text, sections, path) {
+  const found = [];
+  const projected = maskCode(text, (masked) => {
+    const result = masked.replace(
+      /^<!-- i18n:source-only ([a-z][a-z0-9-]*) -->\r?\n([\s\S]*?)^<!-- i18n:end -->(?:\r?\n|$)(?:\r?\n)?/gmu,
+      (_block, id, body) => {
+        if (!body.trim() || body.includes("<!-- i18n:"))
+          throw new Error(`Invalid source-only section: ${path}`);
+        found.push(id);
+        return "";
+      },
     );
+    if (result.includes("<!-- i18n:") || !result.trim())
+      throw new Error(`Invalid source-only sections: ${path}`);
+    return result;
+  });
+  if (
+    new Set(found).size !== found.length ||
+    JSON.stringify(found.sort()) !== JSON.stringify([...sections].sort())
+  )
+    throw new Error(`Source-only sections do not match registry: ${path}`);
+  return projected;
+}
+
+export function localizeLinks(text, lang, sourceLang, sourceOnlyRoutes = []) {
+  if (lang === sourceLang) return text;
+  const prefix = `/${lang}`;
+  // Source-only destinations stay on their unprefixed English routes.
+  const localize = (_match, before, path) => {
+    const route = documentRoute(
+      decodeURIComponent(path.split(/[?#]/u)[0]).slice(1),
+    );
+    return `${before}${sourceOnlyRoutes.includes(route) ? "" : prefix}${path}`;
+  };
+  return maskCode(text, (masked) =>
+    masked
+      .replace(/(\]\()(\/(?!\/)[^\s)]*)/gu, localize)
+      .replace(/(^\s*(?:-\s*)?link:\s*["']?)(\/(?!\/)[^\s"']*)/gmu, localize)
+      .replace(/(^\[[^\]\n]+\]:\s*)(\/(?!\/)[^\s]*)/gmu, localize),
+  );
+}
+
+function validateDocumentLinks(text, routes, path) {
+  maskCode(text, (masked) => {
+    const links = [
+      ...masked.matchAll(/\]\((\/(?!\/)[^\s)]*)/gu),
+      ...masked.matchAll(/^\s*(?:-\s*)?link:\s*["']?(\/(?!\/)[^\s"']*)/gmu),
+      ...masked.matchAll(/^\[[^\]\n]+\]:\s*(\/(?!\/)[^\s]*)/gmu),
+    ];
+    for (const [, link] of links) {
+      const route = documentRoute(
+        decodeURIComponent(link.split(/[?#]/u)[0]).slice(1),
+      );
+      if (!routes.has(route))
+        throw new Error(`Unknown document route in ${path}: ${link}`);
+    }
+    return masked;
+  });
 }
 
 export async function loadProject(root) {
@@ -208,8 +267,93 @@ export async function loadProject(root) {
       markdown: true,
     });
   }
+  const policy = registry.sourceOnly ?? {};
+  if (
+    !policy ||
+    typeof policy !== "object" ||
+    Array.isArray(policy) ||
+    Object.keys(policy).some(
+      (key) => !["pages", "messages", "sections"].includes(key),
+    )
+  )
+    throw new Error("Invalid source-only registry.");
+  if (registry.sourceOnly && sourceLang !== "en")
+    throw new Error("Source-only content requires English source language.");
+  for (const [kind, markdown] of [
+    ["pages", true],
+    ["messages", false],
+  ]) {
+    const entries = policy[kind] ?? [];
+    if (!Array.isArray(entries) || new Set(entries).size !== entries.length)
+      throw new Error(`Invalid source-only ${kind}.`);
+    for (const entry of entries) {
+      const unit = units.find(
+        (unit) =>
+          unit.markdown === markdown &&
+          (markdown ? unit.path : unit.key) === entry,
+      );
+      if (!unit || typeof entry !== "string")
+        throw new Error(`Unknown source-only ${kind}: ${entry}`);
+      unit.sourceOnly = true;
+    }
+  }
+  const sections = policy.sections ?? {};
+  if (!sections || typeof sections !== "object" || Array.isArray(sections))
+    throw new Error("Invalid source-only sections.");
+  for (const [path, ids] of Object.entries(sections)) {
+    if (
+      !units.some((unit) => unit.path === path && !unit.sourceOnly) ||
+      !Array.isArray(ids) ||
+      !ids.length ||
+      ids.some(
+        (id) => typeof id !== "string" || !/^[a-z][a-z0-9-]*$/u.test(id),
+      ) ||
+      new Set(ids).size !== ids.length
+    )
+      throw new Error(`Invalid source-only sections: ${path}`);
+  }
+  for (const unit of units.filter((unit) => unit.markdown)) {
+    if (!unit.text.trim()) throw new Error(`Empty source page: ${unit.path}`);
+    unit.originalText = unit.text;
+    unit.text = translationSource(
+      unit.text,
+      sections[unit.path] ?? [],
+      unit.path,
+    );
+  }
+  const sourceOnlyRoutes = units
+    .filter((unit) => unit.markdown && unit.sourceOnly)
+    .map((unit) => documentRoute(unit.path));
+  // Validate the complete route set when opting into mixed language coverage.
+  // This also rejects an explicit localized link to a source-only page.
+  const routes = new Set();
+  for (const unit of units.filter((unit) => unit.markdown)) {
+    const route = documentRoute(unit.path);
+    if (routes.has(route))
+      throw new Error(`Duplicate document route: ${route}`);
+    routes.add(route);
+  }
+  for (const locale of locales.filter(({ lang }) => lang !== sourceLang)) {
+    for (const unit of units.filter(
+      (unit) => unit.markdown && !unit.sourceOnly,
+    ))
+      routes.add(documentRoute(`${locale.lang}/${unit.path}`));
+  }
+  if (registry.sourceOnly) {
+    for (const unit of units.filter((unit) => unit.markdown))
+      validateDocumentLinks(unit.originalText, routes, unit.path);
+  }
   const state = await optionalJson(join(root, "i18n/state.json"));
-  return { root, sourceLang, locales, units, state };
+  return {
+    root,
+    sourceLang,
+    locales,
+    units,
+    state,
+    sourceOnlyRoutes,
+    routes,
+    validateRoutes: Boolean(registry.sourceOnly),
+  };
 }
 
 async function output(project, locale) {
@@ -241,11 +385,13 @@ export async function inspect(project) {
     (locale) => locale.lang !== project.sourceLang,
   )) {
     const { messages, values } = await output(project, locale);
-    const known = new Set(project.units.map((unit) => unit.id));
+    const known = new Set(
+      project.units.filter((unit) => !unit.sourceOnly).map((unit) => unit.id),
+    );
     const extra = [
       ...Object.keys(messages).map((key) => `messages/${key}`),
       ...(await files(join(project.root, "docs", locale.lang)))
-        .filter((path) => path.endsWith(".md"))
+        .filter((path) => /\.mdx?$/u.test(path))
         .map((path) => `docs/${path}`),
       ...Object.keys(project.state[locale.lang] ?? {}),
     ].filter((id) => !known.has(id));
@@ -253,12 +399,27 @@ export async function inspect(project) {
       issues.push(
         `${locale.lang}: obsolete translation ${id}; remove it and its state entry explicitly.`,
       );
-    for (const unit of project.units) {
+    for (const unit of project.units.filter((unit) => !unit.sourceOnly)) {
       const value = values[unit.id];
       let invalid;
       try {
+        if (
+          unit.markdown &&
+          project.validateRoutes &&
+          typeof value === "string"
+        )
+          validateDocumentLinks(
+            value,
+            project.routes,
+            `${locale.lang}/${unit.path}`,
+          );
         validateTranslation(
-          localizeLinks(unit.text, locale.lang, project.sourceLang),
+          localizeLinks(
+            unit.text,
+            locale.lang,
+            project.sourceLang,
+            project.sourceOnlyRoutes,
+          ),
           value,
           unit.markdown,
         );
@@ -370,6 +531,7 @@ async function generateProject(project, translate, lang) {
             result[unit.id],
             locale.lang,
             project.sourceLang,
+            project.sourceOnlyRoutes,
           );
           if (unit.markdown) {
             const path = join(project.root, "docs", locale.lang, unit.path);

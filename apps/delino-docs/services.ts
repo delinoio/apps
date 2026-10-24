@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import registry from "./i18n/locales.json";
+
 export enum ServiceId {
   Delcore = "delcore",
   DevBase = "devbase",
@@ -33,14 +35,12 @@ export interface Service {
   id: ServiceId;
   name: string;
   pages: readonly ServicePageLink[];
-  englishOnly?: boolean;
 }
 
 export const services: readonly Service[] = [
   {
     id: ServiceId.Perfine,
     name: "Perfine",
-    englishOnly: true,
     pages: [
       { slug: ServicePage.Setup, message: "perfineSetup" },
       { slug: ServicePage.Cli, message: "perfineCli" },
@@ -69,6 +69,8 @@ export const services: readonly Service[] = [
 
 export function servicesForLanguage(language: string): readonly Service[] {
   return services.filter(
-    (service) => !service.englishOnly || language === "en",
+    (service) =>
+      language === registry.sourceLang ||
+      !registry.sourceOnly.pages.includes(`services/${service.id}/index.md`),
   );
 }
