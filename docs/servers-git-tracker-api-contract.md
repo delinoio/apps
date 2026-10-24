@@ -126,6 +126,8 @@ Check current space permissions on protected operations. Verify GitHub signature
 
 Use correlation IDs and bounded error categories. Server logs use `tracing`; Action logs and summaries describe failures without credentials.
 
+Every response carries `X-Correlation-Id`, including a timeout. A client `Connect-Timeout-Ms` deadline shorter than the 60-second request timeout applies as the client's absolute deadline. When it expires before the handler finishes, the transport cancels the handler and the HTTP boundary replaces its bare 504 with the same result as the whole-request timeout: HTTP 504, Connect `deadline_exceeded`, a server-generated UUID in `X-Correlation-Id` and one safe structured timeout warning that logs the same ID without credentials or payload data. The response carries no DevBase typed detail or `X-Devbase-Trace-Id`, keeps `Cache-Control: no-store`, and counts once as `server_error`. A 504 that already carries `X-Correlation-Id` passes through unchanged.
+
 ## Build and Test
 
 Run the owning repository format checks, server Cargo tests, protocol generation/lint/breaking checks and frontend/Action tests as applicable. Test concurrency, exact decimals, frozen baselines, visibility changes, token revocation and failure paths with mocked providers and PostgreSQL integration. Automated fixtures do not establish live-account acceptance.
