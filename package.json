@@ -8,7 +8,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:db:up": "docker compose up -d --wait",
     "dev:db:down": "docker compose down",
-    "dev:db:reset": "docker compose down --volumes && docker compose up -d --wait",
+    "dev:db:reset": "node scripts/dev-db-reset.mjs",
     "build": "turbo run build",
     "test": "turbo run test",
     "i18n:check": "pnpm -r --if-present run i18n:check",
