@@ -46,7 +46,8 @@ impl Client {
         }
         Ok(body)
     }
-    pub async fn request(&self, method: Method, path: &str, input: Value) -> Result<Value, Error> {
+    /// Sends one authenticated request and returns the decoded response envelope.
+    async fn envelope(&self, method: Method, path: &str, input: Value) -> Result<Value, Error> {
         let mutation = method != Method::GET;
         let response = self
             .http
@@ -81,8 +82,40 @@ impl Client {
         if !status.is_success() {
             return Err(Error::Permanent);
         }
-        let envelope: Value = serde_json::from_slice(&body).map_err(|_| Error::Ambiguous)?;
-        envelope.get("data").cloned().ok_or(Error::Ambiguous)
+        serde_json::from_slice(&body).map_err(|_| Error::Ambiguous)
+    }
+    pub async fn request(&self, method: Method, path: &str, input: Value) -> Result<Value, Error> {
+        self.envelope(method, path, input)
+            .await?
+            .get("data")
+            .cloned()
+            .ok_or(Error::Ambiguous)
+    }
+    /// Reads one page of a Paddle list route with a GET request.
+    ///
+    /// `path` is the list route with its filters. Pass the continuation cursor of the previous page
+    /// as `after` to request the following page; the cursor is added as the `after` query
+    /// parameter and the request always goes to the configured Paddle origin.
+    ///
+    /// The page keeps `data` usable even when its pagination block is invalid, so a caller can
+    /// still act on a payment that the page contains. See [`Page::next`] and [`next_cursor`].
+    pub async fn request_page(&self, path: &str, after: Option<&str>) -> Result<Page, Error> {
+        let mut full = path.to_string();
+        if let Some(after) = after {
+            full.push(if path.contains('?') { '&' } else { '?' });
+            full.push_str("after=");
+            full.push_str(&escape_path(after));
+        }
+        let request = url::Url::parse(&format!(
+            "{}{}",
+            self.config.paddle_url.trim_end_matches('/'),
+            full
+        ))
+        .map_err(|_| Error::Permanent)?;
+        let envelope = self.envelope(Method::GET, &full, Value::Null).await?;
+        let data = envelope.get("data").cloned().ok_or(Error::Ambiguous)?;
+        let next = next_cursor(&self.config.paddle_url, &request, &data, &envelope);
+        Ok(Page { data, next })
     }
     pub async fn send_email(&self, to: &str, subject: &str, text: &str) -> Result<(), Error> {
         let html = text
@@ -109,6 +142,92 @@ impl Client {
             return Err(Error::Transient);
         }
         Ok(())
+    }
+}
+/// One page of a Paddle list response.
+#[derive(Debug)]
+pub struct Page {
+    pub data: Value,
+    /// The cursor of the following page, `None` when the provider reports no more pages, or an
+    /// error when the pagination block is malformed or not safe to follow. A caller must inspect
+    /// `data` first and only then act on this value.
+    pub next: Result<Option<String>, Error>,
+}
+/// Validates the continuation of a list response and returns the `after` cursor to resume from.
+///
+/// Paddle reports `meta.pagination.has_more` and a `next` URL. The URL is never requested as
+/// given: the bearer token must only reach the configured Paddle origin, so the function accepts
+/// the URL only when it has the same scheme, host and port as `base`, no credentials and the same
+/// route as the `request` that produced the page, and copies only its `after` cursor. The remaining
+/// query must repeat the requested filters and sort order (`per_page` may differ because the
+/// provider caps it). The cursor must differ from the one that was requested and must identify the
+/// last returned entity, which bounds a malicious or broken provider to a finite scan. A `next`
+/// value with `has_more=false` is ignored.
+fn next_cursor(
+    base: &str,
+    request: &url::Url,
+    data: &Value,
+    envelope: &Value,
+) -> Result<Option<String>, Error> {
+    let Some(pagination) = envelope.get("meta").and_then(|meta| meta.get("pagination")) else {
+        return Ok(None);
+    };
+    match pagination.get("has_more") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => return Ok(None),
+        Some(Value::Bool(true)) => {}
+        Some(_) => return Err(Error::Ambiguous),
+    }
+    let next = pagination
+        .get("next")
+        .and_then(Value::as_str)
+        .and_then(|next| url::Url::parse(next).ok())
+        .ok_or(Error::Ambiguous)?;
+    let base = url::Url::parse(base).map_err(|_| Error::Permanent)?;
+    if next.scheme() != base.scheme()
+        || next.host_str() != base.host_str()
+        || next.port_or_known_default() != base.port_or_known_default()
+        || !next.username().is_empty()
+        || next.password().is_some()
+        || next.fragment().is_some()
+        || next.path() != request.path()
+    {
+        return Err(Error::Ambiguous);
+    }
+    let filters = |url: &url::Url| {
+        let mut pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .filter(|(key, _)| key != "after" && key != "per_page")
+            .collect();
+        pairs.sort();
+        pairs
+    };
+    let cursor = |url: &url::Url| {
+        let mut values = url
+            .query_pairs()
+            .filter(|(key, _)| key == "after")
+            .map(|(_, value)| value.into_owned());
+        let first = values.next();
+        (first, values.next().is_some())
+    };
+    let (after, repeated) = cursor(&next);
+    let requested = cursor(request).0;
+    let last = data
+        .as_array()
+        .and_then(|rows| rows.last())
+        .and_then(|row| row.get("id"))
+        .and_then(Value::as_str);
+    match after {
+        Some(after)
+            if !repeated
+                && !after.is_empty()
+                && filters(&next) == filters(request)
+                && Some(after.as_str()) != requested.as_deref()
+                && Some(after.as_str()) == last =>
+        {
+            Ok(Some(after))
+        }
+        _ => Err(Error::Ambiguous),
     }
 }
 pub fn escape_path(value: &str) -> String {
@@ -424,6 +543,136 @@ mod http_tests {
                     .unwrap_err(),
                 want
             );
+            task.abort();
+        }
+    }
+    /// Serves `render(base_url)` for every request so a response can point at its own origin.
+    async fn paged_server(
+        render: impl Fn(&str) -> String + Clone + Send + Sync + 'static,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let served = base.clone();
+        let app = axum::Router::new().fallback(move || {
+            let body = render(&served);
+            async move { body }
+        });
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (base, task)
+    }
+    fn page_client(url: String) -> Client {
+        Client::new(Config {
+            paddle_url: url,
+            paddle_token: "fixture".into(),
+            timeout_seconds: 1,
+            max_payload_bytes: 4096,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+    const LIST: &str = "/transactions?per_page=200&order_by=created_at[DESC]&customer_id=ctm_1";
+    #[tokio::test]
+    async fn request_page_follows_only_trusted_continuations() {
+        let next = |tail: &'static str| {
+            move |base: &str| {
+                format!(
+                    r#"{{"data":[{{"id":"txn_1"}},{{"id":"txn_2"}}],"meta":{{"pagination":{{"per_page":30,"has_more":true,"next":"{}"}}}}}}"#,
+                    tail.replace("CREDS", &base.replace("http://", "http://user:pw@"))
+                        .replace("BASE", base)
+                )
+            }
+        };
+        let filters = "per_page=30&order_by=created_at%5BDESC%5D&customer_id=ctm_1";
+        for (tail, want) in [
+            (
+                format!("BASE/transactions?{filters}&after=txn_2"),
+                Ok(Some("txn_2".to_string())),
+            ),
+            // A next URL of another origin, scheme, port, route or with credentials is not safe.
+            (
+                format!("http://127.0.0.1:1/transactions?{filters}&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("https://evil.test/transactions?{filters}&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("BASE/subscriptions?{filters}&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("CREDS/transactions?{filters}&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            // The cursor must identify the last returned entity and must be unique and present.
+            (
+                format!("BASE/transactions?{filters}&after=txn_1"),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("BASE/transactions?{filters}&after=txn_2&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("BASE/transactions?{filters}"),
+                Err(Error::Ambiguous),
+            ),
+            // The filters and the sort order must be preserved.
+            (
+                "BASE/transactions?per_page=30&order_by=created_at%5BDESC%5D&after=txn_2".to_string(),
+                Err(Error::Ambiguous),
+            ),
+            (
+                "BASE/transactions?per_page=30&order_by=created_at%5BASC%5D&customer_id=ctm_1&after=txn_2".to_string(),
+                Err(Error::Ambiguous),
+            ),
+            (
+                format!("BASE/transactions?{filters}&status=billed&after=txn_2"),
+                Err(Error::Ambiguous),
+            ),
+            ("not a url".to_string(), Err(Error::Ambiguous)),
+        ] {
+            let tail: &'static str = Box::leak(tail.into_boxed_str());
+            let (url, task) = paged_server(next(tail)).await;
+            let page = page_client(url).request_page(LIST, None).await.unwrap();
+            assert_eq!(page.data.as_array().unwrap().len(), 2, "{tail}");
+            assert_eq!(page.next, want, "{tail}");
+            task.abort();
+        }
+    }
+    #[tokio::test]
+    async fn request_page_rejects_a_repeated_cursor_and_ignores_terminal_next() {
+        let (url, task) = paged_server(|base| {
+            format!(
+                r#"{{"data":[{{"id":"txn_2"}}],"meta":{{"pagination":{{"has_more":true,"next":"{base}/transactions?per_page=30&order_by=created_at%5BDESC%5D&customer_id=ctm_1&after=txn_2"}}}}}}"#
+            )
+        })
+        .await;
+        let page = page_client(url)
+            .request_page(LIST, Some("txn_2"))
+            .await
+            .unwrap();
+        assert_eq!(page.next, Err(Error::Ambiguous));
+        task.abort();
+        for body in [
+            r#"{"data":[{"id":"txn_2"}],"meta":{"pagination":{"has_more":false,"next":"https://evil.test/transactions?after=txn_2"}}}"#,
+            r#"{"data":[{"id":"txn_2"}],"meta":{"pagination":{"has_more":false}}}"#,
+            r#"{"data":[{"id":"txn_2"}]}"#,
+        ] {
+            let (url, task) = paged_server(move |_| body.to_string()).await;
+            let page = page_client(url).request_page(LIST, None).await.unwrap();
+            assert_eq!(page.next, Ok(None), "{body}");
+            task.abort();
+        }
+        for body in [
+            r#"{"data":[{"id":"txn_2"}],"meta":{"pagination":{"has_more":"yes"}}}"#,
+            r#"{"data":[{"id":"txn_2"}],"meta":{"pagination":{"has_more":true}}}"#,
+            r#"{"data":[],"meta":{"pagination":{"has_more":true,"next":"http://127.0.0.1/transactions"}}}"#,
+        ] {
+            let (url, task) = paged_server(move |_| body.to_string()).await;
+            let page = page_client(url).request_page(LIST, None).await.unwrap();
+            assert_eq!(page.next, Err(Error::Ambiguous), "{body}");
             task.abort();
         }
     }

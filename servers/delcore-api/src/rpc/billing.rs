@@ -167,7 +167,7 @@ impl Call<'_> {
             Op::RetryJob => {
                 self.operator(string(q, "reason"))?;
                 // An unknown payment outcome must reconcile before another charge.
-                let row=sqlx::query("UPDATE jobs SET state=CASE WHEN kind IN ('email','webhook','metering') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed' RETURNING kind,error_category").bind(uuid(string(q,"jobId"))?).bind(self.now).fetch_optional(&mut *self.tx).await?.ok_or_else(||precondition("job is not failed"))?;
+                let row=sqlx::query("UPDATE jobs SET payload=CASE WHEN jsonb_typeof(payload)='object' THEN payload-'reconcile_scan' ELSE payload END,state=CASE WHEN kind IN ('email','webhook','metering') OR error_category='provider_rejected' THEN 'pending' ELSE 'reconcile' END,attempts=0,available_at=$2,updated_at=$2 WHERE id=$1 AND state='failed' RETURNING kind,error_category").bind(uuid(string(q,"jobId"))?).bind(self.now).fetch_optional(&mut *self.tx).await?.ok_or_else(||precondition("job is not failed"))?;
                 self.audit("", "job.retry", string(q, "reason")).await?;
                 let kind: String = row.try_get("kind")?;
                 tracing::info!(
