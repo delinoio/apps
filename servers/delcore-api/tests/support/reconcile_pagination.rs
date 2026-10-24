@@ -13,14 +13,14 @@ const BASE: &str = "{BASE}";
 /// Loopback Paddle fixture. Pages are keyed by the `after` cursor of the request ("" is the first
 /// page) and may contain `{BASE}`, which is replaced by the fixture origin. Every request is
 /// recorded as `METHOD path?query` together with whether it carried the fixture token.
-struct Provider {
+pub(super) struct Provider {
     url: String,
     pages: Arc<Mutex<HashMap<String, (u16, String)>>>,
     log: Arc<Mutex<Vec<String>>>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Provider {
-    async fn start() -> Self {
+    pub(super) async fn start() -> Self {
         let pages: Arc<Mutex<HashMap<String, (u16, String)>>> = Arc::default();
         let log: Arc<Mutex<Vec<String>>> = Arc::default();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -67,22 +67,22 @@ impl Provider {
             task,
         }
     }
-    fn page(&self, after: &str, body: Value) {
+    pub(super) fn page(&self, after: &str, body: Value) {
         self.pages
             .lock()
             .unwrap()
             .insert(after.into(), (200, body.to_string()));
     }
-    fn raw(&self, after: &str, status: u16, body: &str) {
+    pub(super) fn raw(&self, after: &str, status: u16, body: &str) {
         self.pages
             .lock()
             .unwrap()
             .insert(after.into(), (status, body.into()));
     }
-    fn requests(&self) -> Vec<String> {
+    pub(super) fn requests(&self) -> Vec<String> {
         self.log.lock().unwrap().clone()
     }
-    fn worker(&self, f: &Fixture) -> Worker {
+    pub(super) fn worker(&self, f: &Fixture) -> Worker {
         Worker::new(
             f.db.clone(),
             Config {
@@ -103,7 +103,7 @@ impl Drop for Provider {
 
 /// One list response. `next` is the `after` cursor of the following page and is rendered as the
 /// provider does, with the filters of the request repeated.
-fn list(rows: Vec<Value>, filter: &str, next: Option<&str>) -> Value {
+pub(super) fn list(rows: Vec<Value>, filter: &str, next: Option<&str>) -> Value {
     let last = rows
         .last()
         .and_then(|row| row["id"].as_str())
@@ -122,34 +122,34 @@ fn list(rows: Vec<Value>, filter: &str, next: Option<&str>) -> Value {
     );
     json!({"data": rows, "meta": {"pagination": pagination}})
 }
-fn unrelated(id: &str, tenant: &uuid::Uuid) -> Value {
+pub(super) fn unrelated(id: &str, tenant: &uuid::Uuid) -> Value {
     json!({"id": id, "status": "completed", "currency_code": "USD",
         "custom_data": {"delcore_job_id": uuid::Uuid::now_v7().to_string(), "delcore_tenant_id": tenant.to_string()},
         "details": {"totals": {"subtotal": "1000"}}})
 }
-fn payment(id: &str, tenant: &uuid::Uuid, job: &uuid::Uuid, status: &str) -> Value {
+pub(super) fn payment(id: &str, tenant: &uuid::Uuid, job: &uuid::Uuid, status: &str) -> Value {
     json!({"id": id, "status": status, "currency_code": "USD", "customer_id": "ctm_fixture",
         "subscription_id": "sub_fixture",
         "custom_data": {"delcore_job_id": job.to_string(), "delcore_tenant_id": tenant.to_string()},
         "details": {"totals": {"subtotal": "1000"}}})
 }
 
-struct Case {
-    tenant: uuid::Uuid,
-    job: uuid::Uuid,
+pub(super) struct Case {
+    pub(super) tenant: uuid::Uuid,
+    pub(super) job: uuid::Uuid,
     /// Query filter of every list request of this case.
-    filter: String,
+    pub(super) filter: String,
 }
 impl Case {
     /// Provider transaction ID of the matching payment, unique per case because the ledger and
     /// provider transaction records are keyed by it across cases of one test schema.
-    fn txn(&self) -> String {
+    pub(super) fn txn(&self) -> String {
         format!("txn_{}", self.job.simple())
     }
 }
 /// Creates a tenant with a top-up job that waits for reconciliation. `external` is empty for the
 /// customer-filtered list and `sub_fixture` for the subscription-filtered list.
-async fn case(f: &Fixture, customer: &str, external: &str) -> Case {
+pub(super) async fn case(f: &Fixture, customer: &str, external: &str) -> Case {
     let tenant: uuid::Uuid = f
         .rpc(
             "owner",
@@ -183,35 +183,35 @@ async fn case(f: &Fixture, customer: &str, external: &str) -> Case {
         filter,
     }
 }
-async fn job_state(f: &Fixture, job: uuid::Uuid) -> (String, String, i32, Value) {
+pub(super) async fn job_state(f: &Fixture, job: uuid::Uuid) -> (String, String, i32, Value) {
     sqlx::query_as("SELECT state,error_category,attempts,payload FROM jobs WHERE id=$1")
         .bind(job)
         .fetch_one(&f.db)
         .await
         .unwrap()
 }
-async fn credits(f: &Fixture, tenant: uuid::Uuid) -> i64 {
+pub(super) async fn credits(f: &Fixture, tenant: uuid::Uuid) -> i64 {
     sqlx::query_scalar("SELECT count(*) FROM ledger WHERE tenant_id=$1 AND kind='credit'")
         .bind(tenant)
         .fetch_one(&f.db)
         .await
         .unwrap()
 }
-async fn ready(f: &Fixture, job: uuid::Uuid) {
+pub(super) async fn ready(f: &Fixture, job: uuid::Uuid) {
     sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
         .bind(job)
         .execute(&f.db)
         .await
         .unwrap();
 }
-fn gets(provider: &Provider) -> usize {
+pub(super) fn gets(provider: &Provider) -> usize {
     provider
         .requests()
         .iter()
         .filter(|r| r.starts_with("GET "))
         .count()
 }
-fn assert_read_only_and_authenticated(provider: &Provider) {
+pub(super) fn assert_read_only_and_authenticated(provider: &Provider) {
     for request in provider.requests() {
         assert!(
             request.starts_with("GET "),

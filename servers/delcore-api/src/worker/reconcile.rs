@@ -137,6 +137,11 @@ impl Worker {
                 if t.status == "completed" {
                     return self.apply_transaction(t, Utc::now()).await;
                 }
+                if !matches!(t.status.as_str(), "canceled" | "past_due")
+                    && !self.save_checkout_url(&j, &t.checkout.url).await?
+                {
+                    return self.retry(&j, Error::Ambiguous, true).await;
+                }
                 return self
                     .finish_scan(&j, "reconcile", "awaiting_payment", &t.id, ScanWrite::Clear)
                     .await;
@@ -301,6 +306,9 @@ impl Worker {
             return self
                 .finish(&j, "failed", "payment_failed", &j.external_id)
                 .await;
+        }
+        if !self.save_checkout_url(&j, &t.checkout.url).await? {
+            return self.retry(&j, Error::Ambiguous, true).await;
         }
         self.finish(&j, "reconcile", "awaiting_payment", &j.external_id)
             .await

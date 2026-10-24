@@ -397,24 +397,37 @@ impl Worker {
                 .finish(j, "reconcile", "awaiting_provider_event", &subscription)
                 .await;
         }
-        if !result.checkout.url.is_empty() {
-            let valid = url::Url::parse(&result.checkout.url).is_ok_and(|u| {
-                u.scheme() == "https" && u.username().is_empty() && u.password().is_none()
-            });
-            if !valid {
-                return self.retry(j, Error::Ambiguous, false).await;
-            }
-            sqlx::query("UPDATE jobs SET checkout_url=$2 WHERE id=$1")
-                .bind(uid(&j.id)?)
-                .bind(&result.checkout.url)
-                .execute(&self.pool)
-                .await?;
+        if !self.save_checkout_url(j, &result.checkout.url).await? {
+            return self.retry(j, Error::Ambiguous, false).await;
         }
         self.finish(j, "reconcile", "", &result.id).await?;
         if result.status == "completed" {
             self.apply_transaction(result, Utc::now()).await?
         }
         Ok(())
+    }
+    /// Saves the provider checkout link of an unpaid payment on the job, so billing history can
+    /// offer it. Returns `false` without writing when the link is nonempty but unsafe (not HTTPS,
+    /// malformed or carrying credentials); the caller applies its ambiguity policy. An empty link
+    /// is not an error and never clears a link that is already stored, because the provider may
+    /// omit the field on a later read.
+    async fn save_checkout_url(&self, j: &Job, url: &str) -> Result<bool> {
+        if url.is_empty() {
+            return Ok(true);
+        }
+        let valid = url::Url::parse(url).is_ok_and(|u| {
+            u.scheme() == "https" && u.username().is_empty() && u.password().is_none()
+        });
+        if !valid {
+            tracing::warn!(kind = j.kind, "provider checkout link is not safe to store");
+            return Ok(false);
+        }
+        sqlx::query("UPDATE jobs SET checkout_url=$2 WHERE id=$1 AND state='running'")
+            .bind(uid(&j.id)?)
+            .bind(url)
+            .execute(&self.pool)
+            .await?;
+        Ok(true)
     }
     async fn finish(&self, j: &Job, state: &str, category: &str, external: &str) -> Result<()> {
         self.finish_scan(j, state, category, external, reconcile::ScanWrite::Keep)
