@@ -1226,3 +1226,32 @@ fn add_raw(m: &mut Value, bytes: &mut BTreeMap<String, Vec<u8>>, raw: Vec<u8>) {
     engine["sha256"] = json!(perfine_api::hash(&bytes["engine"]));
     engine["sizeBytes"] = json!(bytes["engine"].len().to_string());
 }
+
+#[test]
+fn identical_baseline_reuse_is_valid_but_changed_run_identity_is_rejected() {
+    let eid = uid();
+    let (spec, m, mut bytes) = fixture(&eid);
+    let e = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    let mut bundle: perfine_api::evidence::Bundle =
+        serde_json::from_slice(&bytes["engine"]).unwrap();
+    bundle.first.as_mut().unwrap().base = bundle.incremental_baseline[0].clone();
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    assert_eq!(
+        perfine_api::evidence::evaluate(&e, &m, &bytes)
+            .unwrap()
+            .unwrap()["verdict"],
+        "PERFORMANCE_VERDICT_PASS"
+    );
+    bundle
+        .first
+        .as_mut()
+        .unwrap()
+        .base
+        .measurements
+        .values_mut()
+        .next()
+        .unwrap()
+        .values[0] += 1.0;
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    assert!(perfine_api::evidence::evaluate(&e, &m, &bytes).is_err());
+}
