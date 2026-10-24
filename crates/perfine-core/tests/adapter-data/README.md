@@ -24,6 +24,5 @@ The command is `node --cpu-prof --cpu-prof-interval=100 --cpu-prof-dir=/build --
 The SHA-256 is `e9e7563ef45efbe7b0adfc2297e33ffe3ed286b75c43e36f69adc0c44e4a87e6`.
 It contains 37,736 samples, one signed delta of -3 microseconds, and a maximum
 sample offset of 9,615,385 microseconds. The offline test checks chronological
-cost attribution and source coverage. The associated timing experiment remained
-inconclusive under its frozen uncertainty policy; this capture is not a
-performance-pass or native-platform claim.
+cost attribution and source coverage. This offline parser input does not establish a performance pass or native
+platform acceptance.
