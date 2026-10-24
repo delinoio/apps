@@ -295,6 +295,24 @@ describe("mocked typed RPC dashboard", () => {
       ).toBe(expected);
     },
   );
+  it.each([0, 3])(
+    "shows repetition evidence accurately for count %s",
+    (repetitions) => {
+      const value = {
+        ...candidate,
+        comparisons: candidate.comparisons.map((comparison) => ({
+          ...comparison,
+          cases: comparison.cases.map((entry) => ({ ...entry, repetitions })),
+        })),
+      };
+      render(<CandidateEvidence candidate={value} />);
+      for (const label of screen.getAllByText("Repetitions")) {
+        expect(label.nextElementSibling?.textContent).toBe(
+          repetitions > 0 ? String(repetitions) : "Unavailable",
+        );
+      }
+    },
+  );
   it("shows valid no-candidate and cancellation states", async () => {
     mount(
       () => (

@@ -133,3 +133,5 @@ Logto, Delcore, GitHub, Actions, R2 or backend acceptance. Remove generated `dis
 output after validation.
 
 Transient experiment or candidate query failures hide retained review evidence without discarding the mounted publication session. Recovery retains the original approval ID, locked binding, and request ID so retries reconcile the same submission.
+
+A zero/default case repetition count means the API did not supply a usable count. Detail and publication review display it as unavailable, not as evidence of zero measurements. Positive supplied counts remain visible.

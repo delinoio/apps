@@ -665,7 +665,7 @@ export function CandidateEvidence({
                   </div>
                   <div>
                     <dt>Repetitions</dt>
-                    <dd>{m.repetitions}</dd>
+                    <dd>{m.repetitions > 0 ? m.repetitions : "Unavailable"}</dd>
                   </div>
                 </dl>
               </article>
