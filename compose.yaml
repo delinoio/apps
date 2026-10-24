@@ -70,8 +70,26 @@ services:
       retries: 30
       start_period: 10s
 
+  perfine-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: perfine
+      POSTGRES_PASSWORD: local-perfine
+      POSTGRES_DB: perfine
+    ports:
+      - "127.0.0.1:${PERFINE_POSTGRES_PORT:-55436}:5432"
+    volumes:
+      - perfine-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U perfine -d perfine"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
 volumes:
   delcore-postgres-data:
   delitools-postgres-data:
   devbase-postgres-data:
   git-tracker-postgres-data:
+  perfine-postgres-data:

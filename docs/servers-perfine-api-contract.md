@@ -27,6 +27,8 @@ Authorized readers, experiment operators, publishers, space managers, and servic
 
 ### Deployment and operations
 
+Local development registers the API at `perfine-api.localhost` on fixed loopback port `46323`. The shared API launcher selects `perfine-api`; root development prepares `perfine-postgres` and passes its resolved database URL through the service-owned Turbo task after Infisical injection. The service uses `/perfine-api` development settings.
+
 - Rust API and background work, PostgreSQL authoritative state, R2 artifacts, Connect RPC business API, Rsbuild web app on Cloudflare Pages, and server OCI image. Follow repository configuration and secret boundaries.
 - Operator-required deployment settings include space storage quota, single-upload size limit, request-rate limit, concurrent cloud-execution limit, and alert thresholds/windows. Reject new work that exceeds its applicable limit; keep authorized read/delete paths available.
 - Use explicit DB migrations. Recover service defects by deploying a corrected version; no automatic reverse migrations. Preserve v1 public compatibility.
