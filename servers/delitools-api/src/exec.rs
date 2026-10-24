@@ -16,7 +16,8 @@
 //! 3. A transient failure (network, 5xx, 429) retries until the retry budget is spent.
 //! 4. A completed response with confirmed usage is stored in the outbox *before* its content is
 //!    interpreted, so failed, invalid or canceled-after-response attempts are still billed.
-//!    Missing or invalid usage is counted and logged, never estimated.
+//!    Missing or invalid usage is counted and logged, never estimated. A started attempt that ends
+//!    without a response (failure, cancellation or deadline) is likewise one `missing` observation.
 //! 5. Output is validated; invalid output is final (no repair retry, no model substitution).
 //!
 //! Cancellation has two sources: the caller (handler drop) and the service-wide fence that closes
@@ -35,7 +36,7 @@ use crate::{
     retry::Failure,
     telemetry::Procedure,
     translate::{self, Translation},
-    usage::{self, UsageReading},
+    usage::{self, UnknownUsage, UsageReading},
 };
 use chrono::{DateTime, Utc};
 use std::{
@@ -169,12 +170,30 @@ impl Inner {
         }
     }
 
+    /// Records one unknown-usage observation: the `delitools_unknown_usage_total` counter and the
+    /// bounded `unknown_usage` warning. The only call sites are the end of a provider attempt that
+    /// was genuinely started and produced no confirmed totals, so each such attempt is observed
+    /// exactly once. It carries no request text, schema, output or credential.
+    fn observe_unknown_usage(&self, attempt: u32, reason: UnknownUsage) {
+        self.metrics
+            .unknown_usage
+            .with_label_values(&[reason.label()])
+            .inc();
+        tracing::warn!(
+            category = "unknown_usage",
+            attempt,
+            reason = reason.label(),
+            "provider usage is unknown; nothing is charged"
+        );
+    }
+
     /// Runs one Gateway call and counts it as `canceled` or `timeout` only when the call was
     /// interrupted after it had started (see [`race_provider`]).
     async fn provider_attempt(
         &self,
         job: &Job,
         request: &ChatRequest,
+        attempt: u32,
     ) -> Result<Result<Completion, Failure>, ApiError> {
         match race_provider(&job.cancel, job.deadline, self.gateway.complete(request)).await {
             Ok(outcome) => Ok(outcome),
@@ -188,6 +207,8 @@ impl Inner {
                         .gateway_attempts
                         .with_label_values(&[label])
                         .inc();
+                    // The aborted call returned no usage report.
+                    self.observe_unknown_usage(attempt, UnknownUsage::Missing);
                 }
                 Err(self.stopped(interrupted.stop))
             }
@@ -229,7 +250,7 @@ impl Inner {
             }
             // `race_provider` refuses to start an attempt at or after the request deadline and
             // once the job is canceled, so no separate pre-check is needed here.
-            let outcome = self.provider_attempt(job, &request).await?;
+            let outcome = self.provider_attempt(job, &request, attempt).await?;
             let completion = match outcome {
                 Ok(completion) => completion,
                 Err(Failure::Transient { retry_after }) => {
@@ -243,6 +264,8 @@ impl Inner {
                         outcome = "transient",
                         "provider attempt failed transiently"
                     );
+                    // A failed call returned no usage report.
+                    self.observe_unknown_usage(attempt, UnknownUsage::Missing);
                     hint = retry_after;
                     if attempt == max_attempts {
                         return Err(ApiError::provider_unavailable());
@@ -260,6 +283,7 @@ impl Inner {
                         outcome = "permanent",
                         "provider rejected the request"
                     );
+                    self.observe_unknown_usage(attempt, UnknownUsage::Missing);
                     return Err(ApiError::provider_rejected());
                 }
             };
@@ -275,18 +299,7 @@ impl Inner {
                     );
                     self.record_usage(job, attempt, tokens).await?;
                 }
-                UsageReading::Unknown(reason) => {
-                    self.metrics
-                        .unknown_usage
-                        .with_label_values(&[reason.label()])
-                        .inc();
-                    tracing::warn!(
-                        category = "unknown_usage",
-                        attempt,
-                        reason = reason.label(),
-                        "provider usage is unknown; nothing is charged"
-                    );
-                }
+                UsageReading::Unknown(reason) => self.observe_unknown_usage(attempt, reason),
             }
             if completion.truncated {
                 self.metrics

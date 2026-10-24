@@ -933,6 +933,15 @@ impl Harness {
         }
     }
 
+    /// Current value of `delitools_unknown_usage_total{reason}`.
+    pub fn unknown_usage(&self, reason: &str) -> u64 {
+        self.server
+            .metrics
+            .unknown_usage
+            .with_label_values(&[reason])
+            .get()
+    }
+
     pub async fn translate(&self, token: &str, body: Value) -> Wire {
         self.call("Translate", Some(token), body).await
     }
