@@ -101,6 +101,8 @@ Pprof decompression is bounded to 64 MiB and wire inspection to one million fiel
 
 Uploads first write staging keys. Only bytes verified by the service are copied to accepted keys, whose PUT URLs are never returned to clients. Downloads sign accepted keys for 900 seconds. Deletion blocks reads immediately and waits until all staging PUT URLs expire before completing physical cleanup. Cleanup has no retry expiry, and a failed storage operation keeps its work record. For a running imported Actions execution, deletion also retains the execution identity and retries cancellation until GitHub confirms termination; object removal does not discard that retry record.
 
+Publication maintenance orders pending work by its persisted next-attempt time. Each claimed approval advances that time before authority or provider checks, including failed attempts, so blocked approvals cannot monopolize a batch. This scheduling metadata is independent of the durable external-dispatch attempt count.
+
 ### Operator runbooks
 
 - **Authentication or permission failure:** verify the Logto resource and service identity, the exact Delcore capability registration, API-key tenant/grants, and current tenant state. Do not bypass a blocked or unknown state. Only `DELETED` triggers automatic space cleanup.

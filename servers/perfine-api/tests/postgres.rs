@@ -860,9 +860,25 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     )
     .await
     .unwrap();
+    // An entire first batch has invalid approvers. Their failures must not
+    // prevent the later valid approval from running in the next batch.
+    for _ in 0..20 {
+        let blocked = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO perfine_approvals(id,experiment,data,publication,created_at) SELECT $1,experiment,jsonb_set(jsonb_set(data,'{id}',to_jsonb($1::text)),'{approverSubject}','\"invalid-subject\"'::jsonb),jsonb_set(publication,'{approvalId}',to_jsonb($1::text)),created_at-interval '1 day' FROM perfine_approvals WHERE id=$2")
+            .bind(blocked).bind(uuid::Uuid::parse_str(aid).unwrap()).execute(&db).await.unwrap();
+    }
     *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
     server.maintain().await.unwrap();
     assert_eq!(*creates.lock().unwrap(), 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM perfine_approvals WHERE publication ? '_nextAttemptAt'"
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap(),
+        20
+    );
     grants.lock().unwrap().push("publish".into());
     server.maintain().await.unwrap();
     let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
@@ -873,9 +889,23 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         "PUBLICATION_STATE_RECONCILING"
     );
     let delayed = std::mem::take(&mut *pulls.lock().unwrap());
+    sqlx::query(
+        "UPDATE perfine_approvals SET publication=publication-'_nextAttemptAt' WHERE id=$1",
+    )
+    .bind(uuid::Uuid::parse_str(aid).unwrap())
+    .execute(&db)
+    .await
+    .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(*creates.lock().unwrap(), 1);
     *pulls.lock().unwrap() = delayed;
+    sqlx::query(
+        "UPDATE perfine_approvals SET publication=publication-'_nextAttemptAt' WHERE id=$1",
+    )
+    .bind(uuid::Uuid::parse_str(aid).unwrap())
+    .execute(&db)
+    .await
+    .unwrap();
     server.maintain().await.unwrap();
     let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
         .await
