@@ -146,7 +146,7 @@ if (
   const notices =
     process.env.PERFINE_NOTICES ??
     join(root, "packages/perfine/dist/THIRD_PARTY_NOTICES");
-  if (!existsSync(notices)) {
+  if (process.env.PERFINE_NOTICES === undefined) {
     const { collectNotices } = await import("./notices.mjs");
     mkdirSync(dirname(notices), { recursive: true });
     writeFileSync(notices, collectNotices(root));
