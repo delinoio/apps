@@ -40,6 +40,8 @@ Rust is the explicit CLI/shared-engine language choice instead of the non-server
 
 The shared crate exposes configured local language, measurement, profile, headless-agent and Docker environment implementations through the [adapter API contract](crates-perfine-adapters-contract.md#concrete-local-adapter-api). CLI workers and server-side evidence evaluators reuse the same evidence and parser boundary; local authentication configuration is not a hosted API input.
 
+The [hosted evidence and publication contract](servers-perfine-api-contract.md#evidence-upload-envelope) defines normalized observations with retained native artifacts, raw-profile privacy checks, delegated Actions authority, and exact production commit-chain verification.
+
 All surfaces share v1 evidence, immutable experiment policy, and evaluation rules. Execution completion is distinct from a performance pass. Hosted permissions, consent, credential isolation, exact human approval, draft-only publication, and private space ownership apply across every integration.
 
 ### Acceptance Criteria

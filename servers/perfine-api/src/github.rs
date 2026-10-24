@@ -120,6 +120,7 @@ impl GitHub {
     }
     pub async fn production_diff(&self, d: &Value, candidate: &Value, token: &str) -> Result<()> {
         if candidate["_publicationAllowed"] != true
+            || candidate["baseSha"] != d["baseSha"]
             || candidate["headSha"] != d["headSha"]
             || candidate["evidenceManifestSha256"] != d["evidenceManifestSha256"]
         {
@@ -148,22 +149,54 @@ impl GitHub {
         let paths = candidate["_measuredPaths"]
             .as_array()
             .ok_or_else(|| Fault::precondition("measured source paths missing"))?;
-        if integer(&comparison, "total_commits") != 1
-            || comparison["status"] != "ahead"
-            || files.is_empty()
-            || files.len() >= 300
-            || files.iter().any(|f| {
-                let name = string(f, "filename");
-                !paths.contains(&json!(name))
-                    || name.starts_with(".github/")
-                    || name.starts_with(".perfine/")
-                    || name.contains("..")
-                    || f["status"] == "renamed"
-            })
+        let commits = comparison["commits"]
+            .as_array()
+            .ok_or_else(Fault::unavailable)?;
+        if comparison["status"] != "ahead"
+            || comparison["merge_base_commit"]["sha"] != d["baseSha"]
+            || comparison["base_commit"]["sha"] != d["baseSha"]
+            || commits.is_empty()
+            || commits.len() >= 250
+            || integer(&comparison, "total_commits") != commits.len() as u64
+            || commits.last().map(|c| &c["sha"]) != Some(&d["headSha"])
+            || !production_paths(files, paths)
         {
             return Err(Fault::precondition(
-                "production diff requires one isolated commit containing only measured paths; remeasure prepared submission",
+                "complete measured production diff required",
             ));
+        }
+        // Inspect every commit, not just the net diff: adding and then reverting unrelated
+        // infrastructure must not smuggle those commits into a production PR. Exact parent
+        // linkage also excludes merged histories, comparison truncation and unrelated bases.
+        let mut parent = d["baseSha"].clone();
+        for commit in commits {
+            let sha = string(commit, "sha");
+            if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(Fault::precondition("invalid production commit"));
+            }
+            let detail = self
+                .call(
+                    "GET",
+                    &format!("{}/commits/{}", path(&d["headRepository"]), escape(sha)),
+                    token,
+                    None,
+                )
+                .await?;
+            let parents = detail["parents"]
+                .as_array()
+                .ok_or_else(Fault::unavailable)?;
+            let files = detail["files"].as_array().ok_or_else(Fault::unavailable)?;
+            if detail["sha"] != commit["sha"] || parents.len() != 1 || parents[0]["sha"] != parent
+                || !production_paths(files, paths)
+                // The commit endpoint defaults to 30 files per page. Reject the boundary
+                // rather than interpreting a truncated commit as a complete production diff.
+                || files.len() >= 30
+            {
+                return Err(Fault::precondition(
+                    "isolated measured production commits required",
+                ));
+            }
+            parent = commit["sha"].clone();
         }
         Ok(())
     }
@@ -200,4 +233,19 @@ pub fn path(repository: &Value) -> String {
         escape(string(repository, "owner")),
         escape(string(repository, "name"))
     )
+}
+
+fn production_paths(files: &[Value], paths: &[Value]) -> bool {
+    !files.is_empty()
+        && files.len() < 300
+        && files.iter().all(|f| {
+            let name = string(f, "filename");
+            paths.contains(&json!(name))
+                && !name.starts_with(".github/")
+                && !name.starts_with(".perfine/")
+                && !name.contains("..")
+                && !name.starts_with('/')
+                && !name.contains('\\')
+                && matches!(string(f, "status"), "added" | "modified" | "removed")
+        })
 }

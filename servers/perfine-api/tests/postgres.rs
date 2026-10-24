@@ -229,6 +229,29 @@ fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
         .is_err()
     );
 }
+#[test]
+fn raw_profiles_cannot_replace_normalized_observations() {
+    let eid = uid();
+    let (spec, mut m, mut bytes) = fixture(&eid);
+    add_raw(
+        &mut m,
+        &mut bytes,
+        b"events: Ir\nfl=src/hot.rs\n1 10\n".to_vec(),
+    );
+    let e = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    assert!(perfine_api::evidence::evaluate(&e, &m, &bytes).is_ok());
+    let mut bundle: perfine_api::evidence::Bundle =
+        serde_json::from_slice(&bytes["engine"]).unwrap();
+    bundle
+        .first
+        .as_mut()
+        .unwrap()
+        .head
+        .artifacts
+        .remove(&name("head-profile"));
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    assert!(perfine_api::evidence::evaluate(&e, &m, &bytes).is_err());
+}
 #[tokio::test]
 #[ignore = "requires disposable TEST_DATABASE_URL; all providers are mocks"]
 async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
@@ -292,12 +315,14 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     return StatusCode::SERVICE_UNAVAILABLE.into_response();
    },
    "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
+   "/repos/owner/repo/actions/runs/7/attempts/2"=>json!({"id":7,"run_attempt":2,"repository":{"id":42},"head_repository":{"id":42},"actor":{"id":99},"head_sha":"d".repeat(40),"path":".github/workflows/perfine.yml","event":"workflow_dispatch"}),
    "/repos/owner/repo/actions/runs/1/cancel"=>json!({}),
    "/repos/owner/repo/actions/runs/1"=>json!({"status":"completed","conclusion":"cancelled"}),
    "/repos/owner/repo"=>json!({"id":42}),
    "/repos/owner/repo/commits/main"=>json!({"sha":"a".repeat(40)}),
    "/repos/owner/repo/commits/candidate"=>json!({"sha":"d".repeat(40)}),
-   path if path.starts_with("/repos/owner/repo/compare/")=>json!({"total_commits":1,"status":"ahead","files":[{"filename":"src/hot.rs","status":"modified"}]}),
+   path if path.starts_with("/repos/owner/repo/compare/")=>json!({"total_commits":2,"status":"ahead","base_commit":{"sha":"a".repeat(40)},"merge_base_commit":{"sha":"a".repeat(40)},"commits":[{"sha":"e".repeat(40)},{"sha":"d".repeat(40)}],"files":[{"filename":"src/hot.rs","status":"modified"}]}),
+   path if path.starts_with("/repos/owner/repo/commits/")=>{let sha=path.rsplit('/').next().unwrap();json!({"sha":sha,"parents":[{"sha":if sha=="e".repeat(40){"a".repeat(40)}else{"e".repeat(40)}}],"files":[{"filename":"src/hot.rs","status":"modified"}]})},
    "/user"=>json!({"id":7}),
    "/repositories/42"=>json!({"id":42,"full_name":"owner/repo","permissions":{"admin":true}}),
    "/app/installations/1/access_tokens"=>json!({"token":"fixture-installation"}),
@@ -322,11 +347,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             "client".into(),
             "fixture".into(),
         ),
-        actions: Actions::new(
-            http.clone(),
-            format!("{base}/jwks"),
-            serde_json::from_value(json!({"keys":[]})).unwrap(),
-        ),
+        actions: Actions::new(http.clone(), format!("{base}/jwks"), actions_keys()),
         github: GitHub {
             http: http.clone(),
             base: base.clone(),
@@ -380,6 +401,58 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
     let eid = uid();
     let (spec, m, bytes) = fixture(&eid);
+    // The connection creator has GitHub actor 7; actor 99 can run this authorized org workflow.
+    let claims = json!({"iss":"https://token.actions.githubusercontent.com","aud":"https://perfine.api.delino.io","sub":"repo:owner/repo:ref:refs/heads/main","iat":chrono::Utc::now().timestamp(),"nbf":chrono::Utc::now().timestamp()-1,"exp":chrono::Utc::now().timestamp()+300,"repository":"owner/repo","repository_id":"42","run_id":"7","run_attempt":"2","sha":"d".repeat(40),"workflow_sha":"c".repeat(40),"ref":"refs/heads/main","workflow_ref":"owner/repo/.github/workflows/perfine.yml@refs/heads/main","event_name":"workflow_dispatch","actor_id":"99"});
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some("fixture".into());
+    let token = format!(
+        "Actions {}",
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &jsonwebtoken::EncodingKey::from_rsa_pem(include_bytes!(
+                "fixtures/github-test-key.pem"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+    let request = uid();
+    let eligibility = json!({"spaceId":space,"requestId":request,"connectionId":cid,"manifest":m});
+    assert!(
+        server
+            .execute(
+                &token,
+                "",
+                "CheckUploadEligibility",
+                eligibility.clone(),
+                &request
+            )
+            .await
+            .is_ok()
+    );
+    *grants.lock().unwrap() = vec!["manage".into()];
+    assert!(
+        server
+            .execute(
+                &token,
+                "",
+                "CheckUploadEligibility",
+                eligibility.clone(),
+                &request
+            )
+            .await
+            .is_err()
+    );
+    *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
+    let mut wrong = eligibility.clone();
+    wrong["spaceId"] = json!(uid());
+    assert!(
+        server
+            .execute(&token, "", "CheckUploadEligibility", wrong, &request)
+            .await
+            .is_err()
+    );
     let prepared = call(
         &server,
         &space,
@@ -478,6 +551,146 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         .unwrap()["eligibleForCompleteEvaluation"],
         false
     );
+    call(&server,&space,"SetRawArtifactConsent",json!({"connectionId":cid,"expectedRevision":"2","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"]})).await.unwrap();
+    // Exercise the complete storage/evaluation path for all official profile families.
+    for (language, source) in [
+        ("LANGUAGE_RUST", "hot.rs"),
+        ("LANGUAGE_C", "hot.c"),
+        ("LANGUAGE_CPP", "hot.cpp"),
+        ("LANGUAGE_ZIG", "hot.zig"),
+        ("LANGUAGE_GO", "hot.go"),
+        ("LANGUAGE_JAVASCRIPT", "hot.js"),
+        ("LANGUAGE_GO", "secret.go"),
+    ] {
+        let raw_id = uid();
+        let (mut rs, mut rm, mut rb) = fixture(&raw_id);
+        rs["language"] = json!(language);
+        let raw_bytes = if language == "LANGUAGE_GO" {
+            use std::io::Write;
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder
+                .write_all(&[50, 0, 50, 6, b'h', b'o', b't', b'.', b'g', b'o'])
+                .unwrap();
+            if source == "secret.go" {
+                encoder
+                    .write_all(&[50, 5, b'g', b'h', b'p', b'_', b'x'])
+                    .unwrap();
+            }
+            let encoded = encoder.finish().unwrap();
+            if source == "secret.go" {
+                encoded
+            } else {
+                include_bytes!(
+                    "../../../crates/perfine-core/tests/adapter-data/go-darwin-arm64.pprof"
+                )
+                .to_vec()
+            }
+        } else if language == "LANGUAGE_JAVASCRIPT" {
+            serde_json::to_vec(
+                &json!({"nodes":[{"callFrame":{"url":source,"functionName":"hot"}}],"samples":[1]}),
+            )
+            .unwrap()
+        } else {
+            format!("version: 1\nevents: Ir\nfl={source}\nfn=hot\n1 10\n").into_bytes()
+        };
+        let raw_hash = perfine_api::hash(&raw_bytes);
+        add_raw(&mut rm, &mut rb, raw_bytes);
+        rm["consentRevision"] = json!("3");
+        rm["runStartedAt"] = json!(chrono::Utc::now().to_rfc3339());
+        checksum(&mut rm);
+        let begin = call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":raw_id,"specification":rs,"manifest":rm,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap();
+        for t in begin["targets"].as_array().unwrap() {
+            http.put(t["signedPutUrl"].as_str().unwrap())
+                .body(rb[t["artifactName"].as_str().unwrap()].clone())
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+        // Revocation after registration blocks completion, even with containsSourceSnippets=false.
+        if language == "LANGUAGE_GO" {
+            call(
+                &server,
+                &space,
+                "SetRawArtifactConsent",
+                json!({"connectionId":cid,"expectedRevision":"3","allowedKinds":[]}),
+            )
+            .await
+            .unwrap();
+            assert!(
+                call(
+                    &server,
+                    &space,
+                    "CompleteUpload",
+                    json!({"uploadId":begin["upload"]["id"]})
+                )
+                .await
+                .is_err()
+            );
+            // Restore the fixture's pre-run consent record only in the disposable test DB.
+            sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{consent}', $1) WHERE id=$2").bind(json!({"revision":"3","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"],"effectiveAt":"2020-01-01T00:00:00Z"})).bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+        }
+        if source == "secret.go" {
+            assert!(
+                call(
+                    &server,
+                    &space,
+                    "CompleteUpload",
+                    json!({"uploadId":begin["upload"]["id"]})
+                )
+                .await
+                .is_err()
+            );
+            assert!(call(&server,&space,"GetEvidenceDownload",json!({"experimentId":raw_id,"manifestSha256":rm["manifestSha256"],"artifactName":"native-profile"})).await.is_err());
+            call(
+                &server,
+                &space,
+                "DeleteExperiment",
+                json!({"experimentId":raw_id}),
+            )
+            .await
+            .unwrap();
+            sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+                .execute(&db)
+                .await
+                .unwrap();
+            server.maintain().await.unwrap();
+            continue;
+        }
+        call(
+            &server,
+            &space,
+            "CompleteUpload",
+            json!({"uploadId":begin["upload"]["id"]}),
+        )
+        .await
+        .unwrap();
+        let link=call(&server,&space,"GetEvidenceDownload",json!({"experimentId":raw_id,"manifestSha256":rm["manifestSha256"],"artifactName":"native-profile"})).await.unwrap();
+        let retained = http
+            .get(link["signedGetUrl"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert_eq!(perfine_api::hash(&retained), raw_hash);
+        call(
+            &server,
+            &space,
+            "DeleteExperiment",
+            json!({"experimentId":raw_id}),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+            .execute(&db)
+            .await
+            .unwrap();
+        server.maintain().await.unwrap();
+    }
     let page = call(
         &server,
         &space,
@@ -544,6 +757,9 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     );
     *grants.lock().unwrap() = vec!["publish".into()];
     let draft = json!({"targetRepository":c["repository"],"headRepository":c["repository"],"baseRef":"main","headRef":"candidate","baseSha":"a".repeat(40),"headSha":"d".repeat(40),"title":"Optimize measured path","body":"Verified fixture evidence","candidateId":m["candidateId"],"evidenceManifestSha256":m["manifestSha256"]});
+    // A signed job cannot turn upload authority into a human approval.
+    let denied_request = uid();
+    assert!(server.execute(&token,"","ApproveDraft",json!({"requestId":denied_request,"spaceId":space,"experimentId":eid,"draft":draft}),&denied_request).await.is_err());
     let approval = call(
         &server,
         &space,
@@ -716,7 +932,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap(),
-        1
+        8
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
@@ -790,4 +1006,37 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         .unwrap();
     admin.close().await;
     task.abort();
+}
+
+fn actions_keys() -> jsonwebtoken::jwk::JwkSet {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts};
+    let private = RsaPrivateKey::from_pkcs8_pem(
+        std::str::from_utf8(include_bytes!("fixtures/github-test-key.pem")).unwrap(),
+    )
+    .unwrap();
+    serde_json::from_value(json!({"keys":[{"kty":"RSA","kid":"fixture","alg":"RS256","use":"sig","n":URL_SAFE_NO_PAD.encode(private.n().to_bytes_be()),"e":URL_SAFE_NO_PAD.encode(private.e().to_bytes_be())}]})).unwrap()
+}
+fn add_raw(m: &mut Value, bytes: &mut BTreeMap<String, Vec<u8>>, raw: Vec<u8>) {
+    let mut bundle: perfine_api::evidence::Bundle =
+        serde_json::from_slice(&bytes["engine"]).unwrap();
+    bundle.first.as_mut().unwrap().head.artifacts.insert(
+        name("native-profile"),
+        engine::Artifact {
+            kind: engine::ArtifactKind::Profile,
+            sha256: digest(&raw),
+            size: raw.len() as u64,
+        },
+    );
+    m["artifacts"].as_array_mut().unwrap().push(json!({"name":"native-profile","kind":"ARTIFACT_KIND_RAW_PROFILE","mediaType":"application/octet-stream","sizeBytes":raw.len().to_string(),"sha256":perfine_api::hash(&raw),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":true,"containsSourceSnippets":false}));
+    bytes.insert("native-profile".into(), raw);
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    let engine = m["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|a| a["name"] == "engine")
+        .unwrap();
+    engine["sha256"] = json!(perfine_api::hash(&bytes["engine"]));
+    engine["sizeBytes"] = json!(bytes["engine"].len().to_string());
 }

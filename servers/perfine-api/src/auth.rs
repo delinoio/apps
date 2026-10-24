@@ -149,3 +149,62 @@ pub async fn authorize(
     }
     Ok(user)
 }
+
+/// Bind the signed job to the current installation's repository and the exact GitHub attempt.
+/// The caller separately rechecks ACTIVE space and the connection principal's experiment grant.
+pub fn execution_scope(
+    claims: &Value,
+    execution: &Value,
+    repository: &Value,
+    remote: &Value,
+) -> Result<()> {
+    use crate::integer;
+    let rid = integer(repository, "githubRepositoryId");
+    let run = integer(execution, "githubRunId");
+    let attempt = integer(execution, "runAttempt");
+    let repo = format!(
+        "{}/{}",
+        string(repository, "owner"),
+        string(repository, "name")
+    );
+    let path = string(execution, "workflowPath");
+    let reference = string(claims, "ref");
+    let source = string(execution, "sourceSha");
+    let workflow = string(execution, "workflowSha");
+    let full_sha = |s: &str| {
+        s.len() == 40
+            && s.bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    };
+    if rid == 0
+        || run == 0
+        || attempt == 0
+        || string(claims, "repository_id") != rid.to_string()
+        || claims["repository"] != repo
+        || string(claims, "run_id") != run.to_string()
+        || string(claims, "run_attempt") != attempt.to_string()
+        || !full_sha(source)
+        || !full_sha(workflow)
+        || claims["sha"] != source
+        || claims["workflow_sha"] != workflow
+        || claims["event_name"] != "workflow_dispatch"
+        || !path.starts_with(".github/workflows/")
+        || path.contains("..")
+        || path.contains('@')
+        || !(path.ends_with(".yml") || path.ends_with(".yaml"))
+        || !(reference.starts_with("refs/heads/") || reference.starts_with("refs/tags/"))
+        || claims["workflow_ref"] != format!("{repo}/{path}@{reference}")
+        || integer(remote, "id") != run
+        || integer(remote, "run_attempt") != attempt
+        || integer(&remote["repository"], "id") != rid
+        || integer(&remote["head_repository"], "id") != rid
+        || remote["head_sha"] != source
+        || remote["path"] != path
+        || remote["event"] != "workflow_dispatch"
+        || integer(&remote["actor"], "id") == 0
+        || string(claims, "actor_id") != integer(&remote["actor"], "id").to_string()
+    {
+        return Err(Fault::denied());
+    }
+    Ok(())
+}
