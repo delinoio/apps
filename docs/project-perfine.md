@@ -38,6 +38,8 @@ Directory skeletons reserve these canonical paths before runtime implementation.
 
 Rust is the explicit CLI/shared-engine language choice instead of the non-server Go default. TypeScript/React serves the browser UI; hosted Rust, PostgreSQL, Connect, R2 signed URLs, and Cloudflare Pages follow repository defaults. Local filesystem evidence is required for account-free offline operation rather than mandatory R2 storage. Repository-owned server files/distributions use FSL-1.1-ALv2; other owned files/distributions use Apache-2.0, with original third-party notices retained.
 
+The shared crate exposes configured local language, measurement, profile, headless-agent and Docker environment implementations through the [adapter API contract](crates-perfine-adapters-contract.md#concrete-local-adapter-api). CLI workers and server-side evidence evaluators reuse the same evidence and parser boundary; local authentication configuration is not a hosted API input.
+
 All surfaces share v1 evidence, immutable experiment policy, and evaluation rules. Execution completion is distinct from a performance pass. Hosted permissions, consent, credential isolation, exact human approval, draft-only publication, and private space ownership apply across every integration.
 
 ### Acceptance Criteria

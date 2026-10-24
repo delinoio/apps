@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared v1 contracts. Adapters supply observations; this crate validates them.
-//! No operation in this crate executes candidate code or publishes a pull request.
+//! Concrete adapters execute isolated candidate code; publication remains caller-owned.
 #![forbid(unsafe_code)]
+pub mod adapters;
 pub mod evidence;
 pub mod interfaces;
 pub mod lifecycle;
