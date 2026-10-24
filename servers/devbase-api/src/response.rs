@@ -22,6 +22,7 @@ use axum::{
     response::Response,
 };
 use server_common::Fault;
+use std::borrow::Cow;
 
 /// Message prefix the transport gives every JSON decoding failure (`connectrpc::codec`). It
 /// identifies only the failure category, never the submitted value that follows it.
@@ -83,15 +84,41 @@ fn is_json(headers: &HeaderMap) -> bool {
 }
 
 /// True for a Connect error object with code `invalid_argument` whose message begins with the
-/// transport's decoding-failure prefix. The message is only compared, never copied or logged.
+/// transport's decoding-failure prefix. The message is only compared, never logged or returned.
 fn is_decode_failure(body: &[u8]) -> bool {
+    // `Cow` borrows an unescaped string and owns one that needs unescaping. The transport escapes
+    // quotes, backslashes and control characters in the diagnostic, so a plain `&str` would fail
+    // to deserialize exactly for the diagnostics that echo such submitted text.
     #[derive(serde::Deserialize)]
     struct Wire<'a> {
-        code: &'a str,
-        #[serde(default)]
-        message: &'a str,
+        #[serde(borrow)]
+        code: Cow<'a, str>,
+        #[serde(borrow, default)]
+        message: Cow<'a, str>,
     }
     serde_json::from_slice::<Wire>(body).is_ok_and(|wire| {
         wire.code == "invalid_argument" && wire.message.starts_with(DECODE_FAILURE_PREFIX)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_decode_failure;
+
+    #[test]
+    fn decode_failure_with_escaped_diagnostic_is_recognized() {
+        let escaped = br#"{"code":"invalid_argument","message":"failed to decode JSON: bad \"q\" and \\ and \u0001"}"#;
+        assert!(is_decode_failure(escaped));
+        let plain = br#"{"code":"invalid_argument","message":"failed to decode JSON: x"}"#;
+        assert!(is_decode_failure(plain));
+    }
+
+    #[test]
+    fn other_errors_are_not_decode_failures() {
+        let other = br#"{"code":"invalid_argument","message":"a \"quoted\" application error"}"#;
+        assert!(!is_decode_failure(other));
+        let code = br#"{"code":"unauthenticated","message":"failed to decode JSON: x"}"#;
+        assert!(!is_decode_failure(code));
+        assert!(!is_decode_failure(b"not json"));
+    }
 }

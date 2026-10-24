@@ -737,6 +737,10 @@ async fn invalid_update_mask_components_get_a_fixed_typed_error_without_echo() {
         "private-customer-name@example.test",
         "private_customer_name",
         "name,private_customer_name",
+        // Components with a quote or a backslash: the transport's JSON error body escapes them,
+        // so the inspection must accept an escaped message.
+        r#"private\"customer"#,
+        r#"private\\customer"#,
     ];
     for mask in masks {
         let body = update_end_user_json(mask);
