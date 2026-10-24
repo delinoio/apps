@@ -76,3 +76,32 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## Runtime configuration and recovery
+
+The service binary accepts `serve`, `migrate`, and `check-schema`. Migrations are explicit and idempotent. The listener defaults to `127.0.0.1:46323`; the service development command selects the `/perfine-api` Infisical folder and the `perfine-api` Portless route. Root development owns the shared Cargo build, database handoff, and launcher registration.
+
+Configure `DATABASE_URL`, `WEB_ORIGIN`, Delcore/Logto service credentials, the GitHub App identifier and key file, and the R2 endpoint, bucket, access key and secret using service environment injection. The service-local `.env.example` lists names and safe loopback placeholders. Register the Perfine service in Delcore with the exact independent capabilities `read`, `experiment`, `publish`, and `manage`; the service client needs the existing `authorize` scope. Do not add these permissions to a global role implication hierarchy. API-key requests use `AuthorizeApiKey` and require the returned tenant to equal the requested space. Human identity requests use `GetCurrentUser` and exact `Authorize` with `paid: false`. Both also require a current `ACTIVE` tenant state.
+
+Repository connection sends the user's GitHub authorization in the `x-github-token` transport header. The server uses it only to verify current repository admin authority and does not persist it. The GitHub App must currently have access to the same immutable repository ID. This header is distinct from the Logto or Delcore authorization header. Actions evidence uses `Authorization: Actions <OIDC token>` with issuer `https://token.actions.githubusercontent.com`, audience `https://perfine.api.delino.io`, and exact repository, manual workflow, source, run and attempt checks against GitHub.
+
+Operators must set positive `SPACE_STORAGE_QUOTA_BYTES`, `SINGLE_UPLOAD_LIMIT_BYTES`, `REQUESTS_PER_MINUTE`, `CONCURRENT_CLOUD_EXECUTIONS`, `ALERT_WINDOW_SECONDS`, `ALERT_FAILURE_THRESHOLD`, and `ALERT_CLEANUP_AGE_SECONDS`. Storage reservations and lifecycle changes serialize per space in PostgreSQL. Quotas do not expire retained product data. Configure the external operational log sink with a fixed 30-day retention period; server audits and request records use their initial creation time. Read and delete operations bypass new-work rate and storage limits.
+
+### Evidence upload envelope
+
+The `ENGINE_EVIDENCE` artifact contains the lossless JSON `Bundle` defined by the server's evidence module: `schema_version`, shared-engine `config`, two `incremental_baseline` manifests, optional `cumulative_baseline`, optional `first` and `repeat` rounds, and `review`. A round contains `base`, `head`, and optional `cumulative_base` engine manifests. Each run has a distinct UUID v7 run ID. All referenced artifact bytes are separate entries in the typed RPC manifest. The server freezes the supplied config and uses the shared engine's verification, baseline validation, and evaluation functions. The RPC manifest checksum uses deterministic protobuf bytes with its checksum cleared.
+
+The typed policy digest is the core policy fingerprint, and the typed environment digest is the core environment fingerprint. Unknown nested engine fields are rejected at the hosted privacy boundary even though the local core permits additive fields. Environment variable maps must be empty. Non-raw artifacts must be structured JSON. Opaque binary artifacts require an explicit privacy parser; retain them locally or on GitHub until that parser is available. Raw text profile/test artifacts require current pre-run consent and still pass secret checks.
+
+Uploads first write staging keys. Only bytes verified by the service are copied to accepted keys, whose PUT URLs are never returned to clients. Downloads sign accepted keys for 900 seconds. Deletion blocks reads immediately and waits until all staging PUT URLs expire before completing physical cleanup. Cleanup has no retry expiry, and a failed storage operation keeps its work record.
+
+### Operator runbooks
+
+- **Authentication or permission failure:** verify the Logto resource and service identity, the exact Delcore capability registration, API-key tenant/grants, and current tenant state. Do not bypass a blocked or unknown state. Only `DELETED` triggers automatic space cleanup.
+- **Upload failure:** retain local originals, inspect eligibility and quota responses, and resend with the same request ID and immutable manifest. Do not edit frozen conditions or replace accepted candidate evidence. Correct secrets or source eligibility locally and create a new eligible manifest.
+- **Profiler failure:** run local tool diagnostics and preserve partial evidence. Opaque formats without a hosted privacy parser cannot establish a hosted pass. Missing baseline, correctness, profile coverage, or artifact hashes fails verification.
+- **Cleanup backlog:** alert when `perfine_cleanup_pending` persists beyond the configured cleanup age. Check R2 credentials and connectivity. Restore access and allow maintenance to retry. Do not remove tombstones or pending jobs to clear an alert.
+- **Publication uncertainty:** inspect `perfine_publication_reconciling` and the exact approved GitHub repository, refs, SHAs, title, and body. The durable dispatch intent precedes the external request. Reconciliation checks GitHub before another attempt and allows only one retry. Do not manually reset the attempt counter without resolving the remote outcome.
+- **Actions cancellation failure:** use the returned direct GitHub run URL and cancel through GitHub with current repository authority. Keep completed evidence. An API cancellation request is not confirmation that GitHub stopped the run.
+- **Cloud unavailable:** use local Perfine execution and upload. No deployment adapter is enabled merely by supplying credentials. The server never accepts AI authentication configuration.
+- **Capacity and alerts:** monitor reserved storage, pending cleanup, reconciling publication, structured operation failures, and database health over `ALERT_WINDOW_SECONDS`. Apply `ALERT_FAILURE_THRESHOLD` to failed operations and `ALERT_CLEANUP_AGE_SECONDS` to the oldest pending cleanup. Configure the operator's monitoring sink to page on sustained thresholds, and verify alert delivery separately from fixture tests.

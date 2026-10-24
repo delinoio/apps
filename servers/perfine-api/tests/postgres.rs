@@ -1,0 +1,449 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+use axum::{Json, Router, extract::Request, http::StatusCode, response::IntoResponse};
+use buffa::Message;
+use perfine_api::{Server, auth::Actions, github::GitHub, storage::R2};
+use perfine_core::{evidence as engine, lifecycle::Limits, policy, types::*};
+use serde_json::{Value, json};
+use server_common::authority::Authority;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+fn uid() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+fn name(s: &str) -> Name {
+    Name::new(s).unwrap()
+}
+fn fixture(eid: &str) -> (Value, Value, BTreeMap<String, Vec<u8>>) {
+    let conditions = Conditions {
+        harness: CommitSha::new("b".repeat(40)).unwrap(),
+        workflow: CommitSha::new("c".repeat(40)).unwrap(),
+        inputs: BTreeMap::from([(name("input"), digest(b"input"))]),
+        tools: BTreeMap::from([(name("callgrind"), name("3.25"))]),
+        toolchain: name("rustc"),
+        build_options: vec![],
+        runtime_flags: vec![],
+        environment: Environment {
+            os: name("linux"),
+            architecture: name("x86_64"),
+            runner: name("fixture"),
+            hardware: BTreeMap::from([(name("cpu"), name("fixture"))]),
+            variables: BTreeMap::new(),
+        },
+        metric: MetricSpec {
+            metric: Metric::Ir,
+            unit: name("instructions"),
+        },
+        cases: BTreeMap::from([(
+            name("case"),
+            Case {
+                family: name("family"),
+                frequency: Some(1.0),
+                protected: false,
+            },
+        )]),
+        correctness_checks: vec![name("tests")],
+    };
+    let config = engine::Config {
+        schema_version: Version,
+        repository: name("owner/repo"),
+        initial_base: CommitSha::new("a".repeat(40)).unwrap(),
+        incremental_base: CommitSha::new("a".repeat(40)).unwrap(),
+        conditions,
+        policy: policy::Policy::Ir(policy::IrPolicy::default()),
+        limits: Limits {
+            candidate_count: 1,
+            simultaneous_candidates: 1,
+            start_duration_seconds: 60,
+            candidate_duration_seconds: 30,
+        },
+        workload_confirmation: name("confirmed"),
+    };
+    let frozen = config.clone().freeze().unwrap();
+    let candidate = ResourceId::generate();
+    let mut bytes = BTreeMap::new();
+    let mut manifest = |n: &str, head: bool| {
+        let measurements = BTreeMap::from([(
+            name("case"),
+            engine::Samples {
+                values: vec![if head { 800.0 } else { 1000.0 }],
+            },
+        )]);
+        let correctness = BTreeMap::from([(name("tests"), engine::CheckResult::Passed)]);
+        let paths = BTreeMap::from([(name("case"), BTreeSet::from([name("src/hot.rs")]))]);
+        let artifacts = [
+            (
+                "measurement",
+                engine::ArtifactKind::Measurement,
+                serde_json::to_vec(&measurements).unwrap(),
+            ),
+            (
+                "profile",
+                engine::ArtifactKind::Profile,
+                serde_json::to_vec(&paths).unwrap(),
+            ),
+            (
+                "tests",
+                engine::ArtifactKind::Correctness,
+                serde_json::to_vec(&correctness).unwrap(),
+            ),
+        ]
+        .into_iter()
+        .map(|(label, kind, content)| {
+            let key = format!("{n}-{label}");
+            let a = engine::Artifact {
+                kind,
+                sha256: digest(&content),
+                size: content.len() as u64,
+            };
+            bytes.insert(key.clone(), content);
+            (name(&key), a)
+        })
+        .collect();
+        engine::Manifest {
+            schema_version: Version,
+            identity: engine::RunIdentity {
+                experiment: ResourceId::new(eid).unwrap(),
+                candidate: head.then_some(candidate.clone()),
+                run: ResourceId::generate(),
+                external_execution: None,
+                source: CommitSha::new(if head { "d".repeat(40) } else { "a".repeat(40) }).unwrap(),
+                configuration: frozen.fingerprint().clone(),
+                conditions: fingerprint(&config.conditions).unwrap(),
+            },
+            conditions: config.conditions.clone(),
+            policy: config.policy.clone(),
+            completion: engine::Completion::Complete,
+            measurements,
+            correctness,
+            artifacts,
+            profile_paths: paths,
+        }
+    };
+    let bundle = perfine_api::evidence::Bundle {
+        schema_version: Version,
+        config: config.clone(),
+        incremental_baseline: [manifest("baseline1", false), manifest("baseline2", false)],
+        cumulative_baseline: None,
+        first: Some(perfine_api::evidence::Round {
+            base: manifest("base", false),
+            head: manifest("head", true),
+            cumulative_base: None,
+        }),
+        repeat: None,
+        review: policy::ReviewEvidence::default(),
+    };
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    let environment = json!({"operatingSystem":"linux","architecture":"x86_64","runner":"fixture","runtime":"rustc","tools":[{"name":"callgrind","version":"3.25"}],"environmentSha256":fingerprint(&config.conditions.environment).unwrap()});
+    let policy = json!({"schemaVersion":1,"kind":"POLICY_KIND_CALLGRIND_IR","metric":{"name":"Ir","unit":"instructions","objective":"METRIC_OBJECTIVE_MINIMIZE"},"minimumImprovement":0.01,"maximumCaseRegression":0.01,"policySha256":fingerprint(&config.policy).unwrap()});
+    let spec = json!({"schemaVersion":1,"baseSha":"a".repeat(40),"initialBaseSha":"a".repeat(40),"harnessSha":"b".repeat(40),"language":"LANGUAGE_RUST","environment":environment,"policy":policy,"cases":[{"id":"case","family":"family","frequency":1.0,"frequencySource":"FREQUENCY_SOURCE_DECLARED"}],"limits":{"candidateCount":1,"simultaneousCandidates":1,"startDeadline":(chrono::Utc::now()+chrono::Duration::seconds(60)).to_rfc3339(),"candidateTimeout":"30s"},"fingerprintSha256":frozen.fingerprint(),"workloadRepresentativenessConfirmed":true});
+    let manifest = json!({"schemaVersion":1,"experimentId":eid,"candidateId":candidate,"sourceBaseSha":"a".repeat(40),"sourceHeadSha":"d".repeat(40),"harnessSha":"b".repeat(40),"environment":environment,"inputs":[{"name":"input","sha256":digest(b"input")}],"policy":policy,"metrics":[policy["metric"].clone()],"artifacts":bytes.iter().map(|(n,b)|json!({"name":n,"kind":if n=="engine"{"ARTIFACT_KIND_ENGINE_EVIDENCE"}else if n.ends_with("measurement"){"ARTIFACT_KIND_MEASUREMENTS"}else if n.ends_with("profile"){"ARTIFACT_KIND_PROFILE_SUMMARY"}else{"ARTIFACT_KIND_CORRECTNESS_RESULTS"},"mediaType":"application/json","sizeBytes":b.len().to_string(),"sha256":perfine_api::hash(b),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":true})).collect::<Vec<_>>(),"completion":"COMPLETION_STATE_COMPLETE","experimentFingerprintSha256":frozen.fingerprint(),"engineArtifactName":"engine","runStartedAt":chrono::Utc::now().to_rfc3339()});
+    let mut m: delino_protocol::perfine::v1::EvidenceManifest =
+        serde_json::from_value(manifest).unwrap();
+    m.manifest_sha256 = perfine_api::hash(&m.encode_to_vec());
+    let spec: delino_protocol::perfine::v1::ExperimentSpecification =
+        serde_json::from_value(spec).unwrap();
+    (
+        serde_json::to_value(spec).unwrap(),
+        serde_json::to_value(m).unwrap(),
+        bytes,
+    )
+}
+#[test]
+fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
+    let eid = uid();
+    let (spec, m, mut bytes) = fixture(&eid);
+    let e = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    let result = perfine_api::evidence::evaluate(&e, &m, &bytes)
+        .unwrap()
+        .unwrap();
+    assert_eq!(result["verdict"], "PERFORMANCE_VERDICT_PASS");
+    bytes.insert("base-measurement".into(), b"{}".to_vec());
+    assert!(perfine_api::evidence::evaluate(&e, &m, &bytes).is_err());
+    assert!(
+        perfine_api::evidence::content_allowed(b"password=secret", "ARTIFACT_KIND_RAW_TEST_LOG")
+            .is_err()
+    );
+    assert!(
+        perfine_api::evidence::content_allowed(
+            br#"{"diff":"content"}"#,
+            "ARTIFACT_KIND_PROFILE_SUMMARY"
+        )
+        .is_err()
+    );
+}
+#[tokio::test]
+#[ignore = "requires disposable TEST_DATABASE_URL; all providers are mocks"]
+async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
+    let url = std::env::var("TEST_DATABASE_URL").unwrap();
+    let admin = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!("perfine_{}", uuid::Uuid::now_v7().simple());
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let search = schema.clone();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(10)
+        .after_connect(move |c, _| {
+            let search = search.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO {search}"))
+                    .execute(c)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        sqlx::raw_sql(include_str!("../migrations/00001_perfine.sql"))
+            .execute(&db)
+            .await
+            .unwrap();
+    }
+    let actor = uid();
+    let space = uid();
+    let grants = Arc::new(Mutex::new(vec!["manage".to_owned()]));
+    let state = Arc::new(Mutex::new("TENANT_STATE_ACTIVE".to_owned()));
+    let objects = Arc::new(Mutex::new(BTreeMap::<String, Vec<u8>>::new()));
+    let fail_delete = Arc::new(Mutex::new(false));
+    let (g, st, o, fd, act) = (
+        grants.clone(),
+        state.clone(),
+        objects.clone(),
+        fail_delete.clone(),
+        actor.clone(),
+    );
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone());async move{
+  let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
+  if path.starts_with("/bucket/") {
+   let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
+  }
+  let q:Value=serde_json::from_slice(&body).unwrap_or(json!({}));let value=match path.as_str(){
+   "/token"=>json!({"access_token":"fixture-service","expires_in":3600}),
+   "/delcore.v1.DelcoreService/GetCurrentUser"=>json!({"userId":act}),
+   "/delcore.v1.DelcoreService/GetTenantStates"=>json!({"states":q["tenantIds"].as_array().unwrap().iter().map(|id|json!({"tenantId":id,"state":*st.lock().unwrap()})).collect::<Vec<_>>()}),
+   "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v)})},
+   "/user"=>json!({"id":7}),
+   "/repositories/42"=>json!({"id":42,"full_name":"owner/repo","permissions":{"admin":true}}),
+   "/app/installations/1/access_tokens"=>json!({"token":"fixture-installation"}),
+   _=>return StatusCode::NOT_FOUND.into_response(),
+  };Json(value).into_response()
+ }});
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    let server = Server {
+        db: db.clone(),
+        authority: Authority::new(
+            http.clone(),
+            base.clone(),
+            format!("{base}/token"),
+            "resource".into(),
+            "client".into(),
+            "fixture".into(),
+        ),
+        actions: Actions::new(
+            http.clone(),
+            format!("{base}/jwks"),
+            serde_json::from_value(json!({"keys":[]})).unwrap(),
+        ),
+        github: GitHub {
+            http: http.clone(),
+            base: base.clone(),
+            app_id: "1".into(),
+            key: jsonwebtoken::EncodingKey::from_rsa_pem(include_bytes!(
+                "fixtures/github-test-key.pem"
+            ))
+            .unwrap(),
+        },
+        storage: R2 {
+            endpoint: base,
+            bucket: "bucket".into(),
+            access: "fixture".into(),
+            secret: "fixture".into(),
+            http: http.clone(),
+        },
+        quota: 10_000_000,
+        upload_limit: 2_000_000,
+        rate: 100,
+    };
+    async fn call(s: &Server, space: &str, op: &str, mut q: Value) -> perfine_api::Result<Value> {
+        let rid = uid();
+        q["spaceId"] = json!(space);
+        q["requestId"] = json!(rid);
+        s.execute("Bearer fixture", "github-fixture", op, q, &rid)
+            .await
+    }
+    let c=call(&server,&space,"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap()["connection"].clone();
+    let cid = c["id"].as_str().unwrap();
+    assert!(
+        call(
+            &server,
+            &space,
+            "ListExperiments",
+            json!({"connectionId":cid})
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        call(
+            &server,
+            &space,
+            "StartExperiment",
+            json!({"connectionId":cid,"experimentId":uid()})
+        )
+        .await
+        .is_err()
+    );
+    assert!(call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.is_err());
+    *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
+    let eid = uid();
+    let (spec, m, bytes) = fixture(&eid);
+    let q = json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"});
+    let begin = call(&server, &space, "BeginUpload", q.clone())
+        .await
+        .unwrap();
+    let upload = begin["upload"]["id"].as_str().unwrap();
+    for t in begin["targets"].as_array().unwrap() {
+        let name = t["artifactName"].as_str().unwrap();
+        http.put(t["signedPutUrl"].as_str().unwrap())
+            .body(bytes[name].clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let completed = call(
+        &server,
+        &space,
+        "CompleteUpload",
+        json!({"uploadId":upload}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed["evidenceCompletion"], "COMPLETION_STATE_COMPLETE");
+    let e = call(
+        &server,
+        &space,
+        "GetExperiment",
+        json!({"experimentId":eid}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(e["experiment"]["verdict"], "PERFORMANCE_VERDICT_PASS");
+    let download = call(
+        &server,
+        &space,
+        "GetEvidenceDownload",
+        json!({"experimentId":eid,"manifestSha256":m["manifestSha256"],"artifactName":"engine"}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        download["signedGetUrl"]
+            .as_str()
+            .unwrap()
+            .contains("X-Amz-Expires=900")
+    );
+    // A still-valid staging PUT must not change accepted bytes.
+    http.put(begin["targets"][0]["signedPutUrl"].as_str().unwrap())
+        .body("corrupt")
+        .send()
+        .await
+        .unwrap();
+    let downloaded = http
+        .get(download["signedGetUrl"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(downloaded.as_ref(), bytes["engine"]);
+    *grants.lock().unwrap() = vec!["manage".into()];
+    assert!(
+        call(
+            &server,
+            &space,
+            "GetExperiment",
+            json!({"experimentId":eid})
+        )
+        .await
+        .is_err()
+    );
+    call(
+        &server,
+        &space,
+        "DeleteExperiment",
+        json!({"experimentId":eid}),
+    )
+    .await
+    .unwrap();
+    *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
+    assert!(
+        call(
+            &server,
+            &space,
+            "GetExperiment",
+            json!({"experimentId":eid})
+        )
+        .await
+        .is_err()
+    );
+    assert!(call(&server, &space, "BeginUpload", q).await.is_err());
+    sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+        .execute(&db)
+        .await
+        .unwrap();
+    *fail_delete.lock().unwrap() = true;
+    server.maintain().await.unwrap();
+    let d = call(&server, &space, "GetDeletion", json!({"experimentId":eid}))
+        .await
+        .unwrap();
+    assert_eq!(d["deletion"]["state"], "DELETION_STATE_RETRYING");
+    *fail_delete.lock().unwrap() = false;
+    sqlx::query("UPDATE perfine_cleanup SET next_attempt=now()")
+        .execute(&db)
+        .await
+        .unwrap();
+    server.maintain().await.unwrap();
+    assert!(objects.lock().unwrap().is_empty());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_tombstones")
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        0
+    );
+    *state.lock().unwrap() = "TENANT_STATE_BLOCKED".into();
+    assert!(
+        call(&server, &space, "ListConnections", json!({}))
+            .await
+            .is_err()
+    );
+    db.close().await;
+    sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+    task.abort();
+}
