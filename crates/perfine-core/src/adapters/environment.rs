@@ -128,6 +128,13 @@ impl DockerEnvironment {
                 "separate repository, execution and evidence roots",
             ));
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Keep writable build mounts inaccessible to other host users. Docker
+            // mounts the child directly, so a different container UID can still use it.
+            fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+        }
         Ok(Self {
             config,
             artifacts,
@@ -288,6 +295,13 @@ impl EnvironmentAdapter for DockerEnvironment {
         )?;
         fs::create_dir(directory)?;
         fs::create_dir(build)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // This task-owned, credential-free mount must work for any configured
+            // numeric container UID without host root or a privileged chown container.
+            fs::set_permissions(build, fs::Permissions::from_mode(0o1777))?;
+        }
         // clone --no-local avoids alternates/hardlinks and copies committed objects only.
         git(
             &self.repository,

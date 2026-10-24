@@ -87,3 +87,8 @@ Update the project index and affected owning contracts together when ownership, 
 - [Docker container execution boundary](https://docs.docker.com/reference/cli/docker/container/run/)
 
 Each native profile file is limited to 64 MiB before parsing or copying into the artifact store. Oversized files fail the candidate with a bounded read, independently of container memory and captured-output limits.
+
+On Unix hosts the execution root is owner-only. Each fresh, credential-free build
+directory is a sticky writable mount so a configured container UID different from
+the CLI user can create compiler outputs and profiles. Only that child is mounted;
+source remains read-only and host credentials remain outside execution mounts.

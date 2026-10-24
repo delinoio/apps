@@ -173,6 +173,27 @@ fn pinned_checkout_preserves_dirty_user_files_and_does_not_share_git_metadata() 
         network_access: vec![],
     };
     environment.prepare(&request).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(environment.root())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(request.workspace.build_directory.as_str())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o1777,
+            0o1777
+        );
+    }
+
     assert_eq!(
         fs::read_to_string(Path::new(workspace.directory.as_str()).join("kernel.c")).unwrap(),
         "committed"
@@ -386,7 +407,7 @@ fn docker_enforces_filesystem_credentials_network_and_timeout_boundaries() {
     fs::write(&secret, "credential-sentinel").unwrap();
     let mut docker = config();
     docker.image = std::env::var("PERFINE_TEST_IMAGE").expect("set digest-pinned test image");
-    docker.user = "0:0".into();
+    docker.user = "65534:65534".into();
     docker.command_timeout_seconds = 2;
     let environment = DockerEnvironment::new(
         &repo,
