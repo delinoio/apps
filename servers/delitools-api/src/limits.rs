@@ -122,6 +122,19 @@ mod tests {
     }
 
     #[test]
+    fn smallest_supported_rate_rejects_with_a_positive_retry_hint_and_keeps_other_tenants() {
+        let smallest_supported = f64::from_bits(2f64.powi(-64).to_bits() + 1);
+        let gate = TenantGate::new(&limits(smallest_supported, 1, 100));
+        let _permit = gate.admit("t").unwrap();
+        for _ in 0..2 {
+            let error = gate.admit("t").err().unwrap();
+            assert_eq!(error.reason, ErrorReason::ERROR_REASON_RATE_LIMITED);
+            assert!(error.retry_after.is_some_and(|wait| !wait.is_zero()));
+        }
+        assert!(gate.admit("other").is_ok());
+    }
+
+    #[test]
     fn released_slots_leave_no_residue() {
         let gate = TenantGate::new(&limits(1000.0, 1000, 1));
         drop(gate.admit("t").unwrap());
