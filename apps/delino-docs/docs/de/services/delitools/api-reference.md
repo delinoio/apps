@@ -113,6 +113,8 @@ Fehler verwenden einen standardmäßigen Connect-Code. Die Fehlerdetails enthalt
 
 Eine Anfrage, die das vom Betreiber festgelegte Gesamtgrößenlimit für Anfragen überschreitet, kann einen einfachen `resource_exhausted`-Fehler ohne diese Details erhalten. Informationen zum weiteren Vorgehen finden Sie unter [Fehlerbehebung](/de/services/delitools/troubleshooting).
 
+Ein JSON-Anfragetext, der nicht dekodiert werden kann, beispielsweise aufgrund eines Werts mit falschem Typ, eines abgeschnittenen Anfragetexts oder eines Syntaxfehlers, erhält HTTP 400 mit dem Connect-Code `invalid_argument`, dem Fehlergrund `ERROR_REASON_INVALID_INPUT`, einer Anfrage-ID und exakt der Meldung `request body is invalid`. DeliTools prüft den Anfragetext, bevor es Ihre Zugangsdaten prüft. Die Meldung gibt niemals einen Teil Ihrer Inhalte wieder. Korrigieren Sie die JSON-Kodierung oder die Feldtypen und senden Sie die Anfrage erneut.
+
 ## Limits und Wiederholungsversuche
 
 Der Betreiber konfiguriert die folgenden Limits, die sich ändern können: Eingabegröße, Anzahl der Übersetzungselemente, Schemagröße und -tiefe, Ausführungszeitlimit, Anfragerate und kurzfristige Anfragespitzen pro Mandant, gleichzeitige Ausführungen pro Mandant sowie die maximale Anzahl von Wiederholungsversuchen bei vorübergehenden Fehlern. Erfragen Sie die für Sie geltenden Werte beim Dienstbetreiber. Ein Limit dient dem Schutz und ist keine Durchsatzgarantie.
