@@ -634,6 +634,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{consent}', $1) WHERE id=$2").bind(json!({"revision":"3","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"],"effectiveAt":"2020-01-01T00:00:00Z"})).bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
         }
         if source == "secret.go" {
+            *fail_delete.lock().unwrap() = true;
             assert!(
                 call(
                     &server,
@@ -643,6 +644,43 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
                 )
                 .await
                 .is_err()
+            );
+            let rejected: i64 = sqlx::query_scalar("SELECT count(*) FROM perfine_rejected_objects")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+            assert!(
+                rejected > 0,
+                "rejection must durably enqueue cleanup with one pool connection"
+            );
+            assert_eq!(
+                sqlx::query_scalar::<_, String>(
+                    "SELECT data->>'state' FROM perfine_uploads WHERE id=$1"
+                )
+                .bind(uuid::Uuid::parse_str(begin["upload"]["id"].as_str().unwrap()).unwrap())
+                .fetch_one(&db)
+                .await
+                .unwrap(),
+                "UPLOAD_STATE_PENDING"
+            );
+            *fail_delete.lock().unwrap() = false;
+            sqlx::query("UPDATE perfine_rejected_objects SET expires_at=now()-interval '1 minute',next_attempt=now()")
+                .execute(&db).await.unwrap();
+            server.maintain().await.unwrap();
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_rejected_objects")
+                    .fetch_one(&db)
+                    .await
+                    .unwrap(),
+                0
+            );
+            let prefix = format!("/bucket/{raw_id}/");
+            assert!(
+                !objects
+                    .lock()
+                    .unwrap()
+                    .keys()
+                    .any(|key| key.starts_with(&prefix))
             );
             assert!(call(&server,&space,"GetEvidenceDownload",json!({"experimentId":raw_id,"manifestSha256":rm["manifestSha256"],"artifactName":"native-profile"})).await.is_err());
             call(
