@@ -46,11 +46,11 @@ A failed shared build blocks dependent API startup while independent frontend ta
 Root `compose.yaml` provides separate PostgreSQL 17 instances for Delcore, DevBase, Git Tracker and DeliTools, matching the major version used by server integration CI. The frontends, native shells and Rust APIs run on the host through the existing development commands. Install Docker Engine and Docker Compose v2.20 or later, then start Docker. Root `pnpm dev` starts these databases automatically and waits for their healthchecks before launching Turbo. Existing containers and volumes are reused. `Ctrl+C` stops the development tasks and leaves the databases running for the next session. To start or inspect databases separately, run these commands from the repository root:
 
 ```sh
-docker compose up -d --wait
+pnpm dev:db:up
 docker compose ps
 ```
 
-`--wait` waits for every database healthcheck to accept TCP connections. The probes use `127.0.0.1` inside each container so the PostgreSQL image's temporary socket-only initialization server cannot report readiness. To start only one database, append `delcore-postgres`, `devbase-postgres`, `git-tracker-postgres` or `delitools-postgres` to the `up` command. All databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
+`pnpm dev:db:up` runs `docker compose up -d --wait`. These root database commands use the local Compose configuration directly and do not require Infisical. `--wait` waits for every database healthcheck to accept TCP connections. The probes use `127.0.0.1` inside each container so the PostgreSQL image's temporary socket-only initialization server cannot report readiness. To start only one database, append `delcore-postgres`, `devbase-postgres`, `git-tracker-postgres` or `delitools-postgres` to the `up` command. All databases publish only on `127.0.0.1`, use separate named data volumes and fail on port conflicts. The committed usernames and passwords are disposable local development values. Never use them for shared or production deployments.
 
 - Delcore: `postgres://delcore:local-delcore@127.0.0.1:5432/delcore?sslmode=disable`
 - Git Tracker: `postgres://git_tracker:local-git-tracker@127.0.0.1:55432/git_tracker?sslmode=disable`
@@ -86,7 +86,7 @@ docker compose exec git-tracker-postgres psql -U git_tracker -d git_tracker
 docker compose exec delitools-postgres psql -U delitools -d delitools
 ```
 
-Stop and remove containers with `docker compose down`; the data volumes remain. `docker compose down --volumes` also deletes all local databases. After deleting volumes, start Compose and reapply the migrations.
+Stop and remove containers with `pnpm dev:db:down` (`docker compose down`); the data volumes remain. Run `pnpm dev:db:reset` to delete all local database volumes and restart the databases. It runs `docker compose down --volumes` followed by `docker compose up -d --wait` only if removal succeeds. Reset deletes all data in the selected Compose project and does not apply migrations; reapply the migrations before starting the APIs. To delete volumes without restarting, use `docker compose down --volumes`. These commands respect `COMPOSE_PROJECT_NAME` and the existing host-port environment overrides.
 
 For another checkout or occupied database ports, select an explicit project name and host ports on every Compose command. For example:
 
