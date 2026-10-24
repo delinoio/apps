@@ -779,6 +779,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         ("LANGUAGE_GO", "hot.go"),
         ("LANGUAGE_JAVASCRIPT", "hot.js"),
         ("LANGUAGE_GO", "secret.go"),
+        ("LANGUAGE_RUST", "structured.rs"),
     ] {
         let raw_id = uid();
         let (mut rs, mut rm, mut rb) = fixture(&raw_id);
@@ -814,6 +815,12 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         };
         let raw_hash = perfine_api::hash(&raw_bytes);
         add_raw(&mut rm, &mut rb, raw_bytes);
+        if source == "structured.rs" {
+            let extra = br#"{"payload":"fn private_implementation() {}"}"#.to_vec();
+            rm["artifacts"].as_array_mut().unwrap().push(json!({"name":"extra","kind":"ARTIFACT_KIND_PROFILE_SUMMARY","mediaType":"application/json","sizeBytes":extra.len().to_string(),"sha256":perfine_api::hash(&extra),"completion":"COMPLETION_STATE_COMPLETE","containsSourceSnippets":false}));
+            rb.insert("extra".into(), extra);
+        }
+
         rm["consentRevision"] = json!("3");
         rm["runStartedAt"] = json!(chrono::Utc::now().to_rfc3339());
         checksum(&mut rm);
@@ -850,7 +857,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             // Restore the fixture's pre-run consent record only in the disposable test DB.
             sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{consent}', $1) WHERE id=$2").bind(json!({"revision":"3","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"],"effectiveAt":"2020-01-01T00:00:00Z"})).bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
         }
-        if source == "secret.go" {
+        if matches!(source, "secret.go" | "structured.rs") {
             *fail_delete.lock().unwrap() = true;
             assert!(
                 call(
@@ -1251,7 +1258,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap(),
-        8
+        9
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")

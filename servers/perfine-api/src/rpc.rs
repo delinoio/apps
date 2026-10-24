@@ -959,7 +959,21 @@ impl Server {
             }
             bytes.insert(name.to_owned(), content);
         }
-        let candidate = crate::evidence::evaluate(&e, m, &bytes)?;
+        let candidate = match crate::evidence::evaluate(&e, m, &bytes) {
+            Ok(candidate) => candidate,
+            Err(fault) => {
+                // Evaluation includes structural privacy checks. The manifest and bytes
+                // are immutable, so these rejections use the same terminal cleanup path.
+                *rejected = Some(RejectedUpload {
+                    id: id(uid)?,
+                    keys: bytes
+                        .keys()
+                        .map(|name| crate::storage::key(&eid, uid, name))
+                        .collect(),
+                });
+                return Err(fault);
+            }
+        };
         if let Some(candidate) = candidate {
             let cid = string(&candidate, "id");
             let old: Option<Value> =

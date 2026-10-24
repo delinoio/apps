@@ -162,3 +162,5 @@ same transaction as rejected-object cleanup. Begin retries report the failed sta
 without issuing PUT URLs or extending expiry, and completion retries are rejected.
 The failure remains terminal after cleanup finishes, so expired rejected-object
 records cannot be used to obtain fresh write URLs.
+
+Structural evidence rejection, including unreferenced or unmodeled structured content, makes the immutable upload terminally failed and queues all staged objects for durable deletion. Repeated registration cannot renew its upload URLs.
