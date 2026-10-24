@@ -13,6 +13,7 @@ use std::{
 
 pub(crate) struct Output {
     pub code: i32,
+    pub interrupted: bool,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
@@ -47,6 +48,7 @@ pub(crate) fn run(
     }
     let mut child = command.spawn()?;
     let start = std::time::Instant::now();
+    let mut interrupted = false;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -67,8 +69,8 @@ pub(crate) fn run(
                     .status();
             }
             let _ = child.kill();
-            let _ = child.wait();
-            return Err(Error::Limit);
+            interrupted = true;
+            break child.wait()?;
         }
         thread::sleep(Duration::from_millis(20));
     };
@@ -84,6 +86,7 @@ pub(crate) fn run(
     }
     Ok(Output {
         code: status.code().unwrap_or(-1),
+        interrupted,
         stdout: read(&mut stdout)?,
         stderr: read(&mut stderr)?,
     })
@@ -109,16 +112,16 @@ mod tests {
     fn deadline_kills_process_group_and_calls_cleanup() {
         let cleaned = std::cell::Cell::new(false);
         let start = std::time::Instant::now();
-        assert!(matches!(
-            run(
-                Command::new("/bin/sh").args(["-c", "sleep 30 & wait"]),
-                &[],
-                None,
-                Duration::from_millis(80),
-                || cleaned.set(true)
-            ),
-            Err(Error::Limit)
-        ));
+        let output = run(
+            Command::new("/bin/sh").args(["-c", "printf partial; sleep 30 & wait"]),
+            &[],
+            None,
+            Duration::from_millis(80),
+            || cleaned.set(true),
+        )
+        .unwrap();
+        assert!(output.interrupted);
+        assert_eq!(output.stdout, b"partial");
         assert!(cleaned.get());
         assert!(start.elapsed() < Duration::from_secs(3));
     }

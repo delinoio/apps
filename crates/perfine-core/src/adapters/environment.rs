@@ -26,7 +26,11 @@ pub struct DockerConfig {
 }
 impl DockerConfig {
     pub fn validate(&self) -> Result<()> {
-        let digest = self.image.rsplit_once("@sha256:").map(|(_, d)| d);
+        let digest = self
+            .image
+            .rsplit_once("@sha256:")
+            .map(|(_, d)| d)
+            .or_else(|| self.image.strip_prefix("sha256:"));
         if !self.executable.is_absolute()
             || digest.is_none_or(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
             || !self
@@ -367,18 +371,27 @@ impl EnvironmentAdapter for DockerEnvironment {
             },
         );
         // Retry cleanup even when the Docker client failed before reporting status.
-        if out.is_err() {
+        if out.is_err() || out.as_ref().is_ok_and(|o| o.interrupted) {
             self.config.remove(&name)?;
         }
         if let Some(names) = self.active.lock().map_err(|_| Error::State)?.get_mut(key) {
             names.retain(|n| n != &name);
         }
         let out = out?;
-        Ok(CommandOutput {
+        let output = CommandOutput {
             exit_code: out.code,
             stdout_artifact: self.artifacts.put(&out.stdout)?,
             stderr_artifact: self.artifacts.put(&out.stderr)?,
-        })
+        };
+        if out.interrupted {
+            tracing::info!(
+                stdout = output.stdout_artifact.as_str(),
+                stderr = output.stderr_artifact.as_str(),
+                "retained interrupted command evidence"
+            );
+            return Err(Error::Limit);
+        }
+        Ok(output)
     }
     fn cancel(&self, workspace: &Workspace) -> Result<()> {
         let names = self
@@ -423,6 +436,9 @@ pub(crate) fn git(directory: &Path, args: &[&str]) -> Result<Vec<u8>> {
         .arg(directory)
         .args(args);
     let output = process::run(&mut command, &[], None, Duration::from_secs(120), || {})?;
+    if output.interrupted {
+        return Err(Error::Limit);
+    }
     if output.code != 0 {
         return Err(Error::Incomplete("Git command failed"));
     }

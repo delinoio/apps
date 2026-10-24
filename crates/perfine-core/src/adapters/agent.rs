@@ -176,13 +176,16 @@ impl<'a> HeadlessAgentAdapter<'a> {
                 let _ = self.config.docker.remove(&name);
             },
         );
-        if result.is_err() {
+        if result.is_err() || result.as_ref().is_ok_and(|o| o.interrupted) {
             self.config.docker.remove(&name)?;
         }
         let out = result?;
         // Agent transcripts can contain source and stay in the local evidence store.
         self.artifacts.put(&out.stdout)?;
         self.artifacts.put(&out.stderr)?;
+        if out.interrupted {
+            return Err(Error::Limit);
+        }
         if out.code != 0 {
             return Err(Error::Incomplete(
                 "headless agent failed; local transcripts retained",
@@ -247,11 +250,14 @@ pub fn parse_response(provider: LocalAgent, bytes: &[u8]) -> Result<Value> {
                     }
                     Some("turn.completed") => completed = true,
                     Some("item.completed") if event["item"]["type"] == "agent_message" => {
-                        answer = Some(serde_json::from_str(
+                        // Intermediate agent messages can be ordinary commentary.
+                        // Only the final message is constrained by output-schema.
+                        answer = Some(
                             event["item"]["text"]
                                 .as_str()
-                                .ok_or(Error::Incomplete("Codex message"))?,
-                        )?);
+                                .ok_or(Error::Incomplete("Codex message"))?
+                                .to_owned(),
+                        );
                     }
                     _ => (),
                 }
@@ -259,7 +265,9 @@ pub fn parse_response(provider: LocalAgent, bytes: &[u8]) -> Result<Value> {
             if !completed {
                 return Err(Error::Incomplete("Codex turn completion"));
             }
-            answer.ok_or(Error::Incomplete("Codex structured answer"))
+            Ok(serde_json::from_str(
+                &answer.ok_or(Error::Incomplete("Codex structured answer"))?,
+            )?)
         }
     }
 }
@@ -390,6 +398,11 @@ impl AgentAdapter for HeadlessAgentAdapter<'_> {
             {
                 return Err(Error::Mismatch("source changed during agent execution"));
             }
+        }
+        if process::now() >= context.deadline_unix_seconds
+            || context.cancellation.state() == Cancellation::Immediate
+        {
+            return Err(Error::Limit);
         }
         for edit in &response.edits {
             fs::write(regular_file(directory, edit.path.as_str())?, &edit.content)?;

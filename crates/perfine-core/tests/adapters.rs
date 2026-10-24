@@ -596,3 +596,17 @@ else:
         assert!(agent.propose(&profile, &context).is_err());
     }
 }
+
+#[test]
+fn codex_commentary_does_not_replace_the_final_schema_response() {
+    let events = [
+        serde_json::json!({"type":"turn.started"}),
+        serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":"I will inspect the supplied profile."}}),
+        serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":"{\"hypotheses\":[]}"}}),
+        serde_json::json!({"type":"turn.completed"}),
+    ].iter().map(serde_json::Value::to_string).collect::<Vec<_>>().join("\n");
+    assert_eq!(
+        parse_response(LocalAgent::Codex, events.as_bytes()).unwrap()["hypotheses"],
+        serde_json::json!([])
+    );
+}
