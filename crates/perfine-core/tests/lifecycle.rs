@@ -375,3 +375,45 @@ fn evidence_from_another_candidate_cannot_complete_a_running_candidate() {
         ExecutionState::Running
     );
 }
+
+#[test]
+fn deleted_workspaces_stay_reserved_until_cleanup_succeeds() {
+    let old = fixture();
+    let next = fixture();
+    let e = engine(&old);
+    start(&e, &old, old.candidate.clone(), 0, 101).unwrap();
+    e.delete(&request(), &old.experiment, 102).unwrap();
+    e.create(&request(), next.experiment.clone(), next.cfg.clone(), 103)
+        .unwrap();
+    for failure in [false, false] {
+        e.cleanup_result(&old.experiment, failure).unwrap();
+        for overlap in [
+            workspace(0),
+            Workspace {
+                branch: workspace(0).branch,
+                ..workspace(1)
+            },
+            Workspace {
+                build_directory: workspace(0).build_directory,
+                ..workspace(2)
+            },
+        ] {
+            assert!(
+                e.start_candidate(
+                    &request(),
+                    &next.experiment,
+                    ResourceId::generate(),
+                    sha('d'),
+                    overlap,
+                    &next.base,
+                    &next.baseline,
+                    &BTreeSet::from([name("src/hot.rs")]),
+                    104
+                )
+                .is_err()
+            );
+        }
+    }
+    e.cleanup_result(&old.experiment, true).unwrap();
+    start(&e, &next, next.candidate.clone(), 0, 105).unwrap();
+}

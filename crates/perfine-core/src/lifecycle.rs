@@ -329,6 +329,12 @@ impl<S: Store> Engine<S> {
                     .values()
                     .flat_map(|e| e.candidates.values())
                     .any(|c| c.workspace.overlaps(&workspace))
+                    || db
+                        .tombstones
+                        .values()
+                        .filter(|t| t.cleanup_pending)
+                        .flat_map(|t| &t.cleanup_workspaces)
+                        .any(|reserved| reserved.overlaps(&workspace))
                 {
                     return Err(Error::Invalid("workspace already reserved"));
                 }
