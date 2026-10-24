@@ -302,14 +302,19 @@ fn publication_reconciles_lost_response(
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
 fn interrupted_candidate_resumes_same_workspace_without_duplicate_candidate() {
-    interrupted_candidate_resume(false);
+    interrupted_candidate_resume(false, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
 fn interrupted_implementation_resumes_original_admission() {
-    interrupted_candidate_resume(true);
+    interrupted_candidate_resume(true, false);
 }
-fn interrupted_candidate_resume(before_admission: bool) {
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn admitted_candidate_resumes_after_start_deadline() {
+    interrupted_candidate_resume(false, true);
+}
+fn interrupted_candidate_resume(before_admission: bool, expire_start: bool) {
     use std::{
         process::Stdio,
         thread,
@@ -318,6 +323,9 @@ fn interrupted_candidate_resume(before_admission: bool) {
     let (temp, mut config) = setup("pass");
     let repo = temp.path().join("repo");
     config["experiment"]["limits"]["candidate_duration_seconds"] = json!(240);
+    if expire_start {
+        config["experiment"]["limits"]["start_duration_seconds"] = json!(60);
+    }
     config["adapter"]["build"].as_array_mut().unwrap().insert(
         0,
         command(
@@ -380,6 +388,9 @@ fn interrupted_candidate_resume(before_admission: bool) {
     child.wait().unwrap();
     // The prior container finishes before reattachment; no overlapping measurements.
     thread::sleep(Duration::from_secs(7));
+    if expire_start {
+        wait_for_start_deadline(&repo, &id);
+    }
     let resumed = run(&repo, &["resume", "--experiment", id.as_str()]);
     assert!(
         resumed.status.success(),
@@ -398,6 +409,22 @@ fn interrupted_candidate_resume(before_admission: bool) {
         assert_eq!(completed["head"], candidate.1["head"]);
     }
     assert_eq!(completed["evaluation"]["verdict"], "pass");
+}
+
+fn wait_for_start_deadline(repo: &Path, id: &ResourceId) {
+    let status = run(repo, &["status", "--experiment", id.as_str()]);
+    let status: Value = serde_json::from_slice(&status.stdout).unwrap();
+    let deadline = status["result"]["experiment"]["start_deadline"]
+        .as_u64()
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(deadline.saturating_sub(now) <= 60);
+    std::thread::sleep(std::time::Duration::from_secs(
+        deadline.saturating_sub(now) + 1,
+    ));
 }
 
 #[path = "support/six_languages.rs"]
