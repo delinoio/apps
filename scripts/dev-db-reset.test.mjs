@@ -99,10 +99,11 @@ test("reset migrates every fresh database using Compose URLs and service-local c
   assert.equal(env.DATABASE_URL, "postgres://remote.invalid/db");
 });
 
-for (const failedStep of Array.from(
-  { length: 3 + Object.values(Api).length },
-  (_, index) => index,
-)) {
+for (
+  let failedStep = 0;
+  failedStep < 3 + Object.values(Api).length;
+  failedStep++
+) {
   for (const outcome of [
     { code: 7, signal: null },
     { code: null, signal: "SIGINT" },
