@@ -18,19 +18,23 @@ export const specification = create(P.ExperimentSpecificationSchema, {
   baseSha: "a".repeat(40),
   initialBaseSha: "a".repeat(40),
   harnessSha: "b".repeat(40),
+  workflowSha: "b".repeat(40),
+  inputs: [{ name: "small.json", sha256: "e".repeat(64) }],
+  correctnessChecks: ["cargo test"],
+  workloadConfirmation: "Fixture parser inputs exercise parsing",
+  startDuration: { seconds: 3600n },
   language: P.Language.RUST,
   environment: {
     operatingSystem: "Linux",
     architecture: "x86_64",
     runner: "GitHub Actions",
     runtime: "native",
-    runtimeVersion: "1",
+    hardware: { cpu: "fixture CPU" },
     environmentSha256: "c".repeat(64),
     tools: [
       {
         name: "Callgrind",
         version: "3.25",
-        configurationSha256: "d".repeat(64),
       },
     ],
   },
@@ -48,17 +52,18 @@ export const specification = create(P.ExperimentSpecificationSchema, {
     schemaVersion: 1,
     kind: P.PolicyKind.CALLGRIND_IR,
     metric: {
+      engineKind: P.EngineMetricKind.IR,
       name: "Ir",
       unit: "instructions",
       objective: P.MetricObjective.MINIMIZE,
     },
     minimumImprovement: 0.01,
     maximumCaseRegression: 0.01,
-    repetitions: 2,
+    repetitions: 1,
     uncertainty: {
-      confidenceLevel: 0.95,
-      maximumRelativeIntervalWidth: 0.01,
-      nearThresholdMargin: 0.001,
+      engineSchemaVersion: 1,
+      nearThreshold: 0.001,
+      repeatTolerance: 0.001,
     },
     policySha256: "f".repeat(64),
   },
@@ -132,6 +137,8 @@ export type FixtureOptions = {
   incomplete?: boolean;
   publicationUncertain?: boolean;
   noCandidates?: boolean;
+  prepareGate?: Promise<void>;
+  prepareError?: boolean;
 };
 export function fixture(options: FixtureOptions = {}) {
   const calls: { method: string; input: unknown }[] = [];
@@ -201,6 +208,40 @@ export function fixture(options: FixtureOptions = {}) {
       },
     });
     router.service(P.ExperimentService, {
+      prepareExperiment: async (req) => {
+        calls.push({ method: "prepareExperiment", input: req });
+        await options.prepareGate;
+        if (options.prepareError)
+          throw new ConnectError(
+            "Fixture: incomplete engine configuration",
+            Code.InvalidArgument,
+          );
+        const c = req.configuration!;
+        return {
+          specification: create(P.ExperimentSpecificationSchema, {
+            ...c,
+            $typeName: undefined,
+            limits: {
+              candidateCount: c.limits!.candidateCount,
+              simultaneousCandidates: c.limits!.simultaneousCandidates,
+              candidateTimeout: c.limits!.candidateTimeout,
+              startDeadline: specification.limits!.startDeadline,
+            },
+            startDuration: c.limits!.startDuration,
+            fingerprintSha256: specification.fingerprintSha256,
+            policy: {
+              ...c.policy!,
+              policySha256: specification.policy!.policySha256,
+            },
+            environment: {
+              ...c.environment!,
+              environmentSha256: specification.environment!.environmentSha256,
+            },
+            workloadRepresentativenessConfirmed: true,
+          }),
+          engineConfigJson: '{"mockOnly":true}',
+        };
+      },
       listExperiments: (req) => {
         calls.push({ method: "listExperiments", input: req });
         return { experiments: options.empty ? [] : [e] };

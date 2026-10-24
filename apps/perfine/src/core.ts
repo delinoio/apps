@@ -6,13 +6,8 @@ import {
   CompletionState,
   ExecutionState,
   PerformanceVerdict,
-  MetricObjective,
-  PolicyKind,
-  ExperimentSpecificationSchema,
   ErrorDetailSchema,
-  type ExperimentSpecification,
 } from "@delino/protos/perfine/v1/perfine_pb";
-import { fromJsonString } from "@bufbuild/protobuf";
 
 export function uuid7() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -87,103 +82,4 @@ export function errorInfo(error: unknown) {
     requestId:
       detail?.requestId || e.metadata.get("x-request-id") || "unavailable",
   };
-}
-
-// The CLI owns the canonical fingerprint algorithm. Import its complete, frozen
-// specification rather than rehashing a browser-specific representation.
-export function parseSpecification(json: string): ExperimentSpecification {
-  const s = fromJsonString(ExperimentSpecificationSchema, json);
-  const sha = /^[a-f0-9]{40}$/i,
-    hash = /^[a-f0-9]{64}$/i;
-  if (
-    s.schemaVersion !== 1 ||
-    !sha.test(s.baseSha) ||
-    !sha.test(s.initialBaseSha) ||
-    !sha.test(s.harnessSha) ||
-    !hash.test(s.fingerprintSha256)
-  )
-    throw new Error(
-      "A v1 specification with exact base, initial base, harness SHAs and fingerprint is required.",
-    );
-  const l = s.limits;
-  if (
-    !l ||
-    !l.candidateCount ||
-    !l.simultaneousCandidates ||
-    l.simultaneousCandidates > 5 ||
-    l.simultaneousCandidates > l.candidateCount ||
-    !l.startDeadline ||
-    Number(l.startDeadline.seconds) * 1000 <= Date.now() ||
-    !l.candidateTimeout ||
-    Number(l.candidateTimeout.seconds) <= 0
-  )
-    throw new Error(
-      "Declare a positive candidate limit, concurrency from 1 to 5, a future start deadline and a positive per-candidate timeout.",
-    );
-  const p = s.policy;
-  if (
-    !p ||
-    p.schemaVersion !== 1 ||
-    !p.kind ||
-    !p.metric?.name ||
-    !p.metric.unit ||
-    ![MetricObjective.MINIMIZE, MetricObjective.MAXIMIZE].includes(
-      p.metric.objective,
-    ) ||
-    !hash.test(p.policySha256)
-  )
-    throw new Error(
-      "Declare the metric, original unit, objective and frozen v1 policy hash.",
-    );
-  if (
-    p.kind !== PolicyKind.MEASUREMENTS_ONLY &&
-    (!p.repetitions ||
-      p.minimumImprovement <= 0 ||
-      p.maximumCaseRegression < 0 ||
-      !p.uncertainty ||
-      p.uncertainty.confidenceLevel <= 0 ||
-      p.uncertainty.confidenceLevel >= 1 ||
-      p.uncertainty.maximumRelativeIntervalWidth <= 0 ||
-      p.uncertainty.nearThresholdMargin < 0)
-  )
-    throw new Error(
-      "Declare minimum improvement, allowed regression, repetitions and all uncertainty criteria before evaluation.",
-    );
-  if (
-    p.kind === PolicyKind.CALLGRIND_IR &&
-    (p.metric.name !== "Ir" || p.metric.objective !== MetricObjective.MINIMIZE)
-  )
-    throw new Error(
-      "The Callgrind preset requires Ir instruction count with a minimize objective.",
-    );
-  if (
-    !s.language ||
-    !s.environment?.operatingSystem ||
-    !s.environment.architecture ||
-    !s.environment.runner ||
-    !hash.test(s.environment.environmentSha256) ||
-    !s.environment.tools.length ||
-    s.environment.tools.some(
-      (t) => !t.name || !t.version || !hash.test(t.configurationSha256),
-    ) ||
-    !s.cases.length ||
-    s.cases.some(
-      (c) =>
-        !c.id ||
-        !c.family ||
-        c.frequency <= 0 ||
-        !c.frequencySource ||
-        !c.inputs.length ||
-        c.inputs.some((i) => !i.name || !hash.test(i.sha256)),
-    ) ||
-    new Set(s.cases.map((c) => c.id)).size !== s.cases.length
-  )
-    throw new Error(
-      "Include language, reproducible environment/tools, unique workload cases, frequencies and input hashes.",
-    );
-  if (!s.workloadRepresentativenessConfirmed)
-    throw new Error(
-      "Confirm workload representativeness locally before freezing the specification.",
-    );
-  return s;
 }

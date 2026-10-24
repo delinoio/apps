@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
+import { toJsonString } from "@bufbuild/protobuf";
 import { describe, expect, it } from "@rstest/core";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
-import { create, toJsonString } from "@bufbuild/protobuf";
 import * as P from "@delino/protos/perfine/v1/perfine_pb";
 import { App } from "../src/app";
 import { Detail, Status } from "../src/experiments";
 import { Review } from "../src/review";
 import { Operations } from "../src/operations";
 import { Settings } from "../src/repositories";
+import {
+  importConfiguration,
+  emptyConfiguration,
+  validateConfiguration,
+} from "../src/configuration";
 import { Start } from "../src/start";
 import { Confirm } from "../src/ui";
-import { parseSpecification, queryClient, safeURL, uuid7 } from "../src/core";
+import { queryClient, safeURL, uuid7 } from "../src/core";
 import {
   candidate,
   connection,
@@ -61,6 +66,32 @@ function fillDraft() {
       "Pull request body",
       "Measured source only. Correctness passed; Ir is instruction count.",
     ],
+  ])
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
+function fillConfiguration() {
+  for (const [label, value] of [
+    ["Base SHA", "a".repeat(40)],
+    ["Initial base SHA", "a".repeat(40)],
+    ["Harness SHA", "b".repeat(40)],
+    ["Workflow SHA", "b".repeat(40)],
+    ["Language", String(P.Language.RUST)],
+    ["Input 1 name", "small.json"],
+    ["Input 1 SHA-256", "e".repeat(64)],
+    ["Case 1 ID", "parse-small"],
+    ["Case 1 family", "parser"],
+    ["Correctness checks (one per line)", "cargo test"],
+    [
+      "Workload representativeness confirmation",
+      "Parser inputs exercise parsing",
+    ],
+    ["Operating system", "Linux"],
+    ["Architecture", "x86_64"],
+    ["Runner", "GitHub Actions"],
+    ["Toolchain and version", "rustc 1.90"],
+    ["Tool 1 name", "Callgrind"],
+    ["Tool 1 version", "3.25"],
+    ["CPU / hardware identity", "fixture CPU"],
   ])
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
@@ -349,18 +380,14 @@ describe("operation and lifecycle boundaries", () => {
       { cloud: true },
     );
     await screen.findByRole("option", { name: "Test runner (mock only)" });
-    const file = {
-      size: 1000,
-      text: async () =>
-        toJsonString(P.ExperimentSpecificationSchema, specification),
-    };
-    fireEvent.change(screen.getByLabelText("Prepared specification JSON"), {
-      target: { files: [file] },
-    });
-    await screen.findByText("Candidate limit / simultaneous");
     fireEvent.change(screen.getByLabelText("Cloud tool"), {
       target: { value: "fixture-tool" },
     });
+    fillConfiguration();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await screen.findByRole("region", { name: "Prepared experiment review" });
     expect(
       (
         screen.getByRole("button", {
@@ -368,7 +395,7 @@ describe("operation and lifecycle boundaries", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByLabelText(/I confirm these workloads/));
     fireEvent.click(
       screen.getByRole("button", { name: "Start cloud experiment" }),
     );
@@ -377,8 +404,178 @@ describe("operation and lifecycle boundaries", () => {
     );
     const req = f.calls.find((x) => x.method === "startExperiment")!
       .input as P.StartExperimentRequest;
-    expect(req.specification).toEqual(specification);
+    expect(req.specification?.fingerprintSha256).toBe(
+      specification.fingerprintSha256,
+    );
+    expect(req.specification?.policy?.uncertainty?.engineSchemaVersion).toBe(1);
+    expect(f.calls.find((x) => x.method === "prepareExperiment")).toBeTruthy();
     expect(req.experimentId).toMatch(/-7[a-f0-9]{3}-/);
+  });
+  it("prepares without cloud support, then invalidates review after editing a field", async () => {
+    const f = mount(() => (
+      <Start
+        spaceId={spaceId}
+        connection={connection}
+        allowed
+        onStarted={() => {}}
+      />
+    ));
+    fillConfiguration();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await screen.findByRole("region", { name: "Prepared experiment review" });
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Start cloud experiment",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    const prepared = f.calls.find((x) => x.method === "prepareExperiment")!
+      .input as P.PrepareExperimentRequest;
+    expect(prepared.configuration!.policy!.policySha256).toBe("");
+    expect(prepared.configuration!.environment!.environmentSha256).toBe("");
+    fireEvent.click(screen.getByLabelText(/I confirm these workloads/));
+    fireEvent.change(screen.getByLabelText("Candidate count"), {
+      target: { value: "2" },
+    });
+    expect(
+      screen.queryByRole("region", { name: "Prepared experiment review" }),
+    ).toBeNull();
+    expect(
+      (screen.getByLabelText(/I confirm these workloads/) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(f.calls.some((x) => x.method === "startExperiment")).toBe(false);
+  });
+  it("discards preparation that finishes after settings change", async () => {
+    let release!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = mount(
+      () => (
+        <Start
+          spaceId={spaceId}
+          connection={connection}
+          allowed
+          onStarted={() => {}}
+        />
+      ),
+      { prepareGate },
+    );
+    fillConfiguration();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await waitFor(() =>
+      expect(f.calls.some((x) => x.method === "prepareExperiment")).toBe(true),
+    );
+    fireEvent.change(screen.getByLabelText("Base SHA"), {
+      target: { value: "c".repeat(40) },
+    });
+    release();
+    await waitFor(() => expect(screen.queryByText("Preparing…")).toBeNull());
+    expect(
+      screen.queryByRole("region", { name: "Prepared experiment review" }),
+    ).toBeNull();
+  });
+  it("reports preparation rejection with editable recovery", async () => {
+    mount(
+      () => (
+        <Start
+          spaceId={spaceId}
+          connection={connection}
+          allowed
+          onStarted={() => {}}
+        />
+      ),
+      { prepareError: true },
+    );
+    fillConfiguration();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await screen.findByText("Fixture: incomplete engine configuration");
+    expect(screen.getByText(/Check the source revisions/)).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Base SHA") as HTMLInputElement).disabled,
+    ).toBe(false);
+  });
+  it("maps declared sample-range policy and clears irrelevant criteria in measurements-only mode", async () => {
+    const f = mount(() => (
+      <Start
+        spaceId={spaceId}
+        connection={connection}
+        allowed
+        onStarted={() => {}}
+      />
+    ));
+    fillConfiguration();
+    fireEvent.change(screen.getByLabelText("Policy"), {
+      target: { value: String(P.PolicyKind.DECLARED) },
+    });
+    for (const [label, value] of [
+      ["Metric kind", String(P.EngineMetricKind.TIME)],
+      ["Metric name", "wall time"],
+      ["Metric unit", "ms"],
+      ["Maximum relative sample range", "0.03"],
+      ["Decision margin", "0.002"],
+      ["Repeat tolerance", "0.001"],
+      ["Near-threshold margin", "0.001"],
+    ])
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await screen.findByRole("region", { name: "Prepared experiment review" });
+    const req = f.calls.find((x) => x.method === "prepareExperiment")!
+      .input as P.PrepareExperimentRequest;
+    expect(req.configuration!.policy!.uncertainty).toMatchObject({
+      engineSchemaVersion: 1,
+      maximumRelativeRange: 0.03,
+      decisionMargin: 0.002,
+      repeatTolerance: 0.001,
+      nearThreshold: 0.001,
+      confidenceLevel: 0,
+      maximumRelativeIntervalWidth: 0,
+    });
+    fireEvent.change(screen.getByLabelText("Policy"), {
+      target: { value: String(P.PolicyKind.MEASUREMENTS_ONLY) },
+    });
+    expect(screen.queryByLabelText("Maximum relative sample range")).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Prepared experiment review" }),
+    ).toBeNull();
+  });
+  it("rejects missing fields and invalid limits without calling preparation", async () => {
+    const f = mount(() => (
+      <Start
+        spaceId={spaceId}
+        connection={connection}
+        allowed
+        onStarted={() => {}}
+      />
+    ));
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Prepare experiment for review" })
+        .closest("form")!,
+    );
+    await screen.findByText(/Enter exact source/);
+    expect(f.calls.some((x) => x.method === "prepareExperiment")).toBe(false);
+    fillConfiguration();
+    fireEvent.change(screen.getByLabelText("Simultaneous candidates"), {
+      target: { value: "6" },
+    });
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Prepare experiment for review" })
+        .closest("form")!,
+    );
+    await screen.findByText(/Set positive candidate limits/);
+    expect(f.calls.some((x) => x.method === "prepareExperiment")).toBe(false);
   });
   it("shows retained cleanup failures after accepted manager deletion", async () => {
     mount(() => <Settings spaceId={spaceId} manage />);
@@ -398,29 +595,22 @@ describe("operation and lifecycle boundaries", () => {
   });
 });
 describe("input and URL boundaries", () => {
-  it("accepts complete metadata and rejects missing limits, policy uncertainty and unconfirmed workloads", () => {
-    expect(
-      parseSpecification(
-        toJsonString(P.ExperimentSpecificationSchema, specification),
-      ).baseSha,
-    ).toBe(specification.baseSha);
-    for (const bad of [
-      create(P.ExperimentSpecificationSchema, {
-        ...specification,
-        limits: { ...specification.limits!, simultaneousCandidates: 6 },
-      }),
-      create(P.ExperimentSpecificationSchema, {
-        ...specification,
-        policy: { ...specification.policy!, uncertainty: undefined },
-      }),
-      create(P.ExperimentSpecificationSchema, {
-        ...specification,
-        workloadRepresentativenessConfirmed: false,
-      }),
-    ])
-      expect(() =>
-        parseSpecification(toJsonString(P.ExperimentSpecificationSchema, bad)),
-      ).toThrow();
+  it("does not fabricate evidence or source in defaults", () => {
+    const c = emptyConfiguration();
+    expect(c.baseSha).toBe("");
+    expect(c.inputs[0].sha256).toBe("");
+    expect(c.environment!.tools[0].version).toBe("");
+    expect(() => validateConfiguration(c)).toThrow();
+  });
+  it("imports frozen metadata only as editable settings with no canonical hashes", () => {
+    const c = importConfiguration(
+      toJsonString(P.ExperimentSpecificationSchema, specification),
+    );
+    expect(c.baseSha).toBe(specification.baseSha);
+    expect(c.policy!.policySha256).toBe("");
+    expect(c.environment!.environmentSha256).toBe("");
+    expect(c.limits!.startDuration!.seconds).toBe(3600n);
+    expect(() => validateConfiguration(c)).not.toThrow();
   });
   it("produces UUID v7 resource identities and rejects unsafe external URLs", () => {
     expect(uuid7()).toMatch(

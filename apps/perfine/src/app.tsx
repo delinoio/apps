@@ -303,6 +303,7 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
         </Notice>
       ) : view === View.Start ? (
         <Start
+          key={connectionId}
           spaceId={spaceId}
           connection={connection}
           allowed={may(Permission.EXPERIMENT)}

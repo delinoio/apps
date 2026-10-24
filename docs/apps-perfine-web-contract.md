@@ -77,12 +77,22 @@ explicit repository/installation IDs. The API resolves IDs and verifies both
 management and GitHub administrator authority. Connections and histories use
 cursor pagination. Evidence links are issued on demand, after server checks.
 
-Cloud start imports a complete v1 `ExperimentSpecification` JSON prepared by the
-local engine. The browser reviews all limits, metric/units, policies, exceptions,
-workloads and reproducibility inputs before explicit confirmation. It does not
-invent an engine fingerprint or change frozen policy fields. To change inputs,
-prepare and import a new specification with its canonical fingerprint. The API
-must validate the fingerprint, schema, limits and policy independently.
+Execution setup uses editable source SHA, language, input-hash, workload-case,
+frequency/protection, correctness-check, workload confirmation, tool/environment,
+limit and policy fields. Empty defaults must not invent source or evidence.
+`PrepareExperiment` computes authoritative fingerprints and returns the immutable
+specification and engine configuration for review and local use. Preparation is
+available to authorized experiment operators even without an eligible cloud tool.
+Optional JSON import seeds editable settings and still requires fresh preparation.
+The browser never asks users to calculate configuration fingerprints. Changes
+invalidate the prepared result and confirmation, including stale in-flight replies.
+Start submits the reviewed authoritative specification; started runs stay immutable.
+
+Engine v1 uncertainty uses near-threshold margin and repeat tolerance for Ir,
+and also maximum relative sample range and decision margin for declared policies.
+A sample range is not a confidence interval. Measurements-only mode makes no
+pass claim. Detail and publication review show the exact frozen policy without
+deprecated confidence-interval summaries. The API validates all settings independently.
 
 Publication has a separate review view at both widths. Confirmation resets on
 content edits. The client compares the returned approval binding with the exact
