@@ -26,3 +26,4 @@ inputs:
       - protos/delitools/v1
       - protos/devbase/v1
       - protos/gittracker/v1
+      - protos/perfine/v1
