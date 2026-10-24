@@ -1435,6 +1435,54 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     *state.lock().unwrap() = "TENANT_STATE_ACTIVE".into();
     let replacement=call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap();
     assert_ne!(replacement["connection"]["id"], c["id"]);
+    // A full batch waiting for signed PUT expiry must yield to unvisited cleanup.
+    let mut cleanup_ids = Vec::new();
+    for index in 0..101 {
+        let experiment = uuid::Uuid::now_v7();
+        cleanup_ids.push(experiment);
+        sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+            .bind(experiment).bind(connection_only_space).bind(uuid::Uuid::parse_str(cid).unwrap())
+            .bind(json!({"id":experiment,"spaceId":connection_only_space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_LOCAL","executionState":"EXECUTION_STATE_COMPLETED"})).execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO perfine_cleanup(experiment,space,data,next_attempt) VALUES($1,$2,$3,now()-interval '1 hour')")
+            .bind(experiment).bind(connection_only_space).bind(json!({"experimentId":experiment,"state":"DELETION_STATE_PENDING"})).execute(&db).await.unwrap();
+        if index < 100 {
+            sqlx::query("INSERT INTO perfine_uploads(id,experiment,data,reserved_bytes,staging_expires_at) VALUES($1,$2,$3,0,now()+interval '1 hour')")
+                .bind(uuid::Uuid::now_v7()).bind(experiment).bind(json!({"state":"UPLOAD_STATE_PENDING"})).execute(&db).await.unwrap();
+        }
+    }
+    server.maintain().await.unwrap();
+    let healthy = cleanup_ids[100];
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT attempts FROM perfine_cleanup WHERE experiment=$1")
+            .bind(healthy)
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        0
+    );
+    // Make retries due again while preserving relative due times, without sleeping.
+    sqlx::query("UPDATE perfine_cleanup SET next_attempt=next_attempt-interval '2 minutes' WHERE experiment=ANY($1)").bind(&cleanup_ids).execute(&db).await.unwrap();
+    server.maintain().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT data->>'state' FROM perfine_cleanup WHERE experiment=$1"
+        )
+        .bind(healthy)
+        .fetch_one(&db)
+        .await
+        .unwrap(),
+        "DELETION_STATE_COMPLETE"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM perfine_uploads WHERE experiment=ANY($1)"
+        )
+        .bind(&cleanup_ids)
+        .fetch_one(&db)
+        .await
+        .unwrap(),
+        100
+    );
     db.close().await;
     sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
         .execute(&admin)

@@ -1332,7 +1332,7 @@ impl Server {
                 tx.commit().await?;
             }
         }
-        let jobs=sqlx::query("SELECT experiment,space FROM perfine_cleanup WHERE next_attempt<=now() AND data->>'state'<>'DELETION_STATE_COMPLETE' LIMIT 100").fetch_all(&self.db).await?;
+        let jobs=sqlx::query("SELECT experiment,space FROM perfine_cleanup WHERE next_attempt<=now() AND data->>'state'<>'DELETION_STATE_COMPLETE' ORDER BY next_attempt,experiment LIMIT 100").fetch_all(&self.db).await?;
         for job in jobs {
             let eid: uuid::Uuid = job.get("experiment");
             let space: uuid::Uuid = job.get("space");
