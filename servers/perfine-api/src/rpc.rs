@@ -1449,7 +1449,7 @@ impl Server {
                     c["state"] = json!("CONNECTION_STATE_AUTHORITY_LOST");
                 }
                 c["executionCancellations"] = json!(self.cancel_connection(&mut tx, &c).await?);
-                sqlx::query("UPDATE perfine_connections SET active=false,data=$2 WHERE id=$1")
+                sqlx::query("UPDATE perfine_connections SET data=$2 WHERE id=$1")
                     .bind(row.get::<uuid::Uuid, _>("id"))
                     .bind(&c)
                     .execute(&mut *tx)

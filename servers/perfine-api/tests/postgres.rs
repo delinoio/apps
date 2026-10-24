@@ -1212,6 +1212,12 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap(),
         0
     );
+    let blocked_run = uuid::Uuid::now_v7();
+    sqlx::query("UPDATE perfine_connections SET active=true,data=jsonb_set(data,'{state}','\"CONNECTION_STATE_CONNECTED\"') WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(blocked_run).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(json!({"id":blocked_run,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"1","runAttempt":1}})).execute(&db).await.unwrap();
     *state.lock().unwrap() = "TENANT_STATE_BLOCKED".into();
     assert!(
         call(&server, &space, "ListConnections", json!({}))
@@ -1226,6 +1232,30 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap(),
         1
     );
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    let stopped: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+        .bind(blocked_run)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stopped["cancellation"]["state"],
+        "CANCELLATION_STATE_CONFIRMED"
+    );
+    *state.lock().unwrap() = "TENANT_STATE_ACTIVE".into();
+    assert!(call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.is_err());
+    *state.lock().unwrap() = "TENANT_STATE_BLOCKED".into();
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(blocked_run)
+        .execute(&db)
+        .await
+        .unwrap();
     // A connection-only space must release its repository without losing cleanup identity.
     let connection_only_space = uuid::Uuid::now_v7();
     sqlx::query("UPDATE perfine_connections SET space=$2,active=true,data=jsonb_set(jsonb_set(data,'{state}','\"CONNECTION_STATE_CONNECTED\"'),'{spaceId}',to_jsonb($2::text)) WHERE id=$1")
