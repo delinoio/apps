@@ -91,7 +91,16 @@ pub struct ProfileCost {
     pub callees: Vec<SourceLocation>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileEdge {
+    pub caller: SourceLocation,
+    pub callee: SourceLocation,
+    pub metric: MetricSpec,
+    pub cost: f64,
+    pub calls: Option<u64>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
+    pub edges: Vec<ProfileEdge>,
     pub costs: Vec<ProfileCost>,
     pub raw_artifacts: Vec<Fingerprint>,
     pub missing_source_mappings: Vec<Name>,

@@ -160,6 +160,13 @@ pub fn verify(
 ) -> Result<VerifiedRun> {
     config.validate()?;
     let cfg = config.config();
+    if expected
+        .external_execution
+        .as_ref()
+        .is_some_and(|run| run.attempt == 0)
+    {
+        return Err(Error::Invalid("external workflow run attempt"));
+    }
     if manifest.identity != *expected
         || expected.configuration != *config.fingerprint()
         || expected.conditions != fingerprint(&cfg.conditions)?
@@ -240,12 +247,15 @@ pub struct BaselineValidation {
     source: CommitSha,
     experiment: ResourceId,
     runs: [ResourceId; 2],
-    pub variability: BTreeMap<Name, f64>,
+    pub(crate) variability: BTreeMap<Name, f64>,
     pub(crate) means: BTreeMap<Name, f64>,
     pub(crate) minimum_repetitions: usize,
     pub(crate) evidence: [Fingerprint; 2],
 }
 impl BaselineValidation {
+    pub fn variability(&self) -> &BTreeMap<Name, f64> {
+        &self.variability
+    }
     pub(crate) fn matches(
         &self,
         config: &FrozenConfig,

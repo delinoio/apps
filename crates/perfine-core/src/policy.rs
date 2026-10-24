@@ -390,6 +390,14 @@ fn evaluate_round(
                 .chain(round.cumulative.iter())
                 .all(|c| {
                     c.baseline.minimum_repetitions >= p.repetitions as usize
+                        && c.base
+                            .manifest()
+                            .measurements
+                            .iter()
+                            .all(|(name, samples)| {
+                                (samples.mean() / c.baseline.means[name] - 1.0).abs()
+                                    <= p.uncertainty.maximum_relative_range
+                            })
                         && c.baseline
                             .variability
                             .values()
@@ -406,7 +414,7 @@ fn evaluate_round(
                 .all(|s| at_least(s.improvement - margin, p.minimum_improvement))
                 && all_changes
                     .iter()
-                    .all(|(_, c)| c.regression + margin <= p.maximum_case_regression)
+                    .all(|(_, c)| c.regression + margin <= p.maximum_case_regression + 1e-12)
             {
                 result.verdict = Verdict::Pass;
                 result.reason = Reason::DefaultPolicy;

@@ -216,3 +216,112 @@ fn absence_reconciliation_allows_only_one_retry_and_revoked_authority_blocks_rep
             .is_err()
     );
 }
+
+#[test]
+fn a_new_approval_does_not_reset_publication_retry_budget() {
+    let (_dir, e, _f, binding) = prepared();
+    let first = ResourceId::generate();
+    e.approve(
+        &request(),
+        first.clone(),
+        binding.clone(),
+        name("publisher"),
+        None,
+        auth(),
+        103,
+    )
+    .unwrap();
+    for now in [104, 106] {
+        e.begin_publication(&request(), &first, &binding, auth(), now)
+            .unwrap();
+        e.reconcile_publication(
+            &request(),
+            &first,
+            &binding,
+            Reconciliation::Absent,
+            auth(),
+            now + 1,
+        )
+        .unwrap();
+    }
+    let second = ResourceId::generate();
+    e.approve(
+        &request(),
+        second.clone(),
+        binding.clone(),
+        name("publisher"),
+        None,
+        auth(),
+        108,
+    )
+    .unwrap();
+    assert!(
+        e.begin_publication(&request(), &second, &binding, auth(), 109)
+            .is_err()
+    );
+}
+#[test]
+fn protected_regression_requires_explicit_judgment_before_approval() {
+    let mut cfg = config();
+    cfg.conditions
+        .cases
+        .get_mut(&name("small"))
+        .unwrap()
+        .protected = true;
+    let f = Fixture::new(cfg, [10000.0, 100.0], [8000.0, 102.0]);
+    let e = Engine::new(MemoryStore::default());
+    e.create(&request(), f.experiment.clone(), f.cfg.clone(), 100)
+        .unwrap();
+    start(&e, &f, f.candidate.clone(), 0, 101).unwrap();
+    e.finish_candidate(
+        &request(),
+        &f.experiment,
+        &f.candidate,
+        &f.round(),
+        None,
+        &ReviewEvidence::default(),
+        102,
+    )
+    .unwrap();
+    let eval = e.status(&f.experiment).unwrap().candidates[&f.candidate]
+        .evaluation
+        .clone()
+        .unwrap();
+    assert!(eval.human_judgment_required);
+    let binding = ApprovalBinding {
+        experiment: f.experiment.clone(),
+        candidate: f.candidate.clone(),
+        content: PublicationContent {
+            target_repository: name("owner/repo"),
+            target_base: name("main"),
+            base_sha: sha('a'),
+            head_sha: sha('d'),
+            title: name("perf: reviewed tradeoff"),
+            body: "Explicit protected-case tradeoff".into(),
+            production_diff: digest(b"diff"),
+        },
+        evaluation: fingerprint(&eval).unwrap(),
+    };
+    assert!(
+        e.approve(
+            &request(),
+            ResourceId::generate(),
+            binding.clone(),
+            name("publisher"),
+            None,
+            auth(),
+            103
+        )
+        .is_err()
+    );
+    e.approve(
+        &request(),
+        ResourceId::generate(),
+        binding,
+        name("publisher"),
+        Some(name("accept protected regression after review")),
+        auth(),
+        103,
+    )
+    .unwrap();
+}

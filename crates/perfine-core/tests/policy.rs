@@ -262,7 +262,7 @@ fn timing_baseline_measures_variability_and_enforces_declared_uncertainty() {
     let a = make(None, sha('a'), vec![99.0, 100.0, 101.0]);
     let b = make(None, sha('a'), vec![100.0, 101.0, 102.0]);
     let baseline = validate_baseline(&cfg, &a, &b).unwrap();
-    assert!(baseline.variability.values().all(|v| *v > 0.0));
+    assert!(baseline.variability().values().all(|v| *v > 0.0));
     for (values, verdict) in [
         (vec![89.0, 90.0, 91.0], Verdict::Pass),
         (vec![50.0, 90.0, 130.0], Verdict::Inconclusive),
@@ -362,6 +362,90 @@ fn contradictory_ir_samples_are_inconclusive_even_if_the_average_improves() {
     };
     assert_eq!(
         evaluate(&f.cfg, &r, None, &review()).unwrap().verdict,
+        Verdict::Inconclusive
+    );
+}
+
+#[test]
+fn broad_regressions_cannot_hide_behind_a_large_winning_case() {
+    let mut cfg = config();
+    cfg.conditions
+        .cases
+        .insert(name("third"), cfg.conditions.cases[&name("small")].clone());
+    let cfg = cfg.freeze().unwrap();
+    let id = ResourceId::generate();
+    let make = |candidate, source, large, small| {
+        let mut m = manifest(&cfg, &id, candidate, source, [large, small]);
+        m.measurements.insert(
+            name("third"),
+            Samples {
+                values: vec![small],
+            },
+        );
+        m.profile_paths.insert(
+            name("third"),
+            std::collections::BTreeSet::from([name("src/hot.rs")]),
+        );
+        verified(&cfg, m)
+    };
+    let a = make(None, sha('a'), 10000.0, 100.0);
+    let b = make(None, sha('a'), 10000.0, 100.0);
+    let baseline = validate_baseline(&cfg, &a, &b).unwrap();
+    let h = make(Some(ResourceId::generate()), sha('d'), 8000.0, 102.0);
+    let r = Round {
+        incremental: Comparison {
+            base: &a,
+            head: &h,
+            baseline: &baseline,
+        },
+        cumulative: None,
+    };
+    let result = evaluate(&cfg, &r, None, &exception_review()).unwrap();
+    assert!(result.incremental.improvement > 0.05);
+    assert_eq!(result.verdict, Verdict::Regression);
+    assert_eq!(result.reason, Reason::CaseRegression);
+}
+
+#[test]
+fn declared_uncertainty_rejects_baseline_drift_and_under_sampled_baseline() {
+    let cfg = timing(declared()).freeze().unwrap();
+    let id = ResourceId::generate();
+    let make = |candidate, source, value, repetitions| {
+        let mut m = manifest(&cfg, &id, candidate, source, [value, value]);
+        for s in m.measurements.values_mut() {
+            s.values = vec![value; repetitions];
+        }
+        verified(&cfg, m)
+    };
+    let a = make(None, sha('a'), 100.0, 3);
+    let b = make(None, sha('a'), 100.0, 3);
+    let baseline = validate_baseline(&cfg, &a, &b).unwrap();
+    let drift = make(None, sha('a'), 200.0, 3);
+    let h = make(Some(ResourceId::generate()), sha('d'), 90.0, 3);
+    let r = Round {
+        incremental: Comparison {
+            base: &drift,
+            head: &h,
+            baseline: &baseline,
+        },
+        cumulative: None,
+    };
+    assert_eq!(
+        evaluate(&cfg, &r, None, &review()).unwrap().verdict,
+        Verdict::Inconclusive
+    );
+    let sparse = make(None, sha('a'), 100.0, 1);
+    let baseline = validate_baseline(&cfg, &a, &sparse).unwrap();
+    let r = Round {
+        incremental: Comparison {
+            base: &a,
+            head: &h,
+            baseline: &baseline,
+        },
+        cumulative: None,
+    };
+    assert_eq!(
+        evaluate(&cfg, &r, None, &review()).unwrap().verdict,
         Verdict::Inconclusive
     );
 }
