@@ -433,6 +433,9 @@ impl AgentAdapter for HeadlessAgentAdapter<'_> {
             args.push(edit.path.as_str());
         }
         git(directory, &args)?;
+        if git(directory, &["diff", "--cached", "--name-only"])?.is_empty() {
+            return self.environment.source(context.workspace);
+        }
         // Commit immediately after staging. The agent never supplies Git flags,
         // identity, hooks or commit success; the returned SHA is read from Git.
         git(
