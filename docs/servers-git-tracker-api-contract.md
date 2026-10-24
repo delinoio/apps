@@ -120,7 +120,17 @@ PostgreSQL is authoritative for server state. Clients do not persist credentials
 
 ## Security
 
-Check current space permissions on protected operations. Verify GitHub signatures and Actions OIDC identity; reject cross-repository and cross-space access. Public responses must not be cached across visibility changes. Never expose secrets or raw measurements in logs or audits.
+Check current space permissions on protected operations. Verify GitHub signatures and Actions OIDC identity; reject cross-repository and cross-space access.
+
+### Actions OIDC key refresh
+
+- Actions tokens must use RS256 and carry a `kid`; other headers are rejected before any key lookup or network access. Signature, issuer, audience, expiry, not-before and execution, repository, event, PR and commit binding checks are unchanged.
+- The server keeps one successfully fetched JWKS snapshot per process. A snapshot authorizes tokens for at most 300 seconds after its successful fetch. A failed, suppressed or cancelled refresh never extends that age. Expired keys are never used; an expired snapshot that cannot be refreshed fails closed with an unavailable error and its bytes are kept for later recovery.
+- A token whose `kid` is absent from the snapshot, or any token while the snapshot is expired, triggers a refresh. Each process starts at most one refresh attempt per 30 seconds and runs at most one at a time. The interval covers successful, unchanged, failed and cancelled attempts and every `kid` value, so varying unauthenticated key identifiers cannot amplify outbound requests. The startup fetch counts as the first attempt. Callers waiting for an in-flight refresh re-read the shared result; a still-unknown key is denied without another fetch.
+- The refresh runs on a coordinator that is separate from the key cache. The HTTP request, body read and parse happen outside the cache lock, and a successful complete snapshot replaces the old one under a short write lock. Verification of a token whose key is fresh in the snapshot never waits for a refresh.
+- A rotated key is accepted only after a permitted successful refresh and full validation, at most 30 seconds after the previous attempt start once the provider responds. No restart is needed. The HTTP client keeps its 30-second timeout and disabled redirects; the JWKS URL stays restricted to GitHub Actions and bodies are limited to 256 KiB.
+- Refresh logs are structured `tracing` events with a bounded `outcome` category (`refreshed`, `suppressed`, `transport_failed`, `status_failed`, `body_failed`, `parse_failed`) and the key count. Suppressions log at debug level. Logs never contain tokens, `kid` values or credentials.
+  Public responses must not be cached across visibility changes. Never expose secrets or raw measurements in logs or audits.
 
 ## Logging
 

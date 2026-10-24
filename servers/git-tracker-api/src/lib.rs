@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 pub mod alerts;
 pub mod auth;
+#[cfg(test)]
+mod auth_tests;
 pub mod decimal;
 pub mod github;
 #[cfg(test)]
