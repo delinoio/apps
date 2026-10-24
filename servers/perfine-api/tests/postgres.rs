@@ -342,8 +342,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     );
     let pulls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let creates = Arc::new(Mutex::new(0u32));
+    let creation_override = Arc::new(Mutex::new(None::<Value>));
+    let response = creation_override.clone();
     let (p, posts) = (pulls.clone(), creates.clone());
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone());async move{
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -355,6 +357,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v) && denied.lock().unwrap().as_ref().is_none_or(|subject| q["userId"] != *subject)})},
    "/repos/owner/repo/pulls" if method=="POST"=>{
     assert_eq!(q["draft"],true);*posts.lock().unwrap()+=1;
+    if let Some(pr)=response.lock().unwrap().clone(){p.lock().unwrap().push(pr.clone());return Json(pr).into_response();}
     p.lock().unwrap().push(json!({"number":1,"html_url":"https://github.com/owner/repo/pull/1","title":q["title"],"body":q["body"],"draft":true,"head":{"sha":"d".repeat(40)},"base":{"sha":"a".repeat(40)}}));
     return StatusCode::SERVICE_UNAVAILABLE.into_response();
    },
@@ -1190,6 +1193,61 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(*creates.lock().unwrap(), 1);
+    // Branches can move after preflight and before GitHub processes the POST.
+    for changed in ["base", "head", "title", "body", "draft", "none"] {
+        // Each scenario uses a distinct fixture candidate with no previous dispatch.
+        let candidate_id = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO perfine_candidates(id,experiment,data) SELECT $1,experiment,jsonb_set(data,'{id}',to_jsonb($1::text)) FROM perfine_candidates WHERE id=$2")
+            .bind(candidate_id).bind(uuid::Uuid::parse_str(draft["candidateId"].as_str().unwrap()).unwrap()).execute(&db).await.unwrap();
+        let mut draft = draft.clone();
+        draft["candidateId"] = json!(candidate_id.to_string());
+        pulls.lock().unwrap().clear();
+        let mut created = json!({"number":2,"html_url":"https://github.com/owner/repo/pull/2","title":draft["title"],"body":draft["body"],"draft":true,"head":{"sha":draft["headSha"]},"base":{"sha":draft["baseSha"]}});
+        match changed {
+            "base" | "head" => created[changed]["sha"] = json!("f".repeat(40)),
+            "title" | "body" => created[changed] = json!("Changed"),
+            "draft" => created["draft"] = json!(false),
+            _ => {}
+        }
+        *creation_override.lock().unwrap() = Some(created);
+        let a = call(
+            &server,
+            &space,
+            "ApproveDraft",
+            json!({"experimentId":eid,"draft":draft}),
+        )
+        .await
+        .unwrap();
+        let aid = &a["approval"]["id"];
+        call(
+            &server,
+            &space,
+            "PublishDraft",
+            json!({"approvalId":aid,"expectedDraft":draft}),
+        )
+        .await
+        .unwrap();
+        server.maintain().await.unwrap();
+        let result = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
+            .await
+            .unwrap();
+        assert_eq!(
+            result["publication"]["state"],
+            if changed == "none" {
+                "PUBLICATION_STATE_PUBLISHED"
+            } else {
+                "PUBLICATION_STATE_FAILED"
+            },
+            "{changed}"
+        );
+        let before = *creates.lock().unwrap();
+        server.maintain().await.unwrap();
+        assert_eq!(
+            *creates.lock().unwrap(),
+            before,
+            "must not repeat a delivered POST"
+        );
+    }
     // A still-valid staging PUT must not change accepted bytes.
     http.put(begin["targets"][0]["signedPutUrl"].as_str().unwrap())
         .body("corrupt")

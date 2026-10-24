@@ -1662,13 +1662,14 @@ impl Server {
                 "publication reconciliation requires operator inspection",
             ));
         }
-        let found = prs.iter().find(|v| {
+        let matches_approval = |v: &Value| {
             v["head"]["sha"] == d["headSha"]
                 && v["base"]["sha"] == d["baseSha"]
                 && v["title"] == d["title"]
                 && v["body"] == d["body"]
                 && v["draft"] == true
-        });
+        };
+        let found = prs.iter().find(|v| matches_approval(v));
         if let Some(pr) = found {
             p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
             p["githubPullRequestNumber"] = json!(integer(pr, "number").to_string());
@@ -1696,9 +1697,18 @@ impl Server {
             // Persist intent before dispatch. Lost replies are reconciled on the next maintenance cycle.
             let result=self.github.call("POST",&format!("{path}/pulls"),&token.target,Some(json!({"title":d["title"],"body":d["body"],"base":d["baseRef"],"head":head,"head_repo":d["headRepository"]["name"],"draft":true}))).await;
             if let Ok(pr) = result {
-                p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
                 p["githubPullRequestNumber"] = json!(integer(&pr, "number").to_string());
                 p["githubPullRequestUrl"] = pr["html_url"].clone();
+                if matches_approval(&pr) {
+                    p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+                } else {
+                    // GitHub creates from mutable branch names, so the response must
+                    // match the approved snapshot even after preflight SHA checks pass.
+                    p["state"] = json!("PUBLICATION_STATE_FAILED");
+                    p["failureReason"] = json!(
+                        "Created PR differs from the approved binding; inspect GitHub and obtain new approval"
+                    );
+                }
             }
         }
         sqlx::query("UPDATE perfine_approvals SET publication=$2 WHERE id=$1")

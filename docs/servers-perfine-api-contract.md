@@ -164,3 +164,5 @@ The failure remains terminal after cleanup finishes, so expired rejected-object
 records cannot be used to obtain fresh write URLs.
 
 Structural evidence rejection, including unreferenced or unmodeled structured content, makes the immutable upload terminally failed and queues all staged objects for durable deletion. Repeated registration cannot renew its upload URLs.
+
+Successful GitHub draft creation responses must match the exact approved base/head SHAs, title, body, and draft state. A mismatch is a failed publication with the created PR link retained for inspection and a requirement for new approval.
