@@ -461,8 +461,11 @@ impl Server {
             .iter()
             .map(|r| {
                 let mut e = r.execution.clone();
+                // Branch-only selection over the complete state, before history filters: a PR
+                // execution sharing the commit SHA never displaces the branch graph point, and a
+                // PR-only commit has no representative. PR executions stay in the response.
                 e.representative = state
-                    .representative(&e.context.commit, None, false)
+                    .representative(&e.context.commit, None, true)
                     .is_some_and(|v| v.execution.registration_order == e.registration_order);
                 let dataset = string(q, "datasetId");
                 if !dataset.is_empty() {

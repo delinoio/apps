@@ -145,7 +145,7 @@ Update the project index and affected protocol/client/server contracts when beha
 
 ## Connection identity and deletion references
 
-Use UUID v7 connection IDs and retain GitHub repository IDs separately. Enforce at most one active connection per GitHub repository. A reconnect in the same space reuses its history; a new authorized space receives a distinct connection after the old connection is disconnected. Old private history never transfers between spaces. Retain only deletion tombstone IDs to prevent delayed retries from recreating deleted executions or deleted datasets within the same execution. Graph responses mark the representative from all completed executions before applying history filters.
+Use UUID v7 connection IDs and retain GitHub repository IDs separately. Enforce at most one active connection per GitHub repository. A reconnect in the same space reuses its history; a new authorized space receives a distinct connection after the old connection is disconnected. Old private history never transfers between spaces. Retain only deletion tombstone IDs to prevent delayed retries from recreating deleted executions or deleted datasets within the same execution. Graph responses mark the representative from all completed branch executions before applying history filters; a pull-request execution sharing a commit SHA never clears that flag or becomes the representative, and a commit with only pull-request executions has none.
 
 Delcore owns and audits shared permission grants and revocations. Git Tracker audits its repository connections, metadata changes, token issuance/revocation and data deletion without secret values or raw measurements. Request and audit correlation IDs share the same request context.
 
