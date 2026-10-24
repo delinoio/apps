@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/perfine-api` owns the API, PostgreSQL persistence, background jobs, explicit migrations, and OCI packaging. The server uses the local Apache engine in `crates/perfine-core` for evaluation and local schemas in `protos/perfine/v1`.
+`servers/perfine-api` owns the API, PostgreSQL persistence, background jobs, explicit migrations, and OCI packaging. The server owns evidence validation and policy evaluation in `src/evaluation` and consumes local schemas in `protos/perfine/v1`. It does not depend on client-workspace crates.
 
 ## Runtime and Language
 
@@ -91,7 +91,7 @@ Operators must set positive `SPACE_STORAGE_QUOTA_BYTES`, `SINGLE_UPLOAD_LIMIT_BY
 
 ### Evidence upload envelope
 
-The `ENGINE_EVIDENCE` artifact contains the lossless JSON `Bundle` defined by the server's evidence module: `schema_version`, shared-engine `config`, two `incremental_baseline` manifests, optional `cumulative_baseline`, optional `first` and `repeat` rounds, and `review`. A round contains `base`, `head`, and optional `cumulative_base` engine manifests. Each run has a distinct UUID v7 run ID. All referenced artifact bytes are separate entries in the typed RPC manifest. The server freezes the supplied config and uses the shared engine's verification, baseline validation, and evaluation functions. The RPC manifest checksum uses deterministic protobuf bytes with its checksum cleared.
+The `ENGINE_EVIDENCE` artifact contains the lossless JSON `Bundle` defined by the server's evidence module: `schema_version`, v1 `config`, two `incremental_baseline` manifests, optional `cumulative_baseline`, optional `first` and `repeat` rounds, and `review`. A round contains `base`, `head`, and optional `cumulative_base` engine manifests. Each run has a distinct UUID v7 run ID. All referenced artifact bytes are separate entries in the typed RPC manifest. The server freezes the supplied config and uses its own evidence verification, baseline validation, and policy evaluation functions. The RPC manifest checksum uses deterministic protobuf bytes with its checksum cleared.
 
 The typed policy digest is the core policy fingerprint, and the typed environment digest is the core environment fingerprint. Unknown nested engine fields are rejected at the hosted privacy boundary even though the local core permits additive fields. Environment variable maps must be empty. Non-raw artifacts must be structured JSON. Each engine run must include normalized measurement, profile-path and correctness artifacts that exactly match its observations. Native profile and command/test-log artifacts can remain additional engine references, with their original hashes and sizes. Map native profile references to `RAW_PROFILE` and measurement/correctness command records and streams to `RAW_TEST_LOG`. The upload adapter must add the three normalized JSON artifacts to each native run manifest and retain its existing raw references. Raw-only runs cannot establish a hosted pass. This is an upload-envelope integration requirement, not a change to the engine's measured observations or configuration fingerprint.
 
@@ -128,7 +128,7 @@ The binding uses server-verified GitHub objects and the already verified engine 
 
 The current deployment declares both cloud tools unavailable. Start/resume fail with a local alternative; no credentials can enable an unverified adapter. For imported Actions runs, immediate cancellation uses GitHub and maintenance confirms the resulting run state. Graceful cloud control remains unavailable until a workflow control channel can stop candidate admission without terminating active candidates. Disconnection and detected authority loss request immediate cancellation and retain failures for recovery.
 
-Configuration preparation uses `ExperimentService.PrepareExperiment` with the independent experiment grant. The typed input contains the complete public configuration and no calculated fingerprints. The API validates and freezes it through `perfine-core`, returns the immutable specification and canonical core configuration JSON, and retains the prepared specification for 30 days. Preparation does not create an experiment or change a started experiment. Start accepts only an exact, unexpired prepared specification and still requires an eligible cloud tool. Local/Actions uploads may use a CLI-frozen specification; registration independently reconstructs the complete configuration and verifies all three engine fingerprints before creating an experiment.
+Configuration preparation uses `ExperimentService.PrepareExperiment` with the independent experiment grant. The typed input contains the complete public configuration and no calculated fingerprints. The API validates and freezes it through its server-owned evaluator, returns the immutable specification and canonical core configuration JSON, and retains the prepared specification for 30 days. Preparation does not create an experiment or change a started experiment. Start accepts only an exact, unexpired prepared specification and still requires an eligible cloud tool. Local/Actions uploads may use a CLI-frozen specification; registration independently reconstructs the complete configuration and verifies all three engine fingerprints before creating an experiment.
 
 The versioned uncertainty and frozen configuration mapping is defined in the [protocol contract](protos-perfine-v1-contract.md#configuration-preparation-and-engine-v1-mapping). Confidence intervals are not calculated or inferred from sample ranges. The dashboard edits typed configuration values and obtains fingerprints from preparation; callers never need to calculate a hash to prepare a configuration.
 
@@ -148,7 +148,7 @@ reads, comparisons and PR operations use the target token; head commit reads use
 the head token. These credentials are ephemeral and never retained in approvals.
 
 Affected CI registers Perfine in the shared Rust server matrix. API, protocol,
-and shared-core changes select its Clippy, unit, and disposable PostgreSQL checks.
+and server-owned evaluator changes select its Clippy, unit, and disposable PostgreSQL checks.
 The existing matrix result gate rejects failed, cancelled, or skipped selected jobs;
 ordinary and affected manual validation remain on Ubuntu.
 
@@ -168,3 +168,7 @@ Structural evidence rejection, including unreferenced or unmodeled structured co
 Successful GitHub draft creation responses must match the exact approved base/head SHAs, title, body, and draft state. A mismatch is a failed publication with the created PR link retained for inspection and a requirement for new approval.
 
 Deletion batches process eligible jobs by earliest retry time, with experiment ID as a stable tie-breaker. A full batch of blocked cleanup jobs must yield to older unvisited work while retaining every pending cancellation and storage reservation.
+
+### Independent evaluation implementation
+
+The server evaluator preserves the v1 JSON field order, sorted map keys, float round-trip parsing, configuration fingerprints, manifest verification, same-SHA baseline requirements and policy thresholds used by local clients. It owns only evidence types, limits validation and policy evaluation; local execution, filesystem storage and adapters remain client concerns. Server-owned policy and evidence regression suites cover threshold boundaries, repeats, exceptions and invalid evidence. Golden client-format fixtures pin canonical hashes across the boundary. Server tests keep raw profiler fixtures under `tests/fixtures` and must compile from `servers/` and `protos/` alone. Update compatibility fixtures and both implementations when changing versioned semantics.

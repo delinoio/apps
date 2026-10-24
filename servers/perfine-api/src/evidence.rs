@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-//! Lossless hosted bundle. Each run retains the shared engine manifest; all referenced bytes
+//! Lossless hosted bundle. Each run retains the versioned client evidence manifest; all referenced bytes
 //! must be in the upload. Hosted summaries are derived only after shared verification.
+use crate::evaluation::{evidence as engine, policy, types};
 use crate::{Fault, Result, hash, integer, string};
-use perfine_core::{evidence as engine, policy, types};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};

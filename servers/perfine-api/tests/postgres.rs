@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use axum::{Json, Router, extract::Request, http::StatusCode, response::IntoResponse};
 use buffa::Message;
+use perfine_api::evaluation::{Limits, evidence as engine, policy, types::*};
 use perfine_api::{Server, auth::Actions, github::GitHub, storage::R2};
-use perfine_core::{evidence as engine, lifecycle::Limits, policy, types::*};
 use serde_json::{Value, json};
 use server_common::authority::Authority;
 use std::{
@@ -803,10 +803,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             if source == "secret.go" {
                 encoded
             } else {
-                include_bytes!(
-                    "../../../crates/perfine-core/tests/adapter-data/go-darwin-arm64.pprof"
-                )
-                .to_vec()
+                include_bytes!("fixtures/go-darwin-arm64.pprof").to_vec()
             }
         } else if language == "LANGUAGE_JAVASCRIPT" {
             serde_json::to_vec(

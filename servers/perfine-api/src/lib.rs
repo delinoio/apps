@@ -2,6 +2,7 @@
 pub mod alerts;
 pub mod auth;
 mod error;
+pub mod evaluation;
 pub mod evidence;
 pub mod github;
 pub mod preparation;

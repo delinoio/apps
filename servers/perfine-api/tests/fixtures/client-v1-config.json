@@ -1,0 +1,70 @@
+{
+  "config": {
+    "schema_version": 1,
+    "repository": "fixture/repository",
+    "initial_base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "incremental_base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "conditions": {
+      "harness": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workflow": "cccccccccccccccccccccccccccccccccccccccc",
+      "inputs": {
+        "input": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20"
+      },
+      "tools": {
+        "callgrind": "3.25"
+      },
+      "toolchain": "rustc-fixture",
+      "build_options": [
+        "release"
+      ],
+      "runtime_flags": [],
+      "environment": {
+        "os": "linux",
+        "architecture": "x86_64",
+        "runner": "fixture",
+        "hardware": {
+          "cpu": "fixture-cpu"
+        },
+        "variables": {}
+      },
+      "metric": {
+        "metric": "ir",
+        "unit": "instructions"
+      },
+      "cases": {
+        "large": {
+          "family": "large-family",
+          "frequency": 1.0,
+          "protected": false
+        },
+        "small": {
+          "family": "small-family",
+          "frequency": null,
+          "protected": false
+        }
+      },
+      "correctness_checks": [
+        "project-tests"
+      ]
+    },
+    "policy": {
+      "kind": "ir",
+      "settings": {
+        "minimum_improvement": 0.01,
+        "maximum_case_regression": 0.01,
+        "near_threshold": 0.001,
+        "repeat_tolerance": 0.001,
+        "allow_simple_exception": true,
+        "allow_single_case_exception": true
+      }
+    },
+    "limits": {
+      "candidate_count": 10,
+      "simultaneous_candidates": 5,
+      "start_duration_seconds": 100,
+      "candidate_duration_seconds": 30
+    },
+    "workload_confirmation": "user confirmed representative workload"
+  },
+  "fingerprint": "2f859fef73d8afd4fe03fd85cd0da9478cc5a565210cd54fe28ba718f482a326"
+}

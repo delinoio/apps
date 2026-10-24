@@ -2,11 +2,11 @@
 
 ## Scope
 
-`crates/perfine-core` owns the shared experiment engine, policy evaluation, provenance, and local evidence. Both local execution and hosted evaluation consume this Apache-2.0 engine without copying it into the server workspace.
+`crates/perfine-core` owns the shared experiment engine, policy evaluation, provenance, and local evidence. Local CLI and MCP execution consume this Apache-2.0 engine. Hosted evaluation is independently owned by the server and preserves the same versioned evidence and policy semantics.
 
 ## Runtime and Language
 
-Rust is an explicit project choice instead of the non-server Go default. The CLI and API share the engine. Linux x86_64 is the first officially verified execution platform. Add an explicit root Cargo workspace member when Rust implementation begins; a directory skeleton is not a Rust package.
+Rust is an explicit project choice instead of the non-server Go default. The CLI consumes this engine; the API owns a compatible server evaluator. Linux x86_64 is the first officially verified execution platform. Add an explicit root Cargo workspace member when Rust implementation begins; a directory skeleton is not a Rust package.
 
 ## Users and Operators
 
@@ -85,7 +85,7 @@ Automated verification is the first-release gate. Follow the acceptance criteria
 
 ## Dependencies and Integrations
 
-[Adapters contract](crates-perfine-adapters-contract.md), [Cli contract](cmds-perfine-cli-contract.md), [Protocol contract](protos-perfine-v1-contract.md), and [Api contract](servers-perfine-api-contract.md). The server consumes the Apache engine as a local path dependency while remaining a separate FSL workspace.
+[Adapters contract](crates-perfine-adapters-contract.md), [Cli contract](cmds-perfine-cli-contract.md), [Protocol contract](protos-perfine-v1-contract.md), and [Api contract](servers-perfine-api-contract.md). The server has no path dependency on this client crate. Its evaluator and compatibility tests follow the API contract.
 
 ## Change Triggers
 

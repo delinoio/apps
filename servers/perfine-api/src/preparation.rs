@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Versioned wire-to-engine conversion, shared by preparation and evidence acceptance.
+use crate::evaluation::{evidence::Config, policy, types};
 use crate::{Fault, Result, integer, string};
-use perfine_core::{evidence::Config, policy, types};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 

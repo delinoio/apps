@@ -14,7 +14,7 @@ All optimization work must be possible locally without a Perfine server account 
 
 ## Domain Ownership Map
 
-- `crates/perfine-core`: Shared Apache-2.0 engine and adapters.
+- `crates/perfine-core`: Local Apache-2.0 engine and adapters.
 - `cmds/perfine`: Rust CLI and MCP.
 - `apps/perfine`: Rsbuild web dashboard / Cloudflare Pages deployable.
 - `servers/perfine-api`: FSL API/background work, migrations and OCI deployable.
@@ -22,7 +22,7 @@ All optimization work must be possible locally without a Perfine server account 
 - `actions/perfine`: Official Action source; separate distribution repository.
 - `packages/perfine`: npm distribution and standalone CLI packaging.
 
-Directory skeletons reserve these canonical paths before runtime implementation. Add explicit root Cargo memberships for the engine and CLI, and an explicit server-workspace membership for the API, when their Rust implementation begins. The API consumes the shared Apache engine through a local path dependency; do not duplicate it or move it into the FSL server module directory.
+Directory skeletons reserve these canonical paths before runtime implementation. Add explicit root Cargo memberships for the engine and CLI, and an explicit server-workspace membership for the API, when their Rust implementation begins. The client engine remains in the root Cargo workspace. The API owns its evidence validation and policy evaluation in `servers/perfine-api/src/evaluation`; it has no dependency on root client crates. The implementations preserve the versioned evidence format, canonical fingerprints and evaluation semantics.
 
 ## Domain Contract Documents
 

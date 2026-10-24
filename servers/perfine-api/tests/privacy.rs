@@ -145,16 +145,9 @@ fn json_escapes_and_duplicate_keys_do_not_hide_secrets_or_source() {
 #[test]
 fn captured_native_profiles_are_eligible_without_rewriting() {
     for bytes in [
-        include_bytes!("../../../crates/perfine-core/tests/adapter-data/go-darwin-arm64.pprof")
-            .as_slice(),
-        include_bytes!(
-            "../../../crates/perfine-core/tests/adapter-data/node-darwin-arm64.cpuprofile"
-        )
-        .as_slice(),
-        include_bytes!(
-            "../../../crates/perfine-core/tests/adapter-data/c-linux-amd64-emulated.callgrind"
-        )
-        .as_slice(),
+        include_bytes!("fixtures/go-darwin-arm64.pprof").as_slice(),
+        include_bytes!("fixtures/node-darwin-arm64.cpuprofile").as_slice(),
+        include_bytes!("fixtures/c-linux-amd64-emulated.callgrind").as_slice(),
     ] {
         assert!(content_allowed(bytes, RAW).is_ok());
     }
