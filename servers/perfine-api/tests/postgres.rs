@@ -611,6 +611,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         status["publication"]["state"],
         "PUBLICATION_STATE_RECONCILING"
     );
+    let delayed = std::mem::take(&mut *pulls.lock().unwrap());
+    server.maintain().await.unwrap();
+    assert_eq!(*creates.lock().unwrap(), 1);
+    *pulls.lock().unwrap() = delayed;
     server.maintain().await.unwrap();
     let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
         .await
@@ -720,6 +724,23 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         call(&server, &space, "ListConnections", json!({}))
             .await
             .is_err()
+    );
+    server.maintain().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_preparations")
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        1
+    );
+    *state.lock().unwrap() = "TENANT_STATE_DELETED".into();
+    server.maintain().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_preparations")
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        0
     );
     db.close().await;
     sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))

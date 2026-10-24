@@ -421,8 +421,8 @@ impl Server {
                     &c["repository"],
                     chrono::Utc::now(),
                 )?;
-                sqlx::query("INSERT INTO perfine_preparations(space,connection,specification) VALUES($1,$2,$3)")
-                    .bind(id(space)?).bind(id(string(q,"connectionId"))?).bind(&response["specification"]).execute(db).await?;
+                sqlx::query("INSERT INTO perfine_preparations(space,connection,specification,id) VALUES($1,$2,$3,$4)")
+                    .bind(id(space)?).bind(id(string(q,"connectionId"))?).bind(&response["specification"]).bind(uuid::Uuid::now_v7()).execute(db).await?;
                 Ok(response)
             }
             "ListCloudTools" | "StartExperiment" | "ResumeExperiment" => {
@@ -1197,15 +1197,20 @@ impl Server {
             }
             tx.commit().await?;
         }
-        let spaces: Vec<uuid::Uuid> =
-            sqlx::query_scalar("SELECT DISTINCT space FROM perfine_experiments")
-                .fetch_all(&self.db)
-                .await?;
+        let spaces: Vec<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT space FROM perfine_experiments UNION SELECT space FROM perfine_preparations",
+        )
+        .fetch_all(&self.db)
+        .await?;
         for space in spaces {
             if matches!(self.authority.states(&[space.to_string()]).await,Ok(states) if states==[server_common::authority::TenantState::Deleted])
             {
                 let mut tx = self.db.begin().await?;
                 lock(&mut tx, &space.to_string()).await?;
+                sqlx::query("DELETE FROM perfine_preparations WHERE space=$1")
+                    .bind(space)
+                    .execute(&mut *tx)
+                    .await?;
                 let ids: Vec<uuid::Uuid> =
                     sqlx::query_scalar("SELECT id FROM perfine_experiments WHERE space=$1")
                         .bind(space)
@@ -1491,10 +1496,13 @@ impl Server {
             p["state"] = json!("PUBLICATION_STATE_FAILED");
             p["failureReason"] =
                 json!("A PR for this source exists with changed content or state; inspect GitHub");
-        } else if attempts >= 2 {
-            p["state"] = json!("PUBLICATION_STATE_FAILED");
-            p["failureReason"] =
-                json!("Publication retry budget exhausted; inspect GitHub before recovery");
+        } else if attempts > 0 {
+            // An empty list does not prove non-delivery: GitHub may expose a created PR late.
+            // Keep reconciling until a remote outcome is known; never duplicate an uncertain POST.
+            p["state"] = json!("PUBLICATION_STATE_RECONCILING");
+            p["failureReason"] = json!(
+                "Creation outcome remains uncertain; inspect GitHub before operator recovery"
+            );
         } else {
             p["state"] = json!("PUBLICATION_STATE_RECONCILING");
             sqlx::query(

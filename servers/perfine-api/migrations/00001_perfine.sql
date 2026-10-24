@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS perfine_cursors (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS perfine_preparations (
- id bigserial PRIMARY KEY, space uuid NOT NULL, connection uuid NOT NULL REFERENCES perfine_connections(id),
+ id uuid PRIMARY KEY, space uuid NOT NULL, connection uuid NOT NULL REFERENCES perfine_connections(id),
  specification jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS perfine_preparations_scope ON perfine_preparations(space,connection);
