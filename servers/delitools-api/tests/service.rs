@@ -704,6 +704,8 @@ async fn extraction_rejects_unsupported_schemas_before_execution() {
         r##"{"$ref":"#/$defs/x"}"##,
         r#"{"oneOf":[{"type":"string"}]}"#,
         r#"{"type":"object","patternProperties":{"a":{"type":"string"}}}"#,
+        r#"{"enum":[1,1.0]}"#,
+        r#"{"type":"object","properties":{"a":{"enum":[{"x":1},{"x":1.0}]}}}"#,
     ] {
         let mut body = extract_body();
         body["jsonSchema"] = json!(schema);

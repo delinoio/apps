@@ -277,8 +277,13 @@ fn check_node(node: &Value, depth: usize, nodes: &mut usize, path: &str) -> Resu
                 "enum at {path} must have 1 to {MAX_ENUM} values"
             )));
         }
+        // JSON Schema equality, not `serde_json::Value` equality: `1` and `1.0` are the same
+        // value, object member order is irrelevant and array order is significant.
         for (i, item) in items.iter().enumerate() {
-            if items[..i].contains(item) {
+            if items[..i]
+                .iter()
+                .any(|previous| jsonschema::json::cmp::equal(previous, item))
+            {
                 return Err(unsupported(format!(
                     "enum at {path} must not repeat values"
                 )));
@@ -476,6 +481,20 @@ mod tests {
     }
 
     #[test]
+    fn enum_distinctness_follows_json_schema_equality() {
+        for ok in [
+            r#"{"enum":[[1,2],[2,1]]}"#,
+            r#"{"enum":[9007199254740992,9007199254740993]}"#,
+            r#"{"enum":[9007199254740993,9007199254740992.0]}"#,
+            r#"{"enum":[1,"1",true]}"#,
+            r#"{"enum":[0,false,null,"0"]}"#,
+            r#"{"enum":[{"x":1},{"x":2},{"y":1}]}"#,
+        ] {
+            assert!(validate("t", ok, &limits()).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_keywords_before_execution() {
         for keyword in KNOWN_UNSUPPORTED {
             let schema = format!(r#"{{"type":"string","{keyword}":1}}"#);
@@ -514,6 +533,13 @@ mod tests {
             r#"{"type":"object","properties":{"a":{"type":"string"}},"required":["a","a"]}"#,
             r#"{"enum":[]}"#,
             r#"{"enum":[1,1]}"#,
+            r#"{"enum":[1,1.0]}"#,
+            r#"{"enum":[0,-0.0]}"#,
+            r#"{"enum":[[1],[1.0]]}"#,
+            r#"{"enum":[{"x":1},{"x":1.0}]}"#,
+            r#"{"enum":[{"a":1,"b":2},{"b":2.0,"a":1}]}"#,
+            r#"{"type":"object","properties":{"a":{"enum":["x",1,1.0]}}}"#,
+            r#"{"type":"array","items":{"enum":[2,2.0]}}"#,
             r#"{"enum":"a"}"#,
             r#"{"type":"string","minLength":-1}"#,
             r#"{"type":"string","minLength":1.5}"#,
