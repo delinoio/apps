@@ -97,3 +97,7 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+### Post-run review
+
+A completed candidate may be reevaluated through the same engine finish operation with explicit retained review evidence. Its evaluation evidence fingerprints must match the previous evaluation exactly. Review cannot change measurements, immutable policy or source identities, and cannot proceed after a publication approval exists. Retain the caller's content-bound confirmation and attestation in the owning execution journal. Missing required repeat evidence cannot produce a pass.
