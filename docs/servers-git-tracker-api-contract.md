@@ -64,6 +64,7 @@ External individuals and organizations, CI jobs and service operators.
 - For each commit, the representative result is the completed execution with the latest registration order, regardless of regressions. Registration occurs on first upload, or at creation by the completion call for an empty execution. An older execution completing late does not supersede a newer registered completed execution.
 - A representative result does not exclude regression-containing executions. In-progress executions remain separately inspectable.
 - Support uploading historical commits through the same API. Do not order baseline eligibility by historical upload arrival in place of Git ancestry.
+- A pull request upload or completion accepts the current head and any commit that GitHub lists as a member of that pull request, including historical non-head commits of open, closed and merged pull requests. The capped REST pull request commit list (at most 250 commits in total) is only a positive fast path. A commit missing from it, or from a short page, is checked through the authenticated GraphQL pull request commit connection. Reject the commit only after a complete traversal in which the repository, pull request number, base ref, pull request ID, state, head and total count stay consistent across pages, cursors advance, commit IDs are exact and unique, and the collected count equals the total count. GraphQL errors, incomplete or inconsistent pages, provider failures and the membership deadline fail closed as unavailable and never prove non-membership. Do not add a commit-count quota.
 - Skipping means omitting uploads, without explicit skip records or reasons. Before completion, an absent row is uncollected; after completion it is missing. Missing data alone is not a regression and does not fail CI.
 - Keep measurements until the user deletes them. No paid plans, usage billing, or product usage quotas are part of the first release.
 
@@ -120,7 +121,17 @@ PostgreSQL is authoritative for server state. Clients do not persist credentials
 
 ## Security
 
-Check current space permissions on protected operations. Verify GitHub signatures and Actions OIDC identity; reject cross-repository and cross-space access. Public responses must not be cached across visibility changes. Never expose secrets or raw measurements in logs or audits.
+Check current space permissions on protected operations. Verify GitHub signatures and Actions OIDC identity; reject cross-repository and cross-space access.
+
+### Actions OIDC key refresh
+
+- Actions tokens must use RS256 and carry a `kid`; other headers are rejected before any key lookup or network access. Signature, issuer, audience, expiry, not-before and execution, repository, event, PR and commit binding checks are unchanged.
+- The server keeps one successfully fetched JWKS snapshot per process. A snapshot authorizes tokens for at most 300 seconds after its successful fetch. A failed, suppressed or cancelled refresh never extends that age. Expired keys are never used; an expired snapshot that cannot be refreshed fails closed with an unavailable error and its bytes are kept for later recovery.
+- A token whose `kid` is absent from the snapshot, or any token while the snapshot is expired, triggers a refresh. Each process starts at most one refresh attempt per 30 seconds and runs at most one at a time. The interval covers successful, unchanged, failed and cancelled attempts and every `kid` value, so varying unauthenticated key identifiers cannot amplify outbound requests. The startup fetch counts as the first attempt. Callers waiting for an in-flight refresh re-read the shared result; a still-unknown key is denied without another fetch.
+- The refresh runs on a coordinator that is separate from the key cache. The HTTP request, body read and parse happen outside the cache lock, and a successful complete snapshot replaces the old one under a short write lock. Verification of a token whose key is fresh in the snapshot never waits for a refresh.
+- A rotated key is accepted only after a permitted successful refresh and full validation, at most 30 seconds after the previous attempt start once the provider responds. No restart is needed. The HTTP client keeps its 30-second timeout and disabled redirects; the JWKS URL stays restricted to GitHub Actions and bodies are limited to 256 KiB.
+- Refresh logs are structured `tracing` events with a bounded `outcome` category (`refreshed`, `suppressed`, `transport_failed`, `status_failed`, `body_failed`, `parse_failed`) and the key count. Suppressions log at debug level. Logs never contain tokens, `kid` values or credentials.
+  Public responses must not be cached across visibility changes. Never expose secrets or raw measurements in logs or audits.
 
 ## Logging
 
@@ -145,7 +156,7 @@ Update the project index and affected protocol/client/server contracts when beha
 
 ## Connection identity and deletion references
 
-Use UUID v7 connection IDs and retain GitHub repository IDs separately. Enforce at most one active connection per GitHub repository. A reconnect in the same space reuses its history; a new authorized space receives a distinct connection after the old connection is disconnected. Old private history never transfers between spaces. Retain only deletion tombstone IDs to prevent delayed retries from recreating deleted executions or deleted datasets within the same execution. Graph responses mark the representative from all completed executions before applying history filters.
+Use UUID v7 connection IDs and retain GitHub repository IDs separately. Enforce at most one active connection per GitHub repository. A reconnect in the same space reuses its history; a new authorized space receives a distinct connection after the old connection is disconnected. Old private history never transfers between spaces. Retain only deletion tombstone IDs to prevent delayed retries from recreating deleted executions or deleted datasets within the same execution. Graph responses mark the representative from all completed branch executions before applying history filters; a pull-request execution sharing a commit SHA never clears that flag or becomes the representative, and a commit with only pull-request executions has none.
 
 Delcore owns and audits shared permission grants and revocations. Git Tracker audits its repository connections, metadata changes, token issuance/revocation and data deletion without secret values or raw measurements. Request and audit correlation IDs share the same request context.
 
