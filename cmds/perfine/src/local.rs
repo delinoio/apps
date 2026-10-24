@@ -136,6 +136,16 @@ struct Attempt {
     #[serde(default)]
     finished: bool,
 }
+// Expired attempts consume their original slot and keep their evidence, but must
+// not be proposed or reattached again while other candidate slots remain.
+fn settle_expired_attempts(journal: &mut Journal, now: u64) {
+    for attempt in journal.attempts.values_mut() {
+        if now >= attempt.deadline {
+            attempt.finished = true;
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct RequestClaim {
     created_at: u64,
@@ -408,10 +418,11 @@ impl App {
             );
             if resume {
                 let status = engine.status(&id)?;
-                pending_admission = saved
-                    .attempts
-                    .values()
-                    .any(|a| !a.finished && !status.candidates.contains_key(&a.candidate));
+                pending_admission = saved.attempts.values().any(|a| {
+                    !a.finished
+                        && now() < a.deadline
+                        && !status.candidates.contains_key(&a.candidate)
+                });
             }
             if !resume {
                 ensure!(
@@ -564,6 +575,8 @@ impl App {
             atomic(&journal_path, &j)?;
             j
         };
+        settle_expired_attempts(&mut journal, now());
+        atomic(&journal_path, &journal)?;
         let result = (|| -> Result<()> {
             let existing = engine.status(&id)?;
             if matches!(
@@ -690,6 +703,7 @@ impl App {
                     .values()
                     .filter(|a| !a.finished)
                     .map(|a| a.deadline)
+                    .chain(std::iter::once(deadline))
                     .max()
                     .unwrap_or(deadline),
                 cancellation: &signal,
@@ -737,10 +751,16 @@ impl App {
                     attempt,
                 ) = prior
                 {
-                    ensure!(
-                        now() < attempt.deadline,
-                        "interrupted candidate deadline expired; evidence retained"
-                    );
+                    if now() >= attempt.deadline {
+                        journal
+                            .attempts
+                            .get_mut(&hypothesis_hash)
+                            .expect("retained attempt")
+                            .finished = true;
+                        atomic(&journal_path, &journal)?;
+                        engine.tick(&request(), &id, now())?;
+                        continue;
+                    }
                     let req = EnvironmentRequest {
                         role: ExecutionRole::Candidate,
                         base: cfg.experiment.incremental_base.clone(),
@@ -1296,5 +1316,32 @@ mod initialization_tests {
             recover_initialization(&engine, &id, &path, &settings).unwrap();
             assert_eq!(engine.status(&id).unwrap().start_deadline, deadline);
         }
+    }
+}
+
+#[cfg(test)]
+mod expired_attempt_tests {
+    use super::*;
+    #[test]
+    fn expiry_retains_identity_evidence_and_candidate_budget() {
+        let candidate = ResourceId::generate();
+        let hash = digest(b"hypothesis");
+        let mut journal: Journal = serde_json::from_value(json!({
+            "schema_version": 1, "settings": digest(b"settings"), "optimize": true,
+            "created_request": request(), "runs": {}, "failure": null,
+            "attempts": {hash.as_str(): {
+                "candidate": candidate, "workspace": {
+                    "branch": "candidate", "directory": "/tmp/candidate", "build_directory": "/tmp/build"
+                }, "deadline": 10, "finished": false
+            }}
+        })).unwrap();
+        settle_expired_attempts(&mut journal, 9);
+        assert!(!journal.attempts[&hash].finished);
+        settle_expired_attempts(&mut journal, 10);
+        assert!(journal.attempts[&hash].finished);
+        assert_eq!(journal.attempts[&hash].candidate, candidate);
+        assert_eq!(journal.attempts[&hash].deadline, 10);
+        assert_eq!(journal.attempts.len(), 1);
+        assert_eq!(journal.attempts.values().filter(|a| !a.finished).count(), 0);
     }
 }
