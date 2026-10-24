@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 pub mod alerts;
 pub mod auth;
+mod error;
 pub mod evidence;
 pub mod github;
 pub mod preparation;

@@ -215,8 +215,9 @@ impl GitHub {
                 )
                 .await?;
             if v["sha"] != d[sha] {
-                return Err(Fault::precondition(
-                    "approval stale; revalidate measured source",
+                return Err(crate::error::domain(
+                    Fault::precondition("approval stale; revalidate measured source"),
+                    delino_protocol::perfine::v1::ErrorReason::ApprovalStale,
                 ));
             }
             let metadata = self.call("GET", &path(r), token, None).await?;
