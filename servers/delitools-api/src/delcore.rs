@@ -399,11 +399,22 @@ pub fn valid_price(value: &str) -> bool {
         && (!value.contains('.') || !fraction.is_empty())
 }
 
-fn parse_block(value: &Value) -> Block {
+/// Interprets one element of `reasons`, a ProtoJSON `BlockReason` enum value.
+///
+/// An enum is a string name or an integer. Names and numbers this server does not know stay
+/// billing blocks so that newer Delcore reasons fail closed. Any other JSON type, or a
+/// fractional number, is a malformed answer. The value is never logged because the answer body
+/// is not trusted.
+fn parse_block(value: &Value) -> Result<Block, DelcoreError> {
     match value {
-        Value::String(s) if s == "BLOCK_REASON_PERMISSION" => Block::Permission,
-        Value::Number(n) if n.as_i64() == Some(1) => Block::Permission,
-        _ => Block::Other,
+        Value::String(s) if s == "BLOCK_REASON_PERMISSION" => Ok(Block::Permission),
+        Value::String(_) => Ok(Block::Other),
+        Value::Number(n) => match n.as_i64() {
+            Some(1) => Ok(Block::Permission),
+            Some(_) => Ok(Block::Other),
+            None => Err(DelcoreError::Unavailable),
+        },
+        _ => Err(DelcoreError::Unavailable),
     }
 }
 
@@ -422,7 +433,10 @@ pub fn parse_verdict(value: &Value) -> Result<Verdict, DelcoreError> {
     };
     let reasons: Vec<Block> = match value.get("reasons") {
         None | Some(Value::Null) => Vec::new(),
-        Some(Value::Array(items)) => items.iter().map(parse_block).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(parse_block)
+            .collect::<Result<Vec<_>, _>>()?,
         Some(_) => return Err(DelcoreError::Unavailable),
     };
     if allowed == !reasons.is_empty() {
@@ -540,6 +554,69 @@ mod tests {
                 "{malformed}"
             );
         }
+    }
+
+    #[test]
+    fn malformed_reason_elements_are_dependency_failures() {
+        let malformed = [
+            json!({}),
+            json!([]),
+            json!(true),
+            json!(false),
+            json!(null),
+            json!(1.5),
+            json!(1.0),
+        ];
+        for element in &malformed {
+            for reasons in [
+                json!([element]),
+                json!(["BLOCK_REASON_PERMISSION", element]),
+                json!([element, "BLOCK_REASON_PERMISSION"]),
+                json!([1, element]),
+                json!([element, 1]),
+                json!(["BLOCK_REASON_BALANCE", element]),
+            ] {
+                assert_eq!(
+                    parse_verdict(&json!({"allowed":false,"reasons":reasons})),
+                    Err(DelcoreError::Unavailable),
+                    "{reasons}"
+                );
+            }
+        }
+        // allowed=true with a malformed element is malformed as well.
+        assert_eq!(
+            parse_verdict(&json!({"allowed":true,"reasons":[{}]})),
+            Err(DelcoreError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn valid_reason_elements_keep_their_classification() {
+        let reasons = |value: Value| {
+            parse_verdict(&json!({"allowed":false,"reasons":value}))
+                .unwrap()
+                .reasons
+        };
+        assert_eq!(
+            reasons(json!(["BLOCK_REASON_PERMISSION"])),
+            [Block::Permission]
+        );
+        assert_eq!(reasons(json!([1])), [Block::Permission]);
+        for other in [
+            json!("BLOCK_REASON_BALANCE"),
+            json!("BLOCK_REASON_SOME_FUTURE_NAME"),
+            json!(""),
+            json!(0),
+            json!(2),
+            json!(99),
+            json!(-1),
+        ] {
+            assert_eq!(reasons(json!([other])), [Block::Other], "{other}");
+        }
+        assert_eq!(
+            reasons(json!(["BLOCK_REASON_BALANCE", 1, "FUTURE"])),
+            [Block::Other, Block::Permission, Block::Other]
+        );
     }
 
     #[test]
