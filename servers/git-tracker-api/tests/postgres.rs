@@ -490,12 +490,12 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
             .await
             .unwrap();
     let mut stale = state["records"]["run"].clone();
-    stale["execution"]["state"] = json!(1);
-    stale["execution"]["context"]["execution_id"] = json!("stale-rpc");
+    stale["execution"]["state"] = json!("EXECUTION_STATE_MEASURING");
+    stale["execution"]["context"]["executionId"] = json!("stale-rpc");
     stale["last_data"] = json!((chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339());
     sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-rpc'],$2) WHERE id::text=$1")
         .bind(&rid).bind(&stale).execute(&db).await.unwrap();
-    sqlx::query("ALTER TABLE git_tracker_repositories ADD CONSTRAINT reject_interruption CHECK ((state #>> '{records,stale-rpc,execution,state}')::int <> 3)")
+    sqlx::query("ALTER TABLE git_tracker_repositories ADD CONSTRAINT reject_interruption CHECK ((state #>> '{records,stale-rpc,execution,state}') <> 'EXECUTION_STATE_INTERRUPTED')")
         .execute(&db).await.unwrap();
     let query = json!({"repositoryId":rid,"executionId":"run"});
     let (_, failed) = call(
@@ -524,7 +524,7 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     assert_eq!(events.get(), before + 1);
     call(&http, &base, "GetExecution", "Bearer manager", query).await;
     assert_eq!(events.get(), before + 1);
-    stale["execution"]["context"]["execution_id"] = json!("stale-maintenance");
+    stale["execution"]["context"]["executionId"] = json!("stale-maintenance");
     sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-maintenance'],$2) WHERE id::text=$1")
         .bind(&rid).bind(&stale).execute(&db).await.unwrap();
     // An audit row of an unrelated space that is far older than any ordinary retention.
