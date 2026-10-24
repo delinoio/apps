@@ -55,6 +55,7 @@
 
 ## Monorepo Structure Map
 
+- `.agents/skills/`: Project-local third-party agent skills managed with `npx skills`; see [agent skills](docs/repository-workflow-contract.md#project-local-agent-skills) for sources and installation.
 - `servers/`: Delcore, DevBase, Git Tracker and DeliTools services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
 - `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.

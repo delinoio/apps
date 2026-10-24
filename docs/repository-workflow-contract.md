@@ -8,6 +8,21 @@ Shared protocol tooling lives in `protos/scripts/`: `check-breaking.mjs` runs FI
 
 Changes under `servers/scripts/` select all four API entries in both server validation matrices.
 
+## Project-local agent skills
+
+Project-local third-party skills are committed under `.agents/skills/`. Root `skills-lock.json` records their upstream sources, skill paths and content hashes. The installed skills are `turborepo` from `vercel/turborepo`, `supabase-postgres-best-practices` from `supabase/agent-skills`, `vercel-composition-patterns` from `vercel-labs/agent-skills`, and `postgres` from `planetscale/database-skills`.
+
+Install these skills from the repository root:
+
+```sh
+npx skills add vercel/turborepo --skill turborepo --agent codex --yes
+npx skills add supabase/agent-skills --skill supabase-postgres-best-practices --agent codex --yes
+npx skills add vercel-labs/agent-skills --skill vercel-composition-patterns --agent codex --yes
+npx skills add planetscale/database-skills --skill postgres --agent codex --yes
+```
+
+The commands fetch the current upstream skills. Review content and lockfile changes before committing updates. Imported skills retain their upstream license metadata and available license files; see the [license contract](repository-license-contract.md). The shared formatter excludes `.agents/skills/` to preserve imported content.
+
 ## Worktree dependency sharing
 
 Root `pnpm-workspace.yaml` sets `virtualStoreType: global` so worktrees share installed package contents through pnpm's global virtual store. Each worktree retains its own `node_modules` links and dependency versions selected by its lockfile.
