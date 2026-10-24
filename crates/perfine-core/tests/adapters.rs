@@ -673,3 +673,33 @@ fn codex_commentary_does_not_replace_the_final_schema_response() {
         serde_json::json!([])
     );
 }
+
+#[test]
+fn node_signed_deltas_reorder_samples_without_losing_elapsed_cost() {
+    // Synthetic parser regression for out-of-order samples seen in actual V8
+    // captures. This test does not supply benchmark or acceptance measurements.
+    let raw = br#"{"nodes":[{"id":1,"callFrame":{"functionName":"root","url":"","lineNumber":-1},"children":[2,3]},{"id":2,"callFrame":{"functionName":"a","url":"file:///work/a.mjs","lineNumber":0}},{"id":3,"callFrame":{"functionName":"b","url":"file:///work/b.mjs","lineNumber":0}}],"startTime":10,"endTime":410,"samples":[2,3,2],"timeDeltas":[100,-4,200]}"#;
+    let parsed = profile::parse(ProfileFormat::NodeCpu, raw).unwrap();
+    let costs: BTreeMap<_, _> = parsed
+        .profile
+        .costs
+        .iter()
+        .map(|cost| (cost.source.file.as_str(), cost.cost))
+        .collect();
+    assert_eq!(costs["file:///work/a.mjs"], 200.0);
+    assert_eq!(costs["file:///work/b.mjs"], 96.0);
+    assert_eq!(
+        parsed
+            .profile
+            .edges
+            .iter()
+            .map(|edge| edge.cost)
+            .sum::<f64>(),
+        296.0
+    );
+    let text = std::str::from_utf8(raw).unwrap();
+    for deltas in ["[100,-200,200]", "[9223372036854775807,1,1]"] {
+        let invalid = text.replace("[100,-4,200]", deltas);
+        assert!(profile::parse(ProfileFormat::NodeCpu, invalid.as_bytes()).is_err());
+    }
+}
