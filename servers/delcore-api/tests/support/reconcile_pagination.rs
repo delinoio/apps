@@ -540,6 +540,60 @@ async fn invalid_pagination_is_a_bounded_error_and_never_leaves_the_provider_ori
 
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL database"]
+async fn a_cycle_over_several_pages_ends_through_the_retry_policy() {
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let provider = Provider::start().await;
+    let worker = provider.worker(&f);
+    let c = case(&f, "ctm_fixture", "").await;
+    // Each page is consistent on its own: its cursor names its last row and differs from the
+    // requested one. Together the pages form the cycle txn_a -> txn_b -> txn_a.
+    for (id, next) in [("", "txn_a"), ("txn_a", "txn_b"), ("txn_b", "txn_a")] {
+        provider.page(
+            id,
+            list(vec![unrelated(next, &c.tenant)], &c.filter, Some(next)),
+        );
+    }
+    for expected in ["txn_a", "txn_b"] {
+        worker.step().await.unwrap();
+        let (state, category, attempts, payload) = job_state(&f, c.job).await;
+        assert_eq!(
+            (state.as_str(), category.as_str(), attempts),
+            ("reconcile", "reconcile_scan_pending", 0)
+        );
+        assert_eq!(payload["reconcile_scan"]["after"], expected);
+    }
+    // The page after txn_b points back to txn_a, which was requested already.
+    worker.step().await.unwrap();
+    let (state, category, attempts, payload) = job_state(&f, c.job).await;
+    assert_eq!(
+        (state.as_str(), category.as_str(), attempts),
+        ("reconcile", "payment_ambiguous", 1)
+    );
+    assert_eq!(
+        payload["reconcile_scan"]["after"], "txn_b",
+        "completed progress is kept"
+    );
+    // Every further step spends an attempt, so the retry limit ends the scan with an error that
+    // needs operator review instead of requeueing it for ever.
+    let mut steps = 0;
+    while job_state(&f, c.job).await.0 == "reconcile" {
+        steps += 1;
+        assert!(steps <= 50, "the cycle must end through the retry limit");
+        ready(&f, c.job).await;
+        worker.step().await.unwrap();
+    }
+    let (state, category, _, _) = job_state(&f, c.job).await;
+    assert_eq!(
+        (state.as_str(), category.as_str()),
+        ("failed", "retry_exhausted")
+    );
+    assert_eq!(credits(&f, c.tenant).await, 0);
+    assert_read_only_and_authenticated(&provider);
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
 async fn transient_error_on_a_later_page_keeps_the_completed_page() {
     let f = Fixture::setup().await;
     f.bootstrap().await;
