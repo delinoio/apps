@@ -200,6 +200,95 @@ async fn paid_execution_fails_closed_when_delcore_is_unavailable_or_malformed() 
 }
 
 #[tokio::test]
+async fn malformed_reason_elements_are_dependency_failures_not_denials() {
+    let h = Harness::start(None).await;
+    let elements = [json!({}), json!([]), json!(true), json!(null), json!(1.5)];
+    for element in &elements {
+        for reasons in [
+            json!([element]),
+            json!(["BLOCK_REASON_PERMISSION", element]),
+            json!([element, "BLOCK_REASON_PERMISSION"]),
+        ] {
+            let reply = json!({"allowed": false, "reasons": reasons});
+            h.delcore
+                .lock()
+                .unwrap()
+                .authorize_script
+                .push_back((200, reply.clone()));
+            let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+            assert_eq!(
+                wire.reason(),
+                "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+                "{reply}"
+            );
+            assert_eq!(wire.code(), "unavailable", "{reply}");
+
+            let mut key = reply;
+            key["tenantId"] = json!(TENANT);
+            h.delcore
+                .lock()
+                .unwrap()
+                .keys
+                .insert(KEY_SECRET.into(), key.clone());
+            let wire = h.translate(KEY_SECRET, translate_body(&["Hello"])).await;
+            assert_eq!(
+                wire.reason(),
+                "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+                "{key}"
+            );
+            assert_eq!(wire.code(), "unavailable", "{key}");
+        }
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn valid_reason_names_and_numbers_keep_their_denial_classification() {
+    let h = Harness::start(None).await;
+    for (reasons, expected) in [
+        (
+            json!(["BLOCK_REASON_PERMISSION"]),
+            "ERROR_REASON_PERMISSION_DENIED",
+        ),
+        (json!([1]), "ERROR_REASON_PERMISSION_DENIED"),
+        (
+            json!(["BLOCK_REASON_BALANCE", "BLOCK_REASON_PERMISSION"]),
+            "ERROR_REASON_PERMISSION_DENIED",
+        ),
+        (
+            json!(["BLOCK_REASON_BALANCE"]),
+            "ERROR_REASON_BILLING_BLOCKED",
+        ),
+        (
+            json!(["BLOCK_REASON_FUTURE"]),
+            "ERROR_REASON_BILLING_BLOCKED",
+        ),
+        (json!([2]), "ERROR_REASON_BILLING_BLOCKED"),
+        (json!([99]), "ERROR_REASON_BILLING_BLOCKED"),
+    ] {
+        let reply = json!({"allowed": false, "reasons": reasons});
+        h.delcore
+            .lock()
+            .unwrap()
+            .authorize_script
+            .push_back((200, reply.clone()));
+        let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+        assert_eq!(wire.reason(), expected, "{reply}");
+
+        let mut key = reply;
+        key["tenantId"] = json!(TENANT);
+        h.delcore
+            .lock()
+            .unwrap()
+            .keys
+            .insert(KEY_SECRET.into(), key.clone());
+        let wire = h.translate(KEY_SECRET, translate_body(&["Hello"])).await;
+        assert_eq!(wire.reason(), expected, "{key}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
 async fn validation_errors_use_invalid_input_and_limit_reasons() {
     let h = Harness::start(None).await;
     let cases = [
@@ -450,6 +539,28 @@ async fn authorization_outage_between_attempts_fails_closed() {
     let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
     assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
     assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn malformed_reason_on_recheck_stops_retries_with_a_dependency_error() {
+    let h = Harness::start(None).await;
+    let delcore = h.delcore.clone();
+    h.gateway.push(Reply::Hook(
+        std::sync::Arc::new(move || {
+            delcore
+                .lock()
+                .unwrap()
+                .authorize_script
+                .push_back((200, json!({"allowed": false, "reasons": [{}]})))
+        }),
+        Box::new(Reply::Status(503)),
+    ));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(wire.code(), "unavailable");
+    assert_eq!(h.gateway.calls(), 1);
+    assert_eq!(h.delcore.lock().unwrap().authorize_calls.len(), 2);
 }
 
 #[tokio::test]
