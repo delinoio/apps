@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+pub mod alerts;
 pub mod auth;
 pub mod evidence;
 pub mod github;
@@ -7,6 +8,7 @@ pub mod storage;
 use server_common::authority::Authority;
 use sqlx::PgPool;
 pub struct Server {
+    pub metrics: Metrics,
     pub db: PgPool,
     pub authority: Authority,
     pub actions: auth::Actions,
@@ -39,4 +41,20 @@ pub fn integer(v: &serde_json::Value, k: &str) -> u64 {
     v[k].as_u64()
         .or_else(|| v[k].as_str().and_then(|s| s.parse().ok()))
         .unwrap_or(0)
+}
+
+#[derive(Default)]
+pub struct Metrics {
+    pub completed: std::sync::atomic::AtomicU64,
+    pub failed: std::sync::atomic::AtomicU64,
+}
+impl Metrics {
+    pub fn encode(&self) -> String {
+        use std::sync::atomic::Ordering::Relaxed;
+        format!(
+            "perfine_requests_completed_total {}\nperfine_requests_failed_total {}\n",
+            self.completed.load(Relaxed),
+            self.failed.load(Relaxed)
+        )
+    }
 }

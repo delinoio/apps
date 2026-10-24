@@ -14,8 +14,9 @@ CREATE TABLE IF NOT EXISTS perfine_experiments (
 CREATE TABLE IF NOT EXISTS perfine_tombstones (id uuid PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS perfine_uploads (
  id uuid PRIMARY KEY, experiment uuid NOT NULL REFERENCES perfine_experiments(id), data jsonb NOT NULL,
- reserved_bytes bigint NOT NULL CHECK(reserved_bytes>=0), staging_expires_at timestamptz NOT NULL DEFAULT now()+interval '16 minutes', created_at timestamptz NOT NULL DEFAULT now()
+ staging_cleaned boolean NOT NULL DEFAULT false, reserved_bytes bigint NOT NULL CHECK(reserved_bytes>=0), staging_expires_at timestamptz NOT NULL DEFAULT now()+interval '16 minutes', created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS perfine_rejected_objects (object_key text PRIMARY KEY, expires_at timestamptz NOT NULL, next_attempt timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS perfine_candidates (
  id uuid PRIMARY KEY, experiment uuid NOT NULL REFERENCES perfine_experiments(id), data jsonb NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now()
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS perfine_rate (
  space uuid PRIMARY KEY, window_started timestamptz NOT NULL DEFAULT now(), requests bigint NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS perfine_cursors (
- id uuid PRIMARY KEY, binding text NOT NULL, after_id uuid NOT NULL,
+ id uuid PRIMARY KEY, binding text NOT NULL, after_id uuid NOT NULL, after_time timestamptz NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now()
 );
 COMMIT;

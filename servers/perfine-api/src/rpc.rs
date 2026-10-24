@@ -132,6 +132,9 @@ impl Server {
         let out = self.execute(h, gh, op, q, &trace).await;
         match out {
             Ok(mut out) => {
+                self.metrics
+                    .completed
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 out["requestId"] = json!(trace);
                 Ok(Response::new(
                     serde_json::from_value(out).map_err(|_| Fault::unavailable().connect())?,
@@ -140,6 +143,9 @@ impl Server {
                 .with_header("cache-control", "no-store"))
             }
             Err(f) => {
+                self.metrics
+                    .failed
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 tracing::warn!(request_id=%trace,procedure=op,code=?f.code,"Perfine request failed");
                 let reason = match f.code {
                     connectrpc::ErrorCode::Unauthenticated => 2,
@@ -179,8 +185,14 @@ impl Server {
         let space = string(&q, "spaceId");
         id(space)?;
         id(trace)?;
-        if mutation(op) {
+        if mutation(op) || !string(&q, "requestId").is_empty() {
             id(string(&q, "requestId"))?;
+        }
+        if !h.starts_with("Actions ")
+            && op == "BeginUpload"
+            && q["origin"] == "EXECUTION_ORIGIN_GITHUB_ACTIONS"
+        {
+            return Err(Fault::denied());
         }
         if h.starts_with("Actions ") {
             return self.actions_execute(h, op, q, trace).await;
@@ -242,6 +254,17 @@ impl Server {
                 if row.get::<String, _>("digest") != digest {
                     return Err(Fault::conflict());
                 }
+                if op == "ApproveDraft" {
+                    let response: Value = row.get("response");
+                    let e = experiment(&mut tx, space, string(q, "experimentId")).await?;
+                    let c = connection(&mut tx, space, string(&e, "connectionId")).await?;
+                    inactive(&c)?;
+                    let token = self.github.current(&c).await?;
+                    self.github
+                        .binding(&response["approval"]["draft"], &token)
+                        .await?;
+                    return Ok(response);
+                }
                 if !matches!(
                     op,
                     "BeginUpload"
@@ -260,7 +283,7 @@ impl Server {
                     | "CancelExperiment"
                     | "SetRawArtifactConsent"
             ) {
-                let count:i64=sqlx::query_scalar("INSERT INTO perfine_rate(space,requests) VALUES($1,1) ON CONFLICT(space) DO UPDATE SET requests=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN 1 ELSE perfine_rate.requests+1 END,window_started=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN now() ELSE perfine_rate.window_started END RETURNING requests").bind(id(space)?).fetch_one(&mut *tx).await?;
+                let count:i64=sqlx::query_scalar("INSERT INTO perfine_rate(space,requests) VALUES($1,1) ON CONFLICT(space) DO UPDATE SET requests=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN 1 ELSE perfine_rate.requests+1 END,window_started=CASE WHEN perfine_rate.window_started<now()-interval '1 minute' THEN now() ELSE perfine_rate.window_started END RETURNING requests").bind(id(space)?).fetch_one(&self.db).await?;
                 if count > self.rate {
                     return Err(Fault::quota());
                 }
@@ -348,6 +371,7 @@ impl Server {
                 }
                 if op == "DisconnectRepository" {
                     c["state"] = json!("CONNECTION_STATE_DISCONNECTED");
+                    c["executionCancellations"] = json!(self.cancel_connection(db, &c).await?);
                 }
                 if mutation(op) {
                     c["updatedAt"] = json!(stamp());
@@ -401,9 +425,7 @@ impl Server {
                         "cloud unavailable: use the local CLI; no isolated unattended adapter has been verified",
                     ));
                 }
-                Ok(
-                    json!({"tools":[{"toolId":"codex","displayName":"Codex CLI","state":2,"unavailableReason":2,"reason":"Isolated unattended execution has not been verified for this deployment","localAlternative":"Run perfine locally and upload retained evidence"},{"toolId":"claude","displayName":"Claude Code","state":2,"unavailableReason":2,"reason":"Isolated unattended execution has not been verified for this deployment","localAlternative":"Run perfine locally and upload retained evidence"}],"page":{}}),
-                )
+                self.cloud_page(db, q).await
             }
             "CancelExperiment" => {
                 let mut e = experiment(db, space, string(q, "experimentId")).await?;
@@ -418,6 +440,11 @@ impl Server {
                 // Local execution cannot be controlled by the host; the local CLI owns its process.
                 if e["origin"] == "EXECUTION_ORIGIN_LOCAL" {
                     return Err(Fault::precondition("cancel with the local CLI"));
+                }
+                if q["mode"] == "CANCELLATION_MODE_GRACEFUL" {
+                    return Err(Fault::precondition(
+                        "graceful workflow control is unavailable; use local cancellation or request immediate GitHub cancellation",
+                    ));
                 }
                 let token = self.github.current(&c).await?;
                 let path = crate::github::path(&c["repository"]);
@@ -493,6 +520,38 @@ impl Server {
             _ => Err(Fault::invalid("unknown operation")),
         }
     }
+    async fn cloud_page(&self, db: &mut PgConnection, q: &Value) -> Result<Value> {
+        let mut binding = q.clone();
+        binding.as_object_mut().unwrap().remove("requestId");
+        binding.as_object_mut().unwrap().remove("page");
+        let binding = hash(&serde_json::to_vec(&("ListCloudTools", binding))?);
+        let size = integer(&q["page"], "pageSize");
+        if size > 100 {
+            return Err(Fault::invalid("page size exceeds 100"));
+        }
+        let cursor = string(&q["page"], "cursor");
+        let offset = if cursor.is_empty() {
+            0
+        } else {
+            let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM perfine_cursors WHERE id=$1 AND binding=$2 AND created_at>now()-interval '1 hour')").bind(id(cursor)?).bind(&binding).fetch_one(&mut *db).await?;
+            if !valid {
+                return Err(Fault::invalid("cursor invalid or expired"));
+            }
+            1
+        };
+        let tools = [("claude", "Claude Code"), ("codex", "Codex CLI")];
+        let take = if size == 0 { 2 } else { size as usize };
+        let next = if offset + take < tools.len() {
+            let id = uuid::Uuid::now_v7();
+            sqlx::query("INSERT INTO perfine_cursors(id,binding,after_id,after_time) VALUES($1,$2,$3,now())").bind(id).bind(binding).bind(uuid::Uuid::nil()).execute(db).await?;
+            id.to_string()
+        } else {
+            String::new()
+        };
+        Ok(
+            json!({"tools":tools.iter().skip(offset).take(take).map(|(tool,name)|json!({"toolId":tool,"displayName":name,"state":2,"unavailableReason":2,"reason":"Isolated unattended execution has not been verified for this deployment","localAlternative":"Run perfine locally and upload retained evidence"})).collect::<Vec<_>>(),"page":{"nextCursor":next}}),
+        )
+    }
     async fn list(&self, db: &mut PgConnection, op: &str, q: &Value) -> Result<Value> {
         let space = string(q, "spaceId");
         let mut binding = q.clone();
@@ -500,10 +559,10 @@ impl Server {
         binding.as_object_mut().unwrap().remove("page");
         let binding = hash(&serde_json::to_vec(&(op, binding))?);
         let cursor = string(&q["page"], "cursor");
-        let after = if cursor.is_empty() {
-            uuid::Uuid::max()
+        let (after, after_time) = if cursor.is_empty() {
+            (uuid::Uuid::max(), chrono::DateTime::<chrono::Utc>::MAX_UTC)
         } else {
-            sqlx::query_scalar("SELECT after_id FROM perfine_cursors WHERE id=$1 AND binding=$2 AND created_at>now()-interval '1 hour'").bind(id(cursor)?).bind(&binding).fetch_optional(&mut *db).await?.ok_or_else(||Fault::invalid("cursor invalid or expired"))?
+            sqlx::query_as::<_,(uuid::Uuid,chrono::DateTime<chrono::Utc>)>("SELECT after_id,after_time FROM perfine_cursors WHERE id=$1 AND binding=$2 AND created_at>now()-interval '1 hour'").bind(id(cursor)?).bind(&binding).fetch_optional(&mut *db).await?.ok_or_else(||Fault::invalid("cursor invalid or expired"))?
         };
         let size = integer(&q["page"], "pageSize");
         if size > 100 {
@@ -512,14 +571,14 @@ impl Server {
         let size = if size == 0 { 25 } else { size } as usize;
         let (sql, parent, field) = match op {
             "ListConnections" => (
-                "SELECT id,data FROM perfine_connections WHERE space=$1 AND id<$2 ORDER BY id DESC LIMIT $3",
+                "SELECT id,data,created_at FROM perfine_connections WHERE space=$1 AND (created_at,id)<($4,$2) ORDER BY created_at DESC,id DESC LIMIT $3",
                 id(space)?,
                 "connections",
             ),
             "ListExperiments" => {
                 connection(db, space, string(q, "connectionId")).await?;
                 (
-                    "SELECT id,data FROM perfine_experiments WHERE connection=$1 AND id<$2 AND NOT EXISTS(SELECT 1 FROM perfine_tombstones t WHERE t.id=perfine_experiments.id) AND ($4='' OR data->>'executionState'=$4) AND ($5='' OR data->>'verdict'=$5) ORDER BY id DESC LIMIT $3",
+                    "SELECT id,data,created_at FROM perfine_experiments WHERE connection=$1 AND (created_at,id)<($4,$2) AND NOT EXISTS(SELECT 1 FROM perfine_tombstones t WHERE t.id=perfine_experiments.id) AND ($5='' OR data->>'executionState'=$5) AND ($6='' OR data->>'verdict'=$6) ORDER BY created_at DESC,id DESC LIMIT $3",
                     id(string(q, "connectionId"))?,
                     "experiments",
                 )
@@ -527,7 +586,7 @@ impl Server {
             "ListCandidates" => {
                 experiment(db, space, string(q, "experimentId")).await?;
                 (
-                    "SELECT id,data FROM perfine_candidates WHERE experiment=$1 AND id<$2 ORDER BY id DESC LIMIT $3",
+                    "SELECT id,data,created_at FROM perfine_candidates WHERE experiment=$1 AND (created_at,id)<($4,$2) ORDER BY created_at DESC,id DESC LIMIT $3",
                     id(string(q, "experimentId"))?,
                     "candidates",
                 )
@@ -535,7 +594,7 @@ impl Server {
             _ => {
                 experiment(db, space, string(q, "experimentId")).await?;
                 (
-                    "SELECT id,data->'manifest' AS data FROM perfine_uploads WHERE experiment=$1 AND id<$2 AND data->>'state'='UPLOAD_STATE_COMPLETE' AND ($4='' OR data->>'candidateId'=$4) ORDER BY id DESC LIMIT $3",
+                    "SELECT id,created_at,data->'manifest' AS data FROM perfine_uploads WHERE experiment=$1 AND (created_at,id)<($4,$2) AND data->>'state'='UPLOAD_STATE_COMPLETE' AND ($5='' OR data->>'candidateId'=$5) ORDER BY created_at DESC,id DESC LIMIT $3",
                     id(string(q, "experimentId"))?,
                     "manifests",
                 )
@@ -544,7 +603,8 @@ impl Server {
         let mut query = sqlx::query(sql)
             .bind(parent)
             .bind(after)
-            .bind((size + 1) as i64);
+            .bind((size + 1) as i64)
+            .bind(after_time);
         if op == "ListExperiments" {
             query = query
                 .bind(string(q, "executionState"))
@@ -556,12 +616,15 @@ impl Server {
         let rows = query.fetch_all(&mut *db).await?;
         let next = if rows.len() > size {
             let cursor = uuid::Uuid::now_v7();
-            sqlx::query("INSERT INTO perfine_cursors(id,binding,after_id) VALUES($1,$2,$3)")
-                .bind(cursor)
-                .bind(binding)
-                .bind(rows[size - 1].get::<uuid::Uuid, _>("id"))
-                .execute(db)
-                .await?;
+            sqlx::query(
+                "INSERT INTO perfine_cursors(id,binding,after_id,after_time) VALUES($1,$2,$3,$4)",
+            )
+            .bind(cursor)
+            .bind(binding)
+            .bind(rows[size - 1].get::<uuid::Uuid, _>("id"))
+            .bind(rows[size - 1].get::<chrono::DateTime<chrono::Utc>, _>("created_at"))
+            .execute(db)
+            .await?;
             cursor.to_string()
         } else {
             String::new()
@@ -590,6 +653,10 @@ impl Server {
         if artifacts.is_empty() || artifacts.len() > 256 {
             return Err(Fault::invalid("artifact count invalid"));
         }
+        let started = chrono::DateTime::parse_from_rfc3339(string(m, "runStartedAt"))
+            .map_err(|_| Fault::invalid("run start time required"))?;
+        let effective = chrono::DateTime::parse_from_rfc3339(string(&c["consent"], "effectiveAt"))
+            .map_err(|_| Fault::unavailable())?;
         let mut names = std::collections::HashSet::new();
         let mut engine = 0;
         let mut decisions = Vec::new();
@@ -632,7 +699,7 @@ impl Server {
                         .as_array()
                         .is_some_and(|a| a.contains(&json!(kind)))
                         || integer(consent, "revision") != integer(m, "consentRevision")
-                        || string(m, "runStartedAt") < string(consent, "effectiveAt"))
+                        || started < effective)
                 {
                     2
                 } else {
@@ -722,6 +789,9 @@ impl Server {
                 .try_fold(0u64, |a, v| a.checked_add(integer(v, "sizeBytes")))
                 .ok_or_else(Fault::quota)?;
             let used:i64=sqlx::query_scalar("SELECT COALESCE(sum(u.reserved_bytes),0)::bigint FROM perfine_uploads u JOIN perfine_experiments e ON e.id=u.experiment WHERE e.space=$1").bind(id(space)?).fetch_one(&mut *db).await?;
+            if bytes > self.upload_limit {
+                return Err(Fault::quota());
+            }
             if bytes > self.quota as u64 / 2 || used as u64 > self.quota as u64 - bytes * 2 {
                 return Err(Fault::quota());
             }
@@ -779,7 +849,16 @@ impl Server {
             {
                 return Err(Fault::precondition("artifact hash or size mismatch"));
             }
-            crate::evidence::content_allowed(&content, string(a, "kind"))?;
+            if let Err(fault) = crate::evidence::content_allowed(&content, string(a, "kind")) {
+                // This queue must survive rollback of the rejected completion transaction.
+                // The keys contain generated resource IDs and manifest-local names, never content.
+                for artifact in m["artifacts"].as_array().ok_or_else(Fault::unavailable)? {
+                    let key = crate::storage::key(&eid, uid, string(artifact, "name"));
+                    sqlx::query("INSERT INTO perfine_rejected_objects(object_key,expires_at) SELECT $1,staging_expires_at FROM perfine_uploads WHERE id=$2 ON CONFLICT(object_key) DO UPDATE SET expires_at=GREATEST(perfine_rejected_objects.expires_at,EXCLUDED.expires_at)").bind(&key).bind(id(uid)?).execute(&self.db).await?;
+                    let _ = self.storage.delete(&key).await;
+                }
+                return Err(fault);
+            }
             bytes.insert(name.to_owned(), content);
         }
         let candidate = crate::evidence::evaluate(&e, m, &bytes)?;
@@ -845,6 +924,11 @@ impl Server {
             {
                 return Err(Fault::precondition("approval evidence mismatch"));
             }
+            if candidate["_publicationAllowed"] != true {
+                return Err(Fault::precondition(
+                    "candidate is not eligible for publication",
+                ));
+            }
             if candidate["verdict"] != "PERFORMANCE_VERDICT_PASS"
                 && (candidate["humanJudgmentRequired"] != true
                     || string(q, "humanJudgment").trim().is_empty())
@@ -865,6 +949,7 @@ impl Server {
             }
             let token = self.github.current(&c).await?;
             self.github.binding(d, &token).await?;
+            self.github.production_diff(d, &candidate, &token).await?;
             let a = json!({"id":uuid::Uuid::now_v7().to_string(),"experimentId":e["id"],"draft":d,"state":"APPROVAL_STATE_VALID","approverSubject":actor,"createdAt":stamp(),"humanJudgment":string(q,"humanJudgment")});
             sqlx::query("INSERT INTO perfine_approvals(id,experiment,data) VALUES($1,$2,$3)")
                 .bind(id(string(&a, "id"))?)
@@ -940,10 +1025,12 @@ impl Server {
                 e["githubExecution"].clone(),
             )
         } else {
-            (
-                string(&q, "connectionId").to_owned(),
-                q["githubExecution"].clone(),
-            )
+            let execution = if op == "CheckUploadEligibility" {
+                json!({"githubRunId":claims["run_id"],"runAttempt":string(&claims,"run_attempt").parse::<u32>().unwrap_or(0),"sourceSha":claims["sha"],"workflowSha":claims["workflow_sha"],"workflowPath":string(&claims,"workflow_ref").split('@').next().unwrap_or("").splitn(3,'/').nth(2).unwrap_or("")})
+            } else {
+                q["githubExecution"].clone()
+            };
+            (string(&q, "connectionId").to_owned(), execution)
         };
         let c = connection(&mut tx, space, &cid).await?;
         inactive(&c)?;
@@ -1033,13 +1120,56 @@ impl Server {
             .await?;
         }
         sqlx::query("DELETE FROM perfine_cleanup WHERE data->>'state'='DELETION_STATE_COMPLETE' AND created_at<=now()-interval '30 days'").execute(&self.db).await?;
+        let rejected=sqlx::query("SELECT object_key,expires_at FROM perfine_rejected_objects WHERE next_attempt<=now() LIMIT 100").fetch_all(&self.db).await?;
+        for row in rejected {
+            let key: String = row.get("object_key");
+            let expiry: chrono::DateTime<chrono::Utc> = row.get("expires_at");
+            if self.storage.delete(&key).await.is_ok() && expiry < chrono::Utc::now() {
+                sqlx::query("DELETE FROM perfine_rejected_objects WHERE object_key=$1")
+                    .bind(key)
+                    .execute(&self.db)
+                    .await?;
+            } else {
+                sqlx::query("UPDATE perfine_rejected_objects SET next_attempt=now()+interval '1 minute' WHERE object_key=$1").bind(key).execute(&self.db).await?;
+            }
+        }
+        let stages=sqlx::query("SELECT u.id,u.experiment,u.data,e.space FROM perfine_uploads u JOIN perfine_experiments e ON e.id=u.experiment WHERE NOT u.staging_cleaned AND u.staging_expires_at<now() AND u.data->>'state'='UPLOAD_STATE_COMPLETE' LIMIT 100").fetch_all(&self.db).await?;
+        for row in stages {
+            let mut tx = self.db.begin().await?;
+            let space: uuid::Uuid = row.get("space");
+            lock(&mut tx, &space.to_string()).await?;
+            let uid: uuid::Uuid = row.get("id");
+            let eid: uuid::Uuid = row.get("experiment");
+            let data: Value = row.get("data");
+            let mut failed = false;
+            for a in data["manifest"]["artifacts"]
+                .as_array()
+                .ok_or_else(Fault::unavailable)?
+            {
+                if self
+                    .storage
+                    .delete(&crate::storage::key(
+                        &eid.to_string(),
+                        &uid.to_string(),
+                        string(a, "name"),
+                    ))
+                    .await
+                    .is_err()
+                {
+                    failed = true;
+                }
+            }
+            if !failed {
+                sqlx::query("UPDATE perfine_uploads SET reserved_bytes=reserved_bytes/2,staging_cleaned=true WHERE id=$1 AND NOT staging_cleaned").bind(uid).execute(&mut *tx).await?;
+            }
+            tx.commit().await?;
+        }
         let spaces: Vec<uuid::Uuid> =
             sqlx::query_scalar("SELECT DISTINCT space FROM perfine_experiments")
                 .fetch_all(&self.db)
                 .await?;
         for space in spaces {
-            if self.authority.states(&[space.to_string()]).await?
-                == [server_common::authority::TenantState::Deleted]
+            if matches!(self.authority.states(&[space.to_string()]).await,Ok(states) if states==[server_common::authority::TenantState::Deleted])
             {
                 let mut tx = self.db.begin().await?;
                 lock(&mut tx, &space.to_string()).await?;
@@ -1116,7 +1246,109 @@ impl Server {
             tx.commit().await?;
             tracing::info!(experiment_id=%eid,failed,"Perfine cleanup attempted");
         }
+        self.reconcile_executions().await?;
         self.publish_pending().await
+    }
+    async fn cancel_connection(&self, db: &mut PgConnection, c: &Value) -> Result<Vec<Value>> {
+        let rows:Vec<Value>=sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE connection=$1 AND data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED')").bind(id(string(c,"id"))?).fetch_all(&mut *db).await?;
+        let token = self.github.token(c).await;
+        let mut cancellations = Vec::new();
+        for mut e in rows {
+            let run = integer(&e["githubExecution"], "githubRunId");
+            let status = match &token {
+                Ok(token) => self
+                    .github
+                    .call(
+                        "POST",
+                        &format!(
+                            "{}/actions/runs/{run}/cancel",
+                            crate::github::path(&c["repository"])
+                        ),
+                        token,
+                        None,
+                    )
+                    .await
+                    .is_ok(),
+                Err(_) => false,
+            };
+            let cancellation = json!({"mode":"CANCELLATION_MODE_IMMEDIATE","state":if status{"CANCELLATION_STATE_REQUESTED"}else{"CANCELLATION_STATE_FAILED"},"reason":if status{"GitHub cancellation requested; awaiting confirmation"}else{"Cancellation failed; cancel directly on GitHub"},"directCancelUrl":format!("https://github.com/{}/{}/actions/runs/{run}",string(&c["repository"],"owner"),string(&c["repository"],"name"))});
+            e["cancellation"] = cancellation.clone();
+            save_experiment(db, &e).await?;
+            cancellations.push(cancellation);
+        }
+        Ok(cancellations)
+    }
+    async fn reconcile_executions(&self) -> Result<()> {
+        let rows=sqlx::query("SELECT DISTINCT c.id,c.space,c.owner_subject,c.data FROM perfine_connections c JOIN perfine_experiments e ON e.connection=c.id WHERE e.data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND e.data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED') LIMIT 100").fetch_all(&self.db).await?;
+        for row in rows {
+            let mut tx = self.db.begin().await?;
+            let space: uuid::Uuid = row.get("space");
+            lock(&mut tx, &space.to_string()).await?;
+            let mut c: Value = row.get("data");
+            let subject: String = row.get("owner_subject");
+            let active = matches!(self.authority.states(&[space.to_string()]).await,Ok(states) if states==[server_common::authority::TenantState::Active]);
+            let grant = if let Ok(token) = self.authority.service_token().await {
+                self.authority.call("Authorize",&format!("Bearer {token}"),json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false})).await.is_ok_and(|v|v["allowed"]==true)
+            } else {
+                false
+            };
+            if !active || !grant || inactive(&c).is_err() || self.github.current(&c).await.is_err()
+            {
+                if c["state"] == "CONNECTION_STATE_CONNECTED" {
+                    c["state"] = json!("CONNECTION_STATE_AUTHORITY_LOST");
+                }
+                c["executionCancellations"] = json!(self.cancel_connection(&mut tx, &c).await?);
+                sqlx::query("UPDATE perfine_connections SET active=false,data=$2 WHERE id=$1")
+                    .bind(row.get::<uuid::Uuid, _>("id"))
+                    .bind(&c)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            if let Ok(token) = self.github.token(&c).await {
+                let executions:Vec<Value>=sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE connection=$1 AND data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED')").bind(id(string(&c,"id"))?).fetch_all(&mut *tx).await?;
+                for mut e in executions {
+                    let run = integer(&e["githubExecution"], "githubRunId");
+                    if let Ok(remote) = self
+                        .github
+                        .call(
+                            "GET",
+                            &format!(
+                                "{}/actions/runs/{run}",
+                                crate::github::path(&c["repository"])
+                            ),
+                            &token,
+                            None,
+                        )
+                        .await
+                        && remote["status"] == "completed"
+                    {
+                        let cancelled = remote["conclusion"] == "cancelled";
+                        e["executionState"] = json!(if cancelled {
+                            "EXECUTION_STATE_CANCELLED"
+                        } else if remote["conclusion"] == "success" {
+                            "EXECUTION_STATE_COMPLETED"
+                        } else {
+                            "EXECUTION_STATE_FAILED"
+                        });
+                        if e.get("cancellation").is_some() {
+                            e["cancellation"]["state"] = json!(if cancelled {
+                                "CANCELLATION_STATE_CONFIRMED"
+                            } else {
+                                "CANCELLATION_STATE_FAILED"
+                            });
+                            e["cancellation"]["reason"] = json!(if cancelled {
+                                "GitHub confirmed cancellation"
+                            } else {
+                                "Run finished before cancellation was confirmed"
+                            });
+                        }
+                        save_experiment(&mut tx, &e).await?;
+                    }
+                }
+            }
+            tx.commit().await?;
+        }
+        Ok(())
     }
     async fn publish_pending(&self) -> Result<()> {
         let ids:Vec<uuid::Uuid>=sqlx::query_scalar("SELECT id FROM perfine_approvals WHERE publication->>'state' IN ('PUBLICATION_STATE_PENDING','PUBLICATION_STATE_RECONCILING') LIMIT 20").fetch_all(&self.db).await?;
@@ -1282,8 +1514,85 @@ fn validate_spec(s: &Value) -> Result<()> {
     if !timeout.is_finite() || timeout <= 0.0 {
         return Err(Fault::invalid("positive timeout required"));
     }
-    required(s, "policy")?;
-    required(s, "environment")?;
+    let policy = required(s, "policy")?;
+    let environment = required(s, "environment")?;
+    if !matches!(
+        string(s, "language"),
+        "LANGUAGE_RUST"
+            | "LANGUAGE_C"
+            | "LANGUAGE_CPP"
+            | "LANGUAGE_ZIG"
+            | "LANGUAGE_GO"
+            | "LANGUAGE_JAVASCRIPT"
+    ) {
+        return Err(Fault::invalid("language required"));
+    }
+    if integer(policy, "schemaVersion") != 1
+        || !matches!(
+            string(policy, "kind"),
+            "POLICY_KIND_CALLGRIND_IR" | "POLICY_KIND_DECLARED" | "POLICY_KIND_MEASUREMENTS_ONLY"
+        )
+    {
+        return Err(Fault::invalid("versioned policy required"));
+    }
+    sha(string(policy, "policySha256"), 64)?;
+    let metric = required(policy, "metric")?;
+    if string(metric, "name").is_empty()
+        || string(metric, "unit").is_empty()
+        || !matches!(
+            string(metric, "objective"),
+            "METRIC_OBJECTIVE_MINIMIZE" | "METRIC_OBJECTIVE_MAXIMIZE"
+        )
+    {
+        return Err(Fault::invalid("metric and objective required"));
+    }
+    if policy["kind"] == "POLICY_KIND_DECLARED" {
+        required(policy, "uncertainty")?;
+        if integer(policy, "repetitions") < 2 {
+            return Err(Fault::invalid("declared repetitions required"));
+        }
+    }
+    for key in ["minimumImprovement", "maximumCaseRegression"] {
+        let ratio = policy[key].as_f64().unwrap_or(0.0);
+        if !ratio.is_finite() || !(0.0..1.0).contains(&ratio) {
+            return Err(Fault::invalid("policy ratio invalid"));
+        }
+    }
+    sha(string(environment, "environmentSha256"), 64)?;
+    for key in ["operatingSystem", "architecture", "runner", "runtime"] {
+        if string(environment, key).is_empty() {
+            return Err(Fault::invalid("environment identity required"));
+        }
+    }
+    if environment["tools"].as_array().is_none_or(|tools| {
+        tools.is_empty()
+            || tools
+                .iter()
+                .any(|v| string(v, "name").is_empty() || string(v, "version").is_empty())
+    }) {
+        return Err(Fault::invalid("tool identities required"));
+    }
+    let mut names = std::collections::HashSet::new();
+    if let Some(cases) = s["cases"].as_array() {
+        for case in cases {
+            let frequency = case["frequency"].as_f64().unwrap_or(0.0);
+            if !names.insert(string(case, "id"))
+                || string(case, "id").is_empty()
+                || string(case, "family").is_empty()
+                || !frequency.is_finite()
+                || frequency <= 0.0
+                || !matches!(
+                    string(case, "frequencySource"),
+                    "FREQUENCY_SOURCE_DECLARED" | "FREQUENCY_SOURCE_ASSUMED_ONE"
+                )
+            {
+                return Err(Fault::invalid(
+                    "case identities and positive frequencies required",
+                ));
+            }
+        }
+    }
+
     if s["cases"].as_array().is_none_or(Vec::is_empty) {
         return Err(Fault::invalid("cases required"));
     }

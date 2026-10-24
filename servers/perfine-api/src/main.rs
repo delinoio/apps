@@ -32,6 +32,13 @@ async fn run() -> anyhow::Result<()> {
         .skip(1)
         .find(|a| !a.starts_with("--"))
         .unwrap_or("serve".into());
+    if command == "alerts" {
+        print!(
+            "{}",
+            perfine_api::alerts::rules(|k| std::env::var(k).unwrap_or_default())?
+        );
+        return Ok(());
+    }
     anyhow::ensure!(
         matches!(command.as_str(), "serve" | "migrate" | "check-schema"),
         "use serve, migrate or check-schema"
@@ -64,6 +71,7 @@ async fn run() -> anyhow::Result<()> {
     let origin = required("WEB_ORIGIN")?;
     let _: HeaderValue = origin.parse()?;
     let server = Arc::new(Server {
+        metrics: Default::default(),
         db: db.clone(),
         authority: Authority::from_env(Duration::from_secs(15))?,
         actions: Actions::discover().await?,
@@ -89,11 +97,12 @@ async fn run() -> anyhow::Result<()> {
         );
     let ready = db.clone();
     let metrics = db.clone();
+    let counters = server.clone();
     let app=Router::new().route("/healthz",get(||async{StatusCode::OK}))
  .route("/readyz",get(move||{let db=ready.clone();async move{if sqlx::query("SELECT 1").execute(&db).await.is_ok(){StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE}}}))
- .route("/metrics",get(move||{let db=metrics.clone();async move{
-  let counts=sqlx::query_as::<_,(i64,i64,i64)>("SELECT (SELECT count(*) FROM perfine_cleanup WHERE data->>'state'<>'DELETION_STATE_COMPLETE'),(SELECT COALESCE(sum(reserved_bytes),0)::bigint FROM perfine_uploads),(SELECT count(*) FROM perfine_approvals WHERE publication->>'state'='PUBLICATION_STATE_RECONCILING')").fetch_one(&db).await;
-  match counts {Ok((cleanup,storage,publish))=>(StatusCode::OK,format!("perfine_cleanup_pending {cleanup}\nperfine_storage_reserved_bytes {storage}\nperfine_publication_reconciling {publish}\n")),Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,String::new())}
+ .route("/metrics",get(move||{let db=metrics.clone();let counters=counters.clone();async move{
+  let counts=sqlx::query_as::<_,(i64,i64,i64,i64)>("SELECT (SELECT count(*) FROM perfine_cleanup WHERE data->>'state'<>'DELETION_STATE_COMPLETE'),(SELECT COALESCE(sum(reserved_bytes),0)::bigint FROM perfine_uploads),(SELECT count(*) FROM perfine_approvals WHERE publication->>'state'='PUBLICATION_STATE_RECONCILING'),(SELECT COALESCE(extract(epoch FROM now()-min(created_at)),0)::bigint FROM perfine_cleanup WHERE data->>'state'<>'DELETION_STATE_COMPLETE')").fetch_one(&db).await;
+  match counts {Ok((cleanup,storage,publish,age))=>(StatusCode::OK,format!("{}perfine_cleanup_oldest_seconds {age}\nperfine_cleanup_pending {cleanup}\nperfine_storage_reserved_bytes {storage}\nperfine_publication_reconciling {publish}\n",counters.metrics.encode())),Err(_)=>(StatusCode::SERVICE_UNAVAILABLE,String::new())}
  }})).fallback_service(rpc).layer(middleware::from_fn_with_state(origin,http_policy));
     let maintenance = tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(60));
