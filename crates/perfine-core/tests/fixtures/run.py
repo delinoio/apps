@@ -52,7 +52,7 @@ def main():
               "verdict": "not_evaluated", "profile_artifacts": [],
               "native_profiler_acceptance": False}
 
-    def run(argv, cwd=project, timeout=180, extra_env=None):
+    def run(argv, cwd=project, timeout=180, extra_env=None, accepted_exit_codes=(0,)):
         argv = [str(value) for value in argv]
         index = len(result["commands"])
         record = {"argv": argv, "cwd": str(cwd), "timeout_seconds": timeout}
@@ -64,7 +64,7 @@ def main():
             (out / name).write_text(getattr(process, stream))
             record[stream] = name
         record["exit_code"] = process.returncode
-        if process.returncode:
+        if process.returncode not in accepted_exit_codes:
             raise RuntimeError(f"command {index} failed ({process.returncode}): {argv[0]}")
         return process.stdout, process.stderr
 
@@ -97,7 +97,14 @@ def main():
             if not shutil.which(tool, path=env["PATH"]):
                 raise RuntimeError(f"missing tool: {tool}")
             version = "version" if tool in ("go", "zig") else "--version"
-            stdout, stderr = run([tool, version])
+            # Valgrind's Perl annotator prints --version via die(), exiting 255.
+            # Accept that status only for this probe and require its version text;
+            # profile annotation must still exit successfully. Remove this exception
+            # when supported Valgrind versions return zero for the version probe.
+            version_codes = (0, 255) if tool == "callgrind_annotate" else (0,)
+            stdout, stderr = run([tool, version], accepted_exit_codes=version_codes)
+            if tool == "callgrind_annotate" and not (stdout + stderr).strip().startswith("callgrind_annotate-"):
+                raise RuntimeError("callgrind_annotate returned no recognizable version")
             result.setdefault("tool_versions", {})[tool] = (stdout + stderr).strip()
         if args.language == "javascript" and not result["tool_versions"]["node"].startswith("v24."):
             raise RuntimeError("Node 24 is required for the declared runtime")
