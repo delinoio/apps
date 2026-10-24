@@ -3869,6 +3869,13 @@ function executionPlan(env, directory) {
     )
   )
     throw new Error("Explicit UUID v7 experiment required");
+  if (
+    !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID ?? "") ||
+    BigInt(env.GITHUB_RUN_ID) > 18446744073709551615n ||
+    !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT ?? "") ||
+    BigInt(env.GITHUB_RUN_ATTEMPT) > 4294967295n
+  )
+    throw new Error("Canonical GitHub run ID and attempt required");
   const config = env.INPUT_CONFIG;
   if (!config || Buffer.byteLength(config) > 1024 * 1024)
     throw new Error("Bounded inline configuration required");
@@ -3889,6 +3896,8 @@ function executionPlan(env, directory) {
     HOME: directory,
     TMPDIR: directory,
     LANG: "C.UTF-8",
+    PERFINE_GITHUB_RUN_ID: env.GITHUB_RUN_ID,
+    PERFINE_GITHUB_RUN_ATTEMPT: env.GITHUB_RUN_ATTEMPT,
   };
   return {
     configHash: (0, import_node_crypto2.createHash)("sha256")

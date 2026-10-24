@@ -12,7 +12,9 @@ use perfine_core::{
         },
         profile::{NativeProfileAdapter, map_sources},
     },
-    evidence::{FrozenConfig, Manifest, RunIdentity, VerifiedRun, validate_baseline},
+    evidence::{
+        ExecutionIdentity, FrozenConfig, Manifest, RunIdentity, VerifiedRun, validate_baseline,
+    },
     interfaces::{
         AgentAdapter, Cancellation, CancellationSignal, EnvironmentAdapter, EnvironmentRequest,
         ExecutionContext, ExecutionRole, Hypothesis, LanguageAdapter, MeasurementAdapter,
@@ -81,6 +83,8 @@ pub struct Journal {
     pub settings: Fingerprint,
     #[serde(default)]
     pub language: Option<perfine_core::interfaces::Language>,
+    #[serde(default)]
+    external_execution: Option<ExecutionIdentity>,
     optimize: bool,
     created_request: RequestId,
     pub(crate) runs: BTreeMap<String, RunRecord>,
@@ -88,6 +92,46 @@ pub struct Journal {
     #[serde(default)]
     attempts: BTreeMap<Fingerprint, Attempt>,
 }
+fn github_execution(run: Option<&str>, attempt: Option<&str>) -> Result<Option<ExecutionIdentity>> {
+    let (run, attempt) = match (run, attempt) {
+        (None, None) => return Ok(None),
+        (Some(run), Some(attempt)) => (run, attempt),
+        _ => anyhow::bail!("both GitHub run ID and attempt are required"),
+    };
+    let run_id: u64 = run.parse().context("invalid GitHub run ID")?;
+    let number: u32 = attempt.parse().context("invalid GitHub run attempt")?;
+    ensure!(
+        run_id > 0 && number > 0 && run_id.to_string() == run && number.to_string() == attempt,
+        "positive canonical GitHub execution identity required"
+    );
+    Ok(Some(ExecutionIdentity {
+        provider: Name::new("github")?,
+        workflow_run: Name::new(run)?,
+        attempt: number,
+    }))
+}
+fn execution_environment() -> Result<Option<ExecutionIdentity>> {
+    let read = |key| match std::env::var(key) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(anyhow::Error::from(error)),
+    };
+    github_execution(
+        read("PERFINE_GITHUB_RUN_ID")?.as_deref(),
+        read("PERFINE_GITHUB_RUN_ATTEMPT")?.as_deref(),
+    )
+}
+fn verify_execution(
+    saved: Option<&ExecutionIdentity>,
+    current: Option<&ExecutionIdentity>,
+) -> Result<()> {
+    ensure!(
+        saved == current,
+        "GitHub execution identity changed; create a new experiment"
+    );
+    Ok(())
+}
+
 #[derive(Serialize, Deserialize)]
 struct Initialization {
     config: FrozenConfig,
@@ -414,6 +458,7 @@ impl App {
     ) -> Result<Value> {
         let id = ResourceId::new(id)?;
         let cfg = Settings::read(&self.config)?;
+        let external_execution = execution_environment()?;
         let dir = self.directory(&id)?;
         let lock = OpenOptions::new()
             .create(true)
@@ -429,6 +474,10 @@ impl App {
         let mut pending_admission = false;
         if journal_path.exists() {
             let saved: Journal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+            verify_execution(
+                saved.external_execution.as_ref(),
+                external_execution.as_ref(),
+            )?;
             ensure!(
                 saved.settings == fingerprint(&cfg)?,
                 "resume settings fingerprint changed; create a new experiment"
@@ -573,6 +622,7 @@ impl App {
                 schema_version: Version,
                 settings: fingerprint(&cfg)?,
                 language: Some(cfg.adapter.language),
+                external_execution,
                 optimize,
                 created_request: req.clone(),
                 runs: BTreeMap::new(),
@@ -1212,7 +1262,7 @@ fn measure_step(
         experiment: id.clone(),
         candidate,
         run: ResourceId::generate(),
-        external_execution: None,
+        external_execution: journal.external_execution.clone(),
         source: env.source(&req.workspace)?,
         configuration: frozen.fingerprint().clone(),
         conditions: fingerprint(&frozen.config().conditions)?,
@@ -1279,6 +1329,40 @@ fn workflow(config: &str, action: &CommitSha, base: &CommitSha, image: &str) -> 
 mod tests {
     use super::workflow;
     use perfine_core::types::CommitSha;
+    #[test]
+    fn github_execution_is_canonical_and_immutable_across_resume() {
+        use super::*;
+        let execution = github_execution(Some("42"), Some("2")).unwrap();
+        assert_eq!(execution.as_ref().unwrap().provider.as_str(), "github");
+        let restored: Option<ExecutionIdentity> =
+            serde_json::from_slice(&serde_json::to_vec(&execution).unwrap()).unwrap();
+        verify_execution(restored.as_ref(), execution.as_ref()).unwrap();
+        assert!(
+            verify_execution(
+                restored.as_ref(),
+                github_execution(Some("42"), Some("3")).unwrap().as_ref()
+            )
+            .is_err()
+        );
+        assert!(
+            verify_execution(
+                restored.as_ref(),
+                github_execution(Some("43"), Some("2")).unwrap().as_ref()
+            )
+            .is_err()
+        );
+        assert!(verify_execution(restored.as_ref(), None).is_err());
+        assert!(github_execution(None, None).unwrap().is_none());
+        for (run, attempt) in [
+            (Some("0"), Some("1")),
+            (Some("01"), Some("1")),
+            (Some("42"), None),
+            (None, Some("1")),
+            (Some("42"), Some("4294967296")),
+        ] {
+            assert!(github_execution(run, attempt).is_err());
+        }
+    }
     #[test]
     fn retained_hypotheses_precede_new_proposals_without_duplicates() {
         use super::*;
@@ -1374,6 +1458,7 @@ mod initialization_tests {
             let journal = Journal {
                 schema_version: Version,
                 language: None,
+                external_execution: None,
                 settings: settings.clone(),
                 optimize: false,
                 created_request: request(),

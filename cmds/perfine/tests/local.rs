@@ -402,3 +402,50 @@ fn interrupted_candidate_resume(before_admission: bool) {
 
 #[path = "support/six_languages.rs"]
 mod six_languages;
+
+#[test]
+#[ignore = "requires provisioned measurement image; verifies real Actions-bound manifests"]
+fn actions_measurement_retains_execution_and_rejects_changed_attempt() {
+    use perfine_core::{adapters::ArtifactStore, evidence::Manifest, types::Fingerprint};
+    let (temp, _) = setup("none");
+    let repo = temp.path().join("repo");
+    let id = ResourceId::generate();
+    let invoke = |command: &str, attempt: &str| {
+        Command::new(env!("CARGO_BIN_EXE_perfine"))
+            .arg("--repository")
+            .arg(&repo)
+            .arg("--json")
+            .args([command, "--experiment", id.as_str()])
+            .env("PERFINE_GITHUB_RUN_ID", "42")
+            .env("PERFINE_GITHUB_RUN_ATTEMPT", attempt)
+            .output()
+            .unwrap()
+    };
+    let result = invoke("measure", "2");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let path = repo.join(".perfine").join(id.as_str()).join("journal.json");
+    let before = fs::read(&path).unwrap();
+    let journal: Value = serde_json::from_slice(&before).unwrap();
+    let expected = json!({"provider":"github","workflow_run":"42","attempt":2});
+    assert_eq!(journal["external_execution"], expected);
+    let runs = journal["runs"].as_object().unwrap();
+    assert!(runs.len() >= 2);
+    let artifacts = ArtifactStore::new(repo.join(".perfine/artifacts")).unwrap();
+    for record in runs.values() {
+        let hash: Fingerprint = serde_json::from_value(record["artifact"].clone()).unwrap();
+        let manifest: Manifest = serde_json::from_slice(&artifacts.get(&hash).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(manifest.identity.external_execution).unwrap(),
+            expected
+        );
+        assert_eq!(record["identity"]["external_execution"], expected);
+    }
+    let changed = invoke("resume", "3");
+    assert!(!changed.status.success());
+    assert!(String::from_utf8_lossy(&changed.stdout).contains("GitHub execution identity changed"));
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
