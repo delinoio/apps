@@ -10,7 +10,9 @@
 //!
 //! 1. For attempts after the first, wait the backoff and re-run the authorization check; a
 //!    revoked key, lost permission or billing block ends the request.
-//! 2. Call the Gateway, racing the call against cancellation and the execution deadline.
+//! 2. Call the Gateway, racing the call against cancellation and the execution deadline. A stop
+//!    is counted as a `canceled` or `timeout` Gateway attempt only if the call had started; stops
+//!    during backoff, the authorization recheck or before the first poll are not attempts.
 //! 3. A transient failure (network, 5xx, 429) retries until the retry budget is spent.
 //! 4. A completed response with confirmed usage is stored in the outbox *before* its content is
 //!    interpreted, so failed, invalid or canceled-after-response attempts are still billed.
@@ -22,6 +24,7 @@ use crate::{
     auth::Principal,
     error::ApiError,
     extract::Extraction,
+    gateway::{ChatRequest, Completion},
     limits::Permit,
     models::ModelEntry,
     retry::Failure,
@@ -30,7 +33,14 @@ use crate::{
     usage::{self, UsageReading},
 };
 use chrono::{DateTime, Utc};
-use std::{sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -78,9 +88,54 @@ pub struct Job {
     pub permit: Permit,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stop {
     Canceled,
     TimedOut,
+}
+
+/// A provider call that was stopped by cancellation or the execution deadline.
+struct Interrupted {
+    stop: Stop,
+    /// True only if the provider future was polled at least once, so a provider call may have been
+    /// issued. A stop that wins before the first poll (for example an already-canceled or expired
+    /// job) never started an attempt.
+    started: bool,
+}
+
+/// Races one provider call against cancellation and the execution deadline.
+///
+/// Constructing the call future does not start a provider attempt; the attempt starts when the
+/// future is first polled. A thin wrapper records that first poll, and stops that are already
+/// pending before it are reported without `started`. The call future is dropped when a stop wins.
+async fn race_provider<F: Future>(
+    cancel: &CancellationToken,
+    deadline: Instant,
+    call: F,
+) -> Result<F::Output, Interrupted> {
+    // An atomic keeps the execution future `Send`; the flag is only used from this task.
+    let started = AtomicBool::new(false);
+    if cancel.is_cancelled() {
+        return Err(Interrupted {
+            stop: Stop::Canceled,
+            started: false,
+        });
+    }
+    if Instant::now() >= deadline {
+        return Err(Interrupted {
+            stop: Stop::TimedOut,
+            started: false,
+        });
+    }
+    let call = async {
+        started.store(true, Ordering::Relaxed);
+        call.await
+    };
+    tokio::select! {
+        _ = cancel.cancelled() => Err(Interrupted { stop: Stop::Canceled, started: started.load(Ordering::Relaxed) }),
+        _ = tokio::time::sleep_until(deadline) => Err(Interrupted { stop: Stop::TimedOut, started: started.load(Ordering::Relaxed) }),
+        result = call => Ok(result),
+    }
 }
 
 impl Inner {
@@ -93,21 +148,36 @@ impl Inner {
         }
     }
 
+    /// The terminal error of a stopped request. Pure: Gateway attempt metrics are recorded only
+    /// by [`Inner::provider_attempt`], because a stop between attempts is not a provider attempt.
     fn stopped(&self, stop: Stop) -> ApiError {
         match stop {
-            Stop::Canceled => {
-                self.metrics
-                    .gateway_attempts
-                    .with_label_values(&["canceled"])
-                    .inc();
-                ApiError::canceled()
-            }
-            Stop::TimedOut => {
-                self.metrics
-                    .gateway_attempts
-                    .with_label_values(&["timeout"])
-                    .inc();
-                ApiError::timeout()
+            Stop::Canceled => ApiError::canceled(),
+            Stop::TimedOut => ApiError::timeout(),
+        }
+    }
+
+    /// Runs one Gateway call and counts it as `canceled` or `timeout` only when the call was
+    /// interrupted after it had started (see [`race_provider`]).
+    async fn provider_attempt(
+        &self,
+        job: &Job,
+        request: &ChatRequest,
+    ) -> Result<Result<Completion, Failure>, ApiError> {
+        match race_provider(&job.cancel, job.deadline, self.gateway.complete(request)).await {
+            Ok(outcome) => Ok(outcome),
+            Err(interrupted) => {
+                if interrupted.started {
+                    let label = match interrupted.stop {
+                        Stop::Canceled => "canceled",
+                        Stop::TimedOut => "timeout",
+                    };
+                    self.metrics
+                        .gateway_attempts
+                        .with_label_values(&[label])
+                        .inc();
+                }
+                Err(self.stopped(interrupted.stop))
             }
         }
     }
@@ -144,11 +214,7 @@ impl Inner {
                     }
                 }
             }
-            let outcome = tokio::select! {
-                _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
-                _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
-                result = self.gateway.complete(&request) => result,
-            };
+            let outcome = self.provider_attempt(job, &request).await?;
             let completion = match outcome {
                 Ok(completion) => completion,
                 Err(Failure::Transient { retry_after }) => {
@@ -304,5 +370,112 @@ impl Inner {
             "confirmed provider usage could not be stored"
         );
         Err(ApiError::dependency_unavailable())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Counts polls and drops of a provider future that never completes.
+    struct Probe {
+        polls: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+    }
+    impl Future for Probe {
+        type Output = ();
+        fn poll(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<()> {
+            self.polls.fetch_add(1, Ordering::SeqCst);
+            std::task::Poll::Pending
+        }
+    }
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn probe() -> (Probe, Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let drops = Arc::new(AtomicUsize::new(0));
+        (
+            Probe {
+                polls: polls.clone(),
+                drops: drops.clone(),
+            },
+            polls,
+            drops,
+        )
+    }
+
+    fn far() -> Instant {
+        Instant::now() + Duration::from_secs(3600)
+    }
+
+    #[tokio::test]
+    async fn a_canceled_job_never_starts_the_provider_call() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let (call, polls, drops) = probe();
+        let error = race_provider(&cancel, far(), call).await.err().unwrap();
+        assert_eq!(error.stop, Stop::Canceled);
+        assert!(!error.started);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn an_expired_job_never_starts_the_provider_call() {
+        let (call, polls, _) = probe();
+        let error = race_provider(&CancellationToken::new(), Instant::now(), call)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.stop, Stop::TimedOut);
+        assert!(!error.started);
+        assert_eq!(polls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_a_pending_call_is_a_started_stop() {
+        let cancel = CancellationToken::new();
+        let (call, polls, drops) = probe();
+        let later = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            later.cancel();
+        });
+        let error = race_provider(&cancel, far(), call).await.err().unwrap();
+        assert_eq!(error.stop, Stop::Canceled);
+        assert!(error.started);
+        assert!(polls.load(Ordering::SeqCst) >= 1);
+        assert_eq!(
+            drops.load(Ordering::SeqCst),
+            1,
+            "the provider future is dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_deadline_during_a_pending_call_is_a_started_stop() {
+        let (call, _, drops) = probe();
+        let deadline = Instant::now() + Duration::from_millis(30);
+        let error = race_provider(&CancellationToken::new(), deadline, call)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.stop, Stop::TimedOut);
+        assert!(error.started);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_completed_call_returns_its_output() {
+        let result = race_provider(&CancellationToken::new(), far(), async { 7 }).await;
+        assert_eq!(result.ok(), Some(7));
     }
 }

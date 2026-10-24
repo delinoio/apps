@@ -613,3 +613,172 @@ async fn each_request_executes_anew_without_replay() {
     assert_ne!(first.body["requestId"], second.body["requestId"]);
     assert_eq!(h.gateway.calls(), 2);
 }
+
+// Gateway attempt accounting: `canceled` and `timeout` count only a provider call that had
+// started, never a stop during retry backoff or the authorization recheck.
+
+#[derive(Clone, Copy, Debug)]
+enum StopKind {
+    /// The caller disconnects, which cancels the execution.
+    Cancel,
+    /// The execution deadline expires.
+    Timeout,
+}
+
+const STOP_KINDS: [StopKind; 2] = [StopKind::Cancel, StopKind::Timeout];
+
+fn attempts(h: &Harness, outcome: &str) -> u64 {
+    h.server
+        .metrics
+        .gateway_attempts
+        .with_label_values(&[outcome])
+        .get()
+}
+
+/// Polls `condition` for up to five seconds.
+async fn eventually(what: &str, condition: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if condition() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// Sends a Translate request and ends it with `stop` once `ready` holds. A timeout ends by the
+/// configured execution deadline, so the caller waits for the response; a cancellation aborts the
+/// caller and waits until the execution task released its tenant permit.
+async fn translate_then_stop(h: &Harness, stop: StopKind, ready: impl Fn() -> bool) {
+    let request = h.call_future("Translate", USER_TOKEN, translate_body(&["a"]));
+    match stop {
+        StopKind::Timeout => {
+            let response = request.await.unwrap();
+            assert_eq!(response.status().as_u16(), 504);
+            let body: serde_json::Value = response.json().await.unwrap();
+            assert_eq!(body["code"], "deadline_exceeded");
+        }
+        StopKind::Cancel => {
+            let pending = tokio::spawn(request);
+            eventually("the stop condition", ready).await;
+            pending.abort();
+            let _ = pending.await;
+        }
+    }
+    eventually("the tenant permit release", || {
+        h.server.in_flight(TENANT) == 0
+    })
+    .await;
+    // Allow a late metric increment to surface before the caller asserts on deltas.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+}
+
+fn stop_config(stop: StopKind, c: &mut delitools_api::config::Config) {
+    if let StopKind::Timeout = stop {
+        c.limits.execution_timeout = std::time::Duration::from_millis(600);
+    }
+}
+
+#[tokio::test]
+async fn a_stop_during_retry_backoff_is_not_a_gateway_attempt() {
+    for stop in STOP_KINDS {
+        let h = Harness::start_with(None, |c| {
+            stop_config(stop, c);
+            // The minimum jittered delay (half of 10s) outlasts the stop window.
+            c.retry.base_delay = std::time::Duration::from_secs(10);
+            c.retry.max_delay = std::time::Duration::from_secs(10);
+        })
+        .await;
+        h.gateway.push(Reply::Status(503));
+        h.gateway.push(Reply::without_usage(r#"["never"]"#));
+        translate_then_stop(&h, stop, || attempts(&h, "transient") == 1).await;
+        assert_eq!(h.gateway.calls(), 1, "{stop:?}: no second provider call");
+        assert_eq!(attempts(&h, "transient"), 1, "{stop:?}");
+        assert_eq!(attempts(&h, "canceled"), 0, "{stop:?}");
+        assert_eq!(attempts(&h, "timeout"), 0, "{stop:?}");
+        assert_eq!(attempts(&h, "ok"), 0, "{stop:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_stop_during_the_authorization_recheck_is_not_a_gateway_attempt() {
+    for stop in STOP_KINDS {
+        let h = Harness::start_with(None, |c| stop_config(stop, c)).await;
+        // The admission check passes; the recheck before the second attempt is held open.
+        let gate = AuthorizeGate::after(1);
+        h.delcore.lock().unwrap().authorize_gate = Some(gate.clone());
+        h.gateway.push(Reply::Status(503));
+        h.gateway.push(Reply::without_usage(r#"["never"]"#));
+        translate_then_stop(&h, stop, || {
+            gate.entered.load(std::sync::atomic::Ordering::SeqCst) > 0
+        })
+        .await;
+        gate.wait_entered().await;
+        gate.open();
+        assert_eq!(h.gateway.calls(), 1, "{stop:?}: no second provider call");
+        assert_eq!(attempts(&h, "transient"), 1, "{stop:?}");
+        assert_eq!(attempts(&h, "canceled"), 0, "{stop:?}");
+        assert_eq!(attempts(&h, "timeout"), 0, "{stop:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_stop_during_a_pending_provider_call_is_one_gateway_attempt() {
+    for stop in STOP_KINDS {
+        let h = Harness::start_with(None, |c| stop_config(stop, c)).await;
+        h.gateway.push(Reply::Hang);
+        h.gateway.push(Reply::without_usage(r#"["never"]"#));
+        translate_then_stop(&h, stop, || h.gateway.calls() == 1).await;
+        let (matching, other) = match stop {
+            StopKind::Cancel => ("canceled", "timeout"),
+            StopKind::Timeout => ("timeout", "canceled"),
+        };
+        assert_eq!(attempts(&h, matching), 1, "{stop:?}");
+        assert_eq!(attempts(&h, other), 0, "{stop:?}");
+        assert_eq!(attempts(&h, "transient"), 0, "{stop:?}");
+        assert_eq!(h.gateway.calls(), 1, "{stop:?}: no retry");
+        assert_eq!(
+            h.gateway.dropped(),
+            1,
+            "{stop:?}: the provider call is dropped"
+        );
+    }
+}
+
+#[tokio::test]
+async fn completed_attempts_are_still_counted_once() {
+    // A single 503 without retries.
+    let h = Harness::start_with(None, |c| c.retry.max_retries = 0).await;
+    h.gateway.push(Reply::Status(503));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_PROVIDER_FAILED");
+    assert_eq!(attempts(&h, "transient"), 1);
+    assert_eq!(attempts(&h, "canceled") + attempts(&h, "timeout"), 0);
+
+    // A 503 followed by a valid answer.
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::Status(503));
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert!(wire.ok());
+    assert_eq!(attempts(&h, "transient"), 1);
+    assert_eq!(attempts(&h, "ok"), 1);
+    assert_eq!(attempts(&h, "canceled") + attempts(&h, "timeout"), 0);
+
+    // A 503 followed by a denied recheck.
+    let h = Harness::start(None).await;
+    let delcore = h.delcore.clone();
+    h.gateway.push(Reply::Hook(
+        std::sync::Arc::new(move || delcore.lock().unwrap().authorize = deny_permission()),
+        Box::new(Reply::Status(503)),
+    ));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_PERMISSION_DENIED");
+    assert_eq!(h.gateway.calls(), 1);
+    assert_eq!(attempts(&h, "transient"), 1);
+    assert_eq!(
+        attempts(&h, "ok") + attempts(&h, "canceled") + attempts(&h, "timeout"),
+        0
+    );
+}

@@ -178,8 +178,54 @@ pub enum Ingest {
     },
 }
 
+/// Test control that blocks authorization calls once `after` of them have been answered, so a
+/// test can hold the authorization recheck of a retry open and observe that it was entered.
+#[derive(Clone)]
+pub struct AuthorizeGate {
+    after: usize,
+    /// Number of authorization calls currently held by the gate.
+    pub entered: Arc<AtomicUsize>,
+    release: Arc<tokio::sync::Semaphore>,
+}
+
+impl AuthorizeGate {
+    /// Holds every authorization call after the first `after` calls.
+    pub fn after(after: usize) -> Self {
+        Self {
+            after,
+            entered: Arc::default(),
+            release: Arc::new(tokio::sync::Semaphore::new(0)),
+        }
+    }
+    /// Lets all held and future calls through. Call it during test cleanup.
+    pub fn open(&self) {
+        self.release.add_permits(1 << 16);
+    }
+    /// Waits, bounded, until a call is held.
+    pub async fn wait_entered(&self) {
+        for _ in 0..500 {
+            if self.entered.load(Ordering::SeqCst) > 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("no authorization call reached the gate");
+    }
+    async fn hold(&self) {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+        // Bounded so a forgotten `open` cannot hang the suite.
+        if let Ok(Ok(permit)) =
+            tokio::time::timeout(Duration::from_secs(5), self.release.acquire()).await
+        {
+            permit.forget();
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct DelcoreState {
+    /// Optional gate delaying `Authorize` and `AuthorizeApiKey`.
+    pub authorize_gate: Option<AuthorizeGate>,
     pub users: HashMap<String, String>,
     /// Reply body for `Authorize`; `script` entries take precedence.
     pub authorize: Value,
@@ -251,6 +297,16 @@ async fn delcore_method(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    let gate = {
+        let s = state.lock().unwrap();
+        s.authorize_gate.clone().filter(|g| {
+            matches!(method.as_str(), "Authorize" | "AuthorizeApiKey")
+                && s.authorize_calls.len() + s.key_calls >= g.after
+        })
+    };
+    if let Some(gate) = gate {
+        gate.hold().await;
+    }
     let mut s = state.lock().unwrap();
     if s.down {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();

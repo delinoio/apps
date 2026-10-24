@@ -214,6 +214,8 @@ Prometheus metrics are served at `/metrics`; labels are bounded:
 | `delitools_outbox_oldest_pending_age_seconds` | none                   | Age of the oldest pending row (gauge).                                                                    |
 | `delitools_outbox_alert`                      | none                   | 1 while a backlog threshold is exceeded.                                                                  |
 
+The `canceled` and `timeout` Gateway attempt outcomes count only a provider call that had started when cancellation or the execution deadline stopped it. A stop during retry backoff, during the authorization recheck before a retry, or before the first provider call starts is reported with the same terminal error and request metrics but adds no Gateway attempt.
+
 OpenTelemetry spans `delitools.request` and `delitools.execute` export through OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `/healthz` reports process liveness; `/readyz` checks schema compatibility. Operational inspection starts with the request ID from a failing response: search structured logs for it, check the metrics above, run `check-schema` for schema questions, and use `GetMeteringStatus` in delcore for downstream processing lag. Numeric SLOs and dashboards are not part of this contract.
 
 ## Build and Test
