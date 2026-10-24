@@ -470,7 +470,12 @@ fn captured_callgrind_retains_actual_c_hot_function() {
 fn mock_headless_agents_apply_only_profile_linked_edits_in_owned_checkouts() {
     use perfine_core::adapters::agent::{HeadlessAgentAdapter, LocalAgentConfig};
     use std::os::unix::fs::PermissionsExt;
-    for provider in [LocalAgent::Codex, LocalAgent::Claude] {
+    for (provider, unchanged) in [
+        (LocalAgent::Codex, false),
+        (LocalAgent::Claude, false),
+        (LocalAgent::Codex, true),
+        (LocalAgent::Claude, true),
+    ] {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
         fs::create_dir(&repo).unwrap();
@@ -499,7 +504,15 @@ else:
 "#,
             args_log
         );
-        fs::write(&fake, script).unwrap();
+        fs::write(
+            &fake,
+            if unchanged {
+                script.replace("return 2;", "return 1;")
+            } else {
+                script
+            },
+        )
+        .unwrap();
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
         let mut docker = config();
         docker.executable = fake;
@@ -572,7 +585,11 @@ else:
         let hypotheses = agent.propose(&profile, &context).unwrap();
         assert_eq!(hypotheses.len(), 1);
         let sha = agent.implement(&hypotheses[0], &context).unwrap();
-        assert_ne!(sha, base);
+        if unchanged {
+            assert_eq!(sha, base);
+        } else {
+            assert_ne!(sha, base);
+        }
         assert_eq!(
             fs::read_to_string(repo.join("kernel.c")).unwrap(),
             "int value(void) { return 1; }\n"
@@ -592,7 +609,9 @@ else:
             }
             LocalAgent::Claude => assert!(argv.windows(2).any(|a| a == ["--tools", ""])),
         }
-        assert!(agent.implement(&hypotheses[0], &context).is_err());
+        if !unchanged {
+            assert!(agent.implement(&hypotheses[0], &context).is_err());
+        }
         let user_workspace = Workspace {
             directory: name(repo.to_str().unwrap()),
             ..workspace.clone()
