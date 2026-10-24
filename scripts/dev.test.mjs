@@ -646,7 +646,7 @@ test("Perfine Compose database and Turbo handoff remain service-owned", async ()
   assert.ok(task.passThroughEnv.includes(databaseHandoff));
   assert.equal(config.globalPassThroughEnv.includes(databaseHandoff), false);
   assert.ok(
-    config.tasks["//#server-build"].inputs.includes("crates/perfine-core/**"),
+    !config.tasks["//#server-build"].inputs.includes("crates/perfine-core/**"),
   );
-  assert.ok(config.tasks["//#server-build"].inputs.includes("Cargo.toml"));
+  assert.ok(!config.tasks["//#server-build"].inputs.includes("Cargo.toml"));
 });

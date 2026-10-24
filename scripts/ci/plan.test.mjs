@@ -347,7 +347,6 @@ for (const [paths, expected] of [
     [
       "delidev",
       "delitools",
-      ...(path === "Cargo.toml" ? ["perfine_api"] : []),
       ...(/^Cargo\./u.test(path) ? ["perfine_fixtures"] : []),
     ],
   ]),
@@ -517,16 +516,13 @@ test("DeliTools server validation uses its own disposable database", () => {
 
 test("Perfine ownership selects explicit consumers without unknown-path fallback", () => {
   for (const [path, expected] of [
-    ["crates/perfine-core/src/lib.rs", ["perfine_api", "perfine_fixtures"]],
+    ["crates/perfine-core/src/lib.rs", ["perfine_fixtures"]],
     ["cmds/perfine/src/main.rs", ["perfine_fixtures"]],
     ["packages/perfine/package.json", []],
     ["actions/perfine/src/main.ts", []],
     ["apps/perfine/src/main.tsx", ["perfine"]],
     ["servers/perfine-api/src/main.rs", ["perfine_api"]],
-    [
-      "docs/crates-perfine-adapters-contract.md",
-      ["perfine_api", "perfine_fixtures"],
-    ],
+    ["docs/crates-perfine-adapters-contract.md", ["perfine_fixtures"]],
     [
       "docs/protos-perfine-v1-contract.md",
       ["perfine_api", "perfine", "protocol"],
@@ -542,14 +538,7 @@ test("Perfine ownership selects explicit consumers without unknown-path fallback
       assert.equal(select([path])[key], true, `${path}: ${key}`);
   assert.deepEqual(
     selectRustServers(select(["crates/perfine-core/src/lib.rs"])),
-    [
-      {
-        service: "perfine-api",
-        port: 55436,
-        user: "perfine",
-        database: "perfine_api_test",
-      },
-    ],
+    [],
   );
   assert.deepEqual(selectChecks(["crates/perfine-core/src/lib.rs"]), {
     tooling: false,
@@ -558,10 +547,10 @@ test("Perfine ownership selects explicit consumers without unknown-path fallback
   });
 });
 
-test("Perfine API and shared engine changes select server validation", () => {
+test("Perfine API and server evaluator changes select server validation", () => {
   for (const path of [
     "servers/perfine-api/src/lib.rs",
-    "crates/perfine-core/src/lib.rs",
+    "servers/perfine-api/src/evaluation/policy.rs",
     "protos/perfine/v1/perfine.proto",
   ]) {
     assert.ok(

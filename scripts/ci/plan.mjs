@@ -177,7 +177,7 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       serverShared ||
       paths.some((path) =>
-        /^(servers\/perfine-api\/|crates\/perfine-core\/|Cargo\.toml$|protos\/|docs\/(?:project-perfine|servers-perfine|crates-perfine|protos-perfine))/u.test(
+        /^(servers\/perfine-api\/|protos\/|docs\/(?:project-perfine|servers-perfine|protos-perfine))/u.test(
           path,
         ),
       ),
