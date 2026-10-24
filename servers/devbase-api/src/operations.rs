@@ -23,8 +23,9 @@ fn key(r: &PgRow) -> Value {
 }
 pub async fn scrub(db: &mut PgConnection, column: &str, id: uuid::Uuid) -> Result<()> {
     // Only internal column constants reach this query. Delete replies retain their fingerprint.
+    // A scrubbed record keeps no end-user ID, so target_user_id is cleared with the payload.
     assert!(matches!(column, "project_id" | "target_user_id"));
-    sqlx::query(&format!("UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea WHERE {column}=$1 AND NOT scrubbed AND operation NOT LIKE 'Delete%'")) .bind(id).execute(db).await?;
+    sqlx::query(&format!("UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea,target_user_id=NULL WHERE {column}=$1 AND NOT scrubbed AND operation NOT LIKE 'Delete%'")) .bind(id).execute(db).await?;
     Ok(())
 }
 pub async fn audit(
@@ -198,11 +199,26 @@ impl Server {
                 let row = match changed {
                     Some(r) => r,
                     None => {
-                        sqlx::query("SELECT * FROM api_keys WHERE id=$1 AND project_id=$2")
-                            .bind(id)
-                            .bind(pid)
-                            .fetch_one(&mut *db)
-                            .await?
+                        // An already-revoked key matched no row of the UPDATE above, so nothing
+                        // holds it. A repeated revocation therefore takes a shared row lock here
+                        // and keeps it through the replay insert and commit: a concurrent project
+                        // deletion or tenant cleanup waits for this commit and then scrubs the new
+                        // replay record, instead of finishing its scrub first and leaving a late
+                        // unscrubbed record behind. A key already removed by a committed deletion
+                        // is a missing row, which is `not_found` and writes no replay. GetApiKey is
+                        // a plain read outside any transaction and takes no lock.
+                        let lock = if op == Op::RevokeApiKey {
+                            " FOR SHARE"
+                        } else {
+                            ""
+                        };
+                        sqlx::query(&format!(
+                            "SELECT * FROM api_keys WHERE id=$1 AND project_id=$2{lock}"
+                        ))
+                        .bind(id)
+                        .bind(pid)
+                        .fetch_one(&mut *db)
+                        .await?
                     }
                 };
                 out.body["apiKey"] = key(&row);

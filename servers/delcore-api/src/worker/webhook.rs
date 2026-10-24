@@ -388,7 +388,10 @@ impl Worker {
                 // Keep the occurrence so an older renewal payment delivered later cannot clear it.
                 self.retain_subscription_failure(conn, &v.id, event).await?;
             }
-            "canceled" => self.activate_free(conn, &tenant, event.occurred_at).await?,
+            "canceled" => {
+                self.activate_free(conn, &tenant, &v.id, event.occurred_at)
+                    .await?
+            }
             _ => {}
         }
         // An active status alone cannot grant entitlements or clear payment failure.
@@ -562,7 +565,8 @@ impl Worker {
                 subscription_id = subscription,
                 "applying retained subscription cancellation"
             );
-            self.activate_free(conn, tenant, occurred.unwrap()).await?;
+            self.activate_free(conn, tenant, subscription, occurred.unwrap())
+                .await?;
         } else if failed.is_some_and(|at| at > paid_at)
             || (state == "past_due" && occurred.is_some_and(|at| at > paid_at))
         {

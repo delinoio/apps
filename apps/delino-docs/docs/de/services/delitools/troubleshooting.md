@@ -34,6 +34,7 @@ Diese Seite hilft Ihnen, einen Client für DeliTools einzurichten und Fehler zu 
 ## Häufige Probleme
 
 - **Ein Schlüssel funktioniert bei einer Anfrage und schlägt bei der nächsten fehl.** Ein Schlüssel, der abgelaufen ist, widerrufen wurde oder einem Benutzer gehört, der seine Berechtigung verloren hat, funktioniert sofort nicht mehr. Prüfen Sie ihn mit `ListApiKeys`.
+- **`invalid_argument` mit der Meldung `request body is invalid`.** DeliTools konnte Ihren JSON-Anfragetext nicht dekodieren. Prüfen Sie, ob der Anfragetext vollständig ist, gültiges JSON enthält und jedes Feld den dokumentierten Typ hat, beispielsweise `texts` als Array von Zeichenfolgen. Die Meldung nennt das fehlerhafte Feld nicht. Vergleichen Sie Ihre Anfrage daher mit der [API-Referenz](/de/services/delitools/api-reference). Die Antwort enthält weiterhin eine Anfrage-ID.
 - **Ein einfacher `resource_exhausted`-Fehler ohne Grund.** Ihr Anfragetext ist größer als die vom Betreiber festgelegte Gesamtgrößenbeschränkung. Senden Sie weniger Daten.
 - **Ein Ergebnis sieht falsch aus.** Modelle können Fehler machen, und ein Ergebnis, das Ihrem Schema entspricht, ist nicht unbedingt korrekt. Formulieren Sie die Anweisungen in den `description`-Feldern Ihres Schemas klarer und überprüfen Sie wichtige Werte.
 - **Unerwartete Kosten.** Fehlgeschlagene Versuche mit bekannter Nutzung und wiederholte Anfragen werden berechnet. Siehe [Abrechnung](/de/services/delitools/billing).

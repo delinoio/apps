@@ -32,6 +32,7 @@
 
 use crate::{config::Limits, error::ApiError, gateway::ChatRequest, models::EXTRACTION_MODEL};
 use serde_json::{Map, Value, json};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 pub const MAX_DEPTH: usize = 8;
@@ -148,33 +149,130 @@ pub fn accept_schema(text: &str) -> Result<AcceptedSchema, ApiError> {
     })
 }
 
+/// Reads a count keyword. JSON Schema treats any number with a zero fractional part
+/// as an integer, so spellings such as `1.0`, `1e0` and `-0.0` are accepted and
+/// normalized to their integral value for the ordering check. The schema document
+/// itself is passed to the validator unchanged.
 fn count_keyword(map: &Map<String, Value>, key: &str, path: &str) -> Result<Option<u64>, ApiError> {
+    let invalid = || {
+        unsupported(format!(
+            "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
+        ))
+    };
     match map.get(key) {
         None => Ok(None),
-        Some(Value::Number(n)) => match n.as_u64() {
-            Some(v) if v <= MAX_COUNT_KEYWORD => Ok(Some(v)),
-            _ => Err(unsupported(format!(
-                "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
-            ))),
-        },
-        Some(_) => Err(unsupported(format!(
-            "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
-        ))),
+        Some(Value::Number(n)) => {
+            if let Some(v) = n.as_u64() {
+                return if v <= MAX_COUNT_KEYWORD {
+                    Ok(Some(v))
+                } else {
+                    Err(invalid())
+                };
+            }
+            // `-0.0 >= 0.0` holds, so negative zero is accepted; every other
+            // negative value, fraction, NaN and infinity is rejected.
+            match n.as_f64() {
+                Some(f)
+                    if f.is_finite()
+                        && f.fract() == 0.0
+                        && f >= 0.0
+                        && f <= MAX_COUNT_KEYWORD as f64 =>
+                {
+                    Ok(Some(f as u64))
+                }
+                _ => Err(invalid()),
+            }
+        }
+        Some(_) => Err(invalid()),
     }
 }
 
-fn bound_keyword(map: &Map<String, Value>, key: &str, path: &str) -> Result<Option<f64>, ApiError> {
+/// A finite `minimum` or `maximum` value kept in its original numeric class so that
+/// bounds compare exactly. Converting every bound to `f64` would collapse distinct
+/// integers above 2^53 into one value and let a reversed range through.
+#[derive(Clone, Copy, Debug)]
+enum Bound {
+    Unsigned(u64),
+    Signed(i64),
+    Float(f64),
+}
+
+impl Bound {
+    /// Exact total comparison of two finite bounds without rounding integers to `f64`.
+    fn compare(self, other: Bound) -> Ordering {
+        match (self, other) {
+            (Bound::Float(a), Bound::Float(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+            (Bound::Float(a), b) => compare_integer_with_float(b.integer(), a).reverse(),
+            (a, Bound::Float(b)) => compare_integer_with_float(a.integer(), b),
+            (a, b) => a.integer().cmp(&b.integer()),
+        }
+    }
+
+    /// The value of an integer bound. Every `u64` and `i64` fits in `i128`.
+    fn integer(self) -> i128 {
+        match self {
+            Bound::Unsigned(v) => i128::from(v),
+            Bound::Signed(v) => i128::from(v),
+            Bound::Float(_) => unreachable!("float bounds are compared through floats"),
+        }
+    }
+}
+
+/// Compares an integer with a finite float exactly. `integer` always lies within the
+/// `u64` and `i64` range, so a float beyond ±2^100 decides the order by its sign alone.
+fn compare_integer_with_float(integer: i128, float: f64) -> Ordering {
+    const EXACT_LIMIT: f64 = 1.267_650_600_228_229_4e30; // 2^100
+    if float >= EXACT_LIMIT {
+        return Ordering::Less;
+    }
+    if float <= -EXACT_LIMIT {
+        return Ordering::Greater;
+    }
+    let floor = float.floor();
+    // `floor` is integral and within ±2^100, so the conversion is exact.
+    match integer.cmp(&(floor as i128)) {
+        Ordering::Equal if float > floor => Ordering::Less,
+        order => order,
+    }
+}
+
+fn bound_keyword(
+    map: &Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<Option<Bound>, ApiError> {
+    let invalid = || unsupported(format!("{key} at {path} must be a finite number"));
     match map.get(key) {
         None => Ok(None),
-        Some(Value::Number(n)) => n
-            .as_f64()
-            .filter(|f| f.is_finite())
-            .map(Some)
-            .ok_or_else(|| unsupported(format!("{key} at {path} must be a finite number"))),
-        Some(_) => Err(unsupported(format!(
-            "{key} at {path} must be a finite number"
-        ))),
+        Some(Value::Number(n)) => {
+            if let Some(v) = n.as_u64() {
+                Ok(Some(Bound::Unsigned(v)))
+            } else if let Some(v) = n.as_i64() {
+                Ok(Some(Bound::Signed(v)))
+            } else {
+                n.as_f64()
+                    .filter(|f| f.is_finite())
+                    .map(|f| Some(Bound::Float(f)))
+                    .ok_or_else(invalid)
+            }
+        }
+        Some(_) => Err(invalid()),
     }
+}
+
+/// Rejects a reversed `minimum`/`maximum` pair by exact value.
+fn bounds_ordered(
+    low: Option<Bound>,
+    high: Option<Bound>,
+    what: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    if let (Some(low), Some(high)) = (low, high)
+        && low.compare(high) == Ordering::Greater
+    {
+        return Err(unsupported(format!("{what} exceeds its maximum at {path}")));
+    }
+    Ok(())
 }
 
 fn ordered<T: PartialOrd>(
@@ -277,8 +375,13 @@ fn check_node(node: &Value, depth: usize, nodes: &mut usize, path: &str) -> Resu
                 "enum at {path} must have 1 to {MAX_ENUM} values"
             )));
         }
+        // JSON Schema equality, not `serde_json::Value` equality: `1` and `1.0` are the same
+        // value, object member order is irrelevant and array order is significant.
         for (i, item) in items.iter().enumerate() {
-            if items[..i].contains(item) {
+            if items[..i]
+                .iter()
+                .any(|previous| jsonschema::json::cmp::equal(previous, item))
+            {
                 return Err(unsupported(format!(
                     "enum at {path} must not repeat values"
                 )));
@@ -297,7 +400,7 @@ fn check_node(node: &Value, depth: usize, nodes: &mut usize, path: &str) -> Resu
         "minItems",
         path,
     )?;
-    ordered(
+    bounds_ordered(
         bound_keyword(map, "minimum", path)?,
         bound_keyword(map, "maximum", path)?,
         "minimum",
@@ -476,6 +579,344 @@ mod tests {
     }
 
     #[test]
+    fn enum_distinctness_follows_json_schema_equality() {
+        for ok in [
+            r#"{"enum":[[1,2],[2,1]]}"#,
+            r#"{"enum":[9007199254740992,9007199254740993]}"#,
+            r#"{"enum":[9007199254740993,9007199254740992.0]}"#,
+            r#"{"enum":[1,"1",true]}"#,
+            r#"{"enum":[0,false,null,"0"]}"#,
+            r#"{"enum":[{"x":1},{"x":2},{"y":1}]}"#,
+        ] {
+            assert!(validate("t", ok, &limits()).is_ok(), "{ok}");
+        }
+    }
+
+    const COUNT_KEYWORDS: [&str; 4] = ["minLength", "maxLength", "minItems", "maxItems"];
+
+    fn count_schema(keyword: &str, spelling: &str) -> String {
+        let ty = if keyword.ends_with("Length") {
+            "string"
+        } else {
+            "array"
+        };
+        format!(r#"{{"type":"{ty}","{keyword}":{spelling}}}"#)
+    }
+
+    #[test]
+    fn count_keywords_accept_integral_numeric_spellings() {
+        for keyword in COUNT_KEYWORDS {
+            for spelling in [
+                "0",
+                "1",
+                "1.0",
+                "1e0",
+                "0.0",
+                "-0.0",
+                "-0",
+                "1000000",
+                "1000000.0",
+                "1e6",
+                "1.0E+6",
+            ] {
+                let schema = count_schema(keyword, spelling);
+                assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+            }
+        }
+    }
+
+    #[test]
+    fn count_keywords_reject_non_integral_negative_oversized_and_mistyped_values() {
+        for keyword in COUNT_KEYWORDS {
+            for spelling in [
+                "1.5",
+                "0.5",
+                "-1",
+                "-1.0",
+                "-1e0",
+                "1000001",
+                "1000001.0",
+                "1e7",
+                "1e300",
+                "\"1\"",
+                "true",
+                "false",
+                "null",
+                "[1]",
+                "{}",
+            ] {
+                let schema = count_schema(keyword, spelling);
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_json_around_count_keywords_stays_invalid_input() {
+        for schema in [
+            r#"{"type":"string","minLength":1.0"#,
+            r#"{"type":"string","minLength":1e}"#,
+        ] {
+            assert_eq!(
+                reason(validate("t", schema, &limits())),
+                ErrorReason::ERROR_REASON_INVALID_INPUT,
+                "{schema}"
+            );
+        }
+    }
+
+    #[test]
+    fn count_bounds_compare_by_value_across_spellings() {
+        for (low, high) in [
+            ("1", "1.0"),
+            ("1.0", "1"),
+            ("1e0", "1"),
+            ("-0.0", "0"),
+            ("0", "-0.0"),
+            ("1.0", "1e0"),
+        ] {
+            let schema = format!(
+                r#"{{"type":"object","properties":{{"s":{{"type":"string","minLength":{low},"maxLength":{high}}},"a":{{"type":"array","minItems":{low},"maxItems":{high}}}}}}}"#
+            );
+            assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+        }
+        for (low, high) in [
+            ("2.0", "1"),
+            ("2", "1.0"),
+            ("1e1", "9"),
+            ("1000000.0", "0"),
+            ("1", "-0.0"),
+        ] {
+            for (min, max, ty) in [
+                ("minLength", "maxLength", "string"),
+                ("minItems", "maxItems", "array"),
+            ] {
+                let schema = format!(r#"{{"type":"{ty}","{min}":{low},"{max}":{high}}}"#);
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_count_keywords_follow_the_same_rules_and_reversed_bounds_reject_at_any_node() {
+        let ok = r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","maxLength":5.0},"minItems":1.0,"maxItems":1e1}}}"#;
+        assert!(validate("t", ok, &limits()).is_ok());
+        for bad in [
+            r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","maxLength":5.5}}}}"#,
+            r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","minLength":3.0,"maxLength":2}}}}"#,
+            r#"{"type":"object","properties":{"a":{"type":"array","minItems":2.0,"maxItems":1,"items":{"type":"string"}}}}"#,
+        ] {
+            assert_eq!(
+                reason(validate("t", bad, &limits())),
+                ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn minimum_and_maximum_behavior_is_unchanged() {
+        for ok in [
+            r#"{"type":"number","minimum":-1.5,"maximum":2}"#,
+            r#"{"type":"number","minimum":1,"maximum":1.0}"#,
+        ] {
+            assert!(validate("t", ok, &limits()).is_ok(), "{ok}");
+        }
+        assert_eq!(
+            reason(validate(
+                "t",
+                r#"{"type":"number","minimum":2,"maximum":1.5}"#,
+                &limits()
+            )),
+            ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA
+        );
+        assert_eq!(
+            reason(validate(
+                "t",
+                r#"{"type":"number","minimum":"1"}"#,
+                &limits()
+            )),
+            ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA
+        );
+    }
+
+    fn range_schema(low: &str, high: &str) -> String {
+        format!(r#"{{"type":"number","minimum":{low},"maximum":{high}}}"#)
+    }
+
+    #[test]
+    fn reversed_integer_bounds_reject_exactly_beyond_f64_precision() {
+        for (low, high) in [
+            // Both round to 9007199254740992.0 as f64.
+            ("9007199254740993", "9007199254740992"),
+            ("9007199254740995", "9007199254740994"),
+            ("18446744073709551615", "18446744073709551614"),
+            ("-9223372036854775807", "-9223372036854775808"),
+            ("9223372036854775807", "9223372036854775806"),
+            ("9223372036854775808", "9223372036854775807"),
+            ("18446744073709551615", "-9223372036854775808"),
+            ("0", "-9223372036854775808"),
+            ("1", "-1"),
+        ] {
+            for schema in [
+                range_schema(low, high),
+                format!(
+                    r#"{{"type":"object","properties":{{"n":{}}}}}"#,
+                    range_schema(low, high)
+                ),
+                format!(r#"{{"type":"array","items":{}}}"#, range_schema(low, high)),
+            ] {
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_integer_and_float_bounds_compare_without_rounding_the_integer() {
+        for (low, high) in [
+            ("9007199254740993", "9007199254740992.0"),
+            ("9007199254740993", "9007199254740992e0"),
+            ("9007199254740992.0", "9007199254740991"),
+            ("1", "0.9999999999999999"),
+            ("0", "-0.5"),
+            ("-1.5", "-2"),
+            ("-9223372036854775807", "-9223372036854775808.0"),
+            ("18446744073709551616.0", "18446744073709551615"),
+            ("1e300", "18446744073709551615"),
+            ("0", "-1e300"),
+            ("1.7976931348623157e308", "1e308"),
+        ] {
+            let schema = range_schema(low, high);
+            assert!(validate("t", &schema, &limits()).is_err(), "{schema}");
+            assert_eq!(
+                reason(validate("t", &schema, &limits())),
+                ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                "{schema}"
+            );
+        }
+    }
+
+    #[test]
+    fn equal_ascending_one_sided_and_finite_float_bounds_still_pass() {
+        for (low, high) in [
+            ("9007199254740992", "9007199254740993"),
+            ("9007199254740993", "9007199254740993"),
+            ("18446744073709551614", "18446744073709551615"),
+            ("18446744073709551615", "18446744073709551615"),
+            ("-9223372036854775808", "-9223372036854775807"),
+            ("-9223372036854775808", "-9223372036854775808"),
+            ("-9223372036854775808", "18446744073709551615"),
+            ("9223372036854775807", "9223372036854775808"),
+            ("9007199254740992.0", "9007199254740993"),
+            ("9007199254740992", "9007199254740992.0"),
+            ("9007199254740992.0", "9007199254740992"),
+            ("18446744073709551615", "18446744073709551616.0"),
+            ("-9223372036854775809.0", "-9223372036854775808"),
+            ("0", "-0.0"),
+            ("-0.0", "0"),
+            ("1", "1.0"),
+            ("-1.5", "-1.25"),
+            ("-1.25", "-1.25"),
+            ("-1e308", "1e308"),
+            ("-1.7976931348623157e308", "1.7976931348623157e308"),
+            ("1.7976931348623157e308", "1.7976931348623157e308"),
+            ("0", "1e300"),
+            ("-1e300", "0"),
+        ] {
+            let schema = range_schema(low, high);
+            assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+        }
+        for schema in [
+            r#"{"type":"number","minimum":9007199254740993}"#,
+            r#"{"type":"number","maximum":9007199254740992}"#,
+            r#"{"type":"number","minimum":-1.5}"#,
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740992,"maximum":9007199254740993}}}"#,
+            r#"{"type":"array","items":{"type":"number","minimum":-9223372036854775808,"maximum":18446744073709551615}}"#,
+        ] {
+            assert!(validate("t", schema, &limits()).is_ok(), "{schema}");
+        }
+    }
+
+    #[test]
+    fn bound_comparison_is_exact_and_antisymmetric() {
+        use Bound::{Float, Signed, Unsigned};
+        // Groups are strictly ascending; members of one group are equal by value.
+        let groups: [&[Bound]; 16] = [
+            &[Signed(i64::MIN), Float(-9.223_372_036_854_776e18)],
+            &[Signed(i64::MIN + 1)],
+            &[Signed(-1)],
+            &[Float(-0.5)],
+            &[Float(-0.0), Float(0.0), Signed(0), Unsigned(0)],
+            &[Float(0.5)],
+            &[Signed(1), Unsigned(1), Float(1.0)],
+            &[
+                Float(9_007_199_254_740_992.0),
+                Signed(9_007_199_254_740_992),
+            ],
+            &[Unsigned(9_007_199_254_740_993)],
+            &[Signed(i64::MAX)],
+            &[
+                Unsigned(i64::MAX as u64 + 1),
+                Float(9.223_372_036_854_776e18),
+            ],
+            &[Unsigned(u64::MAX - 1)],
+            &[Unsigned(u64::MAX)],
+            &[Float(1.844_674_407_370_955_2e19)],
+            &[Float(1e300)],
+            &[Float(f64::MAX)],
+        ];
+        for (i, left) in groups.iter().enumerate() {
+            for (j, right) in groups.iter().enumerate() {
+                for a in *left {
+                    for b in *right {
+                        let expected = i.cmp(&j);
+                        assert_eq!(a.compare(*b), expected, "{a:?} vs {b:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn accepted_float_counts_are_passed_through_and_still_enforced_on_output() {
+        let schema = r#"{"type":"object","properties":{"name":{"type":"string","minLength":1.0,"maxLength":3e0},"tags":{"type":"array","items":{"type":"string"},"minItems":-0.0,"maxItems":2.0}},"required":["name"],"additionalProperties":false}"#;
+        let extraction = validate("t", schema, &limits()).unwrap();
+        // The accepted document keeps the original spellings.
+        assert_eq!(
+            extraction.schema.document,
+            serde_json::from_str::<Value>(schema).unwrap()
+        );
+        let ok = |data: &str| {
+            extraction.parse_output(&format!(r#"{{"status":"extracted","data":{data}}}"#))
+        };
+        assert!(ok(r#"{"name":"Ada","tags":[]}"#).is_ok());
+        assert!(ok(r#"{"name":"Ada","tags":["a","b"]}"#).is_ok());
+        for bad in [
+            r#"{"name":""}"#,
+            r#"{"name":"Adam"}"#,
+            r#"{"name":"A","tags":["a","b","c"]}"#,
+        ] {
+            assert_eq!(
+                ok(bad).unwrap_err().reason,
+                ErrorReason::ERROR_REASON_INVALID_OUTPUT,
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_keywords_before_execution() {
         for keyword in KNOWN_UNSUPPORTED {
             let schema = format!(r#"{{"type":"string","{keyword}":1}}"#);
@@ -514,6 +955,13 @@ mod tests {
             r#"{"type":"object","properties":{"a":{"type":"string"}},"required":["a","a"]}"#,
             r#"{"enum":[]}"#,
             r#"{"enum":[1,1]}"#,
+            r#"{"enum":[1,1.0]}"#,
+            r#"{"enum":[0,-0.0]}"#,
+            r#"{"enum":[[1],[1.0]]}"#,
+            r#"{"enum":[{"x":1},{"x":1.0}]}"#,
+            r#"{"enum":[{"a":1,"b":2},{"b":2.0,"a":1}]}"#,
+            r#"{"type":"object","properties":{"a":{"enum":["x",1,1.0]}}}"#,
+            r#"{"type":"array","items":{"enum":[2,2.0]}}"#,
             r#"{"enum":"a"}"#,
             r#"{"type":"string","minLength":-1}"#,
             r#"{"type":"string","minLength":1.5}"#,

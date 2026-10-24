@@ -5,6 +5,7 @@ mod fingerprint;
 pub mod http;
 pub mod maintenance;
 mod operations;
+mod response;
 mod size;
 pub mod store;
 mod validation;
@@ -126,24 +127,48 @@ pub struct Server {
     users: Limiter,
     management: Limiter,
 }
+/// Converts a limiter retry delay to the `google.protobuf.Duration` carried by
+/// `ErrorDetail.retry_after`. Returns `None` when the whole seconds exceed
+/// [`config::MAX_RETRY_SECONDS`] (which also keeps them within `i64`); `nanos` is always below
+/// 1,000,000,000 because it comes from `Duration::subsec_nanos`.
+pub(crate) fn retry_after_duration(
+    retry: std::time::Duration,
+) -> Option<buffa_types::google::protobuf::Duration> {
+    if retry.as_secs() > config::MAX_RETRY_SECONDS {
+        return None;
+    }
+    Some(buffa_types::google::protobuf::Duration {
+        seconds: i64::try_from(retry.as_secs()).ok()?,
+        nanos: i32::try_from(retry.subsec_nanos()).ok()?,
+        ..Default::default()
+    })
+}
 /// Converts a fault into the Connect error every DevBase failure carries: the safe trace ID in
 /// the `ErrorDetail` and the `X-Devbase-Trace-Id` header and, for rate limits, `retry_after`.
 /// Shared by the handler and by the pre-decode size interceptor so both produce the same shape.
-pub(crate) fn typed_error(f: Fault, trace: &str) -> connectrpc::ConnectError {
+pub(crate) fn typed_error(mut f: Fault, trace: &str) -> connectrpc::ConnectError {
     let mut detail = ErrorDetail {
         reason: f.reason.into(),
         trace_id: trace.to_owned(),
         ..Default::default()
     };
     if let Some(retry) = f.retry {
-        detail.retry_after = Some(buffa_types::google::protobuf::Duration {
-            // Startup validation keeps retry delays within the protobuf Duration range, far
-            // below i64::MAX; the checked conversion only guards against future changes.
-            seconds: i64::try_from(retry.as_secs()).unwrap_or(i64::MAX),
-            nanos: retry.subsec_nanos() as i32,
-            ..Default::default()
-        })
-        .into();
+        match retry_after_duration(retry) {
+            Some(duration) => detail.retry_after = Some(duration).into(),
+            None => {
+                // Startup validation keeps every retry delay within the protobuf Duration range,
+                // so this is an internal invariant violation. Never saturate or wrap the value:
+                // answer with a bounded server fault that carries no retry information.
+                tracing::error!(
+                    trace_id=%trace,
+                    retry_seconds=retry.as_secs(),
+                    max_retry_seconds=config::MAX_RETRY_SECONDS,
+                    "retry delay is outside the protobuf Duration range"
+                );
+                f = Fault::unavailable();
+                detail.reason = f.reason.into();
+            }
+        }
     }
     let mut headers = axum::http::HeaderMap::new();
     headers.insert("X-Devbase-Trace-Id", trace.parse().unwrap());
@@ -331,7 +356,6 @@ impl Server {
                 .map(|v| v.body);
         }
         let key = server_common::string(&q, "idempotencyKey");
-        let fingerprint = fingerprint::fingerprint(op, &request.encode_to_vec())?;
         let mut tx = self.db.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
             .bind(format!("{}|{key}", who.actor))
@@ -361,10 +385,14 @@ impl Server {
             if row.get::<String,_>("operation")!=op.name()||row.get::<uuid::Uuid,_>("tenant_id").to_string()!=who.tenant||(!who.project.is_empty()&&row.get::<Option<uuid::Uuid>,_>("project_id").is_some_and(|id|id.to_string()!=who.project)){return Err(Fault::conflict())}
             if row.get::<bool,_>("scrubbed"){return Err(Fault::missing())}
             payload?;
-            if row.get::<Vec<u8>,_>("fingerprint")!=fingerprint{return Err(Fault::conflict())}
+            // The fingerprint can fail on a malformed wire shape, so it is computed only after the
+            // operation, tenant, project and scrubbed outcomes and the payload result.
+            if !fingerprint::matches(&row.get::<Vec<u8>,_>("fingerprint"),op,&request.encode_to_vec())?{return Err(Fault::conflict())}
             let bytes:Vec<u8>=row.get("response");let result=R::decode_from_slice(&bytes).map_err(|_|Fault::unavailable())?;return Ok(serde_json::to_value(result)?)
         }
         payload?;
+        // Computed once for the new record, after the replay lookup found no record.
+        let fingerprint = fingerprint::fingerprint(op, &request.encode_to_vec())?;
         let result = self.operation(&mut tx, op, &q, &who, trace).await?;
         let mut snapshot = result.body.clone();
         snapshot.as_object_mut().unwrap().remove("secret");
@@ -494,5 +522,73 @@ impl DevBaseService for Server {
     ) -> ServiceResult<DeleteEndUserResponse> {
         self.handle(ctx, Op::DeleteEndUser, q.to_owned_message())
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+    use buffa::Message;
+    use std::time::Duration;
+
+    const MAX: u64 = config::MAX_RETRY_SECONDS;
+
+    #[test]
+    fn retry_after_conversion_accepts_the_protobuf_duration_maximum() {
+        let max = retry_after_duration(Duration::new(MAX, 999_999_999)).unwrap();
+        assert_eq!((max.seconds, max.nanos), (MAX as i64, 999_999_999));
+        let zero = retry_after_duration(Duration::ZERO).unwrap();
+        assert_eq!((zero.seconds, zero.nanos), (0, 0));
+    }
+
+    #[test]
+    fn retry_after_conversion_rejects_values_beyond_the_range_without_saturating() {
+        for seconds in [MAX + 1, i64::MAX as u64, i64::MAX as u64 + 1, u64::MAX] {
+            assert!(
+                retry_after_duration(Duration::new(seconds, 0)).is_none(),
+                "{seconds}"
+            );
+        }
+    }
+
+    fn detail_of(error: &connectrpc::ConnectError) -> ErrorDetail {
+        let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+            .decode(error.details[0].value.as_deref().unwrap())
+            .unwrap();
+        ErrorDetail::decode_from_slice(&raw).unwrap()
+    }
+
+    fn rate_limited(retry: Duration) -> Fault {
+        let mut fault = Fault::new(connectrpc::ErrorCode::ResourceExhausted, 7, "rate limited");
+        fault.retry = Some(retry);
+        fault
+    }
+
+    #[test]
+    fn typed_error_describes_the_same_wait_in_header_and_detail() {
+        let error = typed_error(rate_limited(Duration::new(999, 500_000_000)), "trace");
+        assert_eq!(error.code, connectrpc::ErrorCode::ResourceExhausted);
+        let detail = detail_of(&error);
+        let retry = detail.retry_after.as_option().unwrap();
+        assert_eq!((retry.seconds, retry.nanos), (999, 500_000_000));
+        assert_eq!(detail.reason.to_i32(), 7);
+        assert_eq!(error.response_headers()["Retry-After"], "1000");
+        assert_eq!(error.response_headers()["X-Devbase-Trace-Id"], "trace");
+        // A sub-second wait still advertises at least one second.
+        let error = typed_error(rate_limited(Duration::from_millis(1)), "trace");
+        assert_eq!(error.response_headers()["Retry-After"], "1");
+    }
+
+    #[test]
+    fn typed_error_reports_an_out_of_range_retry_as_a_bounded_server_fault() {
+        let error = typed_error(rate_limited(Duration::new(MAX + 1, 0)), "trace");
+        assert_eq!(error.code, connectrpc::ErrorCode::Unavailable);
+        assert!(error.response_headers().get("Retry-After").is_none());
+        assert_eq!(error.response_headers()["X-Devbase-Trace-Id"], "trace");
+        let detail = detail_of(&error);
+        assert!(detail.retry_after.as_option().is_none());
+        assert_eq!(detail.reason.to_i32(), 9);
+        assert_eq!(detail.trace_id, "trace");
     }
 }

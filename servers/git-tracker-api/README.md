@@ -4,7 +4,7 @@ Git Tracker stores exact numeric measurements for Git commits. The web applicati
 
 ## Configuration
 
-Copy the names in `.env.example` into the operator's environment. No environment file is loaded automatically. Set a PostgreSQL URL, positive audit retention duration, GitHub App ID/private-key file/webhook secret, Delcore endpoint and Logto M2M credentials. The M2M application must be registered in Delcore with the `authorize` scope and `view`, `edit`, `manage` capabilities. Grant these capabilities through existing Delcore groups. Connection additionally requires Delcore Owner/Admin authority. There is no separate membership system.
+Copy the names in `.env.example` into the operator's environment. No environment file is loaded automatically. Set a PostgreSQL URL, positive audit retention duration (`AUDIT_RETENTION`, for example `2160h`; a value so large that `now - AUDIT_RETENTION` is not a representable timestamp keeps every audit row and does not stop other maintenance), GitHub App ID/private-key file/webhook secret, Delcore endpoint and Logto M2M credentials. The M2M application must be registered in Delcore with the `authorize` scope and `view`, `edit`, `manage` capabilities. Grant these capabilities through existing Delcore groups. Connection additionally requires Delcore Owner/Admin authority. There is no separate membership system.
 
 Use a GitHub App with selected repository access and repository metadata, contents, pull requests and issue-comment permissions. Subscribe to repository, installation and installation-repositories events at `/github/events`. The App private key stays server-side. Connection verifies an administrator's GitHub access token; the token is never retained. Actions credentials use issuer `https://token.actions.githubusercontent.com` and audience `https://git-tracker.api.delino.io`.
 
@@ -22,7 +22,7 @@ Repository rows serialize atomic uploads, completion, deletion and comment publi
 
 ## Alert rules
 
-Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
+Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. Each must be representable as a signed 64-bit nanosecond count, so the largest accepted values are `9223372036s`, `153722867m`, `2562047h` and `106751d`; larger values make `alerts` exit with an error and print no rules. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
 
 ## Validation
 

@@ -34,6 +34,7 @@ Esta página ajuda você a configurar um cliente para o DeliTools e corrigir err
 ## Problemas comuns
 
 - **Uma chave funciona em uma requisição e falha na seguinte.** Uma chave que expirou, foi revogada ou pertence a um usuário que perdeu a permissão para de funcionar imediatamente. Verifique-a com `ListApiKeys`.
+- **`invalid_argument` com a mensagem `request body is invalid`.** O DeliTools não conseguiu decodificar o corpo JSON da sua solicitação. Verifique se o corpo está completo, se é um JSON válido e se cada campo tem o tipo documentado, por exemplo, `texts` como um array de strings. A mensagem não indica o campo com problema, então compare sua solicitação com a [Referência da API](/pt-BR/services/delitools/api-reference). A resposta ainda inclui um ID de solicitação.
 - **Um erro `resource_exhausted` simples, sem motivo.** O corpo da sua requisição é maior que o limite geral de tamanho definido pelo operador. Envie menos dados.
 - **Um resultado parece errado.** Os modelos podem cometer erros, e um resultado que segue seu esquema não é necessariamente correto. Deixe mais claras as instruções nos campos `description` do seu esquema e verifique os valores importantes.
 - **Cobranças inesperadas.** Tentativas malsucedidas com uso conhecido e requisições repetidas são cobradas. Veja [Faturamento](/pt-BR/services/delitools/billing).

@@ -34,6 +34,7 @@
 ## 常见问题
 
 - **密钥在一次请求中可用，但在下一次请求中失败。** 密钥过期、被撤销，或其所属用户失去权限后，该密钥会立即失效。使用 `ListApiKeys` 检查。
+- **出现 `invalid_argument`，消息为 `request body is invalid`。** DeliTools 无法解码你的 JSON 请求体。请检查请求体是否完整、是否为有效的 JSON，以及每个字段的类型是否符合文档要求，例如 `texts` 应为字符串数组。该消息不会指出出错的字段，因此请将请求与 [API 参考](/zh-Hans/services/delitools/api-reference)进行比较。响应仍会包含请求 ID。
 - **只有 `resource_exhausted` 错误，没有原因。** 请求体超过了运营方设置的总体大小限制。请减少发送的数据。
 - **结果看起来不正确。** 模型可能会出错，符合模式的结果也不一定正确。请让模式中 `description` 字段内的指示更加清晰，并核查重要值。
 - **出现意外费用。** 用量已知的失败尝试以及重复请求都会计费。请参阅[计费](/zh-Hans/services/delitools/billing)。
