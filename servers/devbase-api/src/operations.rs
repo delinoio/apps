@@ -23,8 +23,9 @@ fn key(r: &PgRow) -> Value {
 }
 pub async fn scrub(db: &mut PgConnection, column: &str, id: uuid::Uuid) -> Result<()> {
     // Only internal column constants reach this query. Delete replies retain their fingerprint.
+    // A scrubbed record keeps no end-user ID, so target_user_id is cleared with the payload.
     assert!(matches!(column, "project_id" | "target_user_id"));
-    sqlx::query(&format!("UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea WHERE {column}=$1 AND NOT scrubbed AND operation NOT LIKE 'Delete%'")) .bind(id).execute(db).await?;
+    sqlx::query(&format!("UPDATE replays SET scrubbed=true,response=NULL,fingerprint='\\x'::bytea,target_user_id=NULL WHERE {column}=$1 AND NOT scrubbed AND operation NOT LIKE 'Delete%'")) .bind(id).execute(db).await?;
     Ok(())
 }
 pub async fn audit(
