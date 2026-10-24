@@ -9,10 +9,13 @@
 //! that can be personal data, and it would lack the `ErrorDetail` and trace header that every
 //! DevBase error carries.
 //!
+//! The transport likewise rejects a path that is not a registered method with a 404 error that
+//! interpolates the submitted path, again without `ErrorDetail` or trace header.
+//!
 //! [`sanitize_decode_failure`] runs around the whole Connect service, inside the shared request
-//! policy. It replaces only that decoding failure of a known procedure with the same typed error
-//! shape as every other DevBase failure. It never inspects, stores or logs the replaced
-//! diagnostic, and it does not depend on the shape of the submitted value.
+//! policy. It replaces only those two failures with the same typed error shape as every other
+//! DevBase failure. It never inspects, stores or logs the replaced diagnostic, and it does not
+//! depend on the shape of the submitted value.
 use crate::{Op, typed_error};
 use axum::{
     body::{Body, to_bytes},
@@ -37,19 +40,36 @@ const SAFE_MESSAGE: &str = "request body could not be decoded";
 /// replaced as well, so no unexpectedly large diagnostic can be forwarded.
 const MAX_INSPECTED_BODY: usize = 1 << 20;
 
-/// Replaces a JSON decoding failure of a known DevBase procedure with a fixed typed
-/// `invalid_argument` error: HTTP 400, the safe message, `ERROR_REASON_INVALID_INPUT` and a fresh
-/// server-generated trace in `ErrorDetail` and `X-Devbase-Trace-Id`. The incoming trace header is
-/// never read. Every other response, including application errors, passes through unchanged.
+/// Fixed message of the replacement for an unmatched procedure. It never contains the submitted
+/// selector.
+const UNKNOWN_PROCEDURE_MESSAGE: &str = "procedure not found";
+
+/// Replaces two transport failures that occur before the handler runs with the typed DevBase
+/// error shape (fixed message, `ERROR_REASON_INVALID_INPUT` and a fresh server-generated trace in
+/// `ErrorDetail` and `X-Devbase-Trace-Id`; the incoming trace header is never read):
+///
+/// - the JSON decoding failure of a known procedure becomes `invalid_argument` (HTTP 400);
+/// - the JSON 404 `unimplemented` rejection of a path that is not an exact DevBase procedure
+///   becomes the same code and status with the message `procedure not found`.
+///
+/// Every other response, including application errors, passes through unchanged.
 pub(crate) async fn sanitize_decode_failure(request: Request, next: Next) -> Response {
-    // Only the exact allowlisted procedures qualify, so request-controlled text never selects
-    // the adaptation and unknown paths keep the transport's own routing response.
+    // Only the exact allowlist decides which adaptation applies, so request-controlled text never
+    // selects it and no raw dependency diagnostic is matched.
     let procedure = Op::from_procedure_path(request.uri().path()).map(Op::name);
     let request_headers = request.headers().clone();
     let response = next.run(request).await;
-    let Some(procedure) = procedure else {
-        return response;
-    };
+    match procedure {
+        Some(procedure) => sanitize_known(response, procedure, &request_headers).await,
+        None => sanitize_unmatched(response).await,
+    }
+}
+
+async fn sanitize_known(
+    response: Response,
+    procedure: &'static str,
+    request_headers: &HeaderMap,
+) -> Response {
     // Handler-produced errors always carry the trace header, so an untyped JSON 400 can only
     // come from the transport. Anything else is not a candidate and is returned untouched.
     if response.status() != StatusCode::BAD_REQUEST
@@ -72,7 +92,43 @@ pub(crate) async fn sanitize_decode_failure(request: Request, next: Next) -> Res
     // Only the bounded category and the procedure are logged, never the replaced diagnostic.
     tracing::warn!(trace_id=%trace,procedure,category="request_decode","request body could not be decoded");
     typed_error(Fault::invalid(SAFE_MESSAGE), &trace)
-        .into_http_response(&request_headers)
+        .into_http_response(request_headers)
+        .map(Body::new)
+}
+
+/// The transport reports a path that is not a registered method as a JSON 404 `unimplemented`
+/// error whose message interpolates the submitted path, after it has bounded and drained the body
+/// and applied the request deadline. Earlier rejections (timeout, size, unsupported protocol)
+/// have other statuses or codes and pass through. Only the error code is read, never the message.
+async fn sanitize_unmatched(response: Response) -> Response {
+    if response.status() != StatusCode::NOT_FOUND
+        || response.headers().contains_key("x-devbase-trace-id")
+        || !is_json(response.headers())
+    {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let bytes = to_bytes(body, MAX_INSPECTED_BODY).await.ok();
+    let unmatched = match &bytes {
+        Some(bytes) => is_unimplemented(bytes),
+        // The oversized or unreadable body has been consumed and cannot be forwarded.
+        None => true,
+    };
+    if !unmatched {
+        return Response::from_parts(parts, Body::from(bytes.unwrap_or_default()));
+    }
+    let trace = server_common::id();
+    // Neither the path nor the dependency message is logged.
+    tracing::info!(trace_id=%trace,category="unknown_procedure","procedure not found");
+    // The replacement is always a unary JSON error. The request headers are deliberately not
+    // consulted, so a streaming content type cannot select another response shape or status.
+    // The invalid-input fault supplies `ERROR_REASON_INVALID_INPUT`; the selector is the invalid
+    // input, while the Connect code and the HTTP status keep the routing semantics.
+    let mut fault = Fault::invalid(UNKNOWN_PROCEDURE_MESSAGE);
+    fault.code = connectrpc::ErrorCode::Unimplemented;
+    typed_error(fault, &trace)
+        .with_http_status(StatusCode::NOT_FOUND)
+        .into_http_response(&HeaderMap::new())
         .map(Body::new)
 }
 
@@ -99,6 +155,15 @@ fn is_decode_failure(body: &[u8]) -> bool {
     serde_json::from_slice::<Wire>(body).is_ok_and(|wire| {
         wire.code == "invalid_argument" && wire.message.starts_with(DECODE_FAILURE_PREFIX)
     })
+}
+
+/// True for a Connect error object with code `unimplemented`. The message is not read.
+fn is_unimplemented(body: &[u8]) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Wire<'a> {
+        code: &'a str,
+    }
+    serde_json::from_slice::<Wire>(body).is_ok_and(|wire| wire.code == "unimplemented")
 }
 
 #[cfg(test)]
