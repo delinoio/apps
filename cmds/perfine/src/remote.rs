@@ -166,13 +166,33 @@ impl App {
             .root()?
             .join(id.as_str())
             .join(format!("publication-{}.json", cid.as_str()));
+        let publication_lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(record_path.with_extension("lock"))?;
+        fs2::FileExt::try_lock_exclusive(&publication_lock)
+            .context("publication already active")?;
         let record = if record_path.exists() {
             let record: PublicationRecord = serde_json::from_slice(&fs::read(&record_path)?)?;
-            ensure!(
-                fingerprint(&(&record.binding, &record.draft))? == token,
-                "publication binding changed; retained approval cannot be reused"
-            );
-            record
+            if fingerprint(&(&record.binding, &record.draft))? == token {
+                record
+            } else {
+                ensure!(
+                    engine.approval(&id, &record.approval).is_ok_and(|a| a.state
+                        == PublicationState::Approved
+                        && a.dispatch_attempts == 0),
+                    "publication binding changed after dispatch; reconcile retained publication first"
+                );
+                let replacement = PublicationRecord {
+                    approval: ResourceId::generate(),
+                    binding: binding.clone(),
+                    draft: draft.clone(),
+                };
+                atomic(&record_path, &replacement)?;
+                replacement
+            }
         } else {
             let record = PublicationRecord {
                 approval: ResourceId::generate(),
@@ -293,8 +313,29 @@ impl App {
                     )),
                     "unexpected PR response; reconcile before retry"
                 );
-                Reconciliation::DraftFound {
-                    pull_request: Name::new(url)?,
+                // A successful create response alone does not establish the exact
+                // submitted source: refs can move while GitHub processes the request.
+                match gh(&[
+                    "pr",
+                    "view",
+                    &url,
+                    "--repo",
+                    &draft.target_repository,
+                    "--json",
+                    "isDraft,headRefOid,baseRefOid,title,body",
+                ]) {
+                    Ok(actual)
+                        if actual["isDraft"] == true
+                            && actual["headRefOid"] == c.head.as_str()
+                            && actual["baseRefOid"] == base
+                            && actual["title"] == draft.title
+                            && actual["body"] == draft.body =>
+                    {
+                        Reconciliation::DraftFound {
+                            pull_request: Name::new(url)?,
+                        }
+                    }
+                    _ => Reconciliation::Unknown,
                 }
             }
             _ => Reconciliation::Unknown,
@@ -315,15 +356,37 @@ impl App {
 
 // Connect JSON wire envelopes keep uint64 values as decimal strings. The caller's
 // protocol envelope is verified against local content hashes before network access.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ArtifactKind {
+    #[serde(rename = "ARTIFACT_KIND_ENGINE_EVIDENCE")]
+    EngineEvidence,
+    #[serde(rename = "ARTIFACT_KIND_MEASUREMENTS")]
+    Measurements,
+    #[serde(rename = "ARTIFACT_KIND_PROFILE_SUMMARY")]
+    ProfileSummary,
+    #[serde(rename = "ARTIFACT_KIND_CORRECTNESS_RESULTS")]
+    CorrectnessResults,
+    #[serde(rename = "ARTIFACT_KIND_RAW_PROFILE")]
+    RawProfile,
+    #[serde(rename = "ARTIFACT_KIND_RAW_TEST_LOG")]
+    RawTestLog,
+}
+#[derive(Clone, Copy, Serialize, Deserialize)]
+enum Completion {
+    #[serde(rename = "COMPLETION_STATE_INCOMPLETE")]
+    Incomplete,
+    #[serde(rename = "COMPLETION_STATE_COMPLETE")]
+    Complete,
+}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Artifact {
     name: String,
-    kind: String,
+    kind: ArtifactKind,
     media_type: String,
     size_bytes: String,
     sha256: Fingerprint,
-    completion: String,
+    completion: Completion,
     contains_source_snippets: bool,
     secrets_removed: bool,
     required_for_evaluation: bool,
@@ -337,12 +400,12 @@ struct Manifest {
     source_base_sha: CommitSha,
     source_head_sha: CommitSha,
     harness_sha: CommitSha,
-    environment: Value,
-    inputs: Vec<Value>,
-    policy: Value,
-    metrics: Vec<Value>,
+    environment: crate::wire::Environment,
+    inputs: Vec<crate::wire::Input>,
+    policy: crate::wire::Policy,
+    metrics: Vec<crate::wire::Metric>,
     artifacts: Vec<Artifact>,
-    completion: String,
+    completion: Completion,
     experiment_fingerprint_sha256: Fingerprint,
     engine_artifact_name: String,
     #[serde(rename = "manifestSha256")]
@@ -353,8 +416,47 @@ struct Manifest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Envelope {
-    specification: Value,
+    specification: crate::wire::Specification,
     manifest: Manifest,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EligibilityRequest<'a> {
+    request_id: &'a RequestId,
+    space_id: &'a str,
+    connection_id: &'a str,
+    manifest: &'a Manifest,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EligibilityResponse {
+    request_id: String,
+    #[serde(default)]
+    decisions: Vec<ArtifactDecision>,
+    eligible_for_complete_evaluation: bool,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtifactDecision {
+    artifact_name: String,
+    eligibility: Eligibility,
+    #[serde(default)]
+    reason: String,
+}
+#[derive(Serialize, Deserialize)]
+enum Eligibility {
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_ELIGIBLE")]
+    Eligible,
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_CONSENT_REQUIRED")]
+    ConsentRequired,
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_CONSENT_REVOKED")]
+    ConsentRevoked,
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_SECRET_REJECTED")]
+    SecretRejected,
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_SOURCE_REJECTED")]
+    SourceRejected,
+    #[serde(rename = "ARTIFACT_ELIGIBILITY_LIMIT_EXCEEDED")]
+    LimitExceeded,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -363,7 +465,7 @@ struct Begin<'a> {
     space_id: &'a str,
     connection_id: &'a str,
     experiment_id: &'a ResourceId,
-    specification: &'a Value,
+    specification: &'a crate::wire::Specification,
     origin: &'static str,
     manifest: &'a Manifest,
 }
@@ -413,7 +515,7 @@ struct Complete<'a> {
 struct Completed {
     request_id: String,
     upload: Upload,
-    evidence_completion: String,
+    evidence_completion: Completion,
 }
 fn secure_url(value: &str) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(value)?;
@@ -488,6 +590,14 @@ impl App {
                 && envelope.manifest.harness_sha == exp.config.config().conditions.harness,
             "upload source/harness mismatch"
         );
+        ensure!(
+            envelope.specification.fingerprint_sha256 == *exp.config.fingerprint()
+                && envelope.specification.base_sha == exp.config.config().incremental_base
+                && envelope.specification.initial_base_sha == exp.config.config().initial_base
+                && envelope.specification.harness_sha == exp.config.config().conditions.harness
+                && envelope.specification.workflow_sha == exp.config.config().conditions.workflow,
+            "prepared specification does not match local experiment"
+        );
         let store = ArtifactStore::new(self.root()?.join("artifacts"))?;
         for artifact in &envelope.manifest.artifacts {
             ensure!(
@@ -495,12 +605,12 @@ impl App {
                 "upload requires explicit secret screening"
             );
             ensure!(
-                !artifact.contains_source_snippets,
-                "raw source-bearing artifacts require a separately consented hosted upload; retain locally"
-            );
-            ensure!(
-                artifact.kind != "ARTIFACT_KIND_SOURCE" && artifact.kind != "ARTIFACT_KIND_DIFF",
-                "source/diff upload forbidden"
+                !artifact.contains_source_snippets
+                    || matches!(
+                        artifact.kind,
+                        ArtifactKind::RawProfile | ArtifactKind::RawTestLog
+                    ),
+                "only consented raw profiles/test logs may contain source snippets"
             );
             let bytes = store.get(&artifact.sha256)?;
             ensure!(
@@ -508,12 +618,44 @@ impl App {
                 "upload size mismatch"
             );
         }
+        ensure!(
+            envelope
+                .manifest
+                .artifacts
+                .iter()
+                .filter(|a| a.kind == ArtifactKind::EngineEvidence)
+                .count()
+                == 1
+                && envelope
+                    .manifest
+                    .artifacts
+                    .iter()
+                    .any(|a| a.kind == ArtifactKind::EngineEvidence
+                        && a.name == envelope.manifest.engine_artifact_name),
+            "exactly one declared engine artifact required"
+        );
         let key = std::env::var("DELCORE_API_KEY")
             .context("DELCORE_API_KEY required for explicit hosted upload")?;
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
+        let eligibility: EligibilityResponse = rpc(
+            &client,
+            endpoint,
+            &key,
+            "CheckUploadEligibility",
+            &EligibilityRequest {
+                request_id: req,
+                space_id: space,
+                connection_id: connection,
+                manifest: &envelope.manifest,
+            },
+        )?;
+        ensure!(
+            eligibility.request_id == req.as_str(),
+            "Connect eligibility request ID mismatch"
+        );
         let upload_request = Begin {
             request_id: req,
             space_id: space,
@@ -542,10 +684,16 @@ impl App {
                 ensure!(
                     matches!(
                         header.name.to_ascii_lowercase().as_str(),
-                        "content-type" | "content-md5" | "x-amz-checksum-sha256"
+                        "content-type" | "content-length" | "content-md5" | "x-amz-checksum-sha256"
                     ),
                     "unexpected storage header"
                 );
+                if header.name.eq_ignore_ascii_case("content-length") {
+                    ensure!(
+                        header.value.parse::<u64>()? == artifact.size_bytes.parse::<u64>()?,
+                        "storage content length mismatch"
+                    );
+                }
                 put = put.header(header.name, header.value);
             }
             ensure!(
@@ -597,6 +745,19 @@ impl App {
                 .join(format!("upload-{}.json", begun.upload.id.as_str())),
             &completed,
         )?;
-        Ok(serde_json::to_value(completed)?)
+        Ok(json!({"eligibility":eligibility,"completion":completed}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ArtifactKind, secure_url};
+    #[test]
+    fn upload_rejects_credential_urls_and_non_artifact_content() {
+        assert!(secure_url("http://example.com/upload").is_err());
+        assert!(secure_url("https://token@example.com/upload").is_err());
+        assert!(secure_url("https://example.com/upload").is_ok());
+        assert!(serde_json::from_str::<ArtifactKind>("\"ARTIFACT_KIND_SOURCE\"").is_err());
+        assert!(serde_json::from_str::<ArtifactKind>("\"ARTIFACT_KIND_UNSPECIFIED\"").is_err());
     }
 }

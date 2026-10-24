@@ -3,6 +3,7 @@ mod config;
 mod local;
 mod mcp;
 mod remote;
+mod wire;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use perfine_core::types::{RequestId, ResourceId, Version};
@@ -126,6 +127,18 @@ impl App {
     pub(crate) fn dispatch(&self, invocation: Invocation) -> Result<Value> {
         let Version = invocation.schema_version;
         let request = &invocation.request_id;
+        if matches!(
+            invocation.command,
+            Command::Init { .. }
+                | Command::Measure { .. }
+                | Command::Optimize { .. }
+                | Command::Resume { .. }
+                | Command::Cancel { .. }
+                | Command::Upload { .. }
+                | Command::Publish { .. }
+        ) {
+            self.claim_request(request, &invocation.command)?;
+        }
         tracing::info!(request_id = request.as_str(), "capability invoked");
         let result = match invocation.command {
             Command::Init {
@@ -212,7 +225,58 @@ fn main() {
         if !cli.json && !cli.no_color && std::env::var_os("NO_COLOR").is_none() {
             writeln!(stdout, "\x1b[36mPerfine\x1b[0m")?;
         }
-        writeln!(stdout, "{}", serde_json::to_string_pretty(&value)?)?;
+        if !cli.json && value["result"]["experiment"].is_object() {
+            let experiment = &value["result"]["experiment"];
+            writeln!(stdout, "Request: {request}")?;
+            writeln!(
+                stdout,
+                "Experiment: {}",
+                experiment["id"].as_str().unwrap_or("unknown")
+            )?;
+            writeln!(
+                stdout,
+                "Execution: {}",
+                experiment["state"].as_str().unwrap_or("unknown")
+            )?;
+            writeln!(
+                stdout,
+                "Base: {}",
+                experiment["config"]["config"]["incremental_base"]
+                    .as_str()
+                    .unwrap_or("unknown")
+            )?;
+            if let Some(candidates) = experiment["candidates"].as_object() {
+                if candidates.is_empty() {
+                    writeln!(stdout, "Performance: not_evaluated (no candidate)")?;
+                }
+                for (id, candidate) in candidates {
+                    writeln!(
+                        stdout,
+                        "Candidate {id}: execution={}, verdict={}",
+                        candidate["state"].as_str().unwrap_or("unknown"),
+                        candidate["evaluation"]["verdict"]
+                            .as_str()
+                            .unwrap_or("not_evaluated")
+                    )?;
+                    if !candidate["evaluation"].is_null() {
+                        writeln!(
+                            stdout,
+                            "{}",
+                            serde_json::to_string_pretty(&candidate["evaluation"])?
+                        )?;
+                    }
+                }
+            }
+            if let Some(failure) = value["result"]["evidence"]["failure"].as_str() {
+                writeln!(stdout, "Retained failure: {failure}")?;
+            }
+            writeln!(
+                stdout,
+                "Local evidence: .perfine/; request deduplication: 30 days"
+            )?;
+        } else {
+            writeln!(stdout, "{}", serde_json::to_string_pretty(&value)?)?;
+        }
         Ok(())
     })();
     if let Err(error) = result {

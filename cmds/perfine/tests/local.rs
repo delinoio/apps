@@ -71,9 +71,20 @@ fn setup(mode: &str) -> (tempfile::TempDir, Value) {
 #[test]
 #[ignore = "requires provisioned Linux x86_64 measurement image and fixture-only agent image/network"]
 fn real_fixture_pass_regression_no_candidate_dirty_resume_and_fingerprint() {
-    for mode in ["pass", "regression", "none"] {
+    for mode in ["pass", "regression", "none", "inconclusive"] {
         let (temp, mut cfg) = setup(mode);
         let repo = temp.path().join("repo");
+        if mode == "inconclusive" {
+            cfg["experiment"]["policy"]["settings"]["near_threshold"] = json!(0.99);
+            cfg["adapter"]["workloads"]["bulk"]["command"] = command(
+                "/bin/sh",
+                &[
+                    "-c",
+                    "n=1024; if grep -Fq 'counts[256]' kernel.c; then if test -e /build/repeated; then n=4096; fi; touch /build/repeated; fi; exec valgrind --tool=callgrind --callgrind-out-file=/build/callgrind.out /build/workload \"$n\"",
+                ],
+            );
+            fs::write(repo.join("perfine.yaml"), serde_json::to_vec(&cfg).unwrap()).unwrap();
+        }
         fs::write(repo.join("kernel.c"), "dirty user content\n").unwrap();
         let id = ResourceId::generate();
         let args = [
@@ -104,7 +115,23 @@ fn real_fixture_pass_regression_no_candidate_dirty_resume_and_fingerprint() {
             assert_eq!(candidates.len(), 1);
             assert_eq!(
                 candidates.values().next().unwrap()["evaluation"]["verdict"],
-                if mode == "pass" { "pass" } else { "regression" }
+                match mode {
+                    "pass" => "pass",
+                    "inconclusive" => "inconclusive",
+                    _ => "regression",
+                },
+                "{report}"
+            );
+        }
+        #[cfg(unix)]
+        if mode == "pass" {
+            let (candidate, record) = candidates.iter().next().unwrap();
+            publication_reconciles_lost_response(
+                &repo,
+                id.as_str(),
+                candidate,
+                cfg["experiment"]["incremental_base"].as_str().unwrap(),
+                record["head"].as_str().unwrap(),
             );
         }
         let duplicate = run(&repo, &args);
@@ -121,4 +148,138 @@ fn real_fixture_pass_regression_no_candidate_dirty_resume_and_fingerprint() {
         assert!(!mismatch.status.success());
         assert!(String::from_utf8_lossy(&mismatch.stdout).contains("fingerprint"));
     }
+}
+
+#[test]
+#[ignore = "requires provisioned measurement image; exercises active container cancellation"]
+fn immediate_cancel_retains_evidence_and_resume_does_not_restart() {
+    use std::{
+        process::Stdio,
+        thread,
+        time::{Duration, Instant},
+    };
+    let (temp, mut config) = setup("none");
+    let repo = temp.path().join("repo");
+    config["adapter"]["build"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, command("sleep", &["30"]));
+    fs::write(
+        repo.join("perfine.yaml"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    let id = ResourceId::generate();
+    let log = tempfile::tempfile().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_perfine"))
+        .arg("--repository")
+        .arg(&repo)
+        .args(["--json", "optimize", "--experiment", id.as_str()])
+        .stdout(Stdio::from(log.try_clone().unwrap()))
+        .stderr(Stdio::from(log))
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    while !repo
+        .join(".perfine")
+        .join(id.as_str())
+        .join("journal.json")
+        .exists()
+    {
+        assert!(started.elapsed() < Duration::from_secs(90));
+        assert!(child.try_wait().unwrap().is_none());
+        thread::sleep(Duration::from_millis(100));
+    }
+    let cancelled = run(
+        &repo,
+        &["cancel", "--experiment", id.as_str(), "--immediate"],
+    );
+    assert!(cancelled.status.success());
+    while child.try_wait().unwrap().is_none() {
+        assert!(started.elapsed() < Duration::from_secs(105));
+        thread::sleep(Duration::from_millis(100));
+    }
+    let resumed = run(&repo, &["resume", "--experiment", id.as_str()]);
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stdout)
+    );
+    let value: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(value["result"]["experiment"]["state"], "cancelled");
+    assert!(repo.join(".perfine/artifacts").is_dir());
+}
+
+#[cfg(unix)]
+fn publication_reconciles_lost_response(
+    repo: &Path,
+    experiment: &str,
+    candidate: &str,
+    base: &str,
+    head: &str,
+) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = repo.parent().unwrap().join("mock-bin");
+    fs::create_dir(&dir).unwrap();
+    let draft = json!({"schema_version":1,"target_repository":"fixture/upstream","base_ref":"main","head_repository":"fixture/fork","head_ref":"candidate","title":"perf: improve pair counting","body":"Exact measured candidate; fixture-only publication."});
+    let path = repo.parent().unwrap().join("draft.json");
+    fs::write(&path, serde_json::to_vec(&draft).unwrap()).unwrap();
+    let path_text = path.to_str().unwrap();
+    let args = [
+        "publish",
+        "--experiment",
+        experiment,
+        "--candidate",
+        candidate,
+        "--draft",
+        path_text,
+    ];
+    let preview = run(repo, &args);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stdout)
+    );
+    let preview: Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let token = preview["result"]["approval_sha256"].as_str().unwrap();
+    let pulls = json!([{"head":{"sha":head},"base":{"sha":base},"title":draft["title"],"body":draft["body"],"draft":true,"html_url":"https://github.com/fixture/upstream/pull/1"}]);
+    let script = format!(
+        "#!/bin/sh\ncase \"$1 $2\" in\n'api user') printf '%s' '{{\"login\":\"fixture\"}}';;\n'api repos/fixture/fork') printf '%s' '{{\"permissions\":{{\"push\":true}}}}';;\n'api repos/fixture/upstream/commits/main') printf '%s' '{{\"sha\":\"{base}\"}}';;\n'api repos/fixture/fork/commits/candidate') printf '%s' '{{\"sha\":\"{head}\"}}';;\n'api repos/fixture/upstream/pulls?'*) printf '%s' '{pulls}';;\n'pr create') printf 'attempt\\n' >> \"{}\"; exit 1;;\n*) exit 1;;\nesac\n",
+        dir.join("attempts").display()
+    );
+    let executable = dir.join("gh");
+    fs::write(&executable, script).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let original = std::env::var("PATH").unwrap();
+    let invoke = || {
+        Command::new(env!("CARGO_BIN_EXE_perfine"))
+            .env("PATH", format!("{}:{original}", dir.display()))
+            .arg("--repository")
+            .arg(repo)
+            .arg("--json")
+            .args(args)
+            .args(["--approve", token])
+            .output()
+            .unwrap()
+    };
+    let uncertain = invoke();
+    assert!(
+        uncertain.status.success(),
+        "{}",
+        String::from_utf8_lossy(&uncertain.stdout)
+    );
+    let uncertain: Value = serde_json::from_slice(&uncertain.stdout).unwrap();
+    assert_eq!(uncertain["result"]["state"], "uncertain");
+    let recovered = invoke();
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stdout)
+    );
+    let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(recovered["result"]["state"], "published");
+    assert_eq!(
+        fs::read_to_string(dir.join("attempts")).unwrap(),
+        "attempt\n"
+    );
 }

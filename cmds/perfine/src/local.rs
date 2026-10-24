@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::{App, config::Settings};
+use crate::{App, Command as Capability, config::Settings};
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
 use perfine_core::{
@@ -82,6 +82,25 @@ struct Journal {
     created_request: RequestId,
     runs: BTreeMap<String, RunRecord>,
     failure: Option<String>,
+    #[serde(default)]
+    attempts: BTreeMap<Fingerprint, Attempt>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Attempt {
+    candidate: ResourceId,
+    workspace: Workspace,
+    deadline: u64,
+}
+#[derive(Serialize, Deserialize)]
+struct RequestClaim {
+    created_at: u64,
+    payload: Fingerprint,
+}
+#[derive(Serialize, Deserialize)]
+struct CancelReceipt {
+    created_at: u64,
+    immediate: bool,
+    response: Value,
 }
 struct Signal {
     directory: PathBuf,
@@ -98,7 +117,56 @@ impl CancellationSignal for Signal {
     }
 }
 impl App {
+    pub(crate) fn claim_request(&self, request: &RequestId, command: &Capability) -> Result<()> {
+        let directory = self.root()?.join("requests");
+        fs::create_dir_all(&directory)?;
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("requests.lock"))?;
+        lock.lock_exclusive()?;
+        let payload_file = match command {
+            Capability::Publish { draft, .. } => Some(draft.as_path()),
+            Capability::Upload { envelope, .. } => Some(envelope.as_path()),
+            Capability::Measure { .. }
+            | Capability::Optimize { .. }
+            | Capability::Resume { .. } => Some(self.config.as_path()),
+            _ => None,
+        };
+        let file_hash = payload_file
+            .map(|path| fs::read(path).map(|bytes| digest(&bytes)))
+            .transpose()?;
+        let payload = fingerprint(&(command, file_hash))?;
+        let path = directory.join(format!(
+            "{}.json",
+            digest(request.as_str().as_bytes()).as_str()
+        ));
+        if path.exists() {
+            let previous: RequestClaim = serde_json::from_slice(&fs::read(&path)?)?;
+            if now().saturating_sub(previous.created_at) < perfine_core::lifecycle::DEDUP_SECONDS {
+                ensure!(
+                    previous.payload == payload,
+                    "request ID reused for different capability content"
+                );
+                return Ok(());
+            }
+        }
+        atomic(
+            &path,
+            &RequestClaim {
+                created_at: now(),
+                payload,
+            },
+        )?;
+        Ok(())
+    }
     pub(crate) fn root(&self) -> Result<PathBuf> {
+        ensure!(
+            git(&self.repository, &["ls-files", "--", ".perfine"])?.is_empty(),
+            ".perfine must not contain tracked files"
+        );
         // Use Git's local exclude file; never stage or rewrite the user's .gitignore.
         let exclude = git(
             &self.repository,
@@ -143,21 +211,83 @@ impl App {
             Value::Null
         };
         Ok(
-            json!({"experiment":experiment,"evidence":evidence,"verdict": "not_evaluated", "verdict_note":"Candidate evaluations carry their own verdict; experiment completion is not a performance pass.","deduplication_days":30}),
+            json!({"experiment":experiment,"evidence":evidence,"verdict": "not_evaluated", "verdict_note":"Candidate evaluations carry their own verdict; experiment completion is not a performance pass.","deduplication_days":30,"cancellation":{"graceful_requested":self.directory(&id)?.join("graceful").exists(),"immediate_requested":self.directory(&id)?.join("immediate").exists()}}),
         )
     }
     pub(crate) fn cancel(&self, id: &str, req: &RequestId, immediate: bool) -> Result<Value> {
         let id = ResourceId::new(id)?;
+        let directory = self.directory(&id)?;
+        let cancel_lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("cancel.lock"))?;
+        cancel_lock.lock_exclusive()?;
+        let receipt_path = directory.join(format!(
+            "cancel-{}.json",
+            digest(req.as_str().as_bytes()).as_str()
+        ));
         self.engine()?.status(&id)?;
-        // Cross-process signal is observed inside each adapter's process loop.
-        let receipt = self.engine()?.stop(req, &id, immediate, now())?;
+        if receipt_path.exists() {
+            let mut receipt: CancelReceipt = serde_json::from_slice(&fs::read(&receipt_path)?)?;
+            if now().saturating_sub(receipt.created_at) < perfine_core::lifecycle::DEDUP_SECONDS {
+                ensure!(
+                    receipt.immediate == immediate,
+                    "request ID reused for different cancellation content"
+                );
+                receipt.response["replayed"] = json!(true);
+                return Ok(receipt.response);
+            }
+        }
+        let status = self.engine()?.status(&id)?;
+        if matches!(
+            status.state,
+            ExecutionState::Completed | ExecutionState::Cancelled | ExecutionState::Failed
+        ) {
+            return Ok(serde_json::to_value(self.engine()?.stop(
+                req,
+                &id,
+                immediate,
+                now(),
+            )?)?);
+        }
+        // A graceful request must not invalidate an agent attempt already admitted
+        // by the runner's durable journal. The runner stops after that attempt.
+        let runner = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("runner.lock"))?;
+        let active = runner.try_lock_exclusive().is_err();
         atomic(
-            &self
-                .directory(&id)?
-                .join(if immediate { "immediate" } else { "graceful" }),
+            &directory.join(if immediate { "immediate" } else { "graceful" }),
             &json!({"request_id":req}),
         )?;
-        Ok(serde_json::to_value(receipt)?)
+        if active && !immediate {
+            let response = json!({"experiment":id,"request_id":req,"stop_requested":true,"active_work_allowed_to_finish":true,"replayed":false});
+            atomic(
+                &receipt_path,
+                &CancelReceipt {
+                    created_at: now(),
+                    immediate,
+                    response: response.clone(),
+                },
+            )?;
+            return Ok(response);
+        }
+        let receipt = self.engine()?.stop(req, &id, immediate, now())?;
+        let response = serde_json::to_value(receipt)?;
+        atomic(
+            &receipt_path,
+            &CancelReceipt {
+                created_at: now(),
+                immediate,
+                response: response.clone(),
+            },
+        )?;
+        Ok(response)
     }
     pub(crate) fn doctor(&self) -> Result<Value> {
         let cfg = Settings::read(&self.config)?;
@@ -234,6 +364,30 @@ impl App {
                 );
                 return self.report(id.as_str());
             }
+        }
+        if resume && dir.join("graceful").exists() {
+            let status = engine.status(&id)?;
+            for candidate in status
+                .candidates
+                .values()
+                .filter(|c| c.state == ExecutionState::Running)
+            {
+                engine.fail_candidate(
+                    &request(),
+                    &id,
+                    &candidate.id,
+                    FailureClass::Permanent,
+                    now(),
+                )?;
+            }
+            let status = engine.status(&id)?;
+            if matches!(
+                status.state,
+                ExecutionState::Queued | ExecutionState::Running
+            ) {
+                engine.stop(&request(), &id, false, now())?;
+            }
+            return self.report(id.as_str());
         }
         if resume {
             let status = engine.status(&id)?;
@@ -333,6 +487,7 @@ impl App {
                 created_request: req.clone(),
                 runs: BTreeMap::new(),
                 failure: None,
+                attempts: BTreeMap::new(),
             };
             atomic(&journal_path, &j)?;
             j
@@ -389,12 +544,60 @@ impl App {
                 &journal_path,
             )?;
             let baseline = validate_baseline(&frozen, &a, &b)?;
+            let initial = if cfg.experiment.initial_base == cfg.experiment.incremental_base {
+                None
+            } else {
+                let mut initial_settings = cfg.clone();
+                initial_settings.experiment.incremental_base = cfg.experiment.initial_base.clone();
+                let initial_request = prepare(&env, &initial_settings, "initial-base")?;
+                let first = measure_step(
+                    &env,
+                    &cfg,
+                    &frozen,
+                    &id,
+                    None,
+                    &initial_request,
+                    "initial-a",
+                    deadline,
+                    &signal,
+                    &engine,
+                    &mut journal,
+                    &journal_path,
+                )?;
+                let second = measure_step(
+                    &env,
+                    &cfg,
+                    &frozen,
+                    &id,
+                    None,
+                    &initial_request,
+                    "initial-b",
+                    deadline,
+                    &signal,
+                    &engine,
+                    &mut journal,
+                    &journal_path,
+                )?;
+                let validation = validate_baseline(&frozen, &first, &second)?;
+                Some((initial_request, first, validation))
+            };
             if !journal.optimize {
                 engine.stop(&request(), &id, false, now())?;
                 return Ok(());
             }
             if signal.state() != Cancellation::Continue || now() >= deadline {
-                engine.tick(&request(), &id, now())?;
+                let status = engine.status(&id)?;
+                if matches!(
+                    status.state,
+                    ExecutionState::Queued | ExecutionState::Running
+                ) {
+                    engine.stop(
+                        &request(),
+                        &id,
+                        signal.state() == Cancellation::Immediate,
+                        now(),
+                    )?;
+                }
                 return Ok(());
             }
             let profile_adapter = NativeProfileAdapter {
@@ -430,13 +633,28 @@ impl App {
                 if current.stop_requested
                     || signal.state() != Cancellation::Continue
                     || now() >= deadline
-                    || current.candidates.len() >= cfg.experiment.limits.candidate_count as usize
+                    || journal.attempts.len() >= cfg.experiment.limits.candidate_count as usize
                 {
                     break;
                 }
+                let hypothesis_hash = fingerprint(&hypothesis)?;
+                if journal.attempts.contains_key(&hypothesis_hash) {
+                    continue;
+                }
+                let started_at = now();
                 let candidate = ResourceId::generate();
                 let candidate_request = prepare(&env, &cfg, candidate.as_str())?;
-                let candidate_deadline = now() + cfg.experiment.limits.candidate_duration_seconds;
+                let candidate_deadline =
+                    started_at + cfg.experiment.limits.candidate_duration_seconds;
+                journal.attempts.insert(
+                    hypothesis_hash,
+                    Attempt {
+                        candidate: candidate.clone(),
+                        workspace: candidate_request.workspace.clone(),
+                        deadline: candidate_deadline,
+                    },
+                );
+                atomic(&journal_path, &journal)?;
                 let ctx = ExecutionContext {
                     workspace: &candidate_request.workspace,
                     deadline_unix_seconds: candidate_deadline,
@@ -460,7 +678,9 @@ impl App {
                     &a,
                     &baseline,
                     &hypothesis.source_paths,
-                    now(),
+                    // Admission time is the durable agent-attempt start, not the time
+                    // edits finish. This preserves the start deadline and total timeout.
+                    started_at,
                 )?;
                 let label = format!("candidate-{}", candidate.as_str());
                 let candidate_result = (|| -> Result<()> {
@@ -484,7 +704,13 @@ impl App {
                             head: &h,
                             baseline: &baseline,
                         },
-                        cumulative: None,
+                        cumulative: initial.as_ref().map(|(_, initial_base, validation)| {
+                            Comparison {
+                                base: initial_base,
+                                head: &h,
+                                baseline: validation,
+                            }
+                        }),
                     };
                     let review = ReviewEvidence::default();
                     let evaluation = policy::evaluate(&frozen, &round, None, &review)?;
@@ -517,17 +743,41 @@ impl App {
                             &mut journal,
                             &journal_path,
                         )?;
-                        Some((rb, rh))
+                        let initial_repeat = if let Some((initial_request, _, _)) = &initial {
+                            Some(measure_step(
+                                &env,
+                                &cfg,
+                                &frozen,
+                                &id,
+                                None,
+                                initial_request,
+                                &format!("{label}-repeat-initial"),
+                                candidate_deadline,
+                                &signal,
+                                &engine,
+                                &mut journal,
+                                &journal_path,
+                            )?)
+                        } else {
+                            None
+                        };
+                        Some((rb, rh, initial_repeat))
                     } else {
                         None
                     };
-                    let repeat = repeated.as_ref().map(|(rb, rh)| Round {
+                    let repeat = repeated.as_ref().map(|(rb, rh, initial_repeat)| Round {
                         incremental: Comparison {
                             base: rb,
                             head: rh,
                             baseline: &baseline,
                         },
-                        cumulative: None,
+                        cumulative: initial_repeat.as_ref().zip(initial.as_ref()).map(
+                            |(base, (_, _, validation))| Comparison {
+                                base,
+                                head: rh,
+                                baseline: validation,
+                            },
+                        ),
                     });
                     engine.finish_candidate(
                         &request(),
@@ -626,18 +876,49 @@ impl App {
                 action_file["type"] == "file",
                 "verified commit has no distributed action.yml"
             );
-            let mut indented = String::new();
-            for line in contents.lines() {
-                indented.push_str("            ");
-                indented.push_str(line);
-                indented.push('\n');
+            let distribution = crate::remote::gh(&[
+                "api",
+                &format!(
+                    "repos/delinoio/perfine-action/git/trees/{}?recursive=1",
+                    sha.as_str()
+                ),
+            ])?;
+            let tree = distribution["tree"]
+                .as_array()
+                .context("distribution tree")?;
+            ensure!(
+                distribution["truncated"] != true,
+                "incomplete distribution tree"
+            );
+            for required in [
+                "action.cjs",
+                "runtime/perfine",
+                "runtime/SHA256SUMS",
+                "provenance.json",
+            ] {
+                ensure!(
+                    tree.iter()
+                        .any(|entry| entry["path"] == required && entry["type"] == "blob"),
+                    "missing distributed runtime artifact: {required}"
+                );
             }
+            let settings = Settings::parse(contents.as_bytes())
+                .context("GitHub generation requires a complete --template configuration")?;
+            ensure!(
+                settings.agent.is_none(),
+                "cloud optimization is unavailable; omit agent configuration and use local optimize"
+            );
+            ensure!(
+                settings.docker.image.contains("@sha256:"),
+                "GitHub needs a pullable digest-pinned image with provisioned workload dependencies"
+            );
             (
                 self.repository.join(".github/workflows/perfine.yml"),
-                format!(
-                    "name: Perfine\non:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  measure:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: delinoio/perfine-action@{}\n        with:\n          command: measure\n          config: |\n{}",
-                    sha.as_str(),
-                    indented
+                workflow(
+                    &contents,
+                    &sha,
+                    &settings.experiment.incremental_base,
+                    &settings.docker.image,
                 ),
             )
         } else {
@@ -743,4 +1024,45 @@ fn measure_step(
     atomic(path, journal)?;
     engine.record_step(&request(), id, frozen, Name::new(label)?, artifact, now())?;
     Ok(run)
+}
+
+fn workflow(config: &str, action: &CommitSha, base: &CommitSha, image: &str) -> String {
+    let mut inline = String::new();
+    for line in config.lines() {
+        inline.push_str("            ");
+        inline.push_str(line);
+        inline.push('\n');
+    }
+    let image = serde_json::to_string(image).expect("string JSON serialization");
+    format!(
+        "name: Perfine\non:\n  workflow_dispatch:\n    inputs:\n      experiment:\n        description: Explicit UUID v7 experiment identifier\n        required: true\n        type: string\npermissions:\n  contents: read\njobs:\n  measure:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803\n        with:\n          ref: {}\n          fetch-depth: 0\n          persist-credentials: false\n      - name: Provision immutable workload toolchain and dependencies\n        env:\n          PERFINE_IMAGE: {image}\n        run: docker pull -- \"$PERFINE_IMAGE\"\n      - uses: delinoio/perfine-action@{}\n        with:\n          command: measure\n          experiment: ${{{{ inputs.experiment }}}}\n          config: |\n{inline}",
+        base.as_str(),
+        action.as_str()
+    )
+}
+#[cfg(test)]
+mod tests {
+    use super::workflow;
+    use perfine_core::types::CommitSha;
+    #[test]
+    fn manual_workflow_matches_distribution_inputs_and_preserves_inline_config() {
+        let sha = CommitSha::new("a".repeat(40)).unwrap();
+        let contents = "schema_version: 1\nagent: null\n";
+        let text = workflow(contents, &sha, &sha, "registry.example/tools@sha256:1234");
+        let value: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+        assert_eq!(
+            value["jobs"]["measure"]["steps"][0]["with"]["persist-credentials"],
+            false
+        );
+        let inputs = &value["jobs"]["measure"]["steps"][2]["with"];
+        assert_eq!(inputs["command"], "measure");
+        assert_eq!(inputs["experiment"], "${{ inputs.experiment }}");
+        assert_eq!(inputs["config"], contents);
+        assert!(value["on"]["push"].is_null());
+        assert!(value["on"]["pull_request"].is_null());
+        assert_eq!(
+            value["on"]["workflow_dispatch"]["inputs"]["experiment"]["required"],
+            true
+        );
+    }
 }

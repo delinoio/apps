@@ -54,17 +54,16 @@ pub struct Settings {
 }
 impl Settings {
     pub(crate) fn read(path: &Path) -> Result<Self> {
-        let value: Self = serde_yaml::from_slice(&fs::read(path)?)?;
+        Self::parse(&fs::read(path)?)
+    }
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self> {
+        let value: Self = serde_yaml::from_slice(bytes)?;
         value.experiment.validate()?;
         value.adapter.validate()?;
         value.docker.validate()?;
         ensure!(
             value.execution_root.is_absolute(),
             "execution_root must be absolute"
-        );
-        ensure!(
-            value.experiment.initial_base == value.experiment.incremental_base,
-            "independent local experiments require identical initial/incremental bases; dependent experiments require cumulative evidence"
         );
         Ok(value)
     }
