@@ -270,6 +270,15 @@ impl Config {
             l.tenant_burst as f64 >= l.tenant_rate,
             "burst must not be smaller than the sustained tenant rate"
         );
+        // The limiter converts `1 / rate` into a `Duration` for `Retry-After` while it holds
+        // its bucket lock; an unrepresentable wait would panic and poison that lock for every
+        // tenant. Reject such rates here without echoing the configured value.
+        ensure!(
+            l.tenant_rate > 0.0
+                && l.tenant_rate.is_finite()
+                && Duration::try_from_secs_f64(1.0 / l.tenant_rate).is_ok(),
+            "DELITOOLS_TENANT_RATE_PER_SECOND is too small for a representable retry wait"
+        );
         ensure!(
             l.tenant_burst >= 1 && l.tenant_concurrency >= 1,
             "tenant burst and concurrency must be at least 1"
@@ -352,7 +361,15 @@ pub fn parse_duration(key: &str, value: &str) -> Result<Duration> {
     if !seconds.is_finite() || seconds <= 0.0 {
         bail!("{key} must be positive");
     }
-    Duration::try_from_secs_f64(seconds).with_context(|| format!("{key} is out of range"))
+    let parsed =
+        Duration::try_from_secs_f64(seconds).with_context(|| format!("{key} is out of range"))?;
+    // A positive input below 0.5ns passes the check above but rounds to Duration::ZERO. Consumers
+    // such as tokio::time::interval panic on a zero period, so reject it at startup. The error
+    // names the setting only and never prints its value.
+    if parsed.is_zero() {
+        bail!("{key} must be at least 1ns after conversion to nanosecond precision");
+    }
+    Ok(parsed)
 }
 
 #[cfg(test)]
@@ -500,6 +517,65 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn unrepresentable_retry_wait_rates_fail_loading_and_validation() {
+        let dir = tempdir();
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_BURST".into(), "1".into());
+        env.insert("DELITOOLS_TENANT_CONCURRENCY".into(), "1".into());
+        env.insert(
+            "DELITOOLS_TENANT_RATE_PER_SECOND".into(),
+            "0.00000000000000000001".into(),
+        );
+        let message = format!("{:#}", load(&env).unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("0.00000000000000000001"), "{message}");
+
+        let mut config = load(&base_env(&dir)).unwrap();
+        config.limits.tenant_rate = 1e-20;
+        let message = format!("{:#}", config.validate().unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("e-20"), "{message}");
+
+        config.limits.tenant_rate = f64::from_bits(1);
+        assert!(config.validate().is_err(), "smallest subnormal");
+    }
+
+    #[test]
+    fn retry_wait_boundary_follows_the_checked_duration_conversion() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        let boundary = 2f64.powi(-64);
+        let predecessor = f64::from_bits(boundary.to_bits() - 1);
+        let successor = f64::from_bits(boundary.to_bits() + 1);
+        for rate in [predecessor, boundary, successor] {
+            config.limits.tenant_rate = rate;
+            let representable = Duration::try_from_secs_f64(1.0 / rate).is_ok();
+            assert_eq!(config.validate().is_ok(), representable, "{rate:e}");
+        }
+        config.limits.tenant_rate = predecessor;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = boundary;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = successor;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn supported_tenant_rates_are_accepted() {
+        let dir = tempdir();
+        assert!(load(&base_env(&dir)).is_ok());
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_PER_SECOND".into(), "0.001".into());
+        assert_eq!(load(&env).unwrap().limits.tenant_rate, 0.001);
+    }
+
+    #[test]
     fn burst_below_rate_is_rejected() {
         let dir = tempdir();
         let mut env = base_env(&dir);
@@ -560,6 +636,64 @@ pub(crate) mod tests {
         assert!(parse_duration("K", "10").is_err());
         assert!(parse_duration("K", "5x").is_err());
         assert!(parse_duration("K", "0s").is_err());
+    }
+
+    #[test]
+    fn durations_that_round_to_zero_are_rejected_naming_the_key() {
+        for value in ["0.0000000001s", "0.0000001ms", "0.0000000004s"] {
+            let error = parse_duration("DELITOOLS_OUTBOX_INTERVAL", value).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("DELITOOLS_OUTBOX_INTERVAL"), "{value}");
+            assert!(!message.contains(value), "{value}");
+        }
+        assert!(parse_duration("K", "0s").is_err());
+        assert!(parse_duration("K", "5x").is_err());
+        assert!(parse_duration("K", "99999999999999999999999s").is_err());
+    }
+
+    #[test]
+    fn nonzero_nanosecond_durations_keep_their_values() {
+        assert_eq!(
+            parse_duration("K", "0.000000001s").unwrap(),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            parse_duration("K", "0.0000000006s").unwrap(),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            parse_duration("K", "250ms").unwrap(),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            parse_duration("K", "1m30s").unwrap(),
+            Duration::from_secs(90)
+        );
+    }
+
+    #[test]
+    fn zero_rounding_durations_fail_loading_naming_the_setting() {
+        let dir = tempdir();
+        for key in ["DELITOOLS_OUTBOX_INTERVAL", "DELITOOLS_RETRY_BASE_DELAY"] {
+            for value in ["0.0000000001s", "0.0000001ms"] {
+                let mut env = base_env(&dir);
+                env.insert(key.into(), value.into());
+                let error = load(&env).unwrap_err();
+                let message = format!("{error:#}");
+                assert!(message.contains(key), "{key}={value}: {message}");
+                assert!(!message.contains(value), "{key}={value}: {message}");
+            }
+        }
+    }
+
+    #[test]
+    fn outbox_interval_defaults_to_five_seconds_and_accepts_one_nanosecond() {
+        let dir = tempdir();
+        let config = load(&base_env(&dir)).unwrap();
+        assert_eq!(config.outbox.interval, Duration::from_secs(5));
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_OUTBOX_INTERVAL".into(), "0.000000001s".into());
+        assert_eq!(load(&env).unwrap().outbox.interval, Duration::from_nanos(1));
     }
 
     #[test]

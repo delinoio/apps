@@ -31,7 +31,7 @@ pub fn parse_key(raw: &str) -> Result<(uuid::Uuid, String)> {
         return Err(Fault::unauthenticated());
     }
     let id = uuid::Uuid::parse_str(&rest[..32]).map_err(|_| Fault::unauthenticated())?;
-    if id.get_version_num() != 7
+    if !server_common::is_uuid_v7(&id)
         || URL_SAFE_NO_PAD
             .decode(&rest[33..])
             .map_or(true, |b| b.len() != 32)
@@ -236,5 +236,50 @@ impl Server {
             key: None,
             routing_conflict: false,
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use connectrpc::ErrorCode;
+
+    /// A syntactically valid compact key whose ID is version 7 with fourth-group leading nibble
+    /// `n`; only 8 to b carry the RFC 4122 variant.
+    fn key_with_variant(n: u8) -> String {
+        format!(
+            "dbk_0190000000007000{n:x}000000000000001_{}",
+            URL_SAFE_NO_PAD.encode([7u8; 32])
+        )
+    }
+
+    #[test]
+    fn parse_key_accepts_only_the_rfc_variant_for_version_7() {
+        for n in 0..16u8 {
+            let raw = key_with_variant(n);
+            match parse_key(&raw) {
+                Ok((id, secret)) => {
+                    assert!((8..12).contains(&n), "{n:x}");
+                    assert_eq!(id.simple().to_string(), raw[4..36]);
+                    assert_eq!(secret, raw[37..]);
+                }
+                Err(e) => {
+                    assert!(!(8..12).contains(&n), "{n:x}");
+                    assert_eq!(e.code, ErrorCode::Unauthenticated);
+                    assert_eq!(e.message, "authentication failed");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parse_key_accepts_issued_ids_and_keeps_syntax_controls() {
+        let secret = URL_SAFE_NO_PAD.encode([9u8; 32]);
+        let id = uuid::Uuid::now_v7();
+        let (parsed, _) = parse_key(&format!("dbk_{}_{secret}", id.simple())).expect("issued key");
+        assert_eq!(parsed, id);
+        // Version 4 and a short secret stay unauthenticated.
+        let v4 = uuid::Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0001);
+        assert!(parse_key(&format!("dbk_{}_{secret}", v4.simple())).is_err());
+        assert!(parse_key(&format!("dbk_{}_{}", id.simple(), &secret[1..])).is_err());
     }
 }
