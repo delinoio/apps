@@ -160,7 +160,13 @@ impl Worker {
     }
     pub async fn apply_transaction(&self, t: Transaction, at: DateTime<Utc>) -> Result<()> {
         let mut tx = postgres::begin(&self.pool).await?;
-        self.apply_transaction_in(&mut tx, t, at).await?;
+        match self.apply_transaction_in(&mut tx, t, at).await {
+            Ok(()) => {}
+            // Provider reconciliation has no webhook to retry. Dropping the transaction rolls the
+            // deferred renewal back; the webhook path that delivers the renewal retries it.
+            Err(e) if super::renewal::is_deferred(&e) => return Ok(()),
+            Err(e) => return Err(e),
+        }
         tx.commit().await?;
         Ok(())
     }

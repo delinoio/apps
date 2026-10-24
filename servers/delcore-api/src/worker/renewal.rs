@@ -3,6 +3,7 @@ use super::Worker;
 use crate::{postgres, provider::Transaction};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use sqlx::{PgConnection, Row};
 use std::collections::HashMap;
 
@@ -26,7 +27,79 @@ pub(super) fn matches_prices(t: &Transaction, expected: &[String]) -> bool {
     true
 }
 
+/// A confirmed renewal that belongs to a locally initiated subscription whose initial payment has
+/// not associated the subscription with its tenant yet. Callers that process durable work roll
+/// back and retry; the initial payment installs the association that lets the renewal apply.
+#[derive(Debug)]
+pub(super) struct RenewalDeferred;
+impl std::fmt::Display for RenewalDeferred {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("renewal payment attribution is pending")
+    }
+}
+impl std::error::Error for RenewalDeferred {}
+
+/// Reports whether `error` is a renewal deferral rather than a processing failure.
+pub(super) fn is_deferred(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RenewalDeferred>().is_some()
+}
+
 impl Worker {
+    /// Decides whether a recurring payment for a subscription that no tenant carries belongs to a
+    /// locally initiated subscription whose initial payment is still outstanding.
+    ///
+    /// The renewal's job and tenant identifiers come from provider custom data, which is
+    /// untrusted. They only select work to wait for: they must name an unfinished `subscription`
+    /// job of a live tenant, and the renewal's customer, currency and priced items must be
+    /// consistent with that job. A match grants nothing; the ordinary renewal validation runs once
+    /// the initial payment has associated the subscription.
+    async fn awaits_initial_association(
+        &self,
+        conn: &mut PgConnection,
+        t: &Transaction,
+    ) -> Result<bool> {
+        let reject = |reason: &str| {
+            tracing::warn!(
+                subscription_id = %t.subscription_id,
+                transaction_id = %t.id,
+                reason,
+                "rejected renewal for an unassociated subscription"
+            );
+            Ok(false)
+        };
+        let (Ok(job), Ok(tenant)) = (
+            uuid::Uuid::parse_str(&t.custom.job_id),
+            uuid::Uuid::parse_str(&t.custom.tenant_id),
+        ) else {
+            return reject("renewal carries no initial subscription job");
+        };
+        if job.get_version_num() != 7 || tenant.get_version_num() != 7 {
+            return reject("renewal job metadata is not a UUIDv7");
+        }
+        if t.customer_id.is_empty() {
+            return reject("renewal has no customer");
+        }
+        let Some(row) = sqlx::query("SELECT j.payload,j.external_id FROM jobs j JOIN tenants n ON n.id=j.tenant_id WHERE j.id=$1 AND j.tenant_id=$2 AND j.kind='subscription' AND j.state IN ('pending','running','reconcile') AND n.deleted_at IS NULL")
+            .bind(job).bind(tenant).fetch_optional(&mut *conn).await? else {
+            return reject("no unfinished initial subscription job matches the renewal");
+        };
+        let payload: Value = row.try_get(0)?;
+        let external: String = row.try_get(1)?;
+        // A reconciling initial job saves its transaction; a job waiting on a provider event saves
+        // a subscription. Anything else belongs to another payment.
+        if !(external.is_empty()
+            || (external.starts_with("txn_") && external != t.id)
+            || external == t.subscription_id)
+        {
+            return reject("initial subscription job references another payment");
+        }
+        let payload: super::webhook::PaymentPayload = serde_json::from_value(payload)?;
+        if !matches_prices(t, &payload.external_price_ids) {
+            return reject("renewal items differ from the initial subscription");
+        }
+        Ok(true)
+    }
+
     pub(super) async fn renew(
         &self,
         conn: &mut PgConnection,
@@ -41,7 +114,19 @@ impl Worker {
             return Ok(());
         }
         let Some(row) = sqlx::query("SELECT id::text,external_customer_id,period_end FROM tenants WHERE external_subscription_id=$1 AND deleted_at IS NULL")
-            .bind(&t.subscription_id).fetch_optional(&mut *conn).await? else { return Ok(()); };
+            .bind(&t.subscription_id).fetch_optional(&mut *conn).await? else {
+            if self.awaits_initial_association(conn, t).await? {
+                tracing::info!(
+                    subscription_id = %t.subscription_id,
+                    transaction_id = %t.id,
+                    job_id = %t.custom.job_id,
+                    tenant_id = %t.custom.tenant_id,
+                    "deferred renewal until the initial subscription payment associates the subscription"
+                );
+                return Err(RenewalDeferred.into());
+            }
+            return Ok(());
+        };
         let tenant: String = row.try_get(0)?;
         let customer: String = row.try_get(1)?;
         let previous_end: DateTime<Utc> = row.try_get(2)?;

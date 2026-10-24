@@ -948,3 +948,449 @@ async fn initial_payment_resolves_a_stale_past_due_of_its_subscription() {
     assert_eq!(state["renewalFailed"], false, "{state}");
     assert_eq!(state["failure"], Value::Null, "{state}");
 }
+
+// A confirmed renewal can reach Delcore before the initial payment that associates its
+// subscription with the tenant. The renewal stays unprocessed until the association exists.
+
+const USAGE_ALLOWANCE: &str = "100";
+
+impl Scenario {
+    /// Adds a plan usage price with an included allowance and selects it with the initial
+    /// subscription job, so the initial and renewed periods each grant that allowance.
+    async fn with_usage_allowance(&self, job: &str) {
+        let (plan, service): (Uuid, Uuid) =
+            sqlx::query_as("SELECT plan_id,service_id FROM prices WHERE external_price_id=$1")
+                .bind(EXTERNAL_PRICE)
+                .fetch_one(&self.f.db)
+                .await
+                .unwrap();
+        let usage = Uuid::now_v7();
+        sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3,'calls',1,$4::text::numeric,'USD','',now(),1)")
+            .bind(usage).bind(plan).bind(service).bind(USAGE_ALLOWANCE).execute(&self.f.db).await.unwrap();
+        sqlx::query("UPDATE jobs SET payload=jsonb_set(payload,'{price_ids}',payload->'price_ids'||to_jsonb($2::text)) WHERE id=$1")
+            .bind(Uuid::parse_str(job).unwrap()).bind(usage.to_string()).execute(&self.f.db).await.unwrap();
+    }
+    /// Keeps the initial job unfinished and away from the worker, as when its payment is still
+    /// being reconciled.
+    async fn park_initial(&self, job: &str) {
+        sqlx::query("UPDATE jobs SET state='reconcile',external_id='txn_initial',available_at=now()+interval '1 day' WHERE id=$1")
+            .bind(Uuid::parse_str(job).unwrap()).execute(&self.f.db).await.unwrap();
+    }
+    fn initial_data(&self, job: &str) -> Value {
+        let start = self.time.days(-40);
+        json!({"id":"txn_initial","status":"completed","origin":"web","customer_id":CUSTOMER,"subscription_id":SUBSCRIPTION,"currency_code":"USD",
+            "custom_data":{"delcore_job_id":job,"delcore_tenant_id":self.tenant},
+            "items":[{"price":{"id":EXTERNAL_PRICE,"product_id":"pro_order"},"quantity":1}],
+            "billing_period":{"starts_at":start.to_rfc3339(),"ends_at":self.time.days(0).to_rfc3339()},
+            "billed_at":(start + Duration::seconds(1)).to_rfc3339()})
+    }
+    async fn pay_initial(&self, event: &str, job: &str) {
+        let at = self.time.days(-40) + Duration::seconds(1);
+        self.deliver(event, "transaction.completed", at, self.initial_data(job))
+            .await;
+    }
+    /// The recurring payment for the period after the initial one, carrying the custom data the
+    /// provider copies from the subscription.
+    fn renewal_data(&self, txn: &str, job: &str) -> Value {
+        let mut data = self.completion(txn, self.time.payment_a());
+        data["custom_data"] = json!({"delcore_job_id":job,"delcore_tenant_id":self.tenant});
+        data
+    }
+    /// Stores a renewal notification without processing it.
+    async fn store_renewal(&self, event: &str, data: Value) {
+        let at = self.time.payment_a().2;
+        let payload = json!({"event_id":event,"event_type":"transaction.completed","occurred_at":at.to_rfc3339(),"data":data});
+        sqlx::query(
+            "INSERT INTO webhooks(event_id,occurred_at,payload,received_at) VALUES($1,$2,$3,now())",
+        )
+        .bind(event)
+        .bind(at)
+        .bind(payload)
+        .execute(&self.f.db)
+        .await
+        .unwrap();
+    }
+    async fn processed(&self, event: &str) -> bool {
+        sqlx::query_scalar("SELECT processed_at IS NOT NULL FROM webhooks WHERE event_id=$1")
+            .bind(event)
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+    /// The accounting, period and allowance state that two delivery orders must agree on.
+    async fn converged(&self) -> Value {
+        let mut state = self.state().await;
+        let grants: Vec<String> = sqlx::query_scalar("SELECT period_start::text||'/'||period_end::text||'/'||meter||'='||amount::text FROM allowance_grants WHERE tenant_id=$1::text::uuid ORDER BY period_start,meter")
+            .bind(&self.tenant).fetch_all(&self.f.db).await.unwrap();
+        state["grantList"] = json!(grants);
+        let entitlements: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM entitlements WHERE tenant_id=$1::text::uuid")
+                .bind(&self.tenant)
+                .fetch_one(&self.f.db)
+                .await
+                .unwrap();
+        state["entitlementRows"] = json!(entitlements);
+        state
+    }
+    async fn job_row(&self, id: &str) -> (String, String, i32) {
+        sqlx::query_as("SELECT state,error_category,attempts FROM jobs WHERE id=$1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn renewal_before_initial_payment_converges_with_the_reverse_order() {
+    let mut finals = Vec::new();
+    for renewal_first in [true, false] {
+        let s = scenario().await;
+        let job = unassociate(&s).await;
+        s.with_usage_allowance(&job).await;
+        s.park_initial(&job).await;
+        let label = format!("renewalFirst={renewal_first}");
+        s.store_renewal("evt_renewal", s.renewal_data("txn_renewal", &job))
+            .await;
+        if renewal_first {
+            // The renewal is retained: nothing is recorded, the tenant is not paid and the
+            // notification stays unprocessed.
+            assert!(s.f.worker.process_webhook("evt_renewal").await.is_err());
+            assert!(!s.processed("evt_renewal").await, "{label}");
+            assert_eq!(s.count("provider_transactions").await, 0, "{label}");
+            assert_eq!(s.count("billing_periods").await, 0, "{label}");
+            assert_eq!(s.count("allowance_grants").await, 0, "{label}");
+            assert_eq!(s.count("entitlements").await, 0, "{label}");
+            assert_ne!(s.authorize().await["allowed"], true, "{label}");
+            s.pay_initial("evt_initial", &job).await;
+            // The initial payment installs only its own period until the renewal is retried.
+            let state = s.state().await;
+            assert_eq!(
+                state["end"],
+                s.time.days(0).to_rfc3339(),
+                "{label}: {state}"
+            );
+            assert!(!s.processed("evt_renewal").await, "{label}");
+            s.f.worker.process_webhook("evt_renewal").await.unwrap();
+            assert!(s.processed("evt_renewal").await, "{label}");
+        } else {
+            s.pay_initial("evt_initial", &job).await;
+            s.f.worker.process_webhook("evt_renewal").await.unwrap();
+            assert!(s.processed("evt_renewal").await, "{label}");
+        }
+        let state = s.converged().await;
+        assert_eq!(
+            state["transactions"],
+            json!(["txn_initial", "txn_renewal"]),
+            "{label}: {state}"
+        );
+        assert_eq!(
+            state["billingPeriods"].as_array().unwrap().len(),
+            2,
+            "{label}: {state}"
+        );
+        assert_eq!(
+            state["start"],
+            s.time.payment_a().0.to_rfc3339(),
+            "{label}: {state}"
+        );
+        assert_eq!(
+            state["end"],
+            s.time.payment_a().1.to_rfc3339(),
+            "{label}: {state}"
+        );
+        // One allowance per paid period, each with the usage price's included amount.
+        assert_eq!(
+            state["grantList"].as_array().unwrap().len(),
+            2,
+            "{label}: {state}"
+        );
+        assert!(
+            state["grantList"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|g| g.as_str().unwrap().ends_with("calls=100")),
+            "{label}: {state}"
+        );
+        assert_eq!(s.authorize().await["allowed"], true, "{label}");
+
+        // A replay under the same or a fresh event id for the same transaction adds nothing.
+        s.f.worker.process_webhook("evt_renewal").await.unwrap();
+        s.store_renewal("evt_renewal_again", s.renewal_data("txn_renewal", &job))
+            .await;
+        s.f.worker
+            .process_webhook("evt_renewal_again")
+            .await
+            .unwrap();
+        assert_eq!(s.converged().await, state, "{label}: replay changed state");
+        finals.push(state);
+    }
+    assert_eq!(
+        finals[0], finals[1],
+        "final state must not depend on delivery order"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn deferred_renewal_survives_restart_and_retry_exhaustion_until_operator_retry() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    s.park_initial(&job).await;
+    s.store_renewal("evt_renewal", s.renewal_data("txn_renewal", &job))
+        .await;
+    let webhook_job = Uuid::now_v7();
+    sqlx::query("INSERT INTO jobs(id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,'webhook','webhook:evt_renewal','{\"event_id\":\"evt_renewal\"}',now(),now(),now())")
+        .bind(webhook_job).execute(&s.f.db).await.unwrap();
+    let webhook_job = webhook_job.to_string();
+    let limit = s.f.config.retry_limit as i32;
+    for attempt in 1..=limit {
+        sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
+            .bind(Uuid::parse_str(&webhook_job).unwrap())
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        s.f.worker.step().await.unwrap();
+        let (state, category, attempts) = s.job_row(&webhook_job).await;
+        assert_eq!(attempts, attempt);
+        if attempt < limit {
+            assert_eq!(
+                (state.as_str(), category.as_str()),
+                ("pending", "provider_transient")
+            );
+        }
+        // The notification is never acknowledged while the association is missing.
+        assert!(!s.processed("evt_renewal").await);
+        if attempt == 1 {
+            // A process that stopped while running the job returns it to pending on restart.
+            sqlx::query("UPDATE jobs SET state='running' WHERE id=$1")
+                .bind(Uuid::parse_str(&webhook_job).unwrap())
+                .execute(&s.f.db)
+                .await
+                .unwrap();
+            s.f.worker.recover().await.unwrap();
+            assert_eq!(s.job_row(&webhook_job).await.0, "pending");
+        }
+    }
+    let (state, category, _) = s.job_row(&webhook_job).await;
+    assert_eq!(
+        (state.as_str(), category.as_str()),
+        ("failed", "retry_exhausted")
+    );
+    assert!(!s.processed("evt_renewal").await);
+    assert_eq!(s.count("provider_transactions").await, 0);
+
+    // The initial payment arrives, then an operator returns the failed work to processing.
+    s.pay_initial("evt_initial", &job).await;
+    s.f.rpc(
+        "owner",
+        "RetryJob",
+        json!({"requestKey":key(),"jobId":webhook_job,"reason":"initial payment associated"}),
+    )
+    .await;
+    assert_eq!(
+        s.job_row(&webhook_job).await,
+        ("pending".into(), "retry_exhausted".into(), 0)
+    );
+    sqlx::query("UPDATE jobs SET available_at=now() WHERE id=$1")
+        .bind(Uuid::parse_str(&webhook_job).unwrap())
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+    s.f.worker.step().await.unwrap();
+    assert_eq!(s.job_row(&webhook_job).await.0, "done");
+    assert!(s.processed("evt_renewal").await);
+    let state = s.state().await;
+    assert_eq!(
+        state["transactions"],
+        json!(["txn_initial", "txn_renewal"]),
+        "{state}"
+    );
+    assert_eq!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
+    // This fixture has no usage allowance, so only the renewal reason is relevant.
+    let auth = s.authorize().await;
+    assert!(
+        !auth["reasons"]
+            .as_array()
+            .is_some_and(|r| r.contains(&json!("BLOCK_REASON_RENEWAL"))),
+        "{auth}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn renewal_with_unrelated_or_inconsistent_metadata_is_not_retained() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    s.park_initial(&job).await;
+    let foreign_job = Uuid::now_v7().to_string();
+    let other_tenant = Uuid::now_v7().to_string();
+    let mut cases: Vec<(&str, Value)> = Vec::new();
+    let mut case = |label, edit: &dyn Fn(&mut Value)| {
+        let mut data = s.renewal_data("txn_renewal", &job);
+        edit(&mut data);
+        cases.push((label, data));
+    };
+    case("no custom data", &|d| {
+        d.as_object_mut().unwrap().remove("custom_data");
+    });
+    case("unknown job", &|d| {
+        d["custom_data"]["delcore_job_id"] = json!(foreign_job)
+    });
+    case("job id is not a UUID", &|d| {
+        d["custom_data"]["delcore_job_id"] = json!("job_1")
+    });
+    case("job id is not UUIDv7", &|d| {
+        d["custom_data"]["delcore_job_id"] = json!("7b1f3c52-9d0e-4a6b-8c3d-1e2f3a4b5c6d")
+    });
+    case("other tenant", &|d| {
+        d["custom_data"]["delcore_tenant_id"] = json!(other_tenant)
+    });
+    case("empty customer", &|d| d["customer_id"] = json!(""));
+    case("other currency", &|d| d["currency_code"] = json!("EUR"));
+    case("other price", &|d| {
+        d["items"][0]["price"]["id"] = json!("pri_other")
+    });
+    case("quantity", &|d| d["items"][0]["quantity"] = json!(2));
+    case("extra item", &|d| {
+        let item = d["items"][0].clone();
+        d["items"].as_array_mut().unwrap().push(item);
+    });
+    case("no billing period", &|d| {
+        d.as_object_mut().unwrap().remove("billing_period");
+    });
+    for (n, (label, data)) in cases.into_iter().enumerate() {
+        let event = format!("evt_case_{n}");
+        s.store_renewal(&event, data).await;
+        // Terminal no-op: acknowledged without any benefit.
+        s.f.worker.process_webhook(&event).await.unwrap();
+        assert!(s.processed(&event).await, "{label}");
+        assert_eq!(s.count("provider_transactions").await, 0, "{label}");
+        assert_eq!(s.count("billing_periods").await, 0, "{label}");
+        assert_eq!(s.count("allowance_grants").await, 0, "{label}");
+    }
+    // A job that is finished or terminally failed is no longer waiting for an association, and a
+    // job that saved the renewal's own transaction is not waiting for an initial payment.
+    for (label, state, external) in [
+        ("done job", "done", "txn_initial"),
+        ("failed job", "failed", "txn_initial"),
+        ("renewal transaction", "reconcile", "txn_renewal"),
+    ] {
+        sqlx::query("UPDATE jobs SET state=$2,external_id=$3 WHERE id=$1")
+            .bind(Uuid::parse_str(&job).unwrap())
+            .bind(state)
+            .bind(external)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        let event = format!("evt_job_{state}_{external}");
+        s.store_renewal(&event, s.renewal_data("txn_renewal", &job))
+            .await;
+        s.f.worker.process_webhook(&event).await.unwrap();
+        assert!(s.processed(&event).await, "{label}");
+        assert_eq!(s.count("provider_transactions").await, 0, "{label}");
+    }
+    let tenant: (String, String) = sqlx::query_as(
+        "SELECT external_subscription_id,external_customer_id FROM tenants WHERE id=$1::text::uuid",
+    )
+    .bind(&s.tenant)
+    .fetch_one(&s.f.db)
+    .await
+    .unwrap();
+    assert_eq!(tenant, (String::new(), String::new()));
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn deferred_renewal_for_another_customer_grants_nothing_after_association() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    s.park_initial(&job).await;
+    let mut data = s.renewal_data("txn_renewal", &job);
+    data["customer_id"] = json!("ctm_other");
+    s.store_renewal("evt_renewal", data).await;
+    // The metadata is consistent with the pending job, so the renewal waits for the association.
+    assert!(s.f.worker.process_webhook("evt_renewal").await.is_err());
+    s.pay_initial("evt_initial", &job).await;
+    // Ordinary renewal validation then rejects the wrong customer as a terminal no-op.
+    s.f.worker.process_webhook("evt_renewal").await.unwrap();
+    assert!(s.processed("evt_renewal").await);
+    let state = s.state().await;
+    assert_eq!(state["transactions"], json!(["txn_initial"]), "{state}");
+    assert_eq!(state["end"], s.time.days(0).to_rfc3339(), "{state}");
+    assert_eq!(
+        state["billingPeriods"].as_array().unwrap().len(),
+        1,
+        "{state}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn deferred_renewal_does_not_resurrect_a_canceled_subscription() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    s.park_initial(&job).await;
+    s.store_renewal("evt_renewal", s.renewal_data("txn_renewal", &job))
+        .await;
+    assert!(s.f.worker.process_webhook("evt_renewal").await.is_err());
+    // The cancellation occurred after the renewal and is retained before the association.
+    s.status(
+        "evt_canceled",
+        "subscription.canceled",
+        "canceled",
+        s.time.days(5),
+    )
+    .await;
+    s.pay_initial("evt_initial", &job).await;
+    let free_plan: bool = sqlx::query_scalar(
+        "SELECT p.free FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1::text::uuid",
+    )
+    .bind(&s.tenant)
+    .fetch_one(&s.f.db)
+    .await
+    .unwrap();
+    assert!(
+        free_plan,
+        "retained cancellation applies with the initial payment"
+    );
+    // The ended subscription has no tenant and its job is finished: the renewal is dropped.
+    s.f.worker.process_webhook("evt_renewal").await.unwrap();
+    assert!(s.processed("evt_renewal").await);
+    let state = s.state().await;
+    assert_eq!(state["transactions"], json!(["txn_initial"]), "{state}");
+    assert_ne!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
+    let paid: bool = sqlx::query_scalar(
+        "SELECT p.free FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1::text::uuid",
+    )
+    .bind(&s.tenant)
+    .fetch_one(&s.f.db)
+    .await
+    .unwrap();
+    assert!(paid, "the tenant stays on the free plan");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn deferred_renewal_keeps_a_newer_failure_after_association() {
+    let s = scenario().await;
+    let job = unassociate(&s).await;
+    s.park_initial(&job).await;
+    s.store_renewal("evt_renewal", s.renewal_data("txn_renewal", &job))
+        .await;
+    assert!(s.f.worker.process_webhook("evt_renewal").await.is_err());
+    s.past_due("evt_b").await;
+    s.pay_initial("evt_initial", &job).await;
+    assert!(s.flag().await);
+    s.f.worker.process_webhook("evt_renewal").await.unwrap();
+    let state = s.state().await;
+    assert_eq!(
+        state["transactions"],
+        json!(["txn_initial", "txn_renewal"]),
+        "{state}"
+    );
+    assert_eq!(state["end"], s.time.payment_a().1.to_rfc3339(), "{state}");
+    assert_eq!(state["renewalFailed"], true, "{state}");
+}
