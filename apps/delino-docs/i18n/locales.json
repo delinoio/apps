@@ -1,13 +1,62 @@
 {
   "sourceLang": "en",
   "locales": [
-    { "lang": "en", "label": "English" },
-    { "lang": "ko", "label": "한국어" },
-    { "lang": "ja", "label": "日本語" },
-    { "lang": "zh-Hans", "label": "简体中文" },
-    { "lang": "es", "label": "Español" },
-    { "lang": "fr", "label": "Français" },
-    { "lang": "de", "label": "Deutsch" },
-    { "lang": "pt-BR", "label": "Português (Brasil)" }
-  ]
+    {
+      "lang": "en",
+      "label": "English"
+    },
+    {
+      "lang": "ko",
+      "label": "한국어"
+    },
+    {
+      "lang": "ja",
+      "label": "日本語"
+    },
+    {
+      "lang": "zh-Hans",
+      "label": "简体中文"
+    },
+    {
+      "lang": "es",
+      "label": "Español"
+    },
+    {
+      "lang": "fr",
+      "label": "Français"
+    },
+    {
+      "lang": "de",
+      "label": "Deutsch"
+    },
+    {
+      "lang": "pt-BR",
+      "label": "Português (Brasil)"
+    }
+  ],
+  "sourceOnly": {
+    "pages": [
+      "services/perfine/adapters.md",
+      "services/perfine/cli.md",
+      "services/perfine/github-actions.md",
+      "services/perfine/hosting.md",
+      "services/perfine/index.md",
+      "services/perfine/policies.md",
+      "services/perfine/publication.md",
+      "services/perfine/setup.md",
+      "services/perfine/troubleshooting.md"
+    ],
+    "messages": [
+      "perfineSetup",
+      "perfineCli",
+      "perfineAdapters",
+      "perfinePolicies",
+      "perfineHosting",
+      "perfinePublication",
+      "perfineGithubActions"
+    ],
+    "sections": {
+      "services/index.md": ["perfine"]
+    }
+  }
 }

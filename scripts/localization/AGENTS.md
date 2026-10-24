@@ -4,3 +4,5 @@
 - This directory owns shared local translation generation and offline validation for Delino Site and Delino Docs.
 - Keep authentication in the local CLI. Do not import authentication modules into either frontend.
 - Test authentication and generation with fixtures; record real ChatGPT account acceptance separately.
+
+- Keep translated coverage as the default. Use exact source-only declarations and registered section markers only for English-only requirements in owning product contracts; follow the localization contract. Do not bypass discovery, freshness checks or protected syntax validation.
