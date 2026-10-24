@@ -100,8 +100,8 @@ fn tool(name: &str) -> Value {
     match name {
         "compare" => required.push("candidate"),
         "publish" => required.extend(["candidate", "draft"]),
-        "upload" => required.extend(["envelope", "endpoint", "space", "connection"]),
+        "upload" => required.extend(["endpoint", "space", "connection"]),
         _ => (),
     }
-    json!({"name":name,"description":format!("Perfine v1 {name}; same policy and authorization as CLI. Mutations deduplicate for 30 days."),"inputSchema":{"type":"object","required":required,"properties":{"schema_version":{"type":"integer","const":1},"request_id":{"type":"string"},"experiment":{"type":"string"},"candidate":{"type":"string"},"immediate":{"type":"boolean","default":false},"github":{"type":"boolean","default":false},"action_commit":{"type":["string","null"]},"template":{"type":["string","null"]},"overwrite_sha256":{"type":["string","null"]},"envelope":{"type":"string"},"endpoint":{"type":"string"},"space":{"type":"string"},"connection":{"type":"string"},"draft":{"type":"string"},"approve":{"type":["string","null"]},"human_judgment":{"type":["string","null"]}}}})
+    json!({"name":name,"description":format!("Perfine v1 {name}; same policy and authorization as CLI. Mutations deduplicate for 30 days."),"inputSchema":{"type":"object","required":required,"properties":{"schema_version":{"type":"integer","const":1},"request_id":{"type":"string"},"experiment":{"type":"string"},"candidate":{"type":"string"},"immediate":{"type":"boolean","default":false},"github":{"type":"boolean","default":false},"action_commit":{"type":["string","null"]},"template":{"type":["string","null"]},"overwrite_sha256":{"type":["string","null"]},"consent_revision":{"type":"integer","minimum":0,"default":0},"endpoint":{"type":"string"},"space":{"type":"string"},"connection":{"type":"string"},"review":{"type":["string","null"]},"confirm_review":{"type":["string","null"]},"draft":{"type":"string"},"approve":{"type":["string","null"]},"human_judgment":{"type":["string","null"]}}}})
 }

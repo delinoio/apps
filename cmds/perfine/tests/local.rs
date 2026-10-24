@@ -283,3 +283,106 @@ fn publication_reconciles_lost_response(
         "attempt\n"
     );
 }
+
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn interrupted_candidate_resumes_same_workspace_without_duplicate_candidate() {
+    interrupted_candidate_resume(false);
+}
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn interrupted_implementation_resumes_original_admission() {
+    interrupted_candidate_resume(true);
+}
+fn interrupted_candidate_resume(before_admission: bool) {
+    use std::{
+        process::Stdio,
+        thread,
+        time::{Duration, Instant},
+    };
+    let (temp, mut config) = setup("pass");
+    let repo = temp.path().join("repo");
+    config["experiment"]["limits"]["candidate_duration_seconds"] = json!(240);
+    config["adapter"]["build"].as_array_mut().unwrap().insert(
+        0,
+        command(
+            "/bin/sh",
+            &["-c", "if grep -Fq 'counts[256]' kernel.c; then sleep 5; fi"],
+        ),
+    );
+    fs::write(
+        repo.join("perfine.yaml"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    let id = ResourceId::generate();
+    let log_path = temp.path().join("child.log");
+    let log = fs::File::create(&log_path).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_perfine"))
+        .arg("--repository")
+        .arg(&repo)
+        .args(["--json", "optimize", "--experiment", id.as_str()])
+        .stdout(Stdio::from(log.try_clone().unwrap()))
+        .stderr(Stdio::from(log))
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let candidate = loop {
+        assert!(started.elapsed() < Duration::from_secs(120));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "{}",
+            fs::read_to_string(&log_path).unwrap()
+        );
+        if before_admission {
+            let path = repo.join(".perfine").join(id.as_str()).join("journal.json");
+            if let Ok(bytes) = fs::read(path) {
+                let journal: Value = serde_json::from_slice(&bytes).unwrap();
+                if let Some(attempt) = journal["attempts"]
+                    .as_object()
+                    .and_then(|a| a.values().next())
+                {
+                    break (
+                        attempt["candidate"].as_str().unwrap().to_owned(),
+                        json!({"workspace":attempt["workspace"],"head":config["experiment"]["incremental_base"]}),
+                    );
+                }
+            }
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+        let status = run(&repo, &["status", "--experiment", id.as_str()]);
+        if let Ok(v) = serde_json::from_slice::<Value>(&status.stdout) {
+            if let Some(candidates) = v["result"]["experiment"]["candidates"].as_object() {
+                if let Some((id, c)) = candidates.iter().next() {
+                    if c["state"] == "running" {
+                        break (id.clone(), c.clone());
+                    }
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    child.kill().unwrap();
+    child.wait().unwrap();
+    // The prior container finishes before reattachment; no overlapping measurements.
+    thread::sleep(Duration::from_secs(7));
+    let resumed = run(&repo, &["resume", "--experiment", id.as_str()]);
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stdout)
+    );
+    let v: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    let candidates = v["result"]["experiment"]["candidates"].as_object().unwrap();
+    assert_eq!(candidates.len(), 1);
+    let completed = &candidates[&candidate.0];
+    assert_eq!(completed["state"], "completed", "{v}");
+    assert_eq!(completed["workspace"], candidate.1["workspace"]);
+    if before_admission {
+        assert_ne!(completed["head"], candidate.1["head"]);
+    } else {
+        assert_eq!(completed["head"], candidate.1["head"]);
+    }
+    assert_eq!(completed["evaluation"]["verdict"], "pass");
+}
