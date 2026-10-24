@@ -136,9 +136,9 @@ fn fixture(eid: &str) -> (Value, Value, BTreeMap<String, Vec<u8>>) {
         review: policy::ReviewEvidence::default(),
     };
     bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
-    let environment = json!({"operatingSystem":"linux","architecture":"x86_64","runner":"fixture","runtime":"rustc","tools":[{"name":"callgrind","version":"3.25"}],"environmentSha256":fingerprint(&config.conditions.environment).unwrap()});
-    let policy = json!({"schemaVersion":1,"kind":"POLICY_KIND_CALLGRIND_IR","metric":{"name":"Ir","unit":"instructions","objective":"METRIC_OBJECTIVE_MINIMIZE"},"minimumImprovement":0.01,"maximumCaseRegression":0.01,"policySha256":fingerprint(&config.policy).unwrap()});
-    let spec = json!({"schemaVersion":1,"baseSha":"a".repeat(40),"initialBaseSha":"a".repeat(40),"harnessSha":"b".repeat(40),"language":"LANGUAGE_RUST","environment":environment,"policy":policy,"cases":[{"id":"case","family":"family","frequency":1.0,"frequencySource":"FREQUENCY_SOURCE_DECLARED"}],"limits":{"candidateCount":1,"simultaneousCandidates":1,"startDeadline":(chrono::Utc::now()+chrono::Duration::seconds(60)).to_rfc3339(),"candidateTimeout":"30s"},"fingerprintSha256":frozen.fingerprint(),"workloadRepresentativenessConfirmed":true});
+    let environment = json!({"operatingSystem":"linux","architecture":"x86_64","runner":"fixture","runtime":"rustc","hardware":{"cpu":"fixture"},"tools":[{"name":"callgrind","version":"3.25"}],"environmentSha256":fingerprint(&config.conditions.environment).unwrap()});
+    let policy = json!({"schemaVersion":1,"kind":"POLICY_KIND_CALLGRIND_IR","metric":{"name":"Ir","unit":"instructions","objective":"METRIC_OBJECTIVE_MINIMIZE","engineKind":"ENGINE_METRIC_KIND_IR"},"minimumImprovement":0.01,"maximumCaseRegression":0.01,"repetitions":1,"allowedExceptions":["POLICY_EXCEPTION_BELOW_MINIMUM_IMPROVEMENT","POLICY_EXCEPTION_SINGLE_UNPROTECTED_REGRESSION"],"uncertainty":{"engineSchemaVersion":1,"nearThreshold":0.001,"repeatTolerance":0.001},"policySha256":fingerprint(&config.policy).unwrap()});
+    let spec = json!({"schemaVersion":1,"baseSha":"a".repeat(40),"initialBaseSha":"a".repeat(40),"harnessSha":"b".repeat(40),"language":"LANGUAGE_RUST","environment":environment,"policy":policy,"cases":[{"id":"case","family":"family","frequency":1.0,"frequencySource":"FREQUENCY_SOURCE_DECLARED"}],"limits":{"candidateCount":1,"simultaneousCandidates":1,"startDeadline":(chrono::Utc::now()+chrono::Duration::seconds(60)).to_rfc3339(),"candidateTimeout":"30s"},"fingerprintSha256":frozen.fingerprint(),"workloadRepresentativenessConfirmed":true,"workflowSha":config.conditions.workflow,"inputs":[{"name":"input","sha256":digest(b"input")}],"correctnessChecks":["tests"],"workloadConfirmation":"confirmed","startDuration":"60s"});
     let manifest = json!({"schemaVersion":1,"experimentId":eid,"candidateId":candidate,"sourceBaseSha":"a".repeat(40),"sourceHeadSha":"d".repeat(40),"harnessSha":"b".repeat(40),"environment":environment,"inputs":[{"name":"input","sha256":digest(b"input")}],"policy":policy,"metrics":[policy["metric"].clone()],"artifacts":bytes.iter().map(|(n,b)|json!({"name":n,"kind":if n=="engine"{"ARTIFACT_KIND_ENGINE_EVIDENCE"}else if n.ends_with("measurement"){"ARTIFACT_KIND_MEASUREMENTS"}else if n.ends_with("profile"){"ARTIFACT_KIND_PROFILE_SUMMARY"}else{"ARTIFACT_KIND_CORRECTNESS_RESULTS"},"mediaType":"application/json","sizeBytes":b.len().to_string(),"sha256":perfine_api::hash(b),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":true})).collect::<Vec<_>>(),"completion":"COMPLETION_STATE_COMPLETE","experimentFingerprintSha256":frozen.fingerprint(),"engineArtifactName":"engine","runStartedAt":chrono::Utc::now().to_rfc3339()});
     let mut m: delino_protocol::perfine::v1::EvidenceManifest =
         serde_json::from_value(manifest).unwrap();
@@ -150,6 +150,61 @@ fn fixture(eid: &str) -> (Value, Value, BTreeMap<String, Vec<u8>>) {
         serde_json::to_value(m).unwrap(),
         bytes,
     )
+}
+fn configuration(spec: &Value) -> Value {
+    let mut c = spec.clone();
+    c["environment"]["environmentSha256"] = json!("");
+    c["policy"]["policySha256"] = json!("");
+    c["limits"]["startDuration"] = spec["startDuration"].clone();
+    // Round-trip the public input type, not an ad hoc hidden engine JSON request.
+    serde_json::to_value(
+        serde_json::from_value::<delino_protocol::perfine::v1::ExperimentConfiguration>(c).unwrap(),
+    )
+    .unwrap()
+}
+#[test]
+fn preparation_freezes_exact_policy_and_rejects_statistical_aliases() {
+    let (spec, _, _) = fixture(&uid());
+    let mut c = configuration(&spec);
+    let repo = json!({"owner":"owner","name":"repo"});
+    let now = chrono::Utc::now();
+    let prepared = perfine_api::preparation::prepare(&c, &repo, now).unwrap();
+    assert_eq!(
+        prepared["specification"]["fingerprintSha256"],
+        spec["fingerprintSha256"]
+    );
+    let cfg: engine::Config =
+        serde_json::from_str(prepared["engineConfigJson"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        cfg.freeze().unwrap().fingerprint().as_str(),
+        spec["fingerprintSha256"].as_str().unwrap()
+    );
+    c["policy"]["uncertainty"]["confidenceLevel"] = json!(0.95);
+    assert!(perfine_api::preparation::prepare(&c, &repo, now).is_err());
+    c = configuration(&spec);
+    c["policy"]["kind"] = json!("POLICY_KIND_DECLARED");
+    c["policy"]["metric"] = json!({"name":"latency","unit":"ns","engineKind":"ENGINE_METRIC_KIND_TIME","objective":"METRIC_OBJECTIVE_MINIMIZE"});
+    c["policy"]["repetitions"] = json!(3);
+    c["policy"]["allowedExceptions"] = json!([]);
+    c["policy"]["uncertainty"]["maximumRelativeRange"] = json!(0.05);
+    c["policy"]["uncertainty"]["decisionMargin"] = json!(0.02);
+    let prepared = perfine_api::preparation::prepare(&c, &repo, now).unwrap();
+    let cfg: engine::Config =
+        serde_json::from_str(prepared["engineConfigJson"].as_str().unwrap()).unwrap();
+    let policy::Policy::Declared(p) = cfg.policy else {
+        panic!("declared policy")
+    };
+    assert_eq!(p.uncertainty.maximum_relative_range, 0.05);
+    assert_eq!(p.uncertainty.decision_margin, 0.02);
+    assert_eq!(p.uncertainty.repeat_tolerance, 0.001);
+    c["policy"]["uncertainty"]
+        .as_object_mut()
+        .unwrap()
+        .remove("decisionMargin");
+    assert!(perfine_api::preparation::prepare(&c, &repo, now).is_err());
+    let mut altered = spec.clone();
+    altered["limits"]["candidateCount"] = json!(2);
+    assert!(perfine_api::preparation::verify_spec(&altered, &repo).is_err());
 }
 #[test]
 fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
@@ -323,6 +378,30 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
     let eid = uid();
     let (spec, m, bytes) = fixture(&eid);
+    let prepared = call(
+        &server,
+        &space,
+        "PrepareExperiment",
+        json!({"connectionId":cid,"configuration":configuration(&spec)}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        prepared["specification"]["fingerprintSha256"],
+        spec["fingerprintSha256"]
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments WHERE space=$1")
+            .bind(uuid::Uuid::parse_str(&space).unwrap())
+            .fetch_one(&server.db)
+            .await
+            .unwrap(),
+        0
+    );
+    let mut fabricated = spec.clone();
+    fabricated["fingerprintSha256"] = json!("f".repeat(64));
+    assert!(call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":eid,"specification":fabricated,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.is_err());
+
     let q = json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"});
     let original_quota = server.quota;
     server.quota = 1;

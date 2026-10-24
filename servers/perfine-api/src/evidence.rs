@@ -123,6 +123,18 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
     let frozen = bundle.config.clone().freeze().map_err(engine_error)?;
     let cfg = frozen.config();
     let spec = &e["specification"];
+    let (owner, name) = cfg
+        .repository
+        .as_str()
+        .split_once('/')
+        .ok_or_else(|| Fault::invalid("repository identity required"))?;
+    let expected = crate::preparation::verify_spec(spec, &json!({"owner":owner,"name":name}))?;
+    if expected != *cfg || crate::preparation::policy(&m["policy"])? != cfg.policy {
+        return Err(Fault::precondition(
+            "complete engine configuration mapping mismatch",
+        ));
+    }
+
     if frozen.fingerprint().as_str() != string(m, "experimentFingerprintSha256")
         || cfg.incremental_base.as_str() != string(m, "sourceBaseSha")
         || cfg.initial_base.as_str() != string(spec, "initialBaseSha")

@@ -941,6 +941,64 @@ func (CloudUnavailableReason) EnumDescriptor() ([]byte, []int) {
 	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{15}
 }
 
+type EngineMetricKind int32
+
+const (
+	EngineMetricKind_ENGINE_METRIC_KIND_UNSPECIFIED EngineMetricKind = 0
+	EngineMetricKind_ENGINE_METRIC_KIND_IR          EngineMetricKind = 1
+	EngineMetricKind_ENGINE_METRIC_KIND_TIME        EngineMetricKind = 2
+	EngineMetricKind_ENGINE_METRIC_KIND_THROUGHPUT  EngineMetricKind = 3
+	EngineMetricKind_ENGINE_METRIC_KIND_MEMORY      EngineMetricKind = 4
+	EngineMetricKind_ENGINE_METRIC_KIND_CUSTOM      EngineMetricKind = 5
+)
+
+// Enum value maps for EngineMetricKind.
+var (
+	EngineMetricKind_name = map[int32]string{
+		0: "ENGINE_METRIC_KIND_UNSPECIFIED",
+		1: "ENGINE_METRIC_KIND_IR",
+		2: "ENGINE_METRIC_KIND_TIME",
+		3: "ENGINE_METRIC_KIND_THROUGHPUT",
+		4: "ENGINE_METRIC_KIND_MEMORY",
+		5: "ENGINE_METRIC_KIND_CUSTOM",
+	}
+	EngineMetricKind_value = map[string]int32{
+		"ENGINE_METRIC_KIND_UNSPECIFIED": 0,
+		"ENGINE_METRIC_KIND_IR":          1,
+		"ENGINE_METRIC_KIND_TIME":        2,
+		"ENGINE_METRIC_KIND_THROUGHPUT":  3,
+		"ENGINE_METRIC_KIND_MEMORY":      4,
+		"ENGINE_METRIC_KIND_CUSTOM":      5,
+	}
+)
+
+func (x EngineMetricKind) Enum() *EngineMetricKind {
+	p := new(EngineMetricKind)
+	*p = x
+	return p
+}
+
+func (x EngineMetricKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EngineMetricKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_perfine_v1_perfine_proto_enumTypes[16].Descriptor()
+}
+
+func (EngineMetricKind) Type() protoreflect.EnumType {
+	return &file_perfine_v1_perfine_proto_enumTypes[16]
+}
+
+func (x EngineMetricKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EngineMetricKind.Descriptor instead.
+func (EngineMetricKind) EnumDescriptor() ([]byte, []int) {
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{16}
+}
+
 type MetricObjective int32
 
 const (
@@ -974,11 +1032,11 @@ func (x MetricObjective) String() string {
 }
 
 func (MetricObjective) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[16].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[17].Descriptor()
 }
 
 func (MetricObjective) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[16]
+	return &file_perfine_v1_perfine_proto_enumTypes[17]
 }
 
 func (x MetricObjective) Number() protoreflect.EnumNumber {
@@ -987,7 +1045,7 @@ func (x MetricObjective) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MetricObjective.Descriptor instead.
 func (MetricObjective) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{16}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{17}
 }
 
 type PolicyKind int32
@@ -1026,11 +1084,11 @@ func (x PolicyKind) String() string {
 }
 
 func (PolicyKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[17].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[18].Descriptor()
 }
 
 func (PolicyKind) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[17]
+	return &file_perfine_v1_perfine_proto_enumTypes[18]
 }
 
 func (x PolicyKind) Number() protoreflect.EnumNumber {
@@ -1039,7 +1097,7 @@ func (x PolicyKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PolicyKind.Descriptor instead.
 func (PolicyKind) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{17}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{18}
 }
 
 type PolicyException int32
@@ -1078,11 +1136,11 @@ func (x PolicyException) String() string {
 }
 
 func (PolicyException) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[18].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[19].Descriptor()
 }
 
 func (PolicyException) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[18]
+	return &file_perfine_v1_perfine_proto_enumTypes[19]
 }
 
 func (x PolicyException) Number() protoreflect.EnumNumber {
@@ -1091,7 +1149,7 @@ func (x PolicyException) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PolicyException.Descriptor instead.
 func (PolicyException) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{18}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{19}
 }
 
 type CorrectnessState int32
@@ -1130,11 +1188,11 @@ func (x CorrectnessState) String() string {
 }
 
 func (CorrectnessState) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[19].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[20].Descriptor()
 }
 
 func (CorrectnessState) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[19]
+	return &file_perfine_v1_perfine_proto_enumTypes[20]
 }
 
 func (x CorrectnessState) Number() protoreflect.EnumNumber {
@@ -1143,7 +1201,7 @@ func (x CorrectnessState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CorrectnessState.Descriptor instead.
 func (CorrectnessState) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{19}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{20}
 }
 
 type ComparisonKind int32
@@ -1182,11 +1240,11 @@ func (x ComparisonKind) String() string {
 }
 
 func (ComparisonKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[20].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[21].Descriptor()
 }
 
 func (ComparisonKind) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[20]
+	return &file_perfine_v1_perfine_proto_enumTypes[21]
 }
 
 func (x ComparisonKind) Number() protoreflect.EnumNumber {
@@ -1195,7 +1253,7 @@ func (x ComparisonKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ComparisonKind.Descriptor instead.
 func (ComparisonKind) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{20}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{21}
 }
 
 type Language int32
@@ -1243,11 +1301,11 @@ func (x Language) String() string {
 }
 
 func (Language) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[21].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[22].Descriptor()
 }
 
 func (Language) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[21]
+	return &file_perfine_v1_perfine_proto_enumTypes[22]
 }
 
 func (x Language) Number() protoreflect.EnumNumber {
@@ -1256,7 +1314,7 @@ func (x Language) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Language.Descriptor instead.
 func (Language) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{21}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{22}
 }
 
 type ExecutionOrigin int32
@@ -1292,11 +1350,11 @@ func (x ExecutionOrigin) String() string {
 }
 
 func (ExecutionOrigin) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[22].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[23].Descriptor()
 }
 
 func (ExecutionOrigin) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[22]
+	return &file_perfine_v1_perfine_proto_enumTypes[23]
 }
 
 func (x ExecutionOrigin) Number() protoreflect.EnumNumber {
@@ -1305,7 +1363,7 @@ func (x ExecutionOrigin) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExecutionOrigin.Descriptor instead.
 func (ExecutionOrigin) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{22}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{23}
 }
 
 type FrequencySource int32
@@ -1341,11 +1399,11 @@ func (x FrequencySource) String() string {
 }
 
 func (FrequencySource) Descriptor() protoreflect.EnumDescriptor {
-	return file_perfine_v1_perfine_proto_enumTypes[23].Descriptor()
+	return file_perfine_v1_perfine_proto_enumTypes[24].Descriptor()
 }
 
 func (FrequencySource) Type() protoreflect.EnumType {
-	return &file_perfine_v1_perfine_proto_enumTypes[23]
+	return &file_perfine_v1_perfine_proto_enumTypes[24]
 }
 
 func (x FrequencySource) Number() protoreflect.EnumNumber {
@@ -1354,7 +1412,7 @@ func (x FrequencySource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FrequencySource.Descriptor instead.
 func (FrequencySource) EnumDescriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{23}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{24}
 }
 
 type ErrorDetail struct {
@@ -2068,8 +2126,10 @@ type ExecutionEnvironment struct {
 	RuntimeFlags      []string               `protobuf:"bytes,7,rep,name=runtime_flags,json=runtimeFlags,proto3" json:"runtime_flags,omitempty"`
 	Tools             []*ToolVersion         `protobuf:"bytes,8,rep,name=tools,proto3" json:"tools,omitempty"`
 	EnvironmentSha256 string                 `protobuf:"bytes,9,opt,name=environment_sha256,json=environmentSha256,proto3" json:"environment_sha256,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Public hardware identity only. Environment variables and credentials are forbidden.
+	Hardware      map[string]string `protobuf:"bytes,10,rep,name=hardware,proto3" json:"hardware,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExecutionEnvironment) Reset() {
@@ -2163,6 +2223,13 @@ func (x *ExecutionEnvironment) GetEnvironmentSha256() string {
 		return x.EnvironmentSha256
 	}
 	return ""
+}
+
+func (x *ExecutionEnvironment) GetHardware() map[string]string {
+	if x != nil {
+		return x.Hardware
+	}
+	return nil
 }
 
 type InputHash struct {
@@ -2306,6 +2373,7 @@ type Metric struct {
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Unit          string                 `protobuf:"bytes,2,opt,name=unit,proto3" json:"unit,omitempty"`
 	Objective     MetricObjective        `protobuf:"varint,3,opt,name=objective,proto3,enum=perfine.v1.MetricObjective" json:"objective,omitempty"`
+	EngineKind    EngineMetricKind       `protobuf:"varint,4,opt,name=engine_kind,json=engineKind,proto3,enum=perfine.v1.EngineMetricKind" json:"engine_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2359,6 +2427,13 @@ func (x *Metric) GetObjective() MetricObjective {
 		return x.Objective
 	}
 	return MetricObjective_METRIC_OBJECTIVE_UNSPECIFIED
+}
+
+func (x *Metric) GetEngineKind() EngineMetricKind {
+	if x != nil {
+		return x.EngineKind
+	}
+	return EngineMetricKind_ENGINE_METRIC_KIND_UNSPECIFIED
 }
 
 type PerformancePolicy struct {
@@ -2470,12 +2545,25 @@ func (x *PerformancePolicy) GetPolicySha256() string {
 }
 
 type UncertaintyCriteria struct {
-	state                        protoimpl.MessageState `protogen:"open.v1"`
-	ConfidenceLevel              float64                `protobuf:"fixed64,1,opt,name=confidence_level,json=confidenceLevel,proto3" json:"confidence_level,omitempty"`
-	MaximumRelativeIntervalWidth float64                `protobuf:"fixed64,2,opt,name=maximum_relative_interval_width,json=maximumRelativeIntervalWidth,proto3" json:"maximum_relative_interval_width,omitempty"`
-	NearThresholdMargin          float64                `protobuf:"fixed64,3,opt,name=near_threshold_margin,json=nearThresholdMargin,proto3" json:"near_threshold_margin,omitempty"`
-	unknownFields                protoimpl.UnknownFields
-	sizeCache                    protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Legacy statistical-summary fields. The v1 engine does not calculate confidence intervals.
+	// Preparation rejects nonzero values rather than treating them as sample-range criteria.
+	//
+	// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
+	ConfidenceLevel float64 `protobuf:"fixed64,1,opt,name=confidence_level,json=confidenceLevel,proto3" json:"confidence_level,omitempty"`
+	// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
+	MaximumRelativeIntervalWidth float64 `protobuf:"fixed64,2,opt,name=maximum_relative_interval_width,json=maximumRelativeIntervalWidth,proto3" json:"maximum_relative_interval_width,omitempty"`
+	// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
+	NearThresholdMargin float64 `protobuf:"fixed64,3,opt,name=near_threshold_margin,json=nearThresholdMargin,proto3" json:"near_threshold_margin,omitempty"`
+	// Exact perfine-core policy mapping. Version 1 uses all four fields for DECLARED,
+	// and near_threshold plus repeat_tolerance for CALLGRIND_IR.
+	EngineSchemaVersion  uint32   `protobuf:"varint,4,opt,name=engine_schema_version,json=engineSchemaVersion,proto3" json:"engine_schema_version,omitempty"`
+	MaximumRelativeRange *float64 `protobuf:"fixed64,5,opt,name=maximum_relative_range,json=maximumRelativeRange,proto3,oneof" json:"maximum_relative_range,omitempty"`
+	DecisionMargin       *float64 `protobuf:"fixed64,6,opt,name=decision_margin,json=decisionMargin,proto3,oneof" json:"decision_margin,omitempty"`
+	RepeatTolerance      *float64 `protobuf:"fixed64,7,opt,name=repeat_tolerance,json=repeatTolerance,proto3,oneof" json:"repeat_tolerance,omitempty"`
+	NearThreshold        *float64 `protobuf:"fixed64,8,opt,name=near_threshold,json=nearThreshold,proto3,oneof" json:"near_threshold,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UncertaintyCriteria) Reset() {
@@ -2508,6 +2596,7 @@ func (*UncertaintyCriteria) Descriptor() ([]byte, []int) {
 	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{16}
 }
 
+// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
 func (x *UncertaintyCriteria) GetConfidenceLevel() float64 {
 	if x != nil {
 		return x.ConfidenceLevel
@@ -2515,6 +2604,7 @@ func (x *UncertaintyCriteria) GetConfidenceLevel() float64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
 func (x *UncertaintyCriteria) GetMaximumRelativeIntervalWidth() float64 {
 	if x != nil {
 		return x.MaximumRelativeIntervalWidth
@@ -2522,9 +2612,45 @@ func (x *UncertaintyCriteria) GetMaximumRelativeIntervalWidth() float64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in perfine/v1/perfine.proto.
 func (x *UncertaintyCriteria) GetNearThresholdMargin() float64 {
 	if x != nil {
 		return x.NearThresholdMargin
+	}
+	return 0
+}
+
+func (x *UncertaintyCriteria) GetEngineSchemaVersion() uint32 {
+	if x != nil {
+		return x.EngineSchemaVersion
+	}
+	return 0
+}
+
+func (x *UncertaintyCriteria) GetMaximumRelativeRange() float64 {
+	if x != nil && x.MaximumRelativeRange != nil {
+		return *x.MaximumRelativeRange
+	}
+	return 0
+}
+
+func (x *UncertaintyCriteria) GetDecisionMargin() float64 {
+	if x != nil && x.DecisionMargin != nil {
+		return *x.DecisionMargin
+	}
+	return 0
+}
+
+func (x *UncertaintyCriteria) GetRepeatTolerance() float64 {
+	if x != nil && x.RepeatTolerance != nil {
+		return *x.RepeatTolerance
+	}
+	return 0
+}
+
+func (x *UncertaintyCriteria) GetNearThreshold() float64 {
+	if x != nil && x.NearThreshold != nil {
+		return *x.NearThreshold
 	}
 	return 0
 }
@@ -2611,6 +2737,11 @@ type ExperimentSpecification struct {
 	FingerprintSha256                   string                 `protobuf:"bytes,10,opt,name=fingerprint_sha256,json=fingerprintSha256,proto3" json:"fingerprint_sha256,omitempty"`
 	WorkloadRepresentativenessConfirmed bool                   `protobuf:"varint,11,opt,name=workload_representativeness_confirmed,json=workloadRepresentativenessConfirmed,proto3" json:"workload_representativeness_confirmed,omitempty"`
 	ParentCandidateIds                  []string               `protobuf:"bytes,12,rep,name=parent_candidate_ids,json=parentCandidateIds,proto3" json:"parent_candidate_ids,omitempty"`
+	WorkflowSha                         string                 `protobuf:"bytes,13,opt,name=workflow_sha,json=workflowSha,proto3" json:"workflow_sha,omitempty"`
+	Inputs                              []*InputHash           `protobuf:"bytes,14,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	CorrectnessChecks                   []string               `protobuf:"bytes,15,rep,name=correctness_checks,json=correctnessChecks,proto3" json:"correctness_checks,omitempty"`
+	WorkloadConfirmation                string                 `protobuf:"bytes,16,opt,name=workload_confirmation,json=workloadConfirmation,proto3" json:"workload_confirmation,omitempty"`
+	StartDuration                       *durationpb.Duration   `protobuf:"bytes,17,opt,name=start_duration,json=startDuration,proto3" json:"start_duration,omitempty"`
 	unknownFields                       protoimpl.UnknownFields
 	sizeCache                           protoimpl.SizeCache
 }
@@ -2725,6 +2856,41 @@ func (x *ExperimentSpecification) GetWorkloadRepresentativenessConfirmed() bool 
 func (x *ExperimentSpecification) GetParentCandidateIds() []string {
 	if x != nil {
 		return x.ParentCandidateIds
+	}
+	return nil
+}
+
+func (x *ExperimentSpecification) GetWorkflowSha() string {
+	if x != nil {
+		return x.WorkflowSha
+	}
+	return ""
+}
+
+func (x *ExperimentSpecification) GetInputs() []*InputHash {
+	if x != nil {
+		return x.Inputs
+	}
+	return nil
+}
+
+func (x *ExperimentSpecification) GetCorrectnessChecks() []string {
+	if x != nil {
+		return x.CorrectnessChecks
+	}
+	return nil
+}
+
+func (x *ExperimentSpecification) GetWorkloadConfirmation() string {
+	if x != nil {
+		return x.WorkloadConfirmation
+	}
+	return ""
+}
+
+func (x *ExperimentSpecification) GetStartDuration() *durationpb.Duration {
+	if x != nil {
+		return x.StartDuration
 	}
 	return nil
 }
@@ -4397,6 +4563,364 @@ func (x *CloudTool) GetVerifiedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Required user-selected limits; preparation converts durations to the engine's integer seconds.
+type PreparationLimits struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	CandidateCount         uint32                 `protobuf:"varint,1,opt,name=candidate_count,json=candidateCount,proto3" json:"candidate_count,omitempty"`
+	SimultaneousCandidates uint32                 `protobuf:"varint,2,opt,name=simultaneous_candidates,json=simultaneousCandidates,proto3" json:"simultaneous_candidates,omitempty"`
+	StartDuration          *durationpb.Duration   `protobuf:"bytes,3,opt,name=start_duration,json=startDuration,proto3" json:"start_duration,omitempty"`
+	CandidateTimeout       *durationpb.Duration   `protobuf:"bytes,4,opt,name=candidate_timeout,json=candidateTimeout,proto3" json:"candidate_timeout,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *PreparationLimits) Reset() {
+	*x = PreparationLimits{}
+	mi := &file_perfine_v1_perfine_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreparationLimits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreparationLimits) ProtoMessage() {}
+
+func (x *PreparationLimits) ProtoReflect() protoreflect.Message {
+	mi := &file_perfine_v1_perfine_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreparationLimits.ProtoReflect.Descriptor instead.
+func (*PreparationLimits) Descriptor() ([]byte, []int) {
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *PreparationLimits) GetCandidateCount() uint32 {
+	if x != nil {
+		return x.CandidateCount
+	}
+	return 0
+}
+
+func (x *PreparationLimits) GetSimultaneousCandidates() uint32 {
+	if x != nil {
+		return x.SimultaneousCandidates
+	}
+	return 0
+}
+
+func (x *PreparationLimits) GetStartDuration() *durationpb.Duration {
+	if x != nil {
+		return x.StartDuration
+	}
+	return nil
+}
+
+func (x *PreparationLimits) GetCandidateTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.CandidateTimeout
+	}
+	return nil
+}
+
+// Complete editable configuration, before freezing. Fingerprint fields on policy/environment
+// must be empty: the server computes them. Input hashes identify workload bytes, not this config.
+type ExperimentConfiguration struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion        uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	BaseSha              string                 `protobuf:"bytes,2,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	InitialBaseSha       string                 `protobuf:"bytes,3,opt,name=initial_base_sha,json=initialBaseSha,proto3" json:"initial_base_sha,omitempty"`
+	HarnessSha           string                 `protobuf:"bytes,4,opt,name=harness_sha,json=harnessSha,proto3" json:"harness_sha,omitempty"`
+	WorkflowSha          string                 `protobuf:"bytes,5,opt,name=workflow_sha,json=workflowSha,proto3" json:"workflow_sha,omitempty"`
+	Language             Language               `protobuf:"varint,6,opt,name=language,proto3,enum=perfine.v1.Language" json:"language,omitempty"`
+	Environment          *ExecutionEnvironment  `protobuf:"bytes,7,opt,name=environment,proto3" json:"environment,omitempty"`
+	Cases                []*WorkloadCase        `protobuf:"bytes,8,rep,name=cases,proto3" json:"cases,omitempty"`
+	Inputs               []*InputHash           `protobuf:"bytes,9,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	CorrectnessChecks    []string               `protobuf:"bytes,10,rep,name=correctness_checks,json=correctnessChecks,proto3" json:"correctness_checks,omitempty"`
+	Policy               *PerformancePolicy     `protobuf:"bytes,11,opt,name=policy,proto3" json:"policy,omitempty"`
+	Limits               *PreparationLimits     `protobuf:"bytes,12,opt,name=limits,proto3" json:"limits,omitempty"`
+	WorkloadConfirmation string                 `protobuf:"bytes,13,opt,name=workload_confirmation,json=workloadConfirmation,proto3" json:"workload_confirmation,omitempty"`
+	ParentCandidateIds   []string               `protobuf:"bytes,14,rep,name=parent_candidate_ids,json=parentCandidateIds,proto3" json:"parent_candidate_ids,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ExperimentConfiguration) Reset() {
+	*x = ExperimentConfiguration{}
+	mi := &file_perfine_v1_perfine_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExperimentConfiguration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExperimentConfiguration) ProtoMessage() {}
+
+func (x *ExperimentConfiguration) ProtoReflect() protoreflect.Message {
+	mi := &file_perfine_v1_perfine_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExperimentConfiguration.ProtoReflect.Descriptor instead.
+func (*ExperimentConfiguration) Descriptor() ([]byte, []int) {
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ExperimentConfiguration) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ExperimentConfiguration) GetBaseSha() string {
+	if x != nil {
+		return x.BaseSha
+	}
+	return ""
+}
+
+func (x *ExperimentConfiguration) GetInitialBaseSha() string {
+	if x != nil {
+		return x.InitialBaseSha
+	}
+	return ""
+}
+
+func (x *ExperimentConfiguration) GetHarnessSha() string {
+	if x != nil {
+		return x.HarnessSha
+	}
+	return ""
+}
+
+func (x *ExperimentConfiguration) GetWorkflowSha() string {
+	if x != nil {
+		return x.WorkflowSha
+	}
+	return ""
+}
+
+func (x *ExperimentConfiguration) GetLanguage() Language {
+	if x != nil {
+		return x.Language
+	}
+	return Language_LANGUAGE_UNSPECIFIED
+}
+
+func (x *ExperimentConfiguration) GetEnvironment() *ExecutionEnvironment {
+	if x != nil {
+		return x.Environment
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetCases() []*WorkloadCase {
+	if x != nil {
+		return x.Cases
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetInputs() []*InputHash {
+	if x != nil {
+		return x.Inputs
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetCorrectnessChecks() []string {
+	if x != nil {
+		return x.CorrectnessChecks
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetPolicy() *PerformancePolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetLimits() *PreparationLimits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *ExperimentConfiguration) GetWorkloadConfirmation() string {
+	if x != nil {
+		return x.WorkloadConfirmation
+	}
+	return ""
+}
+
+func (x *ExperimentConfiguration) GetParentCandidateIds() []string {
+	if x != nil {
+		return x.ParentCandidateIds
+	}
+	return nil
+}
+
+type PrepareExperimentRequest struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	RequestId     string                   `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SpaceId       string                   `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
+	ConnectionId  string                   `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	Configuration *ExperimentConfiguration `protobuf:"bytes,4,opt,name=configuration,proto3" json:"configuration,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareExperimentRequest) Reset() {
+	*x = PrepareExperimentRequest{}
+	mi := &file_perfine_v1_perfine_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareExperimentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareExperimentRequest) ProtoMessage() {}
+
+func (x *PrepareExperimentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_perfine_v1_perfine_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareExperimentRequest.ProtoReflect.Descriptor instead.
+func (*PrepareExperimentRequest) Descriptor() ([]byte, []int) {
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *PrepareExperimentRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PrepareExperimentRequest) GetSpaceId() string {
+	if x != nil {
+		return x.SpaceId
+	}
+	return ""
+}
+
+func (x *PrepareExperimentRequest) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+func (x *PrepareExperimentRequest) GetConfiguration() *ExperimentConfiguration {
+	if x != nil {
+		return x.Configuration
+	}
+	return nil
+}
+
+type PrepareExperimentResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Server-generated immutable spec suitable for StartExperiment or BeginUpload.
+	Specification *ExperimentSpecification `protobuf:"bytes,2,opt,name=specification,proto3" json:"specification,omitempty"`
+	// Canonical v1 perfine-core Config JSON for local CLI/Action consumers; not a new evaluator.
+	// Contains public reproducibility data only, never credentials or source.
+	EngineConfigJson string                 `protobuf:"bytes,3,opt,name=engine_config_json,json=engineConfigJson,proto3" json:"engine_config_json,omitempty"`
+	PreparedAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=prepared_at,json=preparedAt,proto3" json:"prepared_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *PrepareExperimentResponse) Reset() {
+	*x = PrepareExperimentResponse{}
+	mi := &file_perfine_v1_perfine_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareExperimentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareExperimentResponse) ProtoMessage() {}
+
+func (x *PrepareExperimentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_perfine_v1_perfine_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareExperimentResponse.ProtoReflect.Descriptor instead.
+func (*PrepareExperimentResponse) Descriptor() ([]byte, []int) {
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *PrepareExperimentResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PrepareExperimentResponse) GetSpecification() *ExperimentSpecification {
+	if x != nil {
+		return x.Specification
+	}
+	return nil
+}
+
+func (x *PrepareExperimentResponse) GetEngineConfigJson() string {
+	if x != nil {
+		return x.EngineConfigJson
+	}
+	return ""
+}
+
+func (x *PrepareExperimentResponse) GetPreparedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PreparedAt
+	}
+	return nil
+}
+
 type GetAuthorizationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -4407,7 +4931,7 @@ type GetAuthorizationRequest struct {
 
 func (x *GetAuthorizationRequest) Reset() {
 	*x = GetAuthorizationRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[36]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4419,7 +4943,7 @@ func (x *GetAuthorizationRequest) String() string {
 func (*GetAuthorizationRequest) ProtoMessage() {}
 
 func (x *GetAuthorizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[36]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4432,7 +4956,7 @@ func (x *GetAuthorizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAuthorizationRequest.ProtoReflect.Descriptor instead.
 func (*GetAuthorizationRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{36}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetAuthorizationRequest) GetRequestId() string {
@@ -4459,7 +4983,7 @@ type GetAuthorizationResponse struct {
 
 func (x *GetAuthorizationResponse) Reset() {
 	*x = GetAuthorizationResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[37]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4471,7 +4995,7 @@ func (x *GetAuthorizationResponse) String() string {
 func (*GetAuthorizationResponse) ProtoMessage() {}
 
 func (x *GetAuthorizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[37]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4484,7 +5008,7 @@ func (x *GetAuthorizationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAuthorizationResponse.ProtoReflect.Descriptor instead.
 func (*GetAuthorizationResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{37}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetAuthorizationResponse) GetRequestId() string {
@@ -4512,7 +5036,7 @@ type ListConnectionsRequest struct {
 
 func (x *ListConnectionsRequest) Reset() {
 	*x = ListConnectionsRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[38]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4524,7 +5048,7 @@ func (x *ListConnectionsRequest) String() string {
 func (*ListConnectionsRequest) ProtoMessage() {}
 
 func (x *ListConnectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[38]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4537,7 +5061,7 @@ func (x *ListConnectionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectionsRequest.ProtoReflect.Descriptor instead.
 func (*ListConnectionsRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{38}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ListConnectionsRequest) GetRequestId() string {
@@ -4572,7 +5096,7 @@ type ListConnectionsResponse struct {
 
 func (x *ListConnectionsResponse) Reset() {
 	*x = ListConnectionsResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[39]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4584,7 +5108,7 @@ func (x *ListConnectionsResponse) String() string {
 func (*ListConnectionsResponse) ProtoMessage() {}
 
 func (x *ListConnectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[39]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4597,7 +5121,7 @@ func (x *ListConnectionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectionsResponse.ProtoReflect.Descriptor instead.
 func (*ListConnectionsResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{39}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ListConnectionsResponse) GetRequestId() string {
@@ -4632,7 +5156,7 @@ type GetConnectionRequest struct {
 
 func (x *GetConnectionRequest) Reset() {
 	*x = GetConnectionRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[40]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4644,7 +5168,7 @@ func (x *GetConnectionRequest) String() string {
 func (*GetConnectionRequest) ProtoMessage() {}
 
 func (x *GetConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[40]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4657,7 +5181,7 @@ func (x *GetConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConnectionRequest.ProtoReflect.Descriptor instead.
 func (*GetConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{40}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GetConnectionRequest) GetRequestId() string {
@@ -4691,7 +5215,7 @@ type GetConnectionResponse struct {
 
 func (x *GetConnectionResponse) Reset() {
 	*x = GetConnectionResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[41]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4703,7 +5227,7 @@ func (x *GetConnectionResponse) String() string {
 func (*GetConnectionResponse) ProtoMessage() {}
 
 func (x *GetConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[41]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4716,7 +5240,7 @@ func (x *GetConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConnectionResponse.ProtoReflect.Descriptor instead.
 func (*GetConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{41}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GetConnectionResponse) GetRequestId() string {
@@ -4745,7 +5269,7 @@ type ConnectRepositoryRequest struct {
 
 func (x *ConnectRepositoryRequest) Reset() {
 	*x = ConnectRepositoryRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[42]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4757,7 +5281,7 @@ func (x *ConnectRepositoryRequest) String() string {
 func (*ConnectRepositoryRequest) ProtoMessage() {}
 
 func (x *ConnectRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[42]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4770,7 +5294,7 @@ func (x *ConnectRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*ConnectRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{42}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ConnectRepositoryRequest) GetRequestId() string {
@@ -4811,7 +5335,7 @@ type ConnectRepositoryResponse struct {
 
 func (x *ConnectRepositoryResponse) Reset() {
 	*x = ConnectRepositoryResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[43]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4823,7 +5347,7 @@ func (x *ConnectRepositoryResponse) String() string {
 func (*ConnectRepositoryResponse) ProtoMessage() {}
 
 func (x *ConnectRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[43]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4836,7 +5360,7 @@ func (x *ConnectRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*ConnectRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{43}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ConnectRepositoryResponse) GetRequestId() string {
@@ -4864,7 +5388,7 @@ type DisconnectRepositoryRequest struct {
 
 func (x *DisconnectRepositoryRequest) Reset() {
 	*x = DisconnectRepositoryRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[44]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4876,7 +5400,7 @@ func (x *DisconnectRepositoryRequest) String() string {
 func (*DisconnectRepositoryRequest) ProtoMessage() {}
 
 func (x *DisconnectRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[44]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4889,7 +5413,7 @@ func (x *DisconnectRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{44}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *DisconnectRepositoryRequest) GetRequestId() string {
@@ -4923,7 +5447,7 @@ type DisconnectRepositoryResponse struct {
 
 func (x *DisconnectRepositoryResponse) Reset() {
 	*x = DisconnectRepositoryResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[45]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4935,7 +5459,7 @@ func (x *DisconnectRepositoryResponse) String() string {
 func (*DisconnectRepositoryResponse) ProtoMessage() {}
 
 func (x *DisconnectRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[45]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4948,7 +5472,7 @@ func (x *DisconnectRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{45}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *DisconnectRepositoryResponse) GetRequestId() string {
@@ -4978,7 +5502,7 @@ type SetRawArtifactConsentRequest struct {
 
 func (x *SetRawArtifactConsentRequest) Reset() {
 	*x = SetRawArtifactConsentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[46]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4990,7 +5514,7 @@ func (x *SetRawArtifactConsentRequest) String() string {
 func (*SetRawArtifactConsentRequest) ProtoMessage() {}
 
 func (x *SetRawArtifactConsentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[46]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5003,7 +5527,7 @@ func (x *SetRawArtifactConsentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRawArtifactConsentRequest.ProtoReflect.Descriptor instead.
 func (*SetRawArtifactConsentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{46}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *SetRawArtifactConsentRequest) GetRequestId() string {
@@ -5051,7 +5575,7 @@ type SetRawArtifactConsentResponse struct {
 
 func (x *SetRawArtifactConsentResponse) Reset() {
 	*x = SetRawArtifactConsentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[47]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5063,7 +5587,7 @@ func (x *SetRawArtifactConsentResponse) String() string {
 func (*SetRawArtifactConsentResponse) ProtoMessage() {}
 
 func (x *SetRawArtifactConsentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[47]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5076,7 +5600,7 @@ func (x *SetRawArtifactConsentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRawArtifactConsentResponse.ProtoReflect.Descriptor instead.
 func (*SetRawArtifactConsentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{47}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *SetRawArtifactConsentResponse) GetRequestId() string {
@@ -5105,7 +5629,7 @@ type GetRawArtifactConsentRequest struct {
 
 func (x *GetRawArtifactConsentRequest) Reset() {
 	*x = GetRawArtifactConsentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[48]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5117,7 +5641,7 @@ func (x *GetRawArtifactConsentRequest) String() string {
 func (*GetRawArtifactConsentRequest) ProtoMessage() {}
 
 func (x *GetRawArtifactConsentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[48]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5130,7 +5654,7 @@ func (x *GetRawArtifactConsentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRawArtifactConsentRequest.ProtoReflect.Descriptor instead.
 func (*GetRawArtifactConsentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{48}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetRawArtifactConsentRequest) GetRequestId() string {
@@ -5164,7 +5688,7 @@ type GetRawArtifactConsentResponse struct {
 
 func (x *GetRawArtifactConsentResponse) Reset() {
 	*x = GetRawArtifactConsentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[49]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5176,7 +5700,7 @@ func (x *GetRawArtifactConsentResponse) String() string {
 func (*GetRawArtifactConsentResponse) ProtoMessage() {}
 
 func (x *GetRawArtifactConsentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[49]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5189,7 +5713,7 @@ func (x *GetRawArtifactConsentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRawArtifactConsentResponse.ProtoReflect.Descriptor instead.
 func (*GetRawArtifactConsentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{49}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetRawArtifactConsentResponse) GetRequestId() string {
@@ -5220,7 +5744,7 @@ type ListExperimentsRequest struct {
 
 func (x *ListExperimentsRequest) Reset() {
 	*x = ListExperimentsRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[50]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5232,7 +5756,7 @@ func (x *ListExperimentsRequest) String() string {
 func (*ListExperimentsRequest) ProtoMessage() {}
 
 func (x *ListExperimentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[50]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5245,7 +5769,7 @@ func (x *ListExperimentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExperimentsRequest.ProtoReflect.Descriptor instead.
 func (*ListExperimentsRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{50}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListExperimentsRequest) GetRequestId() string {
@@ -5301,7 +5825,7 @@ type ListExperimentsResponse struct {
 
 func (x *ListExperimentsResponse) Reset() {
 	*x = ListExperimentsResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[51]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5313,7 +5837,7 @@ func (x *ListExperimentsResponse) String() string {
 func (*ListExperimentsResponse) ProtoMessage() {}
 
 func (x *ListExperimentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[51]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5326,7 +5850,7 @@ func (x *ListExperimentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListExperimentsResponse.ProtoReflect.Descriptor instead.
 func (*ListExperimentsResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{51}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListExperimentsResponse) GetRequestId() string {
@@ -5361,7 +5885,7 @@ type GetExperimentRequest struct {
 
 func (x *GetExperimentRequest) Reset() {
 	*x = GetExperimentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[52]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5373,7 +5897,7 @@ func (x *GetExperimentRequest) String() string {
 func (*GetExperimentRequest) ProtoMessage() {}
 
 func (x *GetExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[52]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5386,7 +5910,7 @@ func (x *GetExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExperimentRequest.ProtoReflect.Descriptor instead.
 func (*GetExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{52}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetExperimentRequest) GetRequestId() string {
@@ -5420,7 +5944,7 @@ type GetExperimentResponse struct {
 
 func (x *GetExperimentResponse) Reset() {
 	*x = GetExperimentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[53]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5432,7 +5956,7 @@ func (x *GetExperimentResponse) String() string {
 func (*GetExperimentResponse) ProtoMessage() {}
 
 func (x *GetExperimentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[53]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5445,7 +5969,7 @@ func (x *GetExperimentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExperimentResponse.ProtoReflect.Descriptor instead.
 func (*GetExperimentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{53}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *GetExperimentResponse) GetRequestId() string {
@@ -5476,7 +6000,7 @@ type StartExperimentRequest struct {
 
 func (x *StartExperimentRequest) Reset() {
 	*x = StartExperimentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[54]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5488,7 +6012,7 @@ func (x *StartExperimentRequest) String() string {
 func (*StartExperimentRequest) ProtoMessage() {}
 
 func (x *StartExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[54]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5501,7 +6025,7 @@ func (x *StartExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExperimentRequest.ProtoReflect.Descriptor instead.
 func (*StartExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{54}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *StartExperimentRequest) GetRequestId() string {
@@ -5556,7 +6080,7 @@ type StartExperimentResponse struct {
 
 func (x *StartExperimentResponse) Reset() {
 	*x = StartExperimentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[55]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5568,7 +6092,7 @@ func (x *StartExperimentResponse) String() string {
 func (*StartExperimentResponse) ProtoMessage() {}
 
 func (x *StartExperimentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[55]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5581,7 +6105,7 @@ func (x *StartExperimentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExperimentResponse.ProtoReflect.Descriptor instead.
 func (*StartExperimentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{55}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *StartExperimentResponse) GetRequestId() string {
@@ -5610,7 +6134,7 @@ type ResumeExperimentRequest struct {
 
 func (x *ResumeExperimentRequest) Reset() {
 	*x = ResumeExperimentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[56]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5622,7 +6146,7 @@ func (x *ResumeExperimentRequest) String() string {
 func (*ResumeExperimentRequest) ProtoMessage() {}
 
 func (x *ResumeExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[56]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5635,7 +6159,7 @@ func (x *ResumeExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeExperimentRequest.ProtoReflect.Descriptor instead.
 func (*ResumeExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{56}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ResumeExperimentRequest) GetRequestId() string {
@@ -5676,7 +6200,7 @@ type ResumeExperimentResponse struct {
 
 func (x *ResumeExperimentResponse) Reset() {
 	*x = ResumeExperimentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[57]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5688,7 +6212,7 @@ func (x *ResumeExperimentResponse) String() string {
 func (*ResumeExperimentResponse) ProtoMessage() {}
 
 func (x *ResumeExperimentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[57]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5701,7 +6225,7 @@ func (x *ResumeExperimentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeExperimentResponse.ProtoReflect.Descriptor instead.
 func (*ResumeExperimentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{57}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ResumeExperimentResponse) GetRequestId() string {
@@ -5730,7 +6254,7 @@ type CancelExperimentRequest struct {
 
 func (x *CancelExperimentRequest) Reset() {
 	*x = CancelExperimentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[58]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5742,7 +6266,7 @@ func (x *CancelExperimentRequest) String() string {
 func (*CancelExperimentRequest) ProtoMessage() {}
 
 func (x *CancelExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[58]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5755,7 +6279,7 @@ func (x *CancelExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExperimentRequest.ProtoReflect.Descriptor instead.
 func (*CancelExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{58}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *CancelExperimentRequest) GetRequestId() string {
@@ -5796,7 +6320,7 @@ type CancelExperimentResponse struct {
 
 func (x *CancelExperimentResponse) Reset() {
 	*x = CancelExperimentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[59]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5808,7 +6332,7 @@ func (x *CancelExperimentResponse) String() string {
 func (*CancelExperimentResponse) ProtoMessage() {}
 
 func (x *CancelExperimentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[59]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5821,7 +6345,7 @@ func (x *CancelExperimentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExperimentResponse.ProtoReflect.Descriptor instead.
 func (*CancelExperimentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{59}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *CancelExperimentResponse) GetRequestId() string {
@@ -5850,7 +6374,7 @@ type ListCandidatesRequest struct {
 
 func (x *ListCandidatesRequest) Reset() {
 	*x = ListCandidatesRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[60]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5862,7 +6386,7 @@ func (x *ListCandidatesRequest) String() string {
 func (*ListCandidatesRequest) ProtoMessage() {}
 
 func (x *ListCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[60]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5875,7 +6399,7 @@ func (x *ListCandidatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCandidatesRequest.ProtoReflect.Descriptor instead.
 func (*ListCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{60}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListCandidatesRequest) GetRequestId() string {
@@ -5917,7 +6441,7 @@ type ListCandidatesResponse struct {
 
 func (x *ListCandidatesResponse) Reset() {
 	*x = ListCandidatesResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[61]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5929,7 +6453,7 @@ func (x *ListCandidatesResponse) String() string {
 func (*ListCandidatesResponse) ProtoMessage() {}
 
 func (x *ListCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[61]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5942,7 +6466,7 @@ func (x *ListCandidatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{61}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ListCandidatesResponse) GetRequestId() string {
@@ -5978,7 +6502,7 @@ type GetCandidateRequest struct {
 
 func (x *GetCandidateRequest) Reset() {
 	*x = GetCandidateRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[62]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5990,7 +6514,7 @@ func (x *GetCandidateRequest) String() string {
 func (*GetCandidateRequest) ProtoMessage() {}
 
 func (x *GetCandidateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[62]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6003,7 +6527,7 @@ func (x *GetCandidateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCandidateRequest.ProtoReflect.Descriptor instead.
 func (*GetCandidateRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{62}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GetCandidateRequest) GetRequestId() string {
@@ -6044,7 +6568,7 @@ type GetCandidateResponse struct {
 
 func (x *GetCandidateResponse) Reset() {
 	*x = GetCandidateResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[63]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6056,7 +6580,7 @@ func (x *GetCandidateResponse) String() string {
 func (*GetCandidateResponse) ProtoMessage() {}
 
 func (x *GetCandidateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[63]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6069,7 +6593,7 @@ func (x *GetCandidateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCandidateResponse.ProtoReflect.Descriptor instead.
 func (*GetCandidateResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{63}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *GetCandidateResponse) GetRequestId() string {
@@ -6098,7 +6622,7 @@ type CheckUploadEligibilityRequest struct {
 
 func (x *CheckUploadEligibilityRequest) Reset() {
 	*x = CheckUploadEligibilityRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[64]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6110,7 +6634,7 @@ func (x *CheckUploadEligibilityRequest) String() string {
 func (*CheckUploadEligibilityRequest) ProtoMessage() {}
 
 func (x *CheckUploadEligibilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[64]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6123,7 +6647,7 @@ func (x *CheckUploadEligibilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckUploadEligibilityRequest.ProtoReflect.Descriptor instead.
 func (*CheckUploadEligibilityRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{64}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *CheckUploadEligibilityRequest) GetRequestId() string {
@@ -6165,7 +6689,7 @@ type CheckUploadEligibilityResponse struct {
 
 func (x *CheckUploadEligibilityResponse) Reset() {
 	*x = CheckUploadEligibilityResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[65]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6177,7 +6701,7 @@ func (x *CheckUploadEligibilityResponse) String() string {
 func (*CheckUploadEligibilityResponse) ProtoMessage() {}
 
 func (x *CheckUploadEligibilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[65]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6190,7 +6714,7 @@ func (x *CheckUploadEligibilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckUploadEligibilityResponse.ProtoReflect.Descriptor instead.
 func (*CheckUploadEligibilityResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{65}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *CheckUploadEligibilityResponse) GetRequestId() string {
@@ -6230,7 +6754,7 @@ type BeginUploadRequest struct {
 
 func (x *BeginUploadRequest) Reset() {
 	*x = BeginUploadRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[66]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6242,7 +6766,7 @@ func (x *BeginUploadRequest) String() string {
 func (*BeginUploadRequest) ProtoMessage() {}
 
 func (x *BeginUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[66]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6255,7 +6779,7 @@ func (x *BeginUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginUploadRequest.ProtoReflect.Descriptor instead.
 func (*BeginUploadRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{66}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *BeginUploadRequest) GetRequestId() string {
@@ -6325,7 +6849,7 @@ type BeginUploadResponse struct {
 
 func (x *BeginUploadResponse) Reset() {
 	*x = BeginUploadResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[67]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6337,7 +6861,7 @@ func (x *BeginUploadResponse) String() string {
 func (*BeginUploadResponse) ProtoMessage() {}
 
 func (x *BeginUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[67]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6350,7 +6874,7 @@ func (x *BeginUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginUploadResponse.ProtoReflect.Descriptor instead.
 func (*BeginUploadResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{67}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *BeginUploadResponse) GetRequestId() string {
@@ -6385,7 +6909,7 @@ type GetUploadRequest struct {
 
 func (x *GetUploadRequest) Reset() {
 	*x = GetUploadRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[68]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6397,7 +6921,7 @@ func (x *GetUploadRequest) String() string {
 func (*GetUploadRequest) ProtoMessage() {}
 
 func (x *GetUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[68]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6410,7 +6934,7 @@ func (x *GetUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUploadRequest.ProtoReflect.Descriptor instead.
 func (*GetUploadRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{68}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetUploadRequest) GetRequestId() string {
@@ -6444,7 +6968,7 @@ type GetUploadResponse struct {
 
 func (x *GetUploadResponse) Reset() {
 	*x = GetUploadResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[69]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6456,7 +6980,7 @@ func (x *GetUploadResponse) String() string {
 func (*GetUploadResponse) ProtoMessage() {}
 
 func (x *GetUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[69]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6469,7 +6993,7 @@ func (x *GetUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUploadResponse.ProtoReflect.Descriptor instead.
 func (*GetUploadResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{69}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *GetUploadResponse) GetRequestId() string {
@@ -6498,7 +7022,7 @@ type CompleteUploadRequest struct {
 
 func (x *CompleteUploadRequest) Reset() {
 	*x = CompleteUploadRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[70]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6510,7 +7034,7 @@ func (x *CompleteUploadRequest) String() string {
 func (*CompleteUploadRequest) ProtoMessage() {}
 
 func (x *CompleteUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[70]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6523,7 +7047,7 @@ func (x *CompleteUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteUploadRequest.ProtoReflect.Descriptor instead.
 func (*CompleteUploadRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{70}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *CompleteUploadRequest) GetRequestId() string {
@@ -6565,7 +7089,7 @@ type CompleteUploadResponse struct {
 
 func (x *CompleteUploadResponse) Reset() {
 	*x = CompleteUploadResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[71]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6577,7 +7101,7 @@ func (x *CompleteUploadResponse) String() string {
 func (*CompleteUploadResponse) ProtoMessage() {}
 
 func (x *CompleteUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[71]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6590,7 +7114,7 @@ func (x *CompleteUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteUploadResponse.ProtoReflect.Descriptor instead.
 func (*CompleteUploadResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{71}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *CompleteUploadResponse) GetRequestId() string {
@@ -6627,7 +7151,7 @@ type ListEvidenceRequest struct {
 
 func (x *ListEvidenceRequest) Reset() {
 	*x = ListEvidenceRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[72]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6639,7 +7163,7 @@ func (x *ListEvidenceRequest) String() string {
 func (*ListEvidenceRequest) ProtoMessage() {}
 
 func (x *ListEvidenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[72]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6652,7 +7176,7 @@ func (x *ListEvidenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEvidenceRequest.ProtoReflect.Descriptor instead.
 func (*ListEvidenceRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{72}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ListEvidenceRequest) GetRequestId() string {
@@ -6701,7 +7225,7 @@ type ListEvidenceResponse struct {
 
 func (x *ListEvidenceResponse) Reset() {
 	*x = ListEvidenceResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[73]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6713,7 +7237,7 @@ func (x *ListEvidenceResponse) String() string {
 func (*ListEvidenceResponse) ProtoMessage() {}
 
 func (x *ListEvidenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[73]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6726,7 +7250,7 @@ func (x *ListEvidenceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEvidenceResponse.ProtoReflect.Descriptor instead.
 func (*ListEvidenceResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{73}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ListEvidenceResponse) GetRequestId() string {
@@ -6763,7 +7287,7 @@ type GetEvidenceDownloadRequest struct {
 
 func (x *GetEvidenceDownloadRequest) Reset() {
 	*x = GetEvidenceDownloadRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[74]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6775,7 +7299,7 @@ func (x *GetEvidenceDownloadRequest) String() string {
 func (*GetEvidenceDownloadRequest) ProtoMessage() {}
 
 func (x *GetEvidenceDownloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[74]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6788,7 +7312,7 @@ func (x *GetEvidenceDownloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEvidenceDownloadRequest.ProtoReflect.Descriptor instead.
 func (*GetEvidenceDownloadRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{74}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *GetEvidenceDownloadRequest) GetRequestId() string {
@@ -6837,7 +7361,7 @@ type GetEvidenceDownloadResponse struct {
 
 func (x *GetEvidenceDownloadResponse) Reset() {
 	*x = GetEvidenceDownloadResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[75]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6849,7 +7373,7 @@ func (x *GetEvidenceDownloadResponse) String() string {
 func (*GetEvidenceDownloadResponse) ProtoMessage() {}
 
 func (x *GetEvidenceDownloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[75]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6862,7 +7386,7 @@ func (x *GetEvidenceDownloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEvidenceDownloadResponse.ProtoReflect.Descriptor instead.
 func (*GetEvidenceDownloadResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{75}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *GetEvidenceDownloadResponse) GetRequestId() string {
@@ -6897,7 +7421,7 @@ type DeleteExperimentRequest struct {
 
 func (x *DeleteExperimentRequest) Reset() {
 	*x = DeleteExperimentRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[76]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6909,7 +7433,7 @@ func (x *DeleteExperimentRequest) String() string {
 func (*DeleteExperimentRequest) ProtoMessage() {}
 
 func (x *DeleteExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[76]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6922,7 +7446,7 @@ func (x *DeleteExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExperimentRequest.ProtoReflect.Descriptor instead.
 func (*DeleteExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{76}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *DeleteExperimentRequest) GetRequestId() string {
@@ -6956,7 +7480,7 @@ type DeleteExperimentResponse struct {
 
 func (x *DeleteExperimentResponse) Reset() {
 	*x = DeleteExperimentResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[77]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6968,7 +7492,7 @@ func (x *DeleteExperimentResponse) String() string {
 func (*DeleteExperimentResponse) ProtoMessage() {}
 
 func (x *DeleteExperimentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[77]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6981,7 +7505,7 @@ func (x *DeleteExperimentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteExperimentResponse.ProtoReflect.Descriptor instead.
 func (*DeleteExperimentResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{77}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *DeleteExperimentResponse) GetRequestId() string {
@@ -7009,7 +7533,7 @@ type GetDeletionRequest struct {
 
 func (x *GetDeletionRequest) Reset() {
 	*x = GetDeletionRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[78]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7021,7 +7545,7 @@ func (x *GetDeletionRequest) String() string {
 func (*GetDeletionRequest) ProtoMessage() {}
 
 func (x *GetDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[78]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7034,7 +7558,7 @@ func (x *GetDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDeletionRequest.ProtoReflect.Descriptor instead.
 func (*GetDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{78}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *GetDeletionRequest) GetRequestId() string {
@@ -7068,7 +7592,7 @@ type GetDeletionResponse struct {
 
 func (x *GetDeletionResponse) Reset() {
 	*x = GetDeletionResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[79]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7080,7 +7604,7 @@ func (x *GetDeletionResponse) String() string {
 func (*GetDeletionResponse) ProtoMessage() {}
 
 func (x *GetDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[79]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7093,7 +7617,7 @@ func (x *GetDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDeletionResponse.ProtoReflect.Descriptor instead.
 func (*GetDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{79}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *GetDeletionResponse) GetRequestId() string {
@@ -7123,7 +7647,7 @@ type ApproveDraftRequest struct {
 
 func (x *ApproveDraftRequest) Reset() {
 	*x = ApproveDraftRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[80]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7135,7 +7659,7 @@ func (x *ApproveDraftRequest) String() string {
 func (*ApproveDraftRequest) ProtoMessage() {}
 
 func (x *ApproveDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[80]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7148,7 +7672,7 @@ func (x *ApproveDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveDraftRequest.ProtoReflect.Descriptor instead.
 func (*ApproveDraftRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{80}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ApproveDraftRequest) GetRequestId() string {
@@ -7196,7 +7720,7 @@ type ApproveDraftResponse struct {
 
 func (x *ApproveDraftResponse) Reset() {
 	*x = ApproveDraftResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[81]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7208,7 +7732,7 @@ func (x *ApproveDraftResponse) String() string {
 func (*ApproveDraftResponse) ProtoMessage() {}
 
 func (x *ApproveDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[81]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7221,7 +7745,7 @@ func (x *ApproveDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveDraftResponse.ProtoReflect.Descriptor instead.
 func (*ApproveDraftResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{81}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ApproveDraftResponse) GetRequestId() string {
@@ -7249,7 +7773,7 @@ type GetApprovalRequest struct {
 
 func (x *GetApprovalRequest) Reset() {
 	*x = GetApprovalRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[82]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7261,7 +7785,7 @@ func (x *GetApprovalRequest) String() string {
 func (*GetApprovalRequest) ProtoMessage() {}
 
 func (x *GetApprovalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[82]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7274,7 +7798,7 @@ func (x *GetApprovalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApprovalRequest.ProtoReflect.Descriptor instead.
 func (*GetApprovalRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{82}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *GetApprovalRequest) GetRequestId() string {
@@ -7308,7 +7832,7 @@ type GetApprovalResponse struct {
 
 func (x *GetApprovalResponse) Reset() {
 	*x = GetApprovalResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[83]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7320,7 +7844,7 @@ func (x *GetApprovalResponse) String() string {
 func (*GetApprovalResponse) ProtoMessage() {}
 
 func (x *GetApprovalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[83]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7333,7 +7857,7 @@ func (x *GetApprovalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApprovalResponse.ProtoReflect.Descriptor instead.
 func (*GetApprovalResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{83}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *GetApprovalResponse) GetRequestId() string {
@@ -7362,7 +7886,7 @@ type PublishDraftRequest struct {
 
 func (x *PublishDraftRequest) Reset() {
 	*x = PublishDraftRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[84]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7374,7 +7898,7 @@ func (x *PublishDraftRequest) String() string {
 func (*PublishDraftRequest) ProtoMessage() {}
 
 func (x *PublishDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[84]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7387,7 +7911,7 @@ func (x *PublishDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishDraftRequest.ProtoReflect.Descriptor instead.
 func (*PublishDraftRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{84}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *PublishDraftRequest) GetRequestId() string {
@@ -7428,7 +7952,7 @@ type PublishDraftResponse struct {
 
 func (x *PublishDraftResponse) Reset() {
 	*x = PublishDraftResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[85]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7440,7 +7964,7 @@ func (x *PublishDraftResponse) String() string {
 func (*PublishDraftResponse) ProtoMessage() {}
 
 func (x *PublishDraftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[85]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7453,7 +7977,7 @@ func (x *PublishDraftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishDraftResponse.ProtoReflect.Descriptor instead.
 func (*PublishDraftResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{85}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *PublishDraftResponse) GetRequestId() string {
@@ -7481,7 +8005,7 @@ type GetPublicationRequest struct {
 
 func (x *GetPublicationRequest) Reset() {
 	*x = GetPublicationRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[86]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7493,7 +8017,7 @@ func (x *GetPublicationRequest) String() string {
 func (*GetPublicationRequest) ProtoMessage() {}
 
 func (x *GetPublicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[86]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7506,7 +8030,7 @@ func (x *GetPublicationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPublicationRequest.ProtoReflect.Descriptor instead.
 func (*GetPublicationRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{86}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *GetPublicationRequest) GetRequestId() string {
@@ -7540,7 +8064,7 @@ type GetPublicationResponse struct {
 
 func (x *GetPublicationResponse) Reset() {
 	*x = GetPublicationResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[87]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7552,7 +8076,7 @@ func (x *GetPublicationResponse) String() string {
 func (*GetPublicationResponse) ProtoMessage() {}
 
 func (x *GetPublicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[87]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7565,7 +8089,7 @@ func (x *GetPublicationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPublicationResponse.ProtoReflect.Descriptor instead.
 func (*GetPublicationResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{87}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *GetPublicationResponse) GetRequestId() string {
@@ -7594,7 +8118,7 @@ type ListCloudToolsRequest struct {
 
 func (x *ListCloudToolsRequest) Reset() {
 	*x = ListCloudToolsRequest{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[88]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7606,7 +8130,7 @@ func (x *ListCloudToolsRequest) String() string {
 func (*ListCloudToolsRequest) ProtoMessage() {}
 
 func (x *ListCloudToolsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[88]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7619,7 +8143,7 @@ func (x *ListCloudToolsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCloudToolsRequest.ProtoReflect.Descriptor instead.
 func (*ListCloudToolsRequest) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{88}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ListCloudToolsRequest) GetRequestId() string {
@@ -7661,7 +8185,7 @@ type ListCloudToolsResponse struct {
 
 func (x *ListCloudToolsResponse) Reset() {
 	*x = ListCloudToolsResponse{}
-	mi := &file_perfine_v1_perfine_proto_msgTypes[89]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7673,7 +8197,7 @@ func (x *ListCloudToolsResponse) String() string {
 func (*ListCloudToolsResponse) ProtoMessage() {}
 
 func (x *ListCloudToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_perfine_v1_perfine_proto_msgTypes[89]
+	mi := &file_perfine_v1_perfine_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7686,7 +8210,7 @@ func (x *ListCloudToolsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCloudToolsResponse.ProtoReflect.Descriptor instead.
 func (*ListCloudToolsResponse) Descriptor() ([]byte, []int) {
-	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{89}
+	return file_perfine_v1_perfine_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ListCloudToolsResponse) GetRequestId() string {
@@ -7776,7 +8300,7 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\vToolVersion\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x121\n" +
-	"\x14configuration_sha256\x18\x03 \x01(\tR\x13configurationSha256\"\xe8\x02\n" +
+	"\x14configuration_sha256\x18\x03 \x01(\tR\x13configurationSha256\"\xf1\x03\n" +
 	"\x14ExecutionEnvironment\x12)\n" +
 	"\x10operating_system\x18\x01 \x01(\tR\x0foperatingSystem\x12\"\n" +
 	"\farchitecture\x18\x02 \x01(\tR\farchitecture\x12\x16\n" +
@@ -7786,7 +8310,12 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\rbuild_options\x18\x06 \x03(\tR\fbuildOptions\x12#\n" +
 	"\rruntime_flags\x18\a \x03(\tR\fruntimeFlags\x12-\n" +
 	"\x05tools\x18\b \x03(\v2\x17.perfine.v1.ToolVersionR\x05tools\x12-\n" +
-	"\x12environment_sha256\x18\t \x01(\tR\x11environmentSha256\"7\n" +
+	"\x12environment_sha256\x18\t \x01(\tR\x11environmentSha256\x12J\n" +
+	"\bhardware\x18\n" +
+	" \x03(\v2..perfine.v1.ExecutionEnvironment.HardwareEntryR\bhardware\x1a;\n" +
+	"\rHardwareEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\tInputHash\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xf2\x01\n" +
@@ -7796,11 +8325,13 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\tfrequency\x18\x03 \x01(\x01R\tfrequency\x12F\n" +
 	"\x10frequency_source\x18\x04 \x01(\x0e2\x1b.perfine.v1.FrequencySourceR\x0ffrequencySource\x12%\n" +
 	"\x0eprotected_case\x18\x05 \x01(\bR\rprotectedCase\x12-\n" +
-	"\x06inputs\x18\x06 \x03(\v2\x15.perfine.v1.InputHashR\x06inputs\"k\n" +
+	"\x06inputs\x18\x06 \x03(\v2\x15.perfine.v1.InputHashR\x06inputs\"\xaa\x01\n" +
 	"\x06Metric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04unit\x18\x02 \x01(\tR\x04unit\x129\n" +
-	"\tobjective\x18\x03 \x01(\x0e2\x1b.perfine.v1.MetricObjectiveR\tobjective\"\xd1\x03\n" +
+	"\tobjective\x18\x03 \x01(\x0e2\x1b.perfine.v1.MetricObjectiveR\tobjective\x12=\n" +
+	"\vengine_kind\x18\x04 \x01(\x0e2\x1c.perfine.v1.EngineMetricKindR\n" +
+	"engineKind\"\xd1\x03\n" +
 	"\x11PerformancePolicy\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.perfine.v1.PolicyKindR\x04kind\x12*\n" +
@@ -7810,16 +8341,25 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\vrepetitions\x18\x06 \x01(\rR\vrepetitions\x12A\n" +
 	"\vuncertainty\x18\a \x01(\v2\x1f.perfine.v1.UncertaintyCriteriaR\vuncertainty\x12J\n" +
 	"\x12allowed_exceptions\x18\b \x03(\x0e2\x1b.perfine.v1.PolicyExceptionR\x11allowedExceptions\x12#\n" +
-	"\rpolicy_sha256\x18\t \x01(\tR\fpolicySha256\"\xbb\x01\n" +
-	"\x13UncertaintyCriteria\x12)\n" +
-	"\x10confidence_level\x18\x01 \x01(\x01R\x0fconfidenceLevel\x12E\n" +
-	"\x1fmaximum_relative_interval_width\x18\x02 \x01(\x01R\x1cmaximumRelativeIntervalWidth\x122\n" +
-	"\x15near_threshold_margin\x18\x03 \x01(\x01R\x13nearThresholdMargin\"\xfe\x01\n" +
+	"\rpolicy_sha256\x18\t \x01(\tR\fpolicySha256\"\x97\x04\n" +
+	"\x13UncertaintyCriteria\x12-\n" +
+	"\x10confidence_level\x18\x01 \x01(\x01B\x02\x18\x01R\x0fconfidenceLevel\x12I\n" +
+	"\x1fmaximum_relative_interval_width\x18\x02 \x01(\x01B\x02\x18\x01R\x1cmaximumRelativeIntervalWidth\x126\n" +
+	"\x15near_threshold_margin\x18\x03 \x01(\x01B\x02\x18\x01R\x13nearThresholdMargin\x122\n" +
+	"\x15engine_schema_version\x18\x04 \x01(\rR\x13engineSchemaVersion\x129\n" +
+	"\x16maximum_relative_range\x18\x05 \x01(\x01H\x00R\x14maximumRelativeRange\x88\x01\x01\x12,\n" +
+	"\x0fdecision_margin\x18\x06 \x01(\x01H\x01R\x0edecisionMargin\x88\x01\x01\x12.\n" +
+	"\x10repeat_tolerance\x18\a \x01(\x01H\x02R\x0frepeatTolerance\x88\x01\x01\x12*\n" +
+	"\x0enear_threshold\x18\b \x01(\x01H\x03R\rnearThreshold\x88\x01\x01B\x19\n" +
+	"\x17_maximum_relative_rangeB\x12\n" +
+	"\x10_decision_marginB\x13\n" +
+	"\x11_repeat_toleranceB\x11\n" +
+	"\x0f_near_threshold\"\xfe\x01\n" +
 	"\x0fExecutionLimits\x12'\n" +
 	"\x0fcandidate_count\x18\x01 \x01(\rR\x0ecandidateCount\x127\n" +
 	"\x17simultaneous_candidates\x18\x02 \x01(\rR\x16simultaneousCandidates\x12A\n" +
 	"\x0estart_deadline\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\rstartDeadline\x12F\n" +
-	"\x11candidate_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x10candidateTimeout\"\xed\x04\n" +
+	"\x11candidate_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x10candidateTimeout\"\xe5\x06\n" +
 	"\x17ExperimentSpecification\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x19\n" +
 	"\bbase_sha\x18\x02 \x01(\tR\abaseSha\x12(\n" +
@@ -7834,7 +8374,12 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\x12fingerprint_sha256\x18\n" +
 	" \x01(\tR\x11fingerprintSha256\x12R\n" +
 	"%workload_representativeness_confirmed\x18\v \x01(\bR#workloadRepresentativenessConfirmed\x120\n" +
-	"\x14parent_candidate_ids\x18\f \x03(\tR\x12parentCandidateIds\"\xbf\x06\n" +
+	"\x14parent_candidate_ids\x18\f \x03(\tR\x12parentCandidateIds\x12!\n" +
+	"\fworkflow_sha\x18\r \x01(\tR\vworkflowSha\x12-\n" +
+	"\x06inputs\x18\x0e \x03(\v2\x15.perfine.v1.InputHashR\x06inputs\x12-\n" +
+	"\x12correctness_checks\x18\x0f \x03(\tR\x11correctnessChecks\x123\n" +
+	"\x15workload_confirmation\x18\x10 \x01(\tR\x14workloadConfirmation\x12@\n" +
+	"\x0estart_duration\x18\x11 \x01(\v2\x19.google.protobuf.DurationR\rstartDuration\"\xbf\x06\n" +
 	"\n" +
 	"Experiment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -8015,7 +8560,42 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\x11local_alternative\x18\x06 \x01(\tR\x10localAlternative\x12>\n" +
 	"\x1bofficial_documentation_urls\x18\a \x03(\tR\x19officialDocumentationUrls\x12;\n" +
 	"\vverified_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"verifiedAt\"S\n" +
+	"verifiedAt\"\xff\x01\n" +
+	"\x11PreparationLimits\x12'\n" +
+	"\x0fcandidate_count\x18\x01 \x01(\rR\x0ecandidateCount\x127\n" +
+	"\x17simultaneous_candidates\x18\x02 \x01(\rR\x16simultaneousCandidates\x12@\n" +
+	"\x0estart_duration\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\rstartDuration\x12F\n" +
+	"\x11candidate_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x10candidateTimeout\"\xa2\x05\n" +
+	"\x17ExperimentConfiguration\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x19\n" +
+	"\bbase_sha\x18\x02 \x01(\tR\abaseSha\x12(\n" +
+	"\x10initial_base_sha\x18\x03 \x01(\tR\x0einitialBaseSha\x12\x1f\n" +
+	"\vharness_sha\x18\x04 \x01(\tR\n" +
+	"harnessSha\x12!\n" +
+	"\fworkflow_sha\x18\x05 \x01(\tR\vworkflowSha\x120\n" +
+	"\blanguage\x18\x06 \x01(\x0e2\x14.perfine.v1.LanguageR\blanguage\x12B\n" +
+	"\venvironment\x18\a \x01(\v2 .perfine.v1.ExecutionEnvironmentR\venvironment\x12.\n" +
+	"\x05cases\x18\b \x03(\v2\x18.perfine.v1.WorkloadCaseR\x05cases\x12-\n" +
+	"\x06inputs\x18\t \x03(\v2\x15.perfine.v1.InputHashR\x06inputs\x12-\n" +
+	"\x12correctness_checks\x18\n" +
+	" \x03(\tR\x11correctnessChecks\x125\n" +
+	"\x06policy\x18\v \x01(\v2\x1d.perfine.v1.PerformancePolicyR\x06policy\x125\n" +
+	"\x06limits\x18\f \x01(\v2\x1d.perfine.v1.PreparationLimitsR\x06limits\x123\n" +
+	"\x15workload_confirmation\x18\r \x01(\tR\x14workloadConfirmation\x120\n" +
+	"\x14parent_candidate_ids\x18\x0e \x03(\tR\x12parentCandidateIds\"\xc4\x01\n" +
+	"\x18PrepareExperimentRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x19\n" +
+	"\bspace_id\x18\x02 \x01(\tR\aspaceId\x12#\n" +
+	"\rconnection_id\x18\x03 \x01(\tR\fconnectionId\x12I\n" +
+	"\rconfiguration\x18\x04 \x01(\v2#.perfine.v1.ExperimentConfigurationR\rconfiguration\"\xf0\x01\n" +
+	"\x19PrepareExperimentResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12I\n" +
+	"\rspecification\x18\x02 \x01(\v2#.perfine.v1.ExperimentSpecificationR\rspecification\x12,\n" +
+	"\x12engine_config_json\x18\x03 \x01(\tR\x10engineConfigJson\x12;\n" +
+	"\vprepared_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"preparedAt\"S\n" +
 	"\x17GetAuthorizationRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x19\n" +
@@ -8429,7 +9009,14 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"-CLOUD_UNAVAILABLE_REASON_EXECUTION_UNVERIFIED\x10\x02\x120\n" +
 	",CLOUD_UNAVAILABLE_REASON_CONNECTION_INACTIVE\x10\x03\x122\n" +
 	".CLOUD_UNAVAILABLE_REASON_AUTHORITY_UNAVAILABLE\x10\x04\x12.\n" +
-	"*CLOUD_UNAVAILABLE_REASON_CAPACITY_EXCEEDED\x10\x05*q\n" +
+	"*CLOUD_UNAVAILABLE_REASON_CAPACITY_EXCEEDED\x10\x05*\xcf\x01\n" +
+	"\x10EngineMetricKind\x12\"\n" +
+	"\x1eENGINE_METRIC_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15ENGINE_METRIC_KIND_IR\x10\x01\x12\x1b\n" +
+	"\x17ENGINE_METRIC_KIND_TIME\x10\x02\x12!\n" +
+	"\x1dENGINE_METRIC_KIND_THROUGHPUT\x10\x03\x12\x1d\n" +
+	"\x19ENGINE_METRIC_KIND_MEMORY\x10\x04\x12\x1d\n" +
+	"\x19ENGINE_METRIC_KIND_CUSTOM\x10\x05*q\n" +
 	"\x0fMetricObjective\x12 \n" +
 	"\x1cMETRIC_OBJECTIVE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19METRIC_OBJECTIVE_MINIMIZE\x10\x01\x12\x1d\n" +
@@ -8480,8 +9067,9 @@ const file_perfine_v1_perfine_proto_rawDesc = "" +
 	"\rGetConnection\x12 .perfine.v1.GetConnectionRequest\x1a!.perfine.v1.GetConnectionResponse\x12`\n" +
 	"\x11ConnectRepository\x12$.perfine.v1.ConnectRepositoryRequest\x1a%.perfine.v1.ConnectRepositoryResponse\x12i\n" +
 	"\x14DisconnectRepository\x12'.perfine.v1.DisconnectRepositoryRequest\x1a(.perfine.v1.DisconnectRepositoryResponse\x12l\n" +
-	"\x15SetRawArtifactConsent\x12(.perfine.v1.SetRawArtifactConsentRequest\x1a).perfine.v1.SetRawArtifactConsentResponse2\x8b\x05\n" +
-	"\x11ExperimentService\x12Z\n" +
+	"\x15SetRawArtifactConsent\x12(.perfine.v1.SetRawArtifactConsentRequest\x1a).perfine.v1.SetRawArtifactConsentResponse2\xed\x05\n" +
+	"\x11ExperimentService\x12`\n" +
+	"\x11PrepareExperiment\x12$.perfine.v1.PrepareExperimentRequest\x1a%.perfine.v1.PrepareExperimentResponse\x12Z\n" +
 	"\x0fListExperiments\x12\".perfine.v1.ListExperimentsRequest\x1a#.perfine.v1.ListExperimentsResponse\x12T\n" +
 	"\rGetExperiment\x12 .perfine.v1.GetExperimentRequest\x1a!.perfine.v1.GetExperimentResponse\x12Z\n" +
 	"\x0fStartExperiment\x12\".perfine.v1.StartExperimentRequest\x1a#.perfine.v1.StartExperimentResponse\x12]\n" +
@@ -8519,8 +9107,8 @@ func file_perfine_v1_perfine_proto_rawDescGZIP() []byte {
 	return file_perfine_v1_perfine_proto_rawDescData
 }
 
-var file_perfine_v1_perfine_proto_enumTypes = make([]protoimpl.EnumInfo, 24)
-var file_perfine_v1_perfine_proto_msgTypes = make([]protoimpl.MessageInfo, 90)
+var file_perfine_v1_perfine_proto_enumTypes = make([]protoimpl.EnumInfo, 25)
+var file_perfine_v1_perfine_proto_msgTypes = make([]protoimpl.MessageInfo, 95)
 var file_perfine_v1_perfine_proto_goTypes = []any{
 	(Permission)(0),                        // 0: perfine.v1.Permission
 	(ExecutionState)(0),                    // 1: perfine.v1.ExecutionState
@@ -8538,297 +9126,320 @@ var file_perfine_v1_perfine_proto_goTypes = []any{
 	(PublicationState)(0),                  // 13: perfine.v1.PublicationState
 	(CloudEligibilityState)(0),             // 14: perfine.v1.CloudEligibilityState
 	(CloudUnavailableReason)(0),            // 15: perfine.v1.CloudUnavailableReason
-	(MetricObjective)(0),                   // 16: perfine.v1.MetricObjective
-	(PolicyKind)(0),                        // 17: perfine.v1.PolicyKind
-	(PolicyException)(0),                   // 18: perfine.v1.PolicyException
-	(CorrectnessState)(0),                  // 19: perfine.v1.CorrectnessState
-	(ComparisonKind)(0),                    // 20: perfine.v1.ComparisonKind
-	(Language)(0),                          // 21: perfine.v1.Language
-	(ExecutionOrigin)(0),                   // 22: perfine.v1.ExecutionOrigin
-	(FrequencySource)(0),                   // 23: perfine.v1.FrequencySource
-	(*ErrorDetail)(nil),                    // 24: perfine.v1.ErrorDetail
-	(*FieldViolation)(nil),                 // 25: perfine.v1.FieldViolation
-	(*PageRequest)(nil),                    // 26: perfine.v1.PageRequest
-	(*PageResponse)(nil),                   // 27: perfine.v1.PageResponse
-	(*GitHubRepository)(nil),               // 28: perfine.v1.GitHubRepository
-	(*GitHubExecution)(nil),                // 29: perfine.v1.GitHubExecution
-	(*Authorization)(nil),                  // 30: perfine.v1.Authorization
-	(*Cancellation)(nil),                   // 31: perfine.v1.Cancellation
-	(*Connection)(nil),                     // 32: perfine.v1.Connection
-	(*RawArtifactConsent)(nil),             // 33: perfine.v1.RawArtifactConsent
-	(*ToolVersion)(nil),                    // 34: perfine.v1.ToolVersion
-	(*ExecutionEnvironment)(nil),           // 35: perfine.v1.ExecutionEnvironment
-	(*InputHash)(nil),                      // 36: perfine.v1.InputHash
-	(*WorkloadCase)(nil),                   // 37: perfine.v1.WorkloadCase
-	(*Metric)(nil),                         // 38: perfine.v1.Metric
-	(*PerformancePolicy)(nil),              // 39: perfine.v1.PerformancePolicy
-	(*UncertaintyCriteria)(nil),            // 40: perfine.v1.UncertaintyCriteria
-	(*ExecutionLimits)(nil),                // 41: perfine.v1.ExecutionLimits
-	(*ExperimentSpecification)(nil),        // 42: perfine.v1.ExperimentSpecification
-	(*Experiment)(nil),                     // 43: perfine.v1.Experiment
-	(*CaseMeasurement)(nil),                // 44: perfine.v1.CaseMeasurement
-	(*Comparison)(nil),                     // 45: perfine.v1.Comparison
-	(*CorrectnessResult)(nil),              // 46: perfine.v1.CorrectnessResult
-	(*Candidate)(nil),                      // 47: perfine.v1.Candidate
-	(*ArtifactManifest)(nil),               // 48: perfine.v1.ArtifactManifest
-	(*EvidenceManifest)(nil),               // 49: perfine.v1.EvidenceManifest
-	(*ArtifactDecision)(nil),               // 50: perfine.v1.ArtifactDecision
-	(*UploadTarget)(nil),                   // 51: perfine.v1.UploadTarget
-	(*UploadHeader)(nil),                   // 52: perfine.v1.UploadHeader
-	(*Upload)(nil),                         // 53: perfine.v1.Upload
-	(*ArtifactReceipt)(nil),                // 54: perfine.v1.ArtifactReceipt
-	(*Deletion)(nil),                       // 55: perfine.v1.Deletion
-	(*DraftBinding)(nil),                   // 56: perfine.v1.DraftBinding
-	(*Approval)(nil),                       // 57: perfine.v1.Approval
-	(*Publication)(nil),                    // 58: perfine.v1.Publication
-	(*CloudTool)(nil),                      // 59: perfine.v1.CloudTool
-	(*GetAuthorizationRequest)(nil),        // 60: perfine.v1.GetAuthorizationRequest
-	(*GetAuthorizationResponse)(nil),       // 61: perfine.v1.GetAuthorizationResponse
-	(*ListConnectionsRequest)(nil),         // 62: perfine.v1.ListConnectionsRequest
-	(*ListConnectionsResponse)(nil),        // 63: perfine.v1.ListConnectionsResponse
-	(*GetConnectionRequest)(nil),           // 64: perfine.v1.GetConnectionRequest
-	(*GetConnectionResponse)(nil),          // 65: perfine.v1.GetConnectionResponse
-	(*ConnectRepositoryRequest)(nil),       // 66: perfine.v1.ConnectRepositoryRequest
-	(*ConnectRepositoryResponse)(nil),      // 67: perfine.v1.ConnectRepositoryResponse
-	(*DisconnectRepositoryRequest)(nil),    // 68: perfine.v1.DisconnectRepositoryRequest
-	(*DisconnectRepositoryResponse)(nil),   // 69: perfine.v1.DisconnectRepositoryResponse
-	(*SetRawArtifactConsentRequest)(nil),   // 70: perfine.v1.SetRawArtifactConsentRequest
-	(*SetRawArtifactConsentResponse)(nil),  // 71: perfine.v1.SetRawArtifactConsentResponse
-	(*GetRawArtifactConsentRequest)(nil),   // 72: perfine.v1.GetRawArtifactConsentRequest
-	(*GetRawArtifactConsentResponse)(nil),  // 73: perfine.v1.GetRawArtifactConsentResponse
-	(*ListExperimentsRequest)(nil),         // 74: perfine.v1.ListExperimentsRequest
-	(*ListExperimentsResponse)(nil),        // 75: perfine.v1.ListExperimentsResponse
-	(*GetExperimentRequest)(nil),           // 76: perfine.v1.GetExperimentRequest
-	(*GetExperimentResponse)(nil),          // 77: perfine.v1.GetExperimentResponse
-	(*StartExperimentRequest)(nil),         // 78: perfine.v1.StartExperimentRequest
-	(*StartExperimentResponse)(nil),        // 79: perfine.v1.StartExperimentResponse
-	(*ResumeExperimentRequest)(nil),        // 80: perfine.v1.ResumeExperimentRequest
-	(*ResumeExperimentResponse)(nil),       // 81: perfine.v1.ResumeExperimentResponse
-	(*CancelExperimentRequest)(nil),        // 82: perfine.v1.CancelExperimentRequest
-	(*CancelExperimentResponse)(nil),       // 83: perfine.v1.CancelExperimentResponse
-	(*ListCandidatesRequest)(nil),          // 84: perfine.v1.ListCandidatesRequest
-	(*ListCandidatesResponse)(nil),         // 85: perfine.v1.ListCandidatesResponse
-	(*GetCandidateRequest)(nil),            // 86: perfine.v1.GetCandidateRequest
-	(*GetCandidateResponse)(nil),           // 87: perfine.v1.GetCandidateResponse
-	(*CheckUploadEligibilityRequest)(nil),  // 88: perfine.v1.CheckUploadEligibilityRequest
-	(*CheckUploadEligibilityResponse)(nil), // 89: perfine.v1.CheckUploadEligibilityResponse
-	(*BeginUploadRequest)(nil),             // 90: perfine.v1.BeginUploadRequest
-	(*BeginUploadResponse)(nil),            // 91: perfine.v1.BeginUploadResponse
-	(*GetUploadRequest)(nil),               // 92: perfine.v1.GetUploadRequest
-	(*GetUploadResponse)(nil),              // 93: perfine.v1.GetUploadResponse
-	(*CompleteUploadRequest)(nil),          // 94: perfine.v1.CompleteUploadRequest
-	(*CompleteUploadResponse)(nil),         // 95: perfine.v1.CompleteUploadResponse
-	(*ListEvidenceRequest)(nil),            // 96: perfine.v1.ListEvidenceRequest
-	(*ListEvidenceResponse)(nil),           // 97: perfine.v1.ListEvidenceResponse
-	(*GetEvidenceDownloadRequest)(nil),     // 98: perfine.v1.GetEvidenceDownloadRequest
-	(*GetEvidenceDownloadResponse)(nil),    // 99: perfine.v1.GetEvidenceDownloadResponse
-	(*DeleteExperimentRequest)(nil),        // 100: perfine.v1.DeleteExperimentRequest
-	(*DeleteExperimentResponse)(nil),       // 101: perfine.v1.DeleteExperimentResponse
-	(*GetDeletionRequest)(nil),             // 102: perfine.v1.GetDeletionRequest
-	(*GetDeletionResponse)(nil),            // 103: perfine.v1.GetDeletionResponse
-	(*ApproveDraftRequest)(nil),            // 104: perfine.v1.ApproveDraftRequest
-	(*ApproveDraftResponse)(nil),           // 105: perfine.v1.ApproveDraftResponse
-	(*GetApprovalRequest)(nil),             // 106: perfine.v1.GetApprovalRequest
-	(*GetApprovalResponse)(nil),            // 107: perfine.v1.GetApprovalResponse
-	(*PublishDraftRequest)(nil),            // 108: perfine.v1.PublishDraftRequest
-	(*PublishDraftResponse)(nil),           // 109: perfine.v1.PublishDraftResponse
-	(*GetPublicationRequest)(nil),          // 110: perfine.v1.GetPublicationRequest
-	(*GetPublicationResponse)(nil),         // 111: perfine.v1.GetPublicationResponse
-	(*ListCloudToolsRequest)(nil),          // 112: perfine.v1.ListCloudToolsRequest
-	(*ListCloudToolsResponse)(nil),         // 113: perfine.v1.ListCloudToolsResponse
-	(*timestamppb.Timestamp)(nil),          // 114: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),            // 115: google.protobuf.Duration
+	(EngineMetricKind)(0),                  // 16: perfine.v1.EngineMetricKind
+	(MetricObjective)(0),                   // 17: perfine.v1.MetricObjective
+	(PolicyKind)(0),                        // 18: perfine.v1.PolicyKind
+	(PolicyException)(0),                   // 19: perfine.v1.PolicyException
+	(CorrectnessState)(0),                  // 20: perfine.v1.CorrectnessState
+	(ComparisonKind)(0),                    // 21: perfine.v1.ComparisonKind
+	(Language)(0),                          // 22: perfine.v1.Language
+	(ExecutionOrigin)(0),                   // 23: perfine.v1.ExecutionOrigin
+	(FrequencySource)(0),                   // 24: perfine.v1.FrequencySource
+	(*ErrorDetail)(nil),                    // 25: perfine.v1.ErrorDetail
+	(*FieldViolation)(nil),                 // 26: perfine.v1.FieldViolation
+	(*PageRequest)(nil),                    // 27: perfine.v1.PageRequest
+	(*PageResponse)(nil),                   // 28: perfine.v1.PageResponse
+	(*GitHubRepository)(nil),               // 29: perfine.v1.GitHubRepository
+	(*GitHubExecution)(nil),                // 30: perfine.v1.GitHubExecution
+	(*Authorization)(nil),                  // 31: perfine.v1.Authorization
+	(*Cancellation)(nil),                   // 32: perfine.v1.Cancellation
+	(*Connection)(nil),                     // 33: perfine.v1.Connection
+	(*RawArtifactConsent)(nil),             // 34: perfine.v1.RawArtifactConsent
+	(*ToolVersion)(nil),                    // 35: perfine.v1.ToolVersion
+	(*ExecutionEnvironment)(nil),           // 36: perfine.v1.ExecutionEnvironment
+	(*InputHash)(nil),                      // 37: perfine.v1.InputHash
+	(*WorkloadCase)(nil),                   // 38: perfine.v1.WorkloadCase
+	(*Metric)(nil),                         // 39: perfine.v1.Metric
+	(*PerformancePolicy)(nil),              // 40: perfine.v1.PerformancePolicy
+	(*UncertaintyCriteria)(nil),            // 41: perfine.v1.UncertaintyCriteria
+	(*ExecutionLimits)(nil),                // 42: perfine.v1.ExecutionLimits
+	(*ExperimentSpecification)(nil),        // 43: perfine.v1.ExperimentSpecification
+	(*Experiment)(nil),                     // 44: perfine.v1.Experiment
+	(*CaseMeasurement)(nil),                // 45: perfine.v1.CaseMeasurement
+	(*Comparison)(nil),                     // 46: perfine.v1.Comparison
+	(*CorrectnessResult)(nil),              // 47: perfine.v1.CorrectnessResult
+	(*Candidate)(nil),                      // 48: perfine.v1.Candidate
+	(*ArtifactManifest)(nil),               // 49: perfine.v1.ArtifactManifest
+	(*EvidenceManifest)(nil),               // 50: perfine.v1.EvidenceManifest
+	(*ArtifactDecision)(nil),               // 51: perfine.v1.ArtifactDecision
+	(*UploadTarget)(nil),                   // 52: perfine.v1.UploadTarget
+	(*UploadHeader)(nil),                   // 53: perfine.v1.UploadHeader
+	(*Upload)(nil),                         // 54: perfine.v1.Upload
+	(*ArtifactReceipt)(nil),                // 55: perfine.v1.ArtifactReceipt
+	(*Deletion)(nil),                       // 56: perfine.v1.Deletion
+	(*DraftBinding)(nil),                   // 57: perfine.v1.DraftBinding
+	(*Approval)(nil),                       // 58: perfine.v1.Approval
+	(*Publication)(nil),                    // 59: perfine.v1.Publication
+	(*CloudTool)(nil),                      // 60: perfine.v1.CloudTool
+	(*PreparationLimits)(nil),              // 61: perfine.v1.PreparationLimits
+	(*ExperimentConfiguration)(nil),        // 62: perfine.v1.ExperimentConfiguration
+	(*PrepareExperimentRequest)(nil),       // 63: perfine.v1.PrepareExperimentRequest
+	(*PrepareExperimentResponse)(nil),      // 64: perfine.v1.PrepareExperimentResponse
+	(*GetAuthorizationRequest)(nil),        // 65: perfine.v1.GetAuthorizationRequest
+	(*GetAuthorizationResponse)(nil),       // 66: perfine.v1.GetAuthorizationResponse
+	(*ListConnectionsRequest)(nil),         // 67: perfine.v1.ListConnectionsRequest
+	(*ListConnectionsResponse)(nil),        // 68: perfine.v1.ListConnectionsResponse
+	(*GetConnectionRequest)(nil),           // 69: perfine.v1.GetConnectionRequest
+	(*GetConnectionResponse)(nil),          // 70: perfine.v1.GetConnectionResponse
+	(*ConnectRepositoryRequest)(nil),       // 71: perfine.v1.ConnectRepositoryRequest
+	(*ConnectRepositoryResponse)(nil),      // 72: perfine.v1.ConnectRepositoryResponse
+	(*DisconnectRepositoryRequest)(nil),    // 73: perfine.v1.DisconnectRepositoryRequest
+	(*DisconnectRepositoryResponse)(nil),   // 74: perfine.v1.DisconnectRepositoryResponse
+	(*SetRawArtifactConsentRequest)(nil),   // 75: perfine.v1.SetRawArtifactConsentRequest
+	(*SetRawArtifactConsentResponse)(nil),  // 76: perfine.v1.SetRawArtifactConsentResponse
+	(*GetRawArtifactConsentRequest)(nil),   // 77: perfine.v1.GetRawArtifactConsentRequest
+	(*GetRawArtifactConsentResponse)(nil),  // 78: perfine.v1.GetRawArtifactConsentResponse
+	(*ListExperimentsRequest)(nil),         // 79: perfine.v1.ListExperimentsRequest
+	(*ListExperimentsResponse)(nil),        // 80: perfine.v1.ListExperimentsResponse
+	(*GetExperimentRequest)(nil),           // 81: perfine.v1.GetExperimentRequest
+	(*GetExperimentResponse)(nil),          // 82: perfine.v1.GetExperimentResponse
+	(*StartExperimentRequest)(nil),         // 83: perfine.v1.StartExperimentRequest
+	(*StartExperimentResponse)(nil),        // 84: perfine.v1.StartExperimentResponse
+	(*ResumeExperimentRequest)(nil),        // 85: perfine.v1.ResumeExperimentRequest
+	(*ResumeExperimentResponse)(nil),       // 86: perfine.v1.ResumeExperimentResponse
+	(*CancelExperimentRequest)(nil),        // 87: perfine.v1.CancelExperimentRequest
+	(*CancelExperimentResponse)(nil),       // 88: perfine.v1.CancelExperimentResponse
+	(*ListCandidatesRequest)(nil),          // 89: perfine.v1.ListCandidatesRequest
+	(*ListCandidatesResponse)(nil),         // 90: perfine.v1.ListCandidatesResponse
+	(*GetCandidateRequest)(nil),            // 91: perfine.v1.GetCandidateRequest
+	(*GetCandidateResponse)(nil),           // 92: perfine.v1.GetCandidateResponse
+	(*CheckUploadEligibilityRequest)(nil),  // 93: perfine.v1.CheckUploadEligibilityRequest
+	(*CheckUploadEligibilityResponse)(nil), // 94: perfine.v1.CheckUploadEligibilityResponse
+	(*BeginUploadRequest)(nil),             // 95: perfine.v1.BeginUploadRequest
+	(*BeginUploadResponse)(nil),            // 96: perfine.v1.BeginUploadResponse
+	(*GetUploadRequest)(nil),               // 97: perfine.v1.GetUploadRequest
+	(*GetUploadResponse)(nil),              // 98: perfine.v1.GetUploadResponse
+	(*CompleteUploadRequest)(nil),          // 99: perfine.v1.CompleteUploadRequest
+	(*CompleteUploadResponse)(nil),         // 100: perfine.v1.CompleteUploadResponse
+	(*ListEvidenceRequest)(nil),            // 101: perfine.v1.ListEvidenceRequest
+	(*ListEvidenceResponse)(nil),           // 102: perfine.v1.ListEvidenceResponse
+	(*GetEvidenceDownloadRequest)(nil),     // 103: perfine.v1.GetEvidenceDownloadRequest
+	(*GetEvidenceDownloadResponse)(nil),    // 104: perfine.v1.GetEvidenceDownloadResponse
+	(*DeleteExperimentRequest)(nil),        // 105: perfine.v1.DeleteExperimentRequest
+	(*DeleteExperimentResponse)(nil),       // 106: perfine.v1.DeleteExperimentResponse
+	(*GetDeletionRequest)(nil),             // 107: perfine.v1.GetDeletionRequest
+	(*GetDeletionResponse)(nil),            // 108: perfine.v1.GetDeletionResponse
+	(*ApproveDraftRequest)(nil),            // 109: perfine.v1.ApproveDraftRequest
+	(*ApproveDraftResponse)(nil),           // 110: perfine.v1.ApproveDraftResponse
+	(*GetApprovalRequest)(nil),             // 111: perfine.v1.GetApprovalRequest
+	(*GetApprovalResponse)(nil),            // 112: perfine.v1.GetApprovalResponse
+	(*PublishDraftRequest)(nil),            // 113: perfine.v1.PublishDraftRequest
+	(*PublishDraftResponse)(nil),           // 114: perfine.v1.PublishDraftResponse
+	(*GetPublicationRequest)(nil),          // 115: perfine.v1.GetPublicationRequest
+	(*GetPublicationResponse)(nil),         // 116: perfine.v1.GetPublicationResponse
+	(*ListCloudToolsRequest)(nil),          // 117: perfine.v1.ListCloudToolsRequest
+	(*ListCloudToolsResponse)(nil),         // 118: perfine.v1.ListCloudToolsResponse
+	nil,                                    // 119: perfine.v1.ExecutionEnvironment.HardwareEntry
+	(*timestamppb.Timestamp)(nil),          // 120: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),            // 121: google.protobuf.Duration
 }
 var file_perfine_v1_perfine_proto_depIdxs = []int32{
 	6,   // 0: perfine.v1.ErrorDetail.reason:type_name -> perfine.v1.ErrorReason
-	25,  // 1: perfine.v1.ErrorDetail.violations:type_name -> perfine.v1.FieldViolation
+	26,  // 1: perfine.v1.ErrorDetail.violations:type_name -> perfine.v1.FieldViolation
 	0,   // 2: perfine.v1.Authorization.permissions:type_name -> perfine.v1.Permission
 	3,   // 3: perfine.v1.Cancellation.mode:type_name -> perfine.v1.CancellationMode
 	4,   // 4: perfine.v1.Cancellation.state:type_name -> perfine.v1.CancellationState
-	28,  // 5: perfine.v1.Connection.repository:type_name -> perfine.v1.GitHubRepository
+	29,  // 5: perfine.v1.Connection.repository:type_name -> perfine.v1.GitHubRepository
 	5,   // 6: perfine.v1.Connection.state:type_name -> perfine.v1.ConnectionState
-	114, // 7: perfine.v1.Connection.created_at:type_name -> google.protobuf.Timestamp
-	114, // 8: perfine.v1.Connection.updated_at:type_name -> google.protobuf.Timestamp
-	33,  // 9: perfine.v1.Connection.consent:type_name -> perfine.v1.RawArtifactConsent
-	31,  // 10: perfine.v1.Connection.execution_cancellations:type_name -> perfine.v1.Cancellation
+	120, // 7: perfine.v1.Connection.created_at:type_name -> google.protobuf.Timestamp
+	120, // 8: perfine.v1.Connection.updated_at:type_name -> google.protobuf.Timestamp
+	34,  // 9: perfine.v1.Connection.consent:type_name -> perfine.v1.RawArtifactConsent
+	32,  // 10: perfine.v1.Connection.execution_cancellations:type_name -> perfine.v1.Cancellation
 	7,   // 11: perfine.v1.RawArtifactConsent.allowed_kinds:type_name -> perfine.v1.ArtifactKind
-	114, // 12: perfine.v1.RawArtifactConsent.effective_at:type_name -> google.protobuf.Timestamp
-	34,  // 13: perfine.v1.ExecutionEnvironment.tools:type_name -> perfine.v1.ToolVersion
-	23,  // 14: perfine.v1.WorkloadCase.frequency_source:type_name -> perfine.v1.FrequencySource
-	36,  // 15: perfine.v1.WorkloadCase.inputs:type_name -> perfine.v1.InputHash
-	16,  // 16: perfine.v1.Metric.objective:type_name -> perfine.v1.MetricObjective
-	17,  // 17: perfine.v1.PerformancePolicy.kind:type_name -> perfine.v1.PolicyKind
-	38,  // 18: perfine.v1.PerformancePolicy.metric:type_name -> perfine.v1.Metric
-	40,  // 19: perfine.v1.PerformancePolicy.uncertainty:type_name -> perfine.v1.UncertaintyCriteria
-	18,  // 20: perfine.v1.PerformancePolicy.allowed_exceptions:type_name -> perfine.v1.PolicyException
-	114, // 21: perfine.v1.ExecutionLimits.start_deadline:type_name -> google.protobuf.Timestamp
-	115, // 22: perfine.v1.ExecutionLimits.candidate_timeout:type_name -> google.protobuf.Duration
-	21,  // 23: perfine.v1.ExperimentSpecification.language:type_name -> perfine.v1.Language
-	35,  // 24: perfine.v1.ExperimentSpecification.environment:type_name -> perfine.v1.ExecutionEnvironment
-	37,  // 25: perfine.v1.ExperimentSpecification.cases:type_name -> perfine.v1.WorkloadCase
-	39,  // 26: perfine.v1.ExperimentSpecification.policy:type_name -> perfine.v1.PerformancePolicy
-	41,  // 27: perfine.v1.ExperimentSpecification.limits:type_name -> perfine.v1.ExecutionLimits
-	42,  // 28: perfine.v1.Experiment.specification:type_name -> perfine.v1.ExperimentSpecification
-	22,  // 29: perfine.v1.Experiment.origin:type_name -> perfine.v1.ExecutionOrigin
-	1,   // 30: perfine.v1.Experiment.execution_state:type_name -> perfine.v1.ExecutionState
-	2,   // 31: perfine.v1.Experiment.verdict:type_name -> perfine.v1.PerformanceVerdict
-	9,   // 32: perfine.v1.Experiment.evidence_completion:type_name -> perfine.v1.CompletionState
-	18,  // 33: perfine.v1.Experiment.exceptions:type_name -> perfine.v1.PolicyException
-	114, // 34: perfine.v1.Experiment.created_at:type_name -> google.protobuf.Timestamp
-	114, // 35: perfine.v1.Experiment.updated_at:type_name -> google.protobuf.Timestamp
-	31,  // 36: perfine.v1.Experiment.cancellation:type_name -> perfine.v1.Cancellation
-	29,  // 37: perfine.v1.Experiment.github_execution:type_name -> perfine.v1.GitHubExecution
-	20,  // 38: perfine.v1.Comparison.kind:type_name -> perfine.v1.ComparisonKind
-	38,  // 39: perfine.v1.Comparison.metric:type_name -> perfine.v1.Metric
-	44,  // 40: perfine.v1.Comparison.cases:type_name -> perfine.v1.CaseMeasurement
-	2,   // 41: perfine.v1.Comparison.verdict:type_name -> perfine.v1.PerformanceVerdict
-	18,  // 42: perfine.v1.Comparison.exceptions:type_name -> perfine.v1.PolicyException
-	19,  // 43: perfine.v1.CorrectnessResult.state:type_name -> perfine.v1.CorrectnessState
-	1,   // 44: perfine.v1.Candidate.execution_state:type_name -> perfine.v1.ExecutionState
-	2,   // 45: perfine.v1.Candidate.verdict:type_name -> perfine.v1.PerformanceVerdict
-	45,  // 46: perfine.v1.Candidate.comparisons:type_name -> perfine.v1.Comparison
-	46,  // 47: perfine.v1.Candidate.correctness:type_name -> perfine.v1.CorrectnessResult
-	18,  // 48: perfine.v1.Candidate.exceptions:type_name -> perfine.v1.PolicyException
-	7,   // 49: perfine.v1.ArtifactManifest.kind:type_name -> perfine.v1.ArtifactKind
-	9,   // 50: perfine.v1.ArtifactManifest.completion:type_name -> perfine.v1.CompletionState
-	35,  // 51: perfine.v1.EvidenceManifest.environment:type_name -> perfine.v1.ExecutionEnvironment
-	36,  // 52: perfine.v1.EvidenceManifest.inputs:type_name -> perfine.v1.InputHash
-	39,  // 53: perfine.v1.EvidenceManifest.policy:type_name -> perfine.v1.PerformancePolicy
-	38,  // 54: perfine.v1.EvidenceManifest.metrics:type_name -> perfine.v1.Metric
-	48,  // 55: perfine.v1.EvidenceManifest.artifacts:type_name -> perfine.v1.ArtifactManifest
-	9,   // 56: perfine.v1.EvidenceManifest.completion:type_name -> perfine.v1.CompletionState
-	114, // 57: perfine.v1.EvidenceManifest.run_started_at:type_name -> google.protobuf.Timestamp
-	8,   // 58: perfine.v1.ArtifactDecision.eligibility:type_name -> perfine.v1.ArtifactEligibility
-	114, // 59: perfine.v1.UploadTarget.expires_at:type_name -> google.protobuf.Timestamp
-	52,  // 60: perfine.v1.UploadTarget.required_headers:type_name -> perfine.v1.UploadHeader
-	10,  // 61: perfine.v1.Upload.state:type_name -> perfine.v1.UploadState
-	49,  // 62: perfine.v1.Upload.manifest:type_name -> perfine.v1.EvidenceManifest
-	50,  // 63: perfine.v1.Upload.decisions:type_name -> perfine.v1.ArtifactDecision
-	114, // 64: perfine.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
-	11,  // 65: perfine.v1.Deletion.state:type_name -> perfine.v1.DeletionState
-	114, // 66: perfine.v1.Deletion.accepted_at:type_name -> google.protobuf.Timestamp
-	28,  // 67: perfine.v1.DraftBinding.target_repository:type_name -> perfine.v1.GitHubRepository
-	28,  // 68: perfine.v1.DraftBinding.head_repository:type_name -> perfine.v1.GitHubRepository
-	56,  // 69: perfine.v1.Approval.draft:type_name -> perfine.v1.DraftBinding
-	12,  // 70: perfine.v1.Approval.state:type_name -> perfine.v1.ApprovalState
-	114, // 71: perfine.v1.Approval.created_at:type_name -> google.protobuf.Timestamp
-	13,  // 72: perfine.v1.Publication.state:type_name -> perfine.v1.PublicationState
-	56,  // 73: perfine.v1.Publication.draft:type_name -> perfine.v1.DraftBinding
-	14,  // 74: perfine.v1.CloudTool.state:type_name -> perfine.v1.CloudEligibilityState
-	15,  // 75: perfine.v1.CloudTool.unavailable_reason:type_name -> perfine.v1.CloudUnavailableReason
-	114, // 76: perfine.v1.CloudTool.verified_at:type_name -> google.protobuf.Timestamp
-	30,  // 77: perfine.v1.GetAuthorizationResponse.authorization:type_name -> perfine.v1.Authorization
-	26,  // 78: perfine.v1.ListConnectionsRequest.page:type_name -> perfine.v1.PageRequest
-	32,  // 79: perfine.v1.ListConnectionsResponse.connections:type_name -> perfine.v1.Connection
-	27,  // 80: perfine.v1.ListConnectionsResponse.page:type_name -> perfine.v1.PageResponse
-	32,  // 81: perfine.v1.GetConnectionResponse.connection:type_name -> perfine.v1.Connection
-	28,  // 82: perfine.v1.ConnectRepositoryRequest.repository:type_name -> perfine.v1.GitHubRepository
-	32,  // 83: perfine.v1.ConnectRepositoryResponse.connection:type_name -> perfine.v1.Connection
-	32,  // 84: perfine.v1.DisconnectRepositoryResponse.connection:type_name -> perfine.v1.Connection
-	7,   // 85: perfine.v1.SetRawArtifactConsentRequest.allowed_kinds:type_name -> perfine.v1.ArtifactKind
-	33,  // 86: perfine.v1.SetRawArtifactConsentResponse.consent:type_name -> perfine.v1.RawArtifactConsent
-	33,  // 87: perfine.v1.GetRawArtifactConsentResponse.consent:type_name -> perfine.v1.RawArtifactConsent
-	26,  // 88: perfine.v1.ListExperimentsRequest.page:type_name -> perfine.v1.PageRequest
-	1,   // 89: perfine.v1.ListExperimentsRequest.execution_state:type_name -> perfine.v1.ExecutionState
-	2,   // 90: perfine.v1.ListExperimentsRequest.verdict:type_name -> perfine.v1.PerformanceVerdict
-	43,  // 91: perfine.v1.ListExperimentsResponse.experiments:type_name -> perfine.v1.Experiment
-	27,  // 92: perfine.v1.ListExperimentsResponse.page:type_name -> perfine.v1.PageResponse
-	43,  // 93: perfine.v1.GetExperimentResponse.experiment:type_name -> perfine.v1.Experiment
-	42,  // 94: perfine.v1.StartExperimentRequest.specification:type_name -> perfine.v1.ExperimentSpecification
-	43,  // 95: perfine.v1.StartExperimentResponse.experiment:type_name -> perfine.v1.Experiment
-	43,  // 96: perfine.v1.ResumeExperimentResponse.experiment:type_name -> perfine.v1.Experiment
-	3,   // 97: perfine.v1.CancelExperimentRequest.mode:type_name -> perfine.v1.CancellationMode
-	43,  // 98: perfine.v1.CancelExperimentResponse.experiment:type_name -> perfine.v1.Experiment
-	26,  // 99: perfine.v1.ListCandidatesRequest.page:type_name -> perfine.v1.PageRequest
-	47,  // 100: perfine.v1.ListCandidatesResponse.candidates:type_name -> perfine.v1.Candidate
-	27,  // 101: perfine.v1.ListCandidatesResponse.page:type_name -> perfine.v1.PageResponse
-	47,  // 102: perfine.v1.GetCandidateResponse.candidate:type_name -> perfine.v1.Candidate
-	49,  // 103: perfine.v1.CheckUploadEligibilityRequest.manifest:type_name -> perfine.v1.EvidenceManifest
-	50,  // 104: perfine.v1.CheckUploadEligibilityResponse.decisions:type_name -> perfine.v1.ArtifactDecision
-	42,  // 105: perfine.v1.BeginUploadRequest.specification:type_name -> perfine.v1.ExperimentSpecification
-	22,  // 106: perfine.v1.BeginUploadRequest.origin:type_name -> perfine.v1.ExecutionOrigin
-	29,  // 107: perfine.v1.BeginUploadRequest.github_execution:type_name -> perfine.v1.GitHubExecution
-	49,  // 108: perfine.v1.BeginUploadRequest.manifest:type_name -> perfine.v1.EvidenceManifest
-	53,  // 109: perfine.v1.BeginUploadResponse.upload:type_name -> perfine.v1.Upload
-	51,  // 110: perfine.v1.BeginUploadResponse.targets:type_name -> perfine.v1.UploadTarget
-	53,  // 111: perfine.v1.GetUploadResponse.upload:type_name -> perfine.v1.Upload
-	54,  // 112: perfine.v1.CompleteUploadRequest.receipts:type_name -> perfine.v1.ArtifactReceipt
-	53,  // 113: perfine.v1.CompleteUploadResponse.upload:type_name -> perfine.v1.Upload
-	9,   // 114: perfine.v1.CompleteUploadResponse.evidence_completion:type_name -> perfine.v1.CompletionState
-	26,  // 115: perfine.v1.ListEvidenceRequest.page:type_name -> perfine.v1.PageRequest
-	49,  // 116: perfine.v1.ListEvidenceResponse.manifests:type_name -> perfine.v1.EvidenceManifest
-	27,  // 117: perfine.v1.ListEvidenceResponse.page:type_name -> perfine.v1.PageResponse
-	114, // 118: perfine.v1.GetEvidenceDownloadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	55,  // 119: perfine.v1.DeleteExperimentResponse.deletion:type_name -> perfine.v1.Deletion
-	55,  // 120: perfine.v1.GetDeletionResponse.deletion:type_name -> perfine.v1.Deletion
-	56,  // 121: perfine.v1.ApproveDraftRequest.draft:type_name -> perfine.v1.DraftBinding
-	57,  // 122: perfine.v1.ApproveDraftResponse.approval:type_name -> perfine.v1.Approval
-	57,  // 123: perfine.v1.GetApprovalResponse.approval:type_name -> perfine.v1.Approval
-	56,  // 124: perfine.v1.PublishDraftRequest.expected_draft:type_name -> perfine.v1.DraftBinding
-	58,  // 125: perfine.v1.PublishDraftResponse.publication:type_name -> perfine.v1.Publication
-	58,  // 126: perfine.v1.GetPublicationResponse.publication:type_name -> perfine.v1.Publication
-	26,  // 127: perfine.v1.ListCloudToolsRequest.page:type_name -> perfine.v1.PageRequest
-	59,  // 128: perfine.v1.ListCloudToolsResponse.tools:type_name -> perfine.v1.CloudTool
-	27,  // 129: perfine.v1.ListCloudToolsResponse.page:type_name -> perfine.v1.PageResponse
-	60,  // 130: perfine.v1.AccessService.GetAuthorization:input_type -> perfine.v1.GetAuthorizationRequest
-	72,  // 131: perfine.v1.ConnectionService.GetRawArtifactConsent:input_type -> perfine.v1.GetRawArtifactConsentRequest
-	62,  // 132: perfine.v1.ConnectionService.ListConnections:input_type -> perfine.v1.ListConnectionsRequest
-	64,  // 133: perfine.v1.ConnectionService.GetConnection:input_type -> perfine.v1.GetConnectionRequest
-	66,  // 134: perfine.v1.ConnectionService.ConnectRepository:input_type -> perfine.v1.ConnectRepositoryRequest
-	68,  // 135: perfine.v1.ConnectionService.DisconnectRepository:input_type -> perfine.v1.DisconnectRepositoryRequest
-	70,  // 136: perfine.v1.ConnectionService.SetRawArtifactConsent:input_type -> perfine.v1.SetRawArtifactConsentRequest
-	74,  // 137: perfine.v1.ExperimentService.ListExperiments:input_type -> perfine.v1.ListExperimentsRequest
-	76,  // 138: perfine.v1.ExperimentService.GetExperiment:input_type -> perfine.v1.GetExperimentRequest
-	78,  // 139: perfine.v1.ExperimentService.StartExperiment:input_type -> perfine.v1.StartExperimentRequest
-	80,  // 140: perfine.v1.ExperimentService.ResumeExperiment:input_type -> perfine.v1.ResumeExperimentRequest
-	82,  // 141: perfine.v1.ExperimentService.CancelExperiment:input_type -> perfine.v1.CancelExperimentRequest
-	84,  // 142: perfine.v1.ExperimentService.ListCandidates:input_type -> perfine.v1.ListCandidatesRequest
-	86,  // 143: perfine.v1.ExperimentService.GetCandidate:input_type -> perfine.v1.GetCandidateRequest
-	88,  // 144: perfine.v1.EvidenceService.CheckUploadEligibility:input_type -> perfine.v1.CheckUploadEligibilityRequest
-	90,  // 145: perfine.v1.EvidenceService.BeginUpload:input_type -> perfine.v1.BeginUploadRequest
-	92,  // 146: perfine.v1.EvidenceService.GetUpload:input_type -> perfine.v1.GetUploadRequest
-	94,  // 147: perfine.v1.EvidenceService.CompleteUpload:input_type -> perfine.v1.CompleteUploadRequest
-	96,  // 148: perfine.v1.EvidenceService.ListEvidence:input_type -> perfine.v1.ListEvidenceRequest
-	98,  // 149: perfine.v1.EvidenceService.GetEvidenceDownload:input_type -> perfine.v1.GetEvidenceDownloadRequest
-	100, // 150: perfine.v1.ManagementService.DeleteExperiment:input_type -> perfine.v1.DeleteExperimentRequest
-	102, // 151: perfine.v1.ManagementService.GetDeletion:input_type -> perfine.v1.GetDeletionRequest
-	104, // 152: perfine.v1.PublicationService.ApproveDraft:input_type -> perfine.v1.ApproveDraftRequest
-	106, // 153: perfine.v1.PublicationService.GetApproval:input_type -> perfine.v1.GetApprovalRequest
-	108, // 154: perfine.v1.PublicationService.PublishDraft:input_type -> perfine.v1.PublishDraftRequest
-	110, // 155: perfine.v1.PublicationService.GetPublication:input_type -> perfine.v1.GetPublicationRequest
-	112, // 156: perfine.v1.CloudService.ListCloudTools:input_type -> perfine.v1.ListCloudToolsRequest
-	61,  // 157: perfine.v1.AccessService.GetAuthorization:output_type -> perfine.v1.GetAuthorizationResponse
-	73,  // 158: perfine.v1.ConnectionService.GetRawArtifactConsent:output_type -> perfine.v1.GetRawArtifactConsentResponse
-	63,  // 159: perfine.v1.ConnectionService.ListConnections:output_type -> perfine.v1.ListConnectionsResponse
-	65,  // 160: perfine.v1.ConnectionService.GetConnection:output_type -> perfine.v1.GetConnectionResponse
-	67,  // 161: perfine.v1.ConnectionService.ConnectRepository:output_type -> perfine.v1.ConnectRepositoryResponse
-	69,  // 162: perfine.v1.ConnectionService.DisconnectRepository:output_type -> perfine.v1.DisconnectRepositoryResponse
-	71,  // 163: perfine.v1.ConnectionService.SetRawArtifactConsent:output_type -> perfine.v1.SetRawArtifactConsentResponse
-	75,  // 164: perfine.v1.ExperimentService.ListExperiments:output_type -> perfine.v1.ListExperimentsResponse
-	77,  // 165: perfine.v1.ExperimentService.GetExperiment:output_type -> perfine.v1.GetExperimentResponse
-	79,  // 166: perfine.v1.ExperimentService.StartExperiment:output_type -> perfine.v1.StartExperimentResponse
-	81,  // 167: perfine.v1.ExperimentService.ResumeExperiment:output_type -> perfine.v1.ResumeExperimentResponse
-	83,  // 168: perfine.v1.ExperimentService.CancelExperiment:output_type -> perfine.v1.CancelExperimentResponse
-	85,  // 169: perfine.v1.ExperimentService.ListCandidates:output_type -> perfine.v1.ListCandidatesResponse
-	87,  // 170: perfine.v1.ExperimentService.GetCandidate:output_type -> perfine.v1.GetCandidateResponse
-	89,  // 171: perfine.v1.EvidenceService.CheckUploadEligibility:output_type -> perfine.v1.CheckUploadEligibilityResponse
-	91,  // 172: perfine.v1.EvidenceService.BeginUpload:output_type -> perfine.v1.BeginUploadResponse
-	93,  // 173: perfine.v1.EvidenceService.GetUpload:output_type -> perfine.v1.GetUploadResponse
-	95,  // 174: perfine.v1.EvidenceService.CompleteUpload:output_type -> perfine.v1.CompleteUploadResponse
-	97,  // 175: perfine.v1.EvidenceService.ListEvidence:output_type -> perfine.v1.ListEvidenceResponse
-	99,  // 176: perfine.v1.EvidenceService.GetEvidenceDownload:output_type -> perfine.v1.GetEvidenceDownloadResponse
-	101, // 177: perfine.v1.ManagementService.DeleteExperiment:output_type -> perfine.v1.DeleteExperimentResponse
-	103, // 178: perfine.v1.ManagementService.GetDeletion:output_type -> perfine.v1.GetDeletionResponse
-	105, // 179: perfine.v1.PublicationService.ApproveDraft:output_type -> perfine.v1.ApproveDraftResponse
-	107, // 180: perfine.v1.PublicationService.GetApproval:output_type -> perfine.v1.GetApprovalResponse
-	109, // 181: perfine.v1.PublicationService.PublishDraft:output_type -> perfine.v1.PublishDraftResponse
-	111, // 182: perfine.v1.PublicationService.GetPublication:output_type -> perfine.v1.GetPublicationResponse
-	113, // 183: perfine.v1.CloudService.ListCloudTools:output_type -> perfine.v1.ListCloudToolsResponse
-	157, // [157:184] is the sub-list for method output_type
-	130, // [130:157] is the sub-list for method input_type
-	130, // [130:130] is the sub-list for extension type_name
-	130, // [130:130] is the sub-list for extension extendee
-	0,   // [0:130] is the sub-list for field type_name
+	120, // 12: perfine.v1.RawArtifactConsent.effective_at:type_name -> google.protobuf.Timestamp
+	35,  // 13: perfine.v1.ExecutionEnvironment.tools:type_name -> perfine.v1.ToolVersion
+	119, // 14: perfine.v1.ExecutionEnvironment.hardware:type_name -> perfine.v1.ExecutionEnvironment.HardwareEntry
+	24,  // 15: perfine.v1.WorkloadCase.frequency_source:type_name -> perfine.v1.FrequencySource
+	37,  // 16: perfine.v1.WorkloadCase.inputs:type_name -> perfine.v1.InputHash
+	17,  // 17: perfine.v1.Metric.objective:type_name -> perfine.v1.MetricObjective
+	16,  // 18: perfine.v1.Metric.engine_kind:type_name -> perfine.v1.EngineMetricKind
+	18,  // 19: perfine.v1.PerformancePolicy.kind:type_name -> perfine.v1.PolicyKind
+	39,  // 20: perfine.v1.PerformancePolicy.metric:type_name -> perfine.v1.Metric
+	41,  // 21: perfine.v1.PerformancePolicy.uncertainty:type_name -> perfine.v1.UncertaintyCriteria
+	19,  // 22: perfine.v1.PerformancePolicy.allowed_exceptions:type_name -> perfine.v1.PolicyException
+	120, // 23: perfine.v1.ExecutionLimits.start_deadline:type_name -> google.protobuf.Timestamp
+	121, // 24: perfine.v1.ExecutionLimits.candidate_timeout:type_name -> google.protobuf.Duration
+	22,  // 25: perfine.v1.ExperimentSpecification.language:type_name -> perfine.v1.Language
+	36,  // 26: perfine.v1.ExperimentSpecification.environment:type_name -> perfine.v1.ExecutionEnvironment
+	38,  // 27: perfine.v1.ExperimentSpecification.cases:type_name -> perfine.v1.WorkloadCase
+	40,  // 28: perfine.v1.ExperimentSpecification.policy:type_name -> perfine.v1.PerformancePolicy
+	42,  // 29: perfine.v1.ExperimentSpecification.limits:type_name -> perfine.v1.ExecutionLimits
+	37,  // 30: perfine.v1.ExperimentSpecification.inputs:type_name -> perfine.v1.InputHash
+	121, // 31: perfine.v1.ExperimentSpecification.start_duration:type_name -> google.protobuf.Duration
+	43,  // 32: perfine.v1.Experiment.specification:type_name -> perfine.v1.ExperimentSpecification
+	23,  // 33: perfine.v1.Experiment.origin:type_name -> perfine.v1.ExecutionOrigin
+	1,   // 34: perfine.v1.Experiment.execution_state:type_name -> perfine.v1.ExecutionState
+	2,   // 35: perfine.v1.Experiment.verdict:type_name -> perfine.v1.PerformanceVerdict
+	9,   // 36: perfine.v1.Experiment.evidence_completion:type_name -> perfine.v1.CompletionState
+	19,  // 37: perfine.v1.Experiment.exceptions:type_name -> perfine.v1.PolicyException
+	120, // 38: perfine.v1.Experiment.created_at:type_name -> google.protobuf.Timestamp
+	120, // 39: perfine.v1.Experiment.updated_at:type_name -> google.protobuf.Timestamp
+	32,  // 40: perfine.v1.Experiment.cancellation:type_name -> perfine.v1.Cancellation
+	30,  // 41: perfine.v1.Experiment.github_execution:type_name -> perfine.v1.GitHubExecution
+	21,  // 42: perfine.v1.Comparison.kind:type_name -> perfine.v1.ComparisonKind
+	39,  // 43: perfine.v1.Comparison.metric:type_name -> perfine.v1.Metric
+	45,  // 44: perfine.v1.Comparison.cases:type_name -> perfine.v1.CaseMeasurement
+	2,   // 45: perfine.v1.Comparison.verdict:type_name -> perfine.v1.PerformanceVerdict
+	19,  // 46: perfine.v1.Comparison.exceptions:type_name -> perfine.v1.PolicyException
+	20,  // 47: perfine.v1.CorrectnessResult.state:type_name -> perfine.v1.CorrectnessState
+	1,   // 48: perfine.v1.Candidate.execution_state:type_name -> perfine.v1.ExecutionState
+	2,   // 49: perfine.v1.Candidate.verdict:type_name -> perfine.v1.PerformanceVerdict
+	46,  // 50: perfine.v1.Candidate.comparisons:type_name -> perfine.v1.Comparison
+	47,  // 51: perfine.v1.Candidate.correctness:type_name -> perfine.v1.CorrectnessResult
+	19,  // 52: perfine.v1.Candidate.exceptions:type_name -> perfine.v1.PolicyException
+	7,   // 53: perfine.v1.ArtifactManifest.kind:type_name -> perfine.v1.ArtifactKind
+	9,   // 54: perfine.v1.ArtifactManifest.completion:type_name -> perfine.v1.CompletionState
+	36,  // 55: perfine.v1.EvidenceManifest.environment:type_name -> perfine.v1.ExecutionEnvironment
+	37,  // 56: perfine.v1.EvidenceManifest.inputs:type_name -> perfine.v1.InputHash
+	40,  // 57: perfine.v1.EvidenceManifest.policy:type_name -> perfine.v1.PerformancePolicy
+	39,  // 58: perfine.v1.EvidenceManifest.metrics:type_name -> perfine.v1.Metric
+	49,  // 59: perfine.v1.EvidenceManifest.artifacts:type_name -> perfine.v1.ArtifactManifest
+	9,   // 60: perfine.v1.EvidenceManifest.completion:type_name -> perfine.v1.CompletionState
+	120, // 61: perfine.v1.EvidenceManifest.run_started_at:type_name -> google.protobuf.Timestamp
+	8,   // 62: perfine.v1.ArtifactDecision.eligibility:type_name -> perfine.v1.ArtifactEligibility
+	120, // 63: perfine.v1.UploadTarget.expires_at:type_name -> google.protobuf.Timestamp
+	53,  // 64: perfine.v1.UploadTarget.required_headers:type_name -> perfine.v1.UploadHeader
+	10,  // 65: perfine.v1.Upload.state:type_name -> perfine.v1.UploadState
+	50,  // 66: perfine.v1.Upload.manifest:type_name -> perfine.v1.EvidenceManifest
+	51,  // 67: perfine.v1.Upload.decisions:type_name -> perfine.v1.ArtifactDecision
+	120, // 68: perfine.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
+	11,  // 69: perfine.v1.Deletion.state:type_name -> perfine.v1.DeletionState
+	120, // 70: perfine.v1.Deletion.accepted_at:type_name -> google.protobuf.Timestamp
+	29,  // 71: perfine.v1.DraftBinding.target_repository:type_name -> perfine.v1.GitHubRepository
+	29,  // 72: perfine.v1.DraftBinding.head_repository:type_name -> perfine.v1.GitHubRepository
+	57,  // 73: perfine.v1.Approval.draft:type_name -> perfine.v1.DraftBinding
+	12,  // 74: perfine.v1.Approval.state:type_name -> perfine.v1.ApprovalState
+	120, // 75: perfine.v1.Approval.created_at:type_name -> google.protobuf.Timestamp
+	13,  // 76: perfine.v1.Publication.state:type_name -> perfine.v1.PublicationState
+	57,  // 77: perfine.v1.Publication.draft:type_name -> perfine.v1.DraftBinding
+	14,  // 78: perfine.v1.CloudTool.state:type_name -> perfine.v1.CloudEligibilityState
+	15,  // 79: perfine.v1.CloudTool.unavailable_reason:type_name -> perfine.v1.CloudUnavailableReason
+	120, // 80: perfine.v1.CloudTool.verified_at:type_name -> google.protobuf.Timestamp
+	121, // 81: perfine.v1.PreparationLimits.start_duration:type_name -> google.protobuf.Duration
+	121, // 82: perfine.v1.PreparationLimits.candidate_timeout:type_name -> google.protobuf.Duration
+	22,  // 83: perfine.v1.ExperimentConfiguration.language:type_name -> perfine.v1.Language
+	36,  // 84: perfine.v1.ExperimentConfiguration.environment:type_name -> perfine.v1.ExecutionEnvironment
+	38,  // 85: perfine.v1.ExperimentConfiguration.cases:type_name -> perfine.v1.WorkloadCase
+	37,  // 86: perfine.v1.ExperimentConfiguration.inputs:type_name -> perfine.v1.InputHash
+	40,  // 87: perfine.v1.ExperimentConfiguration.policy:type_name -> perfine.v1.PerformancePolicy
+	61,  // 88: perfine.v1.ExperimentConfiguration.limits:type_name -> perfine.v1.PreparationLimits
+	62,  // 89: perfine.v1.PrepareExperimentRequest.configuration:type_name -> perfine.v1.ExperimentConfiguration
+	43,  // 90: perfine.v1.PrepareExperimentResponse.specification:type_name -> perfine.v1.ExperimentSpecification
+	120, // 91: perfine.v1.PrepareExperimentResponse.prepared_at:type_name -> google.protobuf.Timestamp
+	31,  // 92: perfine.v1.GetAuthorizationResponse.authorization:type_name -> perfine.v1.Authorization
+	27,  // 93: perfine.v1.ListConnectionsRequest.page:type_name -> perfine.v1.PageRequest
+	33,  // 94: perfine.v1.ListConnectionsResponse.connections:type_name -> perfine.v1.Connection
+	28,  // 95: perfine.v1.ListConnectionsResponse.page:type_name -> perfine.v1.PageResponse
+	33,  // 96: perfine.v1.GetConnectionResponse.connection:type_name -> perfine.v1.Connection
+	29,  // 97: perfine.v1.ConnectRepositoryRequest.repository:type_name -> perfine.v1.GitHubRepository
+	33,  // 98: perfine.v1.ConnectRepositoryResponse.connection:type_name -> perfine.v1.Connection
+	33,  // 99: perfine.v1.DisconnectRepositoryResponse.connection:type_name -> perfine.v1.Connection
+	7,   // 100: perfine.v1.SetRawArtifactConsentRequest.allowed_kinds:type_name -> perfine.v1.ArtifactKind
+	34,  // 101: perfine.v1.SetRawArtifactConsentResponse.consent:type_name -> perfine.v1.RawArtifactConsent
+	34,  // 102: perfine.v1.GetRawArtifactConsentResponse.consent:type_name -> perfine.v1.RawArtifactConsent
+	27,  // 103: perfine.v1.ListExperimentsRequest.page:type_name -> perfine.v1.PageRequest
+	1,   // 104: perfine.v1.ListExperimentsRequest.execution_state:type_name -> perfine.v1.ExecutionState
+	2,   // 105: perfine.v1.ListExperimentsRequest.verdict:type_name -> perfine.v1.PerformanceVerdict
+	44,  // 106: perfine.v1.ListExperimentsResponse.experiments:type_name -> perfine.v1.Experiment
+	28,  // 107: perfine.v1.ListExperimentsResponse.page:type_name -> perfine.v1.PageResponse
+	44,  // 108: perfine.v1.GetExperimentResponse.experiment:type_name -> perfine.v1.Experiment
+	43,  // 109: perfine.v1.StartExperimentRequest.specification:type_name -> perfine.v1.ExperimentSpecification
+	44,  // 110: perfine.v1.StartExperimentResponse.experiment:type_name -> perfine.v1.Experiment
+	44,  // 111: perfine.v1.ResumeExperimentResponse.experiment:type_name -> perfine.v1.Experiment
+	3,   // 112: perfine.v1.CancelExperimentRequest.mode:type_name -> perfine.v1.CancellationMode
+	44,  // 113: perfine.v1.CancelExperimentResponse.experiment:type_name -> perfine.v1.Experiment
+	27,  // 114: perfine.v1.ListCandidatesRequest.page:type_name -> perfine.v1.PageRequest
+	48,  // 115: perfine.v1.ListCandidatesResponse.candidates:type_name -> perfine.v1.Candidate
+	28,  // 116: perfine.v1.ListCandidatesResponse.page:type_name -> perfine.v1.PageResponse
+	48,  // 117: perfine.v1.GetCandidateResponse.candidate:type_name -> perfine.v1.Candidate
+	50,  // 118: perfine.v1.CheckUploadEligibilityRequest.manifest:type_name -> perfine.v1.EvidenceManifest
+	51,  // 119: perfine.v1.CheckUploadEligibilityResponse.decisions:type_name -> perfine.v1.ArtifactDecision
+	43,  // 120: perfine.v1.BeginUploadRequest.specification:type_name -> perfine.v1.ExperimentSpecification
+	23,  // 121: perfine.v1.BeginUploadRequest.origin:type_name -> perfine.v1.ExecutionOrigin
+	30,  // 122: perfine.v1.BeginUploadRequest.github_execution:type_name -> perfine.v1.GitHubExecution
+	50,  // 123: perfine.v1.BeginUploadRequest.manifest:type_name -> perfine.v1.EvidenceManifest
+	54,  // 124: perfine.v1.BeginUploadResponse.upload:type_name -> perfine.v1.Upload
+	52,  // 125: perfine.v1.BeginUploadResponse.targets:type_name -> perfine.v1.UploadTarget
+	54,  // 126: perfine.v1.GetUploadResponse.upload:type_name -> perfine.v1.Upload
+	55,  // 127: perfine.v1.CompleteUploadRequest.receipts:type_name -> perfine.v1.ArtifactReceipt
+	54,  // 128: perfine.v1.CompleteUploadResponse.upload:type_name -> perfine.v1.Upload
+	9,   // 129: perfine.v1.CompleteUploadResponse.evidence_completion:type_name -> perfine.v1.CompletionState
+	27,  // 130: perfine.v1.ListEvidenceRequest.page:type_name -> perfine.v1.PageRequest
+	50,  // 131: perfine.v1.ListEvidenceResponse.manifests:type_name -> perfine.v1.EvidenceManifest
+	28,  // 132: perfine.v1.ListEvidenceResponse.page:type_name -> perfine.v1.PageResponse
+	120, // 133: perfine.v1.GetEvidenceDownloadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	56,  // 134: perfine.v1.DeleteExperimentResponse.deletion:type_name -> perfine.v1.Deletion
+	56,  // 135: perfine.v1.GetDeletionResponse.deletion:type_name -> perfine.v1.Deletion
+	57,  // 136: perfine.v1.ApproveDraftRequest.draft:type_name -> perfine.v1.DraftBinding
+	58,  // 137: perfine.v1.ApproveDraftResponse.approval:type_name -> perfine.v1.Approval
+	58,  // 138: perfine.v1.GetApprovalResponse.approval:type_name -> perfine.v1.Approval
+	57,  // 139: perfine.v1.PublishDraftRequest.expected_draft:type_name -> perfine.v1.DraftBinding
+	59,  // 140: perfine.v1.PublishDraftResponse.publication:type_name -> perfine.v1.Publication
+	59,  // 141: perfine.v1.GetPublicationResponse.publication:type_name -> perfine.v1.Publication
+	27,  // 142: perfine.v1.ListCloudToolsRequest.page:type_name -> perfine.v1.PageRequest
+	60,  // 143: perfine.v1.ListCloudToolsResponse.tools:type_name -> perfine.v1.CloudTool
+	28,  // 144: perfine.v1.ListCloudToolsResponse.page:type_name -> perfine.v1.PageResponse
+	65,  // 145: perfine.v1.AccessService.GetAuthorization:input_type -> perfine.v1.GetAuthorizationRequest
+	77,  // 146: perfine.v1.ConnectionService.GetRawArtifactConsent:input_type -> perfine.v1.GetRawArtifactConsentRequest
+	67,  // 147: perfine.v1.ConnectionService.ListConnections:input_type -> perfine.v1.ListConnectionsRequest
+	69,  // 148: perfine.v1.ConnectionService.GetConnection:input_type -> perfine.v1.GetConnectionRequest
+	71,  // 149: perfine.v1.ConnectionService.ConnectRepository:input_type -> perfine.v1.ConnectRepositoryRequest
+	73,  // 150: perfine.v1.ConnectionService.DisconnectRepository:input_type -> perfine.v1.DisconnectRepositoryRequest
+	75,  // 151: perfine.v1.ConnectionService.SetRawArtifactConsent:input_type -> perfine.v1.SetRawArtifactConsentRequest
+	63,  // 152: perfine.v1.ExperimentService.PrepareExperiment:input_type -> perfine.v1.PrepareExperimentRequest
+	79,  // 153: perfine.v1.ExperimentService.ListExperiments:input_type -> perfine.v1.ListExperimentsRequest
+	81,  // 154: perfine.v1.ExperimentService.GetExperiment:input_type -> perfine.v1.GetExperimentRequest
+	83,  // 155: perfine.v1.ExperimentService.StartExperiment:input_type -> perfine.v1.StartExperimentRequest
+	85,  // 156: perfine.v1.ExperimentService.ResumeExperiment:input_type -> perfine.v1.ResumeExperimentRequest
+	87,  // 157: perfine.v1.ExperimentService.CancelExperiment:input_type -> perfine.v1.CancelExperimentRequest
+	89,  // 158: perfine.v1.ExperimentService.ListCandidates:input_type -> perfine.v1.ListCandidatesRequest
+	91,  // 159: perfine.v1.ExperimentService.GetCandidate:input_type -> perfine.v1.GetCandidateRequest
+	93,  // 160: perfine.v1.EvidenceService.CheckUploadEligibility:input_type -> perfine.v1.CheckUploadEligibilityRequest
+	95,  // 161: perfine.v1.EvidenceService.BeginUpload:input_type -> perfine.v1.BeginUploadRequest
+	97,  // 162: perfine.v1.EvidenceService.GetUpload:input_type -> perfine.v1.GetUploadRequest
+	99,  // 163: perfine.v1.EvidenceService.CompleteUpload:input_type -> perfine.v1.CompleteUploadRequest
+	101, // 164: perfine.v1.EvidenceService.ListEvidence:input_type -> perfine.v1.ListEvidenceRequest
+	103, // 165: perfine.v1.EvidenceService.GetEvidenceDownload:input_type -> perfine.v1.GetEvidenceDownloadRequest
+	105, // 166: perfine.v1.ManagementService.DeleteExperiment:input_type -> perfine.v1.DeleteExperimentRequest
+	107, // 167: perfine.v1.ManagementService.GetDeletion:input_type -> perfine.v1.GetDeletionRequest
+	109, // 168: perfine.v1.PublicationService.ApproveDraft:input_type -> perfine.v1.ApproveDraftRequest
+	111, // 169: perfine.v1.PublicationService.GetApproval:input_type -> perfine.v1.GetApprovalRequest
+	113, // 170: perfine.v1.PublicationService.PublishDraft:input_type -> perfine.v1.PublishDraftRequest
+	115, // 171: perfine.v1.PublicationService.GetPublication:input_type -> perfine.v1.GetPublicationRequest
+	117, // 172: perfine.v1.CloudService.ListCloudTools:input_type -> perfine.v1.ListCloudToolsRequest
+	66,  // 173: perfine.v1.AccessService.GetAuthorization:output_type -> perfine.v1.GetAuthorizationResponse
+	78,  // 174: perfine.v1.ConnectionService.GetRawArtifactConsent:output_type -> perfine.v1.GetRawArtifactConsentResponse
+	68,  // 175: perfine.v1.ConnectionService.ListConnections:output_type -> perfine.v1.ListConnectionsResponse
+	70,  // 176: perfine.v1.ConnectionService.GetConnection:output_type -> perfine.v1.GetConnectionResponse
+	72,  // 177: perfine.v1.ConnectionService.ConnectRepository:output_type -> perfine.v1.ConnectRepositoryResponse
+	74,  // 178: perfine.v1.ConnectionService.DisconnectRepository:output_type -> perfine.v1.DisconnectRepositoryResponse
+	76,  // 179: perfine.v1.ConnectionService.SetRawArtifactConsent:output_type -> perfine.v1.SetRawArtifactConsentResponse
+	64,  // 180: perfine.v1.ExperimentService.PrepareExperiment:output_type -> perfine.v1.PrepareExperimentResponse
+	80,  // 181: perfine.v1.ExperimentService.ListExperiments:output_type -> perfine.v1.ListExperimentsResponse
+	82,  // 182: perfine.v1.ExperimentService.GetExperiment:output_type -> perfine.v1.GetExperimentResponse
+	84,  // 183: perfine.v1.ExperimentService.StartExperiment:output_type -> perfine.v1.StartExperimentResponse
+	86,  // 184: perfine.v1.ExperimentService.ResumeExperiment:output_type -> perfine.v1.ResumeExperimentResponse
+	88,  // 185: perfine.v1.ExperimentService.CancelExperiment:output_type -> perfine.v1.CancelExperimentResponse
+	90,  // 186: perfine.v1.ExperimentService.ListCandidates:output_type -> perfine.v1.ListCandidatesResponse
+	92,  // 187: perfine.v1.ExperimentService.GetCandidate:output_type -> perfine.v1.GetCandidateResponse
+	94,  // 188: perfine.v1.EvidenceService.CheckUploadEligibility:output_type -> perfine.v1.CheckUploadEligibilityResponse
+	96,  // 189: perfine.v1.EvidenceService.BeginUpload:output_type -> perfine.v1.BeginUploadResponse
+	98,  // 190: perfine.v1.EvidenceService.GetUpload:output_type -> perfine.v1.GetUploadResponse
+	100, // 191: perfine.v1.EvidenceService.CompleteUpload:output_type -> perfine.v1.CompleteUploadResponse
+	102, // 192: perfine.v1.EvidenceService.ListEvidence:output_type -> perfine.v1.ListEvidenceResponse
+	104, // 193: perfine.v1.EvidenceService.GetEvidenceDownload:output_type -> perfine.v1.GetEvidenceDownloadResponse
+	106, // 194: perfine.v1.ManagementService.DeleteExperiment:output_type -> perfine.v1.DeleteExperimentResponse
+	108, // 195: perfine.v1.ManagementService.GetDeletion:output_type -> perfine.v1.GetDeletionResponse
+	110, // 196: perfine.v1.PublicationService.ApproveDraft:output_type -> perfine.v1.ApproveDraftResponse
+	112, // 197: perfine.v1.PublicationService.GetApproval:output_type -> perfine.v1.GetApprovalResponse
+	114, // 198: perfine.v1.PublicationService.PublishDraft:output_type -> perfine.v1.PublishDraftResponse
+	116, // 199: perfine.v1.PublicationService.GetPublication:output_type -> perfine.v1.GetPublicationResponse
+	118, // 200: perfine.v1.CloudService.ListCloudTools:output_type -> perfine.v1.ListCloudToolsResponse
+	173, // [173:201] is the sub-list for method output_type
+	145, // [145:173] is the sub-list for method input_type
+	145, // [145:145] is the sub-list for extension type_name
+	145, // [145:145] is the sub-list for extension extendee
+	0,   // [0:145] is the sub-list for field type_name
 }
 
 func init() { file_perfine_v1_perfine_proto_init() }
@@ -8836,14 +9447,15 @@ func file_perfine_v1_perfine_proto_init() {
 	if File_perfine_v1_perfine_proto != nil {
 		return
 	}
-	file_perfine_v1_perfine_proto_msgTypes[50].OneofWrappers = []any{}
+	file_perfine_v1_perfine_proto_msgTypes[16].OneofWrappers = []any{}
+	file_perfine_v1_perfine_proto_msgTypes[54].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_perfine_v1_perfine_proto_rawDesc), len(file_perfine_v1_perfine_proto_rawDesc)),
-			NumEnums:      24,
-			NumMessages:   90,
+			NumEnums:      25,
+			NumMessages:   95,
 			NumExtensions: 0,
 			NumServices:   7,
 		},
