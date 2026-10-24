@@ -228,6 +228,39 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         }
         (out[0], out[1], out[2], out[3])
     }
+    // Replay rows of one caller as `(key, scrubbed, has target user, has response, fingerprint
+    // length)`, selected by principal and idempotency key and never by target user ID.
+    async fn replay_rows(
+        db: &sqlx::PgPool,
+        actor: &str,
+        keys: &[&str],
+    ) -> Vec<(String, bool, bool, bool, i32)> {
+        sqlx::query("SELECT idempotency_key,scrubbed,target_user_id IS NOT NULL AS has_target,response IS NOT NULL AS has_response,octet_length(fingerprint) AS fingerprint_length FROM replays WHERE principal=$1 AND idempotency_key=ANY($2) ORDER BY idempotency_key")
+            .bind(actor)
+            .bind(keys.iter().map(|k| k.to_string()).collect::<Vec<_>>())
+            .fetch_all(db)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r.get("idempotency_key"),
+                    r.get("scrubbed"),
+                    r.get("has_target"),
+                    r.get("has_response"),
+                    r.get("fingerprint_length"),
+                )
+            })
+            .collect()
+    }
+    async fn leaked_targets(db: &sqlx::PgPool) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM replays WHERE scrubbed AND target_user_id IS NOT NULL",
+        )
+        .fetch_one(db)
+        .await
+        .unwrap()
+    }
     // Asserts that every request is answered with the expected code, a typed ErrorDetail and the
     // trace header, and that none of them changes stored rows.
     async fn expect_all(
@@ -423,6 +456,25 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     )
     .await;
     assert_eq!(stale["code"], "aborted");
+    // Active control: before the delete the create and update records keep their payload and the
+    // end user they refer to.
+    let user_keys = ["user-create", "user-update", "user-delete"];
+    // The key-authenticated caller is the principal of the first create record.
+    let actor_principal: String =
+        sqlx::query_scalar("SELECT principal FROM replays WHERE idempotency_key='user-create'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let active = replay_rows(&db, &actor_principal, &user_keys).await;
+    assert_eq!(active.len(), 2, "{active:?}");
+    assert!(
+        active.iter().all(|r| !r.1 && r.2 && r.3 && r.4 > 0),
+        "{active:?}"
+    );
+    let audit_before: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events")
+        .fetch_one(&db)
+        .await
+        .unwrap();
     let (_, deleted) = call(
         &http,
         &base,
@@ -432,6 +484,34 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     )
     .await;
     assert!(deleted.get("code").is_none(), "{deleted}");
+    // Deleting the end user scrubs both records and drops the user ID; the delete record keeps
+    // its fingerprint and stored result, and only the delete adds an audit row.
+    let scrubbed_rows = replay_rows(&db, &actor_principal, &user_keys).await;
+    assert_eq!(
+        scrubbed_rows,
+        vec![
+            ("user-create".to_owned(), true, false, false, 0),
+            (
+                "user-delete".to_owned(),
+                false,
+                false,
+                true,
+                scrubbed_rows[1].4
+            ),
+            ("user-update".to_owned(), true, false, false, 0),
+        ],
+        "{scrubbed_rows:?}"
+    );
+    assert!(
+        scrubbed_rows[1].4 > 0,
+        "the delete record keeps its fingerprint"
+    );
+    assert_eq!(leaked_targets(&db).await, 0);
+    let audit_after: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(audit_after, audit_before + 1);
     let (_, scrubbed) = call(&http, &base, "CreateEndUser", &secret, create.clone()).await;
     assert_eq!(scrubbed["code"], "not_found");
     // A matching scrubbed create or update is `not_found` whatever the payload contains and
@@ -499,14 +579,14 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         vec![oversized],
     )
     .await;
-    let kept = sqlx::query("SELECT scrubbed,response,fingerprint FROM replays WHERE idempotency_key IN ('user-create','user-update')")
-        .fetch_all(&db)
-        .await
-        .unwrap();
-    assert_eq!(kept.len(), 2);
-    assert!(kept.iter().all(|r| r.get::<bool, _>("scrubbed")
-        && r.get::<Option<Vec<u8>>, _>("response").is_none()
-        && r.get::<Vec<u8>, _>("fingerprint").is_empty()));
+    let kept = replay_rows(&db, &actor_principal, &["user-create", "user-update"]).await;
+    assert_eq!(
+        kept,
+        vec![
+            ("user-create".to_owned(), true, false, false, 0),
+            ("user-update".to_owned(), true, false, false, 0),
+        ]
+    );
     // After expiry the key is a fresh request again, so an invalid payload is `invalid_argument`.
     sqlx::query("UPDATE replays SET expires_at=now()-interval '1 second' WHERE idempotency_key='user-update'")
         .execute(&db)
@@ -514,17 +594,8 @@ async fn postgres_wire_authorization_replays_and_deletion() {
         .unwrap();
     let expired = call(&http, &base, "UpdateEndUser", &secret, json!({"projectId":pid,"endUserId":uid,"updateMask":"","version":"1","idempotencyKey":"user-update"})).await;
     assert_eq!(expired.1["code"], "invalid_argument", "{}", expired.1);
-    let rows =
-        sqlx::query("SELECT fingerprint,response,scrubbed FROM replays WHERE target_user_id=$1")
-            .bind(uuid::Uuid::parse_str(&uid).unwrap())
-            .fetch_all(&db)
-            .await
-            .unwrap();
-    assert!(
-        rows.iter()
-            .all(|r| r.get::<bool, _>("scrubbed")
-                && r.get::<Option<Vec<u8>>, _>("response").is_none())
-    );
+    // The rejected retry added no record, and no scrubbed row keeps an end-user ID.
+    assert_eq!(leaked_targets(&db).await, 0);
     let (_, revoked) = call(
         &http,
         &base,
@@ -582,9 +653,78 @@ async fn postgres_wire_authorization_replays_and_deletion() {
     let response =
         delino_protocol::devbase::v1::GetProjectResponse::decode_from_slice(&bytes).unwrap();
     assert_eq!(response.project.id, pid);
+    // A second end user whose records are still active when the project is deleted.
+    let (status, second) = call(
+        &http,
+        &base,
+        "CreateEndUser",
+        "manager",
+        json!({"projectId":pid,"externalId":"second","idempotencyKey":"second-create"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    let manager_principal: String =
+        sqlx::query_scalar("SELECT principal FROM replays WHERE idempotency_key='project-create'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let project_keys = [
+        "second-create",
+        "project-create",
+        "key-issue",
+        "project-delete",
+    ];
+    let before_delete = replay_rows(&db, &manager_principal, &project_keys).await;
+    assert_eq!(
+        before_delete
+            .iter()
+            .map(|r| (r.0.as_str(), r.1))
+            .collect::<Vec<_>>(),
+        vec![
+            ("key-issue", false),
+            ("project-create", false),
+            ("second-create", false)
+        ]
+    );
+    assert!(
+        before_delete
+            .iter()
+            .find(|r| r.0 == "second-create")
+            .unwrap()
+            .2
+    );
+    let audit_before: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events")
+        .fetch_one(&db)
+        .await
+        .unwrap();
     let delete = json!({"projectId":pid,"version":"1","idempotencyKey":"project-delete"});
     let (status, _) = call(&http, &base, "DeleteProject", "manager", delete.clone()).await;
     assert_eq!(status, StatusCode::OK);
+    let after_delete = replay_rows(&db, &manager_principal, &project_keys).await;
+    assert_eq!(
+        after_delete,
+        vec![
+            ("key-issue".to_owned(), true, false, false, 0),
+            ("project-create".to_owned(), true, false, false, 0),
+            (
+                "project-delete".to_owned(),
+                false,
+                false,
+                true,
+                after_delete[2].4
+            ),
+            ("second-create".to_owned(), true, false, false, 0),
+        ],
+        "{after_delete:?}"
+    );
+    assert!(after_delete[2].4 > 0);
+    assert_eq!(leaked_targets(&db).await, 0);
+    // Only the project delete (and its cascades) adds audit rows; replay scrubbing adds none.
+    let audit_after: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(audit_after, audit_before + 1);
     let (status, v) = call(&http, &base, "DeleteProject", "manager", delete).await;
     assert_eq!(status, StatusCode::OK, "{v}");
     // Login project creation: the deleted project's create record is scrubbed, so the original

@@ -15,6 +15,7 @@ pub mod billing_safeguards;
 pub mod catalog;
 pub mod free_allowance;
 pub mod free_recovery;
+pub mod group_deletion;
 pub mod late_renewal;
 pub mod metering;
 pub mod period_selection;

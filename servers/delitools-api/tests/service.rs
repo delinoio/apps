@@ -6,7 +6,13 @@
 mod common;
 
 use common::*;
-use serde_json::json;
+use delitools_api::delcore::IngestFailure;
+use serde_json::{Value, json};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use uuid::Uuid;
 
 #[tokio::test]
 async fn health_ready_and_metrics_endpoints_respond() {
@@ -194,6 +200,95 @@ async fn paid_execution_fails_closed_when_delcore_is_unavailable_or_malformed() 
 }
 
 #[tokio::test]
+async fn malformed_reason_elements_are_dependency_failures_not_denials() {
+    let h = Harness::start(None).await;
+    let elements = [json!({}), json!([]), json!(true), json!(null), json!(1.5)];
+    for element in &elements {
+        for reasons in [
+            json!([element]),
+            json!(["BLOCK_REASON_PERMISSION", element]),
+            json!([element, "BLOCK_REASON_PERMISSION"]),
+        ] {
+            let reply = json!({"allowed": false, "reasons": reasons});
+            h.delcore
+                .lock()
+                .unwrap()
+                .authorize_script
+                .push_back((200, reply.clone()));
+            let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+            assert_eq!(
+                wire.reason(),
+                "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+                "{reply}"
+            );
+            assert_eq!(wire.code(), "unavailable", "{reply}");
+
+            let mut key = reply;
+            key["tenantId"] = json!(TENANT);
+            h.delcore
+                .lock()
+                .unwrap()
+                .keys
+                .insert(KEY_SECRET.into(), key.clone());
+            let wire = h.translate(KEY_SECRET, translate_body(&["Hello"])).await;
+            assert_eq!(
+                wire.reason(),
+                "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+                "{key}"
+            );
+            assert_eq!(wire.code(), "unavailable", "{key}");
+        }
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn valid_reason_names_and_numbers_keep_their_denial_classification() {
+    let h = Harness::start(None).await;
+    for (reasons, expected) in [
+        (
+            json!(["BLOCK_REASON_PERMISSION"]),
+            "ERROR_REASON_PERMISSION_DENIED",
+        ),
+        (json!([1]), "ERROR_REASON_PERMISSION_DENIED"),
+        (
+            json!(["BLOCK_REASON_BALANCE", "BLOCK_REASON_PERMISSION"]),
+            "ERROR_REASON_PERMISSION_DENIED",
+        ),
+        (
+            json!(["BLOCK_REASON_BALANCE"]),
+            "ERROR_REASON_BILLING_BLOCKED",
+        ),
+        (
+            json!(["BLOCK_REASON_FUTURE"]),
+            "ERROR_REASON_BILLING_BLOCKED",
+        ),
+        (json!([2]), "ERROR_REASON_BILLING_BLOCKED"),
+        (json!([99]), "ERROR_REASON_BILLING_BLOCKED"),
+    ] {
+        let reply = json!({"allowed": false, "reasons": reasons});
+        h.delcore
+            .lock()
+            .unwrap()
+            .authorize_script
+            .push_back((200, reply.clone()));
+        let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+        assert_eq!(wire.reason(), expected, "{reply}");
+
+        let mut key = reply;
+        key["tenantId"] = json!(TENANT);
+        h.delcore
+            .lock()
+            .unwrap()
+            .keys
+            .insert(KEY_SECRET.into(), key.clone());
+        let wire = h.translate(KEY_SECRET, translate_body(&["Hello"])).await;
+        assert_eq!(wire.reason(), expected, "{key}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
 async fn validation_errors_use_invalid_input_and_limit_reasons() {
     let h = Harness::start(None).await;
     let cases = [
@@ -280,6 +375,134 @@ async fn catalog_pagination_and_failures_are_handled() {
     assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
 }
 
+fn catalog_price(meter: &str, kind: Value) -> Value {
+    json!({
+        "id": "p", "serviceId": SERVICE_ID, "meter": meter, "unitPrice": "0.000002",
+        "kind": kind, "active": true
+    })
+}
+
+fn both_prices() -> Value {
+    json!([
+        catalog_price("gem_in", json!("PRICE_KIND_USAGE")),
+        catalog_price("gem_out", json!(1)),
+    ])
+}
+
+fn script_catalog(h: &Harness, pages: impl IntoIterator<Item = Value>) {
+    h.delcore.lock().unwrap().catalog_script.extend(pages);
+}
+
+#[tokio::test]
+async fn malformed_catalog_fields_are_dependency_failures_before_any_provider_call() {
+    let wrong_types = [json!(42), json!(true), json!([]), json!({})];
+    let mut bodies = Vec::new();
+    for wrong in &wrong_types {
+        // Both meters are priced, so only the malformed cursor can reject the request.
+        bodies.push(json!({"prices": both_prices(), "nextAfterId": wrong}));
+    }
+    for wrong in [json!("broken"), json!(42), json!(true), json!({})] {
+        bodies.push(json!({"prices": wrong, "nextAfterId": ""}));
+    }
+    for body in bodies {
+        let h = Harness::start(None).await;
+        script_catalog(&h, [body.clone()]);
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(
+            wire.reason(),
+            "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+            "{body}"
+        );
+        assert_eq!(wire.code(), "unavailable", "{body}");
+        assert_eq!(h.gateway.calls(), 0, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn a_malformed_later_catalog_page_invalidates_the_whole_read() {
+    for second in [
+        json!({"prices": {}}),
+        json!({"prices": [], "nextAfterId": 7}),
+    ] {
+        let h = Harness::start(None).await;
+        script_catalog(
+            &h,
+            [
+                json!({"prices": both_prices(), "nextAfterId": "019b0000-0000-7000-8000-0000000000f1"}),
+                second.clone(),
+            ],
+        );
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(
+            wire.reason(),
+            "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+            "{second}"
+        );
+        assert_eq!(h.gateway.calls(), 0, "{second}");
+    }
+}
+
+#[tokio::test]
+async fn a_malformed_catalog_read_is_not_cached() {
+    // A long TTL makes a cached result observable: the retry must read the catalog again.
+    let h = Harness::start_with(None, |c| {
+        c.price_cache_ttl = std::time::Duration::from_secs(60);
+    })
+    .await;
+    script_catalog(&h, [json!({"prices": "broken"})]);
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(h.delcore.lock().unwrap().catalog_calls, 1);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    assert!(h.translate(USER_TOKEN, translate_body(&["a"])).await.ok());
+    assert_eq!(h.delcore.lock().unwrap().catalog_calls, 2);
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn omitted_null_and_empty_catalog_fields_are_protojson_defaults() {
+    for body in [
+        json!({}),
+        json!({"prices": null}),
+        json!({"prices": [], "nextAfterId": null}),
+        json!({"prices": [], "nextAfterId": ""}),
+    ] {
+        let h = Harness::start(None).await;
+        script_catalog(&h, [body.clone()]);
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_MODEL_UNAVAILABLE", "{body}");
+        assert_eq!(h.gateway.calls(), 0, "{body}");
+    }
+    for cursor in [None, Some(Value::Null), Some(json!(""))] {
+        let h = Harness::start(None).await;
+        let mut page = json!({"prices": both_prices()});
+        if let Some(cursor) = cursor.clone() {
+            page["nextAfterId"] = cursor;
+        }
+        script_catalog(&h, [page]);
+        h.gateway.push(Reply::without_usage(r#"["x"]"#));
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{cursor:?}");
+        assert_eq!(h.delcore.lock().unwrap().catalog_calls, 1);
+    }
+}
+
+#[tokio::test]
+async fn repeated_catalog_cursors_remain_dependency_failures() {
+    let h = Harness::start(None).await;
+    let cursor = "019b0000-0000-7000-8000-0000000000f1";
+    script_catalog(
+        &h,
+        [
+            json!({"prices": both_prices(), "nextAfterId": cursor}),
+            json!({"prices": [], "nextAfterId": cursor}),
+        ],
+    );
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(h.gateway.calls(), 0);
+}
+
 #[tokio::test]
 async fn model_output_must_match_the_request_shape() {
     for content in [
@@ -319,6 +542,42 @@ async fn transient_failures_retry_with_a_bounded_budget() {
     assert_eq!(wire.code(), "unavailable");
     // One attempt plus two retries.
     assert_eq!(h.gateway.calls(), 3);
+}
+
+#[tokio::test]
+async fn http_date_retry_after_raises_the_wait_to_the_cap() {
+    // Harness policy: base 5ms, cap 20ms, so jitter without a hint stays at or below 5ms before
+    // the first retry. A distant-future HTTP-date hint raises the ceiling to the cap, so the wait
+    // is at least half of it. Sleeps never finish early, which keeps the lower bound deterministic.
+    for status in [429, 503] {
+        let h = Harness::start(None).await;
+        h.gateway.push(Reply::RetryAfterRaw(
+            status,
+            "Fri, 31 Dec 9999 23:59:59 GMT".to_owned(),
+        ));
+        h.gateway.push(Reply::without_usage(r#"["ok"]"#));
+        let started = std::time::Instant::now();
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{status}: {}", wire.body);
+        assert_eq!(h.gateway.calls(), 2, "{status}");
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(10),
+            "{status}: {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_retry_after_values_still_retry_with_ordinary_backoff() {
+    for value in ["-1", "1.5", "tomorrow", "Sun, 32 Nov 1994 08:49:37 GMT"] {
+        let h = Harness::start(None).await;
+        h.gateway.push(Reply::RetryAfterRaw(429, value.to_owned()));
+        h.gateway.push(Reply::without_usage(r#"["ok"]"#));
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{value}: {}", wire.body);
+        assert_eq!(h.gateway.calls(), 2, "{value}");
+    }
 }
 
 #[tokio::test]
@@ -411,6 +670,28 @@ async fn authorization_outage_between_attempts_fails_closed() {
 }
 
 #[tokio::test]
+async fn malformed_reason_on_recheck_stops_retries_with_a_dependency_error() {
+    let h = Harness::start(None).await;
+    let delcore = h.delcore.clone();
+    h.gateway.push(Reply::Hook(
+        std::sync::Arc::new(move || {
+            delcore
+                .lock()
+                .unwrap()
+                .authorize_script
+                .push_back((200, json!({"allowed": false, "reasons": [{}]})))
+        }),
+        Box::new(Reply::Status(503)),
+    ));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(wire.code(), "unavailable");
+    assert_eq!(h.gateway.calls(), 1);
+    assert_eq!(h.delcore.lock().unwrap().authorize_calls.len(), 2);
+}
+
+#[tokio::test]
 async fn the_execution_timeout_cancels_the_provider_call() {
     let h = Harness::start_with(None, |c| {
         c.limits.execution_timeout = std::time::Duration::from_millis(300)
@@ -463,6 +744,123 @@ async fn caller_cancellation_aborts_the_provider_call_and_stops_retries() {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     panic!("the tenant permit was not released");
+}
+
+/// Waits until the mock Gateway has received `calls` requests.
+async fn wait_for_gateway_calls(h: &Harness, calls: usize) {
+    for _ in 0..200 {
+        if h.gateway.calls() >= calls {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the Gateway did not receive {calls} calls");
+}
+
+#[tokio::test]
+async fn the_instance_fence_cancels_a_held_provider_call_promptly() {
+    // The execution timeout is far longer than the assertion bound: only the fence can end the call.
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(60);
+        c.dependency_timeout = std::time::Duration::from_secs(2);
+    })
+    .await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    wait_for_gateway_calls(&h, 1).await;
+    let fenced = std::time::Instant::now();
+    h.server.fence();
+    for _ in 0..100 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.gateway.dropped(), 1, "the provider connection is dropped");
+    assert!(fenced.elapsed() < std::time::Duration::from_secs(1));
+    let response = pending.await.unwrap().unwrap();
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "canceled");
+    // No retry follows, no usage is estimated, and the tenant permit is released.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(h.gateway.calls(), 1);
+    let metrics = h.server.metrics.encode();
+    assert!(
+        !metrics.contains("delitools_usage_persisted_total{"),
+        "{metrics}"
+    );
+    assert_eq!(h.server.in_flight(TENANT), 0);
+}
+
+#[tokio::test]
+async fn the_instance_fence_stops_retries_during_backoff_and_after_a_transient_failure() {
+    // A long backoff keeps the retry pending until the fence closes.
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(60);
+        c.retry.base_delay = std::time::Duration::from_secs(20);
+        c.retry.max_delay = std::time::Duration::from_secs(20);
+    })
+    .await;
+    h.gateway.push(Reply::Status(503));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    wait_for_gateway_calls(&h, 1).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let authorizations = h.delcore.lock().unwrap().authorize_calls.len();
+    h.server.fence();
+    let body: serde_json::Value =
+        tokio::time::timeout(std::time::Duration::from_secs(2), async move {
+            pending.await.unwrap().unwrap().json().await.unwrap()
+        })
+        .await
+        .expect("the retry wait ends at the fence");
+    assert_eq!(body["code"], "canceled");
+    assert_eq!(h.gateway.calls(), 1, "no attempt starts after the fence");
+    assert_eq!(
+        h.delcore.lock().unwrap().authorize_calls.len(),
+        authorizations,
+        "no retry authorization runs after the fence"
+    );
+
+    // A transient failure that returns exactly as the fence closes cannot start another attempt.
+    let h = Harness::start(None).await;
+    let server = h.server.clone();
+    h.gateway.push(Reply::Hook(
+        std::sync::Arc::new(move || server.fence()),
+        Box::new(Reply::Status(503)),
+    ));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn requests_admitted_after_the_fence_start_no_provider_work() {
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    h.server.fence();
+    h.server.fence();
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(wire.reason(), "ERROR_REASON_CANCELED");
+    assert_eq!(h.gateway.calls(), 0);
+    assert_eq!(h.server.in_flight(TENANT), 0);
+}
+
+#[tokio::test]
+async fn a_request_whose_admission_races_the_fence_is_canceled_without_a_provider_call() {
+    // The fence closes while delcore is answering the authorization; the job must not slip through
+    // although authorization still succeeds and admission completes.
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let server = h.server.clone();
+    h.delcore.lock().unwrap().authorize_hook = Some(std::sync::Arc::new(move || server.fence()));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(h.gateway.calls(), 0);
+    assert_eq!(h.server.in_flight(TENANT), 0);
 }
 
 #[tokio::test]
@@ -612,4 +1010,623 @@ async fn each_request_executes_anew_without_replay() {
     assert_eq!(second.body["translations"], json!(["deux"]));
     assert_ne!(first.body["requestId"], second.body["requestId"]);
     assert_eq!(h.gateway.calls(), 2);
+}
+
+#[tokio::test]
+async fn an_unrepresentable_execution_timeout_fails_closed_without_panicking() {
+    // Config::validate rejects this at startup; the service must still not panic if a Config
+    // bypasses validation.
+    for timeout in [
+        std::time::Duration::MAX,
+        std::time::Duration::MAX - std::time::Duration::from_secs(5),
+    ] {
+        let h = Harness::start_with(None, |c| c.limits.execution_timeout = timeout).await;
+        for method in ["Translate", "Extract"] {
+            let body = if method == "Translate" {
+                translate_body(&["a"])
+            } else {
+                extract_body()
+            };
+            let wire = h.call(method, Some(USER_TOKEN), body).await;
+            assert_eq!(wire.code(), "internal", "{method}");
+            assert_eq!(wire.status, 500, "{method}");
+            assert!(wire.request_id_header.is_some(), "{method}");
+        }
+        assert_eq!(h.gateway.calls(), 0);
+    }
+}
+
+#[tokio::test]
+async fn long_supported_timeouts_keep_authentication_and_timeout_behavior() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(30 * 24 * 3600)
+    })
+    .await;
+    for method in ["Translate", "Extract"] {
+        let wire = h.call(method, None, translate_body(&["a"])).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_UNAUTHENTICATED", "{method}");
+    }
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(200)
+    })
+    .await;
+    h.gateway.push(Reply::Hang);
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+}
+
+// The cases below run through the production shared transport (`transport::serve`) rather than
+// `axum::serve`, with a socket idle-read interval far below the execution budget. reqwest keeps
+// its connection open after sending the whole request, as an ordinary HTTP/1 client does.
+
+const TRANSPORT_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+#[tokio::test]
+async fn translation_outlives_the_socket_idle_interval_through_the_shared_transport() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |_| {}).await;
+    h.gateway.push(Reply::Delay(
+        600,
+        Box::new(Reply::without_usage(r#"["Bonjour"]"#)),
+    ));
+    let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(wire.body["translations"], json!(["Bonjour"]));
+    assert_eq!(h.gateway.calls(), 1, "one attempt and no retry");
+    assert_eq!(h.gateway.dropped(), 0);
+}
+
+#[tokio::test]
+async fn extraction_outlives_the_socket_idle_interval_through_the_shared_transport() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |_| {}).await;
+    h.gateway.push(Reply::Delay(
+        600,
+        Box::new(Reply::without_usage(&extracted(
+            json!({"name":"Ada","age":36}),
+        ))),
+    ));
+    let wire = h.extract(USER_TOKEN, extract_body()).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(wire.body["json"].as_str().unwrap()).unwrap(),
+        json!({"name":"Ada","age":36})
+    );
+    assert_eq!(h.gateway.calls(), 1);
+    assert_eq!(h.gateway.dropped(), 0);
+}
+
+#[tokio::test]
+async fn the_execution_timeout_wins_over_the_socket_idle_interval() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(700)
+    })
+    .await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let started = std::time::Instant::now();
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert!(started.elapsed() >= std::time::Duration::from_millis(600));
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert_eq!(wire.code(), "deadline_exceeded");
+    assert!(
+        !wire.detail().1.is_empty(),
+        "the typed timeout names its request"
+    );
+    for _ in 0..50 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.gateway.dropped(), 1, "the provider call is canceled");
+    assert_eq!(h.gateway.calls(), 1, "no retry");
+}
+
+#[tokio::test]
+async fn a_closed_client_still_cancels_the_provider_call_through_the_shared_transport() {
+    // The execution budget and idle interval both outlast the scenario, so only the socket
+    // closure can cancel the provider call.
+    let h = Harness::start_transport(None, std::time::Duration::from_secs(30), |_| {}).await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    for _ in 0..100 {
+        if h.gateway.calls() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.gateway.calls(), 1);
+    pending.abort();
+    let _ = pending.await;
+    for _ in 0..100 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        h.gateway.dropped(),
+        1,
+        "the provider call is canceled promptly"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(h.gateway.calls(), 1, "no retry after cancellation");
+}
+
+// ---------------------------------------------------------------------------------------------
+// IngestEvent acknowledgment validation
+// ---------------------------------------------------------------------------------------------
+
+fn usage_event() -> delitools_api::delcore::UsageEvent {
+    delitools_api::delcore::UsageEvent {
+        request_key: Uuid::now_v7().to_string(),
+        tenant_id: TENANT.into(),
+        event_key: format!("{}:1:in", Uuid::now_v7()),
+        meter_key: "gem_in".into(),
+        quantity: 7,
+        occurred_at: chrono::Utc::now(),
+    }
+}
+
+/// HTTP-success bodies that do not acknowledge the ingestion.
+fn invalid_acknowledgments() -> Vec<serde_json::Value> {
+    let id = VALID_EVENT_ID;
+    vec![
+        json!({}),
+        json!({"eventId": 42, "revision": "broken"}),
+        json!({"eventId": 42, "revision": 1}),
+        json!({"eventId": id, "revision": "broken"}),
+        json!({"eventId": "", "revision": 1}),
+        json!({"revision": 1}),
+        json!({"eventId": null, "revision": 1}),
+        json!({"eventId": "e", "revision": 1}),
+        // UUID v4, uppercase and braced forms are not canonical UUID v7 identities.
+        json!({"eventId": "3b241101-e2bb-4255-8caf-4136c566a962", "revision": 1}),
+        json!({"eventId": "0190ABCD-0000-7000-8000-00000000ABCD", "revision": 1}),
+        json!({"eventId": "{0190abcd-0000-7000-8000-00000000abcd}", "revision": 1}),
+        json!({"eventId": id}),
+        json!({"eventId": id, "revision": null}),
+        json!({"eventId": id, "revision": 0}),
+        json!({"eventId": id, "revision": -1}),
+        json!({"eventId": id, "revision": 2}),
+        json!({"eventId": id, "revision": "0"}),
+        json!({"eventId": id, "revision": "2"}),
+        json!({"eventId": id, "revision": "one"}),
+        json!({"eventId": id, "revision": true}),
+        json!({"eventId": id, "revision": {}}),
+    ]
+}
+
+#[tokio::test]
+async fn invalid_ingest_acknowledgments_are_retryable_malformed_responses() {
+    let h = Harness::start(None).await;
+    for body in invalid_acknowledgments() {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server
+                .delcore
+                .ingest_event(&usage_event(), &|| true)
+                .await,
+            Err(delitools_api::delcore::IngestFailure::Retryable(
+                "malformed_response"
+            )),
+            "{body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn valid_ingest_acknowledgments_deliver_including_supported_encodings() {
+    let h = Harness::start(None).await;
+    for body in [
+        json!({"eventId": VALID_EVENT_ID, "revision": 1}),
+        // Generated ProtoJSON accepts integer strings and snake_case field names.
+        json!({"eventId": VALID_EVENT_ID, "revision": "1"}),
+        json!({"event_id": VALID_EVENT_ID, "revision": 1}),
+        // Identical replay returns the original identity and revision 1 again.
+        json!({"eventId": VALID_EVENT_ID, "revision": 1}),
+        // Correlation metadata is not a delivery condition.
+        json!({"metadata": {"correlationId": "c"}, "eventId": VALID_EVENT_ID, "revision": 1}),
+        json!({"eventId": VALID_EVENT_ID, "revision": 1, "unknownField": true}),
+    ] {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server
+                .delcore
+                .ingest_event(&usage_event(), &|| true)
+                .await,
+            Ok(()),
+            "{body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn non_object_ingest_bodies_and_poison_classification_are_unchanged() {
+    use delitools_api::delcore::IngestFailure;
+    let h = Harness::start(None).await;
+    for body in [json!([]), json!("ok"), json!(null), json!(7)] {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server
+                .delcore
+                .ingest_event(&usage_event(), &|| true)
+                .await,
+            Err(IngestFailure::Retryable("malformed_response")),
+            "{body}"
+        );
+    }
+    h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
+        status: 409,
+        code: "already_exists",
+        reason: Some(11),
+    });
+    assert_eq!(
+        h.server
+            .delcore
+            .ingest_event(&usage_event(), &|| true)
+            .await,
+        Err(IngestFailure::Poison("identity_conflict"))
+    );
+}
+
+#[tokio::test]
+async fn ingest_never_starts_a_request_after_the_deadline_passes_during_token_acquisition() {
+    let h = Harness::start(None).await;
+    let live = Arc::new(AtomicBool::new(true));
+    // The token request is still being answered when the row expires.
+    let flag = live.clone();
+    h.delcore.lock().unwrap().on_token =
+        Some(Arc::new(move || flag.store(false, Ordering::SeqCst)));
+    let flag = live.clone();
+    let still_live = move || flag.load(Ordering::SeqCst);
+    let result = h
+        .server
+        .delcore
+        .ingest_event(&usage_event(), &still_live)
+        .await;
+    assert_eq!(result, Err(IngestFailure::Expired));
+    let state = h.delcore.lock().unwrap();
+    assert_eq!(state.token_calls, 1, "the token request itself had started");
+    assert!(state.ingested.is_empty(), "no IngestEvent request was sent");
+}
+
+#[tokio::test]
+async fn ingest_sends_when_the_row_is_still_live_after_the_token_is_available() {
+    let h = Harness::start(None).await;
+    let result = h
+        .server
+        .delcore
+        .ingest_event(&usage_event(), &|| true)
+        .await;
+    assert_eq!(result, Ok(()));
+    assert_eq!(h.delcore.lock().unwrap().ingested.len(), 1);
+    // A cached token is re-checked as well: expiry before the send still sends nothing.
+    let result = h
+        .server
+        .delcore
+        .ingest_event(&usage_event(), &|| false)
+        .await;
+    assert_eq!(result, Err(IngestFailure::Expired));
+    assert_eq!(h.delcore.lock().unwrap().ingested.len(), 1);
+    assert_eq!(h.delcore.lock().unwrap().token_calls, 1);
+}
+
+const SLOW: std::time::Duration = std::time::Duration::from_millis(300);
+const WATCHDOG: std::time::Duration = std::time::Duration::from_secs(7);
+
+fn body_for(method: &str) -> serde_json::Value {
+    if method == "Translate" {
+        translate_body(&["Hello"])
+    } else {
+        extract_body()
+    }
+}
+
+#[tokio::test]
+async fn a_body_that_completes_after_the_deadline_never_reaches_the_provider() {
+    for method in ["Translate", "Extract"] {
+        let h = Harness::start_with(None, |c| {
+            c.limits.execution_timeout = std::time::Duration::from_millis(100);
+            c.dependency_timeout = std::time::Duration::from_millis(80);
+        })
+        .await;
+        h.gateway.push(Reply::without_usage(r#"["Bonjour"]"#));
+        let (wire, elapsed) = h
+            .call_slow(method, USER_TOKEN, body_for(method), SLOW, WATCHDOG)
+            .await;
+        assert_eq!(wire.status, 504, "{method}");
+        assert_eq!(wire.code(), "deadline_exceeded", "{method}");
+        assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT", "{method}");
+        let (_, detail_request_id) = wire.detail();
+        assert_eq!(
+            wire.request_id_header.as_deref(),
+            Some(detail_request_id.as_str()),
+            "{method}"
+        );
+        assert!(elapsed < SLOW, "{method} answered at {elapsed:?}");
+        // The body completes after the reply; give a late handler time to misbehave.
+        tokio::time::sleep(SLOW).await;
+        assert_eq!(h.gateway.calls(), 0, "{method}");
+        assert_eq!(h.server.in_flight(TENANT), 0, "{method}");
+    }
+}
+
+#[tokio::test]
+async fn an_incomplete_body_is_cut_at_the_execution_timeout_not_the_transport_margin() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(150);
+        c.dependency_timeout = std::time::Duration::from_millis(80);
+    })
+    .await;
+    // The body never completes within the test.
+    let (wire, elapsed) = h
+        .call_slow(
+            "Translate",
+            USER_TOKEN,
+            translate_body(&["Hello"]),
+            std::time::Duration::from_secs(30),
+            WATCHDOG,
+        )
+        .await;
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "the reply must not wait for the five-second margin: {elapsed:?}"
+    );
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn body_time_reduces_the_provider_budget() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(500);
+        c.dependency_timeout = std::time::Duration::from_millis(80);
+    })
+    .await;
+    // 300ms of body plus 300ms of provider time exceeds the 500ms budget measured from receipt.
+    h.gateway.push(Reply::Delay(
+        300,
+        Box::new(Reply::without_usage(r#"["Bonjour"]"#)),
+    ));
+    let (wire, elapsed) = h
+        .call_slow(
+            "Translate",
+            USER_TOKEN,
+            translate_body(&["Hello"]),
+            SLOW,
+            WATCHDOG,
+        )
+        .await;
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert!(
+        elapsed >= std::time::Duration::from_millis(480)
+            && elapsed < std::time::Duration::from_millis(900),
+        "the provider call must be canceled near the original deadline: {elapsed:?}"
+    );
+    assert_eq!(h.gateway.calls(), 1);
+    for _ in 0..50 {
+        if h.gateway.dropped() == 0 && h.server.in_flight(TENANT) == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.server.in_flight(TENANT), 0);
+    assert_eq!(h.gateway.calls(), 1, "no attempt starts after expiry");
+}
+
+#[tokio::test]
+async fn a_slow_body_within_the_budget_still_succeeds() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(5)
+    })
+    .await;
+    for method in ["Translate", "Extract"] {
+        h.gateway.push(if method == "Translate" {
+            Reply::without_usage(r#"["Bonjour"]"#)
+        } else {
+            Reply::without_usage(&extracted(json!({"name": "Ada", "age": 36})))
+        });
+        let (wire, _) = h
+            .call_slow(method, USER_TOKEN, body_for(method), SLOW, WATCHDOG)
+            .await;
+        assert!(wire.ok(), "{method}: {:?}", wire.body);
+    }
+    assert_eq!(h.gateway.calls(), 2);
+}
+
+/// Asserted caller deadlines: absent, short, long and malformed. None of them may select a
+/// server deadline.
+const CALLER_DEADLINES: [Option<&str>; 5] =
+    [None, Some("1"), Some("40"), Some("garbage"), Some("10000")];
+const ENCODINGS: [Encoding; 2] = [Encoding::Json, Encoding::Proto];
+
+fn delayed_success(method: &str) -> Reply {
+    let content = if method == "Translate" {
+        r#"["Bonjour"]"#.to_owned()
+    } else {
+        extracted(json!({"name": "Ada", "age": 36}))
+    };
+    Reply::Delay(120, Box::new(Reply::without_usage(&content)))
+}
+
+async fn wait_for_dropped(h: &Harness, expected: usize) {
+    for _ in 0..100 {
+        if h.gateway.dropped() == expected {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+async fn wait_for_permit_release(h: &Harness, context: &str) {
+    for _ in 0..100 {
+        if h.server.in_flight(TENANT) == 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("the tenant permit was not released: {context}");
+}
+
+#[tokio::test]
+async fn a_caller_deadline_header_does_not_end_a_connected_call() {
+    for method in ["Translate", "Extract"] {
+        for encoding in ENCODINGS {
+            for header in CALLER_DEADLINES {
+                let context = format!("{method} {encoding:?} {header:?}");
+                let h = Harness::start_with(None, |c| {
+                    c.limits.execution_timeout = std::time::Duration::from_secs(1)
+                })
+                .await;
+                h.gateway.push(delayed_success(method));
+                let wire = h
+                    .call_with(method, USER_TOKEN, &body_for(method), encoding, header)
+                    .await;
+                assert!(wire.ok(), "{context}: {} {}", wire.status, wire.body);
+                assert_eq!(wire.status, 200, "{context}");
+                assert!(
+                    wire.body["requestId"]
+                        .as_str()
+                        .is_some_and(|id| !id.is_empty()),
+                    "{context}"
+                );
+                if method == "Translate" {
+                    assert_eq!(wire.body["translations"], json!(["Bonjour"]), "{context}");
+                } else {
+                    assert!(
+                        wire.body["json"]
+                            .as_str()
+                            .is_some_and(|d| d.contains("Ada")),
+                        "{context}: {}",
+                        wire.body
+                    );
+                }
+                assert_eq!(h.gateway.calls(), 1, "{context}");
+                assert_eq!(h.gateway.dropped(), 0, "{context}");
+                wait_for_permit_release(&h, &context).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_server_budget_wins_over_every_caller_deadline_header() {
+    for method in ["Translate", "Extract"] {
+        for encoding in ENCODINGS {
+            for header in CALLER_DEADLINES {
+                let context = format!("{method} {encoding:?} {header:?}");
+                let h = Harness::start_with(None, |c| {
+                    c.limits.execution_timeout = std::time::Duration::from_millis(300)
+                })
+                .await;
+                h.gateway.push(Reply::Hang);
+                h.gateway.push(Reply::without_usage(r#"["never"]"#));
+                let started = tokio::time::Instant::now();
+                let wire = h
+                    .call_with(method, USER_TOKEN, &body_for(method), encoding, header)
+                    .await;
+                let elapsed = started.elapsed();
+                assert_eq!(wire.status, 504, "{context}");
+                assert_eq!(wire.code(), "deadline_exceeded", "{context}");
+                assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT", "{context}");
+                let (_, detail_request_id) = wire.detail();
+                assert_eq!(
+                    wire.request_id_header.as_deref(),
+                    Some(detail_request_id.as_str()),
+                    "{context}"
+                );
+                assert!(
+                    elapsed >= std::time::Duration::from_millis(250),
+                    "{context}: answered early at {elapsed:?}"
+                );
+                wait_for_dropped(&h, 1).await;
+                assert_eq!(h.gateway.dropped(), 1, "{context}");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                assert_eq!(h.gateway.calls(), 1, "{context}: no retry after expiry");
+                wait_for_permit_release(&h, &context).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_actual_disconnect_still_cancels_with_any_caller_deadline_header() {
+    for method in ["Translate", "Extract"] {
+        for encoding in ENCODINGS {
+            for header in [None, Some("10000"), Some("garbage")] {
+                let context = format!("{method} {encoding:?} {header:?}");
+                let h = Harness::start(None).await;
+                h.gateway.push(Reply::Hang);
+                h.gateway.push(Reply::without_usage(r#"["never"]"#));
+                let pending = tokio::spawn(
+                    h.request_with(method, USER_TOKEN, &body_for(method), encoding, header)
+                        .send(),
+                );
+                for _ in 0..100 {
+                    if h.gateway.calls() == 1 {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert_eq!(h.gateway.calls(), 1, "{context}");
+                pending.abort();
+                let _ = pending.await;
+                wait_for_dropped(&h, 1).await;
+                assert_eq!(h.gateway.dropped(), 1, "{context}: provider call canceled");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                assert_eq!(
+                    h.gateway.calls(),
+                    1,
+                    "{context}: no retry after cancellation"
+                );
+                wait_for_permit_release(&h, &context).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn origin_and_message_size_rejection_ignore_the_caller_deadline_header() {
+    let h = Harness::start(None).await;
+    let url = format!("{}/delitools.v1.DelitoolsService/Translate", h.base);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Connect-Protocol-Version", "1")
+        .header("Connect-Timeout-Ms", "40")
+        .header("Origin", "https://example.test")
+        .bearer_auth(USER_TOKEN)
+        .json(&translate_body(&["a"]))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    let oversized = "a".repeat(400_000);
+    for encoding in ENCODINGS {
+        let wire = h
+            .call_with(
+                "Translate",
+                USER_TOKEN,
+                &translate_body(&[&oversized]),
+                encoding,
+                Some("40"),
+            )
+            .await;
+        assert_eq!(wire.code(), "resource_exhausted", "{encoding:?}");
+        assert!(
+            wire.body["details"].is_null(),
+            "{encoding:?}: no ErrorDetail"
+        );
+    }
+    assert_eq!(h.gateway.calls(), 0);
 }

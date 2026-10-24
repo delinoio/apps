@@ -15,7 +15,7 @@ impl Worker {
     /// Periods rated from now on recover their baseline in the metering transaction that rates
     /// them, so this sweep only walks the rated periods once, in `(tenant, period start)` order.
     /// Sparse history costs one row per examined rated period, never one per calendar month. The
-    /// position (see migration 14) moves in the transaction that examined its batch, so a failure
+    /// position (see migration 15) moves in the transaction that examined its batch, so a failure
     /// or restart retries the same batch and the grant keys keep the retry idempotent. A period
     /// whose retained history is contradictory is reported through an audit record and a log and
     /// then passed; it receives no grant. Returns the number of grants recorded.

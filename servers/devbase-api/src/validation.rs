@@ -229,6 +229,75 @@ mod tests {
         let valid = json!({"idempotencyKey":key,"externalId":"e"});
         assert!(validate_payload(Op::CreateEndUser, &valid).is_ok());
     }
+    /// Fourth-group leading nibbles 0-7 and c-f are version-7 text without the RFC 4122 variant.
+    fn variant_vector(n: u8) -> String {
+        format!("01900000-0000-7000-{n:x}000-000000000001")
+    }
+    #[test]
+    fn resource_ids_enforce_the_rfc_variant_with_the_existing_message() {
+        for n in 0..16u8 {
+            let id = variant_vector(n);
+            let rfc = (8..12).contains(&n);
+            for (op, field, message) in [
+                (
+                    Op::GetApiKey,
+                    "apiKeyId",
+                    "api_key_id must be a canonical UUID v7",
+                ),
+                (
+                    Op::RevokeApiKey,
+                    "apiKeyId",
+                    "api_key_id must be a canonical UUID v7",
+                ),
+                (
+                    Op::GetEndUser,
+                    "endUserId",
+                    "end_user_id must be a canonical UUID v7",
+                ),
+                (
+                    Op::DeleteEndUser,
+                    "endUserId",
+                    "end_user_id must be a canonical UUID v7",
+                ),
+            ] {
+                let q = json!({ field: id });
+                match validate_payload(op, &q) {
+                    Ok(()) => assert!(rfc, "{op:?} {id}"),
+                    Err(e) => {
+                        assert!(!rfc, "{op:?} {id}");
+                        assert_eq!(e.code, connectrpc::ErrorCode::InvalidArgument);
+                        assert_eq!(e.message, message);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn page_token_ids_enforce_the_rfc_variant() {
+        for n in 0..16u8 {
+            let id = variant_vector(n);
+            let token = cursor_for(&id);
+            let q = json!({ "pageToken": token });
+            match page(&q) {
+                Ok((_, at, parsed)) => {
+                    assert!((8..12).contains(&n), "{id}");
+                    assert_eq!(parsed.to_string(), id);
+                    assert!(at.is_some());
+                }
+                Err(e) => {
+                    assert!(!(8..12).contains(&n), "{id}");
+                    assert_eq!(e.code, connectrpc::ErrorCode::InvalidArgument);
+                    assert_eq!(e.message, "page_token is invalid");
+                }
+            }
+        }
+        // A server-issued cursor keeps working.
+        let issued = cursor(Utc::now(), uuid::Uuid::now_v7());
+        assert!(page(&json!({ "pageToken": issued })).is_ok());
+    }
+    fn cursor_for(id: &str) -> String {
+        URL_SAFE_NO_PAD.encode(format!("0.{id}"))
+    }
     fn check(metadata: Value) -> Result<Value> {
         metadata_of(json!({ "metadata": metadata }))
     }
