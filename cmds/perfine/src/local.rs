@@ -77,7 +77,9 @@ pub struct RunRecord {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Journal {
     schema_version: Version,
-    settings: Fingerprint,
+    pub settings: Fingerprint,
+    #[serde(default)]
+    pub language: Option<perfine_core::interfaces::Language>,
     optimize: bool,
     created_request: RequestId,
     pub(crate) runs: BTreeMap<String, RunRecord>,
@@ -527,9 +529,9 @@ impl App {
                 engine.status(&id)?.config.fingerprint() == frozen.fingerprint(),
                 "experiment fingerprint changed"
             );
-            // An admitted agent attempt precedes its measured head. Do not advance the
-            // engine clock past that durable admission before registering the head.
-            // All frozen identities were checked above; the original deadline still applies.
+            // An admitted agent attempt precedes its measured head. Do not settle the
+            // experiment at its start deadline before registering that admitted head.
+            // All frozen identities were checked above; the original timeout still applies.
             if !pending_admission {
                 engine.resume(req, &id, &frozen, now())?;
             }
@@ -542,6 +544,7 @@ impl App {
             let j = Journal {
                 schema_version: Version,
                 settings: fingerprint(&cfg)?,
+                language: Some(cfg.adapter.language),
                 optimize,
                 created_request: req.clone(),
                 runs: BTreeMap::new(),
@@ -827,20 +830,18 @@ impl App {
                     "candidate implementation deadline reached"
                 );
                 if !current.candidates.contains_key(&candidate) {
-                engine.start_candidate_at(
-                    &request(),
-                    &id,
-                    candidate.clone(),
-                    head,
-                    candidate_request.workspace.clone(),
-                    &a,
-                    &baseline,
-                    &hypothesis.source_paths,
-                    // Admission time is the durable agent-attempt start, not the time
-                    // edits finish. This preserves the start deadline and total timeout.
-                    started_at,
-                    now(),
-                )?;
+                    engine.start_candidate_from_admission(
+                        &request(),
+                        &id,
+                        candidate.clone(),
+                        head,
+                        candidate_request.workspace.clone(),
+                        &a,
+                        &baseline,
+                        &hypothesis.source_paths,
+                        started_at,
+                        now(),
+                    )?;
                 }
                 let label = format!("candidate-{}", candidate.as_str());
                 let candidate_result = (|| -> Result<()> {
@@ -1264,6 +1265,7 @@ mod initialization_tests {
             let settings = digest(b"original settings");
             let journal = Journal {
                 schema_version: Version,
+                language: None,
                 settings: settings.clone(),
                 optimize: false,
                 created_request: request(),

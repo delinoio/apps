@@ -101,3 +101,5 @@ Update the project index and affected owning contracts together when ownership, 
 ### Post-run review
 
 A completed candidate may be reevaluated through the same engine finish operation with explicit retained review evidence. Its evaluation evidence fingerprints must match the previous evaluation exactly. Review cannot change measurements, immutable policy or source identities, and cannot proceed after a publication approval exists. Retain the caller's content-bound confirmation and attestation in the owning execution journal. Missing required repeat evidence cannot produce a pass.
+
+Candidate head registration may carry the earlier admission time from a durable execution journal separately from the current operation time. Admission must fall within the experiment start window; the current operation must precede the original candidate deadline. Advancing engine history must not reset that deadline or require a backwards operation clock.
