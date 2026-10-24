@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 WORKDIR /src
 COPY protos ./protos
 COPY servers ./servers
+COPY crates/perfine-core ./crates/perfine-core
 RUN cargo build --locked --release --manifest-path servers/Cargo.toml -p delcore-api --bin delcore-api
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=build /src/servers/target/release/delcore-api /delcore-api

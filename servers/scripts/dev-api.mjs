@@ -19,6 +19,7 @@ export function prepareApiEnvironment(api, source = process.env) {
       [Api.DeliTools]: "127.0.0.1:46322",
       [Api.DevBase]: "127.0.0.1:46317",
       [Api.GitTracker]: "127.0.0.1:46321",
+      [Api.Perfine]: "127.0.0.1:46323",
     }[api],
   };
   delete env[databaseHandoff];
@@ -39,6 +40,7 @@ export function apiCommand(api, source = process.env) {
     [Api.DeliTools]: "delitools-api",
     [Api.DevBase]: "devbase-api",
     [Api.GitTracker]: "git-tracker-api",
+    [Api.Perfine]: "perfine-api",
   }[api];
   if (!binary) throw new Error("Unknown development API");
   return [

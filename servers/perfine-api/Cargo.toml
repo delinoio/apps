@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+[package]
+name = "perfine-api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+buffa.workspace = true
+buffa-types.workspace = true
+chrono.workspace = true
+connectrpc.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+delino-protocol.workspace = true
+server-common.workspace = true
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+hmac = "0.12"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+
+perfine-core = { path = "../../crates/perfine-core" }
+
+[dev-dependencies]
+rsa = "0.9"
+base64.workspace = true
