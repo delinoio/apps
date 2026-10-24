@@ -584,6 +584,14 @@ else:
                 .any(|arg| arg.contains(workspace.directory.as_str())
                     || arg.contains(repo.to_str().unwrap()))
         );
+        match provider {
+            LocalAgent::Codex => {
+                assert!(argv.windows(2).any(|a| a == ["--disable", "shell_tool"]));
+                assert!(argv.windows(2).any(|a| a == ["--disable", "unified_exec"]));
+                assert!(argv.windows(2).any(|a| a == ["--disable", "multi_agent"]));
+            }
+            LocalAgent::Claude => assert!(argv.windows(2).any(|a| a == ["--tools", ""])),
+        }
         assert!(agent.implement(&hypotheses[0], &context).is_err());
         let user_workspace = Workspace {
             directory: name(repo.to_str().unwrap()),
