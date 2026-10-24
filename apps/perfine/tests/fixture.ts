@@ -139,9 +139,15 @@ export type FixtureOptions = {
   noCandidates?: boolean;
   prepareGate?: Promise<void>;
   prepareError?: boolean;
+  connectGate?: Promise<void>;
+  connectError?: boolean;
 };
 export function fixture(options: FixtureOptions = {}) {
-  const calls: { method: string; input: unknown }[] = [];
+  const calls: {
+    method: string;
+    input: unknown;
+    githubToken?: string | null;
+  }[] = [];
   let approval: P.Approval | undefined, publication: P.Publication | undefined;
   const e = create(P.ExperimentSchema, {
     ...experiment,
@@ -175,13 +181,27 @@ export function fixture(options: FixtureOptions = {}) {
       },
     });
     router.service(P.ConnectionService, {
-      listConnections: (req) => {
-        calls.push({ method: "listConnections", input: req });
+      listConnections: (req, ctx) => {
+        calls.push({
+          method: "listConnections",
+          input: req,
+          githubToken: ctx.requestHeader.get("x-github-token"),
+        });
         return { connections: options.empty ? [] : [connection] };
       },
       getConnection: () => ({ connection }),
-      connectRepository: (req) => {
-        calls.push({ method: "connectRepository", input: req });
+      connectRepository: async (req, ctx) => {
+        calls.push({
+          method: "connectRepository",
+          input: req,
+          githubToken: ctx.requestHeader.get("x-github-token"),
+        });
+        await options.connectGate;
+        if (options.connectError)
+          throw new ConnectError(
+            "Fixture: GitHub token rejected",
+            Code.PermissionDenied,
+          );
         return { connection };
       },
       getRawArtifactConsent: () => ({ consent: connection.consent }),

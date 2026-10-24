@@ -73,7 +73,14 @@ scoped by space/resource and cleared on sign-out. Permission failures hide cache
 results. Manage, experiment and publish controls remain independent of read.
 
 Repository setup uses an operator-configured GitHub App installation URL and
-explicit repository/installation IDs. The API resolves IDs and verifies both
+explicit repository/installation IDs and a masked GitHub access token input.
+The token field spans both desktop columns and stacks with the form on mobile.
+Its helper explains that the token verifies repository administrator access and
+is not saved. Send it only in the connection request's `x-github-token` header;
+never retain it in mutation variables, browser storage, or shared transport state.
+Clear the input when dispatching and require re-entry after failure. Disable
+submission while pending and preserve the manage permission gate.
+The API resolves IDs and verifies both
 management and GitHub administrator authority. Connections and histories use
 cursor pagination. Evidence links are issued on demand, after server checks.
 

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
-import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { createClient } from "@connectrpc/connect";
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import { useMutation, useQuery, useTransport } from "@connectrpc/connect-query";
+import {
+  useQueryClient,
+  useMutation as useRequestMutation,
+} from "@tanstack/react-query";
 import {
   ArtifactKind,
   ConnectionService,
+  ConnectRepositoryRequestSchema,
   ConnectionState,
   ManagementService,
   DeletionState,
@@ -23,8 +29,22 @@ export function Repositories({
   connections: Connection[];
   onSelect: (c: Connection) => void;
 }) {
-  const connect = useMutation(ConnectionService.method.connectRepository),
-    cache = useQueryClient();
+  const client = createClient(ConnectionService, useTransport());
+  const token = useRef("");
+  const connect = useRequestMutation({
+    retry: false,
+    mutationFn: (
+      request: MessageInitShape<typeof ConnectRepositoryRequestSchema>,
+    ) => {
+      // Keep credentials out of retained mutation variables and shared transport state.
+      const githubToken = token.current;
+      token.current = "";
+      return client.connectRepository(request, {
+        headers: { "x-github-token": githubToken },
+      });
+    },
+  });
+  const cache = useQueryClient();
   const [requestId, setRequestId] = useState(uuid7);
   return (
     <div className="stack">
@@ -82,7 +102,15 @@ export function Repositories({
           onChange={() => setRequestId(uuid7())}
           onSubmit={(e) => {
             e.preventDefault();
+            if (!manage || connect.isPending) return;
+            const input = e.currentTarget.elements.namedItem(
+              "githubToken",
+            ) as HTMLInputElement;
+            if (!input.value.trim()) return;
             const f = new FormData(e.currentTarget);
+            token.current = input.value.trim();
+            input.value = "";
+            f.delete("githubToken");
             connect.mutate(
               {
                 spaceId,
@@ -131,6 +159,18 @@ export function Repositories({
             required
             disabled={!manage}
           />
+          <div className="connection-token">
+            <Field
+              label="GitHub access token"
+              name="githubToken"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              disabled={!manage || connect.isPending}
+              hint="Used only to verify repository administrator access. Not saved."
+            />
+          </div>
           <Button type="submit" disabled={!manage || connect.isPending}>
             {connect.isPending ? "Connecting…" : "Connect repository"}
           </Button>

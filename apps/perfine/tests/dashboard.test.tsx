@@ -9,7 +9,7 @@ import { App } from "../src/app";
 import { CandidateEvidence, Detail, Status } from "../src/experiments";
 import { Review } from "../src/review";
 import { Operations } from "../src/operations";
-import { Settings } from "../src/repositories";
+import { Repositories, Settings } from "../src/repositories";
 import {
   importConfiguration,
   emptyConfiguration,
@@ -43,7 +43,7 @@ function mount(
       <TransportProvider transport={f.transport}>{node(f)}</TransportProvider>
     </QueryClientProvider>,
   );
-  return f;
+  return { ...f, client };
 }
 async function selectSpace() {
   await screen.findByRole("option", { name: "Example engineering · Personal" });
@@ -96,6 +96,131 @@ function fillConfiguration() {
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 describe("mocked typed RPC dashboard", () => {
+  it("sends the ephemeral token only on connection and clears it before completion", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const f = mount((f) => <App delcore={f.transport} signOut={() => {}} />, {
+      connectGate: gate,
+    });
+    await selectSpace();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Repositories" }),
+    );
+    await screen.findByLabelText("Repository owner");
+    for (const [label, value] of [
+      ["Repository owner", "example"],
+      ["Repository name", "parser"],
+      ["GitHub repository ID", "1"],
+      ["GitHub App installation ID", "7"],
+      ["GitHub access token", "fixture-secret-token"],
+    ])
+      fireEvent.change(screen.getByLabelText(label, { exact: false }), {
+        target: { value },
+      });
+    const input = screen.getByLabelText(
+      /^GitHub access token/,
+    ) as HTMLInputElement;
+    expect(input.type).toBe("password");
+    fireEvent.click(screen.getByRole("button", { name: "Connect repository" }));
+    expect(input.value).toBe("");
+    await waitFor(() =>
+      expect(
+        f.calls.filter((x) => x.method === "connectRepository").length,
+      ).toBe(1),
+    );
+    expect(
+      f.calls.find((x) => x.method === "connectRepository")?.githubToken,
+    ).toBe("fixture-secret-token");
+    expect(
+      (screen.getByRole("button", { name: "Connecting…" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    const variables = f.client
+      .getMutationCache()
+      .getAll()
+      .map((m) => m.state.variables);
+    expect(
+      JSON.stringify(variables, (_, v) =>
+        typeof v === "bigint" ? String(v) : v,
+      ),
+    ).not.toContain("fixture-secret-token");
+    expect(JSON.stringify(localStorage)).not.toContain("fixture-secret-token");
+    expect(JSON.stringify(sessionStorage)).not.toContain(
+      "fixture-secret-token",
+    );
+    finish();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Connect repository",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    expect(
+      f.calls
+        .filter((x) => x.method === "listConnections")
+        .every((x) => !x.githubToken),
+    ).toBe(true);
+    expect(input.value).toBe("");
+  });
+  it("requires token re-entry after a failed connection and preserves the manage gate", async () => {
+    const f = mount(
+      () => (
+        <Repositories
+          spaceId={spaceId}
+          manage
+          connections={[]}
+          onSelect={() => {}}
+        />
+      ),
+      { connectError: true },
+    );
+    for (const [label, value] of [
+      ["Repository owner", "example"],
+      ["Repository name", "parser"],
+      ["GitHub repository ID", "1"],
+      ["GitHub App installation ID", "7"],
+      ["GitHub access token", "rejected-token"],
+    ])
+      fireEvent.change(screen.getByLabelText(label, { exact: false }), {
+        target: { value },
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Connect repository" }));
+    await screen.findByRole("alert");
+    const input = screen.getByLabelText(
+      /^GitHub access token/,
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
+    fireEvent.submit(input.form!);
+    expect(f.calls.filter((x) => x.method === "connectRepository").length).toBe(
+      1,
+    );
+  });
+  it("disables the token field without manage permission", () => {
+    mount(() => (
+      <Repositories
+        spaceId={spaceId}
+        manage={false}
+        connections={[]}
+        onSelect={() => {}}
+      />
+    ));
+    expect(
+      (screen.getByLabelText(/^GitHub access token/) as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Connect repository",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
   it("does not fetch private results before a space is selected", async () => {
     const f = mount((f) => <App delcore={f.transport} signOut={() => {}} />);
     await screen.findByText("Select a space to continue");
@@ -649,7 +774,9 @@ describe("operation and lifecycle boundaries", () => {
       ["Repeat tolerance", "0.001"],
       ["Near-threshold margin", "0.001"],
     ])
-      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      fireEvent.change(screen.getByLabelText(label, { exact: false }), {
+        target: { value },
+      });
     fireEvent.click(
       screen.getByRole("button", { name: "Prepare experiment for review" }),
     );
