@@ -657,6 +657,7 @@ impl<S: Store> Engine<S> {
                         .completed_steps
                         .values()
                         .cloned()
+                        .chain(exp.candidates.values().map(|c| c.hypothesis.clone()))
                         .chain(
                             exp.candidates
                                 .values()
