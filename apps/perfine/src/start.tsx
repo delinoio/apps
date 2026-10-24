@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
   CloudService,
@@ -14,9 +14,15 @@ import {
   type Connection,
   type ExperimentSpecification,
 } from "@delino/protos/perfine/v1/perfine_pb";
+import {
+  ConfigurationForm,
+  emptyConfiguration,
+  validateConfiguration,
+  importConfiguration,
+} from "./configuration";
 import { NativeSelect } from "@delino/ui/components/native-select";
 import { Button, Card, Failure, Notice, Pager } from "./ui";
-import { parseSpecification, percent, useRequestId, uuid7 } from "./core";
+import { percent, useRequestId, uuid7 } from "./core";
 export function Specification({ spec }: { spec: ExperimentSpecification }) {
   const p = spec.policy,
     l = spec.limits;
@@ -91,19 +97,59 @@ export function Specification({ spec }: { spec: ExperimentSpecification }) {
           <dd>{p?.repetitions}</dd>
         </div>
         <div>
-          <dt>Confidence level / maximum relative interval width</dt>
+          <dt>Maximum relative sample range / decision margin</dt>
           <dd>
             {p?.uncertainty
-              ? `${percent(p.uncertainty.confidenceLevel)} / ${percent(p.uncertainty.maximumRelativeIntervalWidth)}`
+              ? `${p.uncertainty.maximumRelativeRange === undefined ? "Not applicable" : percent(p.uncertainty.maximumRelativeRange)} / ${p.uncertainty.decisionMargin === undefined ? "Not applicable" : percent(p.uncertainty.decisionMargin)}`
               : "Not declared"}
           </dd>
         </div>
         <div>
           <dt>Near-threshold margin</dt>
           <dd>
-            {p?.uncertainty
-              ? percent(p.uncertainty.nearThresholdMargin)
+            {p?.uncertainty?.nearThreshold !== undefined
+              ? percent(p.uncertainty.nearThreshold)
               : "Not declared"}
+          </dd>
+        </div>
+        <div>
+          <dt>Repeat tolerance</dt>
+          <dd>
+            {p?.uncertainty?.repeatTolerance === undefined
+              ? "Not declared"
+              : percent(p.uncertainty.repeatTolerance)}
+          </dd>
+        </div>
+        <div>
+          <dt>Workflow SHA</dt>
+          <dd>
+            <code>{spec.workflowSha}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Correctness checks</dt>
+          <dd>{spec.correctnessChecks.join(", ") || "Missing"}</dd>
+        </div>
+        <div>
+          <dt>Workload confirmation</dt>
+          <dd>{spec.workloadConfirmation || "Missing"}</dd>
+        </div>
+        <div>
+          <dt>Input hashes</dt>
+          <dd>
+            {spec.inputs.map((i) => (
+              <p key={i.name}>
+                {i.name}: <code>{i.sha256}</code>
+              </p>
+            ))}
+          </dd>
+        </div>
+        <div>
+          <dt>Hardware</dt>
+          <dd>
+            {Object.entries(spec.environment?.hardware || {})
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(", ") || "None declared"}
           </dd>
         </div>
         <div>
@@ -205,6 +251,10 @@ export function Start({
     },
     { enabled: allowed && !!id },
   );
+  const preparation = useMutation(ExperimentService.method.prepareExperiment);
+  const [configuration, setConfiguration] = useState(emptyConfiguration);
+  const [engineConfig, setEngineConfig] = useState("");
+  const revision = useRef(0);
   const start = useMutation(ExperimentService.method.startExperiment);
   const [spec, setSpec] = useState<ExperimentSpecification>(),
     [error, setError] = useState<unknown>(),
@@ -269,49 +319,117 @@ export function Start({
       <Card className="panel">
         <h2>Execution limits and policy</h2>
         <p>
-          Import the frozen v1 experiment specification from your local
-          preparation. Review every limit and policy below. To change a value,
-          update the local specification and its canonical fingerprint, then
-          import it again. This is configuration, never repository source.
-        </p>
-        <p>
-          Required: candidate count, concurrency (at most five), start deadline,
-          candidate timeout, exact SHAs, workloads, tools/environment, metric,
-          objective, minimum improvement, allowed regressions, repetitions and
-          uncertainty criteria.
+          Enter reproducible settings and confirm the workload before
+          preparation. The server computes fingerprints. Started experiments
+          remain immutable; edits here prepare a new experiment.
         </p>
         <label className="field">
-          Prepared specification JSON
+          Import configuration or specification JSON (optional)
           <input
             type="file"
-            autoFocus
             accept=".json,application/json"
+            disabled={!allowed || start.isPending || start.isSuccess}
             onChange={async (e) => {
-              setSpec(undefined);
-              setConfirmed(false);
-              setError(undefined);
-              setIdentity({ requestId: uuid7(), experimentId: uuid7() });
               const file = e.target.files?.[0];
               if (!file) return;
+              const current = ++revision.current;
+              setSpec(undefined);
+              setEngineConfig("");
+              setConfirmed(false);
+              setError(undefined);
               try {
                 if (file.size > 2_000_000)
                   throw new Error(
-                    "Specification exceeds 2 MB. Import metadata only.",
+                    "Configuration exceeds 2 MB. Import metadata only.",
                   );
-                setSpec(parseSpecification(await file.text()));
-              } catch (e) {
-                setError(e);
+                const next = importConfiguration(await file.text());
+                if (revision.current === current) setConfiguration(next);
+              } catch (error) {
+                if (revision.current === current) setError(error);
               }
             }}
           />
         </label>
-        {!!error && <Failure error={error} />}{" "}
-        {spec && <Specification spec={spec} />}
+        <ConfigurationForm
+          value={configuration}
+          disabled={!allowed || start.isPending || start.isSuccess}
+          onChange={(next) => {
+            revision.current++;
+            setConfiguration(next);
+            setSpec(undefined);
+            setEngineConfig("");
+            setConfirmed(false);
+            setError(undefined);
+            setIdentity({ requestId: uuid7(), experimentId: uuid7() });
+          }}
+          onPrepare={() => {
+            try {
+              validateConfiguration(configuration);
+            } catch (e) {
+              setError(e);
+              return;
+            }
+            const current = ++revision.current;
+            setSpec(undefined);
+            setEngineConfig("");
+            setConfirmed(false);
+            setError(undefined);
+            preparation.mutate(
+              { requestId: uuid7(), spaceId, connectionId: id, configuration },
+              {
+                onSuccess: (r) => {
+                  // A response for earlier settings must never restore an obsolete review.
+                  if (revision.current !== current) return;
+                  if (!r.specification || !r.engineConfigJson) {
+                    setError(
+                      new Error(
+                        "Preparation returned incomplete data. Prepare again.",
+                      ),
+                    );
+                    return;
+                  }
+                  setSpec(r.specification);
+                  setEngineConfig(r.engineConfigJson);
+                  setIdentity({ requestId: uuid7(), experimentId: uuid7() });
+                },
+                onError: (e) => {
+                  if (revision.current === current) setError(e);
+                },
+              },
+            );
+          }}
+          pending={preparation.isPending}
+        />
+        {!!error && (
+          <>
+            <Failure error={error} />
+            <p>
+              Check the source revisions, workload hashes, tools, limits and
+              policy above, then prepare again.
+            </p>
+          </>
+        )}
+        {spec && (
+          <section aria-label="Prepared experiment review" className="stack">
+            <h2>Review prepared experiment</h2>
+            <Specification spec={spec} />
+            <a
+              download="perfine-config.json"
+              href={`data:application/json;charset=utf-8,${encodeURIComponent(engineConfig)}`}
+            >
+              Download prepared engine configuration
+            </a>
+            <p>
+              Review this configuration for local use with perfine optimize.
+              Preparation does not start execution.
+            </p>
+          </section>
+        )}
         <form
           className="stack"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!enabled || !spec || !confirmed) return;
+            if (!enabled || !spec || !confirmed || start.isSuccess) return;
             try {
               if (
                 Number(spec.limits!.startDeadline!.seconds) * 1000 <=
@@ -341,8 +459,12 @@ export function Start({
             Cloud tool
             <NativeSelect
               value={tool}
-              disabled={!allowed || start.isPending}
+              disabled={!allowed || start.isPending || start.isSuccess}
               onChange={(e) => {
+                revision.current++;
+                setSpec(undefined);
+                setEngineConfig("");
+                setConfirmed(false);
                 setTool(e.target.value);
                 setIdentity({ requestId: uuid7(), experimentId: uuid7() });
               }}
@@ -358,6 +480,7 @@ export function Start({
           <label className="check">
             <input
               type="checkbox"
+              disabled={!spec || start.isPending || start.isSuccess}
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
             />
@@ -365,7 +488,13 @@ export function Start({
             these immutable limits and policies.
           </label>
           <Button
-            disabled={!enabled || !spec || !confirmed || start.isPending}
+            disabled={
+              !enabled ||
+              !spec ||
+              !confirmed ||
+              start.isPending ||
+              start.isSuccess
+            }
             type="submit"
           >
             {start.isPending ? "Starting…" : "Start cloud experiment"}

@@ -638,12 +638,6 @@ export function CandidateEvidence({
                     <dt>Repetitions</dt>
                     <dd>{m.repetitions}</dd>
                   </div>
-                  <div>
-                    <dt>Uncertainty interval</dt>
-                    <dd>
-                      {m.uncertaintyLower} – {m.uncertaintyUpper}
-                    </dd>
-                  </div>
                 </dl>
               </article>
             ))}

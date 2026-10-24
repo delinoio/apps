@@ -14,6 +14,7 @@ import {
 import "../src/style.css";
 const scenario = new URLSearchParams(location.search).get("scenario");
 const f = fixture({
+  cloud: scenario === "cloud",
   deny: scenario === "denied",
   empty: scenario === "empty",
   incomplete: scenario === "incomplete",
