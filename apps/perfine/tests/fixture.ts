@@ -136,6 +136,7 @@ export type FixtureOptions = {
   verdict?: P.PerformanceVerdict;
   incomplete?: boolean;
   publicationUncertain?: boolean;
+  publicationNotSubmitted?: boolean;
   noCandidates?: boolean;
   prepareGate?: Promise<void>;
   prepareError?: boolean;
@@ -351,6 +352,14 @@ export function fixture(options: FixtureOptions = {}) {
       getApproval: () => ({ approval }),
       publishDraft: (req) => {
         calls.push({ method: "publishDraft", input: req });
+        if (
+          options.publicationNotSubmitted &&
+          calls.filter((x) => x.method === "publishDraft").length === 1
+        )
+          throw new ConnectError(
+            "Fixture: submission did not reach server",
+            Code.Unavailable,
+          );
         publication = create(P.PublicationSchema, {
           approvalId: req.approvalId,
           candidateId: candidate.id,
@@ -369,7 +378,11 @@ export function fixture(options: FixtureOptions = {}) {
           );
         return { publication };
       },
-      getPublication: () => ({ publication }),
+      getPublication: () => {
+        if (options.publicationNotSubmitted && !publication)
+          throw new ConnectError("No publication", Code.NotFound);
+        return { publication };
+      },
     });
   });
   return { transport, calls };

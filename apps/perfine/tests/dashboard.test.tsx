@@ -299,6 +299,38 @@ describe("mocked typed RPC dashboard", () => {
       ).disabled,
     ).toBe(true);
   });
+  it("retries a confirmed absent publication with the original exact approval", async () => {
+    const f = mount(
+      () => (
+        <Review
+          spaceId={spaceId}
+          experiment={experiment}
+          candidate={candidate}
+          connection={connection}
+          allowed
+          back={() => {}}
+        />
+      ),
+      { publicationNotSubmitted: true },
+    );
+    fillDraft();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Approve and create draft PR" }),
+    );
+    const retry = await screen.findByRole("button", {
+      name: "Retry reconciled draft publication",
+    });
+    await waitFor(() =>
+      expect((retry as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(retry);
+    await screen.findByText("Draft PR created");
+    expect(f.calls.filter((x) => x.method === "approveDraft").length).toBe(1);
+    const publishes = f.calls.filter((x) => x.method === "publishDraft");
+    expect(publishes.length).toBe(2);
+    expect(publishes[1].input).toEqual(publishes[0].input);
+  });
   it("downloads evidence only after explicitly requesting a fresh signed URL", async () => {
     const f = mount(() => (
       <Detail
