@@ -139,7 +139,7 @@ Copy the names in `.env.example` into the operator's environment. Development mo
 | `DELITOOLS_TENANT_RATE_PER_SECOND`, `DELITOOLS_TENANT_RATE_BURST` | 5, 10                             | Tenant token bucket; burst not below rate.                                                       |
 | `DELITOOLS_TENANT_CONCURRENCY`                                    | 4                                 | Concurrent executions per tenant.                                                                |
 | `DELITOOLS_MAX_RETRIES`                                           | 2 (max 5)                         | Retries after the first Gateway attempt.                                                         |
-| `DELITOOLS_RETRY_BASE_DELAY`, `DELITOOLS_RETRY_MAX_DELAY`         | `250ms`, `5s`                     | Retry backoff bounds; a `Retry-After` hint is honored up to the maximum.                         |
+| `DELITOOLS_RETRY_BASE_DELAY`, `DELITOOLS_RETRY_MAX_DELAY`         | `250ms`, `5s`                     | Retry backoff bounds; a `Retry-After` hint (seconds or HTTP-date) is honored up to the maximum.  |
 | `DEPENDENCY_TIMEOUT`                                              | `3s`                              | Delcore call timeout; not above the execution timeout.                                           |
 | `DELITOOLS_PRICE_CACHE_TTL`                                       | `30s`                             | Reuse of a successful price check. A missing price is re-read after 5 seconds.                   |
 | `DELITOOLS_OUTBOX_INTERVAL`                                       | `5s`                              | Delivery cycle interval.                                                                         |
