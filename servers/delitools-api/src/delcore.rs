@@ -289,7 +289,7 @@ impl DelcoreClient {
             }
         });
         match self.call("IngestEvent", body).await {
-            Ok(value) if value.is_object() => Ok(()),
+            Ok(value) if is_valid_ingest_ack(&value) => Ok(()),
             Ok(_) => Err(IngestFailure::Retryable("malformed_response")),
             Err((kind, reason)) => Err(classify_ingest_failure(kind, reason)),
         }
@@ -422,6 +422,24 @@ fn error_reason(body: &Value) -> Option<i32> {
         }
     }
     None
+}
+
+/// Revision Delcore assigns to the original acceptance of an event, and to its identical replay.
+const ORIGINAL_EVENT_REVISION: i32 = 1;
+
+/// Reports whether an HTTP-success `IngestEvent` body is a contractual acknowledgment.
+///
+/// The body is decoded with the generated `IngestEventResponse` ProtoJSON decoder, which keeps
+/// the legal integer encodings (number or integer string) and field-name aliases. Proto3 decoding
+/// accepts absent, null and default values, so the acknowledgment is also checked semantically:
+/// Delcore assigns a canonical UUID v7 event ID and returns revision 1 for the original
+/// ingestion and for an identical replay. The returned ID is deliberately not compared with the
+/// caller's keys, and metadata or aggregation progress is not a delivery condition.
+fn is_valid_ingest_ack(value: &Value) -> bool {
+    serde_json::from_value::<delino_protocol::delcore::v1::IngestEventResponse>(value.clone())
+        .is_ok_and(|ack| {
+            server_common::canonical_id(&ack.event_id) && ack.revision == ORIGINAL_EVENT_REVISION
+        })
 }
 
 /// Maps a Delcore failure to delivery handling.

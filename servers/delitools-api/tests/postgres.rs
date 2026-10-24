@@ -364,6 +364,108 @@ async fn failed_deliveries_retry_with_identical_identity_and_bounded_backoff() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn invalid_acknowledgments_keep_usage_pending_until_a_valid_one_arrives() {
+    let id = VALID_EVENT_ID;
+    let invalid = [
+        json!({}),
+        json!({"eventId": 42, "revision": "broken"}),
+        json!({"eventId": "", "revision": 1}),
+        json!({"eventId": null, "revision": 1}),
+        json!({"eventId": "e", "revision": 1}),
+        json!({"eventId": id}),
+        json!({"eventId": id, "revision": null}),
+        json!({"eventId": id, "revision": 0}),
+        json!({"eventId": id, "revision": -1}),
+        json!({"eventId": id, "revision": "one"}),
+        json!({"eventId": id, "revision": 2}),
+    ];
+    const IDENTITY: &str = "SELECT event_key, delivery_key, meter_key, quantity, occurred_at, \
+         created_at, expires_at FROM usage_outbox ORDER BY event_key";
+    for body in invalid {
+        let db = TestDb::migrated().await;
+        let h = Harness::start(Some(db.pool.clone())).await;
+        let outbox = Outbox::new(db.pool.clone());
+        let request = Uuid::now_v7();
+        let t0 = now_micros();
+        insert(&outbox, TENANT, request, 1, t0).await;
+        let before = sqlx::query(IDENTITY).fetch_all(&db.pool).await.unwrap();
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        let worker = delivery(&h, &db.pool);
+        let stats = worker.cycle(t0).await.unwrap();
+        assert_eq!(stats.poisoned, 0, "{body}");
+        assert_eq!(count(&db.pool, Some("pending")).await, 2, "{body}");
+        assert_eq!(count(&db.pool, Some("poisoned")).await, 0, "{body}");
+        let attempts = sqlx::query(
+            "SELECT delivery_attempts, last_failure, next_attempt_at FROM usage_outbox",
+        )
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(attempts.len(), 2);
+        for row in &attempts {
+            assert_eq!(row.get::<i32, _>("delivery_attempts"), 1, "{body}");
+            assert_eq!(
+                row.get::<String, _>("last_failure"),
+                "malformed_response",
+                "{body}"
+            );
+            // Configured minimum backoff is 50 ms.
+            assert_eq!(
+                (row.get::<DateTime<Utc>, _>("next_attempt_at") - t0).num_milliseconds(),
+                50,
+                "{body}"
+            );
+        }
+        let after = sqlx::query(IDENTITY).fetch_all(&db.pool).await.unwrap();
+        assert_eq!(before.len(), after.len());
+        for (b, a) in before.iter().zip(&after) {
+            assert_eq!(
+                b.get::<String, _>("event_key"),
+                a.get::<String, _>("event_key")
+            );
+            assert_eq!(
+                b.get::<Uuid, _>("delivery_key"),
+                a.get::<Uuid, _>("delivery_key")
+            );
+            assert_eq!(
+                b.get::<String, _>("meter_key"),
+                a.get::<String, _>("meter_key")
+            );
+            assert_eq!(b.get::<i64, _>("quantity"), a.get::<i64, _>("quantity"));
+            for column in ["occurred_at", "created_at", "expires_at"] {
+                assert_eq!(
+                    b.get::<DateTime<Utc>, _>(column),
+                    a.get::<DateTime<Utc>, _>(column),
+                    "{column} {body}"
+                );
+            }
+        }
+        // The next due cycle resends identical identity and deletes only on a valid acknowledgment.
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: json!({"event_id": id, "revision": "1"}),
+        });
+        worker.cycle(t0 + Duration::seconds(5)).await.unwrap();
+        assert_eq!(count(&db.pool, None).await, 0, "{body}");
+        let ingested = h.delcore.lock().unwrap().ingested.clone();
+        assert_eq!(ingested.len(), 4, "{body}");
+        for key in ["in", "out"] {
+            let sent: Vec<&Value> = ingested
+                .iter()
+                .filter(|b| b["event"]["eventKey"] == format!("{request}:1:{key}"))
+                .collect();
+            assert_eq!(sent.len(), 2);
+            assert_eq!(sent[0], sent[1]);
+        }
+        db.finish().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn backoff_grows_and_is_capped() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;

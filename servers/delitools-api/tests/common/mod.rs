@@ -35,6 +35,7 @@ use std::{
 pub const SERVICE_ID: &str = "019b0000-0000-7000-8000-0000000000aa";
 pub const TENANT: &str = "019b0000-0000-7000-8000-0000000000b1";
 pub const OTHER_TENANT: &str = "019b0000-0000-7000-8000-0000000000b2";
+pub const VALID_EVENT_ID: &str = "01900000-0000-7000-8000-000000000001";
 pub const USER: &str = "019b0000-0000-7000-8000-0000000000c1";
 pub const USER_TOKEN: &str = "user-token";
 pub const KEY_SECRET: &str =
@@ -327,7 +328,9 @@ async fn delcore_method(
                 .unwrap_or(Ingest::Ok);
             s.ingested.push(body);
             match reply {
-                Ingest::Ok => Json(json!({"eventId": "e", "revision": 1})).into_response(),
+                Ingest::Ok => {
+                    Json(json!({"eventId": VALID_EVENT_ID, "revision": 1})).into_response()
+                }
                 Ingest::Error {
                     status,
                     code,
