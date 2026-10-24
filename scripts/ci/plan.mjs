@@ -167,6 +167,17 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    perfine_api:
+      serverRust ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/perfine-api\/|crates\/perfine-core\/|Cargo\.toml$|protos\/|docs\/(?:project-perfine|servers-perfine|crates-perfine|protos-perfine))/u.test(
+          path,
+        ),
+      ),
     protocol:
       repositoryShared ||
       shared.protocol ||
@@ -208,6 +219,13 @@ export function selectRustServers(selected) {
       port: 55432,
       user: "delcore",
       database: "delcore_api_test",
+    },
+    {
+      service: "perfine-api",
+      owner: "perfine_api",
+      port: 55436,
+      user: "perfine",
+      database: "perfine_api_test",
     },
   ]
     .filter(({ owner }) => selected[owner])

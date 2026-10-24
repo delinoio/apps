@@ -8,6 +8,7 @@ test("isolated projects select only their validation", () => {
     delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
+    perfine_api: false,
     git_tracker: false,
     devbase: false,
     delino_site: false,
@@ -21,6 +22,7 @@ test("isolated projects select only their validation", () => {
     delitools_api: true,
     devbase_api: true,
     git_tracker_api: true,
+    perfine_api: true,
     git_tracker: true,
     devbase: false,
     delino_site: false,
@@ -34,6 +36,7 @@ test("isolated projects select only their validation", () => {
     delitools_api: true,
     devbase_api: true,
     git_tracker_api: true,
+    perfine_api: true,
     git_tracker: true,
     devbase: true,
     delino_site: true,
@@ -61,6 +64,7 @@ for (const [project, key] of [
         delitools_api: false,
         devbase_api: key === "devbase" && path === "docs/project-devbase.md",
         git_tracker_api: false,
+        perfine_api: false,
         git_tracker: false,
         devbase: key === "devbase",
         delino_site: key === "delino_site",
@@ -79,6 +83,7 @@ test("consumer examples select protocol validation without native runners", () =
     delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
+    perfine_api: false,
     git_tracker: false,
     devbase: false,
     delino_site: false,
@@ -106,6 +111,7 @@ for (const [service, key] of [
   ["delitools-api", "delitools_api"],
   ["devbase-api", "devbase_api"],
   ["git-tracker-api", "git_tracker_api"],
+  ["perfine-api", "perfine_api"],
 ]) {
   test(`${service} changes select only the owning server`, () => {
     for (const path of [
@@ -179,6 +185,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delitools_api: false,
       devbase_api: false,
       git_tracker_api: false,
+      perfine_api: false,
       git_tracker: false,
       devbase: false,
       delino_site: false,
@@ -196,6 +203,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delitools_api: false,
     devbase_api: false,
     git_tracker_api: false,
+    perfine_api: false,
     git_tracker: false,
     devbase: false,
     delino_site: false,
@@ -258,15 +266,33 @@ test("Rust server matrix selects only affected services", () => {
     [["servers/git-tracker-api/src/main.rs"], ["git-tracker-api"]],
     [
       ["servers/crates/server-common/src/lib.rs"],
-      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
+      [
+        "delcore-api",
+        "delitools-api",
+        "devbase-api",
+        "git-tracker-api",
+        "perfine-api",
+      ],
     ],
     [
       ["protos/devbase/v1/devbase.proto"],
-      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
+      [
+        "delcore-api",
+        "delitools-api",
+        "devbase-api",
+        "git-tracker-api",
+        "perfine-api",
+      ],
     ],
     [
       [".github/workflows/CI.yml"],
-      ["delcore-api", "delitools-api", "devbase-api", "git-tracker-api"],
+      [
+        "delcore-api",
+        "delitools-api",
+        "devbase-api",
+        "git-tracker-api",
+        "perfine-api",
+      ],
     ],
   ]) {
     assert.deepEqual(
@@ -299,7 +325,10 @@ for (const [paths, expected] of [
     "scripts/tauri-cli.mjs",
     "scripts/prebuilt-dependencies.mjs",
     "scripts/archive.mjs",
-  ].map((path) => [[path], ["delidev", "delitools"]]),
+  ].map((path) => [
+    [path],
+    ["delidev", "delitools", ...(path === "Cargo.toml" ? ["perfine_api"] : [])],
+  ]),
   ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
     (path) => [
       [path],
@@ -310,6 +339,7 @@ for (const [paths, expected] of [
         "git_tracker_api",
         "delidev",
         "delitools",
+        "perfine_api",
       ],
     ],
   ),
@@ -322,6 +352,7 @@ for (const [paths, expected] of [
       "devbase_api",
       "git_tracker_api",
       "git_tracker",
+      "perfine_api",
       "protocol",
     ],
   ],
@@ -333,6 +364,7 @@ for (const [paths, expected] of [
       "devbase_api",
       "git_tracker_api",
       "git_tracker",
+      "perfine_api",
       "protocol",
     ],
   ],
@@ -453,6 +485,32 @@ test("DeliTools server validation uses its own disposable database", () => {
         port: 55435,
         user: "delitools",
         database: "delitools_api_test",
+      },
+    ],
+  );
+});
+
+test("Perfine API and shared engine changes select server validation", () => {
+  for (const path of [
+    "servers/perfine-api/src/lib.rs",
+    "crates/perfine-core/src/lib.rs",
+    "protos/perfine/v1/perfine.proto",
+  ]) {
+    assert.ok(
+      selectRustServers(select([path])).some(
+        (entry) => entry.service === "perfine-api",
+      ),
+      path,
+    );
+  }
+  assert.deepEqual(
+    selectRustServers(select(["servers/perfine-api/src/lib.rs"])),
+    [
+      {
+        service: "perfine-api",
+        port: 55436,
+        user: "perfine",
+        database: "perfine_api_test",
       },
     ],
   );

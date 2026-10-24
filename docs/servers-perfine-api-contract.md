@@ -146,3 +146,8 @@ using App authentication and mint a separate token restricted to its exact ID.
 Verify its current ID and full name before approval or dispatch. Target commit
 reads, comparisons and PR operations use the target token; head commit reads use
 the head token. These credentials are ephemeral and never retained in approvals.
+
+Affected CI registers Perfine in the shared Rust server matrix. API, protocol,
+and shared-core changes select its Clippy, unit, and disposable PostgreSQL checks.
+The existing matrix result gate rejects failed, cancelled, or skipped selected jobs;
+ordinary and affected manual validation remain on Ubuntu.
