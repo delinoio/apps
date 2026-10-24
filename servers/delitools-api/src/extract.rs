@@ -32,6 +32,7 @@
 
 use crate::{config::Limits, error::ApiError, gateway::ChatRequest, models::EXTRACTION_MODEL};
 use serde_json::{Map, Value, json};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 pub const MAX_DEPTH: usize = 8;
@@ -186,18 +187,92 @@ fn count_keyword(map: &Map<String, Value>, key: &str, path: &str) -> Result<Opti
     }
 }
 
-fn bound_keyword(map: &Map<String, Value>, key: &str, path: &str) -> Result<Option<f64>, ApiError> {
+/// A finite `minimum` or `maximum` value kept in its original numeric class so that
+/// bounds compare exactly. Converting every bound to `f64` would collapse distinct
+/// integers above 2^53 into one value and let a reversed range through.
+#[derive(Clone, Copy, Debug)]
+enum Bound {
+    Unsigned(u64),
+    Signed(i64),
+    Float(f64),
+}
+
+impl Bound {
+    /// Exact total comparison of two finite bounds without rounding integers to `f64`.
+    fn compare(self, other: Bound) -> Ordering {
+        match (self, other) {
+            (Bound::Float(a), Bound::Float(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+            (Bound::Float(a), b) => compare_integer_with_float(b.integer(), a).reverse(),
+            (a, Bound::Float(b)) => compare_integer_with_float(a.integer(), b),
+            (a, b) => a.integer().cmp(&b.integer()),
+        }
+    }
+
+    /// The value of an integer bound. Every `u64` and `i64` fits in `i128`.
+    fn integer(self) -> i128 {
+        match self {
+            Bound::Unsigned(v) => i128::from(v),
+            Bound::Signed(v) => i128::from(v),
+            Bound::Float(_) => unreachable!("float bounds are compared through floats"),
+        }
+    }
+}
+
+/// Compares an integer with a finite float exactly. `integer` always lies within the
+/// `u64` and `i64` range, so a float beyond ±2^100 decides the order by its sign alone.
+fn compare_integer_with_float(integer: i128, float: f64) -> Ordering {
+    const EXACT_LIMIT: f64 = 1.267_650_600_228_229_4e30; // 2^100
+    if float >= EXACT_LIMIT {
+        return Ordering::Less;
+    }
+    if float <= -EXACT_LIMIT {
+        return Ordering::Greater;
+    }
+    let floor = float.floor();
+    // `floor` is integral and within ±2^100, so the conversion is exact.
+    match integer.cmp(&(floor as i128)) {
+        Ordering::Equal if float > floor => Ordering::Less,
+        order => order,
+    }
+}
+
+fn bound_keyword(
+    map: &Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Result<Option<Bound>, ApiError> {
+    let invalid = || unsupported(format!("{key} at {path} must be a finite number"));
     match map.get(key) {
         None => Ok(None),
-        Some(Value::Number(n)) => n
-            .as_f64()
-            .filter(|f| f.is_finite())
-            .map(Some)
-            .ok_or_else(|| unsupported(format!("{key} at {path} must be a finite number"))),
-        Some(_) => Err(unsupported(format!(
-            "{key} at {path} must be a finite number"
-        ))),
+        Some(Value::Number(n)) => {
+            if let Some(v) = n.as_u64() {
+                Ok(Some(Bound::Unsigned(v)))
+            } else if let Some(v) = n.as_i64() {
+                Ok(Some(Bound::Signed(v)))
+            } else {
+                n.as_f64()
+                    .filter(|f| f.is_finite())
+                    .map(|f| Some(Bound::Float(f)))
+                    .ok_or_else(invalid)
+            }
+        }
+        Some(_) => Err(invalid()),
     }
+}
+
+/// Rejects a reversed `minimum`/`maximum` pair by exact value.
+fn bounds_ordered(
+    low: Option<Bound>,
+    high: Option<Bound>,
+    what: &str,
+    path: &str,
+) -> Result<(), ApiError> {
+    if let (Some(low), Some(high)) = (low, high)
+        && low.compare(high) == Ordering::Greater
+    {
+        return Err(unsupported(format!("{what} exceeds its maximum at {path}")));
+    }
+    Ok(())
 }
 
 fn ordered<T: PartialOrd>(
@@ -325,7 +400,7 @@ fn check_node(node: &Value, depth: usize, nodes: &mut usize, path: &str) -> Resu
         "minItems",
         path,
     )?;
-    ordered(
+    bounds_ordered(
         bound_keyword(map, "minimum", path)?,
         bound_keyword(map, "maximum", path)?,
         "minimum",
@@ -671,6 +746,147 @@ mod tests {
             )),
             ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA
         );
+    }
+
+    fn range_schema(low: &str, high: &str) -> String {
+        format!(r#"{{"type":"number","minimum":{low},"maximum":{high}}}"#)
+    }
+
+    #[test]
+    fn reversed_integer_bounds_reject_exactly_beyond_f64_precision() {
+        for (low, high) in [
+            // Both round to 9007199254740992.0 as f64.
+            ("9007199254740993", "9007199254740992"),
+            ("9007199254740995", "9007199254740994"),
+            ("18446744073709551615", "18446744073709551614"),
+            ("-9223372036854775807", "-9223372036854775808"),
+            ("9223372036854775807", "9223372036854775806"),
+            ("9223372036854775808", "9223372036854775807"),
+            ("18446744073709551615", "-9223372036854775808"),
+            ("0", "-9223372036854775808"),
+            ("1", "-1"),
+        ] {
+            for schema in [
+                range_schema(low, high),
+                format!(
+                    r#"{{"type":"object","properties":{{"n":{}}}}}"#,
+                    range_schema(low, high)
+                ),
+                format!(r#"{{"type":"array","items":{}}}"#, range_schema(low, high)),
+            ] {
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_integer_and_float_bounds_compare_without_rounding_the_integer() {
+        for (low, high) in [
+            ("9007199254740993", "9007199254740992.0"),
+            ("9007199254740993", "9007199254740992e0"),
+            ("9007199254740992.0", "9007199254740991"),
+            ("1", "0.9999999999999999"),
+            ("0", "-0.5"),
+            ("-1.5", "-2"),
+            ("-9223372036854775807", "-9223372036854775808.0"),
+            ("18446744073709551616.0", "18446744073709551615"),
+            ("1e300", "18446744073709551615"),
+            ("0", "-1e300"),
+            ("1.7976931348623157e308", "1e308"),
+        ] {
+            let schema = range_schema(low, high);
+            assert!(validate("t", &schema, &limits()).is_err(), "{schema}");
+            assert_eq!(
+                reason(validate("t", &schema, &limits())),
+                ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                "{schema}"
+            );
+        }
+    }
+
+    #[test]
+    fn equal_ascending_one_sided_and_finite_float_bounds_still_pass() {
+        for (low, high) in [
+            ("9007199254740992", "9007199254740993"),
+            ("9007199254740993", "9007199254740993"),
+            ("18446744073709551614", "18446744073709551615"),
+            ("18446744073709551615", "18446744073709551615"),
+            ("-9223372036854775808", "-9223372036854775807"),
+            ("-9223372036854775808", "-9223372036854775808"),
+            ("-9223372036854775808", "18446744073709551615"),
+            ("9223372036854775807", "9223372036854775808"),
+            ("9007199254740992.0", "9007199254740993"),
+            ("9007199254740992", "9007199254740992.0"),
+            ("9007199254740992.0", "9007199254740992"),
+            ("18446744073709551615", "18446744073709551616.0"),
+            ("-9223372036854775809.0", "-9223372036854775808"),
+            ("0", "-0.0"),
+            ("-0.0", "0"),
+            ("1", "1.0"),
+            ("-1.5", "-1.25"),
+            ("-1.25", "-1.25"),
+            ("-1e308", "1e308"),
+            ("-1.7976931348623157e308", "1.7976931348623157e308"),
+            ("1.7976931348623157e308", "1.7976931348623157e308"),
+            ("0", "1e300"),
+            ("-1e300", "0"),
+        ] {
+            let schema = range_schema(low, high);
+            assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+        }
+        for schema in [
+            r#"{"type":"number","minimum":9007199254740993}"#,
+            r#"{"type":"number","maximum":9007199254740992}"#,
+            r#"{"type":"number","minimum":-1.5}"#,
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740992,"maximum":9007199254740993}}}"#,
+            r#"{"type":"array","items":{"type":"number","minimum":-9223372036854775808,"maximum":18446744073709551615}}"#,
+        ] {
+            assert!(validate("t", schema, &limits()).is_ok(), "{schema}");
+        }
+    }
+
+    #[test]
+    fn bound_comparison_is_exact_and_antisymmetric() {
+        use Bound::{Float, Signed, Unsigned};
+        // Groups are strictly ascending; members of one group are equal by value.
+        let groups: [&[Bound]; 16] = [
+            &[Signed(i64::MIN), Float(-9.223_372_036_854_776e18)],
+            &[Signed(i64::MIN + 1)],
+            &[Signed(-1)],
+            &[Float(-0.5)],
+            &[Float(-0.0), Float(0.0), Signed(0), Unsigned(0)],
+            &[Float(0.5)],
+            &[Signed(1), Unsigned(1), Float(1.0)],
+            &[
+                Float(9_007_199_254_740_992.0),
+                Signed(9_007_199_254_740_992),
+            ],
+            &[Unsigned(9_007_199_254_740_993)],
+            &[Signed(i64::MAX)],
+            &[
+                Unsigned(i64::MAX as u64 + 1),
+                Float(9.223_372_036_854_776e18),
+            ],
+            &[Unsigned(u64::MAX - 1)],
+            &[Unsigned(u64::MAX)],
+            &[Float(1.844_674_407_370_955_2e19)],
+            &[Float(1e300)],
+            &[Float(f64::MAX)],
+        ];
+        for (i, left) in groups.iter().enumerate() {
+            for (j, right) in groups.iter().enumerate() {
+                for a in *left {
+                    for b in *right {
+                        let expected = i.cmp(&j);
+                        assert_eq!(a.compare(*b), expected, "{a:?} vs {b:?}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

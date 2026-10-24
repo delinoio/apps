@@ -763,6 +763,45 @@ async fn extraction_rejects_invalid_count_keywords_without_a_gateway_call() {
 }
 
 #[tokio::test]
+async fn extraction_rejects_reversed_integer_bounds_beyond_f64_precision_without_a_gateway_call() {
+    let h = Harness::start(None).await;
+    for schema in [
+        r#"{"type":"integer","minimum":9007199254740993,"maximum":9007199254740992}"#,
+        r#"{"type":"integer","minimum":18446744073709551615,"maximum":18446744073709551614}"#,
+        r#"{"type":"number","minimum":9007199254740993,"maximum":9007199254740992.0}"#,
+        r#"{"type":"object","properties":{"n":{"type":"integer","minimum":-9223372036854775807,"maximum":-9223372036854775808}}}"#,
+        r#"{"type":"array","items":{"type":"integer","minimum":9223372036854775808,"maximum":9223372036854775807}}"#,
+    ] {
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_UNSUPPORTED_SCHEMA", "{schema}");
+        assert_eq!(wire.code(), "invalid_argument", "{schema}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+
+    // Counterfactual: ascending and equal ranges succeed with one provider call each.
+    for (schema, output) in [
+        (
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740992,"maximum":9007199254740993}},"required":["n"]}"#,
+            json!({"n": 9007199254740993_u64}),
+        ),
+        (
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":18446744073709551615,"maximum":18446744073709551615}},"required":["n"]}"#,
+            json!({"n": 18446744073709551615_u64}),
+        ),
+    ] {
+        let calls = h.gateway.calls();
+        h.gateway.push(Reply::without_usage(&extracted(output)));
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert!(wire.ok(), "{}", wire.body);
+        assert_eq!(h.gateway.calls(), calls + 1, "{schema}");
+    }
+}
+
+#[tokio::test]
 async fn extraction_failures_and_invalid_output_are_distinct_and_never_retried() {
     let h = Harness::start(None).await;
     h.gateway.push(Reply::without_usage(
