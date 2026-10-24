@@ -144,6 +144,7 @@ impl Server {
             delcore: self.delcore.clone(),
             settings: self.config.outbox.clone(),
             metrics: self.metrics.clone(),
+            clock: outbox::system_clock(),
         })
     }
 

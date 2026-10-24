@@ -8,7 +8,7 @@ mod common;
 use chrono::{DateTime, Duration, Utc};
 use common::*;
 use delitools_api::{
-    outbox::{Delivery, Outbox},
+    outbox::{self, Delivery, Outbox},
     store,
     usage::{Direction, NewEvent},
 };
@@ -85,7 +85,47 @@ fn delivery(h: &Harness, pool: &sqlx::PgPool) -> Delivery {
         delcore: h.server.delcore.clone(),
         settings: h.config.outbox.clone(),
         metrics: h.server.metrics.clone(),
+        clock: outbox::system_clock(),
     }
+}
+
+/// A manually advanced clock shared between a test and the Delcore mock hooks.
+#[derive(Clone)]
+struct TestClock(Arc<std::sync::Mutex<DateTime<Utc>>>);
+
+impl TestClock {
+    fn new(at: DateTime<Utc>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(at)))
+    }
+    fn set(&self, at: DateTime<Utc>) {
+        *self.0.lock().unwrap() = at;
+    }
+    fn clock(&self) -> outbox::Clock {
+        let inner = self.0.clone();
+        Arc::new(move || *inner.lock().unwrap())
+    }
+    fn hook_set(&self, at: DateTime<Utc>) -> Hook {
+        let this = self.clone();
+        Arc::new(move || this.set(at))
+    }
+}
+
+fn delivery_with_clock(h: &Harness, pool: &sqlx::PgPool, clock: &TestClock) -> Delivery {
+    Delivery {
+        clock: clock.clock(),
+        ..delivery(h, pool)
+    }
+}
+
+/// Delivery-time event keys the Delcore mock received, in order.
+fn ingested_keys(h: &Harness) -> Vec<String> {
+    h.delcore
+        .lock()
+        .unwrap()
+        .ingested
+        .iter()
+        .map(|b| b["event"]["eventKey"].as_str().unwrap().to_owned())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -310,6 +350,54 @@ async fn delivery_reports_stable_events_and_removes_accepted_rows() {
             .iter()
             .all(|s| s == "authorize usage:write")
     );
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn unschedulable_retry_deadline_fails_the_cycle_and_keeps_the_row_pending() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start(Some(db.pool.clone())).await;
+    let outbox = Outbox::new(db.pool.clone());
+    let t0 = now_micros();
+    insert(&outbox, TENANT, Uuid::now_v7(), 1, t0).await;
+    // Startup validation rejects these bounds; bypass it to prove the worker's own defense.
+    let mut worker = delivery(&h, &db.pool);
+    worker.settings.backoff_min = std::time::Duration::from_secs(10_000_000_000_000);
+    worker.settings.backoff_max = worker.settings.backoff_min;
+    h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
+        status: 503,
+        code: "unavailable",
+        reason: None,
+    });
+    let before: Vec<(String, i32, String)> = sqlx::query_as(
+        "SELECT state,delivery_attempts,expires_at::text FROM usage_outbox ORDER BY event_key",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        worker.cycle(t0).await,
+        Err(delitools_api::outbox::CycleError::Schedule(_))
+    ));
+    let after: Vec<(String, i32, String)> = sqlx::query_as(
+        "SELECT state,delivery_attempts,expires_at::text FROM usage_outbox ORDER BY event_key",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        before, after,
+        "the row is neither deleted, poisoned nor re-expired"
+    );
+    assert_eq!(count(&db.pool, Some("pending")).await, 2);
+    // The next cycle with representable bounds runs normally.
+    h.delcore.lock().unwrap().ingest_default = None;
+    delivery(&h, &db.pool)
+        .cycle(t0 + Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(count(&db.pool, None).await, 0);
     db.finish().await;
 }
 
@@ -1995,4 +2083,137 @@ fn outbox_arc_is_send_and_sync() {
     fn check<T: Send + Sync>() {}
     check::<Arc<Outbox>>();
     check::<Delivery>();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expiry that happens inside one delivery cycle
+// ---------------------------------------------------------------------------------------------
+
+/// Stores one input event created at `created` and returns its event key.
+async fn insert_one(outbox: &Outbox, request: Uuid, created: DateTime<Utc>) -> String {
+    let new = event(request, 1, Direction::Input, "gem_in", 100);
+    let key = new.event_key.clone();
+    outbox
+        .insert_attempt(
+            Uuid::parse_str(TENANT).unwrap(),
+            request,
+            1,
+            created,
+            &[new],
+            created,
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    key
+}
+
+fn expired_total(h: &Harness) -> u64 {
+    h.server.metrics.expired.get()
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_row_expiring_while_an_earlier_row_is_in_flight_is_dropped_without_delivery() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start(Some(db.pool.clone())).await;
+    let outbox = Outbox::new(db.pool.clone());
+    let t0 = now_micros();
+    // Row A expires one hour before row B.
+    let a = insert_one(&outbox, Uuid::now_v7(), t0).await;
+    let b = insert_one(&outbox, Uuid::now_v7(), t0 + Duration::hours(1)).await;
+    let expires_a = t0 + Duration::days(30);
+    let expires_b = expires_a + Duration::hours(1);
+    let now = expires_a - Duration::seconds(1);
+    let clock = TestClock::new(now);
+    // Delcore is still handling A when B's deadline passes.
+    h.delcore.lock().unwrap().on_ingest = Some(clock.hook_set(expires_b));
+    let before = expired_total(&h);
+    delivery_with_clock(&h, &db.pool, &clock)
+        .cycle(now)
+        .await
+        .unwrap();
+    assert_eq!(
+        ingested_keys(&h),
+        vec![a],
+        "A started before its deadline and completes; B is never sent"
+    );
+    assert!(!ingested_keys(&h).contains(&b));
+    assert_eq!(count(&db.pool, None).await, 0, "both rows are gone");
+    assert_eq!(expired_total(&h) - before, 1, "only B counts as expired");
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_row_expiring_during_the_tenant_lookup_is_dropped_and_later_rows_continue() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start(Some(db.pool.clone())).await;
+    let outbox = Outbox::new(db.pool.clone());
+    let t0 = now_micros();
+    // A expires first; B has a later deadline and keeps its delivery identity.
+    let a = insert_one(&outbox, Uuid::now_v7(), t0).await;
+    let b = insert_one(&outbox, Uuid::now_v7(), t0 + Duration::hours(1)).await;
+    let expires_a = t0 + Duration::days(30);
+    let b_request_key: Uuid =
+        sqlx::query_scalar("SELECT delivery_key FROM usage_outbox WHERE event_key=$1")
+            .bind(&b)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    let now = expires_a - Duration::microseconds(1);
+    let clock = TestClock::new(now);
+    h.delcore.lock().unwrap().on_tenant_states = Some(clock.hook_set(expires_a));
+    let before = expired_total(&h);
+    delivery_with_clock(&h, &db.pool, &clock)
+        .cycle(now)
+        .await
+        .unwrap();
+    let ingested = h.delcore.lock().unwrap().ingested.clone();
+    assert_eq!(ingested.len(), 1, "only the later-deadline row is sent");
+    assert_eq!(ingested[0]["event"]["eventKey"], b);
+    assert_eq!(ingested[0]["requestKey"], b_request_key.to_string());
+    assert!(!ingested_keys(&h).contains(&a));
+    assert_eq!(count(&db.pool, None).await, 0);
+    assert_eq!(expired_total(&h) - before, 1);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn the_expiry_boundary_instant_is_expired_for_each_delivery() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start(Some(db.pool.clone())).await;
+    let outbox = Outbox::new(db.pool.clone());
+    let t0 = now_micros();
+    let expires = t0 + Duration::days(30);
+    let cycle_start = expires - Duration::seconds(1);
+    // (fresh clock reading, delivery expected)
+    let cases = [
+        (expires - Duration::microseconds(1), true),
+        (expires, false),
+        (expires + Duration::microseconds(1), false),
+    ];
+    for (reading, delivered) in cases {
+        let key = insert_one(&outbox, Uuid::now_v7(), t0).await;
+        let clock = TestClock::new(reading);
+        let sent = ingested_keys(&h).len();
+        let before = expired_total(&h);
+        delivery_with_clock(&h, &db.pool, &clock)
+            .cycle(cycle_start)
+            .await
+            .unwrap();
+        let keys = ingested_keys(&h);
+        assert_eq!(keys.len() - sent, usize::from(delivered), "{reading}");
+        assert_eq!(keys.contains(&key), delivered, "{reading}");
+        assert_eq!(
+            expired_total(&h) - before,
+            u64::from(!delivered),
+            "{reading}"
+        );
+        assert_eq!(count(&db.pool, None).await, 0, "{reading}");
+        // Neither path poisons or reschedules a row.
+        assert_eq!(count(&db.pool, Some("poisoned")).await, 0, "{reading}");
+    }
+    db.finish().await;
 }
