@@ -180,3 +180,109 @@ fn cancel_status_report_and_request_replay_share_durable_engine_state() {
         }
     }
 }
+
+#[test]
+fn mcp_cancellation_changes_the_same_state_seen_by_cli() {
+    use perfine_core::{
+        lifecycle::Engine,
+        storage::FileStore,
+        types::{RequestId, ResourceId},
+    };
+    let repo = repo();
+    let id = ResourceId::generate();
+    Engine::new(FileStore::open(repo.path().join(".perfine/engine")).unwrap())
+        .create(
+            &RequestId::new("create").unwrap(),
+            id.clone(),
+            configuration().freeze().unwrap(),
+            1,
+        )
+        .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_perfine"))
+        .arg("--repository")
+        .arg(repo.path())
+        .args(["mcp", "serve"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(child.stdin.take().unwrap(),"{}",json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cancel","arguments":{"schema_version":1,"request_id":"mcp-cancel","experiment":id,"immediate":true}}})).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["result"]["isError"], false);
+    let output = run(repo.path(), &["status", "--experiment", id.as_str()]);
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["result"]["experiment"]["state"], "cancelled");
+}
+
+#[test]
+fn evaluation_ratios_round_trip_without_changing_evidence_fingerprints() {
+    use perfine_core::types::fingerprint;
+    let ratios = (1..10_000)
+        .map(|n| f64::from(n) / 52_432_431.0)
+        .collect::<Vec<_>>();
+    let bytes = serde_json::to_vec(&ratios).unwrap();
+    let restored: Vec<f64> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        fingerprint(&ratios).unwrap(),
+        fingerprint(&restored).unwrap()
+    );
+}
+
+#[test]
+fn graceful_cancel_during_active_attempt_is_durable_and_deduplicated() {
+    use fs2::FileExt;
+    use perfine_core::{
+        lifecycle::Engine,
+        storage::FileStore,
+        types::{RequestId, ResourceId},
+    };
+    let repo = repo();
+    let id = ResourceId::generate();
+    let engine = Engine::new(FileStore::open(repo.path().join(".perfine/engine")).unwrap());
+    engine
+        .create(
+            &RequestId::new("create").unwrap(),
+            id.clone(),
+            configuration().freeze().unwrap(),
+            1,
+        )
+        .unwrap();
+    let directory = repo.path().join(".perfine").join(id.as_str());
+    fs::create_dir(&directory).unwrap();
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory.join("runner.lock"))
+        .unwrap();
+    lock.lock_exclusive().unwrap();
+    let args = [
+        "--request-id",
+        "graceful-request",
+        "cancel",
+        "--experiment",
+        id.as_str(),
+    ];
+    let output = run(repo.path(), &args);
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["result"]["active_work_allowed_to_finish"], true);
+    drop(lock);
+    let replay = run(repo.path(), &args);
+    assert!(replay.status.success());
+    let response: Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(response["result"]["replayed"], true);
+    let mut conflicting = args.to_vec();
+    conflicting.push("--immediate");
+    assert!(!run(repo.path(), &conflicting).status.success());
+    let output = run(repo.path(), &["status", "--experiment", id.as_str()]);
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        response["result"]["cancellation"]["graceful_requested"],
+        true
+    );
+}
