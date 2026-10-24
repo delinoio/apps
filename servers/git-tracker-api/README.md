@@ -22,7 +22,7 @@ Repository rows serialize atomic uploads, completion, deletion and comment publi
 
 ## Alert rules
 
-Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
+Generate Prometheus rules with `./servers/target/debug/git-tracker-api alerts`. For each of `API_ERRORS`, `PERSISTENCE`, `GITHUB` and `INTERRUPTED`, supply `ALERT_<name>_THRESHOLD`, `ALERT_<name>_WINDOW` and `ALERT_<name>_FOR`. Thresholds are nonnegative numbers. Windows and hold durations are positive Prometheus durations ending in `s`, `m`, `h` or `d`. Each must be representable as a signed 64-bit nanosecond count, so the largest accepted values are `9223372036s`, `153722867m`, `2562047h` and `106751d`; larger values make `alerts` exit with an error and print no rules. API errors use a rate ratio; other rules use event counts over the observation window. Operators choose all values and connect receiving routes through Alertmanager. The service sends no alert messages.
 
 ## Validation
 
