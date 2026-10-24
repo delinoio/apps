@@ -1091,11 +1091,11 @@ async fn a_truncated_2xx_gateway_body_creates_no_usage_outbox_rows() {
     for extract in [false, true] {
         // The incomplete bytes carry a usage fragment that must never be billed or estimated.
         let gateway = RawGateway::start(vec![
-            RawReply::Truncated(
+            RawGatewayReply::Truncated(
                 r#"{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":7,"completion_tokens":3"#
                     .to_owned(),
             ),
-            RawReply::Complete {
+            RawGatewayReply::Complete {
                 content: r#"["never reached"]"#.to_owned(),
                 usage: json!({"prompt_tokens": 5, "completion_tokens": 2}),
             },

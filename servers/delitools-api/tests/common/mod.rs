@@ -179,7 +179,7 @@ async fn gateway_handler(
 
 /// A scripted answer of the raw TCP Gateway mock.
 #[derive(Clone)]
-pub enum RawReply {
+pub enum RawGatewayReply {
     /// Flushes `200` headers that declare a 1000-byte body, writes `prefix`, then closes the
     /// connection, so the client sees a successful status followed by a body transport failure.
     Truncated(String),
@@ -199,7 +199,7 @@ pub struct RawGateway {
 }
 
 impl RawGateway {
-    pub async fn start(script: Vec<RawReply>) -> Self {
+    pub async fn start(script: Vec<RawGatewayReply>) -> Self {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -244,12 +244,12 @@ impl RawGateway {
                     let reply = script.lock().unwrap().pop_front();
                     let bytes = match reply {
                         None => b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
-                        Some(RawReply::CloseBeforeHeaders) => Vec::new(),
-                        Some(RawReply::Truncated(prefix)) => format!(
+                        Some(RawGatewayReply::CloseBeforeHeaders) => Vec::new(),
+                        Some(RawGatewayReply::Truncated(prefix)) => format!(
                             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n{prefix}"
                         )
                         .into_bytes(),
-                        Some(RawReply::Complete { content, usage }) => {
+                        Some(RawGatewayReply::Complete { content, usage }) => {
                             let mut body = json!({
                                 "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
                             });

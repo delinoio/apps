@@ -605,19 +605,19 @@ async fn an_unreadable_gateway_body_is_invalid_output_without_retry() {
 
 /// A `200` response whose body is cut off mid-transfer is an unreadable 2xx body: the provider
 /// already answered, so it is final `INVALID_OUTPUT` after one call, never a retry.
-fn broken_then_valid() -> Vec<RawReply> {
+fn broken_then_valid() -> Vec<RawGatewayReply> {
     vec![
         // The prefix includes a usage fragment that must never be recovered or estimated.
-        RawReply::Truncated(
+        RawGatewayReply::Truncated(
             r#"{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":7,"completion_tokens":3"#
                 .to_owned(),
         ),
-        RawReply::Complete {
+        RawGatewayReply::Complete {
             content: r#"["never reached"]"#.to_owned(),
             usage: serde_json::Value::Null,
         },
-        RawReply::Truncated("{".to_owned()),
-        RawReply::Truncated("{".to_owned()),
+        RawGatewayReply::Truncated("{".to_owned()),
+        RawGatewayReply::Truncated("{".to_owned()),
     ]
 }
 
@@ -670,8 +670,8 @@ async fn a_truncated_2xx_gateway_body_is_invalid_output_after_one_call() {
 #[tokio::test]
 async fn a_connection_closed_before_response_headers_still_retries() {
     let gateway = RawGateway::start(vec![
-        RawReply::CloseBeforeHeaders,
-        RawReply::Complete {
+        RawGatewayReply::CloseBeforeHeaders,
+        RawGatewayReply::Complete {
             content: r#"["ok"]"#.to_owned(),
             usage: serde_json::Value::Null,
         },
