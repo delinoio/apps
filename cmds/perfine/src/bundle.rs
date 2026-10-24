@@ -186,8 +186,20 @@ impl App {
             cfg.conditions.environment.variables.is_empty(),
             "environment variables are not eligible for hosting; immutable local evidence retained"
         );
-        let settings = Settings::read(&self.config)?;
-        let specification = specification(cfg, settings.adapter.language, exp.created_at)?;
+        let journal: Journal = serde_json::from_slice(&fs::read(
+            self.root()?.join(id.as_str()).join("journal.json"),
+        )?)?;
+        let language = if let Some(language) = journal.language {
+            language
+        } else {
+            let settings = Settings::read(&self.config)?;
+            ensure!(
+                fingerprint(&settings)? == journal.settings,
+                "legacy upload configuration changed; restore the original configuration to preserve the adapter language"
+            );
+            settings.adapter.language
+        };
+        let specification = specification(cfg, language, exp.created_at)?;
         let store = ArtifactStore::new(self.root()?.join("artifacts"))?;
         let mut artifacts = BTreeMap::new();
         let mut runs: Vec<&evidence::Manifest> = bundle.incremental_baseline.iter().collect();

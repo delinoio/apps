@@ -137,7 +137,7 @@ fn seeded_values(candidate: bool, values: [f64; 2]) -> (tempfile::TempDir, Resou
     }
     engine.stop(&request(), &id, false, now).unwrap();
     fs::create_dir_all(root.path().join(".perfine").join(id.as_str())).unwrap();
-    fs::write(root.path().join(".perfine").join(id.as_str()).join("journal.json"),serde_json::to_vec(&json!({"schema_version":1,"settings":digest(b"settings"),"optimize":candidate,"created_request":request(),"runs":runs,"failure":null,"attempts":{}})).unwrap()).unwrap();
+    fs::write(root.path().join(".perfine").join(id.as_str()).join("journal.json"),serde_json::to_vec(&json!({"schema_version":1,"settings":digest(b"settings"),"language":"rust","optimize":candidate,"created_request":request(),"runs":runs,"failure":null,"attempts":{}})).unwrap()).unwrap();
     let command = json!({"executable":"true","arguments":[]});
     let settings = json!({"schema_version":1,"experiment":cfg.config(),"adapter":{"schema_version":1,"language":"rust","discovery_files":["src/hot.rs"],"build":[],"correctness":{"project-tests":command},"workloads":{"large":{"command":command,"profiles":["profile"],"format":"callgrind","output":{"kind":"callgrind"},"repetitions":1,"required_paths":["src/hot.rs"]}},"tool_probes":{"callgrind":command},"source_prefixes":{}},"docker":{"executable":"/usr/bin/docker","image":format!("sha256:{}","a".repeat(64)),"dependency_names":[],"user":"1:1","memory_bytes":1000000,"cpus":1,"process_limit":10,"command_timeout_seconds":10},"execution_root":"/tmp/perfine-acceptance","toolchain_probe":"callgrind","agent":null,"action_commit":null});
     fs::write(
@@ -268,6 +268,8 @@ fn subprocess_candidate_upload_preserves_real_baseline_reuse() {
 }
 fn upload_roundtrip(candidate: bool) {
     let (root, id, cid) = seeded(candidate);
+    // Upload must use retained provenance even after the local config is removed.
+    fs::remove_file(root.path().join("perfine.yaml")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let base = endpoint.clone();
@@ -316,6 +318,7 @@ fn upload_roundtrip(candidate: bool) {
                     "resuming pending upload must refresh expired URLs with a new operation ID"
                 );
                 specification = q["specification"].clone();
+                assert_eq!(specification["language"], "LANGUAGE_RUST");
                 assert_eq!(q["manifest"], manifest);
                 assert_eq!(
                     q["specification"]["fingerprintSha256"],

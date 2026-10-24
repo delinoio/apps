@@ -568,3 +568,49 @@ fn completed_review_requires_identical_measurements_and_retained_proof() {
         .is_err()
     );
 }
+
+#[test]
+fn delayed_head_registration_keeps_original_deadline_after_engine_clock_advances() {
+    let f = fixture();
+    let e = engine(&f);
+    e.record_step(
+        &request(),
+        &f.experiment,
+        &f.cfg,
+        name("independent-step"),
+        digest(b"record"),
+        105,
+    )
+    .unwrap();
+    e.start_candidate_from_admission(
+        &request(),
+        &f.experiment,
+        f.candidate.clone(),
+        sha('d'),
+        workspace(0),
+        &f.base,
+        &f.baseline,
+        &BTreeSet::from([name("src/hot.rs")]),
+        101,
+        106,
+    )
+    .unwrap();
+    let c = &e.status(&f.experiment).unwrap().candidates[&f.candidate];
+    assert_eq!(c.started_at, 101);
+    assert_eq!(c.deadline, 131);
+    assert!(
+        e.start_candidate_from_admission(
+            &request(),
+            &f.experiment,
+            ResourceId::generate(),
+            sha('d'),
+            workspace(1),
+            &f.base,
+            &f.baseline,
+            &BTreeSet::from([name("src/hot.rs")]),
+            101,
+            132
+        )
+        .is_err()
+    );
+}

@@ -321,6 +321,34 @@ impl<S: Store> Engine<S> {
             now,
         )
     }
+    /// Compatibility entry point for durable journal admission.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_candidate_from_admission(
+        &self,
+        request: &RequestId,
+        id: &ResourceId,
+        candidate: ResourceId,
+        head: CommitSha,
+        workspace: Workspace,
+        profile: &VerifiedRun,
+        baseline: &BaselineValidation,
+        optimized_paths: &std::collections::BTreeSet<Name>,
+        admitted_at: u64,
+        now: u64,
+    ) -> Result<Receipt> {
+        self.start_candidate_at(
+            request,
+            id,
+            candidate,
+            head,
+            workspace,
+            profile,
+            baseline,
+            optimized_paths,
+            admitted_at,
+            now,
+        )
+    }
     /// Preserve durable admission time while timestamping the transaction at execution time.
     #[allow(clippy::too_many_arguments)]
     pub fn start_candidate_at(
@@ -337,6 +365,9 @@ impl<S: Store> Engine<S> {
         now: u64,
     ) -> Result<Receipt> {
         workspace.validate()?;
+        if admitted_at > now {
+            return Err(Error::Invalid("admission after operation time"));
+        }
         self.mutate(
             request,
             id,
@@ -371,7 +402,6 @@ impl<S: Store> Engine<S> {
                 let cfg = exp.config.config();
                 if exp.stop_requested
                     || admitted_at < exp.created_at
-                    || admitted_at > now
                     || admitted_at >= exp.start_deadline
                     || !matches!(exp.state, ExecutionState::Queued | ExecutionState::Running)
                     || exp.candidates.len() >= cfg.limits.candidate_count as usize
