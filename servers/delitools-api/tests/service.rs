@@ -711,3 +711,117 @@ async fn a_closed_client_still_cancels_the_provider_call_through_the_shared_tran
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(h.gateway.calls(), 1, "no retry after cancellation");
 }
+
+// ---------------------------------------------------------------------------------------------
+// IngestEvent acknowledgment validation
+// ---------------------------------------------------------------------------------------------
+
+fn usage_event() -> delitools_api::delcore::UsageEvent {
+    delitools_api::delcore::UsageEvent {
+        request_key: "01900000-0000-7000-8000-0000000000f1".into(),
+        tenant_id: TENANT.into(),
+        event_key: "01900000-0000-7000-8000-0000000000f1:1:in".into(),
+        meter_key: "gem_in".into(),
+        quantity: 100,
+        occurred_at: chrono::Utc::now(),
+    }
+}
+
+/// HTTP-success bodies that do not acknowledge the ingestion.
+fn invalid_acknowledgments() -> Vec<serde_json::Value> {
+    let id = VALID_EVENT_ID;
+    vec![
+        json!({}),
+        json!({"eventId": 42, "revision": "broken"}),
+        json!({"eventId": 42, "revision": 1}),
+        json!({"eventId": id, "revision": "broken"}),
+        json!({"eventId": "", "revision": 1}),
+        json!({"revision": 1}),
+        json!({"eventId": null, "revision": 1}),
+        json!({"eventId": "e", "revision": 1}),
+        // UUID v4, uppercase and braced forms are not canonical UUID v7 identities.
+        json!({"eventId": "3b241101-e2bb-4255-8caf-4136c566a962", "revision": 1}),
+        json!({"eventId": "0190ABCD-0000-7000-8000-00000000ABCD", "revision": 1}),
+        json!({"eventId": "{0190abcd-0000-7000-8000-00000000abcd}", "revision": 1}),
+        json!({"eventId": id}),
+        json!({"eventId": id, "revision": null}),
+        json!({"eventId": id, "revision": 0}),
+        json!({"eventId": id, "revision": -1}),
+        json!({"eventId": id, "revision": 2}),
+        json!({"eventId": id, "revision": "0"}),
+        json!({"eventId": id, "revision": "2"}),
+        json!({"eventId": id, "revision": "one"}),
+        json!({"eventId": id, "revision": true}),
+        json!({"eventId": id, "revision": {}}),
+    ]
+}
+
+#[tokio::test]
+async fn invalid_ingest_acknowledgments_are_retryable_malformed_responses() {
+    let h = Harness::start(None).await;
+    for body in invalid_acknowledgments() {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server.delcore.ingest_event(&usage_event()).await,
+            Err(delitools_api::delcore::IngestFailure::Retryable(
+                "malformed_response"
+            )),
+            "{body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn valid_ingest_acknowledgments_deliver_including_supported_encodings() {
+    let h = Harness::start(None).await;
+    for body in [
+        json!({"eventId": VALID_EVENT_ID, "revision": 1}),
+        // Generated ProtoJSON accepts integer strings and snake_case field names.
+        json!({"eventId": VALID_EVENT_ID, "revision": "1"}),
+        json!({"event_id": VALID_EVENT_ID, "revision": 1}),
+        // Identical replay returns the original identity and revision 1 again.
+        json!({"eventId": VALID_EVENT_ID, "revision": 1}),
+        // Correlation metadata is not a delivery condition.
+        json!({"metadata": {"correlationId": "c"}, "eventId": VALID_EVENT_ID, "revision": 1}),
+        json!({"eventId": VALID_EVENT_ID, "revision": 1, "unknownField": true}),
+    ] {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server.delcore.ingest_event(&usage_event()).await,
+            Ok(()),
+            "{body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn non_object_ingest_bodies_and_poison_classification_are_unchanged() {
+    use delitools_api::delcore::IngestFailure;
+    let h = Harness::start(None).await;
+    for body in [json!([]), json!("ok"), json!(null), json!(7)] {
+        h.delcore.lock().unwrap().ingest_default = Some(Ingest::Raw {
+            status: 200,
+            body: body.clone(),
+        });
+        assert_eq!(
+            h.server.delcore.ingest_event(&usage_event()).await,
+            Err(IngestFailure::Retryable("malformed_response")),
+            "{body}"
+        );
+    }
+    h.delcore.lock().unwrap().ingest_default = Some(Ingest::Error {
+        status: 409,
+        code: "already_exists",
+        reason: Some(11),
+    });
+    assert_eq!(
+        h.server.delcore.ingest_event(&usage_event()).await,
+        Err(IngestFailure::Poison("identity_conflict"))
+    );
+}
