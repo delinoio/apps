@@ -127,8 +127,11 @@ def main():
             run([project / "correctness"])
             run([compiler, *flags, f"main.{ext}", "kernel.o", "-o", binary])
         elif language == "zig":
-            run(["zig", "test", "correctness.zig", "-O", "ReleaseSafe"])
-            run(["zig", "build-exe", "main.zig", "-O", "ReleaseSafe", f"-femit-bin={binary}"])
+            # Host-native AVX-512 instructions can exceed Valgrind's decoder.
+            # Keep both correctness and measured binaries on the declared baseline CPU.
+            flags = ["-O", "ReleaseSafe", "-mcpu", "baseline"]
+            run(["zig", "test", "correctness.zig", *flags])
+            run(["zig", "build-exe", "main.zig", *flags, f"-femit-bin={binary}"])
         elif language == "go":
             run(["go", "test", "-count=1", "-run", "^Test", "./..."])
         else:

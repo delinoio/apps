@@ -144,6 +144,7 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
             (tool, "--version", command("/build/correctness", &[]))
         }
         "zig" => {
+            // Match the profiler fixture CPU; native AVX-512 may exceed Valgrind support.
             build.push(command(
                 "zig",
                 &[
@@ -151,6 +152,8 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
                     "main.zig",
                     "-O",
                     "ReleaseSafe",
+                    "-mcpu",
+                    "baseline",
                     "--cache-dir",
                     "/build/zig-cache",
                     "--global-cache-dir",
@@ -168,6 +171,8 @@ fn recipe(language: &str, cfg: &mut Value, repo: &Path) -> String {
                         "correctness.zig",
                         "-O",
                         "ReleaseSafe",
+                        "-mcpu",
+                        "baseline",
                         "--cache-dir",
                         "/build/zig-cache",
                         "--global-cache-dir",
