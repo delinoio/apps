@@ -465,6 +465,123 @@ async fn caller_cancellation_aborts_the_provider_call_and_stops_retries() {
     panic!("the tenant permit was not released");
 }
 
+/// Waits until the mock Gateway has received `calls` requests.
+async fn wait_for_gateway_calls(h: &Harness, calls: usize) {
+    for _ in 0..200 {
+        if h.gateway.calls() >= calls {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the Gateway did not receive {calls} calls");
+}
+
+#[tokio::test]
+async fn the_instance_fence_cancels_a_held_provider_call_promptly() {
+    // The execution timeout is far longer than the assertion bound: only the fence can end the call.
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(60);
+        c.dependency_timeout = std::time::Duration::from_secs(2);
+    })
+    .await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    wait_for_gateway_calls(&h, 1).await;
+    let fenced = std::time::Instant::now();
+    h.server.fence();
+    for _ in 0..100 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.gateway.dropped(), 1, "the provider connection is dropped");
+    assert!(fenced.elapsed() < std::time::Duration::from_secs(1));
+    let response = pending.await.unwrap().unwrap();
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "canceled");
+    // No retry follows, no usage is estimated, and the tenant permit is released.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(h.gateway.calls(), 1);
+    let metrics = h.server.metrics.encode();
+    assert!(
+        !metrics.contains("delitools_usage_persisted_total{"),
+        "{metrics}"
+    );
+    assert_eq!(h.server.in_flight(TENANT), 0);
+}
+
+#[tokio::test]
+async fn the_instance_fence_stops_retries_during_backoff_and_after_a_transient_failure() {
+    // A long backoff keeps the retry pending until the fence closes.
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(60);
+        c.retry.base_delay = std::time::Duration::from_secs(20);
+        c.retry.max_delay = std::time::Duration::from_secs(20);
+    })
+    .await;
+    h.gateway.push(Reply::Status(503));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    wait_for_gateway_calls(&h, 1).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let authorizations = h.delcore.lock().unwrap().authorize_calls.len();
+    h.server.fence();
+    let body: serde_json::Value =
+        tokio::time::timeout(std::time::Duration::from_secs(2), async move {
+            pending.await.unwrap().unwrap().json().await.unwrap()
+        })
+        .await
+        .expect("the retry wait ends at the fence");
+    assert_eq!(body["code"], "canceled");
+    assert_eq!(h.gateway.calls(), 1, "no attempt starts after the fence");
+    assert_eq!(
+        h.delcore.lock().unwrap().authorize_calls.len(),
+        authorizations,
+        "no retry authorization runs after the fence"
+    );
+
+    // A transient failure that returns exactly as the fence closes cannot start another attempt.
+    let h = Harness::start(None).await;
+    let server = h.server.clone();
+    h.gateway.push(Reply::Hook(
+        std::sync::Arc::new(move || server.fence()),
+        Box::new(Reply::Status(503)),
+    ));
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn requests_admitted_after_the_fence_start_no_provider_work() {
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    h.server.fence();
+    h.server.fence();
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(wire.reason(), "ERROR_REASON_CANCELED");
+    assert_eq!(h.gateway.calls(), 0);
+    assert_eq!(h.server.in_flight(TENANT), 0);
+}
+
+#[tokio::test]
+async fn a_request_whose_admission_races_the_fence_is_canceled_without_a_provider_call() {
+    // The fence closes while delcore is answering the authorization; the job must not slip through
+    // although authorization still succeeds and admission completes.
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let server = h.server.clone();
+    h.delcore.lock().unwrap().authorize_hook = Some(std::sync::Arc::new(move || server.fence()));
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.code(), "canceled");
+    assert_eq!(h.gateway.calls(), 0);
+    assert_eq!(h.server.in_flight(TENANT), 0);
+}
+
 #[tokio::test]
 async fn tenant_rate_and_concurrency_limits_apply_per_tenant() {
     let h = Harness::start_with(None, |c| {

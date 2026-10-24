@@ -178,8 +178,41 @@ pub enum Ingest {
     },
 }
 
+/// Holds every `IngestEvent` request on arrival (counted in `entered`, before it is recorded in
+/// `DelcoreState::ingested`) until the test opens it, so a test can fence a delivery worker while its call is in flight.
+pub struct IngestBarrier {
+    pub entered: AtomicUsize,
+    pub dropped: AtomicUsize,
+    pub release: tokio::sync::Semaphore,
+}
+
+impl IngestBarrier {
+    /// A barrier that holds every call until [`IngestBarrier::open`] adds permits.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            entered: AtomicUsize::new(0),
+            dropped: AtomicUsize::new(0),
+            release: tokio::sync::Semaphore::new(0),
+        })
+    }
+    /// Lets every current and future call through.
+    pub fn open(&self) {
+        self.release.add_permits(1 << 20);
+    }
+}
+
+struct BarrierDrop(Arc<IngestBarrier>);
+impl Drop for BarrierDrop {
+    fn drop(&mut self) {
+        self.0.dropped.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 #[derive(Default)]
 pub struct DelcoreState {
+    /// Runs inside every `Authorize` call, before the reply is sent.
+    pub authorize_hook: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub ingest_barrier: Option<Arc<IngestBarrier>>,
     pub users: HashMap<String, String>,
     /// Reply body for `Authorize`; `script` entries take precedence.
     pub authorize: Value,
@@ -251,6 +284,17 @@ async fn delcore_method(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    // The barrier is awaited before the state lock is taken, so a held call never blocks the mock.
+    if method == "IngestEvent" {
+        let barrier = state.lock().unwrap().ingest_barrier.clone();
+        if let Some(barrier) = barrier {
+            barrier.entered.fetch_add(1, Ordering::SeqCst);
+            let _guard = BarrierDrop(barrier.clone());
+            if let Ok(permit) = barrier.release.acquire().await {
+                permit.forget();
+            }
+        }
+    }
     let mut s = state.lock().unwrap();
     if s.down {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -272,6 +316,9 @@ async fn delcore_method(
     match method.as_str() {
         "Authorize" => {
             s.authorize_calls.push(body);
+            if let Some(hook) = s.authorize_hook.clone() {
+                hook();
+            }
             if let Some((status, reply)) = s.authorize_script.pop_front() {
                 return (StatusCode::from_u16(status).unwrap(), Json(reply)).into_response();
             }

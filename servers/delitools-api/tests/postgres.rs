@@ -79,6 +79,7 @@ async fn count(db: &sqlx::PgPool, state: Option<&str>) -> i64 {
 
 fn delivery(h: &Harness, pool: &sqlx::PgPool) -> Delivery {
     Delivery {
+        fence: tokio_util::sync::CancellationToken::new(),
         outbox: Outbox::new(pool.clone()),
         delcore: h.server.delcore.clone(),
         settings: h.config.outbox.clone(),
@@ -947,6 +948,7 @@ async fn submitted_content_never_reaches_the_database() {
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn binary_commands_check_configuration_and_hold_one_instance_lock() {
     use std::process::{Command, Stdio};
+    let _serial = SERVE.lock().await;
     let db = TestDb::new().await;
     let h = Harness::start(None).await;
     let dir = std::env::temp_dir().join(format!("delitools-bin-{}", Uuid::now_v7()));
@@ -1043,6 +1045,588 @@ async fn binary_commands_check_configuration_and_hold_one_instance_lock() {
     assert!(metrics.contains("delitools_outbox_pending"));
     first.kill().unwrap();
     let _ = first.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+    db.finish().await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Instance fence: lock loss versus ordinary shutdown
+// ---------------------------------------------------------------------------------------------
+
+async fn eventually<F, Fut>(what: &str, seconds: u64, mut check: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let limit = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < limit {
+        if check().await {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn confirmed_usage_is_stored_after_the_fence_within_the_bound() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start_with(Some(db.pool.clone()), |c| {
+        c.dependency_timeout = std::time::Duration::from_secs(3)
+    })
+    .await;
+    h.gateway.push(Reply::ok(r#"["ok"]"#, 21, 4));
+    let mut blocker = db.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE usage_outbox IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["Hello"])));
+    eventually("the confirmed provider response", 5, || async {
+        h.gateway.calls() == 1
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    h.server.fence();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    blocker.commit().await.unwrap();
+    let response = pending.await.unwrap().unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "confirmed usage finalizes after the fence"
+    );
+    assert_eq!(
+        count(&db.pool, Some("pending")).await,
+        2,
+        "both directions are stored for the replacement to deliver"
+    );
+    assert_eq!(h.gateway.calls(), 1);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn usage_finalization_after_the_fence_is_bounded() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start_with(Some(db.pool.clone()), |c| {
+        c.dependency_timeout = std::time::Duration::from_millis(400)
+    })
+    .await;
+    h.gateway.push(Reply::ok(r#"["ok"]"#, 21, 4));
+    h.gateway.push(Reply::ok(r#"["never"]"#, 1, 1));
+    let mut blocker = db.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE usage_outbox IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["Hello"])));
+    eventually("the confirmed provider response", 5, || async {
+        h.gateway.calls() == 1
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let fenced = std::time::Instant::now();
+    h.server.fence();
+    let response = tokio::time::timeout(std::time::Duration::from_secs(3), pending)
+        .await
+        .expect("the blocked finalization ends within the bound")
+        .unwrap()
+        .unwrap();
+    assert!(fenced.elapsed() < std::time::Duration::from_secs(2));
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "unavailable");
+    let metrics = h.server.metrics.encode();
+    assert!(
+        metrics.contains("delitools_usage_persist_failures_total 1"),
+        "{metrics}"
+    );
+    assert_eq!(h.gateway.calls(), 1, "no provider work restarts");
+    blocker.rollback().await.unwrap();
+    assert_eq!(count(&db.pool, None).await, 0);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn the_fence_stops_delivery_without_the_transport_and_the_replacement_delivers() {
+    let db = TestDb::migrated().await;
+    let a = Harness::start(Some(db.pool.clone())).await;
+    let barrier = IngestBarrier::new();
+    a.delcore.lock().unwrap().ingest_barrier = Some(barrier.clone());
+    let outbox = Outbox::new(db.pool.clone());
+    let request = Uuid::now_v7();
+    insert(&outbox, TENANT, request, 1, now_micros()).await;
+    let keys: Vec<(String, String)> = sqlx::query(
+        "SELECT event_key,delivery_key::text AS delivery_key FROM usage_outbox ORDER BY event_key",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|r| (r.get("event_key"), r.get("delivery_key")))
+    .collect();
+    let worker = tokio::spawn(a.server.delivery().run());
+    eventually("the first ingest to be in flight", 5, || async {
+        barrier.entered.load(std::sync::atomic::Ordering::SeqCst) == 1
+    })
+    .await;
+    a.server.fence();
+    // The worker ends by itself: no abort and no transport are involved.
+    tokio::time::timeout(std::time::Duration::from_secs(1), worker)
+        .await
+        .expect("the fenced worker stops")
+        .unwrap();
+    eventually("the ingest connection to drop", 2, || async {
+        barrier.dropped.load(std::sync::atomic::Ordering::SeqCst) == 1
+    })
+    .await;
+    barrier.open();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        barrier.entered.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "no further IngestEvent starts after the fence"
+    );
+    assert!(a.delcore.lock().unwrap().ingested.is_empty());
+    assert_eq!(count(&db.pool, Some("pending")).await, 2);
+    // A fenced cycle does nothing even when called directly.
+    a.server.delivery().cycle(now_micros()).await.unwrap();
+    assert!(a.delcore.lock().unwrap().ingested.is_empty());
+
+    // The replacement delivers the retained rows with their original identities.
+    let b = Harness::start(Some(db.pool.clone())).await;
+    b.server.delivery().cycle(now_micros()).await.unwrap();
+    assert_eq!(count(&db.pool, None).await, 0);
+    let delivered: Vec<(String, String)> = b
+        .delcore
+        .lock()
+        .unwrap()
+        .ingested
+        .iter()
+        .map(|body| {
+            (
+                body["event"]["eventKey"].as_str().unwrap().to_owned(),
+                body["requestKey"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let mut delivered = delivered;
+    delivered.sort();
+    assert_eq!(delivered, keys);
+    assert!(keys[0].0.starts_with(&request.to_string()));
+    db.finish().await;
+}
+
+/// Binary tests share one database-wide advisory lock, so they run one at a time.
+static SERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// A running `delitools-api serve` process with captured logs.
+struct Instance {
+    child: std::process::Child,
+    port: u16,
+    logs: Arc<std::sync::Mutex<String>>,
+}
+
+impl Instance {
+    fn spawn(db: &TestDb, mocks: &Harness, dir: &std::path::Path, extra: &[(&str, &str)]) -> Self {
+        use std::{
+            io::Read,
+            process::{Command, Stdio},
+        };
+        let models = dir.join("models.yaml");
+        std::fs::write(
+            &models,
+            "models:\n  - model: google/gemini-translate\n    input_meter_key: gem_in\n    output_meter_key: gem_out\n  - model: openai/gpt-6-luna\n    input_meter_key: luna_in\n    output_meter_key: luna_out\n",
+        )
+        .unwrap();
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let mut command = Command::new(env!("CARGO_BIN_EXE_delitools-api"));
+        command
+            .arg("serve")
+            .env_clear()
+            .env("DATABASE_URL", db.scoped_url())
+            .env("DELCORE_URL", mocks.config.delcore.url.clone())
+            .env("LOGTO_TOKEN_URL", mocks.config.delcore.token_url.clone())
+            .env("DELCORE_RESOURCE", "https://delcore.test")
+            .env("CLIENT_ID", "svc-client")
+            .env("CLIENT_SECRET", "svc-secret")
+            .env("DELITOOLS_SERVICE_ID", SERVICE_ID)
+            .env("AI_GATEWAY_API_KEY", "gw-secret")
+            .env("AI_GATEWAY_BASE_URL", mocks.config.gateway.base_url.clone())
+            .env("DELITOOLS_MODELS", &models)
+            .env("LISTEN", format!("127.0.0.1:{port}"))
+            .env("DELITOOLS_RETRY_BASE_DELAY", "10ms")
+            .env("DELITOOLS_RETRY_MAX_DELAY", "20ms")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (key, value) in extra {
+            command.env(key, value);
+        }
+        let mut child = command.spawn().unwrap();
+        let logs = Arc::new(std::sync::Mutex::new(String::new()));
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        for mut stream in [
+            Box::new(stdout) as Box<dyn Read + Send>,
+            Box::new(stderr) as Box<dyn Read + Send>,
+        ] {
+            let logs = logs.clone();
+            std::thread::spawn(move || {
+                let mut buffer = [0u8; 4096];
+                while let Ok(n) = stream.read(&mut buffer) {
+                    if n == 0 {
+                        break;
+                    }
+                    logs.lock()
+                        .unwrap()
+                        .push_str(&String::from_utf8_lossy(&buffer[..n]));
+                }
+            });
+        }
+        Self { child, port, logs }
+    }
+
+    fn logged(&self, needle: &str) -> bool {
+        self.logs.lock().unwrap().contains(needle)
+    }
+
+    async fn ready(&self) {
+        let client = reqwest::Client::new();
+        let limit = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while std::time::Instant::now() < limit {
+            if matches!(
+                client
+                    .get(format!("http://127.0.0.1:{}/readyz", self.port))
+                    .send()
+                    .await,
+                Ok(r) if r.status() == 200
+            ) {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!(
+            "the instance did not become ready:\n{}",
+            self.logs.lock().unwrap()
+        );
+    }
+
+    fn translate(&self) -> tokio::task::JoinHandle<Value> {
+        let url = format!(
+            "http://127.0.0.1:{}/delitools.v1.DelitoolsService/Translate",
+            self.port
+        );
+        tokio::spawn(async move {
+            reqwest::Client::new()
+                .post(url)
+                .header("Content-Type", "application/json")
+                .header("Connect-Protocol-Version", "1")
+                .bearer_auth(USER_TOKEN)
+                .json(&translate_body(&["Hello"]))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        })
+    }
+
+    /// Waits for the process to exit.
+    async fn exit(&mut self, seconds: u64) -> std::process::ExitStatus {
+        let limit = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            assert!(
+                std::time::Instant::now() < limit,
+                "the process did not exit"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Terminates only the backend that holds the instance advisory lock; returns its PID.
+async fn terminate_lock_backend(db: &TestDb) -> i32 {
+    let pid: i32 = sqlx::query_scalar(
+        "SELECT l.pid FROM pg_locks l JOIN pg_database d ON d.oid=l.database
+         WHERE l.locktype='advisory' AND l.granted AND l.objid=$1 AND d.datname=current_database()",
+    )
+    .bind(store::INSTANCE_LOCK as i32)
+    .fetch_one(&db.pool)
+    .await
+    .expect("one granted instance lock");
+    let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+        .bind(pid)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert!(terminated);
+    pid
+}
+
+fn scratch_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("delitools-fence-{}", Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn binary_lock_loss_cancels_the_held_provider_call_and_hands_over() {
+    let _serial = SERVE.lock().await;
+    let db = TestDb::migrated().await;
+    let (a_mocks, b_mocks) = (Harness::start(None).await, Harness::start(None).await);
+    let dir = scratch_dir();
+    // The execution timeout is far above every assertion bound: only the fence can end the call.
+    let mut a = Instance::spawn(
+        &db,
+        &a_mocks,
+        &dir,
+        &[("DELITOOLS_EXECUTION_TIMEOUT", "30s")],
+    );
+    a.ready().await;
+    a_mocks.gateway.push(Reply::Hang);
+    let request = a.translate();
+    eventually("the held Gateway request", 10, || async {
+        a_mocks.gateway.calls() == 1
+    })
+    .await;
+
+    terminate_lock_backend(&db).await;
+    if !a.logged("instance lock session lost") {
+        // Only the lock session ended: A's pool still reaches the database.
+        let ready = reqwest::get(format!("http://127.0.0.1:{}/readyz", a.port))
+            .await
+            .unwrap();
+        assert_eq!(ready.status(), 200);
+    }
+    // The replacement acquires the released lock and serves while A still drains.
+    let b = Instance::spawn(&db, &b_mocks, &dir, &[]);
+    b.ready().await;
+    eventually("A to detect the loss", 15, || async {
+        a.logged("instance lock session lost")
+    })
+    .await;
+    let detected = std::time::Instant::now();
+    eventually("the provider connection to drop", 3, || async {
+        a_mocks.gateway.dropped() == 1
+    })
+    .await;
+    assert!(
+        detected.elapsed() < std::time::Duration::from_secs(1),
+        "the provider call ends promptly, not at the execution timeout"
+    );
+    let body = tokio::time::timeout(std::time::Duration::from_secs(2), request)
+        .await
+        .expect("the held request ends")
+        .unwrap();
+    assert_eq!(body["code"], "canceled");
+    let status = a.exit(10).await;
+    assert_eq!(status.code(), Some(1), "lock loss keeps the nonzero exit");
+    assert_eq!(a_mocks.gateway.calls(), 1);
+    assert_eq!(a_mocks.delcore.lock().unwrap().ingested.len(), 0);
+    // The replacement keeps serving.
+    b_mocks.gateway.push(Reply::without_usage(r#"["salut"]"#));
+    let served = b.translate().await.unwrap();
+    assert_eq!(served["translations"][0], "salut");
+    drop(b);
+    let _ = std::fs::remove_dir_all(&dir);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn binary_lock_loss_during_retry_backoff_starts_no_attempt() {
+    let _serial = SERVE.lock().await;
+    let db = TestDb::migrated().await;
+    let mocks = Harness::start(None).await;
+    let dir = scratch_dir();
+    let mut a = Instance::spawn(
+        &db,
+        &mocks,
+        &dir,
+        &[
+            ("DELITOOLS_EXECUTION_TIMEOUT", "60s"),
+            ("DELITOOLS_RETRY_BASE_DELAY", "30s"),
+            ("DELITOOLS_RETRY_MAX_DELAY", "30s"),
+        ],
+    );
+    a.ready().await;
+    // A transient failure leaves a retry with authorization still allowed and budget remaining.
+    mocks.gateway.push(Reply::Status(503));
+    mocks.gateway.push(Reply::ok(r#"["never"]"#, 5, 5));
+    let request = a.translate();
+    eventually("the first attempt", 10, || async {
+        mocks.gateway.calls() == 1
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let authorizations = mocks.delcore.lock().unwrap().authorize_calls.len();
+    terminate_lock_backend(&db).await;
+    eventually("A to detect the loss", 15, || async {
+        a.logged("instance lock session lost")
+    })
+    .await;
+    let body = tokio::time::timeout(std::time::Duration::from_secs(2), request)
+        .await
+        .expect("the backoff ends at the fence")
+        .unwrap();
+    assert_eq!(body["code"], "canceled");
+    assert_eq!(mocks.gateway.calls(), 1, "no attempt starts after the loss");
+    assert_eq!(
+        mocks.delcore.lock().unwrap().authorize_calls.len(),
+        authorizations,
+        "no retry authorization runs after the loss"
+    );
+    assert_eq!(a.exit(10).await.code(), Some(1));
+    assert_eq!(count(&db.pool, None).await, 0, "no usage is estimated");
+    let _ = std::fs::remove_dir_all(&dir);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn binary_lock_loss_stops_delivery_and_the_replacement_delivers() {
+    let _serial = SERVE.lock().await;
+    let db = TestDb::migrated().await;
+    let (a_mocks, b_mocks) = (Harness::start(None).await, Harness::start(None).await);
+    let barrier = IngestBarrier::new();
+    a_mocks.delcore.lock().unwrap().ingest_barrier = Some(barrier.clone());
+    let request = Uuid::now_v7();
+    insert(
+        &Outbox::new(db.pool.clone()),
+        TENANT,
+        request,
+        1,
+        now_micros(),
+    )
+    .await;
+    let dir = scratch_dir();
+    let interval = [("DELITOOLS_OUTBOX_INTERVAL", "200ms")];
+    // A's Delcore timeout exceeds the monitor period, so only the fence can end the held ingest.
+    let mut a = Instance::spawn(
+        &db,
+        &a_mocks,
+        &dir,
+        &[
+            ("DELITOOLS_OUTBOX_INTERVAL", "200ms"),
+            ("DEPENDENCY_TIMEOUT", "30s"),
+            ("DELITOOLS_EXECUTION_TIMEOUT", "60s"),
+        ],
+    );
+    a.ready().await;
+    // A held request keeps A's transport drain open, so delivery must stop without waiting for it.
+    a_mocks.gateway.push(Reply::Hang);
+    let held = a.translate();
+    eventually("A's ingest to be in flight", 15, || async {
+        barrier.entered.load(std::sync::atomic::Ordering::SeqCst) == 1
+            && a_mocks.gateway.calls() == 1
+    })
+    .await;
+    terminate_lock_backend(&db).await;
+    let b = Instance::spawn(&db, &b_mocks, &dir, &interval);
+    b.ready().await;
+    eventually("A to detect the loss", 15, || async {
+        a.logged("instance lock session lost")
+    })
+    .await;
+    eventually("A's ingest connection to drop", 2, || async {
+        barrier.dropped.load(std::sync::atomic::Ordering::SeqCst) == 1
+    })
+    .await;
+    barrier.open();
+    // B delivers both rows; A, still draining or exiting, dispatches nothing more.
+    eventually("the replacement to deliver", 15, || async {
+        count(&db.pool, None).await == 0
+    })
+    .await;
+    let held = tokio::time::timeout(std::time::Duration::from_secs(2), held)
+        .await
+        .expect("the held request ends")
+        .unwrap();
+    assert_eq!(held["code"], "canceled");
+    assert_eq!(a.exit(10).await.code(), Some(1));
+    assert_eq!(barrier.entered.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(a_mocks.delcore.lock().unwrap().ingested.is_empty());
+    let delivered = b_mocks.delcore.lock().unwrap().ingested.len();
+    assert_eq!(delivered, 2, "each retained event is delivered once by B");
+    let _ = std::fs::remove_dir_all(&dir);
+    drop(b);
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn binary_sigterm_with_an_intact_lock_keeps_the_bounded_drain() {
+    let _serial = SERVE.lock().await;
+    let db = TestDb::migrated().await;
+    let (a_mocks, b_mocks) = (Harness::start(None).await, Harness::start(None).await);
+    let dir = scratch_dir();
+    // Delivery stays idle after its immediate first cycle so the stored rows remain visible.
+    let mut a = Instance::spawn(
+        &db,
+        &a_mocks,
+        &dir,
+        &[
+            ("DELITOOLS_EXECUTION_TIMEOUT", "30s"),
+            ("DELITOOLS_OUTBOX_INTERVAL", "1h"),
+        ],
+    );
+    a.ready().await;
+    a_mocks.gateway.push(Reply::Delay(
+        1500,
+        Box::new(Reply::ok(r#"["bonjour"]"#, 21, 4)),
+    ));
+    let request = a.translate();
+    eventually("the slow Gateway request", 10, || async {
+        a_mocks.gateway.calls() == 1
+    })
+    .await;
+    let signaled = std::process::Command::new("kill")
+        .args(["-TERM", &a.child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(signaled.success());
+    // While A drains it still owns the lock: a second instance cannot start.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        a.child.try_wait().unwrap().is_none(),
+        "A drains the request"
+    );
+    let blocked = Instance::spawn(&db, &b_mocks, &dir, &[]);
+    let mut blocked = blocked;
+    assert!(!blocked.exit(10).await.success());
+    assert!(blocked.logged("instance lock"));
+    // The slow request completes normally and its confirmed usage is stored.
+    let body = tokio::time::timeout(std::time::Duration::from_secs(5), request)
+        .await
+        .expect("the drained request completes")
+        .unwrap();
+    assert_eq!(body["translations"][0], "bonjour");
+    assert_eq!(a_mocks.gateway.dropped(), 0);
+    let status = a.exit(10).await;
+    assert!(status.success(), "an ordinary shutdown exits cleanly");
+    assert!(!a.logged("instance lock session lost"));
+    assert_eq!(count(&db.pool, Some("pending")).await, 2);
+    // After A exits the lock is free.
+    let b = Instance::spawn(&db, &b_mocks, &dir, &[]);
+    b.ready().await;
+    drop(b);
     let _ = std::fs::remove_dir_all(&dir);
     db.finish().await;
 }
