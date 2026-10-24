@@ -361,3 +361,289 @@ async fn failed_free_activation_rolls_back_every_change() {
             .unwrap();
     assert!(processed.is_none());
 }
+
+/// A confirmed cancellation supersedes a scheduled paid downgrade or add-on removal, because a
+/// canceled subscription never renews.
+mod superseded_change {
+    use super::*;
+    use delcore_api::{config::Config, worker::Worker};
+    use std::sync::{Arc, Mutex};
+
+    const OTHER_SUBSCRIPTION: &str = "sub_other_fixture";
+    const REQUESTED_PRICE: &str = "pri_requested_fixture";
+
+    /// A worker whose provider answers every GET with the body currently stored in `response`.
+    async fn provider(
+        s: &Scenario,
+        response: Arc<Mutex<Value>>,
+    ) -> (Worker, tokio::task::JoinHandle<()>) {
+        let app = axum::Router::new().fallback(move || {
+            let body = response.lock().unwrap().clone();
+            async move { axum::Json(json!({ "data": body })) }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let worker = Worker::new(
+            s.f.db.clone(),
+            Config {
+                paddle_url: url.clone(),
+                email_url: url,
+                ..s.f.config.clone()
+            },
+        )
+        .unwrap();
+        (worker, task)
+    }
+
+    fn body(status: &str, canceled_at: Value, prices: &[&str]) -> Value {
+        let items: Vec<Value> = prices
+            .iter()
+            .map(|price| json!({"quantity":1,"price":{"id":price}}))
+            .collect();
+        json!({"id":SUBSCRIPTION,"status":status,"canceled_at":canceled_at,"items":items,
+            "scheduled_change":null})
+    }
+
+    /// Establishes the paid subscription and queues a sent `do_not_bill` change that waits for
+    /// the renewal of the saved subscription. Returns the change job.
+    async fn scheduled_change(s: &Scenario, subscription: &str) -> Uuid {
+        let id = Uuid::now_v7();
+        let payload = json!({"plan_id":s.plan,"price_ids":[s.price],"version_ids":[s.version],
+            "external_price_ids":[REQUESTED_PRICE],"timing":"do_not_bill"});
+        sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,external_id,error_category,available_at,created_at,updated_at) VALUES($1,$2::text::uuid,'subscription',$1::text,$3,'reconcile',1,$4,'awaiting_renewal',now()-interval '1 hour',now(),now())")
+            .bind(id).bind(&s.tenant).bind(payload).bind(subscription).execute(&s.f.db).await.unwrap();
+        id
+    }
+
+    async fn job(s: &Scenario, id: Uuid) -> (String, String, String) {
+        sqlx::query_as("SELECT state,error_category,external_id FROM jobs WHERE id=$1")
+            .bind(id)
+            .fetch_one(&s.f.db)
+            .await
+            .unwrap()
+    }
+
+    async fn step(s: &Scenario, worker: &Worker, id: Uuid) -> (String, String) {
+        sqlx::query("UPDATE jobs SET available_at=now()-interval '1 hour' WHERE id=$1")
+            .bind(id)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        worker.step().await.unwrap();
+        let (state, category, _) = job(s, id).await;
+        (state, category)
+    }
+
+    async fn canceled_webhook(s: &Scenario, id: &str) {
+        s.deliver(
+            id,
+            "subscription.canceled",
+            s.time.canceled(),
+            json!({"id":SUBSCRIPTION,"status":"canceled"}),
+        )
+        .await;
+    }
+
+    /// Establishes the paid subscription; the fixture's initial job completes with the payment.
+    async fn subscribed() -> Scenario {
+        let s = scenario().await;
+        s.payment("evt_payment").await;
+        assert_eq!(s.state().await["subscription"], SUBSCRIPTION);
+        s
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn accepted_cancellation_retires_the_scheduled_change_and_unblocks_the_tenant() {
+        let s = subscribed().await;
+        let change = scheduled_change(&s, SUBSCRIPTION).await;
+        // Jobs of another subscription and unresolved initial payments are not superseded.
+        let other = scheduled_change(&s, OTHER_SUBSCRIPTION).await;
+        let initial = Uuid::now_v7();
+        sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2::text::uuid,'subscription',$1::text,'{}','reconcile',1,'unknown_payment_outcome',now(),now(),now())")
+            .bind(initial).bind(&s.tenant).execute(&s.f.db).await.unwrap();
+
+        // While active, the scheduled change holds subscription changes and deletion.
+        s.f.error(
+            "owner",
+            "DeleteTenant",
+            json!({"requestKey":key(),"tenantId":s.tenant}),
+            "failed_precondition",
+        )
+        .await;
+
+        canceled_webhook(&s, "evt_canceled").await;
+        let state = s.state().await;
+        assert_eq!(state["free"], true, "{state}");
+        assert_eq!(state["selectedVersionIsPaid"], false, "{state}");
+        assert_eq!(state["paidEntitlements"], 0, "{state}");
+        assert_eq!(
+            job(&s, change).await,
+            (
+                "done".into(),
+                "superseded_by_cancellation".into(),
+                SUBSCRIPTION.into()
+            )
+        );
+        assert_eq!(job(&s, other).await.0, "reconcile");
+        assert_eq!(job(&s, other).await.1, "awaiting_renewal");
+        assert_eq!(job(&s, initial).await.1, "unknown_payment_outcome");
+
+        // Only the unresolved initial payment still holds the tenant.
+        s.f.error(
+            "owner",
+            "DeleteTenant",
+            json!({"requestKey":key(),"tenantId":s.tenant}),
+            "failed_precondition",
+        )
+        .await;
+        sqlx::query("UPDATE jobs SET state='done' WHERE id=ANY($1)")
+            .bind(vec![other, initial])
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        s.f.rpc(
+            "owner",
+            "DeleteTenant",
+            json!({"requestKey":key(),"tenantId":s.tenant}),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn canceled_subscription_converges_before_and_after_the_webhook() {
+        for webhook_first in [false, true] {
+            for prices in [&[REQUESTED_PRICE][..], &["pri_unrelated_fixture"][..]] {
+                let label = format!("webhook_first={webhook_first} prices={prices:?}");
+                let s = subscribed().await;
+                let change = scheduled_change(&s, SUBSCRIPTION).await;
+                let response = Arc::new(Mutex::new(body(
+                    "canceled",
+                    json!(s.time.canceled().to_rfc3339()),
+                    prices,
+                )));
+                let (worker, mock) = provider(&s, response).await;
+                if webhook_first {
+                    canceled_webhook(&s, "evt_canceled").await;
+                    // Reproduce a job that stranded before cancellation retired it.
+                    sqlx::query("UPDATE jobs SET state='reconcile',error_category='awaiting_renewal' WHERE id=$1")
+                        .bind(change).execute(&s.f.db).await.unwrap();
+                }
+                assert_eq!(
+                    step(&s, &worker, change).await,
+                    ("done".into(), "superseded_by_cancellation".into()),
+                    "{label}"
+                );
+                let converged = s.state().await;
+                assert_eq!(converged["free"], true, "{label}: {converged}");
+                assert_eq!(converged["subscription"], "", "{label}: {converged}");
+                assert_eq!(converged["selectedVersionIsPaid"], false, "{label}");
+                assert_eq!(converged["paidEntitlements"], 0, "{label}");
+                // The real notification and its replay add no transition.
+                canceled_webhook(&s, "evt_canceled_late").await;
+                assert_eq!(s.state().await, converged, "{label}");
+                mock.abort();
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn failed_mismatch_job_recovers_through_retry_after_cancellation() {
+        let s = subscribed().await;
+        let change = scheduled_change(&s, SUBSCRIPTION).await;
+        canceled_webhook(&s, "evt_canceled").await;
+        let converged = s.state().await;
+        // The stranded state of a job that cancellation could not retire.
+        sqlx::query(
+            "UPDATE jobs SET state='failed',error_category='subscription_mismatch' WHERE id=$1",
+        )
+        .bind(change)
+        .execute(&s.f.db)
+        .await
+        .unwrap();
+        s.f.error(
+            "owner",
+            "DeleteTenant",
+            json!({"requestKey":key(),"tenantId":s.tenant}),
+            "failed_precondition",
+        )
+        .await;
+        s.f.rpc("owner","RetryJob",json!({"requestKey":key(),"jobId":change.to_string(),"reason":"recover canceled change"})).await;
+        let response = Arc::new(Mutex::new(body(
+            "canceled",
+            json!(s.time.canceled().to_rfc3339()),
+            &["pri_unrelated_fixture"],
+        )));
+        let (worker, mock) = provider(&s, response).await;
+        assert_eq!(
+            step(&s, &worker, change).await,
+            ("done".into(), "superseded_by_cancellation".into())
+        );
+        assert_eq!(s.state().await, converged, "no paid product is revived");
+        s.f.rpc(
+            "owner",
+            "DeleteTenant",
+            json!({"requestKey":key(),"tenantId":s.tenant}),
+        )
+        .await;
+        mock.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn reconciliation_does_not_cancel_another_subscription() {
+        let s = subscribed().await;
+        // The tenant now carries a newer subscription; the saved one is already canceled.
+        let change = scheduled_change(&s, OTHER_SUBSCRIPTION).await;
+        let mut canceled = body(
+            "canceled",
+            json!(s.time.canceled().to_rfc3339()),
+            &[REQUESTED_PRICE],
+        );
+        canceled["id"] = json!(OTHER_SUBSCRIPTION);
+        let (worker, mock) = provider(&s, Arc::new(Mutex::new(canceled))).await;
+        let before = s.state().await;
+        assert_eq!(
+            step(&s, &worker, change).await,
+            ("done".into(), "superseded_by_cancellation".into())
+        );
+        assert_eq!(s.state().await, before);
+        assert_eq!(before["subscription"], SUBSCRIPTION);
+        mock.abort();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable TEST_DATABASE_URL"]
+    async fn active_subscription_keeps_waiting_and_invalid_cancellation_time_retries() {
+        let s = subscribed().await;
+        let change = scheduled_change(&s, SUBSCRIPTION).await;
+        let response = Arc::new(Mutex::new(body("active", Value::Null, &[REQUESTED_PRICE])));
+        let (worker, mock) = provider(&s, response.clone()).await;
+        let before = s.state().await;
+        assert_eq!(
+            step(&s, &worker, change).await,
+            ("reconcile".into(), "awaiting_renewal".into())
+        );
+        *response.lock().unwrap() = body("active", Value::Null, &["pri_unrelated_fixture"]);
+        assert_eq!(
+            step(&s, &worker, change).await,
+            ("failed".into(), "subscription_mismatch".into())
+        );
+        // A canceled subscription without a usable cancellation time changes nothing.
+        sqlx::query("UPDATE jobs SET state='reconcile' WHERE id=$1")
+            .bind(change)
+            .execute(&s.f.db)
+            .await
+            .unwrap();
+        *response.lock().unwrap() = body("canceled", Value::Null, &[REQUESTED_PRICE]);
+        assert_eq!(
+            step(&s, &worker, change).await,
+            ("reconcile".into(), "payment_ambiguous".into())
+        );
+        assert_eq!(s.state().await, before);
+        mock.abort();
+    }
+}

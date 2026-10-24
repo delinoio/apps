@@ -52,6 +52,8 @@ pub enum Reply {
     },
     Status(u16),
     RetryAfter(u16, u64),
+    /// A status with a verbatim `Retry-After` header value, such as an HTTP-date.
+    RetryAfterRaw(u16, String),
     Garbage,
     /// Never answers; the request ends only when the caller aborts it.
     Hang,
@@ -155,6 +157,13 @@ async fn gateway_handler(
                 return (
                     StatusCode::from_u16(code).unwrap(),
                     [("retry-after", seconds.to_string())],
+                )
+                    .into_response();
+            }
+            Reply::RetryAfterRaw(code, value) => {
+                return (
+                    StatusCode::from_u16(code).unwrap(),
+                    [("retry-after", value)],
                 )
                     .into_response();
             }

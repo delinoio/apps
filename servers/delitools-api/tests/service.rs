@@ -322,6 +322,42 @@ async fn transient_failures_retry_with_a_bounded_budget() {
 }
 
 #[tokio::test]
+async fn http_date_retry_after_raises_the_wait_to_the_cap() {
+    // Harness policy: base 5ms, cap 20ms, so jitter without a hint stays at or below 5ms before
+    // the first retry. A distant-future HTTP-date hint raises the ceiling to the cap, so the wait
+    // is at least half of it. Sleeps never finish early, which keeps the lower bound deterministic.
+    for status in [429, 503] {
+        let h = Harness::start(None).await;
+        h.gateway.push(Reply::RetryAfterRaw(
+            status,
+            "Fri, 31 Dec 9999 23:59:59 GMT".to_owned(),
+        ));
+        h.gateway.push(Reply::without_usage(r#"["ok"]"#));
+        let started = std::time::Instant::now();
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{status}: {}", wire.body);
+        assert_eq!(h.gateway.calls(), 2, "{status}");
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(10),
+            "{status}: {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_retry_after_values_still_retry_with_ordinary_backoff() {
+    for value in ["-1", "1.5", "tomorrow", "Sun, 32 Nov 1994 08:49:37 GMT"] {
+        let h = Harness::start(None).await;
+        h.gateway.push(Reply::RetryAfterRaw(429, value.to_owned()));
+        h.gateway.push(Reply::without_usage(r#"["ok"]"#));
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{value}: {}", wire.body);
+        assert_eq!(h.gateway.calls(), 2, "{value}");
+    }
+}
+
+#[tokio::test]
 async fn permanent_provider_rejection_is_not_retried() {
     for status in [400, 401, 403, 404, 422] {
         let h = Harness::start(None).await;

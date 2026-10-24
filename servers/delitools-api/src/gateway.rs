@@ -7,11 +7,11 @@
 
 use crate::{
     config::GatewaySettings,
-    retry::{Failure, classify_status},
+    retry::{Failure, classify_status, parse_retry_after},
     usage::{self, UsageReading},
 };
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const MAX_RESPONSE_BYTES: usize = 8 << 20;
 
@@ -81,13 +81,13 @@ impl Gateway {
             .send()
             .await
             .map_err(|_| Failure::Transient { retry_after: None })?;
+        let received_at = SystemTime::now();
         let status = response.status().as_u16();
         let retry_after = response
             .headers()
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_secs);
+            .and_then(|v| parse_retry_after(v, received_at));
         if !(200..300).contains(&status) {
             return Err(classify_status(status, retry_after));
         }
