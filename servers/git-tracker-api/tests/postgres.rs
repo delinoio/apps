@@ -121,11 +121,14 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
         "http://{}/gittracker.v1.GitTrackerService",
         listener.local_addr().unwrap()
     );
-    let router = Router::new().fallback_service(
-        connectrpc::Router::new()
-            .add_service(server.clone())
-            .into_axum_service(),
-    );
+    let router = Router::new()
+        .fallback_service(
+            connectrpc::Router::new()
+                .add_service(server.clone())
+                .into_axum_service(),
+        )
+        // Same ingress stamp as the production router; without it publication is skipped.
+        .layer(axum::middleware::from_fn(git_tracker_api::capture_ingress));
     let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     async fn call(
         http: &reqwest::Client,

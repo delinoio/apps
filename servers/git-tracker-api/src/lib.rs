@@ -39,6 +39,22 @@ fn publication_cutoff(ingress: Instant, client_deadline: Option<Instant>) -> Opt
     let effective = client_deadline.map_or(envelope, |deadline| deadline.min(envelope));
     effective.checked_sub(RESPONSE_RESERVE)
 }
+/// Moment the HTTP stack received the request headers, before any body bytes are read or decoded.
+/// [`capture_ingress`] stores it in the request extensions so the optional-publication cutoff
+/// starts when the Action's own response timer is already running, not after a slow upload body
+/// has been received and decoded.
+#[derive(Clone, Copy, Debug)]
+pub struct Ingress(pub Instant);
+/// HTTP middleware that records [`Ingress`] before the Connect service consumes the request body.
+/// It must run in front of the Connect service. Without it the handler has no trustworthy ingress
+/// time and skips optional publication instead of restarting the budget after the body arrived.
+pub async fn capture_ingress(
+    mut request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    request.extensions_mut().insert(Ingress(Instant::now()));
+    next.run(request).await
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Op {
     Upload,
@@ -144,9 +160,16 @@ impl Server {
         op: Op,
         q: Value,
     ) -> ServiceResult<R> {
-        // Captured first so the optional-publication cutoff covers all mandatory work.
-        let ingress = Instant::now();
-        let cutoff = publication_cutoff(ingress, ctx.deadline());
+        // The cutoff is anchored at the ingress time captured before the body was read, so slow
+        // request-body delivery and all mandatory work consume the same budget. A missing marker
+        // means the middleware is not installed; fail closed by leaving no publication budget.
+        let cutoff = match ctx.extensions().get::<Ingress>() {
+            Some(Ingress(ingress)) => publication_cutoff(*ingress, ctx.deadline()),
+            None => {
+                tracing::error!("request ingress time is missing; optional publication is skipped");
+                None
+            }
+        };
         let trace = server_common::id();
         let authorization = ctx
             .headers()
@@ -718,5 +741,54 @@ mod tests {
         let ingress = Instant::now() - Duration::from_secs(29);
         let cutoff = publication_cutoff(ingress, None).unwrap();
         assert!(cutoff <= Instant::now());
+    }
+    #[tokio::test]
+    async fn ingress_is_captured_before_a_slow_request_body_is_read() {
+        use axum::{Extension, Router, body::Bytes, routing::post};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        // The handler runs only after the whole body is read, like the Connect service. It reports
+        // how long ago the middleware stamped the request.
+        async fn handler(Extension(Ingress(at)): Extension<Ingress>, body: Bytes) -> String {
+            assert_eq!(body.as_ref(), b"{}");
+            at.elapsed().as_millis().to_string()
+        }
+        let app = Router::new()
+            .route("/", post(handler))
+            .layer(axum::middleware::from_fn(capture_ingress));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(
+                b"POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        // The body arrives late; the stamp must predate this delay.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        stream.write_all(b"{}").await.unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        server.abort();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let elapsed: u64 = response
+            .rsplit("\r\n\r\n")
+            .next()
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // The body was held back 400 ms; allow timer jitter below that.
+        assert!(
+            elapsed >= 300,
+            "ingress was stamped after the body: {elapsed} ms"
+        );
+        // A cutoff built from that stamp is already consumed by the delay and is not restarted.
+        let ingress = Instant::now() - Duration::from_millis(elapsed);
+        assert_eq!(
+            publication_cutoff(ingress, None),
+            Some(ingress + ACTION_RESPONSE_ENVELOPE - RESPONSE_RESERVE)
+        );
     }
 }

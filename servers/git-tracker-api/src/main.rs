@@ -143,7 +143,10 @@ async fn run() -> anyhow::Result<()> {
                 procedure: None,
             },
             server_common::http::middleware,
-        ));
+        ))
+        // Outermost layer: stamp the request before any body bytes are consumed so the optional
+        // publication cutoff covers body delivery as well as handler work.
+        .layer(middleware::from_fn(git_tracker_api::capture_ingress));
     let listen = std::env::var("LISTEN")
         .ok()
         .filter(|s| !s.is_empty())
