@@ -362,7 +362,23 @@ fn acceptance(language: &str) {
             assert!(verify_local(&frozen, &manifest.identity, missing_bytes, &store).is_err());
             verified.insert(label.clone(), v);
         }
-        validate_baseline(&frozen, &verified["baseline-a"], &verified["baseline-b"]).unwrap();
+        let baseline =
+            validate_baseline(&frozen, &verified["baseline-a"], &verified["baseline-b"]).unwrap();
+        // Timing is allowed to be inconclusive only when retained observations
+        // exceed the policy fixed before execution. Never relax policy after a run.
+        let uncertain = if let Policy::Declared(policy) = &frozen.config().policy {
+            verified.values().any(|run| {
+                run.manifest().measurements.values().any(|samples| {
+                    assert_eq!(samples.values.len(), policy.repetitions as usize);
+                    samples.relative_range() > policy.uncertainty.maximum_relative_range
+                })
+            }) || baseline
+                .variability()
+                .values()
+                .any(|v| *v > policy.uncertainty.maximum_relative_range)
+        } else {
+            false
+        };
         if mode == "none" {
             assert!(candidates.is_empty());
             assert_eq!(verified.len(), 2, "no fabricated candidate measurements");
@@ -373,14 +389,20 @@ fn acceptance(language: &str) {
             let evaluation = &candidate["evaluation"];
             assert_eq!(
                 evaluation["verdict"],
-                match mode {
-                    "pass" => "pass",
-                    "reverse" => "regression",
-                    _ => "inconclusive",
+                if uncertain {
+                    "inconclusive"
+                } else {
+                    match mode {
+                        "pass" => "pass",
+                        "reverse" => "regression",
+                        _ => "inconclusive",
+                    }
                 },
                 "{language}/{mode}: {evaluation}"
             );
-            if mode == "inconclusive" {
+            if uncertain {
+                assert_eq!(evaluation["reason"], "uncertainty");
+            } else if mode == "inconclusive" {
                 assert_eq!(evaluation["reason"], "repeat_required");
             }
             assert_ne!(
@@ -427,7 +449,14 @@ fn acceptance(language: &str) {
                 String::from_utf8_lossy(&comparison.stdout)
             );
         }
-        eprintln!("six-language acceptance: {language}/{mode} verified; evidence {destination:?}");
+        let verdict = candidates
+            .values()
+            .next()
+            .and_then(|c| c["evaluation"]["verdict"].as_str())
+            .unwrap_or("no_candidate");
+        eprintln!(
+            "six-language acceptance: {language}/{mode} verified ({verdict}); evidence {destination:?}"
+        );
     }
 }
 fn copy_tree(source: &Path, destination: &Path) {
