@@ -308,6 +308,34 @@ impl<S: Store> Engine<S> {
         optimized_paths: &std::collections::BTreeSet<Name>,
         now: u64,
     ) -> Result<Receipt> {
+        self.start_candidate_at(
+            request,
+            id,
+            candidate,
+            head,
+            workspace,
+            profile,
+            baseline,
+            optimized_paths,
+            now,
+            now,
+        )
+    }
+    /// Preserve durable admission time while timestamping the transaction at execution time.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_candidate_at(
+        &self,
+        request: &RequestId,
+        id: &ResourceId,
+        candidate: ResourceId,
+        head: CommitSha,
+        workspace: Workspace,
+        profile: &VerifiedRun,
+        baseline: &BaselineValidation,
+        optimized_paths: &std::collections::BTreeSet<Name>,
+        admitted_at: u64,
+        now: u64,
+    ) -> Result<Receipt> {
         workspace.validate()?;
         self.mutate(
             request,
@@ -322,6 +350,7 @@ impl<S: Store> Engine<S> {
                 profile.digest(),
                 baseline.runs(),
                 optimized_paths,
+                admitted_at,
             ),
             |db| {
                 if db
@@ -341,7 +370,9 @@ impl<S: Store> Engine<S> {
                 let exp = db.experiments.get_mut(id).ok_or(Error::State)?;
                 let cfg = exp.config.config();
                 if exp.stop_requested
-                    || now >= exp.start_deadline
+                    || admitted_at < exp.created_at
+                    || admitted_at > now
+                    || admitted_at >= exp.start_deadline
                     || !matches!(exp.state, ExecutionState::Queued | ExecutionState::Running)
                     || exp.candidates.len() >= cfg.limits.candidate_count as usize
                     || exp.active() >= usize::from(cfg.limits.simultaneous_candidates)
@@ -369,9 +400,12 @@ impl<S: Store> Engine<S> {
                 {
                     return Err(Error::Incomplete("profile-backed hypothesis"));
                 }
-                let deadline = now
+                let deadline = admitted_at
                     .checked_add(cfg.limits.candidate_duration_seconds)
                     .ok_or(Error::Invalid("candidate deadline overflow"))?;
+                if now >= deadline {
+                    return Err(Error::Limit);
+                }
                 exp.candidates.insert(
                     candidate.clone(),
                     Candidate {
@@ -379,7 +413,7 @@ impl<S: Store> Engine<S> {
                         head: head.clone(),
                         workspace: workspace.clone(),
                         state: ExecutionState::Running,
-                        started_at: now,
+                        started_at: admitted_at,
                         deadline,
                         retries: 0,
                         failure: None,

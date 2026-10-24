@@ -718,7 +718,7 @@ impl App {
                     now() < candidate_deadline,
                     "candidate implementation deadline reached"
                 );
-                engine.start_candidate(
+                engine.start_candidate_at(
                     &request(),
                     &id,
                     candidate.clone(),
@@ -730,6 +730,7 @@ impl App {
                     // Admission time is the durable agent-attempt start, not the time
                     // edits finish. This preserves the start deadline and total timeout.
                     started_at,
+                    now(),
                 )?;
                 let label = format!("candidate-{}", candidate.as_str());
                 let candidate_result = (|| -> Result<()> {
