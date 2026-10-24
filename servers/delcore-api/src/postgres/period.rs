@@ -13,32 +13,29 @@ impl std::fmt::Display for PeriodUnavailable {
 impl std::error::Error for PeriodUnavailable {}
 
 /// Only trusted SQL aliases and expressions may be passed to these helpers.
-pub fn selected_plan_bool_sql(tenant: &str, plan: &str, field: &str) -> String {
+pub fn selected_plan_bool_sql(tenant: &str, _plan: &str, field: &str) -> String {
     assert!(
         matches!(field, "free" | "postpaid"),
         "invalid plan policy field"
     );
     format!(
-        "COALESCE((SELECT (cv.definition->>'{field}')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL),{plan}.{field})"
+        "(SELECT (cv.definition->>'{field}')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL)"
     )
 }
 /// Reports whether the tenant's plan was postpaid at the instant `at`.
 ///
-/// A billing period records its policy when it is created, so a period recovered from a late
-/// payment must record the policy that applied when it began, not the policy of today's plan:
-/// the plan selection pinned at `at` wins, then the plan owning a recurring price the tenant held
-/// at `at` (tenants without pinned history), then the tenant's current plan.
+/// Resolve the policy from the immutable plan selection covering the period start.
 pub async fn postpaid_at(
     db: &mut PgConnection,
     tenant: &str,
     at: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
-    sqlx::query_scalar("SELECT COALESCE((SELECT (cv.definition->>'postpaid')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),(SELECT pl.postpaid FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=t.id AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2) ORDER BY en.starts_at DESC LIMIT 1),p.postpaid) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
+    sqlx::query_scalar("SELECT (cv.definition->>'postpaid')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=$1 AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1")
         .bind(Uuid::parse_str(tenant)?).bind(at).fetch_one(db).await.map_err(Into::into)
 }
-pub fn selected_plan_rank_sql(tenant: &str, plan: &str) -> String {
+pub fn selected_plan_rank_sql(tenant: &str, _plan: &str) -> String {
     format!(
-        "COALESCE((SELECT (cv.definition->>'rank')::integer FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL),{plan}.rank)"
+        "(SELECT (cv.definition->>'rank')::integer FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id={tenant}.id AND cs.product_id={tenant}.plan_id AND cs.ends_at IS NULL)"
     )
 }
 pub fn period_expired_sql(tenant: &str, plan: &str, now: &str) -> String {
@@ -50,21 +47,15 @@ pub fn period_expired_sql(tenant: &str, plan: &str, now: &str) -> String {
 /// Reports whether the tenant's billing period at `at` is a free calendar period, and whether a
 /// recurring add-on entitlement is active at that instant. `None` means the tenant does not exist.
 ///
-/// The first value is the pinned plan selection's free policy, then the legacy fallback
-/// described in [`billing_period`]. Starts are inclusive and ends are exclusive.
+/// The first value is the pinned plan selection's free policy.
+/// Missing pinned history returns `None`. Starts are inclusive and ends are exclusive.
 pub async fn period_applicability(
     db: &mut PgConnection,
     tenant: &str,
     at: DateTime<Utc>,
 ) -> anyhow::Result<Option<(bool, bool)>> {
     let tenant_id = Uuid::parse_str(tenant)?;
-    // Legacy tenants without pinned history fall back to `plans.free`; current tenant state
-    // never substitutes for historical evidence. A tenant that has pinned history but is asked
-    // about an instant before its first pinned plan selection (the legacy snapshot only
-    // backdates to the current period) is paid at that instant when a paid plan entitlement
-    // covers it, so its retained recorded periods apply instead of the current plan's calendar
-    // month.
-    sqlx::query_as("SELECT COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),CASE WHEN EXISTS(SELECT 1 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=t.id AND ce.kind='plan') AND NOT EXISTS(SELECT 1 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$2) AND EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=t.id AND pl.free IS FALSE AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) THEN false ELSE p.free END), EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=t.id AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1")
+    sqlx::query_as("SELECT (cv.definition->>'free')::boolean, EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id WHERE en.tenant_id=cs.tenant_id AND pr.addon_id IS NOT NULL AND pr.kind=2 AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2)) FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=$1 AND ce.kind='plan' AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1")
         .bind(tenant_id).bind(at).fetch_optional(db).await.map_err(Into::into)
 }
 

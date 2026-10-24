@@ -69,19 +69,10 @@ CREATE TABLE entitlements (
  id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants(id), price_id uuid NOT NULL REFERENCES prices(id),
  starts_at timestamptz NOT NULL, ends_at timestamptz, CHECK(ends_at IS NULL OR ends_at>starts_at)
 );
-CREATE TABLE usage_events (
- id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants(id), service_id uuid NOT NULL REFERENCES services(id),
- event_key text NOT NULL, fingerprint text NOT NULL, meter text NOT NULL,
- quantity numeric NOT NULL CHECK(quantity>=0), occurred_at timestamptz NOT NULL,
- accepted_at timestamptz NOT NULL, price_id uuid NOT NULL REFERENCES prices(id),
- period_start timestamptz NOT NULL, period_end timestamptz NOT NULL,
- correction_of uuid REFERENCES usage_events(id), UNIQUE(service_id,event_key)
-);
-CREATE UNIQUE INDEX one_correction ON usage_events(correction_of) WHERE correction_of IS NOT NULL;
 CREATE TABLE ledger (
  id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES tenants(id),
  service_id uuid REFERENCES services(id), meter text NOT NULL DEFAULT '',
- usage_id uuid REFERENCES usage_events(id), kind text NOT NULL,
+ kind text NOT NULL,
  amount numeric NOT NULL, period_start timestamptz, period_end timestamptz,
  source_key text NOT NULL UNIQUE, created_at timestamptz NOT NULL
 );
@@ -118,7 +109,6 @@ CREATE TABLE requests (
  PRIMARY KEY(actor_id,request_key)
 );
 CREATE INDEX jobs_ready ON jobs(available_at) WHERE state IN ('pending','reconcile');
-CREATE INDEX usage_period ON usage_events(tenant_id,service_id,meter,period_start);
 CREATE INDEX ledger_balance ON ledger(tenant_id,kind);
 CREATE TABLE billing_periods (
  tenant_id uuid NOT NULL REFERENCES tenants(id), starts_at timestamptz NOT NULL,

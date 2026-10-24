@@ -15,8 +15,8 @@ pub use catalog::*;
 pub use period::*;
 pub use rating::*;
 
-pub const SCHEMA_VERSION: i32 = 15;
-const MIGRATIONS: [&str; 15] = [
+pub const SCHEMA_VERSION: i32 = 14;
+const MIGRATIONS: [&str; 14] = [
     include_str!("../../migrations/00001_foundation.sql"),
     include_str!("../../migrations/00002_payment_history.sql"),
     include_str!("../../migrations/00003_retention.sql"),
@@ -31,7 +31,6 @@ const MIGRATIONS: [&str; 15] = [
     include_str!("../../migrations/00012_api_keys.sql"),
     include_str!("../../migrations/00013_entitlement_window_index.sql"),
     include_str!("../../migrations/00014_deferrable_group_names.sql"),
-    include_str!("../../migrations/00015_free_allowance_recovery.sql"),
 ];
 #[derive(Clone)]
 pub struct Store {
@@ -59,14 +58,22 @@ impl Store {
     }
 }
 pub async fn check_schema(pool: &PgPool) -> Result<()> {
-    let version: i32 = sqlx::query_scalar("SELECT COALESCE(max(version),0) FROM delcore_schema")
-        .fetch_one(pool)
-        .await
-        .map_err(|_| anyhow::anyhow!("schema unavailable: run migrate"))?;
+    let rows: Vec<(i32, String)> =
+        sqlx::query_as("SELECT version,digest FROM delcore_schema ORDER BY version")
+            .fetch_all(pool)
+            .await
+            .map_err(|_| anyhow::anyhow!("schema unavailable: run migrate"))?;
     ensure!(
-        version == SCHEMA_VERSION,
-        "incompatible schema version {version}; expected {SCHEMA_VERSION}"
+        rows.len() == MIGRATIONS.len(),
+        "incompatible schema version or migration count: reset the pre-release database and run migrate"
     );
+    for (index, (version, digest)) in rows.iter().enumerate() {
+        ensure!(
+            *version == index as i32 + 1
+                && *digest == hex::encode(Sha256::digest(MIGRATIONS[index].as_bytes())),
+            "migration checksum mismatch: reset the pre-release database"
+        );
+    }
     Ok(())
 }
 pub async fn migrate(pool: &PgPool) -> Result<()> {
@@ -192,20 +199,11 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL pointing to disposable PostgreSQL"]
-    async fn price_history_upgrade_baselines_current_version_and_rolls_back_mutations() {
+    async fn price_history_records_activations_and_rolls_back_mutations() {
         let db = Database::new().await;
+        migrate(&db.pool).await.unwrap();
         let mut tx = db.pool.begin().await.unwrap();
-        sqlx::query("CREATE TABLE delcore_schema(version integer PRIMARY KEY,digest text NOT NULL,applied_at timestamptz NOT NULL)").execute(&mut *tx).await.unwrap();
-        for (index, sql) in MIGRATIONS[..10].iter().enumerate() {
-            sqlx::raw_sql(sql).execute(&mut *tx).await.unwrap();
-            sqlx::query("INSERT INTO delcore_schema VALUES($1,$2,now())")
-                .bind(index as i32 + 1)
-                .bind(hex::encode(Sha256::digest(sql.as_bytes())))
-                .execute(&mut *tx)
-                .await
-                .unwrap();
-        }
-        let entity = ensure_catalog_entity(&mut tx, "price", "plan:legacy", "requests", "")
+        let entity = ensure_catalog_entity(&mut tx, "price", "plan:test", "requests", "")
             .await
             .unwrap();
         let a = select_catalog_version(&mut tx, &entity, &serde_json::json!({"unit_price":"1"}))
@@ -217,17 +215,15 @@ mod tests {
             .unwrap()
             .0;
         tx.commit().await.unwrap();
-        let before = chrono::Utc::now();
-        migrate(&db.pool).await.unwrap();
         migrate(&db.pool).await.unwrap();
         let history: Vec<(String, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as("SELECT version_id::text,effective_at FROM catalog_price_activations")
                 .fetch_all(&db.pool)
                 .await
                 .unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].0, b);
-        assert!(history[0].1 >= before);
+        assert_eq!(history.len(), 2);
+        assert!(history.iter().any(|row| row.0 == a));
+        assert!(history.iter().any(|row| row.0 == b));
         let mut tx = db.pool.begin().await.unwrap();
         select_catalog_version(&mut tx, &entity, &serde_json::json!({"unit_price":"1"}))
             .await
@@ -240,7 +236,7 @@ mod tests {
             .fetch_one(&db.pool)
             .await
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
         db.pool.close().await;
     }
 

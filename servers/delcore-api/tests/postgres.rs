@@ -346,14 +346,14 @@ async fn non_rfc_variant_uuid_v7_inputs_are_rejected_without_committing() {
         f.error(
             "owner",
             "PutPlan",
-            json!({"requestKey":key(),"reason":"variant fixture","plan":{"id":bad,"name":"Variant Plan","rank":10}}),
+            json!({"requestKey":key(),"reason":"variant fixture","plan":{"id":bad,"key":"variant-plan","name":"Variant Plan","rank":10}}),
             "invalid_argument",
         )
         .await;
         f.error(
             "owner",
             "PutService",
-            json!({"requestKey":key(),"reason":"variant fixture","service":{"id":bad,"name":"variant","clientId":"variant","capabilities":["execute"],"scopes":["authorize"]}}),
+            json!({"requestKey":key(),"reason":"variant fixture","service":{"id":bad,"key":"variant","name":"variant","clientId":"variant","capabilities":["execute"],"scopes":["authorize"]}}),
             "invalid_argument",
         )
         .await;

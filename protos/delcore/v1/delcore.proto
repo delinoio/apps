@@ -211,21 +211,14 @@ message MeterFilterValue {
 }
 // MeterFilter is one AND-combined condition on a flat event attribute.
 //
-// Operands come from exactly one of values and typed_values; supplying both is
-// invalid. values holds untyped operands: string operands for equal,
-// not_equal, and in; one canonical decimal for numeric comparisons; and, for
-// exists, either no operand or one "true" or "false" operand. typed_values
-// holds operands with explicit scalar types, which lets equal, not_equal,
-// and in compare number and boolean attributes. Numeric comparisons take one
-// number operand and exists takes at most one boolean operand. exists without
-// an operand means the attribute must be present. GetCatalog returns the
-// canonical form: string-only operands, numeric comparisons, and exists use
-// values; number or boolean operands of equal, not_equal, and in use
-// typed_values.
+// Operands carry explicit scalar types. Numeric comparisons take one number;
+// exists takes at most one boolean and defaults to requiring presence.
+// GetCatalog returns canonical typed operands.
 message MeterFilter {
   string attribute = 1;
   MeterFilterOperator operator = 2;
-  repeated string values = 3;
+  reserved 3;
+  reserved "values";
   repeated MeterFilterValue typed_values = 4;
 }
 enum FeatureKind {
@@ -269,16 +262,6 @@ message FeatureValue {
   string limit = 3;
   ConfigurationValue configuration = 4;
 }
-message Usage {
-  string id = 1;
-  string tenant_id = 2;
-  string service_id = 3;
-  string event_key = 4;
-  string meter = 5;
-  string quantity = 6;
-  google.protobuf.Timestamp occurred_at = 7;
-  string correction_of = 8;
-}
 // AttributeValue is one flat event attribute. Nested objects and lists are not
 // supported. Numbers are canonical decimal strings, never binary floats.
 message AttributeValue {
@@ -312,7 +295,8 @@ message LedgerEntry {
   string amount = 3;
   string meter = 4;
   google.protobuf.Timestamp created_at = 5;
-  string usage_id = 6;
+  reserved 6;
+  reserved "usage_id";
 }
 message Job {
   string id = 1;
@@ -668,22 +652,6 @@ message GetTenantStatesResponse {
   // One entry per requested tenant ID, in request order.
   repeated TenantStateEntry states = 2;
 }
-message ReportUsageRequest {
-  string request_key = 1;
-  Usage usage = 2;
-}
-message ReportUsageResponse {
-  Metadata metadata = 1;
-  string usage_id = 2;
-}
-message CorrectUsageRequest {
-  string request_key = 1;
-  Usage usage = 2;
-}
-message CorrectUsageResponse {
-  Metadata metadata = 1;
-  string usage_id = 2;
-}
 // IngestEvent durably accepts one event. A response promises durable storage
 // and queued aggregation, not updated aggregates.
 message IngestEventRequest {
@@ -728,15 +696,6 @@ message GetEventResponse {
   // Latest revision materialized by asynchronous processing. It trails
   // revision while work is pending or failed.
   int32 applied_revision = 5;
-}
-message ListUsageRequest {
-  string tenant_id = 1;
-  Page page = 2;
-}
-message ListUsageResponse {
-  Metadata metadata = 1;
-  repeated Usage events = 2;
-  string next_after_id = 3;
 }
 message ListLedgerRequest {
   string tenant_id = 1;
@@ -967,19 +926,6 @@ service DelcoreService {
   rpc GetMeteringStatus(GetMeteringStatusRequest) returns (GetMeteringStatusResponse);
   rpc CheckTenantLifecycle(CheckTenantLifecycleRequest) returns (CheckTenantLifecycleResponse);
   rpc GetTenantStates(GetTenantStatesRequest) returns (GetTenantStatesResponse);
-  // Deprecated: retired quantity reporting. Delcore never bills these calls
-  // and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-  // Report measured events with IngestEvent instead.
-  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
-    option deprecated = true;
-  }
-  // Deprecated: retired quantity correction. Delcore never bills these calls
-  // and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-  // Correct accepted events with CorrectEvent instead.
-  rpc CorrectUsage(CorrectUsageRequest) returns (CorrectUsageResponse) {
-    option deprecated = true;
-  }
-  rpc ListUsage(ListUsageRequest) returns (ListUsageResponse);
   rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse);
   rpc CorrectEvent(CorrectEventRequest) returns (CorrectEventResponse);
   rpc GetEvent(GetEventRequest) returns (GetEventResponse);

@@ -152,7 +152,7 @@ fn command(args: impl Iterator<Item = String>) -> anyhow::Result<Command> {
         anyhow::ensure!(command.is_none(), "unexpected command argument");
         command = Some(match arg.as_str() {
             "serve" => Command::Serve,
-            "migrate" | "-migrate" | "--migrate" => Command::Migrate,
+            "migrate" => Command::Migrate,
             "check-schema" => Command::CheckSchema,
             _ => anyhow::bail!("unknown command"),
         });
@@ -163,14 +163,15 @@ fn command(args: impl Iterator<Item = String>) -> anyhow::Result<Command> {
 mod tests {
     use super::*;
     #[test]
-    fn operator_command_compatibility() {
-        for flag in ["migrate", "-migrate", "--migrate"] {
-            assert_eq!(
-                command([flag.to_owned()].into_iter()).unwrap(),
-                Command::Migrate
-            );
-        }
+    fn operator_commands_reject_retired_flags() {
+        assert_eq!(
+            command(["migrate".to_owned()].into_iter()).unwrap(),
+            Command::Migrate
+        );
         assert!(command(["serve".into(), "migrate".into()].into_iter()).is_err());
+        for flag in ["-migrate", "--migrate"] {
+            assert!(command([flag.to_owned()].into_iter()).is_err());
+        }
         assert_eq!(
             command(["--dev-env".into()].into_iter()).unwrap(),
             Command::Serve

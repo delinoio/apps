@@ -76,8 +76,7 @@ fn encode(fields: Vec<Field>) -> Vec<u8> {
     }
     out
 }
-// Go replay hashes use deterministic protobuf map ordering. Keep canonicalizing
-// the three input map locations until persisted request records are migrated.
+// Sort map entries so equivalent requests have the same fingerprint.
 fn canonical_map(raw: &[u8], number: u64) -> Result<Vec<u8>> {
     let mut fs = fields(raw)?;
     let mut maps: Vec<_> = fs

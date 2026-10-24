@@ -60,7 +60,6 @@ pub fn decode_grant(kind: FeatureKind, value_type: i32, raw: &Value) -> Result<G
     match kind {
         FeatureKind::Access => {
             grant.enabled = match fields.get("enabled") {
-                Some(Value::Null) => false,
                 Some(v) => v.as_bool().ok_or_else(mismatch)?,
                 None => return Err(mismatch()),
             };
@@ -81,11 +80,11 @@ pub fn decode_grant(kind: FeatureKind, value_type: i32, raw: &Value) -> Result<G
             grant.configuration = Some(match value_type {
                 1 => {
                     let v = fields.get("boolean").ok_or_else(mismatch)?;
-                    json!({"boolean":if v.is_null() {false} else {v.as_bool().ok_or_else(mismatch)?}})
+                    json!({"boolean":v.as_bool().ok_or_else(mismatch)?})
                 }
                 2 => {
                     let v = fields.get("integer").ok_or_else(mismatch)?;
-                    json!({"integer":if v.is_null() {0} else {v.as_i64().ok_or_else(mismatch)?}.to_string()})
+                    json!({"integer":v.as_i64().ok_or_else(mismatch)?.to_string()})
                 }
                 3 => {
                     let v = fields
@@ -96,15 +95,12 @@ pub fn decode_grant(kind: FeatureKind, value_type: i32, raw: &Value) -> Result<G
                 }
                 4 => {
                     let v = fields.get("text").ok_or_else(mismatch)?;
-                    json!({"text":if v.is_null() {""} else {v.as_str().ok_or_else(mismatch)?}})
+                    json!({"text":v.as_str().ok_or_else(mismatch)?})
                 }
                 5 => {
                     let v = fields.get("string_list").ok_or_else(mismatch)?;
-                    let values: Vec<String> = if v.is_null() {
-                        vec![]
-                    } else {
-                        serde_json::from_value(v.clone()).map_err(|_| mismatch())?
-                    };
+                    let values: Vec<String> =
+                        serde_json::from_value(v.clone()).map_err(|_| mismatch())?;
                     json!({"stringList":{"values":values}})
                 }
                 _ => bail!("invalid stored feature grant: unknown configuration type"),
@@ -120,18 +116,11 @@ pub fn decode_grant(kind: FeatureKind, value_type: i32, raw: &Value) -> Result<G
 pub struct MeterDefinition {
     pub event_type: String,
     pub aggregation: i32,
-    #[serde(deserialize_with = "null_group_by")]
     pub group_by: Vec<String>,
-}
-// Catalog JSON uses null for an empty Go slice. Retain that stored representation.
-fn null_group_by<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error> {
-    Ok(Option::<Vec<String>>::deserialize(deserializer)?.unwrap_or_default())
 }
 pub fn decode_meter(raw: Option<&Value>) -> Result<MeterDefinition> {
     match raw {
-        None | Some(Value::Null) => Ok(MeterDefinition::default()),
+        None | Some(Value::Null) => bail!("missing meter definition"),
         Some(raw) => Ok(serde_json::from_value(raw.clone())?),
     }
 }
@@ -234,7 +223,7 @@ mod tests {
             ),
             (
                 5,
-                json!({"string_list":null}),
+                json!({"string_list":[]}),
                 json!({"stringList":{"values":[]}}),
             ),
         ] {
@@ -279,9 +268,9 @@ mod tests {
         assert!(!evaluate(&[disabled], &Decimal::zero()).entitled);
     }
     #[test]
-    fn ungrouped_catalog_meter_authorizes_with_null_group_by() {
+    fn ungrouped_catalog_meter_authorizes_with_empty_group_by() {
         let definition = decode_meter(Some(&json!({
-            "event_type": "use", "aggregation": 2, "group_by": null
+            "event_type": "use", "aggregation": 2, "group_by": []
         })))
         .unwrap();
         assert_eq!(definition.event_type, "use");
@@ -323,7 +312,7 @@ mod tests {
         values.remove("tier");
         assert!(group_key(&names, &values).is_err());
         assert_eq!(group_key(&[], &BTreeMap::new()).unwrap(), "[]");
-        assert_eq!(decode_meter(None).unwrap().group_by, Vec::<String>::new());
+        assert!(decode_meter(None).is_err());
         assert_eq!(
             decode_meter(Some(&json!({"group_by":["region"],"aggregation":2})))
                 .unwrap()

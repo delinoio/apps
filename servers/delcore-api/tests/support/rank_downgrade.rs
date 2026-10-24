@@ -48,7 +48,7 @@ fn transaction(
 }
 
 async fn put_plan(f: &Fixture, plan: &str, rank: i32, free: bool) -> String {
-    let response = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"rank fixture","plan":{"id":plan,"name":"Paid","rank":rank,"free":free}})).await;
+    let response = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"rank fixture","plan":{"id":plan,"key":"paid","name":"Paid","rank":rank,"free":free}})).await;
     response["plan"]["activeVersionId"].as_str().unwrap().into()
 }
 
@@ -75,7 +75,7 @@ async fn effects(f: &Fixture, tenant: &str) -> (i64, i64, i64) {
 async fn setup(f: &Fixture) -> Scenario {
     f.bootstrap().await;
     let service = f.service().await;
-    let plan = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"name":"Paid","rank":10,"free":false}})).await["plan"]["id"].as_str().unwrap().to_owned();
+    let plan = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"key":"paid","name":"Paid","rank":10,"free":false}})).await["plan"]["id"].as_str().unwrap().to_owned();
     let price = f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"recurring price","price":{"key":"base-usd","planId":plan,"serviceId":service,"meter":"base","unitPrice":"10","included":"0","currency":"USD","kind":"PRICE_KIND_RECURRING","externalPriceId":EXTERNAL_PRICE}})).await["price"]["id"].as_str().unwrap().to_owned();
     let tenant = f
         .rpc(
@@ -382,7 +382,7 @@ async fn unassociated_free_rank_downgrade_stays_a_free_deferred_change() {
     f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":service,"name":"requests","key":"requests","eventType":"request","aggregation":"METER_AGGREGATION_COUNT"}})).await;
     let plans = f.rpc("owner", "GetCatalog", json!({})).await;
     let plan = plans["plans"][0]["id"].as_str().unwrap().to_owned();
-    f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"rank free plan","plan":{"id":plan,"name":"free","rank":5,"free":true,"defaultFree":true}})).await;
+    f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"rank free plan","plan":{"id":plan,"key":"free","name":"free","rank":5,"free":true,"defaultFree":true}})).await;
     let price = f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"usage price","price":{"key":"requests-usd","planId":plan,"serviceId":service,"meter":"requests","unitPrice":"1","included":"2","currency":"USD"}})).await["price"]["id"].as_str().unwrap().to_owned();
     let tenant = f
         .rpc(
@@ -395,7 +395,7 @@ async fn unassociated_free_rank_downgrade_stays_a_free_deferred_change() {
         .unwrap()
         .to_owned();
     let (version_a, _) = selected(&f, &tenant, &plan).await;
-    let version_b = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"lower free rank","plan":{"id":plan,"name":"free","rank":1,"free":true,"defaultFree":true}})).await["plan"]["activeVersionId"].as_str().unwrap().to_owned();
+    let version_b = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"lower free rank","plan":{"id":plan,"key":"free","name":"free","rank":1,"free":true,"defaultFree":true}})).await["plan"]["activeVersionId"].as_str().unwrap().to_owned();
     assert_ne!(version_a, version_b);
     let job = f.rpc("owner","ChangeSubscription",json!({"requestKey":key(),"tenantId":tenant,"planId":plan,"priceIds":[price],"returnUrl":f.config.return_urls[0]})).await["jobId"].as_str().unwrap().to_owned();
     let (state, _, payload) = job_row(&f, &job).await;

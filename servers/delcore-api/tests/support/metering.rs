@@ -305,15 +305,8 @@ async fn catalog_prices_reuse_versions_and_keep_tenant_selections() {
         "invalid_argument",
     )
     .await;
-    let legacy = put(
-        &f,
-        "PutMeter",
-        "meter",
-        json!({"serviceId":svc["id"],"name":"requests"}),
-    )
-    .await;
-    assert_eq!(legacy["id"], stored["id"]);
-    assert_eq!(legacy["aggregation"], "METER_AGGREGATION_COUNT");
+    f.error("owner", "PutMeter", json!({"requestKey":key(),"reason":"reject missing typed definition","meter":{"serviceId":svc["id"],"key":"requests","name":"requests"}}), "invalid_argument").await;
+    assert!(!stored["id"].as_str().unwrap().is_empty());
     let base = plan(&f, json!([])).await;
     let mut price = json!({"key":"requests-usd","planId":base["id"],"serviceId":svc["id"],"meter":"requests","unitPrice":"1.0","included":"2.00","currency":"USD"});
     let a = put(&f, "CreatePrice", "price", price.clone()).await;
@@ -692,13 +685,6 @@ async fn call_time_prices_apply_to_existing_tenants_and_late_usage() {
     price["unitPrice"] = json!("1");
     let restored = put(&f, "CreatePrice", "price", price.clone()).await;
     assert_eq!(restored["id"], a["id"]);
-    // An old, unversioned entitlement installed by a delayed subscription
-    // transition cannot override the product's effective catalog price.
-    let legacy = key();
-    sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,'requests',100,0,'USD','',now(),1)")
-        .bind(&legacy).bind(base["id"].as_str().unwrap()).bind(svc["id"].as_str().unwrap()).execute(&f.db).await.unwrap();
-    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,clock_timestamp())")
-        .bind(key()).bind(alpha.as_str().unwrap()).bind(legacy).execute(&f.db).await.unwrap();
     let at_restored = Utc::now().to_rfc3339();
     ingest(&f, alpha, &svc["id"], "restored", json!({}), &at_restored).await;
     ingest(&f, beta, &svc["id"], "beta-a", json!({}), &at_restored).await;

@@ -156,7 +156,7 @@ impl Call<'_> {
         if q.get("reason").is_some() {
             return self.operator(string(q, "reason"));
         }
-        if matches!(op, ReportUsage | CorrectUsage | IngestEvent | CorrectEvent) {
+        if matches!(op, IngestEvent | CorrectEvent) {
             return self.service_scope("usage:write").await;
         }
         let tenant = string(q, "tenantId");
@@ -188,8 +188,7 @@ impl Call<'_> {
             | RemoveMember | CreateInvitation | AcceptInvitation | RevokeInvitation
             | TransferOwnership | AcceptOwnership => self.tenants(op, q).await,
             GetTenantStates => self.tenant_states(q).await,
-            Authorize | ReportUsage | CorrectUsage | ListUsage | ListLedger
-            | CheckTenantLifecycle => self.usage(op, q).await,
+            Authorize | ListLedger | CheckTenantLifecycle => self.usage(op, q).await,
             CreateApiKey | ListApiKeys | RevokeApiKey | AuthorizeApiKey => {
                 self.api_keys(op, q).await
             }

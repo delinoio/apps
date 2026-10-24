@@ -70,22 +70,15 @@ async fn scenario() -> Scenario {
     f.bootstrap().await;
     // Authorization checks need a registered calling service.
     let service = Uuid::parse_str(&f.service().await).unwrap();
-    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"name":"pro","rank":10,"free":false}})).await;
+    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"key":"pro","name":"pro","rank":10,"free":false,"postpaid":true}})).await;
     let plan = Uuid::parse_str(paid["plan"]["id"].as_str().unwrap()).unwrap();
     let user = f.rpc("owner", "GetCurrentUser", json!({})).await;
     let tenant = user["tenants"][0]["id"].as_str().unwrap().to_owned();
     let tenant_id = Uuid::parse_str(&tenant).unwrap();
     let time = Timeline::now();
     // A recurring-only entitlement set keeps the renewal independent of usage allowances.
-    let price = Uuid::now_v7();
-    sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$4,'base',5,0,'USD',$3,now(),2)")
-        .bind(price).bind(plan).bind(EXTERNAL_PRICE).bind(service).execute(&f.db).await.unwrap();
-    // A postpaid plan keeps the allowance-depletion check out of the authorization result.
-    sqlx::query("UPDATE plans SET postpaid=true WHERE id=$1")
-        .bind(plan)
-        .execute(&f.db)
-        .await
-        .unwrap();
+    let price = f.rpc("owner", "CreatePrice", json!({"requestKey":key(),"reason":"recurring fixture","price":{"key":"base-usd","planId":plan.to_string(),"serviceId":service.to_string(),"meter":"base","unitPrice":"5","currency":"USD","kind":"PRICE_KIND_RECURRING","externalPriceId":EXTERNAL_PRICE}})).await;
+    let price = Uuid::parse_str(price["price"]["id"].as_str().unwrap()).unwrap();
     sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)")
         .bind(Uuid::now_v7())
         .bind(tenant_id)
@@ -96,6 +89,13 @@ async fn scenario() -> Scenario {
         .unwrap();
     sqlx::query("UPDATE tenants SET plan_id=$2,external_customer_id=$3,external_subscription_id=$4,period_start=$5,period_end=$6 WHERE id=$1")
         .bind(tenant_id).bind(plan).bind(CUSTOMER).bind(SUBSCRIPTION).bind(time.days(-40)).bind(time.seeded_end()).execute(&f.db).await.unwrap();
+    sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1")
+        .bind(tenant_id)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at) SELECT $1,$2,id,active_version_id,$4 FROM catalog_entities WHERE id=$3")
+        .bind(Uuid::now_v7()).bind(tenant_id).bind(plan).bind(time.days(-40)).execute(&f.db).await.unwrap();
     sqlx::query("INSERT INTO provider_objects VALUES($1,$2,'active')")
         .bind(SUBSCRIPTION)
         .bind(time.days(-40))
@@ -713,6 +713,18 @@ async fn unassociate(s: &Scenario) -> String {
         .execute(&s.f.db)
         .await
         .unwrap();
+    let mut tx = s.f.db.begin().await.unwrap();
+    let free_version: String = sqlx::query_scalar("SELECT ce.active_version_id::text FROM tenants t JOIN catalog_entities ce ON ce.id=t.plan_id WHERE t.id=$1")
+        .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+    delcore_api::postgres::replace_tenant_selections(
+        &mut tx,
+        &s.tenant,
+        &[free_version],
+        s.time.days(-40),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
     let job = key();
     let payload = json!({"plan_id":plan,"price_ids":[price],"version_ids":[version],"external_price_ids":[EXTERNAL_PRICE]});
     sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$3,$4,'pending',0,now(),now(),now())")
@@ -1430,9 +1442,11 @@ impl Scenario {
         until: Option<DateTime<Utc>>,
     ) -> Uuid {
         let service = self.service_id().await;
-        let price = Uuid::now_v7();
-        sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3::text::uuid,$4,1,$5,'USD',$6,now(),1)")
-            .bind(price).bind(plan).bind(&service).bind(ALLOWANCE_METER).bind(included).bind(format!("allowance_{price}")).execute(&self.f.db).await.unwrap();
+        let price_key = format!("allowance-{}", Uuid::now_v7().simple());
+        let response = self.f.rpc("owner", "CreatePrice", json!({"requestKey":key(),"reason":"usage allowance fixture","price":{"key":price_key,"planId":plan.to_string(),"serviceId":service,"meter":ALLOWANCE_METER,"unitPrice":"1","included":included.to_string(),"currency":"USD"}})).await;
+        let price = Uuid::parse_str(response["price"]["id"].as_str().unwrap()).unwrap();
+        sqlx::query("INSERT INTO catalog_price_activations(price_id,version_id,effective_at) SELECT entity_id,id,$2 FROM catalog_versions WHERE id=$1")
+            .bind(price).bind(from).execute(&self.f.db).await.unwrap();
         sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1,$2::text::uuid,$3,$4,$5)")
             .bind(Uuid::now_v7()).bind(&self.tenant).bind(price).bind(from).bind(until).execute(&self.f.db).await.unwrap();
         price
@@ -1632,11 +1646,6 @@ async fn historical_renewal_is_atomic_and_retryable() {
 async fn recovered_period_keeps_the_terms_held_when_it_began() {
     let s = scenario().await;
     let tenant = Uuid::parse_str(&s.tenant).unwrap();
-    let old_plan: Uuid = sqlx::query_scalar("SELECT plan_id FROM tenants WHERE id=$1")
-        .bind(tenant)
-        .fetch_one(&s.f.db)
-        .await
-        .unwrap();
     let old_recurring: Uuid =
         sqlx::query_scalar("SELECT id FROM prices WHERE external_price_id=$1")
             .bind(EXTERNAL_PRICE)
@@ -1656,9 +1665,8 @@ async fn recovered_period_keeps_the_terms_held_when_it_began() {
         .await
         .unwrap();
     // The new terms: another plan with a different recurring price, allowance 20, not postpaid.
-    let new_plan = Uuid::now_v7();
-    sqlx::query("INSERT INTO plans(id,name,rank,free,postpaid,is_default) SELECT $1,'scale',rank+100,false,false,false FROM plans WHERE id=$2")
-        .bind(new_plan).bind(old_plan).execute(&s.f.db).await.unwrap();
+    let response = s.f.rpc("owner", "PutPlan", json!({"requestKey":key(),"reason":"new terms fixture","plan":{"key":"scale","name":"scale","rank":110,"free":false}})).await;
+    let new_plan = Uuid::parse_str(response["plan"]["id"].as_str().unwrap()).unwrap();
     let new_recurring = Uuid::now_v7();
     sqlx::query("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2,$3,'base',5,0,'USD','pri_new_terms',now(),2)")
         .bind(new_recurring).bind(new_plan).bind(service).execute(&s.f.db).await.unwrap();
@@ -1680,6 +1688,15 @@ async fn recovered_period_keeps_the_terms_held_when_it_began() {
         .execute(&s.f.db)
         .await
         .unwrap();
+    let mut tx = s.f.db.begin().await.unwrap();
+    let version =
+        delcore_api::postgres::active_catalog_version(&mut tx, "plan", &new_plan.to_string())
+            .await
+            .unwrap();
+    delcore_api::postgres::replace_tenant_selections(&mut tx, &s.tenant, &[version], change)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
     let _ = old_recurring;
     let projections = s.projections().await;
     // The older period was paid under the old recurring price and allowance.

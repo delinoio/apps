@@ -45,7 +45,7 @@ async fn world() -> World {
     let f = Fixture::setup().await;
     f.bootstrap().await;
     let svc = f.service().await;
-    let other = f.rpc("owner","PutService",json!({"requestKey":key(),"reason":"register second","service":{"name":"second","clientId":"other","capabilities":["render","export"],"scopes":["authorize","usage:write","usage:read"]}})).await["service"]["id"].as_str().unwrap().into();
+    let other = f.rpc("owner","PutService",json!({"requestKey":key(),"reason":"register second","service":{"key":"second","name":"second","clientId":"other","capabilities":["render","export"],"scopes":["authorize","usage:write","usage:read"]}})).await["service"]["id"].as_str().unwrap().into();
     let org = f
         .rpc(
             "alice",

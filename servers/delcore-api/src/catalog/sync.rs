@@ -25,7 +25,7 @@ const DIGEST: &str = r#"SELECT md5(jsonb_build_array(
  (SELECT count(*) FROM catalog_entities),(SELECT count(*) FROM catalog_versions)"#;
 
 /// Reconcile the full development catalog after schema and process-lock checks.
-/// The transaction owns all mutations, including legacy subscription snapshots.
+/// The transaction owns all mutations, within one catalog transaction.
 pub async fn sync(
     pool: &PgPool,
     directory: &Path,
@@ -90,7 +90,6 @@ async fn apply(pool: &PgPool, directory: &Path, correlation: String) -> Result<S
     };
     let mut tx = postgres::begin(pool).await?;
     let before: (String, i64, i64) = sqlx::query_as(DIGEST).fetch_one(&mut *tx).await?;
-    snapshot_legacy(&mut tx, &items).await?;
     validate_database(&mut tx, &items).await?;
     let mut counts = BTreeMap::new();
     for kind in ["service", "meter", "feature", "plan", "addon", "price"] {
@@ -177,30 +176,6 @@ async fn resolve(c: &mut PgConnection, kind: &str, scope: &str, key: &str) -> Re
     .fetch_optional(c)
     .await?
     .with_context(|| format!("unknown {kind} reference {key:?}"))
-}
-async fn snapshot_legacy(c: &mut PgConnection, items: &[Definition]) -> Result<()> {
-    let now = Utc::now();
-    for item in items {
-        let row:Option<(String,bool)>=match item.kind.as_str() {
-            "plan"=>sqlx::query_as(r#"SELECT p.id::text, EXISTS(SELECT 1 FROM tenants t WHERE t.plan_id=p.id AND NOT EXISTS (
- SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=t.id AND cs.product_id=t.plan_id AND cs.ends_at IS NULL))
- FROM catalog_entities ce JOIN plans p ON p.id=ce.id WHERE ce.kind='plan' AND ce.scope='' AND ce.key=$1"#).bind(&item.key).fetch_optional(&mut *c).await?,
-            "addon"=>sqlx::query_as(r#"SELECT a.id::text, EXISTS(SELECT 1 FROM entitlements en JOIN prices p ON p.id=en.price_id
- WHERE (en.ends_at IS NULL OR en.ends_at>$3) AND p.addon_id=a.id AND NOT EXISTS (
- SELECT 1 FROM tenant_catalog_selections cs WHERE cs.tenant_id=en.tenant_id AND cs.product_id=a.id AND (cs.ends_at IS NULL OR cs.ends_at>$3)))
- FROM catalog_entities ce JOIN catalog_entities se ON se.kind='service' AND se.scope='' AND se.key=$2 AND ce.scope=se.id::text
- JOIN addons a ON a.id=ce.id AND a.service_id=se.id WHERE ce.kind='addon' AND ce.key=$1"#).bind(&item.key).bind(&item.service).bind(now).fetch_optional(&mut *c).await?,
-            _=>continue,
-        };
-        if let Some((id, true)) = row {
-            if item.kind == "plan" {
-                db::snapshot_legacy_plan_selections(c, &id, now).await?;
-            } else {
-                db::snapshot_legacy_add_on_selections(c, &id, now).await?;
-            }
-        }
-    }
-    Ok(())
 }
 async fn validate_database(c: &mut PgConnection, items: &[Definition]) -> Result<()> {
     let mut plans = BTreeMap::new();
@@ -325,34 +300,11 @@ async fn apply_meter(c: &mut PgConnection, d: &Definition, id: &str, service: &s
     let filters = crate::events::canonical_filters(&filters)?;
     let mut groups = d.group_by.clone();
     groups.sort();
-    let definition = json!({"name":d.key,"event_type":d.event_type,"aggregation":aggregation(&d.aggregation),"value_attribute":d.value_attribute,"filters":filters,"group_by":if groups.is_empty() {Value::Null} else {json!(groups)}});
+    let definition = json!({"name":d.key,"event_type":d.event_type,"aggregation":aggregation(&d.aggregation),"value_attribute":d.value_attribute,"filters":filters,"group_by":json!(groups)});
     let previous = db::active_catalog_version(c, "meter", id).await?;
-    let untyped = if previous.is_empty() {
-        true
-    } else {
-        let event:String=sqlx::query_scalar("SELECT COALESCE(definition->>'event_type','') FROM catalog_versions WHERE id=$1::text::uuid").bind(&previous).fetch_one(&mut *c).await?;
-        event.is_empty()
-    };
-    if untyped {
-        let used: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM metering_events WHERE $1::text::uuid=ANY(meter_ids))",
-        )
-        .bind(id)
-        .fetch_one(&mut *c)
-        .await?;
-        let compatible = d.event_type == d.key
-            && d.aggregation == "sum"
-            && d.value_attribute == "quantity"
-            && d.filters.is_empty()
-            && d.group_by.is_empty();
-        ensure!(
-            !used || compatible,
-            "meter definition is immutable for its key"
-        );
-    }
     let (version, _) = db::select_catalog_version(c, id, &definition).await?;
     ensure!(
-        previous.is_empty() || previous == version || untyped,
+        previous.is_empty() || previous == version,
         "meter definition is immutable for its key"
     );
     let count: i64 = sqlx::query_scalar(

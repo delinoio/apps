@@ -100,9 +100,9 @@ async fn scenario_at(time: Timeline) -> Scenario {
     let free = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"free plan","plan":{"key":"free","name":"free","free":true,"defaultFree":true}})).await["plan"]["id"].as_str().unwrap().to_owned();
     let free_price = f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"free allowance","price":{"key":"usage-free","planId":free,"serviceId":service,"meter":"usage","unitPrice":"1","included":"10","currency":"USD"}})).await["price"]["id"].as_str().unwrap().to_owned();
     f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"free limit","replaceFeatureValues":true,"plan":{"key":"free","name":"free","free":true,"defaultFree":true,"featureValues":[{"featureId":feature,"limit":"10"}]}})).await;
-    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"name":"pro","rank":10,"free":false}})).await["plan"]["id"].as_str().unwrap().to_owned();
+    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"key":"pro","name":"pro","rank":10,"free":false}})).await["plan"]["id"].as_str().unwrap().to_owned();
     let price = f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"paid usage","price":{"key":"usage-pro","planId":paid,"serviceId":service,"meter":"usage","unitPrice":"1","included":"1000","currency":"USD"}})).await["price"]["id"].as_str().unwrap().to_owned();
-    f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid limit","replaceFeatureValues":true,"plan":{"name":"pro","rank":10,"free":false,"featureValues":[{"featureId":feature,"limit":"1000"}]}})).await;
+    f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid limit","replaceFeatureValues":true,"plan":{"key":"pro","name":"pro","rank":10,"free":false,"featureValues":[{"featureId":feature,"limit":"1000"}]}})).await;
     let version: String = sqlx::query_scalar(
         "SELECT active_version_id::text FROM catalog_entities WHERE id=$1::text::uuid",
     )
@@ -697,59 +697,16 @@ async fn recurring_price_of_the_free_base_plan_keeps_the_calendar_month() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
-async fn recorded_periods_before_the_first_pinned_selection_keep_their_coverage() {
+async fn missing_pinned_history_is_unavailable() {
     let s = scenario().await;
-    let t = &s.time;
     s.subscribe().await;
     s.cancel().await;
-    let paid = (t.paid_start, t.paid_end);
-    // A legacy tenant: the snapshot only backdated the free selection to the cancellation, so
-    // the retained paid period and the paid plan entitlement predate the first pinned plan
-    // selection.
-    sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid AND product_id IN (SELECT id FROM catalog_entities WHERE kind='plan') AND ends_at IS NOT NULL")
-        .bind(&s.tenant)
-        .execute(&s.f.db)
-        .await
-        .unwrap();
-    // The current free plan must not replace the evidence: the recorded paid period applies to
-    // resolution, ingestion and aggregate queries before the first selection.
-    assert_eq!(s.resolve(t.before(24)).await.unwrap(), paid);
-    s.ingest("legacy-paid", "3", t.before(6)).await;
-    assert_eq!(s.persisted("legacy-paid").await, paid);
-    s.f.process_metering().await;
-    let paid_aggregates = s.aggregates(Some(t.before(6))).await;
-    assert_eq!(paid_aggregates.len(), 1, "{paid_aggregates:?}");
-    assert_eq!(paid_aggregates[0]["value"], "3", "{paid_aggregates:?}");
-    // From the first selection on, the free selection applies as before.
-    assert_eq!(s.resolve(t.after(30)).await.unwrap(), calendar(t.after(30)));
-    // Paid applicability without recorded coverage stays unavailable instead of taking the
-    // current plan's calendar month.
-    sqlx::query("DELETE FROM billing_periods WHERE tenant_id=$1::text::uuid")
-        .bind(&s.tenant)
-        .execute(&s.f.db)
-        .await
-        .unwrap();
-    assert!(unavailable(s.resolve(t.before(24)).await));
-}
-
-#[tokio::test]
-#[ignore = "requires a disposable TEST_DATABASE_URL"]
-async fn tenants_without_pinned_history_use_the_plan_free_flag() {
-    let s = scenario().await;
-    let t = &s.time;
-    s.subscribe().await;
-    s.cancel().await;
-    // A legacy tenant that never received a pinned selection resolves from its current plan,
-    // also where a retained paid period exists.
     sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid")
         .bind(&s.tenant)
         .execute(&s.f.db)
         .await
         .unwrap();
-    assert_eq!(
-        s.resolve(t.before(24)).await.unwrap(),
-        calendar(t.before(24))
-    );
+    assert!(unavailable(s.resolve(s.time.before(24)).await));
 }
 
 #[tokio::test]

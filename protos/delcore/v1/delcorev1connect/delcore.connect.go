@@ -124,15 +124,6 @@ const (
 	// DelcoreServiceGetTenantStatesProcedure is the fully-qualified name of the DelcoreService's
 	// GetTenantStates RPC.
 	DelcoreServiceGetTenantStatesProcedure = "/delcore.v1.DelcoreService/GetTenantStates"
-	// DelcoreServiceReportUsageProcedure is the fully-qualified name of the DelcoreService's
-	// ReportUsage RPC.
-	DelcoreServiceReportUsageProcedure = "/delcore.v1.DelcoreService/ReportUsage"
-	// DelcoreServiceCorrectUsageProcedure is the fully-qualified name of the DelcoreService's
-	// CorrectUsage RPC.
-	DelcoreServiceCorrectUsageProcedure = "/delcore.v1.DelcoreService/CorrectUsage"
-	// DelcoreServiceListUsageProcedure is the fully-qualified name of the DelcoreService's ListUsage
-	// RPC.
-	DelcoreServiceListUsageProcedure = "/delcore.v1.DelcoreService/ListUsage"
 	// DelcoreServiceIngestEventProcedure is the fully-qualified name of the DelcoreService's
 	// IngestEvent RPC.
 	DelcoreServiceIngestEventProcedure = "/delcore.v1.DelcoreService/IngestEvent"
@@ -206,19 +197,6 @@ type DelcoreServiceClient interface {
 	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
-	// Deprecated: retired quantity reporting. Delcore never bills these calls
-	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-	// Report measured events with IngestEvent instead.
-	//
-	// Deprecated: do not use.
-	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
-	// Deprecated: retired quantity correction. Delcore never bills these calls
-	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-	// Correct accepted events with CorrectEvent instead.
-	//
-	// Deprecated: do not use.
-	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
-	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
 	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
 	CorrectEvent(context.Context, *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error)
 	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
@@ -432,24 +410,6 @@ func NewDelcoreServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(delcoreServiceMethods.ByName("GetTenantStates")),
 			connect.WithClientOptions(opts...),
 		),
-		reportUsage: connect.NewClient[v1.ReportUsageRequest, v1.ReportUsageResponse](
-			httpClient,
-			baseURL+DelcoreServiceReportUsageProcedure,
-			connect.WithSchema(delcoreServiceMethods.ByName("ReportUsage")),
-			connect.WithClientOptions(opts...),
-		),
-		correctUsage: connect.NewClient[v1.CorrectUsageRequest, v1.CorrectUsageResponse](
-			httpClient,
-			baseURL+DelcoreServiceCorrectUsageProcedure,
-			connect.WithSchema(delcoreServiceMethods.ByName("CorrectUsage")),
-			connect.WithClientOptions(opts...),
-		),
-		listUsage: connect.NewClient[v1.ListUsageRequest, v1.ListUsageResponse](
-			httpClient,
-			baseURL+DelcoreServiceListUsageProcedure,
-			connect.WithSchema(delcoreServiceMethods.ByName("ListUsage")),
-			connect.WithClientOptions(opts...),
-		),
 		ingestEvent: connect.NewClient[v1.IngestEventRequest, v1.IngestEventResponse](
 			httpClient,
 			baseURL+DelcoreServiceIngestEventProcedure,
@@ -570,9 +530,6 @@ type delcoreServiceClient struct {
 	getMeteringStatus    *connect.Client[v1.GetMeteringStatusRequest, v1.GetMeteringStatusResponse]
 	checkTenantLifecycle *connect.Client[v1.CheckTenantLifecycleRequest, v1.CheckTenantLifecycleResponse]
 	getTenantStates      *connect.Client[v1.GetTenantStatesRequest, v1.GetTenantStatesResponse]
-	reportUsage          *connect.Client[v1.ReportUsageRequest, v1.ReportUsageResponse]
-	correctUsage         *connect.Client[v1.CorrectUsageRequest, v1.CorrectUsageResponse]
-	listUsage            *connect.Client[v1.ListUsageRequest, v1.ListUsageResponse]
 	ingestEvent          *connect.Client[v1.IngestEventRequest, v1.IngestEventResponse]
 	correctEvent         *connect.Client[v1.CorrectEventRequest, v1.CorrectEventResponse]
 	getEvent             *connect.Client[v1.GetEventRequest, v1.GetEventResponse]
@@ -744,25 +701,6 @@ func (c *delcoreServiceClient) GetTenantStates(ctx context.Context, req *connect
 	return c.getTenantStates.CallUnary(ctx, req)
 }
 
-// ReportUsage calls delcore.v1.DelcoreService.ReportUsage.
-//
-// Deprecated: do not use.
-func (c *delcoreServiceClient) ReportUsage(ctx context.Context, req *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
-	return c.reportUsage.CallUnary(ctx, req)
-}
-
-// CorrectUsage calls delcore.v1.DelcoreService.CorrectUsage.
-//
-// Deprecated: do not use.
-func (c *delcoreServiceClient) CorrectUsage(ctx context.Context, req *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error) {
-	return c.correctUsage.CallUnary(ctx, req)
-}
-
-// ListUsage calls delcore.v1.DelcoreService.ListUsage.
-func (c *delcoreServiceClient) ListUsage(ctx context.Context, req *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error) {
-	return c.listUsage.CallUnary(ctx, req)
-}
-
 // IngestEvent calls delcore.v1.DelcoreService.IngestEvent.
 func (c *delcoreServiceClient) IngestEvent(ctx context.Context, req *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
 	return c.ingestEvent.CallUnary(ctx, req)
@@ -866,19 +804,6 @@ type DelcoreServiceHandler interface {
 	GetMeteringStatus(context.Context, *connect.Request[v1.GetMeteringStatusRequest]) (*connect.Response[v1.GetMeteringStatusResponse], error)
 	CheckTenantLifecycle(context.Context, *connect.Request[v1.CheckTenantLifecycleRequest]) (*connect.Response[v1.CheckTenantLifecycleResponse], error)
 	GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error)
-	// Deprecated: retired quantity reporting. Delcore never bills these calls
-	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-	// Report measured events with IngestEvent instead.
-	//
-	// Deprecated: do not use.
-	ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error)
-	// Deprecated: retired quantity correction. Delcore never bills these calls
-	// and rejects them with FAILED_PRECONDITION and ERROR_REASON_PRECONDITION.
-	// Correct accepted events with CorrectEvent instead.
-	//
-	// Deprecated: do not use.
-	CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error)
-	ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error)
 	IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error)
 	CorrectEvent(context.Context, *connect.Request[v1.CorrectEventRequest]) (*connect.Response[v1.CorrectEventResponse], error)
 	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
@@ -1088,24 +1013,6 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 		connect.WithSchema(delcoreServiceMethods.ByName("GetTenantStates")),
 		connect.WithHandlerOptions(opts...),
 	)
-	delcoreServiceReportUsageHandler := connect.NewUnaryHandler(
-		DelcoreServiceReportUsageProcedure,
-		svc.ReportUsage,
-		connect.WithSchema(delcoreServiceMethods.ByName("ReportUsage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	delcoreServiceCorrectUsageHandler := connect.NewUnaryHandler(
-		DelcoreServiceCorrectUsageProcedure,
-		svc.CorrectUsage,
-		connect.WithSchema(delcoreServiceMethods.ByName("CorrectUsage")),
-		connect.WithHandlerOptions(opts...),
-	)
-	delcoreServiceListUsageHandler := connect.NewUnaryHandler(
-		DelcoreServiceListUsageProcedure,
-		svc.ListUsage,
-		connect.WithSchema(delcoreServiceMethods.ByName("ListUsage")),
-		connect.WithHandlerOptions(opts...),
-	)
 	delcoreServiceIngestEventHandler := connect.NewUnaryHandler(
 		DelcoreServiceIngestEventProcedure,
 		svc.IngestEvent,
@@ -1254,12 +1161,6 @@ func NewDelcoreServiceHandler(svc DelcoreServiceHandler, opts ...connect.Handler
 			delcoreServiceCheckTenantLifecycleHandler.ServeHTTP(w, r)
 		case DelcoreServiceGetTenantStatesProcedure:
 			delcoreServiceGetTenantStatesHandler.ServeHTTP(w, r)
-		case DelcoreServiceReportUsageProcedure:
-			delcoreServiceReportUsageHandler.ServeHTTP(w, r)
-		case DelcoreServiceCorrectUsageProcedure:
-			delcoreServiceCorrectUsageHandler.ServeHTTP(w, r)
-		case DelcoreServiceListUsageProcedure:
-			delcoreServiceListUsageHandler.ServeHTTP(w, r)
 		case DelcoreServiceIngestEventProcedure:
 			delcoreServiceIngestEventHandler.ServeHTTP(w, r)
 		case DelcoreServiceCorrectEventProcedure:
@@ -1419,18 +1320,6 @@ func (UnimplementedDelcoreServiceHandler) CheckTenantLifecycle(context.Context, 
 
 func (UnimplementedDelcoreServiceHandler) GetTenantStates(context.Context, *connect.Request[v1.GetTenantStatesRequest]) (*connect.Response[v1.GetTenantStatesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.GetTenantStates is not implemented"))
-}
-
-func (UnimplementedDelcoreServiceHandler) ReportUsage(context.Context, *connect.Request[v1.ReportUsageRequest]) (*connect.Response[v1.ReportUsageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ReportUsage is not implemented"))
-}
-
-func (UnimplementedDelcoreServiceHandler) CorrectUsage(context.Context, *connect.Request[v1.CorrectUsageRequest]) (*connect.Response[v1.CorrectUsageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.CorrectUsage is not implemented"))
-}
-
-func (UnimplementedDelcoreServiceHandler) ListUsage(context.Context, *connect.Request[v1.ListUsageRequest]) (*connect.Response[v1.ListUsageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delcore.v1.DelcoreService.ListUsage is not implemented"))
 }
 
 func (UnimplementedDelcoreServiceHandler) IngestEvent(context.Context, *connect.Request[v1.IngestEventRequest]) (*connect.Response[v1.IngestEventResponse], error) {
