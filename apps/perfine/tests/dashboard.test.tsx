@@ -609,6 +609,30 @@ describe("operation and lifecycle boundaries", () => {
     await screen.findByText(/Set positive candidate limits/);
     expect(f.calls.some((x) => x.method === "prepareExperiment")).toBe(false);
   });
+  it("uses a new deletion request ID for each experiment", async () => {
+    const f = mount(() => <Settings spaceId={spaceId} manage />);
+    for (const id of [experiment.id, candidate.id]) {
+      fireEvent.change(screen.getByLabelText("Experiment ID"), {
+        target: { value: id },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Delete experiment" }),
+      );
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Delete experiment" }).at(-1)!,
+      );
+      await screen.findByText("Deletion retrying");
+    }
+    const requests = f.calls
+      .filter((x) => x.method === "deleteExperiment")
+      .map((x) => x.input as P.DeleteExperimentRequest);
+    expect(requests.length).toBe(2);
+    expect(requests[0].requestId).not.toBe(requests[1].requestId);
+    expect(requests.map((x) => x.experimentId)).toEqual([
+      experiment.id,
+      candidate.id,
+    ]);
+  });
   it("shows retained cleanup failures after accepted manager deletion", async () => {
     mount(() => <Settings spaceId={spaceId} manage />);
     fireEvent.change(screen.getByLabelText("Experiment ID"), {

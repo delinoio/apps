@@ -333,8 +333,8 @@ export function DeleteResult({
 }) {
   const [id, setId] = useState(experimentId || ""),
     [accepted, setAccepted] = useState(false);
-  const requestId = useRequestId(),
-    remove = useMutation(ManagementService.method.deleteExperiment),
+  const [requestId, setRequestId] = useState(uuid7);
+  const remove = useMutation(ManagementService.method.deleteExperiment),
     cache = useQueryClient();
   const deletion = useQuery(
     ManagementService.method.getDeletion,
@@ -358,7 +358,9 @@ export function DeleteResult({
           label="Experiment ID"
           autoFocus
           value={id}
+          disabled={remove.isPending}
           onChange={(e) => {
+            if (e.target.value !== id) setRequestId(uuid7());
             setId(e.target.value);
             setAccepted(false);
           }}
