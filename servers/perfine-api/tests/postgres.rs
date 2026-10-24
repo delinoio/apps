@@ -1570,10 +1570,19 @@ fn add_raw(m: &mut Value, bytes: &mut BTreeMap<String, Vec<u8>>, raw: Vec<u8>) {
 #[test]
 fn identical_baseline_reuse_is_valid_but_changed_run_identity_is_rejected() {
     let eid = uid();
-    let (spec, m, mut bytes) = fixture(&eid);
+    let (spec, mut m, mut bytes) = fixture(&eid);
     let e = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
     let mut bundle: perfine_api::evidence::Bundle =
         serde_json::from_slice(&bytes["engine"]).unwrap();
+    // Reusing the baseline replaces the comparison run and its artifact references.
+    // Keep the fixture eligible under the hosted ban on uninspected extra JSON.
+    for name in bundle.first.as_ref().unwrap().base.artifacts.keys() {
+        bytes.remove(name.as_str());
+        m["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|a| a["name"] != name.as_str());
+    }
     bundle.first.as_mut().unwrap().base = bundle.incremental_baseline[0].clone();
     bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
     assert_eq!(
