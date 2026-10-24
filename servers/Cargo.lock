@@ -669,6 +669,7 @@ dependencies = [
  "connectrpc",
  "delino-protocol",
  "hex",
+ "httpdate",
  "jsonschema",
  "oxilangtag",
  "prometheus",

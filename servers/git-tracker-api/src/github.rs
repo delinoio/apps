@@ -169,6 +169,43 @@ impl GitHub {
         )
         .await
     }
+    /// Loads the commit at the exact head of `branch`.
+    ///
+    /// The generic `/commits/{ref}` lookup also resolves SHAs and tag names, so a
+    /// caller-supplied branch must first be resolved through the exact
+    /// `/git/ref/heads/{branch}` endpoint. The returned ref name and object type are
+    /// verified because a provider fallback must never turn a non-branch value into
+    /// a branch head.
+    async fn branch_head(&self, r: &Repository, branch: &str, token: &str) -> Result<Value> {
+        if branch.is_empty()
+            || branch
+                .split('/')
+                .any(|segment| matches!(segment, "" | "." | ".."))
+        {
+            return Err(Fault::unavailable());
+        }
+        let encoded = branch.split('/').map(escape).collect::<Vec<_>>().join("/");
+        let head = self
+            .call(
+                "GET",
+                &format!("{}/git/ref/heads/{encoded}", path(r)),
+                token,
+                None,
+            )
+            .await?;
+        let sha = string(&head["object"], "sha");
+        if head["ref"] != format!("refs/heads/{branch}")
+            || head["object"]["type"] != "commit"
+            || !crate::valid_sha(sha)
+        {
+            return Err(Fault::unavailable());
+        }
+        let commit = self.commit(r, sha, token).await?;
+        if string(&commit, "sha") != sha {
+            return Err(Fault::unavailable());
+        }
+        Ok(commit)
+    }
     pub async fn branch(
         &self,
         r: &Repository,
@@ -176,7 +213,7 @@ impl GitHub {
         mut needed: HashSet<String>,
     ) -> Result<Vec<String>> {
         let token = self.installation(&r.installation_id).await?;
-        let mut c = self.commit(r, branch, &token).await?;
+        let mut c = self.branch_head(r, branch, &token).await?;
         let mut result = vec![string(&c, "sha").to_owned()];
         needed.remove(&result[0]);
         while !needed.is_empty() {

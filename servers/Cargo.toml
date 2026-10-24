@@ -17,6 +17,7 @@ buffa-types = { version = "0.9", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
 connectrpc = { version = "0.9.1", features = ["axum", "server"] }
 hex = "0.4"
+httpdate = "1"
 rand = "0.9"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
