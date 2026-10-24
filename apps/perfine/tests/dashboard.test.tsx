@@ -443,6 +443,35 @@ describe("operation and lifecycle boundaries", () => {
     expect(f.calls.find((x) => x.method === "prepareExperiment")).toBeTruthy();
     expect(req.experimentId).toMatch(/-7[a-f0-9]{3}-/);
   });
+  it("preserves parent ID newlines during editing and normalizes the prepared request", async () => {
+    const f = mount(() => (
+      <Start
+        spaceId={spaceId}
+        connection={connection}
+        allowed
+        onStarted={() => {}}
+      />
+    ));
+    fillConfiguration();
+    const input = screen.getByLabelText(
+      "Parent candidate IDs (optional, one per line)",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: candidate.id + "\n" } });
+    expect(input.value).toBe(candidate.id + "\n");
+    fireEvent.change(input, {
+      target: { value: input.value + experiment.id + "\n\n" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare experiment for review" }),
+    );
+    await screen.findByRole("region", { name: "Prepared experiment review" });
+    const request = f.calls.find((x) => x.method === "prepareExperiment")!
+      .input as P.PrepareExperimentRequest;
+    expect(request.configuration?.parentCandidateIds).toEqual([
+      candidate.id,
+      experiment.id,
+    ]);
+  });
   it("prepares without cloud support, then invalidates review after editing a field", async () => {
     const f = mount(() => (
       <Start
