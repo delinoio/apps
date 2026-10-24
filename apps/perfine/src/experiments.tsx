@@ -632,7 +632,11 @@ export function CandidateEvidence({
                   </div>
                   <div>
                     <dt>Change (head − base)</dt>
-                    <dd>{percent(m.relativeChange)}</dd>
+                    <dd>
+                      {m.baseValue === 0
+                        ? "Unavailable (zero baseline)"
+                        : percent((m.headValue - m.baseValue) / m.baseValue)}
+                    </dd>
                   </div>
                   <div>
                     <dt>Weighted absolute change</dt>
