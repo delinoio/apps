@@ -94,7 +94,6 @@ export const candidate = create(P.CandidateSchema, {
   headSha: "2".repeat(40),
   executionState: P.ExecutionState.COMPLETED,
   verdict: P.PerformanceVerdict.PASS,
-  githubDiffUrl: `https://github.com/example/parser/compare/${specification.baseSha}...${"2".repeat(40)}`,
   evidenceManifestSha256: "3".repeat(64),
   correctness: [
     {
