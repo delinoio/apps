@@ -590,3 +590,60 @@ async fn the_sweep_is_bounded_and_resumable_over_sparse_history() {
         .bind(&w.tenant).fetch_one(&w.f.db).await.unwrap().get(0);
     assert_eq!(any, 0, "no history before the tenant held anything");
 }
+
+/// The paid-entitlement check reads the plan policy pinned for the tenant at the month boundary.
+/// A free plan that held a recurring base-plan price and was later republished as paid still
+/// grants its skipped free month, while a paid plan entitlement with no pinned free selection at
+/// the boundary remains inconsistent history.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn held_entitlements_use_the_plan_policy_pinned_at_the_month_boundary() {
+    let w = World::new().await;
+    let back = w.cur - Months::new(3);
+    // Tenant creation needs the default free plan, so create the second tenant first.
+    let other = w.tenant("Other", true).await;
+    let recurring: Uuid = sqlx::query_scalar("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) SELECT $1,plan_id,service_id,meter,0,0,currency,$2,now(),2 FROM prices WHERE plan_id=$3::text::uuid AND kind<>2 LIMIT 1 RETURNING id")
+        .bind(Uuid::now_v7()).bind(format!("pri_recovery_{}", Uuid::now_v7())).bind(&w.plan).fetch_one(&w.f.db).await.unwrap();
+    sqlx::query(
+        "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2::text::uuid,$3,$4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&w.tenant)
+    .bind(recurring)
+    .bind(back)
+    .execute(&w.f.db)
+    .await
+    .unwrap();
+    // The operator later publishes the plan as paid; the tenant's pinned selection keeps the
+    // free version that applied at the boundary.
+    sqlx::query("UPDATE plans SET free=false,is_default=false WHERE id=$1::text::uuid")
+        .bind(&w.plan)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.recover(&w.tenant, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Granted(1)
+    );
+    assert_eq!(w.grants(w.prev).await.len(), 1);
+
+    // A paid plan entitlement without any pinned selection of that plan is still contradictory.
+    let paid_plan = w.f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"publish paid plan","plan":{"name":"paid","rank":2,"free":false}})).await["plan"]["id"].as_str().unwrap().to_owned();
+    let paid_price: Uuid = sqlx::query_scalar("INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1,$2::text::uuid,$3::text::uuid,'requests',0,0,'USD',$4,now(),2) RETURNING id")
+        .bind(Uuid::now_v7()).bind(&paid_plan).bind(&w.service).bind(format!("pri_recovery_{}", Uuid::now_v7())).fetch_one(&w.f.db).await.unwrap();
+    sqlx::query(
+        "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2::text::uuid,$3,$4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(&other)
+    .bind(paid_price)
+    .bind(back)
+    .execute(&w.f.db)
+    .await
+    .unwrap();
+    let error = w.recover(&other, w.prev, w.cur).await.unwrap_err();
+    assert!(
+        error.downcast_ref::<recovery::HistoryInvalid>().is_some(),
+        "{error}"
+    );
+}
