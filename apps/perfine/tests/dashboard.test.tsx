@@ -6,7 +6,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
 import * as P from "@delino/protos/perfine/v1/perfine_pb";
 import { App } from "../src/app";
-import { Detail, Status } from "../src/experiments";
+import { CandidateEvidence, Detail, Status } from "../src/experiments";
 import { Review } from "../src/review";
 import { Operations } from "../src/operations";
 import { Settings } from "../src/repositories";
@@ -139,6 +139,37 @@ describe("mocked typed RPC dashboard", () => {
     ).toBeTruthy();
     expect(screen.queryByText("Verdict: Pass")).toBeNull();
   });
+  it.each([
+    [P.MetricObjective.MAXIMIZE, 110, -0.1, "10%"],
+    [P.MetricObjective.MINIMIZE, 90, -0.1, "-10%"],
+  ])(
+    "shows head-minus-base change for objective %s",
+    (objective, head, regression, expected) => {
+      const comparison = candidate.comparisons[0];
+      const value = {
+        ...candidate,
+        comparisons: [
+          {
+            ...comparison,
+            metric: { ...comparison.metric!, objective },
+            cases: [
+              {
+                ...comparison.cases[0],
+                baseValue: 100,
+                headValue: head,
+                relativeChange: regression,
+              },
+            ],
+          },
+        ],
+      };
+      render(<CandidateEvidence candidate={value} />);
+      expect(
+        screen.getByText("Change (head − base)").nextElementSibling
+          ?.textContent,
+      ).toBe(expected);
+    },
+  );
   it("shows valid no-candidate and cancellation states", async () => {
     mount(
       () => (
