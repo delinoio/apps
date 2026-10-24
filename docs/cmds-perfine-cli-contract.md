@@ -89,3 +89,5 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+Approved local publication creates drafts through the [GitHub REST pull-request endpoint](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request), with an explicit head repository for personal and organization-owned forks. Request bodies preserve the exact approved text; successful responses still require exact SHA and content reconciliation.

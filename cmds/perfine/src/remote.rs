@@ -278,34 +278,12 @@ impl App {
             )?;
         }
         engine.begin_publication(&request(), &record.approval, &binding, authority, now())?;
-        let body = tempfile::NamedTempFile::new()?;
-        fs::write(body.path(), &draft.body)?;
-        let owner = draft
-            .head_repository
-            .split('/')
-            .next()
-            .context("head owner")?;
-        let head = format!("{owner}:{}", draft.head_ref);
-        let output = Command::new("gh")
-            .args([
-                "pr",
-                "create",
-                "--draft",
-                "--repo",
-                &draft.target_repository,
-                "--base",
-                &draft.base_ref,
-                "--head",
-                &head,
-                "--title",
-                &draft.title,
-                "--body-file",
-            ])
-            .arg(body.path())
-            .output();
-        let outcome = match output {
-            Ok(out) if out.status.success() => {
-                let url = String::from_utf8(out.stdout)?.trim().to_owned();
+        let outcome = match create_pull_request(&draft, &mut Command::new("gh")) {
+            Ok(created) => {
+                let url = created["html_url"]
+                    .as_str()
+                    .context("created PR URL")?
+                    .to_owned();
                 ensure!(
                     url.starts_with(&format!(
                         "https://github.com/{}/pull/",
@@ -352,6 +330,33 @@ impl App {
             engine.approval(&id, &record.approval)?,
         )?)
     }
+}
+
+// REST supports organization-owned fork heads, including two repositories owned
+// by the same organization. `gh pr create --head owner:branch` does not.
+fn create_pull_request(draft: &Draft, command: &mut Command) -> Result<Value> {
+    let (owner, repo) = draft
+        .head_repository
+        .split_once('/')
+        .context("head repository")?;
+    let payload = json!({"head":format!("{owner}:{}",draft.head_ref),"head_repo":repo,"base":draft.base_ref,"title":draft.title,"body":draft.body,"draft":true});
+    let input = tempfile::NamedTempFile::new()?;
+    fs::write(input.path(), serde_json::to_vec(&payload)?)?;
+    let output = command
+        .args([
+            "api",
+            &format!("repos/{}/pulls", draft.target_repository),
+            "--method",
+            "POST",
+            "--input",
+        ])
+        .arg(input.path())
+        .output()?;
+    ensure!(
+        output.status.success(),
+        "GitHub draft creation failed; reconcile before retry"
+    );
+    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 // Connect JSON wire envelopes keep uint64 values as decimal strings. The caller's
@@ -751,7 +756,38 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArtifactKind, secure_url};
+    use super::{ArtifactKind, Draft, create_pull_request, secure_url};
+    #[test]
+    fn fork_creation_uses_structured_rest_payload_for_personal_and_organization_owners() {
+        for owner in ["person", "organization"] {
+            let draft = Draft {
+                schema_version: perfine_core::types::Version,
+                target_repository: "organization/upstream".into(),
+                base_ref: "main".into(),
+                head_repository: format!("{owner}/fork"),
+                head_ref: "candidate".into(),
+                title: "Exact title".into(),
+                body: "Literal $() and `text`\nSecond line".into(),
+            };
+            let mut command = std::process::Command::new("python3");
+            command.args([
+                "-c",
+                r"import sys,json
+assert sys.argv[1:5] == ['api','repos/organization/upstream/pulls','--method','POST']
+assert sys.argv[5] == '--input'
+payload=json.load(open(sys.argv[6]))
+assert payload['head'] in ['person:candidate','organization:candidate']
+assert payload['head_repo']=='fork' and payload['base']=='main' and payload['draft'] is True
+assert payload['body']=='Literal $() and `text`\nSecond line'
+print(json.dumps({'html_url':'https://github.com/organization/upstream/pull/1'}))
+",
+            ]);
+            assert_eq!(
+                create_pull_request(&draft, &mut command).unwrap()["html_url"],
+                "https://github.com/organization/upstream/pull/1"
+            );
+        }
+    }
     #[test]
     fn upload_rejects_credential_urls_and_non_artifact_content() {
         assert!(secure_url("http://example.com/upload").is_err());

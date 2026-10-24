@@ -244,7 +244,7 @@ fn publication_reconciles_lost_response(
     let token = preview["result"]["approval_sha256"].as_str().unwrap();
     let pulls = json!([{"head":{"sha":head},"base":{"sha":base},"title":draft["title"],"body":draft["body"],"draft":true,"html_url":"https://github.com/fixture/upstream/pull/1"}]);
     let script = format!(
-        "#!/bin/sh\ncase \"$1 $2\" in\n'api user') printf '%s' '{{\"login\":\"fixture\"}}';;\n'api repos/fixture/fork') printf '%s' '{{\"permissions\":{{\"push\":true}}}}';;\n'api repos/fixture/upstream/commits/main') printf '%s' '{{\"sha\":\"{base}\"}}';;\n'api repos/fixture/fork/commits/candidate') printf '%s' '{{\"sha\":\"{head}\"}}';;\n'api repos/fixture/upstream/pulls?'*) printf '%s' '{pulls}';;\n'pr create') printf 'attempt\\n' >> \"{}\"; exit 1;;\n*) exit 1;;\nesac\n",
+        "#!/bin/sh\ncase \"$1 $2\" in\n'api user') printf '%s' '{{\"login\":\"fixture\"}}';;\n'api repos/fixture/fork') printf '%s' '{{\"permissions\":{{\"push\":true}}}}';;\n'api repos/fixture/upstream/commits/main') printf '%s' '{{\"sha\":\"{base}\"}}';;\n'api repos/fixture/fork/commits/candidate') printf '%s' '{{\"sha\":\"{head}\"}}';;\n'api repos/fixture/upstream/pulls?'*) printf '%s' '{pulls}';;\n'api repos/fixture/upstream/pulls') printf 'attempt\\n' >> \"{}\"; exit 1;;\n*) exit 1;;\nesac\n",
         dir.join("attempts").display()
     );
     let executable = dir.join("gh");
