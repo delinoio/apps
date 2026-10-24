@@ -1059,6 +1059,18 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap(),
         1
     );
+    // A connection-only space must release its repository without losing cleanup identity.
+    let connection_only_space = uuid::Uuid::now_v7();
+    sqlx::query("UPDATE perfine_connections SET space=$2,active=true,data=jsonb_set(jsonb_set(data,'{state}','\"CONNECTION_STATE_CONNECTED\"'),'{spaceId}',to_jsonb($2::text)) WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).bind(connection_only_space).execute(&db).await.unwrap();
+    server.maintain().await.unwrap();
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
     *state.lock().unwrap() = "TENANT_STATE_DELETED".into();
     server.maintain().await.unwrap();
     assert_eq!(
@@ -1068,6 +1080,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap(),
         0
     );
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    *state.lock().unwrap() = "TENANT_STATE_ACTIVE".into();
+    let replacement=call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap();
+    assert_ne!(replacement["connection"]["id"], c["id"]);
     db.close().await;
     sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
         .execute(&admin)
