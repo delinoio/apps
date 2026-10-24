@@ -1316,6 +1316,93 @@ async fn usage_that_cannot_be_stored_fails_the_request_loudly() {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_caller_deadline_header_does_not_preempt_the_persistence_allowance() {
+    for (encoding, header) in [
+        (Encoding::Json, "1"),
+        (Encoding::Proto, "40"),
+        (Encoding::Json, "garbage"),
+    ] {
+        let context = format!("{encoding:?} {header}");
+        let db = TestDb::migrated().await;
+        let h = Harness::start_with(Some(db.pool.clone()), |c| {
+            c.limits.execution_timeout = std::time::Duration::from_millis(400)
+        })
+        .await;
+        // Confirmed usage arrives just before the server deadline; the insert is held across it
+        // and released inside the five-second finalization allowance.
+        h.gateway
+            .push(Reply::Delay(250, Box::new(Reply::ok(r#"["ok"]"#, 21, 4))));
+        let mut blocker = db.pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE usage_outbox IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+            blocker.commit().await.unwrap();
+        });
+        let wire = h
+            .call_with(
+                "Translate",
+                USER_TOKEN,
+                &translate_body(&["Hello"]),
+                encoding,
+                Some(header),
+            )
+            .await;
+        release.await.unwrap();
+        assert!(wire.ok(), "{context}: {} {}", wire.status, wire.body);
+        assert_eq!(wire.body["translations"], json!(["ok"]), "{context}");
+        assert_eq!(h.gateway.calls(), 1, "{context}");
+        let stored = rows(&db.pool).await;
+        assert_eq!(stored.len(), 2, "{context}");
+        assert!(stored.iter().any(|r| r.1 == "gem_in" && r.2 == 21));
+        assert!(stored.iter().any(|r| r.1 == "gem_out" && r.2 == 4));
+        db.finish().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_caller_deadline_header_does_not_replace_a_typed_persistence_failure() {
+    for (encoding, header) in [(Encoding::Json, "1"), (Encoding::Proto, "40")] {
+        let context = format!("{encoding:?} {header}");
+        let db = TestDb::migrated().await;
+        let h = Harness::start(Some(db.pool.clone())).await;
+        sqlx::query("ALTER TABLE usage_outbox RENAME TO usage_outbox_away")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        h.gateway
+            .push(Reply::Delay(120, Box::new(Reply::ok(r#"["ok"]"#, 21, 4))));
+        let wire = h
+            .call_with(
+                "Translate",
+                USER_TOKEN,
+                &translate_body(&["Hello"]),
+                encoding,
+                Some(header),
+            )
+            .await;
+        assert_eq!(wire.code(), "unavailable", "{context}: {}", wire.body);
+        assert_eq!(
+            wire.reason(),
+            "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+            "{context}"
+        );
+        let (_, detail_request_id) = wire.detail();
+        assert_eq!(
+            wire.request_id_header.as_deref(),
+            Some(detail_request_id.as_str()),
+            "{context}"
+        );
+        assert_eq!(h.gateway.calls(), 1, "{context}");
+        db.finish().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn a_restarted_instance_delivers_usage_recorded_before_the_restart() {
     let db = TestDb::migrated().await;
     let first = Harness::start(Some(db.pool.clone())).await;
