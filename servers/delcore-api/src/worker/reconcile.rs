@@ -132,12 +132,49 @@ impl Worker {
                         Ok(v) => v,
                         Err(e) => return self.retry(&j, e, true).await,
                     };
-                    let state: provider::Transaction = match serde_json::from_value(raw) {
+                    let state: provider::Transaction = match serde_json::from_value(raw.clone()) {
                         Ok(v) => v,
                         Err(_) => return self.retry(&j, Error::Ambiguous, true).await,
                     };
                     if state.id != j.external_id {
                         return self.retry(&j, Error::Ambiguous, true).await;
+                    }
+                    if state.status == "canceled" {
+                        // A canceled subscription can never renew, so the scheduled change can no
+                        // longer apply, whether or not the saved items still match it. Project the
+                        // cancellation through the same ordered path as the notification, at the
+                        // provider's own `canceled_at` (see the cancel branch above). The
+                        // projection is keyed by the saved subscription ID: it only changes a
+                        // tenant that still carries this subscription, and it is a no-op when the
+                        // notification was applied first or the association was already cleared.
+                        // The job is then retired as superseded without installing the requested
+                        // paid selections. This also covers retrying a job that failed with
+                        // `subscription_mismatch` after cancellation won.
+                        let Some(canceled_at) = provider::canceled_at(&raw, Utc::now()) else {
+                            tracing::warn!(
+                                kind = j.kind,
+                                "canceled subscription has no valid cancellation time; retrying"
+                            );
+                            return self.retry(&j, Error::Ambiguous, true).await;
+                        };
+                        let event = provider::Event {
+                            r#type: "subscription.canceled".into(),
+                            occurred_at: canceled_at,
+                            data: raw,
+                            ..Default::default()
+                        };
+                        let mut tx = postgres::begin(&self.pool).await?;
+                        self.subscription_event(&mut tx, &event).await?;
+                        tx.commit().await?;
+                        tracing::info!(
+                            job_id = j.id,
+                            tenant_id = j.tenant,
+                            subscription_id = j.external_id,
+                            "scheduled subscription change superseded by confirmed cancellation"
+                        );
+                        return self
+                            .finish(&j, "done", "superseded_by_cancellation", &j.external_id)
+                            .await;
                     }
                     if !webhook::matches_prices(&state, &p.external_price_ids) {
                         return self

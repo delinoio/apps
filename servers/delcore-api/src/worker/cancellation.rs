@@ -7,6 +7,7 @@ impl Worker {
         &self,
         tx: &mut PgConnection,
         tenant: &str,
+        subscription: &str,
         at: DateTime<Utc>,
     ) -> Result<()> {
         // Confirmed cancellation ends the subscription-scoped renewal failure in the same
@@ -47,6 +48,19 @@ impl Worker {
             tenant_id = tenant,
             completed_jobs = completed,
             "confirmed cancellation completed cancel jobs"
+        );
+        // The same transaction retires the scheduled paid downgrade or add-on removal of the
+        // canceled subscription: a canceled subscription never renews, so the change can no longer
+        // apply and must not hold later subscription changes or final deletion. Only attempted
+        // `do_not_bill` jobs saved against this subscription are retired; the job keeps its saved
+        // provider ID and history, other subscriptions' jobs and unresolved initial payments are
+        // untouched, and the requested paid selections are never installed.
+        let superseded=sqlx::query("UPDATE jobs SET state='done',error_category='superseded_by_cancellation',updated_at=now() WHERE tenant_id=$1 AND kind='subscription' AND payload->>'timing'='do_not_bill' AND state IN ('pending','running','reconcile','failed') AND external_id=$2").bind(uid(tenant)?).bind(subscription).execute(&mut *tx).await?.rows_affected();
+        tracing::info!(
+            tenant_id = tenant,
+            subscription_id = subscription,
+            superseded_jobs = superseded,
+            "confirmed cancellation retired scheduled subscription changes"
         );
         postgres::grant_allowances(
             tx,
