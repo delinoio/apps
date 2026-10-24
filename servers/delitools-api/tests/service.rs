@@ -5,9 +5,11 @@
 
 mod common;
 
+use buffa::Message;
 use common::*;
 use delitools_api::delcore::IngestFailure;
 use serde_json::json;
+use std::io::Write;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -678,6 +680,270 @@ async fn transport_bound_admits_input_that_only_escaping_makes_large() {
     let too_large = "a".repeat(200_001);
     let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
     assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+}
+
+/// Transport allowance for the given limits: six bytes per decoded byte plus 64 KiB.
+fn allowance(input: usize, schema: usize) -> usize {
+    (input + schema) * 6 + (64 << 10)
+}
+
+async fn harness_with_input_limit(input: usize) -> Harness {
+    Harness::start_with(None, |c| {
+        c.limits.max_input_bytes = input;
+        c.limits.max_schema_bytes = 32_768;
+    })
+    .await
+}
+
+fn json_translate(text: &str) -> Vec<u8> {
+    serde_json::to_vec(&translate_body(&[text])).unwrap()
+}
+
+fn proto_translate(text: &str) -> Vec<u8> {
+    delino_protocol::delitools::v1::TranslateRequest {
+        tenant_id: TENANT.into(),
+        texts: vec![text.into()],
+        target_language: "fr".into(),
+        model: MODEL.into(),
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
+/// A valid JSON request followed by trailing whitespace up to exactly `size` bytes.
+fn json_padded_to(size: usize) -> Vec<u8> {
+    let mut body = json_translate("a");
+    assert!(body.len() <= size);
+    body.resize(size, b' ');
+    body
+}
+
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// The documented transport rejection: plain `resource_exhausted`, no `ErrorDetail` and no
+/// request ID, produced before any handler work.
+fn assert_transport_rejection(reply: &RawReply, what: &str) {
+    assert_eq!(reply.status, 429, "{what}: {}", reply.head);
+    let body = reply.json();
+    assert_eq!(body["code"], "resource_exhausted", "{what}: {body}");
+    assert!(
+        body.get("details")
+            .and_then(|d| d.as_array())
+            .is_none_or(|d| d.is_empty()),
+        "{what}: {body}"
+    );
+    assert_eq!(reply.header(REQUEST_ID), None, "{what}");
+}
+
+/// A body that reached the handler: typed `UNAUTHENTICATED` (no credentials were sent) with a
+/// request ID that matches the response header.
+fn assert_reached_handler(reply: &RawReply, what: &str) {
+    let wire = reply.wire();
+    assert_eq!(wire.status, 401, "{what}: {}", reply.head);
+    let (reason, request_id) = wire.detail();
+    assert_eq!(reason, "ERROR_REASON_UNAUTHENTICATED", "{what}");
+    assert!(!request_id.is_empty(), "{what}");
+    assert_eq!(wire.request_id_header.as_deref(), Some(request_id.as_str()));
+}
+
+#[tokio::test]
+async fn escaped_bodies_above_four_mib_reach_the_handler_within_the_allowance() {
+    let h = harness_with_input_limit(1_000_000).await;
+    // 1,000,000 U+0001 characters encode as six bytes each: about 6 MB on the wire, above the
+    // 4 MiB default body limit and below the computed allowance.
+    let text = "\u{1}".repeat(1_000_000);
+    let body = json_translate(&text);
+    assert!(body.len() > 4 << 20);
+    assert!(body.len() <= allowance(1_000_000, 32_768));
+
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            None,
+            Framing::ContentLength,
+            body,
+        )
+        .await;
+    assert_reached_handler(&reply, "without credentials");
+    assert_eq!(h.gateway.calls(), 0);
+
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&[&text])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+
+    // A decoded input one byte above the limit still gets the typed handler error, even though
+    // its escaped body is also above 4 MiB.
+    let too_large = "\u{1}".repeat(1_000_001);
+    let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+    assert_eq!(wire.code(), "resource_exhausted");
+    assert!(!wire.detail().1.is_empty());
+    assert_eq!(
+        wire.request_id_header.as_deref(),
+        Some(wire.detail().1.as_str())
+    );
+    let too_large = "a".repeat(1_000_001);
+    let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn four_mib_of_decoded_input_is_transportable_for_json_and_protobuf() {
+    let max = 4_194_304;
+    let h = harness_with_input_limit(max).await;
+    let text = "a".repeat(max);
+
+    let json = json_translate(&text);
+    assert!(json.len() > 4 << 20);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&[&text])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+
+    let proto = proto_translate(&text);
+    assert!(proto.len() > 4 << 20);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let reply = h
+        .raw(
+            "Translate",
+            "application/proto",
+            None,
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            proto,
+        )
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.head);
+    assert!(reply.header(REQUEST_ID).is_some());
+    assert_eq!(h.gateway.calls(), 2);
+
+    // The same request without credentials is classified by the handler, not the transport.
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            None,
+            Framing::Chunked,
+            json,
+        )
+        .await;
+    assert_reached_handler(&reply, "chunked 4 MiB input");
+
+    // One byte above the computed allowance is still rejected before any handler work.
+    let limit = allowance(max, 32_768);
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            json_padded_to(limit + 1),
+        )
+        .await;
+    assert_transport_rejection(&reply, "maximum configuration");
+    assert_eq!(h.gateway.calls(), 2);
+}
+
+#[tokio::test]
+async fn bodies_above_the_allowance_are_rejected_before_handler_work() {
+    let h = Harness::start(None).await;
+    let limit = allowance(
+        h.config.limits.max_input_bytes,
+        h.config.limits.max_schema_bytes,
+    );
+    for (framing, name) in [
+        (Framing::ContentLength, "content-length"),
+        (Framing::Chunked, "chunked"),
+    ] {
+        h.gateway.push(Reply::without_usage(r#"["x"]"#));
+        let reply = h
+            .raw(
+                "Translate",
+                "application/json",
+                None,
+                Some(USER_TOKEN),
+                framing,
+                json_padded_to(limit),
+            )
+            .await;
+        // Exactly the allowance is admitted: the padded body is a valid request, so the
+        // handler runs and the scripted Gateway answers it.
+        assert_eq!(reply.status, 200, "{name}: {}", reply.head);
+        assert!(reply.header(REQUEST_ID).is_some(), "{name}");
+
+        let reply = h
+            .raw(
+                "Translate",
+                "application/json",
+                None,
+                Some(USER_TOKEN),
+                framing,
+                json_padded_to(limit + 1),
+            )
+            .await;
+        assert_transport_rejection(&reply, name);
+    }
+    let reply = h
+        .raw(
+            "Extract",
+            "application/proto",
+            None,
+            None,
+            Framing::Chunked,
+            vec![0; limit + 1],
+        )
+        .await;
+    assert_transport_rejection(&reply, "protobuf");
+    // Only the two admitted boundary requests reached the Gateway.
+    assert_eq!(h.gateway.calls(), 2);
+}
+
+#[tokio::test]
+async fn decompressed_messages_above_the_allowance_are_rejected() {
+    let h = Harness::start(None).await;
+    let limit = allowance(
+        h.config.limits.max_input_bytes,
+        h.config.limits.max_schema_bytes,
+    );
+
+    // The compressed body is tiny, so only the decompression limit can reject it.
+    let bomb = gzip(&json_padded_to(limit + 1));
+    assert!(bomb.len() < limit);
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            Some("gzip"),
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            bomb,
+        )
+        .await;
+    assert_transport_rejection(&reply, "decompression above the allowance");
+
+    // A body that expands to exactly the allowance is handed to the handler.
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            Some("gzip"),
+            None,
+            Framing::ContentLength,
+            gzip(&json_padded_to(limit)),
+        )
+        .await;
+    assert_reached_handler(&reply, "decompression at the allowance");
+    assert_eq!(h.gateway.calls(), 0);
 }
 
 #[tokio::test]

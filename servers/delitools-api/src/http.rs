@@ -56,6 +56,9 @@ pub fn router(server: Server) -> Router {
     // One decoded byte can take six bytes on the wire (`\u00XX` for a control
     // character), so the transport bound covers the worst-case JSON escaping of the
     // configured input and schema limits. Handlers apply the exact limits after decoding.
+    // Connect keeps two independent limits: the on-wire body (default 4 MiB) and the
+    // decoded or decompressed message. Both must use the computed allowance, otherwise the
+    // default body limit silently caps the documented allowance at 4 MiB.
     let limit = server
         .config
         .limits
@@ -63,10 +66,13 @@ pub fn router(server: Server) -> Router {
         .saturating_add(server.config.limits.max_schema_bytes)
         .saturating_mul(6)
         .saturating_add(64 << 10);
+    let limits = connectrpc::Limits::default()
+        .with_max_request_body_size(limit)
+        .with_max_message_size(limit);
     let rpc = connectrpc::Router::new()
         .add_service(Arc::new(server.clone()))
         .into_axum_service()
-        .with_limits(connectrpc::Limits::default().with_max_message_size(limit))
+        .with_limits(limits)
         .with_interceptor(DecodeErrorSanitizer {
             metrics: server.metrics.clone(),
         });

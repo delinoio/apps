@@ -6,7 +6,7 @@
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -554,6 +554,52 @@ impl Wire {
     }
 }
 
+/// A reply read from a raw socket, for bodies that `reqwest` would reframe.
+pub struct RawReply {
+    pub status: u16,
+    pub head: String,
+    pub body: Vec<u8>,
+}
+
+impl RawReply {
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).unwrap_or_else(|e| {
+            panic!(
+                "JSON reply expected ({e}): {}",
+                String::from_utf8_lossy(&self.body)
+            )
+        })
+    }
+    pub fn header(&self, name: &str) -> Option<String> {
+        self.head.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
+        })
+    }
+    /// The decoded Connect JSON error or reply.
+    pub fn wire(&self) -> Wire {
+        Wire {
+            status: self.status,
+            request_id_header: self.header(REQUEST_ID),
+            retry_after: self.header("retry-after"),
+            body: serde_json::from_slice(&self.body).unwrap_or(Value::Null),
+            raw: String::from_utf8_lossy(&self.body).into_owned(),
+            bytes: self.body.clone(),
+        }
+    }
+}
+
+/// How a raw request body is framed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Framing {
+    ContentLength,
+    /// `Transfer-Encoding: chunked` without a `Content-Length` header.
+    Chunked,
+}
+
+pub const REQUEST_ID: &str = "x-delitools-request-id";
+
 pub struct Harness {
     pub base: String,
     pub delcore: Delcore,
@@ -677,6 +723,10 @@ impl Harness {
         let gateway_url = serve(
             Router::new()
                 .route("/v1/chat/completions", post(gateway_handler))
+                // Only the mock's own extractor limit (2 MiB by default) is raised so that
+                // large escaped prompts reach the success fixtures; the server under test
+                // keeps its production limits.
+                .layer(DefaultBodyLimit::max(64 << 20))
                 .with_state(gateway.clone()),
         )
         .await;
@@ -768,6 +818,110 @@ impl Harness {
             raw: String::from_utf8_lossy(&bytes).into_owned(),
             bytes: bytes.to_vec(),
         }
+    }
+
+    /// Posts exact bytes to `method` over a raw HTTP/1.1 socket and reads the reply to EOF.
+    /// `content_type` is `application/json` or `application/proto`; `encoding` is an optional
+    /// `Content-Encoding`. The reply is read while the body is still being written, because the
+    /// server may answer and close before it has consumed an oversized body.
+    pub async fn raw(
+        &self,
+        method: &str,
+        content_type: &str,
+        encoding: Option<&str>,
+        token: Option<&str>,
+        framing: Framing,
+        body: Vec<u8>,
+    ) -> RawReply {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let address = self.base.trim_start_matches("http://").to_owned();
+        let socket = tokio::net::TcpStream::connect(&address).await.unwrap();
+        let (mut reader, mut writer) = socket.into_split();
+        let mut head = format!(
+            "POST /delitools.v1.DelitoolsService/{method} HTTP/1.1\r\nHost: {address}\r\nContent-Type: {content_type}\r\nConnect-Protocol-Version: 1\r\nConnection: close\r\n"
+        );
+        if let Some(encoding) = encoding {
+            head.push_str(&format!("Content-Encoding: {encoding}\r\n"));
+        }
+        if let Some(token) = token {
+            head.push_str(&format!("Authorization: Bearer {token}\r\n"));
+        }
+        match framing {
+            Framing::ContentLength => {
+                head.push_str(&format!("Content-Length: {}\r\n", body.len()));
+            }
+            Framing::Chunked => head.push_str("Transfer-Encoding: chunked\r\n"),
+        }
+        head.push_str("\r\n");
+        let writer_task = tokio::spawn(async move {
+            // Write errors are expected when the server rejects the body early.
+            if writer.write_all(head.as_bytes()).await.is_err() {
+                return;
+            }
+            match framing {
+                Framing::ContentLength => {
+                    let _ = writer.write_all(&body).await;
+                }
+                Framing::Chunked => {
+                    for chunk in body.chunks(64 << 10) {
+                        let frame = format!("{:x}\r\n", chunk.len());
+                        if writer.write_all(frame.as_bytes()).await.is_err()
+                            || writer.write_all(chunk).await.is_err()
+                            || writer.write_all(b"\r\n").await.is_err()
+                        {
+                            return;
+                        }
+                    }
+                    let _ = writer.write_all(b"0\r\n\r\n").await;
+                }
+            }
+            let _ = writer.flush().await;
+            // Keep the write half open until the reply has been read.
+            std::future::pending::<()>().await;
+        });
+        let mut raw = Vec::new();
+        // A reset after a complete early reply is expected; keep what was received.
+        let _ = tokio::time::timeout(Duration::from_secs(30), reader.read_to_end(&mut raw)).await;
+        writer_task.abort();
+        let split = raw
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .unwrap_or_else(|| panic!("a complete HTTP reply head: {} bytes", raw.len()));
+        let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+        let status = head
+            .lines()
+            .next()
+            .unwrap()
+            .split(' ')
+            .nth(1)
+            .unwrap()
+            .parse::<u16>()
+            .unwrap();
+        let rest = &raw[split + 4..];
+        let body = if head
+            .to_ascii_lowercase()
+            .contains("transfer-encoding: chunked")
+        {
+            let mut decoded = Vec::new();
+            let mut rest = rest;
+            loop {
+                let line_end = rest.windows(2).position(|w| w == b"\r\n").unwrap();
+                let size = usize::from_str_radix(
+                    std::str::from_utf8(&rest[..line_end]).unwrap().trim(),
+                    16,
+                )
+                .unwrap();
+                if size == 0 {
+                    break;
+                }
+                decoded.extend_from_slice(&rest[line_end + 2..line_end + 2 + size]);
+                rest = &rest[line_end + 2 + size + 2..];
+            }
+            decoded
+        } else {
+            rest.to_vec()
+        };
+        RawReply { status, head, body }
     }
 
     /// Sends a request that the caller may abandon: returns the in-flight future.

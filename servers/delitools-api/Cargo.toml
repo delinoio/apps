@@ -35,4 +35,5 @@ oxilangtag = "0.1"
 jsonschema = { version = "0.60", default-features = false }
 
 [dev-dependencies]
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tracing-subscriber.workspace = true
