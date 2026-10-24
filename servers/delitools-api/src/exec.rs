@@ -22,7 +22,7 @@
 //! Cancellation has two sources: the caller (handler drop) and the service-wide fence that closes
 //! when the process loses the instance lock. Each job's token is a child of the fence, so both end
 //! provider calls and retries the same way, and neither blocks the storing of confirmed usage; the
-//! fence only bounds that storing by `DEPENDENCY_TIMEOUT` so the old process can exit.
+//! finite persistence budget (`DEPENDENCY_TIMEOUT`) bounds that storing so the old process can exit.
 
 use crate::{
     Inner,
@@ -92,6 +92,9 @@ pub struct Job {
     pub cancel: CancellationToken,
     pub permit: Permit,
 }
+
+/// Maximum tries to store the events of one attempt, within one `dependency_timeout` budget.
+const PERSIST_ATTEMPTS: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stop {
@@ -347,48 +350,57 @@ impl Inner {
             return Ok(());
         }
         let tenant = Uuid::parse_str(&job.principal.tenant_id).map_err(|_| ApiError::internal())?;
-        let persist = async {
-            for tries in 0..3u64 {
-                match self
-                    .outbox
-                    .insert_attempt(
-                        tenant,
-                        job.request_id,
-                        attempt,
-                        job.started_at,
-                        &events,
-                        server_common::now(),
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        for event in &events {
-                            self.metrics
-                                .usage_persisted
-                                .with_label_values(&[event.direction.as_str()])
-                                .inc();
-                        }
-                        return true;
+        // One finite budget covers every try, backoff, acquisition and commit. It starts when
+        // persistence begins and ignores caller cancellation, the instance fence and the provider
+        // deadline, so a held lock cannot keep the tenant permit or a pooled connection
+        // indefinitely. Because the budget is `DEPENDENCY_TIMEOUT`, confirmed usage is stored
+        // whatever cancels the job, and a fenced process finishes this step within the same bound;
+        // the rows already written stay in the outbox for the replacement to deliver.
+        let deadline = Instant::now() + self.config.dependency_timeout;
+        for tries in 0..PERSIST_ATTEMPTS {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match self
+                .outbox
+                .insert_attempt(
+                    tenant,
+                    job.request_id,
+                    attempt,
+                    job.started_at,
+                    &events,
+                    server_common::now(),
+                    remaining,
+                )
+                .await
+            {
+                Ok(()) => {
+                    for event in &events {
+                        self.metrics
+                            .usage_persisted
+                            .with_label_values(&[event.direction.as_str()])
+                            .inc();
                     }
-                    Err(_) => tokio::time::sleep(Duration::from_millis(50 * (tries + 1))).await,
+                    return Ok(());
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        category = "usage_persist",
+                        attempt,
+                        try_number = tries + 1,
+                        error = %error,
+                        "storing confirmed usage failed"
+                    );
+                    if tries + 1 < PERSIST_ATTEMPTS {
+                        let backoff = Duration::from_millis(50 * (u64::from(tries) + 1));
+                        tokio::time::sleep(
+                            backoff.min(deadline.saturating_duration_since(Instant::now())),
+                        )
+                        .await;
+                    }
                 }
             }
-            false
-        };
-        // Confirmed usage is stored whatever cancels the job. Once the instance fence closes,
-        // the old process may only finish this accounting step within `DEPENDENCY_TIMEOUT`; the
-        // rows already written stay in the outbox for the replacement to deliver.
-        let fence = self.fence.clone();
-        let bound = async {
-            fence.cancelled().await;
-            tokio::time::sleep(self.config.dependency_timeout).await;
-        };
-        let stored = tokio::select! {
-            stored = persist => stored,
-            _ = bound => false,
-        };
-        if stored {
-            return Ok(());
         }
         self.metrics.persist_failures.inc();
         tracing::error!(

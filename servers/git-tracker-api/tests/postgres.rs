@@ -16,6 +16,20 @@ const KEY: &[u8] = include_bytes!("fixtures/github-test-key.pem");
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
+    permissions_atomic_upload_oidc_visibility_and_cleanup(chrono::Duration::days(90), false).await;
+}
+// A retention accepted at startup but too large for any representable cutoff must not stop the
+// ordinary maintenance duties and must keep every audit row.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_full_cycle_with_unrepresentable_audit_retention() {
+    let retention = chrono::Duration::from_std(Duration::from_secs(9_999_999_999 * 3600)).unwrap();
+    permissions_atomic_upload_oidc_visibility_and_cleanup(retention, true).await;
+}
+async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
+    retention: chrono::Duration,
+    retains_audit: bool,
+) {
     let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
     let admin = sqlx::PgPool::connect(&url).await.unwrap();
     let schema = format!("tracker_{}", uuid::Uuid::now_v7().simple());
@@ -100,7 +114,7 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
             EncodingKey::from_rsa_pem(KEY).unwrap(),
         ),
         actions: Actions::new(http.clone(), format!("{base}/jwks"), jwks),
-        audit_retention: chrono::Duration::days(90),
+        audit_retention: retention,
         webhook_secret: "fixture-only".into(),
         metrics: Arc::new(Metrics::new(Service::GitTracker)),
     });
@@ -427,10 +441,28 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     stale["execution"]["context"]["execution_id"] = json!("stale-maintenance");
     sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-maintenance'],$2) WHERE id::text=$1")
         .bind(&rid).bind(&stale).execute(&db).await.unwrap();
+    // An audit row of an unrelated space that is far older than any ordinary retention.
+    let old_audit = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO git_tracker_audit VALUES($1,$2,'old_fixture',$3,'2000-01-01T00:00:00Z')",
+    )
+    .bind(old_audit)
+    .bind(uuid::Uuid::now_v7())
+    .bind(uuid::Uuid::now_v7())
+    .execute(&db)
+    .await
+    .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(events.get(), before + 2);
     server.maintain().await.unwrap();
     assert_eq!(events.get(), before + 2);
+    let old_audit_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM git_tracker_audit WHERE id=$1")
+            .bind(old_audit)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(old_audit_rows, i64::from(retains_audit));
     let (status, _) = call(
         &http,
         &base,
@@ -447,6 +479,13 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+    let old_audit_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM git_tracker_audit WHERE id=$1")
+            .bind(old_audit)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(old_audit_rows, i64::from(retains_audit));
     let failures = server
         .metrics
         .events

@@ -90,6 +90,33 @@ impl Drop for Settlement<'_> {
     }
 }
 
+/// Builds the `api.request` span for one request.
+///
+/// DevBase spans carry only bounded, server-chosen values because the span is exported through
+/// OpenTelemetry: `procedure` is the allowlisted procedure name or the constant `unknown`, and
+/// `method_class` is `post` or the constant `other`. The raw request path and method are
+/// caller-controlled and never become span attributes. Git Tracker keeps its existing
+/// `method`/`path` span fields.
+fn request_span(
+    policy: &Policy,
+    procedure: Option<&'static str>,
+    method: &Method,
+    path: &str,
+) -> tracing::Span {
+    match policy.service {
+        Service::DevBase => tracing::info_span!(
+            "api.request",
+            procedure = procedure.unwrap_or("unknown"),
+            method_class = if method == Method::POST {
+                "post"
+            } else {
+                "other"
+            },
+        ),
+        Service::GitTracker => tracing::info_span!("api.request", method = %method, path = %path),
+    }
+}
+
 pub async fn middleware(
     State(policy): State<Policy>,
     mut request: Request,
@@ -105,13 +132,12 @@ pub async fn middleware(
     let mut response = if preflight {
         StatusCode::NO_CONTENT.into_response()
     } else {
-        let span =
-            tracing::info_span!("api.request",method=%request.method(),path=%request.uri().path());
         // Capture the procedure and start time before the request is moved so that the elapsed
         // time covers body reading as well as handler execution.
         let procedure = policy
             .procedure
             .and_then(|resolve| resolve(request.uri().path()));
+        let span = request_span(&policy, procedure, request.method(), request.uri().path());
         let accounting = Accounting::default();
         if procedure.is_some() {
             request.extensions_mut().insert(accounting.clone());
@@ -664,5 +690,141 @@ mod tests {
         assert!(!parts.headers.contains_key("x-devbase-trace-id"));
         assert!(!parts.headers.contains_key("x-correlation-id"));
         assert!(String::from_utf8_lossy(&body).contains("request timeout"));
+    }
+
+    /// Records every span the middleware creates as exported span data: the span name and each
+    /// field value that reached the subscriber, which is what an OpenTelemetry layer exports.
+    type SpanFields = Vec<(String, String)>;
+    type CapturedSpans = Vec<(String, SpanFields)>;
+    #[derive(Clone, Default)]
+    struct SpanCapture(Arc<Mutex<CapturedSpans>>);
+    struct FieldCollector(Vec<(String, String)>);
+    impl tracing::field::Visit for FieldCollector {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.push((field.name().to_owned(), format!("{value:?}")));
+        }
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.push((field.name().to_owned(), value.to_owned()));
+        }
+    }
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SpanCapture {
+        fn on_new_span(
+            &self,
+            attributes: &tracing::span::Attributes<'_>,
+            _: &tracing::span::Id,
+            _: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut fields = FieldCollector(Vec::new());
+            attributes.record(&mut fields);
+            self.0
+                .lock()
+                .unwrap()
+                .push((attributes.metadata().name().to_owned(), fields.0));
+        }
+    }
+
+    /// Sends one request with the given method and path through the middleware and returns the
+    /// span data captured for it, together with the response status.
+    async fn captured_request(
+        service: Service,
+        procedure: Option<ProcedureResolver>,
+        method: &str,
+        path: &str,
+    ) -> (StatusCode, CapturedSpans) {
+        use tracing_subscriber::layer::SubscriberExt;
+        let capture = SpanCapture::default();
+        // The test runtime is single-threaded, so the thread-local default subscriber sees the
+        // spans created while the request future is polled.
+        let _guard =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(capture.clone()));
+        let app = Router::new()
+            .route(
+                "/devbase.v1.DevBaseService/GetProject",
+                axum::routing::any(|| async { StatusCode::OK }),
+            )
+            .fallback(|| async { StatusCode::NOT_FOUND })
+            .layer(axum::middleware::from_fn_with_state(
+                policy(service, procedure),
+                middleware,
+            ));
+        let response = tower::ServiceExt::oneshot(
+            app,
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let spans = capture.0.lock().unwrap().clone();
+        (response.status(), spans)
+    }
+
+    fn field<'a>(fields: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        fields
+            .iter()
+            .find_map(|(key, value)| (key == name).then_some(value.as_str()))
+    }
+
+    #[tokio::test]
+    async fn devbase_request_spans_carry_only_bounded_identities() {
+        let resolver: ProcedureResolver =
+            |path| (path == "/devbase.v1.DevBaseService/GetProject").then_some("GetProject");
+        let known = "/devbase.v1.DevBaseService/GetProject";
+        // A known procedure exports its static name; the method only selects a fixed class.
+        let (status, spans) =
+            captured_request(Service::DevBase, Some(resolver), "POST", known).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "api.request");
+        assert_eq!(field(&spans[0].1, "procedure"), Some("GetProject"));
+        assert_eq!(field(&spans[0].1, "method_class"), Some("post"));
+        assert_eq!(
+            spans[0].1.len(),
+            2,
+            "no caller-selected attributes: {spans:?}"
+        );
+
+        // Distinct unknown paths and odd methods collapse into one constant identity.
+        let cases = [
+            ("POST", "/secret-tenant/abc123?token=1"),
+            ("POST", "/devbase.v1.DevBaseService/GetProjectX"),
+            ("GET", "/another/unknown/path"),
+            ("PURGE", known),
+            ("X-CALLER-CHOSEN", "/devbase.v1.DevBaseService/Nope"),
+        ];
+        let mut identities = Vec::new();
+        for (method, path) in cases {
+            let (_, spans) = captured_request(Service::DevBase, Some(resolver), method, path).await;
+            assert_eq!(spans.len(), 1, "{method} {path}");
+            assert_eq!(spans[0].0, "api.request");
+            for (key, value) in &spans[0].1 {
+                assert!(
+                    ["procedure", "method_class"].contains(&key.as_str()),
+                    "unexpected span attribute {key}"
+                );
+                for raw in [path, method, "secret-tenant", "abc123", "PURGE", "X-CALLER"] {
+                    assert!(!value.contains(raw), "{key}={value} leaks {raw}");
+                }
+            }
+            identities.push(spans[0].1.clone());
+        }
+        assert_eq!(field(&identities[0], "procedure"), Some("unknown"));
+        assert_eq!(field(&identities[3], "procedure"), Some("GetProject"));
+        assert_eq!(field(&identities[3], "method_class"), Some("other"));
+        assert_eq!(identities[0], identities[1]);
+        assert_eq!(field(&identities[4], "procedure"), Some("unknown"));
+        assert_eq!(field(&identities[4], "method_class"), Some("other"));
+    }
+
+    #[tokio::test]
+    async fn git_tracker_request_span_keeps_method_and_path() {
+        let (_, spans) =
+            captured_request(Service::GitTracker, None, "POST", "/gittracker.v1/Anything").await;
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "api.request");
+        assert_eq!(field(&spans[0].1, "method"), Some("POST"));
+        assert_eq!(field(&spans[0].1, "path"), Some("/gittracker.v1/Anything"));
     }
 }
