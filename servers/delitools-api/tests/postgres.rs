@@ -58,6 +58,7 @@ async fn insert(
                 event(request, attempt, Direction::Output, "gem_out", 40),
             ],
             created,
+            std::time::Duration::from_secs(5),
         )
         .await
         .unwrap();
@@ -1150,6 +1151,148 @@ async fn a_canceled_caller_does_not_lose_usage_that_is_being_stored() {
     db.finish().await;
 }
 
+/// Holds `ACCESS EXCLUSIVE` on the outbox from its own pool until the returned transaction ends.
+async fn lock_outbox(db: &TestDb) -> (sqlx::PgPool, sqlx::Transaction<'static, sqlx::Postgres>) {
+    let holder = db.reconnect().await;
+    let mut blocker = holder.begin().await.unwrap();
+    sqlx::query("LOCK TABLE usage_outbox IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    (holder, blocker)
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_lock_held_beyond_the_budget_fails_once_and_frees_permit_and_connection() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start_with(Some(db.pool.clone()), |c| {
+        c.dependency_timeout = std::time::Duration::from_millis(400);
+    })
+    .await;
+    h.gateway.push(Reply::ok(r#"["ok"]"#, 21, 4));
+    let (holder, blocker) = lock_outbox(&db).await;
+    let started = std::time::Instant::now();
+    let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+    let elapsed = started.elapsed();
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "persistence is bounded by the budget, took {elapsed:?}"
+    );
+    let metrics = h.server.metrics.encode();
+    assert!(metrics.contains("delitools_usage_persist_failures_total 1"));
+    assert!(!metrics.contains("delitools_usage_persisted_total{direction=\"in\"}"));
+    assert_eq!(
+        h.server.in_flight(TENANT),
+        0,
+        "the tenant permit is released"
+    );
+    // The lock is still held: the pool closes within a finite allowance with no connection stuck.
+    tokio::time::timeout(std::time::Duration::from_secs(2), db.pool.close())
+        .await
+        .expect("pool close finishes while the lock is still held");
+    blocker.rollback().await.unwrap();
+    holder.close().await;
+    let verify = db.reconnect().await;
+    assert_eq!(count(&verify, None).await, 0, "no partial rows remain");
+    verify.close().await;
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_lock_released_within_the_budget_after_cancellation_stores_both_directions() {
+    let db = TestDb::migrated().await;
+    let h = Harness::start_with(Some(db.pool.clone()), |c| {
+        c.dependency_timeout = std::time::Duration::from_secs(5);
+    })
+    .await;
+    h.gateway.push(Reply::ok(r#"["ok"]"#, 21, 4));
+    let (holder, blocker) = lock_outbox(&db).await;
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["Hello"])));
+    for _ in 0..100 {
+        if h.gateway.calls() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    pending.abort();
+    let _ = pending.await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    blocker.commit().await.unwrap();
+    holder.close().await;
+    for _ in 0..100 {
+        if count(&db.pool, None).await == 2 && h.server.in_flight(TENANT) == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(count(&db.pool, None).await, 2);
+    assert_eq!(h.server.in_flight(TENANT), 0);
+    assert!(
+        h.server
+            .metrics
+            .encode()
+            .contains("delitools_usage_persist_failures_total 0")
+    );
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn an_exhausted_insert_budget_retires_the_connection_and_a_retry_never_duplicates() {
+    let db = TestDb::migrated().await;
+    let outbox = Outbox::new(db.pool.clone());
+    let request = Uuid::now_v7();
+    let tenant = Uuid::parse_str(TENANT).unwrap();
+    let now = now_micros();
+    let events = [
+        event(request, 1, Direction::Input, "gem_in", 100),
+        event(request, 1, Direction::Output, "gem_out", 40),
+    ];
+    let (holder, blocker) = lock_outbox(&db).await;
+    let started = std::time::Instant::now();
+    let failed = outbox
+        .insert_attempt(
+            tenant,
+            request,
+            1,
+            now,
+            &events,
+            now,
+            std::time::Duration::from_millis(300),
+        )
+        .await;
+    assert!(failed.is_err());
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    blocker.rollback().await.unwrap();
+    holder.close().await;
+    assert_eq!(
+        count(&db.pool, None).await,
+        0,
+        "the timed-out attempt left no rows"
+    );
+    // The same attempt retried (as after an uncertain commit) stores each event key exactly once.
+    for _ in 0..2 {
+        outbox
+            .insert_attempt(
+                tenant,
+                request,
+                1,
+                now,
+                &events,
+                now,
+                std::time::Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(count(&db.pool, None).await, 2);
+    db.finish().await;
+}
+
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn usage_that_cannot_be_stored_fails_the_request_loudly() {
@@ -1958,6 +2101,7 @@ async fn insert_one(outbox: &Outbox, request: Uuid, created: DateTime<Utc>) -> S
             created,
             &[new],
             created,
+            std::time::Duration::from_secs(5),
         )
         .await
         .unwrap();

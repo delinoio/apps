@@ -7,6 +7,7 @@ use axum::{Json, Router, http::StatusCode, routing::post};
 use devbase_api::{Server, config::Config, store};
 use serde_json::{Value, json};
 use server_common::authority::Authority;
+use sqlx::Row;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -229,6 +230,111 @@ async fn deleted_tenant_cleanup_counts_each_cycle() {
     assert_eq!(f.runs(), runs + 1);
     f.server.maintain().await.unwrap();
     assert_eq!(f.runs(), runs + 2);
+    f.finish().await;
+}
+
+/// Inserts one replay record directly so the cleanup scrub is checked without driving the API.
+async fn insert_replay(
+    f: &Fixture,
+    key: &str,
+    operation: &str,
+    project: uuid::Uuid,
+    user: Option<uuid::Uuid>,
+) {
+    sqlx::query("INSERT INTO replays(principal,idempotency_key,operation,tenant_id,project_id,target_user_id,fingerprint,response,created_at,expires_at) VALUES('caller',$1,$2,$3,$4,$5,'\\x010203'::bytea,'\\x0405'::bytea,now(),now()+interval '24 hours')")
+        .bind(key)
+        .bind(operation)
+        .bind(uuid::Uuid::now_v7())
+        .bind(project)
+        .bind(user)
+        .execute(&f.server.db)
+        .await
+        .unwrap();
+}
+
+/// A replay row as `(scrubbed, has target user, has response, fingerprint length)` by caller and key.
+async fn replay(f: &Fixture, key: &str) -> Vec<(bool, bool, bool, i32)> {
+    sqlx::query("SELECT scrubbed,target_user_id IS NOT NULL AS has_target,response IS NOT NULL AS has_response,octet_length(fingerprint) AS fingerprint_length FROM replays WHERE principal='caller' AND idempotency_key=$1")
+        .bind(key)
+        .fetch_all(&f.server.db)
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r.get("scrubbed"),
+                r.get("has_target"),
+                r.get("has_response"),
+                r.get("fingerprint_length"),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn deleted_tenant_cleanup_clears_replay_user_targets() {
+    let f = Fixture::new().await;
+    f.insert_projects(1).await;
+    let doomed: uuid::Uuid = sqlx::query_scalar("SELECT id FROM projects")
+        .fetch_one(&f.server.db)
+        .await
+        .unwrap();
+    // A project that cleanup never visits is the active-replay control.
+    let untouched = uuid::Uuid::now_v7();
+    let user = Some(uuid::Uuid::now_v7());
+    for (project, suffix) in [(doomed, "doomed"), (untouched, "untouched")] {
+        insert_replay(
+            &f,
+            &format!("create-{suffix}"),
+            "CreateEndUser",
+            project,
+            user,
+        )
+        .await;
+        insert_replay(
+            &f,
+            &format!("update-{suffix}"),
+            "UpdateEndUser",
+            project,
+            user,
+        )
+        .await;
+        insert_replay(
+            &f,
+            &format!("delete-{suffix}"),
+            "DeleteEndUser",
+            project,
+            user,
+        )
+        .await;
+    }
+    f.set_state(DELETED);
+    f.server.maintain().await.unwrap();
+    assert_eq!(f.project_count().await, 0);
+    assert_eq!(
+        replay(&f, "create-doomed").await,
+        vec![(true, false, false, 0)]
+    );
+    assert_eq!(
+        replay(&f, "update-doomed").await,
+        vec![(true, false, false, 0)]
+    );
+    // Delete records are never scrubbed and keep their stored result.
+    assert_eq!(
+        replay(&f, "delete-doomed").await,
+        vec![(false, true, true, 3)]
+    );
+    for key in ["create-untouched", "update-untouched", "delete-untouched"] {
+        assert_eq!(replay(&f, key).await, vec![(false, true, true, 3)], "{key}");
+    }
+    let leaked: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM replays WHERE scrubbed AND target_user_id IS NOT NULL",
+    )
+    .fetch_one(&f.server.db)
+    .await
+    .unwrap();
+    assert_eq!(leaked, 0);
     f.finish().await;
 }
 
