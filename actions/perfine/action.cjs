@@ -3785,6 +3785,30 @@ async function upload(env, fetcher = fetch) {
     !Array.isArray(begun.targets)
   )
     throw new Error("Invalid upload response");
+  if (begun.upload.state === "UPLOAD_STATE_COMPLETE") {
+    const reconciled = await rpc("GetUpload", {
+      requestId,
+      spaceId: space,
+      uploadId: begun.upload.id,
+    });
+    if (
+      reconciled.requestId !== requestId ||
+      reconciled.upload?.id !== begun.upload.id ||
+      reconciled.upload?.state !== "UPLOAD_STATE_COMPLETE"
+    )
+      throw new Error(
+        "Upload reconciliation incomplete; local evidence retained",
+      );
+    console.log(
+      JSON.stringify({
+        event: "perfine_upload_complete",
+        requestId,
+        experimentId: experiment,
+        reconciled: true,
+      }),
+    );
+    return reconciled;
+  }
   const receipts = [];
   const seen = new Set();
   for (const target of begun.targets) {

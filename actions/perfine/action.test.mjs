@@ -279,3 +279,55 @@ test("bundle includes dependency license texts and action metadata", () => {
   const tracked = execFileSync("git", ["ls-files", "."], { encoding: "utf8" });
   assert.ok(!tracked.split("\n").some((p) => p.split("/").includes("dist")));
 });
+
+test("same-ID retry reconciles a committed upload after a lost response", async (t) => {
+  const { vars, claims, artifact } = uploadFixture(t);
+  let committed = false;
+  let reconciliationState = "UPLOAD_STATE_COMPLETE";
+  const methods = [];
+  const fetcher = async (url, options) => {
+    const method = new URL(url).pathname.split("/").at(-1);
+    methods.push(method);
+    let data;
+    if (method === "token")
+      data = {
+        value: `fixture.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`,
+      };
+    else if (method === "BeginUpload")
+      data = {
+        requestId: id,
+        upload: {
+          id,
+          state: committed ? "UPLOAD_STATE_COMPLETE" : "UPLOAD_STATE_PENDING",
+        },
+        targets: committed
+          ? []
+          : [
+              {
+                artifactName: artifact.name,
+                signedPutUrl: "https://bucket.example.invalid/object",
+              },
+            ],
+      };
+    else if (method === "CompleteUpload") {
+      assert.equal(
+        committed,
+        false,
+        "must not repeat completion with empty receipts",
+      );
+      assert.equal(JSON.parse(options.body).receipts.length, 1);
+      committed = true;
+      throw new Error("lost completion response");
+    } else if (method === "GetUpload")
+      data = { requestId: id, upload: { id, state: reconciliationState } };
+    else data = {};
+    return { ok: true, json: async () => data };
+  };
+  await assert.rejects(upload(vars, fetcher), /Evidence transport failed/);
+  methods.length = 0;
+  const result = await upload(vars, fetcher);
+  assert.equal(result.upload.state, "UPLOAD_STATE_COMPLETE");
+  assert.deepEqual(methods, ["token", "BeginUpload", "GetUpload"]);
+  reconciliationState = "UPLOAD_STATE_PENDING";
+  await assert.rejects(upload(vars, fetcher), /reconciliation incomplete/);
+});
