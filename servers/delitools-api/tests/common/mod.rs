@@ -52,6 +52,8 @@ pub enum Reply {
     },
     Status(u16),
     RetryAfter(u16, u64),
+    /// A status with a verbatim `Retry-After` header value, such as an HTTP-date.
+    RetryAfterRaw(u16, String),
     Garbage,
     /// Never answers; the request ends only when the caller aborts it.
     Hang,
@@ -158,6 +160,13 @@ async fn gateway_handler(
                 )
                     .into_response();
             }
+            Reply::RetryAfterRaw(code, value) => {
+                return (
+                    StatusCode::from_u16(code).unwrap(),
+                    [("retry-after", value)],
+                )
+                    .into_response();
+            }
             Reply::Garbage => return (StatusCode::OK, "<html>not json</html>").into_response(),
             Reply::Hang => {
                 let _guard = DropCounter(state.clone());
@@ -258,6 +267,9 @@ impl AuthorizeGate {
     }
 }
 
+/// Test hook run inside a Delcore mock handler, for example to advance a test clock.
+pub type Hook = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Default)]
 pub struct DelcoreState {
     /// Optional gate delaying `Authorize` and `AuthorizeApiKey`.
@@ -265,6 +277,12 @@ pub struct DelcoreState {
     /// Runs inside every `Authorize` call, before the reply is sent.
     pub authorize_hook: Option<Arc<dyn Fn() + Send + Sync>>,
     pub ingest_barrier: Option<Arc<IngestBarrier>>,
+    /// Runs when a token request arrives, before the token is issued.
+    pub on_token: Option<Hook>,
+    /// Runs when a `GetTenantStates` request arrives, before it is answered.
+    pub on_tenant_states: Option<Hook>,
+    /// Runs when an `IngestEvent` request arrives, after it is recorded and before it is answered.
+    pub on_ingest: Option<Hook>,
     pub users: HashMap<String, String>,
     /// Reply body for `Authorize`; `script` entries take precedence.
     pub authorize: Value,
@@ -311,6 +329,10 @@ fn service_ok(headers: &HeaderMap) -> bool {
 }
 
 async fn token(State(state): State<Delcore>, headers: HeaderMap, body: String) -> Response {
+    let hook = state.lock().unwrap().on_token.clone();
+    if let Some(hook) = hook {
+        hook();
+    }
     let mut s = state.lock().unwrap();
     s.token_calls += 1;
     let expected = format!(
@@ -356,6 +378,19 @@ async fn delcore_method(
                 permit.forget();
             }
         }
+    }
+    let hook = {
+        let s = state.lock().unwrap();
+        match method.as_str() {
+            "GetTenantStates" => s.on_tenant_states.clone(),
+            "IngestEvent" => s.on_ingest.clone(),
+            _ => None,
+        }
+    };
+    if method == "GetTenantStates"
+        && let Some(hook) = &hook
+    {
+        hook();
     }
     let mut s = state.lock().unwrap();
     if s.down {
@@ -430,6 +465,9 @@ async fn delcore_method(
                 .or_else(|| s.ingest_default.clone())
                 .unwrap_or(Ingest::Ok);
             s.ingested.push(body);
+            if let Some(hook) = &hook {
+                hook();
+            }
             match reply {
                 Ingest::Ok => {
                     Json(json!({"eventId": VALID_EVENT_ID, "revision": 1})).into_response()
@@ -584,6 +622,19 @@ async fn serve(router: Router) -> String {
     format!("http://{addr}")
 }
 
+/// Serves through the production shared transport instead of `axum::serve`, so its idle-read,
+/// header and write bounds apply.
+async fn serve_transport(router: Router, limits: server_common::transport::Limits) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        server_common::transport::serve(listener, router, limits, std::future::pending())
+            .await
+            .unwrap()
+    });
+    format!("http://{addr}")
+}
+
 /// A pool that never connects; for tests that must not touch PostgreSQL.
 pub fn unused_pool() -> sqlx::PgPool {
     sqlx::postgres::PgPoolOptions::new()
@@ -598,6 +649,25 @@ impl Harness {
     }
 
     pub async fn start_with(db: Option<sqlx::PgPool>, tweak: impl FnOnce(&mut Config)) -> Self {
+        Self::start_inner(db, None, tweak).await
+    }
+
+    /// Starts DeliTools behind the production shared transport with the given socket idle-read
+    /// interval. Header, write and shutdown bounds follow the production derivation from the
+    /// (tweaked) execution timeout.
+    pub async fn start_transport(
+        db: Option<sqlx::PgPool>,
+        idle: Duration,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
+        Self::start_inner(db, Some(idle), tweak).await
+    }
+
+    async fn start_inner(
+        db: Option<sqlx::PgPool>,
+        idle: Option<Duration>,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
         let delcore: Delcore = Arc::new(Mutex::new(DelcoreState {
             users: HashMap::from([(USER_TOKEN.to_owned(), USER.to_owned())]),
             authorize: allow(),
@@ -624,7 +694,23 @@ impl Harness {
         let mut config = config(&delcore_url, &gateway_url);
         tweak(&mut config);
         let server = Server::new(db.unwrap_or_else(unused_pool), config.clone()).unwrap();
-        let base = serve(http::router(server.clone())).await;
+        let router = http::router(server.clone());
+        let base = match idle {
+            None => serve(router).await,
+            Some(idle) => {
+                let execution = config.limits.execution_timeout;
+                serve_transport(
+                    router,
+                    server_common::transport::Limits {
+                        header: Duration::from_secs(5),
+                        idle,
+                        write: execution + Duration::from_secs(5),
+                        shutdown: execution,
+                    },
+                )
+                .await
+            }
+        };
         Self {
             base,
             delcore,
