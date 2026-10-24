@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use delitools_api::delcore::IngestFailure;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -284,6 +284,134 @@ async fn catalog_pagination_and_failures_are_handled() {
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
     assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+}
+
+fn catalog_price(meter: &str, kind: Value) -> Value {
+    json!({
+        "id": "p", "serviceId": SERVICE_ID, "meter": meter, "unitPrice": "0.000002",
+        "kind": kind, "active": true
+    })
+}
+
+fn both_prices() -> Value {
+    json!([
+        catalog_price("gem_in", json!("PRICE_KIND_USAGE")),
+        catalog_price("gem_out", json!(1)),
+    ])
+}
+
+fn script_catalog(h: &Harness, pages: impl IntoIterator<Item = Value>) {
+    h.delcore.lock().unwrap().catalog_script.extend(pages);
+}
+
+#[tokio::test]
+async fn malformed_catalog_fields_are_dependency_failures_before_any_provider_call() {
+    let wrong_types = [json!(42), json!(true), json!([]), json!({})];
+    let mut bodies = Vec::new();
+    for wrong in &wrong_types {
+        // Both meters are priced, so only the malformed cursor can reject the request.
+        bodies.push(json!({"prices": both_prices(), "nextAfterId": wrong}));
+    }
+    for wrong in [json!("broken"), json!(42), json!(true), json!({})] {
+        bodies.push(json!({"prices": wrong, "nextAfterId": ""}));
+    }
+    for body in bodies {
+        let h = Harness::start(None).await;
+        script_catalog(&h, [body.clone()]);
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(
+            wire.reason(),
+            "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+            "{body}"
+        );
+        assert_eq!(wire.code(), "unavailable", "{body}");
+        assert_eq!(h.gateway.calls(), 0, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn a_malformed_later_catalog_page_invalidates_the_whole_read() {
+    for second in [
+        json!({"prices": {}}),
+        json!({"prices": [], "nextAfterId": 7}),
+    ] {
+        let h = Harness::start(None).await;
+        script_catalog(
+            &h,
+            [
+                json!({"prices": both_prices(), "nextAfterId": "019b0000-0000-7000-8000-0000000000f1"}),
+                second.clone(),
+            ],
+        );
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(
+            wire.reason(),
+            "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
+            "{second}"
+        );
+        assert_eq!(h.gateway.calls(), 0, "{second}");
+    }
+}
+
+#[tokio::test]
+async fn a_malformed_catalog_read_is_not_cached() {
+    // A long TTL makes a cached result observable: the retry must read the catalog again.
+    let h = Harness::start_with(None, |c| {
+        c.price_cache_ttl = std::time::Duration::from_secs(60);
+    })
+    .await;
+    script_catalog(&h, [json!({"prices": "broken"})]);
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(h.delcore.lock().unwrap().catalog_calls, 1);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    assert!(h.translate(USER_TOKEN, translate_body(&["a"])).await.ok());
+    assert_eq!(h.delcore.lock().unwrap().catalog_calls, 2);
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn omitted_null_and_empty_catalog_fields_are_protojson_defaults() {
+    for body in [
+        json!({}),
+        json!({"prices": null}),
+        json!({"prices": [], "nextAfterId": null}),
+        json!({"prices": [], "nextAfterId": ""}),
+    ] {
+        let h = Harness::start(None).await;
+        script_catalog(&h, [body.clone()]);
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_MODEL_UNAVAILABLE", "{body}");
+        assert_eq!(h.gateway.calls(), 0, "{body}");
+    }
+    for cursor in [None, Some(Value::Null), Some(json!(""))] {
+        let h = Harness::start(None).await;
+        let mut page = json!({"prices": both_prices()});
+        if let Some(cursor) = cursor.clone() {
+            page["nextAfterId"] = cursor;
+        }
+        script_catalog(&h, [page]);
+        h.gateway.push(Reply::without_usage(r#"["x"]"#));
+        let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+        assert!(wire.ok(), "{cursor:?}");
+        assert_eq!(h.delcore.lock().unwrap().catalog_calls, 1);
+    }
+}
+
+#[tokio::test]
+async fn repeated_catalog_cursors_remain_dependency_failures() {
+    let h = Harness::start(None).await;
+    let cursor = "019b0000-0000-7000-8000-0000000000f1";
+    script_catalog(
+        &h,
+        [
+            json!({"prices": both_prices(), "nextAfterId": cursor}),
+            json!({"prices": [], "nextAfterId": cursor}),
+        ],
+    );
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+    assert_eq!(h.gateway.calls(), 0);
 }
 
 #[tokio::test]

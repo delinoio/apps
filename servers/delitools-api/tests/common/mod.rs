@@ -295,6 +295,8 @@ pub struct DelcoreState {
     pub paginate_catalog: bool,
     pub catalog_calls: usize,
     pub catalog_fails: bool,
+    /// Raw `GetCatalog` page bodies served before the generated catalog, one per request.
+    pub catalog_script: VecDeque<Value>,
     pub ingest_script: VecDeque<Ingest>,
     pub ingest_default: Option<Ingest>,
     pub ingested: Vec<Value>,
@@ -432,6 +434,9 @@ async fn delcore_method(
             s.catalog_calls += 1;
             if s.catalog_fails {
                 return connect_error(500, "internal", None);
+            }
+            if let Some(page) = s.catalog_script.pop_front() {
+                return Json(page).into_response();
             }
             let prices: Vec<Value> = s
                 .priced
