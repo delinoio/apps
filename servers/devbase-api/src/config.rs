@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use server_common::config::{duration, positive, valid_origin};
 use std::time::Duration;
-/// Largest `seconds` value that google.protobuf.Duration permits (about 10,000 years).
-const MAX_RETRY_SECONDS: u64 = 315_576_000_000;
+/// Largest `seconds` value that google.protobuf.Duration permits (about 10,000 years). Startup
+/// validation and the `ErrorDetail.retry_after` conversion share this one bound.
+pub const MAX_RETRY_SECONDS: u64 = 315_576_000_000;
 
 /// Reports whether the exhausted-bucket retry delay `1 / rate` converts to a Duration whose whole
 /// seconds stay within the protobuf Duration range.

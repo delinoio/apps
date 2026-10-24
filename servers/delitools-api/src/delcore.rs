@@ -266,11 +266,20 @@ impl DelcoreClient {
             if !value.is_object() {
                 return Err(DelcoreError::Unavailable);
             }
-            for price in value["prices"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or_default()
-            {
+            // ProtoJSON treats omitted and null fields as unset, so both read as the default.
+            // Any other non-array `prices` or non-string `nextAfterId` is a malformed read: it
+            // must fail the whole read instead of looking like an empty or final page.
+            let prices: &[Value] = match &value["prices"] {
+                Value::Null => &[],
+                Value::Array(prices) => prices,
+                _ => return Err(DelcoreError::Unavailable),
+            };
+            let next = match &value["nextAfterId"] {
+                Value::Null => "",
+                Value::String(next) => next.as_str(),
+                _ => return Err(DelcoreError::Unavailable),
+            };
+            for price in prices {
                 if price["serviceId"].as_str() == Some(self.service_id.as_str())
                     && is_usage_kind(&price["kind"])
                     && price["active"].as_bool() == Some(true)
@@ -280,10 +289,10 @@ impl DelcoreClient {
                     priced.insert(meter.to_owned());
                 }
             }
-            match value["nextAfterId"].as_str().filter(|s| !s.is_empty()) {
-                Some(next) if next != after => after = next.to_owned(),
-                Some(_) => return Err(DelcoreError::Unavailable),
-                None => return Ok(priced),
+            match next {
+                "" => return Ok(priced),
+                next if next != after => after = next.to_owned(),
+                _ => return Err(DelcoreError::Unavailable),
             }
         }
         Err(DelcoreError::Unavailable)
