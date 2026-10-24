@@ -252,6 +252,44 @@ export function Detail({
         </Notice>
       </>
     );
+  if (review && e && candidate.data?.candidate)
+    return (
+      <>
+        {experiment.error && (
+          <Failure
+            error={experiment.error}
+            retry={() => void experiment.refetch()}
+          />
+        )}
+        {candidate.error && (
+          <Failure
+            error={candidate.error}
+            retry={() => void candidate.refetch()}
+          />
+        )}
+        {/* Keep the publication session mounted while errors hide retained evidence. */}
+        <div hidden={!!experiment.error || !!candidate.error}>
+          <Review
+            key={`${candidate.data.candidate.id}/${candidate.data.candidate.headSha}/${candidate.data.candidate.evidenceManifestSha256}`}
+            spaceId={spaceId}
+            experiment={e}
+            candidate={candidate.data.candidate}
+            connection={connection}
+            allowed={
+              permissions.includes(Permission.PUBLISH) &&
+              !experiment.error &&
+              !candidate.error
+            }
+            back={() => {
+              setReview(false);
+              requestAnimationFrame(() =>
+                document.getElementById("review-button")?.focus(),
+              );
+            }}
+          />
+        </div>
+      </>
+    );
   if (experiment.isPending) return <Notice title="Loading experiment…" />;
   if (experiment.error)
     return (
@@ -261,23 +299,6 @@ export function Detail({
       />
     );
   if (!e) return <Notice title="Experiment unavailable" />;
-  if (review && c)
-    return (
-      <Review
-        key={`${c.id}/${c.headSha}/${c.evidenceManifestSha256}`}
-        spaceId={spaceId}
-        experiment={e}
-        candidate={c}
-        connection={connection}
-        allowed={permissions.includes(Permission.PUBLISH)}
-        back={() => {
-          setReview(false);
-          requestAnimationFrame(() =>
-            document.getElementById("review-button")?.focus(),
-          );
-        }}
-      />
-    );
   const running = [ExecutionState.RUNNING, ExecutionState.QUEUED].includes(
     e.executionState,
   );

@@ -131,3 +131,5 @@ only for verification with `pnpm exec rsbuild dev --config tests/browser.config.
 It displays an explicit mock-data banner. These checks do not establish live
 Logto, Delcore, GitHub, Actions, R2 or backend acceptance. Remove generated `dist`
 output after validation.
+
+Transient experiment or candidate query failures hide retained review evidence without discarding the mounted publication session. Recovery retains the original approval ID, locked binding, and request ID so retries reconcile the same submission.

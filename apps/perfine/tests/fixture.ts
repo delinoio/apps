@@ -141,6 +141,7 @@ export type FixtureOptions = {
   prepareError?: boolean;
   connectGate?: Promise<void>;
   connectError?: boolean;
+  pollFailure?: "getExperiment" | "getCandidate";
 };
 export function fixture(options: FixtureOptions = {}) {
   const calls: {
@@ -266,11 +267,25 @@ export function fixture(options: FixtureOptions = {}) {
         calls.push({ method: "listExperiments", input: req });
         return { experiments: options.empty ? [] : [e] };
       },
-      getExperiment: () => ({ experiment: e }),
+      getExperiment: () => {
+        if (options.pollFailure === "getExperiment")
+          throw new ConnectError(
+            "Fixture: experiment poll failed",
+            Code.Unavailable,
+          );
+        return { experiment: e };
+      },
       listCandidates: () => ({
         candidates: options.noCandidates ? [] : [candidate],
       }),
-      getCandidate: () => ({ candidate }),
+      getCandidate: () => {
+        if (options.pollFailure === "getCandidate")
+          throw new ConnectError(
+            "Fixture: candidate poll failed",
+            Code.Unavailable,
+          );
+        return { candidate };
+      },
       startExperiment: (req) => {
         calls.push({ method: "startExperiment", input: req });
         return {

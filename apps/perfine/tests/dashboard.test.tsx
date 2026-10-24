@@ -519,6 +519,62 @@ describe("mocked typed RPC dashboard", () => {
     expect(publishes.length).toBe(2);
     expect(publishes[1].input).toEqual(publishes[0].input);
   });
+  it.each(["getExperiment", "getCandidate"] as const)(
+    "retains the exact publication session after a %s polling error",
+    async (method) => {
+      const options: FixtureOptions = { publicationNotSubmitted: true };
+      const f = mount(
+        () => (
+          <Detail
+            spaceId={spaceId}
+            connection={connection}
+            experimentId={experiment.id}
+            permissions={[P.Permission.READ, P.Permission.PUBLISH]}
+            back={() => {}}
+          />
+        ),
+        options,
+      );
+      await screen.findByLabelText("Candidate");
+      fireEvent.change(screen.getByLabelText("Candidate"), {
+        target: { value: candidate.id },
+      });
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Review draft publication" }),
+      );
+      fillDraft();
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Approve and create draft PR" }),
+      );
+      await screen.findByRole("button", {
+        name: "Retry reconciled draft publication",
+      });
+      options.pollFailure = method;
+      await f.client.invalidateQueries();
+      await screen.findByText(
+        `Fixture: ${method === "getExperiment" ? "experiment" : "candidate"} poll failed`,
+        { exact: false },
+      );
+      expect(
+        screen.queryByRole("button", { name: "Approve and create draft PR" }),
+      ).toBeNull();
+      options.pollFailure = undefined;
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      const retry = await screen.findByRole("button", {
+        name: "Retry reconciled draft publication",
+      });
+      await waitFor(() =>
+        expect((retry as HTMLButtonElement).disabled).toBe(false),
+      );
+      fireEvent.click(retry);
+      await screen.findByText("Draft PR created");
+      expect(f.calls.filter((x) => x.method === "approveDraft").length).toBe(1);
+      const requests = f.calls.filter((x) => x.method === "publishDraft");
+      expect(requests.length).toBe(2);
+      expect(requests[1].input).toEqual(requests[0].input);
+    },
+  );
   it("downloads evidence only after explicitly requesting a fresh signed URL", async () => {
     const f = mount(() => (
       <Detail
