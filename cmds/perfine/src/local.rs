@@ -804,7 +804,11 @@ impl App {
                 }) {
                     continue;
                 }
-                if current.stop_requested || signal.state() != Cancellation::Continue {
+                // The start deadline closes admission, not an already-running candidate.
+                // Retained attempts keep their own original deadline below.
+                if (prior.is_none() && current.stop_requested)
+                    || signal.state() != Cancellation::Continue
+                {
                     break;
                 }
                 if prior.is_none()
