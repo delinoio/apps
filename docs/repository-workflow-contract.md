@@ -10,13 +10,13 @@ Changes under `servers/scripts/` select all four API entries in both server vali
 
 ## Project-local agent skills
 
-Project-local third-party skills are committed under `.agents/skills/`. Root `skills-lock.json` records their upstream sources, skill paths and content hashes. The installed skills are `turborepo` from `vercel/turborepo`, `supabase-postgres-best-practices` from `supabase/agent-skills`, `vercel-composition-patterns` from `vercel-labs/agent-skills`, and `postgres` from `planetscale/database-skills`.
+Project-local third-party skills are committed under `.agents/skills/`. Root `skills-lock.json` records their upstream sources, skill paths and content hashes. The installed skills are `turborepo` from `vercel/turborepo`, `vercel-react-best-practices` from `vercel-labs/agent-skills`, `vercel-composition-patterns` from `vercel-labs/agent-skills`, and `postgres` from `planetscale/database-skills`.
 
 Install these skills from the repository root:
 
 ```sh
 npx skills add vercel/turborepo --skill turborepo --agent codex --yes
-npx skills add supabase/agent-skills --skill supabase-postgres-best-practices --agent codex --yes
+npx skills add vercel-labs/agent-skills --skill vercel-react-best-practices --agent codex --yes
 npx skills add vercel-labs/agent-skills --skill vercel-composition-patterns --agent codex --yes
 npx skills add planetscale/database-skills --skill postgres --agent codex --yes
 ```
