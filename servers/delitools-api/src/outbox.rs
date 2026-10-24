@@ -18,6 +18,10 @@
 //! | `pending` | poison         | `poisoned`, never delivered again, kept until expiry    |
 //! | `pending` | tenant deleted | row deleted                                             |
 //! | any       | 30 days elapse | row deleted                                             |
+//!
+//! Expiry is checked again with a fresh clock reading immediately before each `IngestEvent`
+//! and again after the service token is acquired, so a long cycle never starts a delivery at
+//! or after a row's `expires_at`. A request that already started is never canceled.
 
 use crate::{
     config::{OUTBOX_RETENTION, OutboxSettings},
@@ -153,6 +157,8 @@ pub struct DueRow {
     pub tenant_id: Uuid,
     pub event: UsageEvent,
     pub delivery_attempts: i32,
+    /// First-creation expiry; the boundary instant is expired.
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Counters read after each cycle.
@@ -217,7 +223,7 @@ impl Outbox {
     /// Pending, unexpired rows whose retry time has come, oldest first.
     pub async fn due(&self, now: DateTime<Utc>, limit: i64) -> Result<Vec<DueRow>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT id,tenant_id,event_key,delivery_key,meter_key,quantity,occurred_at,delivery_attempts
+            "SELECT id,tenant_id,event_key,delivery_key,meter_key,quantity,occurred_at,delivery_attempts,expires_at
              FROM usage_outbox
              WHERE state='pending' AND next_attempt_at<=$1 AND expires_at>$1
              ORDER BY created_at,id LIMIT $2",
@@ -234,6 +240,7 @@ impl Outbox {
                     id: r.get("id"),
                     tenant_id,
                     delivery_attempts: r.get("delivery_attempts"),
+                    expires_at: r.get("expires_at"),
                     event: UsageEvent {
                         request_key: r.get::<Uuid, _>("delivery_key").to_string(),
                         tenant_id: tenant_id.to_string(),
@@ -296,6 +303,24 @@ impl Outbox {
             .rows_affected())
     }
 
+    /// Deletes one row that is expired at `now`, whatever its state. Returns whether a row was
+    /// deleted; the guard keeps a row that is not expired.
+    pub async fn delete_if_expired(
+        &self,
+        id: Uuid,
+        now: DateTime<Utc>,
+    ) -> Result<bool, sqlx::Error> {
+        Ok(
+            sqlx::query("DELETE FROM usage_outbox WHERE id=$1 AND expires_at<=$2")
+                .bind(id)
+                .bind(now)
+                .execute(&self.pool)
+                .await?
+                .rows_affected()
+                > 0,
+        )
+    }
+
     /// Removes rows 30 days after their first creation, whatever their state.
     pub async fn expire(&self, now: DateTime<Utc>) -> Result<u64, sqlx::Error> {
         Ok(sqlx::query("DELETE FROM usage_outbox WHERE expires_at<=$1")
@@ -323,6 +348,14 @@ impl Outbox {
     }
 }
 
+/// Source of fresh wall-clock readings; replaceable in tests.
+pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
+
+/// The production [`Clock`].
+pub fn system_clock() -> Clock {
+    Arc::new(server_common::now)
+}
+
 /// Delivery worker. One instance runs inside the single serving process.
 pub struct Delivery {
     /// Closes when the process loses the instance lock; no cycle phase or `IngestEvent` starts
@@ -332,10 +365,36 @@ pub struct Delivery {
     pub delcore: Arc<DelcoreClient>,
     pub settings: OutboxSettings,
     pub metrics: Arc<Metrics>,
+    /// Read before every delivery to detect expiry that happens inside a long cycle.
+    pub clock: Clock,
 }
 
 impl Delivery {
+    /// A fresh reading that never precedes the cycle start `now`.
+    fn fresh(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+        (self.clock)().max(now)
+    }
+
+    /// Deletes a row found expired without delivering it and counts it once. A row that is
+    /// not expired at `at` is left untouched.
+    async fn drop_expired(&self, row: &DueRow, at: DateTime<Utc>) -> Result<(), CycleError> {
+        if self.outbox.delete_if_expired(row.id, at).await? {
+            self.metrics.expired.inc();
+            tracing::warn!(
+                category = "usage_expired",
+                rows = 1u64,
+                event_key = %row.event.event_key,
+                "undelivered usage expired after 30 days"
+            );
+        }
+        Ok(())
+    }
+
     /// Runs one expiry, tenant-lifecycle and delivery cycle at `now`.
+    ///
+    /// `now` fixes the batch selection and the retry timestamps. Expiry is decided separately
+    /// per row with a fresh clock reading, because earlier rows and Delcore lookups can take
+    /// long enough for a selected row to expire.
     pub async fn cycle(&self, now: DateTime<Utc>) -> Result<Stats, CycleError> {
         if self.fence.is_cancelled() {
             return Ok(self.outbox.stats(now).await?);
@@ -384,15 +443,30 @@ impl Delivery {
             }
         }
         for row in rows {
+            // Expiry may have been reached while earlier rows or lookups were in flight.
+            let started = self.fresh(now);
+            if started >= row.expires_at {
+                self.drop_expired(&row, started).await?;
+                continue;
+            }
+            let still_live = || self.fresh(now) < row.expires_at;
             // An ingest whose answer is lost to the fence is simply retried by the replacement;
             // Delcore's service-scoped idempotency makes that replay safe.
             let ingest = tokio::select! {
                 biased;
                 _ = self.fence.cancelled() => return Ok(self.outbox.stats(now).await?),
-                ingest = self.delcore.ingest_event(&row.event) => ingest,
+                ingest = self.delcore.ingest_event(&row.event, &still_live) => ingest,
             };
             let outcome = match ingest {
                 Ok(()) => Outcome::Delivered,
+                Err(IngestFailure::Expired) => {
+                    // The deadline passed while the token was acquired; no request was sent.
+                    // Guard with the later of the fresh reading and the deadline so a clock
+                    // that steps backwards cannot keep an expired row alive for a cycle.
+                    self.drop_expired(&row, self.fresh(now).max(row.expires_at))
+                        .await?;
+                    continue;
+                }
                 Err(IngestFailure::Retryable(category)) => Outcome::Retry(category),
                 Err(IngestFailure::Poison(category)) => Outcome::Poison(category),
             };
@@ -469,7 +543,7 @@ impl Delivery {
             if self.fence.is_cancelled() {
                 return;
             }
-            if self.cycle(server_common::now()).await.is_err() {
+            if self.cycle((self.clock)()).await.is_err() {
                 tracing::error!(category = "usage_cycle", "usage delivery cycle failed");
             }
         }

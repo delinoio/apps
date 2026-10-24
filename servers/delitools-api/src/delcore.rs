@@ -60,12 +60,16 @@ pub enum IngestFailure {
     Retryable(&'static str),
     /// Delcore will never accept this exact event; stop retrying and raise an alert.
     Poison(&'static str),
+    /// The row's 30-day deadline passed before the HTTP request could start, so no request
+    /// was sent. The caller deletes the row as expired.
+    Expired,
 }
 
 impl IngestFailure {
     pub fn category(self) -> &'static str {
         match self {
             Self::Retryable(c) | Self::Poison(c) => c,
+            Self::Expired => "expired",
         }
     }
 }
@@ -160,6 +164,16 @@ impl DelcoreClient {
     /// Sends one service-authenticated call and returns the JSON body or the raw failure.
     async fn call(&self, method: &str, body: Value) -> Result<Value, (DelcoreError, Option<i32>)> {
         let token = self.service_token().await.map_err(|e| (e, None))?;
+        self.send(method, body, token).await
+    }
+
+    /// Sends one call with an already acquired service token.
+    async fn send(
+        &self,
+        method: &str,
+        body: Value,
+        token: String,
+    ) -> Result<Value, (DelcoreError, Option<i32>)> {
         let response = self
             .http
             .post(format!("{}/delcore.v1.DelcoreService/{method}", self.url))
@@ -276,7 +290,18 @@ impl DelcoreClient {
     }
 
     /// Delivers one usage event. Success includes an identical replay of an accepted event.
-    pub async fn ingest_event(&self, event: &UsageEvent) -> Result<(), IngestFailure> {
+    ///
+    /// `still_live` reports whether the row is still before its expiry. It is checked after the
+    /// service token is available and immediately before the HTTP request, because token
+    /// acquisition can wait on the token lock or on Logto. When it returns `false`, no request
+    /// is sent and the result is [`IngestFailure::Expired`]. A request that already started is
+    /// not canceled by expiry; its answer is handled normally. Only the instance-lock fence in
+    /// the caller drops a running request.
+    pub async fn ingest_event(
+        &self,
+        event: &UsageEvent,
+        still_live: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), IngestFailure> {
         let body = json!({
             "requestKey": event.request_key,
             "event": {
@@ -288,7 +313,14 @@ impl DelcoreClient {
                 "attributes": {"quantity": {"number": event.quantity.to_string()}},
             }
         });
-        match self.call("IngestEvent", body).await {
+        let token = self
+            .service_token()
+            .await
+            .map_err(|e| classify_ingest_failure(e, None))?;
+        if !still_live() {
+            return Err(IngestFailure::Expired);
+        }
+        match self.send("IngestEvent", body, token).await {
             Ok(value) if is_valid_ingest_ack(&value) => Ok(()),
             Ok(_) => Err(IngestFailure::Retryable("malformed_response")),
             Err((kind, reason)) => Err(classify_ingest_failure(kind, reason)),

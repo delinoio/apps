@@ -214,11 +214,20 @@ impl Drop for BarrierDrop {
     }
 }
 
+/// Test hook run inside a Delcore mock handler, for example to advance a test clock.
+pub type Hook = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Default)]
 pub struct DelcoreState {
     /// Runs inside every `Authorize` call, before the reply is sent.
     pub authorize_hook: Option<Arc<dyn Fn() + Send + Sync>>,
     pub ingest_barrier: Option<Arc<IngestBarrier>>,
+    /// Runs when a token request arrives, before the token is issued.
+    pub on_token: Option<Hook>,
+    /// Runs when a `GetTenantStates` request arrives, before it is answered.
+    pub on_tenant_states: Option<Hook>,
+    /// Runs when an `IngestEvent` request arrives, after it is recorded and before it is answered.
+    pub on_ingest: Option<Hook>,
     pub users: HashMap<String, String>,
     /// Reply body for `Authorize`; `script` entries take precedence.
     pub authorize: Value,
@@ -265,6 +274,10 @@ fn service_ok(headers: &HeaderMap) -> bool {
 }
 
 async fn token(State(state): State<Delcore>, headers: HeaderMap, body: String) -> Response {
+    let hook = state.lock().unwrap().on_token.clone();
+    if let Some(hook) = hook {
+        hook();
+    }
     let mut s = state.lock().unwrap();
     s.token_calls += 1;
     let expected = format!(
@@ -300,6 +313,19 @@ async fn delcore_method(
                 permit.forget();
             }
         }
+    }
+    let hook = {
+        let s = state.lock().unwrap();
+        match method.as_str() {
+            "GetTenantStates" => s.on_tenant_states.clone(),
+            "IngestEvent" => s.on_ingest.clone(),
+            _ => None,
+        }
+    };
+    if method == "GetTenantStates"
+        && let Some(hook) = &hook
+    {
+        hook();
     }
     let mut s = state.lock().unwrap();
     if s.down {
@@ -374,6 +400,9 @@ async fn delcore_method(
                 .or_else(|| s.ingest_default.clone())
                 .unwrap_or(Ingest::Ok);
             s.ingested.push(body);
+            if let Some(hook) = &hook {
+                hook();
+            }
             match reply {
                 Ingest::Ok => {
                     Json(json!({"eventId": VALID_EVENT_ID, "revision": 1})).into_response()
