@@ -331,7 +331,6 @@ impl Server {
                 .map(|v| v.body);
         }
         let key = server_common::string(&q, "idempotencyKey");
-        let fingerprint = fingerprint::fingerprint(op, &request.encode_to_vec())?;
         let mut tx = self.db.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
             .bind(format!("{}|{key}", who.actor))
@@ -361,10 +360,15 @@ impl Server {
             if row.get::<String,_>("operation")!=op.name()||row.get::<uuid::Uuid,_>("tenant_id").to_string()!=who.tenant||(!who.project.is_empty()&&row.get::<Option<uuid::Uuid>,_>("project_id").is_some_and(|id|id.to_string()!=who.project)){return Err(Fault::conflict())}
             if row.get::<bool,_>("scrubbed"){return Err(Fault::missing())}
             payload?;
+            // The fingerprint can fail on a malformed wire shape, so it is computed only after the
+            // operation, tenant, project and scrubbed outcomes and the payload result.
+            let fingerprint=fingerprint::fingerprint(op,&request.encode_to_vec())?;
             if row.get::<Vec<u8>,_>("fingerprint")!=fingerprint{return Err(Fault::conflict())}
             let bytes:Vec<u8>=row.get("response");let result=R::decode_from_slice(&bytes).map_err(|_|Fault::unavailable())?;return Ok(serde_json::to_value(result)?)
         }
         payload?;
+        // Computed once for the new record, after the replay lookup found no record.
+        let fingerprint = fingerprint::fingerprint(op, &request.encode_to_vec())?;
         let result = self.operation(&mut tx, op, &q, &who, trace).await?;
         let mut snapshot = result.body.clone();
         snapshot.as_object_mut().unwrap().remove("secret");
