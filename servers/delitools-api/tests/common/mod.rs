@@ -470,6 +470,19 @@ async fn serve(router: Router) -> String {
     format!("http://{addr}")
 }
 
+/// Serves through the production shared transport instead of `axum::serve`, so its idle-read,
+/// header and write bounds apply.
+async fn serve_transport(router: Router, limits: server_common::transport::Limits) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        server_common::transport::serve(listener, router, limits, std::future::pending())
+            .await
+            .unwrap()
+    });
+    format!("http://{addr}")
+}
+
 /// A pool that never connects; for tests that must not touch PostgreSQL.
 pub fn unused_pool() -> sqlx::PgPool {
     sqlx::postgres::PgPoolOptions::new()
@@ -484,6 +497,25 @@ impl Harness {
     }
 
     pub async fn start_with(db: Option<sqlx::PgPool>, tweak: impl FnOnce(&mut Config)) -> Self {
+        Self::start_inner(db, None, tweak).await
+    }
+
+    /// Starts DeliTools behind the production shared transport with the given socket idle-read
+    /// interval. Header, write and shutdown bounds follow the production derivation from the
+    /// (tweaked) execution timeout.
+    pub async fn start_transport(
+        db: Option<sqlx::PgPool>,
+        idle: Duration,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
+        Self::start_inner(db, Some(idle), tweak).await
+    }
+
+    async fn start_inner(
+        db: Option<sqlx::PgPool>,
+        idle: Option<Duration>,
+        tweak: impl FnOnce(&mut Config),
+    ) -> Self {
         let delcore: Delcore = Arc::new(Mutex::new(DelcoreState {
             users: HashMap::from([(USER_TOKEN.to_owned(), USER.to_owned())]),
             authorize: allow(),
@@ -510,7 +542,23 @@ impl Harness {
         let mut config = config(&delcore_url, &gateway_url);
         tweak(&mut config);
         let server = Server::new(db.unwrap_or_else(unused_pool), config.clone()).unwrap();
-        let base = serve(http::router(server.clone())).await;
+        let router = http::router(server.clone());
+        let base = match idle {
+            None => serve(router).await,
+            Some(idle) => {
+                let execution = config.limits.execution_timeout;
+                serve_transport(
+                    router,
+                    server_common::transport::Limits {
+                        header: Duration::from_secs(5),
+                        idle,
+                        write: execution + Duration::from_secs(5),
+                        shutdown: execution,
+                    },
+                )
+                .await
+            }
+        };
         Self {
             base,
             delcore,

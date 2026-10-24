@@ -85,6 +85,8 @@ Input bytes count UTF-8 bytes of the submitted texts (or of the extraction text)
 
 Apply checks in this order: transport message bound, credential classification, delcore authentication and authorization, tenant rate and concurrency, request validation, model and price check, execution. The execution timeout starts when the request is received and covers all of these steps and every backoff; expiry before execution is `TIMEOUT`, and during execution it aborts the provider call. A shorter deadline set by the caller is not interpreted separately: when the caller closes the call, the request is canceled as for a disconnect.
 
+The shared transport's 60-second socket idle-read interval does not shorten a completed-body HTTP/1 call: it is suspended from request-body completion until the response finishes, so the execution timeout is the only deadline for such a call, while a real client close still cancels the provider call. Follow the [server Rust workspace contract](servers-rust-workspace-contract.md#http-transport-limits).
+
 ### Translation
 
 `TranslateRequest` carries `tenant_id`, `texts`, `target_language`, optional `source_language` and `model`.

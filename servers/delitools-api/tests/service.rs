@@ -613,3 +613,101 @@ async fn each_request_executes_anew_without_replay() {
     assert_ne!(first.body["requestId"], second.body["requestId"]);
     assert_eq!(h.gateway.calls(), 2);
 }
+
+// The cases below run through the production shared transport (`transport::serve`) rather than
+// `axum::serve`, with a socket idle-read interval far below the execution budget. reqwest keeps
+// its connection open after sending the whole request, as an ordinary HTTP/1 client does.
+
+const TRANSPORT_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+#[tokio::test]
+async fn translation_outlives_the_socket_idle_interval_through_the_shared_transport() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |_| {}).await;
+    h.gateway.push(Reply::Delay(
+        600,
+        Box::new(Reply::without_usage(r#"["Bonjour"]"#)),
+    ));
+    let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(wire.body["translations"], json!(["Bonjour"]));
+    assert_eq!(h.gateway.calls(), 1, "one attempt and no retry");
+    assert_eq!(h.gateway.dropped(), 0);
+}
+
+#[tokio::test]
+async fn extraction_outlives_the_socket_idle_interval_through_the_shared_transport() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |_| {}).await;
+    h.gateway.push(Reply::Delay(
+        600,
+        Box::new(Reply::without_usage(&extracted(
+            json!({"name":"Ada","age":36}),
+        ))),
+    ));
+    let wire = h.extract(USER_TOKEN, extract_body()).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(wire.body["json"].as_str().unwrap()).unwrap(),
+        json!({"name":"Ada","age":36})
+    );
+    assert_eq!(h.gateway.calls(), 1);
+    assert_eq!(h.gateway.dropped(), 0);
+}
+
+#[tokio::test]
+async fn the_execution_timeout_wins_over_the_socket_idle_interval() {
+    let h = Harness::start_transport(None, TRANSPORT_IDLE, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(700)
+    })
+    .await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let started = std::time::Instant::now();
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert!(started.elapsed() >= std::time::Duration::from_millis(600));
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert_eq!(wire.code(), "deadline_exceeded");
+    assert!(
+        !wire.detail().1.is_empty(),
+        "the typed timeout names its request"
+    );
+    for _ in 0..50 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.gateway.dropped(), 1, "the provider call is canceled");
+    assert_eq!(h.gateway.calls(), 1, "no retry");
+}
+
+#[tokio::test]
+async fn a_closed_client_still_cancels_the_provider_call_through_the_shared_transport() {
+    // The execution budget and idle interval both outlast the scenario, so only the socket
+    // closure can cancel the provider call.
+    let h = Harness::start_transport(None, std::time::Duration::from_secs(30), |_| {}).await;
+    h.gateway.push(Reply::Hang);
+    h.gateway.push(Reply::without_usage(r#"["never"]"#));
+    let pending = tokio::spawn(h.call_future("Translate", USER_TOKEN, translate_body(&["a"])));
+    for _ in 0..100 {
+        if h.gateway.calls() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(h.gateway.calls(), 1);
+    pending.abort();
+    let _ = pending.await;
+    for _ in 0..100 {
+        if h.gateway.dropped() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        h.gateway.dropped(),
+        1,
+        "the provider call is canceled promptly"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(h.gateway.calls(), 1, "no retry after cancellation");
+}
