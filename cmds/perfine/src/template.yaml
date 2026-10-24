@@ -1,0 +1,63 @@
+# Perfine configuration v1. Replace every null before running.
+# Workload code and a provisioned digest-pinned image are prerequisites.
+# Obtain input hashes from committed files, not a dirty working tree.
+schema_version: 1
+experiment:
+  schema_version: 1
+  repository: null
+  initial_base: null
+  incremental_base: null
+  workload_confirmation: null
+  limits:
+    candidate_count: null
+    simultaneous_candidates: null
+    start_duration_seconds: null
+    candidate_duration_seconds: null
+  policy:
+    kind: ir
+    settings:
+      minimum_improvement: 0.01
+      maximum_case_regression: 0.01
+      near_threshold: 0.001
+      repeat_tolerance: 0.001
+      allow_simple_exception: true
+      allow_single_case_exception: true
+  conditions:
+    harness: null
+    workflow: null
+    inputs: {}
+    tools: { pending: pending }
+    toolchain: pending
+    build_options: []
+    runtime_flags: []
+    environment:
+      os: pending
+      architecture: pending
+      runner: pending
+      hardware: { pending: pending }
+      variables: { LC_ALL: C }
+    metric: { metric: ir, unit: instructions }
+    cases: {}
+    correctness_checks: []
+adapter:
+  schema_version: 1
+  language: null
+  discovery_files: []
+  build: []
+  correctness: {}
+  workloads: {}
+  tool_probes: {}
+  source_prefixes: { /work/: "" }
+docker:
+  executable: /usr/bin/docker
+  image: null
+  dependency_names: []
+  user: null
+  memory_bytes: null
+  cpus: null
+  process_limit: null
+  command_timeout_seconds: null
+execution_root: null
+toolchain_probe: null
+agent: null
+action_commit: null
