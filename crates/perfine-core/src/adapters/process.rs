@@ -11,6 +11,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+const OUTPUT_LIMIT: u64 = 64 * 1024 * 1024;
+
 pub(crate) struct Output {
     pub code: i32,
     pub interrupted: bool,
@@ -53,12 +55,18 @@ pub(crate) fn run(
         if let Some(status) = child.try_wait()? {
             break status;
         }
-        if start.elapsed() >= timeout
+        let output_limit =
+            stdout.metadata()?.len() > OUTPUT_LIMIT || stderr.metadata()?.len() > OUTPUT_LIMIT;
+        if output_limit
+            || start.elapsed() >= timeout
             || context.is_some_and(|c| {
                 now() >= c.deadline_unix_seconds
                     || c.cancellation.state() == Cancellation::Immediate
             })
         {
+            if output_limit {
+                tracing::warn!(limit_bytes = OUTPUT_LIMIT, "command output limit exceeded");
+            }
             cleanup();
             #[cfg(unix)]
             {
@@ -76,7 +84,7 @@ pub(crate) fn run(
     };
     fn read(file: &mut File) -> Result<Vec<u8>> {
         // Bound host memory even when an untrusted command floods stdout.
-        if file.metadata()?.len() > 64 * 1024 * 1024 {
+        if file.metadata()?.len() > OUTPUT_LIMIT {
             return Err(Error::Limit);
         }
         file.seek(SeekFrom::Start(0))?;
@@ -107,6 +115,26 @@ mod tests {
         .unwrap();
         assert_eq!(output.code, 17);
         assert_eq!(output.stderr, b"failure");
+    }
+    #[test]
+    fn output_flood_stops_before_timeout_and_calls_cleanup() {
+        for redirect in ["2>/dev/null", "1>&2 2>/dev/null"] {
+            let cleaned = std::cell::Cell::new(false);
+            let start = std::time::Instant::now();
+            let result = run(
+                Command::new("/bin/sh").args([
+                    "-c",
+                    &format!("dd if=/dev/zero bs=1048576 count=65 {redirect}; sleep 30"),
+                ]),
+                &[],
+                None,
+                Duration::from_secs(30),
+                || cleaned.set(true),
+            );
+            assert!(matches!(result, Err(Error::Limit)));
+            assert!(cleaned.get());
+            assert!(start.elapsed() < Duration::from_secs(5));
+        }
     }
     #[test]
     fn deadline_kills_process_group_and_calls_cleanup() {
