@@ -116,7 +116,7 @@ The shared transport's 60-second socket idle-read interval does not shorten a co
 | `properties`, `required`                         | At most 64 properties per object. Every `required` name is distinct and declared in `properties`.                                                                                    |
 | `additionalProperties`                           | A boolean only.                                                                                                                                                                      |
 | `items`                                          | One schema. The tuple form (an array) is rejected.                                                                                                                                   |
-| `minLength`, `maxLength`, `minItems`, `maxItems` | Integers from 0 to 1,000,000, each minimum not above its maximum.                                                                                                                    |
+| `minLength`, `maxLength`, `minItems`, `maxItems` | Integral numbers from 0 to 1,000,000 (`1`, `1.0`, `1e0` and `-0.0` are accepted; fractions, other negatives and larger values are rejected), each minimum not above its maximum.     |
 | `minimum`, `maximum`                             | Finite numbers, minimum not above maximum.                                                                                                                                           |
 | `title`, `description`                           | Strings; annotations that never change validation.                                                                                                                                   |
 

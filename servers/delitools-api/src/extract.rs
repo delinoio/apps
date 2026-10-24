@@ -148,18 +148,41 @@ pub fn accept_schema(text: &str) -> Result<AcceptedSchema, ApiError> {
     })
 }
 
+/// Reads a count keyword. JSON Schema treats any number with a zero fractional part
+/// as an integer, so spellings such as `1.0`, `1e0` and `-0.0` are accepted and
+/// normalized to their integral value for the ordering check. The schema document
+/// itself is passed to the validator unchanged.
 fn count_keyword(map: &Map<String, Value>, key: &str, path: &str) -> Result<Option<u64>, ApiError> {
+    let invalid = || {
+        unsupported(format!(
+            "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
+        ))
+    };
     match map.get(key) {
         None => Ok(None),
-        Some(Value::Number(n)) => match n.as_u64() {
-            Some(v) if v <= MAX_COUNT_KEYWORD => Ok(Some(v)),
-            _ => Err(unsupported(format!(
-                "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
-            ))),
-        },
-        Some(_) => Err(unsupported(format!(
-            "{key} at {path} must be an integer from 0 to {MAX_COUNT_KEYWORD}"
-        ))),
+        Some(Value::Number(n)) => {
+            if let Some(v) = n.as_u64() {
+                return if v <= MAX_COUNT_KEYWORD {
+                    Ok(Some(v))
+                } else {
+                    Err(invalid())
+                };
+            }
+            // `-0.0 >= 0.0` holds, so negative zero is accepted; every other
+            // negative value, fraction, NaN and infinity is rejected.
+            match n.as_f64() {
+                Some(f)
+                    if f.is_finite()
+                        && f.fract() == 0.0
+                        && f >= 0.0
+                        && f <= MAX_COUNT_KEYWORD as f64 =>
+                {
+                    Ok(Some(f as u64))
+                }
+                _ => Err(invalid()),
+            }
+        }
+        Some(_) => Err(invalid()),
     }
 }
 
@@ -491,6 +514,189 @@ mod tests {
             r#"{"enum":[{"x":1},{"x":2},{"y":1}]}"#,
         ] {
             assert!(validate("t", ok, &limits()).is_ok(), "{ok}");
+        }
+    }
+
+    const COUNT_KEYWORDS: [&str; 4] = ["minLength", "maxLength", "minItems", "maxItems"];
+
+    fn count_schema(keyword: &str, spelling: &str) -> String {
+        let ty = if keyword.ends_with("Length") {
+            "string"
+        } else {
+            "array"
+        };
+        format!(r#"{{"type":"{ty}","{keyword}":{spelling}}}"#)
+    }
+
+    #[test]
+    fn count_keywords_accept_integral_numeric_spellings() {
+        for keyword in COUNT_KEYWORDS {
+            for spelling in [
+                "0",
+                "1",
+                "1.0",
+                "1e0",
+                "0.0",
+                "-0.0",
+                "-0",
+                "1000000",
+                "1000000.0",
+                "1e6",
+                "1.0E+6",
+            ] {
+                let schema = count_schema(keyword, spelling);
+                assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+            }
+        }
+    }
+
+    #[test]
+    fn count_keywords_reject_non_integral_negative_oversized_and_mistyped_values() {
+        for keyword in COUNT_KEYWORDS {
+            for spelling in [
+                "1.5",
+                "0.5",
+                "-1",
+                "-1.0",
+                "-1e0",
+                "1000001",
+                "1000001.0",
+                "1e7",
+                "1e300",
+                "\"1\"",
+                "true",
+                "false",
+                "null",
+                "[1]",
+                "{}",
+            ] {
+                let schema = count_schema(keyword, spelling);
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_json_around_count_keywords_stays_invalid_input() {
+        for schema in [
+            r#"{"type":"string","minLength":1.0"#,
+            r#"{"type":"string","minLength":1e}"#,
+        ] {
+            assert_eq!(
+                reason(validate("t", schema, &limits())),
+                ErrorReason::ERROR_REASON_INVALID_INPUT,
+                "{schema}"
+            );
+        }
+    }
+
+    #[test]
+    fn count_bounds_compare_by_value_across_spellings() {
+        for (low, high) in [
+            ("1", "1.0"),
+            ("1.0", "1"),
+            ("1e0", "1"),
+            ("-0.0", "0"),
+            ("0", "-0.0"),
+            ("1.0", "1e0"),
+        ] {
+            let schema = format!(
+                r#"{{"type":"object","properties":{{"s":{{"type":"string","minLength":{low},"maxLength":{high}}},"a":{{"type":"array","minItems":{low},"maxItems":{high}}}}}}}"#
+            );
+            assert!(validate("t", &schema, &limits()).is_ok(), "{schema}");
+        }
+        for (low, high) in [
+            ("2.0", "1"),
+            ("2", "1.0"),
+            ("1e1", "9"),
+            ("1000000.0", "0"),
+            ("1", "-0.0"),
+        ] {
+            for (min, max, ty) in [
+                ("minLength", "maxLength", "string"),
+                ("minItems", "maxItems", "array"),
+            ] {
+                let schema = format!(r#"{{"type":"{ty}","{min}":{low},"{max}":{high}}}"#);
+                assert_eq!(
+                    reason(validate("t", &schema, &limits())),
+                    ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                    "{schema}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_count_keywords_follow_the_same_rules_and_reversed_bounds_reject_at_any_node() {
+        let ok = r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","maxLength":5.0},"minItems":1.0,"maxItems":1e1}}}"#;
+        assert!(validate("t", ok, &limits()).is_ok());
+        for bad in [
+            r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","maxLength":5.5}}}}"#,
+            r#"{"type":"object","properties":{"a":{"type":"array","items":{"type":"string","minLength":3.0,"maxLength":2}}}}"#,
+            r#"{"type":"object","properties":{"a":{"type":"array","minItems":2.0,"maxItems":1,"items":{"type":"string"}}}}"#,
+        ] {
+            assert_eq!(
+                reason(validate("t", bad, &limits())),
+                ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA,
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn minimum_and_maximum_behavior_is_unchanged() {
+        for ok in [
+            r#"{"type":"number","minimum":-1.5,"maximum":2}"#,
+            r#"{"type":"number","minimum":1,"maximum":1.0}"#,
+        ] {
+            assert!(validate("t", ok, &limits()).is_ok(), "{ok}");
+        }
+        assert_eq!(
+            reason(validate(
+                "t",
+                r#"{"type":"number","minimum":2,"maximum":1.5}"#,
+                &limits()
+            )),
+            ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA
+        );
+        assert_eq!(
+            reason(validate(
+                "t",
+                r#"{"type":"number","minimum":"1"}"#,
+                &limits()
+            )),
+            ErrorReason::ERROR_REASON_UNSUPPORTED_SCHEMA
+        );
+    }
+
+    #[test]
+    fn accepted_float_counts_are_passed_through_and_still_enforced_on_output() {
+        let schema = r#"{"type":"object","properties":{"name":{"type":"string","minLength":1.0,"maxLength":3e0},"tags":{"type":"array","items":{"type":"string"},"minItems":-0.0,"maxItems":2.0}},"required":["name"],"additionalProperties":false}"#;
+        let extraction = validate("t", schema, &limits()).unwrap();
+        // The accepted document keeps the original spellings.
+        assert_eq!(
+            extraction.schema.document,
+            serde_json::from_str::<Value>(schema).unwrap()
+        );
+        let ok = |data: &str| {
+            extraction.parse_output(&format!(r#"{{"status":"extracted","data":{data}}}"#))
+        };
+        assert!(ok(r#"{"name":"Ada","tags":[]}"#).is_ok());
+        assert!(ok(r#"{"name":"Ada","tags":["a","b"]}"#).is_ok());
+        for bad in [
+            r#"{"name":""}"#,
+            r#"{"name":"Adam"}"#,
+            r#"{"name":"A","tags":["a","b","c"]}"#,
+        ] {
+            assert_eq!(
+                ok(bad).unwrap_err().reason,
+                ErrorReason::ERROR_REASON_INVALID_OUTPUT,
+                "{bad}"
+            );
         }
     }
 

@@ -729,6 +729,40 @@ async fn extraction_rejects_unsupported_schemas_before_execution() {
 }
 
 #[tokio::test]
+async fn extraction_accepts_integral_float_count_keywords_with_one_gateway_call() {
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(&extracted(
+        json!({"name":"Ada","tags":["a"]}),
+    )));
+    let mut body = extract_body();
+    body["jsonSchema"] = json!(
+        r#"{"type":"object","properties":{"name":{"type":"string","minLength":1.0,"maxLength":1e1},"tags":{"type":"array","items":{"type":"string"},"minItems":-0.0,"maxItems":2.0}},"required":["name"]}"#
+    );
+    let wire = h.extract(USER_TOKEN, body).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn extraction_rejects_invalid_count_keywords_without_a_gateway_call() {
+    let h = Harness::start(None).await;
+    for schema in [
+        r#"{"type":"string","minLength":1.5}"#,
+        r#"{"type":"string","maxLength":-1.0}"#,
+        r#"{"type":"array","maxItems":1000001.0}"#,
+        r#"{"type":"array","minItems":"1"}"#,
+        r#"{"type":"array","minItems":2.0,"maxItems":1}"#,
+        r#"{"type":"object","properties":{"a":{"type":"string","minLength":3,"maxLength":2.0}}}"#,
+    ] {
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_UNSUPPORTED_SCHEMA", "{schema}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
 async fn extraction_failures_and_invalid_output_are_distinct_and_never_retried() {
     let h = Harness::start(None).await;
     h.gateway.push(Reply::without_usage(
