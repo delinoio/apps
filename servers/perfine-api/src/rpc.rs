@@ -10,6 +10,14 @@ use delino_protocol::perfine::v1::*;
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
 
+// Upload completion establishes evidence availability, not remote job termination.
+fn complete_evidence(experiment: &mut Value) {
+    experiment["evidenceCompletion"] = json!("COMPLETION_STATE_COMPLETE");
+    if experiment["origin"] != "EXECUTION_ORIGIN_GITHUB_ACTIONS" {
+        experiment["executionState"] = json!("EXECUTION_STATE_COMPLETED");
+    }
+}
+
 fn permission(op: &str) -> Permission {
     match op {
         "ConnectRepository"
@@ -918,8 +926,7 @@ impl Server {
                 .await?;
         }
         u["state"] = json!("UPLOAD_STATE_COMPLETE");
-        e["evidenceCompletion"] = json!("COMPLETION_STATE_COMPLETE");
-        e["executionState"] = json!("EXECUTION_STATE_COMPLETED");
+        complete_evidence(&mut e);
         e["updatedAt"] = json!(stamp());
         sqlx::query("UPDATE perfine_uploads SET data=$2 WHERE id=$1")
             .bind(id(uid)?)
@@ -2070,5 +2077,33 @@ impl CloudService for Server {
                 .map_err(|_| Fault::invalid("invalid request").connect())?,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+
+    #[test]
+    fn uploaded_actions_evidence_preserves_remote_lifecycle() {
+        for state in [
+            "EXECUTION_STATE_RUNNING",
+            "EXECUTION_STATE_QUEUED",
+            "EXECUTION_STATE_CANCELLED",
+            "EXECUTION_STATE_FAILED",
+        ] {
+            let mut experiment =
+                json!({"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":state});
+            complete_evidence(&mut experiment);
+            assert_eq!(
+                experiment["evidenceCompletion"],
+                "COMPLETION_STATE_COMPLETE"
+            );
+            assert_eq!(experiment["executionState"], state);
+        }
+        let mut local =
+            json!({"origin":"EXECUTION_ORIGIN_LOCAL","executionState":"EXECUTION_STATE_RUNNING"});
+        complete_evidence(&mut local);
+        assert_eq!(local["executionState"], "EXECUTION_STATE_COMPLETED");
     }
 }
