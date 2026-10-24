@@ -244,6 +244,15 @@ impl Config {
             l.tenant_burst as f64 >= l.tenant_rate,
             "burst must not be smaller than the sustained tenant rate"
         );
+        // The limiter converts `1 / rate` into a `Duration` for `Retry-After` while it holds
+        // its bucket lock; an unrepresentable wait would panic and poison that lock for every
+        // tenant. Reject such rates here without echoing the configured value.
+        ensure!(
+            l.tenant_rate > 0.0
+                && l.tenant_rate.is_finite()
+                && Duration::try_from_secs_f64(1.0 / l.tenant_rate).is_ok(),
+            "DELITOOLS_TENANT_RATE_PER_SECOND is too small for a representable retry wait"
+        );
         ensure!(
             l.tenant_burst >= 1 && l.tenant_concurrency >= 1,
             "tenant burst and concurrency must be at least 1"
@@ -463,6 +472,65 @@ pub(crate) mod tests {
         env.insert("DELITOOLS_OUTBOX_BACKOFF_MIN".into(), "1440h".into());
         env.insert("DELITOOLS_OUTBOX_BACKOFF_MAX".into(), "5184000s".into());
         assert!(load(&env).is_ok());
+    }
+
+    #[test]
+    fn unrepresentable_retry_wait_rates_fail_loading_and_validation() {
+        let dir = tempdir();
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_BURST".into(), "1".into());
+        env.insert("DELITOOLS_TENANT_CONCURRENCY".into(), "1".into());
+        env.insert(
+            "DELITOOLS_TENANT_RATE_PER_SECOND".into(),
+            "0.00000000000000000001".into(),
+        );
+        let message = format!("{:#}", load(&env).unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("0.00000000000000000001"), "{message}");
+
+        let mut config = load(&base_env(&dir)).unwrap();
+        config.limits.tenant_rate = 1e-20;
+        let message = format!("{:#}", config.validate().unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("e-20"), "{message}");
+
+        config.limits.tenant_rate = f64::from_bits(1);
+        assert!(config.validate().is_err(), "smallest subnormal");
+    }
+
+    #[test]
+    fn retry_wait_boundary_follows_the_checked_duration_conversion() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        let boundary = 2f64.powi(-64);
+        let predecessor = f64::from_bits(boundary.to_bits() - 1);
+        let successor = f64::from_bits(boundary.to_bits() + 1);
+        for rate in [predecessor, boundary, successor] {
+            config.limits.tenant_rate = rate;
+            let representable = Duration::try_from_secs_f64(1.0 / rate).is_ok();
+            assert_eq!(config.validate().is_ok(), representable, "{rate:e}");
+        }
+        config.limits.tenant_rate = predecessor;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = boundary;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = successor;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn supported_tenant_rates_are_accepted() {
+        let dir = tempdir();
+        assert!(load(&base_env(&dir)).is_ok());
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_PER_SECOND".into(), "0.001".into());
+        assert_eq!(load(&env).unwrap().limits.tenant_rate, 0.001);
     }
 
     #[test]
