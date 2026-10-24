@@ -15,7 +15,8 @@ use perfine_core::{
     evidence::{FrozenConfig, Manifest, RunIdentity, VerifiedRun, validate_baseline},
     interfaces::{
         AgentAdapter, Cancellation, CancellationSignal, EnvironmentAdapter, EnvironmentRequest,
-        ExecutionContext, ExecutionRole, LanguageAdapter, MeasurementAdapter, ProfileAdapter,
+        ExecutionContext, ExecutionRole, Hypothesis, LanguageAdapter, MeasurementAdapter,
+        ProfileAdapter,
     },
     lifecycle::{Engine, FailureClass, Workspace},
     policy::{self, Comparison, ReviewEvidence, Round},
@@ -136,6 +137,22 @@ struct Attempt {
     #[serde(default)]
     finished: bool,
 }
+// Finish admitted work before consuming another candidate/concurrency slot, even
+// when the provider repeats a retained hypothesis after a new proposal.
+fn prioritize_retained(
+    retained: impl IntoIterator<Item = Hypothesis>,
+    fresh: Vec<Hypothesis>,
+) -> Result<Vec<Hypothesis>> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut ordered = Vec::new();
+    for hypothesis in retained.into_iter().chain(fresh) {
+        if seen.insert(fingerprint(&hypothesis)?) {
+            ordered.push(hypothesis);
+        }
+    }
+    Ok(ordered)
+}
+
 // Expired attempts consume their original slot and keep their evidence, but must
 // not be proposed or reattached again while other candidate slots remain.
 fn settle_expired_attempts(journal: &mut Journal, now: u64) {
@@ -708,23 +725,21 @@ impl App {
                     .unwrap_or(deadline),
                 cancellation: &signal,
             };
-            let mut hypotheses = if now() < deadline
+            let fresh = if now() < deadline
                 && journal.attempts.len() < cfg.experiment.limits.candidate_count as usize
             {
                 agent.propose(&profile, &ctx)?
             } else {
                 Vec::new()
             };
-            // Retain admitted hypotheses even when a fresh proposal omits them.
-            for attempt in journal.attempts.values().filter(|a| !a.finished) {
-                if let Some(h) = &attempt.hypothesis
-                    && !hypotheses
-                        .iter()
-                        .any(|v| fingerprint(v).ok() == fingerprint(h).ok())
-                {
-                    hypotheses.insert(0, h.clone());
-                }
-            }
+            let hypotheses = prioritize_retained(
+                journal
+                    .attempts
+                    .values()
+                    .filter(|a| !a.finished)
+                    .filter_map(|a| a.hypothesis.clone()),
+                fresh,
+            )?;
             for hypothesis in hypotheses {
                 let current = engine.status(&id)?;
                 let hypothesis_hash = fingerprint(&hypothesis)?;
@@ -1245,6 +1260,29 @@ fn workflow(config: &str, action: &CommitSha, base: &CommitSha, image: &str) -> 
 mod tests {
     use super::workflow;
     use perfine_core::types::CommitSha;
+    #[test]
+    fn retained_hypotheses_precede_new_proposals_without_duplicates() {
+        use super::*;
+        let hypothesis = |label| Hypothesis {
+            explanation: Name::new(label).unwrap(),
+            source_paths: std::collections::BTreeSet::from([Name::new("src/hot.c").unwrap()]),
+            profile_evidence: vec![digest(b"profile")],
+        };
+        let retained = hypothesis("retained");
+        let fresh = hypothesis("fresh");
+        for proposals in [vec![fresh.clone(), retained.clone()], vec![fresh.clone()]] {
+            let ordered = prioritize_retained([retained.clone()], proposals).unwrap();
+            assert_eq!(ordered.len(), 2);
+            assert_eq!(
+                fingerprint(&ordered[0]).unwrap(),
+                fingerprint(&retained).unwrap()
+            );
+            assert_eq!(
+                fingerprint(&ordered[1]).unwrap(),
+                fingerprint(&fresh).unwrap()
+            );
+        }
+    }
     #[test]
     fn manual_workflow_matches_distribution_inputs_and_preserves_inline_config() {
         let sha = CommitSha::new("a".repeat(40)).unwrap();
