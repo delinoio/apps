@@ -77,7 +77,7 @@ async fn scenario() -> Scenario {
     let tenant_id = Uuid::parse_str(&tenant).unwrap();
     let time = Timeline::now();
     // A recurring-only entitlement set keeps the renewal independent of usage allowances.
-    let price = f.rpc("owner", "CreatePrice", json!({"requestKey":key(),"reason":"recurring fixture","price":{"key":"base-usd","planId":plan.to_string(),"serviceId":service.to_string(),"meter":"base","unitPrice":"5","currency":"USD","kind":"PRICE_KIND_RECURRING","externalPriceId":EXTERNAL_PRICE}})).await;
+    let price = f.rpc("owner", "CreatePrice", json!({"requestKey":key(),"reason":"recurring fixture","price":{"key":"base-usd","planId":plan.to_string(),"serviceId":service.to_string(),"meter":"base","unitPrice":"5","included":"0","currency":"USD","kind":"PRICE_KIND_RECURRING","externalPriceId":EXTERNAL_PRICE}})).await;
     let price = Uuid::parse_str(price["price"]["id"].as_str().unwrap()).unwrap();
     sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)")
         .bind(Uuid::now_v7())

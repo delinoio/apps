@@ -789,6 +789,8 @@ async fn addon_call_time_prices_respect_product_ownership() {
     let a = put(&f, "CreatePrice", "price", price.clone()).await;
     sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,clock_timestamp())")
         .bind(key()).bind(tenant.as_str().unwrap()).bind(a["id"].as_str().unwrap()).execute(&f.db).await.unwrap();
+    sqlx::query("INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at) SELECT $1::text::uuid,$2::text::uuid,id,active_version_id,clock_timestamp() FROM catalog_entities WHERE id=$3::text::uuid")
+        .bind(key()).bind(tenant.as_str().unwrap()).bind(addon["id"].as_str().unwrap()).execute(&f.db).await.unwrap();
     let before_change = Utc::now().to_rfc3339();
     price["unitPrice"] = json!("2");
     let b = put(&f, "CreatePrice", "price", price).await;

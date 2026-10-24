@@ -112,6 +112,20 @@ async fn scenario_at(time: Timeline) -> Scenario {
     .unwrap();
     let user = f.rpc("owner", "GetCurrentUser", json!({})).await;
     let tenant = user["tenants"][0]["id"].as_str().unwrap().to_owned();
+    // The fixture tenant and catalog existed before the simulated provider periods.
+    let created_at = time.paid_start - Duration::days(10);
+    for table in ["tenant_catalog_selections", "entitlements"] {
+        sqlx::query(&format!(
+            "UPDATE {table} SET starts_at=$2 WHERE tenant_id=$1::text::uuid"
+        ))
+        .bind(&tenant)
+        .bind(created_at)
+        .execute(&f.db)
+        .await
+        .unwrap();
+    }
+    sqlx::query("INSERT INTO catalog_price_activations(price_id,version_id,effective_at) SELECT id,active_version_id,$1 FROM catalog_entities WHERE kind='price'")
+        .bind(created_at).execute(&f.db).await.unwrap();
     let job = key();
     let payload = json!({"plan_id":paid,"price_ids":[price],"version_ids":[version],"external_price_ids":[EXTERNAL_PRICE]});
     sqlx::query("INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$3,$4,'pending',0,now(),now(),now())")
@@ -1072,7 +1086,11 @@ mod reconciled_cancellation {
         assert_eq!(watermark, (t.canceled, "canceled".to_string()));
         assert_eq!(
             s.selection_windows().await,
-            vec![(t.paid_start, Some(t.canceled)), (t.canceled, None),]
+            vec![
+                (t.paid_start - Duration::days(10), Some(t.paid_start)),
+                (t.paid_start, Some(t.canceled)),
+                (t.canceled, None)
+            ]
         );
         let entitlements = s.entitlement_windows().await;
         assert!(
