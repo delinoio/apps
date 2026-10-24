@@ -1239,7 +1239,7 @@ impl Server {
             tx.commit().await?;
         }
         let spaces: Vec<uuid::Uuid> = sqlx::query_scalar(
-            "SELECT space FROM perfine_experiments UNION SELECT space FROM perfine_preparations",
+            "SELECT space FROM perfine_experiments UNION SELECT space FROM perfine_preparations UNION SELECT space FROM perfine_connections WHERE active",
         )
         .fetch_all(&self.db)
         .await?;
@@ -1248,6 +1248,24 @@ impl Server {
             {
                 let mut tx = self.db.begin().await?;
                 lock(&mut tx, &space.to_string()).await?;
+                // Release the unique active repository binding, retaining connection and run
+                // identities so object deletion and cancellation can still be retried.
+                let connections: Vec<Value> = sqlx::query_scalar(
+                    "SELECT data FROM perfine_connections WHERE space=$1 AND active",
+                )
+                .bind(space)
+                .fetch_all(&mut *tx)
+                .await?;
+                for mut c in connections {
+                    c["state"] = json!("CONNECTION_STATE_DISCONNECTED");
+                    c["updatedAt"] = json!(stamp());
+                    c["executionCancellations"] = json!(self.cancel_connection(&mut tx, &c).await?);
+                    sqlx::query("UPDATE perfine_connections SET active=false,data=$2 WHERE id=$1")
+                        .bind(id(string(&c, "id"))?)
+                        .bind(c)
+                        .execute(&mut *tx)
+                        .await?;
+                }
                 sqlx::query("DELETE FROM perfine_preparations WHERE space=$1")
                     .bind(space)
                     .execute(&mut *tx)
