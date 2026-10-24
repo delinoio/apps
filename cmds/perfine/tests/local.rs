@@ -5,6 +5,21 @@ use perfine_core::{
 };
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Command};
+// Dropped capabilities also remove root's DAC override. Bind mounts must use
+// the host owner's identity so CI's non-root checkout can write build output.
+fn fixture_user() -> String {
+    // Docker Desktop virtualizes bind ownership; its existing emulation fixture
+    // uses the VM's root identity rather than the macOS account UID.
+    if !cfg!(target_os = "linux") {
+        return "0:0".into();
+    }
+    let identity = |flag| {
+        let output = Command::new("id").arg(flag).output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    format!("{}:{}", identity("-u"), identity("-g"))
+}
 fn git(path: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .arg("-C")
@@ -55,7 +70,7 @@ fn setup(mode: &str) -> (tempfile::TempDir, Value) {
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "fixture"]);
     let sha = git(&repo, &["rev-parse", "HEAD"]);
-    let docker = json!({"executable":std::env::var("PERFINE_TEST_DOCKER").unwrap_or_else(|_| "/usr/local/bin/docker".into()),"image":std::env::var("PERFINE_TEST_IMAGE").unwrap(),"dependency_names":["cc-valgrind"],"user":"0:0","memory_bytes":1_073_741_824_u64,"cpus":1,"process_limit":128,"command_timeout_seconds":60});
+    let docker = json!({"executable":std::env::var("PERFINE_TEST_DOCKER").unwrap_or_else(|_| "/usr/local/bin/docker".into()),"image":std::env::var("PERFINE_TEST_IMAGE").unwrap(),"dependency_names":["cc-valgrind"],"user":fixture_user(),"memory_bytes":1_073_741_824_u64,"cpus":1,"process_limit":128,"command_timeout_seconds":60});
     let auth = temp.path().join("fixture-auth.json");
     fs::write(&auth, "{}").unwrap();
     let mut agent_docker = docker.clone();

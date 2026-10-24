@@ -28,6 +28,21 @@ fn cmd(exe: &str, args: &[&str]) -> Command {
         arguments: args.iter().map(|s| s.to_string()).collect(),
     }
 }
+// Dropped capabilities also remove root's DAC override. Bind mounts must use
+// the host owner's identity so CI's non-root checkout can write build output.
+fn fixture_user() -> String {
+    // Docker Desktop virtualizes bind ownership; its existing emulation fixture
+    // uses the VM's root identity rather than the macOS account UID.
+    if !cfg!(target_os = "linux") {
+        return "0:0".into();
+    }
+    let identity = |flag| {
+        let output = Process::new("id").arg(flag).output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    format!("{}:{}", identity("-u"), identity("-g"))
+}
 fn git(root: &Path, args: &[&str]) -> String {
     let out = Process::new("git")
         .args([
@@ -76,7 +91,7 @@ fn c_fixture_produces_verified_manifest_from_real_commands_and_callgrind() {
             .into(),
         image: std::env::var("PERFINE_TEST_IMAGE").unwrap(),
         dependency_names: vec![name("cc-valgrind")],
-        user: "0:0".into(),
+        user: fixture_user(),
         cpus: 1,
         memory_bytes: 1024 * 1024 * 1024,
         process_limit: 128,
