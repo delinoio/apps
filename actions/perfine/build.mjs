@@ -13,6 +13,9 @@ await build({
   format: "cjs",
   outfile: "action.cjs",
   legalComments: "inline",
+  // Strip esbuild's source-location comments: pnpm store paths differ by host.
+  // Legal notices remain inline and in ACTION_NOTICES; formatting runs below.
+  minifyWhitespace: true,
 });
 writeFileSync(
   "ACTION_NOTICES",
