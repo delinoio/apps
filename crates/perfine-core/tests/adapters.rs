@@ -540,20 +540,17 @@ else:
         environment.prepare(&request).unwrap();
         let auth = tmp.path().join("auth.json");
         fs::write(&auth, "mock local authentication sentinel").unwrap();
-        let agent = HeadlessAgentAdapter::new(
-            LocalAgentConfig {
-                provider,
-                docker,
-                executable: "agent-cli".into(),
-                auth_file: auth,
-                network: "perfine-agent-egress".into(),
-                model: None,
-                maximum_source_bytes: 8192,
-                maximum_edits: 2,
-            },
-            &environment,
-        )
-        .unwrap();
+        let agent_config = LocalAgentConfig {
+            provider,
+            docker,
+            executable: "agent-cli".into(),
+            auth_file: auth,
+            network: "perfine-agent-egress".into(),
+            model: None,
+            maximum_source_bytes: 8192,
+            maximum_edits: 2,
+        };
+        let agent = HeadlessAgentAdapter::new(agent_config.clone(), &environment).unwrap();
         let context = ExecutionContext {
             workspace: &workspace,
             deadline_unix_seconds: std::time::SystemTime::now()
@@ -584,6 +581,19 @@ else:
         };
         let hypotheses = agent.propose(&profile, &context).unwrap();
         assert_eq!(hypotheses.len(), 1);
+        drop(agent);
+        let agent = HeadlessAgentAdapter::new(agent_config, &environment).unwrap();
+        assert!(agent.implement(&hypotheses[0], &context).is_err());
+        let mut invalid = hypotheses[0].clone();
+        invalid.profile_evidence = vec![digest(b"absent profile")];
+        assert!(
+            agent
+                .restore_hypothesis(&invalid, &profile, &context)
+                .is_err()
+        );
+        agent
+            .restore_hypothesis(&hypotheses[0], &profile, &context)
+            .unwrap();
         let sha = agent.implement(&hypotheses[0], &context).unwrap();
         if unchanged {
             assert_eq!(sha, base);
