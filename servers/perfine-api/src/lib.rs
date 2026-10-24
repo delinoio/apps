@@ -3,6 +3,7 @@ pub mod alerts;
 pub mod auth;
 pub mod evidence;
 pub mod github;
+pub mod preparation;
 pub mod rpc;
 pub mod storage;
 use server_common::authority::Authority;

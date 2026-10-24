@@ -68,6 +68,9 @@ const (
 	// ConnectionServiceSetRawArtifactConsentProcedure is the fully-qualified name of the
 	// ConnectionService's SetRawArtifactConsent RPC.
 	ConnectionServiceSetRawArtifactConsentProcedure = "/perfine.v1.ConnectionService/SetRawArtifactConsent"
+	// ExperimentServicePrepareExperimentProcedure is the fully-qualified name of the
+	// ExperimentService's PrepareExperiment RPC.
+	ExperimentServicePrepareExperimentProcedure = "/perfine.v1.ExperimentService/PrepareExperiment"
 	// ExperimentServiceListExperimentsProcedure is the fully-qualified name of the ExperimentService's
 	// ListExperiments RPC.
 	ExperimentServiceListExperimentsProcedure = "/perfine.v1.ExperimentService/ListExperiments"
@@ -416,6 +419,9 @@ func (UnimplementedConnectionServiceHandler) SetRawArtifactConsent(context.Conte
 
 // ExperimentServiceClient is a client for the perfine.v1.ExperimentService service.
 type ExperimentServiceClient interface {
+	// EXPERIMENT. Validate editable user configuration and compute authoritative core fingerprints.
+	// Creates no experiment and never changes an already-started experiment.
+	PrepareExperiment(context.Context, *connect.Request[v1.PrepareExperimentRequest]) (*connect.Response[v1.PrepareExperimentResponse], error)
 	// READ. Cursor binds connection and filters; order by creation time and ID descending.
 	ListExperiments(context.Context, *connect.Request[v1.ListExperimentsRequest]) (*connect.Response[v1.ListExperimentsResponse], error)
 	// READ. Poll execution and cancellation status separately from performance verdict.
@@ -443,6 +449,12 @@ func NewExperimentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 	baseURL = strings.TrimRight(baseURL, "/")
 	experimentServiceMethods := v1.File_perfine_v1_perfine_proto.Services().ByName("ExperimentService").Methods()
 	return &experimentServiceClient{
+		prepareExperiment: connect.NewClient[v1.PrepareExperimentRequest, v1.PrepareExperimentResponse](
+			httpClient,
+			baseURL+ExperimentServicePrepareExperimentProcedure,
+			connect.WithSchema(experimentServiceMethods.ByName("PrepareExperiment")),
+			connect.WithClientOptions(opts...),
+		),
 		listExperiments: connect.NewClient[v1.ListExperimentsRequest, v1.ListExperimentsResponse](
 			httpClient,
 			baseURL+ExperimentServiceListExperimentsProcedure,
@@ -490,13 +502,19 @@ func NewExperimentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // experimentServiceClient implements ExperimentServiceClient.
 type experimentServiceClient struct {
-	listExperiments  *connect.Client[v1.ListExperimentsRequest, v1.ListExperimentsResponse]
-	getExperiment    *connect.Client[v1.GetExperimentRequest, v1.GetExperimentResponse]
-	startExperiment  *connect.Client[v1.StartExperimentRequest, v1.StartExperimentResponse]
-	resumeExperiment *connect.Client[v1.ResumeExperimentRequest, v1.ResumeExperimentResponse]
-	cancelExperiment *connect.Client[v1.CancelExperimentRequest, v1.CancelExperimentResponse]
-	listCandidates   *connect.Client[v1.ListCandidatesRequest, v1.ListCandidatesResponse]
-	getCandidate     *connect.Client[v1.GetCandidateRequest, v1.GetCandidateResponse]
+	prepareExperiment *connect.Client[v1.PrepareExperimentRequest, v1.PrepareExperimentResponse]
+	listExperiments   *connect.Client[v1.ListExperimentsRequest, v1.ListExperimentsResponse]
+	getExperiment     *connect.Client[v1.GetExperimentRequest, v1.GetExperimentResponse]
+	startExperiment   *connect.Client[v1.StartExperimentRequest, v1.StartExperimentResponse]
+	resumeExperiment  *connect.Client[v1.ResumeExperimentRequest, v1.ResumeExperimentResponse]
+	cancelExperiment  *connect.Client[v1.CancelExperimentRequest, v1.CancelExperimentResponse]
+	listCandidates    *connect.Client[v1.ListCandidatesRequest, v1.ListCandidatesResponse]
+	getCandidate      *connect.Client[v1.GetCandidateRequest, v1.GetCandidateResponse]
+}
+
+// PrepareExperiment calls perfine.v1.ExperimentService.PrepareExperiment.
+func (c *experimentServiceClient) PrepareExperiment(ctx context.Context, req *connect.Request[v1.PrepareExperimentRequest]) (*connect.Response[v1.PrepareExperimentResponse], error) {
+	return c.prepareExperiment.CallUnary(ctx, req)
 }
 
 // ListExperiments calls perfine.v1.ExperimentService.ListExperiments.
@@ -536,6 +554,9 @@ func (c *experimentServiceClient) GetCandidate(ctx context.Context, req *connect
 
 // ExperimentServiceHandler is an implementation of the perfine.v1.ExperimentService service.
 type ExperimentServiceHandler interface {
+	// EXPERIMENT. Validate editable user configuration and compute authoritative core fingerprints.
+	// Creates no experiment and never changes an already-started experiment.
+	PrepareExperiment(context.Context, *connect.Request[v1.PrepareExperimentRequest]) (*connect.Response[v1.PrepareExperimentResponse], error)
 	// READ. Cursor binds connection and filters; order by creation time and ID descending.
 	ListExperiments(context.Context, *connect.Request[v1.ListExperimentsRequest]) (*connect.Response[v1.ListExperimentsResponse], error)
 	// READ. Poll execution and cancellation status separately from performance verdict.
@@ -559,6 +580,12 @@ type ExperimentServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewExperimentServiceHandler(svc ExperimentServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	experimentServiceMethods := v1.File_perfine_v1_perfine_proto.Services().ByName("ExperimentService").Methods()
+	experimentServicePrepareExperimentHandler := connect.NewUnaryHandler(
+		ExperimentServicePrepareExperimentProcedure,
+		svc.PrepareExperiment,
+		connect.WithSchema(experimentServiceMethods.ByName("PrepareExperiment")),
+		connect.WithHandlerOptions(opts...),
+	)
 	experimentServiceListExperimentsHandler := connect.NewUnaryHandler(
 		ExperimentServiceListExperimentsProcedure,
 		svc.ListExperiments,
@@ -603,6 +630,8 @@ func NewExperimentServiceHandler(svc ExperimentServiceHandler, opts ...connect.H
 	)
 	return "/perfine.v1.ExperimentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ExperimentServicePrepareExperimentProcedure:
+			experimentServicePrepareExperimentHandler.ServeHTTP(w, r)
 		case ExperimentServiceListExperimentsProcedure:
 			experimentServiceListExperimentsHandler.ServeHTTP(w, r)
 		case ExperimentServiceGetExperimentProcedure:
@@ -625,6 +654,10 @@ func NewExperimentServiceHandler(svc ExperimentServiceHandler, opts ...connect.H
 
 // UnimplementedExperimentServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedExperimentServiceHandler struct{}
+
+func (UnimplementedExperimentServiceHandler) PrepareExperiment(context.Context, *connect.Request[v1.PrepareExperimentRequest]) (*connect.Response[v1.PrepareExperimentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("perfine.v1.ExperimentService.PrepareExperiment is not implemented"))
+}
 
 func (UnimplementedExperimentServiceHandler) ListExperiments(context.Context, *connect.Request[v1.ListExperimentsRequest]) (*connect.Response[v1.ListExperimentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("perfine.v1.ExperimentService.ListExperiments is not implemented"))

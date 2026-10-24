@@ -23,6 +23,7 @@ fn permission(op: &str) -> Permission {
         | "CompleteUpload"
         | "GetUpload"
         | "CheckUploadEligibility"
+        | "PrepareExperiment"
         | "StartExperiment"
         | "ResumeExperiment"
         | "CancelExperiment"
@@ -254,6 +255,12 @@ impl Server {
                 if row.get::<String, _>("digest") != digest {
                     return Err(Fault::conflict());
                 }
+                if op == "PrepareExperiment" {
+                    let c = connection(&mut tx, space, string(q, "connectionId")).await?;
+                    inactive(&c)?;
+                    self.github.current(&c).await?;
+                    return Ok(row.get("response"));
+                }
                 if op == "ApproveDraft" {
                     let response: Value = row.get("response");
                     let e = experiment(&mut tx, space, string(q, "experimentId")).await?;
@@ -405,6 +412,19 @@ impl Server {
                 .await?;
                 Ok(json!({"candidate":c}))
             }
+            "PrepareExperiment" => {
+                let c = connection(db, space, string(q, "connectionId")).await?;
+                inactive(&c)?;
+                self.github.current(&c).await?;
+                let response = crate::preparation::prepare(
+                    required(q, "configuration")?,
+                    &c["repository"],
+                    chrono::Utc::now(),
+                )?;
+                sqlx::query("INSERT INTO perfine_preparations(space,connection,specification) VALUES($1,$2,$3)")
+                    .bind(id(space)?).bind(id(string(q,"connectionId"))?).bind(&response["specification"]).execute(db).await?;
+                Ok(response)
+            }
             "ListCloudTools" | "StartExperiment" | "ResumeExperiment" => {
                 let cid = if op == "ResumeExperiment" {
                     let e = experiment(db, space, string(q, "experimentId")).await?;
@@ -420,6 +440,13 @@ impl Server {
                 let c = connection(db, space, &cid).await?;
                 inactive(&c)?;
                 self.github.current(&c).await?;
+                if op == "StartExperiment" {
+                    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM perfine_preparations WHERE space=$1 AND connection=$2 AND specification=$3 AND created_at>now()-interval '30 days')")
+                        .bind(id(space)?).bind(id(&cid)?).bind(required(q,"specification")?).fetch_one(&mut *db).await?;
+                    if !exists {
+                        return Err(Fault::precondition("prepare configuration before start"));
+                    }
+                }
                 if op != "ListCloudTools" {
                     return Err(Fault::precondition(
                         "cloud unavailable: use the local CLI; no isolated unattended adapter has been verified",
@@ -735,6 +762,7 @@ impl Server {
         }
         let spec = required(q, "specification")?;
         validate_spec(spec)?;
+        crate::preparation::verify_spec(spec, &c["repository"])?;
         if spec["fingerprintSha256"] != m["experimentFingerprintSha256"]
             || spec["baseSha"] != m["sourceBaseSha"]
             || spec["harnessSha"] != m["harnessSha"]
@@ -1112,7 +1140,12 @@ impl Server {
             .await
     }
     pub async fn maintain(&self) -> Result<()> {
-        for table in ["perfine_audit", "perfine_dedup", "perfine_cursors"] {
+        for table in [
+            "perfine_audit",
+            "perfine_dedup",
+            "perfine_cursors",
+            "perfine_preparations",
+        ] {
             sqlx::query(&format!(
                 "DELETE FROM {table} WHERE created_at<=now()-interval '30 days'"
             ))
@@ -1700,6 +1733,19 @@ impl ConnectionService for Server {
 
 #[allow(refining_impl_trait)]
 impl ExperimentService for Server {
+    async fn prepare_experiment(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, PrepareExperimentRequest>,
+    ) -> ServiceResult<PrepareExperimentResponse> {
+        self.handle(
+            ctx,
+            "PrepareExperiment",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
     async fn list_experiments(
         &self,
         ctx: RequestContext,

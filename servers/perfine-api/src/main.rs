@@ -54,7 +54,7 @@ async fn run() -> anyhow::Result<()> {
             .await?;
         return Ok(());
     }
-    let ready: bool = sqlx::query_scalar("SELECT to_regclass('perfine_cleanup') IS NOT NULL")
+    let ready: bool = sqlx::query_scalar("SELECT to_regclass('perfine_cleanup') IS NOT NULL AND to_regclass('perfine_preparations') IS NOT NULL")
         .fetch_one(&db)
         .await?;
     anyhow::ensure!(ready, "run explicit migrations before serving");

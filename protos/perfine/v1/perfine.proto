@@ -152,6 +152,15 @@ enum CloudUnavailableReason {
   CLOUD_UNAVAILABLE_REASON_CAPACITY_EXCEEDED = 5;
 }
 
+enum EngineMetricKind {
+  ENGINE_METRIC_KIND_UNSPECIFIED = 0;
+  ENGINE_METRIC_KIND_IR = 1;
+  ENGINE_METRIC_KIND_TIME = 2;
+  ENGINE_METRIC_KIND_THROUGHPUT = 3;
+  ENGINE_METRIC_KIND_MEMORY = 4;
+  ENGINE_METRIC_KIND_CUSTOM = 5;
+}
+
 enum MetricObjective {
   METRIC_OBJECTIVE_UNSPECIFIED = 0;
   METRIC_OBJECTIVE_MINIMIZE = 1;
@@ -303,6 +312,8 @@ message ExecutionEnvironment {
   repeated string runtime_flags = 7;
   repeated ToolVersion tools = 8;
   string environment_sha256 = 9;
+  // Public hardware identity only. Environment variables and credentials are forbidden.
+  map<string, string> hardware = 10;
 }
 
 message InputHash {
@@ -325,6 +336,7 @@ message Metric {
   string name = 1;
   string unit = 2;
   MetricObjective objective = 3;
+  EngineMetricKind engine_kind = 4;
 }
 
 // Ratios are fractions, not percentage points. CALLGRIND_IR uses the documented preset; DECLARED requires all numeric criteria. Frozen before evaluation.
@@ -342,9 +354,18 @@ message PerformancePolicy {
 }
 
 message UncertaintyCriteria {
-  double confidence_level = 1;
-  double maximum_relative_interval_width = 2;
-  double near_threshold_margin = 3;
+  // Legacy statistical-summary fields. The v1 engine does not calculate confidence intervals.
+  // Preparation rejects nonzero values rather than treating them as sample-range criteria.
+  double confidence_level = 1 [deprecated = true];
+  double maximum_relative_interval_width = 2 [deprecated = true];
+  double near_threshold_margin = 3 [deprecated = true];
+  // Exact perfine-core policy mapping. Version 1 uses all four fields for DECLARED,
+  // and near_threshold plus repeat_tolerance for CALLGRIND_IR.
+  uint32 engine_schema_version = 4;
+  optional double maximum_relative_range = 5;
+  optional double decision_margin = 6;
+  optional double repeat_tolerance = 7;
+  optional double near_threshold = 8;
 }
 
 // All fields required and positive; simultaneous_candidates <= 5. Deadline stops new starts, not active candidates.
@@ -371,6 +392,11 @@ message ExperimentSpecification {
   string fingerprint_sha256 = 10;
   bool workload_representativeness_confirmed = 11;
   repeated string parent_candidate_ids = 12;
+  string workflow_sha = 13;
+  repeated InputHash inputs = 14;
+  repeated string correctness_checks = 15;
+  string workload_confirmation = 16;
+  google.protobuf.Duration start_duration = 17;
 }
 
 // COMPLETED may have no candidates. Execution success alone never establishes a pass.
@@ -580,6 +606,50 @@ message CloudTool {
   string local_alternative = 6;
   repeated string official_documentation_urls = 7;
   google.protobuf.Timestamp verified_at = 8;
+}
+
+// Required user-selected limits; preparation converts durations to the engine's integer seconds.
+message PreparationLimits {
+  uint32 candidate_count = 1;
+  uint32 simultaneous_candidates = 2;
+  google.protobuf.Duration start_duration = 3;
+  google.protobuf.Duration candidate_timeout = 4;
+}
+
+// Complete editable configuration, before freezing. Fingerprint fields on policy/environment
+// must be empty: the server computes them. Input hashes identify workload bytes, not this config.
+message ExperimentConfiguration {
+  uint32 schema_version = 1;
+  string base_sha = 2;
+  string initial_base_sha = 3;
+  string harness_sha = 4;
+  string workflow_sha = 5;
+  Language language = 6;
+  ExecutionEnvironment environment = 7;
+  repeated WorkloadCase cases = 8;
+  repeated InputHash inputs = 9;
+  repeated string correctness_checks = 10;
+  PerformancePolicy policy = 11;
+  PreparationLimits limits = 12;
+  string workload_confirmation = 13;
+  repeated string parent_candidate_ids = 14;
+}
+
+message PrepareExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  ExperimentConfiguration configuration = 4;
+}
+
+message PrepareExperimentResponse {
+  string request_id = 1;
+  // Server-generated immutable spec suitable for StartExperiment or BeginUpload.
+  ExperimentSpecification specification = 2;
+  // Canonical v1 perfine-core Config JSON for local CLI/Action consumers; not a new evaluator.
+  // Contains public reproducibility data only, never credentials or source.
+  string engine_config_json = 3;
+  google.protobuf.Timestamp prepared_at = 4;
 }
 
 message GetAuthorizationRequest {
@@ -941,6 +1011,10 @@ service ConnectionService {
 }
 
 service ExperimentService {
+  // EXPERIMENT. Validate editable user configuration and compute authoritative core fingerprints.
+  // Creates no experiment and never changes an already-started experiment.
+  rpc PrepareExperiment(PrepareExperimentRequest) returns (PrepareExperimentResponse);
+
   // READ. Cursor binds connection and filters; order by creation time and ID descending.
   rpc ListExperiments(ListExperimentsRequest) returns (ListExperimentsResponse);
 
