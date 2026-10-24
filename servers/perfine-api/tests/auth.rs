@@ -147,3 +147,48 @@ async fn actions_jwt_requires_signature_issuer_audience_and_lifetime() {
     claims.as_object_mut().unwrap().remove("nbf");
     assert!(actions.verify(&sign(&claims)).await.is_err());
 }
+
+#[test]
+fn organization_actions_bind_the_job_not_the_connection_creator() {
+    let repository = json!({"githubRepositoryId":"42","owner":"org","name":"repo"});
+    let execution = json!({"githubRunId":"7","runAttempt":2,"sourceSha":"a".repeat(40),"workflowSha":"b".repeat(40),"workflowPath":".github/workflows/perfine.yml"});
+    let claims = json!({"repository_id":"42","repository":"org/repo","run_id":"7","run_attempt":"2","sha":"a".repeat(40),"workflow_sha":"b".repeat(40),"workflow_ref":"org/repo/.github/workflows/perfine.yml@refs/heads/main","ref":"refs/heads/main","event_name":"workflow_dispatch","actor_id":"99"});
+    let remote = json!({"id":7,"run_attempt":2,"repository":{"id":42},"head_repository":{"id":42},"actor":{"id":99},"head_sha":"a".repeat(40),"path":".github/workflows/perfine.yml","event":"workflow_dispatch"});
+    assert!(auth::execution_scope(&claims, &execution, &repository, &remote).is_ok());
+    for key in [
+        "repository_id",
+        "repository",
+        "run_id",
+        "run_attempt",
+        "sha",
+        "workflow_sha",
+        "workflow_ref",
+        "ref",
+        "event_name",
+        "actor_id",
+    ] {
+        let mut changed = claims.clone();
+        changed[key] = json!("other");
+        assert!(
+            auth::execution_scope(&changed, &execution, &repository, &remote).is_err(),
+            "{key}"
+        );
+    }
+    for key in [
+        "id",
+        "run_attempt",
+        "repository",
+        "head_repository",
+        "actor",
+        "head_sha",
+        "path",
+        "event",
+    ] {
+        let mut changed = remote.clone();
+        changed[key] = json!(null);
+        assert!(
+            auth::execution_scope(&claims, &execution, &repository, &changed).is_err(),
+            "{key}"
+        );
+    }
+}

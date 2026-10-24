@@ -4,6 +4,7 @@ pub mod auth;
 pub mod evidence;
 pub mod github;
 pub mod preparation;
+mod privacy;
 pub mod rpc;
 pub mod storage;
 use server_common::authority::Authority;

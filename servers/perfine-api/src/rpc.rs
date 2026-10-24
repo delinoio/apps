@@ -1065,16 +1065,14 @@ impl Server {
         };
         let c = connection(&mut tx, space, &cid).await?;
         inactive(&c)?;
-        let principal =
-            sqlx::query("SELECT owner_subject,github_actor FROM perfine_connections WHERE id=$1")
-                .bind(id(&cid)?)
-                .fetch_one(&mut *tx)
-                .await?;
+        let principal = sqlx::query("SELECT owner_subject FROM perfine_connections WHERE id=$1")
+            .bind(id(&cid)?)
+            .fetch_one(&mut *tx)
+            .await?;
         let subject: String = principal.get("owner_subject");
         id(&subject).map_err(|_| Fault::denied())?;
-        if string(&claims, "actor_id") != principal.get::<String, _>("github_actor") {
-            return Err(Fault::denied());
-        }
+        // The connection delegates repository execution to its current Delcore principal.
+        // GitHub's signed run actor need not be the human who connected an organization repo.
         let permission = self
             .authority
             .call(
@@ -1101,18 +1099,6 @@ impl Server {
         {
             return Err(Fault::denied());
         }
-        let workflow = format!(
-            "{}/{}@",
-            format_args!(
-                "{}/{}",
-                string(&c["repository"], "owner"),
-                string(&c["repository"], "name")
-            ),
-            string(&execution, "workflowPath")
-        );
-        if !string(&claims, "workflow_ref").starts_with(&workflow) {
-            return Err(Fault::denied());
-        }
         let remote = self
             .github
             .call(
@@ -1125,16 +1111,15 @@ impl Server {
                 None,
             )
             .await?;
-        if integer(&remote["repository"], "id") != rid
-            || remote["head_sha"] != execution["sourceSha"]
-            || remote["path"] != execution["workflowPath"]
-            || remote["event"] != "workflow_dispatch"
+        crate::auth::execution_scope(&claims, &execution, &c["repository"], &remote)?;
+        if matches!(op, "BeginUpload" | "CheckUploadEligibility")
+            && q["manifest"]["sourceHeadSha"] != execution["sourceSha"]
         {
             return Err(Fault::denied());
         }
         if op == "BeginUpload"
             && (q["origin"] != "EXECUTION_ORIGIN_GITHUB_ACTIONS"
-                || q["manifest"]["sourceHeadSha"] != execution["sourceSha"])
+                || q["specification"]["workflowSha"] != execution["workflowSha"])
         {
             return Err(Fault::denied());
         }

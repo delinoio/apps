@@ -26,6 +26,7 @@ delino-protocol.workspace = true
 server-common.workspace = true
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 hmac = "0.12"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 
 perfine-core = { path = "../../crates/perfine-core" }
 

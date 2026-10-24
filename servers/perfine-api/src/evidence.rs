@@ -28,67 +28,7 @@ fn engine_error(_: types::Error) -> Fault {
     Fault::precondition("engine evidence verification failed")
 }
 pub fn content_allowed(bytes: &[u8], kind: &str) -> Result<()> {
-    let text = std::str::from_utf8(bytes).map_err(|_| {
-        Fault::precondition(
-            "opaque binary artifacts require a verified privacy parser; retain locally",
-        )
-    })?;
-    let lower = text.to_ascii_lowercase();
-    if [
-        "-----begin",
-        "private key",
-        "authorization:",
-        "bearer ",
-        "ghp_",
-        "ghs_",
-        "github_pat_",
-        "sk-ant-",
-        "sk-proj-",
-        "dlk_",
-        "aws_secret_access_key",
-        "client_secret",
-        "access_token",
-        "refresh_token",
-        "api_key",
-        "password",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle))
-    {
-        return Err(Fault::precondition(
-            "secret detected; remove credentials before upload",
-        ));
-    }
-    if !matches!(
-        kind,
-        "ARTIFACT_KIND_RAW_PROFILE" | "ARTIFACT_KIND_RAW_TEST_LOG"
-    ) {
-        let v: Value = serde_json::from_slice(bytes)?;
-        fn check(v: &Value) -> bool {
-            match v {
-                Value::Object(o) => o.iter().all(|(k, v)| {
-                    !matches!(
-                        k.as_str(),
-                        "source_code"
-                            | "sourceCode"
-                            | "diff"
-                            | "patch"
-                            | "content"
-                            | "source_snippet"
-                            | "sourceSnippet"
-                            | "repository_files"
-                    ) && check(v)
-                }),
-                Value::Array(a) => a.iter().all(check),
-                Value::String(s) => !s.contains("diff --git") && !s.contains("@@ -"),
-                _ => true,
-            }
-        }
-        if !check(&v) {
-            return Err(Fault::precondition("source content is not eligible"));
-        }
-    }
-    Ok(())
+    crate::privacy::content_allowed(bytes, kind)
 }
 struct VerifiedRound {
     base: engine::VerifiedRun,
@@ -276,12 +216,41 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
             }
         }
         // Every hash consumed by the engine must refer to the same retained byte object.
+        let mut observations = BTreeSet::new();
         for (name, a) in &manifest.artifacts {
             let b = bytes
                 .get(name.as_str())
                 .ok_or_else(|| Fault::precondition("referenced artifact missing"))?;
             if hash(b) != a.sha256.as_str() {
                 return Err(Fault::precondition("artifact mapping mismatch"));
+            }
+            let hosted = m["artifacts"]
+                .as_array()
+                .and_then(|entries| {
+                    entries
+                        .iter()
+                        .find(|entry| string(entry, "name") == name.as_str())
+                })
+                .ok_or_else(|| Fault::precondition("artifact descriptor missing"))?;
+            let (summary_kind, raw_kind) = match a.kind {
+                engine::ArtifactKind::Measurement => {
+                    ("ARTIFACT_KIND_MEASUREMENTS", "ARTIFACT_KIND_RAW_TEST_LOG")
+                }
+                engine::ArtifactKind::Profile => {
+                    ("ARTIFACT_KIND_PROFILE_SUMMARY", "ARTIFACT_KIND_RAW_PROFILE")
+                }
+                engine::ArtifactKind::Correctness => (
+                    "ARTIFACT_KIND_CORRECTNESS_RESULTS",
+                    "ARTIFACT_KIND_RAW_TEST_LOG",
+                ),
+            };
+            if string(hosted, "kind") == raw_kind {
+                // Original native evidence remains hash-bound, consent-gated and inspected.
+                // It supplements normalized observations; it cannot replace them.
+                continue;
+            }
+            if string(hosted, "kind") != summary_kind {
+                return Err(Fault::precondition("artifact kind mapping mismatch"));
             }
             let parsed: Value = serde_json::from_slice(b)?;
             let expected = match a.kind {
@@ -294,6 +263,12 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
                     "structured artifact observations disagree with engine manifest",
                 ));
             }
+            observations.insert(summary_kind);
+        }
+        if observations.len() != 3 {
+            return Err(Fault::precondition(
+                "normalized measurement, profile and correctness artifacts required",
+            ));
         }
         engine::verify(
             &frozen,
