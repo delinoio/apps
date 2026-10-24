@@ -18,6 +18,7 @@ import {
   type DraftBinding,
 } from "@delino/protos/perfine/v1/perfine_pb";
 import { CandidateEvidence } from "./experiments";
+import { Specification } from "./start";
 import { Button, Card, External, Failure, Field, Notice } from "./ui";
 import { safeURL, useRequestId, uuid7 } from "./core";
 export function Review({
@@ -158,7 +159,16 @@ export function Review({
         remeasurement. Only measured production changes belong in this PR;
         exclude harnesses, fork infrastructure, unrelated commits and user work.
       </Notice>
-      <CandidateEvidence candidate={candidate} />
+      <CandidateEvidence
+        candidate={candidate}
+        complete={experiment.evidenceCompletion === CompletionState.COMPLETE}
+      />
+      {experiment.specification && (
+        <details className="panel">
+          <summary>Review frozen policy and protected workloads</summary>
+          <Specification spec={experiment.specification} />
+        </details>
+      )}
       <External github url={candidate.githubDiffUrl}>
         Inspect measured source on GitHub
       </External>
