@@ -1,0 +1,37 @@
+{
+  "name": "perfine",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name perfine --app-port 46324 rsbuild dev",
+    "build": "rsbuild build && cp \"../../LICENSE\" \"../../NOTICE\" \"../../packages/ui/LICENSE.shadcn\" \"dist/\"",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm typecheck && rstest",
+    "ci:checks": "pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@tanstack/react-query": "5.101.4",
+    "@connectrpc/connect-query": "2.3.1",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0",
+    "@bufbuild/protobuf": "2.16.0",
+    "@logto/react": "4.1.1",
+    "@delino/protos": "workspace:*",
+    "@delino/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3",
+    "@rstest/core": "0.12.4",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/dom": "10.4.2",
+    "jsdom": "20.0.3"
+  }
+}
