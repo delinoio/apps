@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 exclude = ["servers"]
-members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "crates/perfine-core"]
+members = ["apps/delidev/src-tauri", "apps/delitools/src-tauri", "crates/perfine-core", "cmds/perfine"]
 
 [patch.crates-io]
 # Match the upstream CEF/winit patch so menus and runtime windows share one dpi type.
