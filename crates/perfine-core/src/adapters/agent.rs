@@ -395,8 +395,13 @@ impl AgentAdapter for HeadlessAgentAdapter<'_> {
             serde_json::to_string(&json!({"hypothesis":hypothesis,"sources":sources}))?
         );
         let response: Edits = serde_json::from_value(self.invoke(&prompt, schema, context)?)?;
-        if response.edits.is_empty() || response.edits.len() > self.config.maximum_edits {
-            return Err(Error::Incomplete("no candidate or excessive edits"));
+        // The extension contract permits declining a hypothesis without fabricating
+        // a candidate. Return the actual unchanged source identity to the caller.
+        if response.edits.is_empty() {
+            return self.environment.source(context.workspace);
+        }
+        if response.edits.len() > self.config.maximum_edits {
+            return Err(Error::Incomplete("excessive edits"));
         }
         let mut unique = BTreeSet::new();
         let mut size = 0usize;
