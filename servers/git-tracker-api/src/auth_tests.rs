@@ -435,9 +435,19 @@ async fn token_validation_is_preserved() {
         );
     }
     // Tampered signature, missing kid and non-RS256 headers are rejected before any refresh.
-    let mut tampered = token("fixture");
-    tampered.pop();
-    tampered.push(if tampered.ends_with('A') { 'B' } else { 'A' });
+    // Replace the first signature character with a different one. Its six bits all map to the first
+    // decoded signature bytes (unlike the last character, whose trailing padding bits may be ignored),
+    // and choosing the replacement from the original character guarantees the token changes.
+    let valid = token("fixture");
+    let mut tampered = valid.clone();
+    let signature_start = tampered
+        .rfind('.')
+        .expect("compact JWT has a signature segment")
+        + 1;
+    let original = tampered.as_bytes()[signature_start];
+    let replacement = if original == b'A' { 'B' } else { 'A' };
+    tampered.replace_range(signature_start..=signature_start, &replacement.to_string());
+    assert_ne!(tampered, valid);
     assert_eq!(
         code(h.actions.verify(&tampered).await),
         ErrorCode::PermissionDenied
