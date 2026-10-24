@@ -456,13 +456,7 @@ impl Server {
         if !to.is_empty() || !from.is_empty() {
             records.retain(|r| commits.contains(&r.execution.context.commit))
         }
-        let offset = offset.min(records.len());
-        let end = offset.saturating_add(100).min(records.len());
-        let next = if offset.saturating_add(100) <= records.len() {
-            end.to_string()
-        } else {
-            String::new()
-        };
+        let (offset, end, next) = history_page_window(offset, records.len());
         let executions: Vec<_> = records[offset..end]
             .iter()
             .map(|r| {
@@ -480,6 +474,24 @@ impl Server {
         Ok(json!({"executions":executions,"nextCursor":next,"commits":commits}))
     }
 }
+/// Number of executions in one history page.
+const HISTORY_PAGE_SIZE: usize = 100;
+
+/// Computes the `[offset, end)` window and next cursor for a history page over `len` matching
+/// executions. The offset is clamped to `len`. The cursor is the decimal end offset only when at
+/// least one matching execution remains after the page; a final page, including one that is
+/// exactly full, returns an empty cursor.
+fn history_page_window(offset: usize, len: usize) -> (usize, usize, String) {
+    let offset = offset.min(len);
+    let end = offset.saturating_add(HISTORY_PAGE_SIZE).min(len);
+    let next = if end < len {
+        end.to_string()
+    } else {
+        String::new()
+    };
+    (offset, end, next)
+}
+
 // The generated trait permits borrowed responses; these handlers return owned messages.
 #[allow(refining_impl_trait)]
 impl GitTrackerService for Server {
