@@ -11,8 +11,20 @@ pub mod usage;
 use crate::{Fault, Result, auth::Identity, config::Config};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-pub use server_common::{canonical_id as canonical, id, string};
+pub use server_common::{id, string};
 use sqlx::PgConnection;
+/// Reports whether `value` is a canonical lowercase hyphenated UUID v7 with the RFC 9562 variant.
+///
+/// Delcore keeps this predicate local instead of using `server_common::canonical_id`, which checks
+/// only the version nibble. Other services keep the shared predicate until their contracts adopt
+/// the variant check; remove this copy only when the shared predicate rejects non-RFC variants.
+pub fn canonical(value: &str) -> bool {
+    uuid::Uuid::parse_str(value).is_ok_and(|parsed| {
+        parsed.get_version_num() == 7
+            && parsed.get_variant() == uuid::Variant::RFC4122
+            && parsed.to_string() == value
+    })
+}
 pub fn uuid(value: &str) -> Result<uuid::Uuid> {
     if !canonical(value) && value != "00000000-0000-0000-0000-000000000000" {
         return Err(invalid("invalid canonical UUID v7"));
@@ -200,11 +212,58 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn canonical_requires_rfc_variant_uuid_v7() {
+        for rejected in [
+            // Version 7 shape with the NCS, Microsoft and future variants.
+            "01900000-0000-7000-0000-000000000001",
+            "01900000-0000-7000-4000-000000000001",
+            "01900000-0000-7000-7000-000000000001",
+            "01900000-0000-7000-c000-000000000001",
+            "01900000-0000-7000-d000-000000000001",
+            "01900000-0000-7000-e000-000000000001",
+            "01900000-0000-7000-f000-000000000001",
+            // Other versions, spellings and sentinels.
+            "550e8400-e29b-41d4-a716-446655440000",
+            "01900000-0000-7000-8000-00000000000A",
+            "01900000-0000-7000-A000-000000000001",
+            "019000000000700080000000000000001",
+            "019000000000700080000000000001",
+            "{01900000-0000-7000-8000-000000000001}",
+            "urn:uuid:01900000-0000-7000-8000-000000000001",
+            "00000000-0000-0000-0000-000000000000",
+            "",
+        ] {
+            assert!(!canonical(rejected), "{rejected}");
+        }
+        for accepted in [
+            "01900000-0000-7000-8000-000000000001",
+            "01900000-0000-7000-9000-000000000001",
+            "01900000-0000-7000-a000-000000000001",
+            "01900000-0000-7000-b000-000000000001",
+        ] {
+            assert!(canonical(accepted), "{accepted}");
+        }
+        assert!(canonical(&id()));
+    }
+    #[test]
+    fn uuid_keeps_the_nil_sentinel_and_rejects_non_rfc_variants() {
+        assert!(uuid("00000000-0000-0000-0000-000000000000").is_ok());
+        assert!(uuid("01900000-0000-7000-8000-000000000001").is_ok());
+        for rejected in [
+            "01900000-0000-7000-0000-000000000001",
+            "01900000-0000-7000-c000-000000000001",
+            "01900000-0000-7000-e000-000000000001",
+        ] {
+            assert!(uuid(rejected).is_err(), "{rejected}");
+        }
+    }
+    #[test]
     fn pagination_has_bounded_sizes_and_canonical_cursors() {
         assert_eq!(page(&Value::Null).unwrap().0, 50);
         assert!(page(&json!({"size":101})).is_err());
         assert!(page(&json!({"size":-1})).is_err());
         assert!(page(&json!({"afterId":"00000000-0000-0000-0000-000000000000"})).is_err());
         assert!(page(&json!({"afterId":"019b0000-0000-7000-8000-000000000001"})).is_ok());
+        assert!(page(&json!({"afterId":"019b0000-0000-7000-c000-000000000001"})).is_err());
     }
 }

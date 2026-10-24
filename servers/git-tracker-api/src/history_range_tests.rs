@@ -110,12 +110,21 @@ impl Fixture {
 
     /// Runs `history` for `branch=main` plus `extra` request fields and returns the response.
     async fn history(&self, executions: &[(&str, char, u64, &str)], extra: Value) -> Value {
-        let records: serde_json::Map<String, Value> = executions
+        let records = executions
             .iter()
             .map(|(id, commit, order, registered_at)| {
                 ((*id).to_owned(), record(id, *commit, *order, registered_at))
             })
             .collect();
+        self.history_records(records, extra).await
+    }
+
+    /// Like `history`, but takes prebuilt record values so a test can customize them.
+    async fn history_records(
+        &self,
+        records: serde_json::Map<String, Value>,
+        extra: Value,
+    ) -> Value {
         self.history_of(true, records, extra).await
     }
 
@@ -508,4 +517,126 @@ async fn branch_omitted_history_keeps_registration_order_path() {
         .history_of(false, cba_records(), json!({"branch": ""}))
         .await;
     assert_eq!(commits(&v), "A", "{v}");
+}
+
+/// Marks a fixture record as a pull-request execution.
+fn pull_request(mut r: Value) -> Value {
+    r["execution"]["context"]["pullRequest"] = json!(1);
+    r
+}
+
+fn records(items: Vec<(&str, Value)>) -> serde_json::Map<String, Value> {
+    items
+        .into_iter()
+        .map(|(id, r)| (id.to_owned(), r))
+        .collect()
+}
+
+/// Maps each returned execution ID to its representative flag.
+fn flags(v: &Value) -> Vec<(String, bool)> {
+    v["executions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            (
+                e["context"]["executionId"].as_str().unwrap().to_owned(),
+                e["representative"].as_bool().unwrap_or(false),
+            )
+        })
+        .collect()
+}
+
+fn flag(v: &Value, id: &str) -> bool {
+    flags(v).into_iter().find(|(i, _)| i == id).unwrap().1
+}
+
+#[tokio::test]
+async fn newer_pr_on_the_same_sha_does_not_displace_the_branch_representative() {
+    let f = Fixture::new("A").await;
+    let v = f
+        .history_records(
+            records(vec![
+                ("branch", record("branch", 'A', 1, T0)),
+                ("pr", pull_request(record("pr", 'A', 2, T0))),
+            ]),
+            json!({}),
+        )
+        .await;
+    // Both executions stay inspectable with their measurements; only the branch one is flagged.
+    assert_eq!(ids(&v), ["pr", "branch"], "{v}");
+    assert!(flag(&v, "branch"), "{v}");
+    assert!(!flag(&v, "pr"), "{v}");
+    for e in v["executions"].as_array().unwrap() {
+        assert_eq!(e["measurements"][0]["rows"][0]["values"]["bytes"], "40");
+    }
+}
+
+#[tokio::test]
+async fn date_window_excluding_the_pr_keeps_the_global_branch_representative() {
+    let f = Fixture::new("A").await;
+    let all = || {
+        records(vec![
+            ("branch", record("branch", 'A', 1, "2026-01-01T00:00:00Z")),
+            (
+                "pr",
+                pull_request(record("pr", 'A', 2, "2026-03-01T00:00:00Z")),
+            ),
+        ])
+    };
+    let v = f
+        .history_records(all(), json!({"until":"2026-02-01T00:00:00Z"}))
+        .await;
+    assert_eq!(ids(&v), ["branch"], "{v}");
+    assert!(flag(&v, "branch"), "{v}");
+    // A window containing only the PR still returns it, unflagged.
+    let v = f
+        .history_records(all(), json!({"since":"2026-02-01T00:00:00Z"}))
+        .await;
+    assert_eq!(ids(&v), ["pr"], "{v}");
+    assert!(!flag(&v, "pr"), "{v}");
+}
+
+#[tokio::test]
+async fn filtered_windows_never_promote_an_older_branch_execution() {
+    let f = Fixture::new("A").await;
+    let v = f
+        .history_records(
+            records(vec![
+                ("b1", record("b1", 'A', 1, "2026-01-01T00:00:00Z")),
+                ("b2", record("b2", 'A', 2, "2026-03-01T00:00:00Z")),
+            ]),
+            json!({"until":"2026-02-01T00:00:00Z"}),
+        )
+        .await;
+    // B2 lies outside the window but is still the global representative, so B1 is not promoted.
+    assert_eq!(ids(&v), ["b1"], "{v}");
+    assert!(!flag(&v, "b1"), "{v}");
+}
+
+#[tokio::test]
+async fn late_completing_older_branch_execution_stays_non_representative() {
+    let f = Fixture::new("A").await;
+    let mut b1 = record("b1", 'A', 1, T0);
+    b1["execution"]["completedAt"] = json!("2026-06-01T00:00:00Z");
+    let mut b2 = record("b2", 'A', 2, T0);
+    b2["execution"]["completedAt"] = json!("2026-02-01T00:00:00Z");
+    let v = f
+        .history_records(records(vec![("b1", b1), ("b2", b2)]), json!({}))
+        .await;
+    assert!(flag(&v, "b2"), "{v}");
+    assert!(!flag(&v, "b1"), "{v}");
+}
+
+#[tokio::test]
+async fn pr_only_commit_has_no_branch_representative() {
+    let f = Fixture::new("A").await;
+    let v = f
+        .history_records(
+            records(vec![("pr", pull_request(record("pr", 'A', 1, T0)))]),
+            json!({}),
+        )
+        .await;
+    assert_eq!(ids(&v), ["pr"], "{v}");
+    assert!(!flag(&v, "pr"), "{v}");
 }

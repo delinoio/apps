@@ -1028,5 +1028,13 @@ mod tests {
         }
         assert!(uuid("550e8400-e29b-41d4-a716-446655440000").is_err());
         assert!(uuid("01900000-0000-7000-8000-000000000001").is_ok());
+        for variant in ['0', '4', '7', 'c', 'd', 'e', 'f'] {
+            let id = format!("01900000-0000-7000-{variant}000-000000000001");
+            assert!(uuid(&id).is_err(), "{id}");
+        }
+        for variant in ['8', '9', 'a', 'b'] {
+            let id = format!("01900000-0000-7000-{variant}000-000000000001");
+            assert!(uuid(&id).is_ok(), "{id}");
+        }
     }
 }

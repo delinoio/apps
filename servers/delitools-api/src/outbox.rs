@@ -180,9 +180,17 @@ impl Outbox {
         Self { pool }
     }
 
-    /// Stores the confirmed usage events of one attempt in one transaction.
+    /// Stores the confirmed usage events of one attempt in one transaction, within `budget`.
     ///
-    /// Replays of the same event key are ignored so a repeated call cannot create a second charge.
+    /// The budget covers connection acquisition, the transaction and the commit. PostgreSQL
+    /// receives the remaining budget as `lock_timeout` and `statement_timeout`, so a conflicting
+    /// table lock ends the statement server-side. The client enforces the same deadline: a
+    /// connection whose operation did not finish in time may hold an unfinished statement or an
+    /// uncertain commit, so it is detached from the pool and closed instead of being reused.
+    ///
+    /// Replays of the same event key are ignored so a repeated call, including a retry after an
+    /// uncertain commit, cannot create a second charge or a partial direction pair.
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_attempt(
         &self,
         tenant_id: Uuid,
@@ -191,8 +199,59 @@ impl Outbox {
         occurred_at: DateTime<Utc>,
         events: &[NewEvent],
         now: DateTime<Utc>,
+        budget: Duration,
     ) -> Result<(), sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let deadline = tokio::time::Instant::now() + budget;
+        let mut conn = tokio::time::timeout_at(deadline, self.pool.acquire())
+            .await
+            .map_err(|_| sqlx::Error::PoolTimedOut)??;
+        let work = Self::insert_events(
+            &mut conn,
+            deadline,
+            tenant_id,
+            request_id,
+            attempt,
+            occurred_at,
+            events,
+            now,
+        );
+        match tokio::time::timeout_at(deadline, work).await {
+            Ok(result) => result,
+            Err(_) => {
+                // The abandoned statement or commit may still be running on the server. Dropping
+                // the detached connection closes its socket instead of returning it to the pool.
+                drop(conn.detach());
+                Err(sqlx::Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "usage persistence budget exhausted",
+                )))
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_events(
+        conn: &mut sqlx::PgConnection,
+        deadline: tokio::time::Instant,
+        tenant_id: Uuid,
+        request_id: Uuid,
+        attempt: u32,
+        occurred_at: DateTime<Utc>,
+        events: &[NewEvent],
+        now: DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = sqlx::Connection::begin(&mut *conn).await?;
+        // `SET LOCAL` cannot take bind parameters; `set_config(..., true)` is transaction-local.
+        let remaining = deadline
+            .saturating_duration_since(tokio::time::Instant::now())
+            .as_millis()
+            .max(1);
+        sqlx::query(
+            "SELECT set_config('lock_timeout',$1,true), set_config('statement_timeout',$1,true)",
+        )
+        .bind(format!("{remaining}ms"))
+        .execute(&mut *tx)
+        .await?;
         for event in events {
             sqlx::query(
                 "INSERT INTO usage_outbox(id,tenant_id,request_id,attempt,direction,event_key,delivery_key,meter_key,quantity,occurred_at,state,next_attempt_at,created_at,expires_at)

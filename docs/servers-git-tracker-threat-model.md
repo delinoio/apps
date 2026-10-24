@@ -8,6 +8,7 @@ Untrusted browsers, CI jobs, forks, repository configuration, JSON rows and GitH
 
 - Cross-space reads and mutations: verify current Delcore permissions for the connected space on protected operations. Repository IDs are globally unique. An initial connection requires both space management and GitHub administrator authority.
 - Credential theft: require OIDC issuer, audience, signature and expiry; bind Actions run identity, repository, event, PR and commit. Fork credentials cannot write upstream push data or supply authoritative baseline overrides. API tokens are repository-scoped, expire and can be revoked; store only digests.
+- Unauthenticated JWKS refresh amplification: an Actions token header with an unknown `kid` is untrusted input that can request a key refresh. Refresh attempts are limited to one per 30 seconds per process and one in flight, covering unchanged, failed and cancelled attempts and any `kid` value, without a per-key negative cache. The fetch runs outside the key-cache lock so authentication of tokens with fresh cached keys is not delayed. A snapshot older than 300 seconds since its last successful fetch never authorizes a token; failures do not extend it. A newly rotated key is accepted only after a permitted refresh and full validation. Logs record only bounded outcome categories, never tokens or `kid` values.
 - Forged or reordered GitHub events: verify HMAC before parsing effects. Repository events re-fetch current metadata. App removal/disconnection makes all retained history private. A failed visibility lookup retains the last confirmed visibility by contract.
 - Concurrent or replayed uploads: lock the repository row, validate the whole request and commit atomically. Same numeric row values are retransmissions; changed values conflict. Registration order and frozen comparison references cannot be changed by completion or retransmission.
 - Malicious numbers: accept only finite JSON decimal syntax, bound parser text/exponent expansion and compare exact rationals. Reject unsupported units and negative thresholds. Never use floating point for regression decisions.
@@ -17,7 +18,7 @@ Untrusted browsers, CI jobs, forks, repository configuration, JSON rows and GitH
 
 ## Intentional limits
 
-A visibility transition that GitHub synchronization has not observed remains public until successful synchronization. An in-flight response can have been authorized before a visibility transition. Measurements have no expiry or product quota. Payload and numeric parser bounds protect runtime resources. Automated security tests use fixtures and mocks; external certification and live-provider acceptance are separate.
+A visibility transition that GitHub synchronization has not observed remains public until successful synchronization. An in-flight response can have been authorized before a visibility transition. Measurements have no expiry or product quota. Payload and numeric parser bounds protect runtime resources. A rotated Actions signing key can be rejected for up to 30 seconds after the previous refresh attempt started. Automated security tests use fixtures and mocks; external certification and live-provider acceptance are separate.
 
 ## References
 

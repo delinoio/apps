@@ -10,19 +10,89 @@ use server_common::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::{Mutex, RwLock};
+
+/// Maximum age of a successfully fetched JWKS snapshot that may authorize a token. Failed or
+/// suppressed refreshes never extend it.
+const SNAPSHOT_FRESHNESS: Duration = Duration::from_secs(300);
+/// Minimum time between two JWKS refresh attempt starts in this process. It covers successful
+/// and failed attempts and every unknown `kid`, so an unauthenticated token header cannot
+/// amplify outbound requests. A rotated key becomes usable on the first eligible attempt.
+const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+/// Upper bound for a JWKS response body.
+const JWKS_BODY_LIMIT: usize = 256 << 10;
+
+/// Monotonic time source. Production uses [`Instant::now`]; tests substitute a controlled clock.
+type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
+
+/// Outcome category of one refresh decision, used for bounded structured logs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RefreshOutcome {
+    Refreshed,
+    Suppressed,
+    TransportFailed,
+    StatusFailed,
+    BodyFailed,
+    ParseFailed,
+}
+impl RefreshOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Refreshed => "refreshed",
+            Self::Suppressed => "suppressed",
+            Self::TransportFailed => "transport_failed",
+            Self::StatusFailed => "status_failed",
+            Self::BodyFailed => "body_failed",
+            Self::ParseFailed => "parse_failed",
+        }
+    }
+}
+
+/// Last successfully fetched key set and the time it was fetched.
+struct Snapshot {
+    set: JwkSet,
+    fetched: Instant,
+}
+
+/// Single-flight refresh coordination, kept separate from the key cache so that a network wait
+/// never blocks verification of a token whose key is fresh in the cache.
+struct Refresh {
+    /// Start of the previous refresh attempt, whatever its result. `None` until the first attempt.
+    last_attempt: Option<Instant>,
+}
+
 pub struct Actions {
     http: reqwest::Client,
     jwks_url: String,
-    keys: RwLock<(JwkSet, Instant)>,
+    keys: RwLock<Snapshot>,
+    /// Held across a refresh fetch, so at most one fetch is in flight. Dropping the holder
+    /// (including by cancellation) releases it; `last_attempt` was already recorded, so a
+    /// cancelled attempt does not allow an immediate retry.
+    refresh: Mutex<Refresh>,
+    clock: Clock,
 }
 impl Actions {
     pub fn new(http: reqwest::Client, jwks_url: String, keys: JwkSet) -> Self {
+        Self::build(http, jwks_url, keys, None, Arc::new(Instant::now))
+    }
+    fn build(
+        http: reqwest::Client,
+        jwks_url: String,
+        keys: JwkSet,
+        last_attempt: Option<Instant>,
+        clock: Clock,
+    ) -> Self {
+        let fetched = clock();
         Self {
             http,
             jwks_url,
-            keys: RwLock::new((keys, Instant::now())),
+            keys: RwLock::new(Snapshot { set: keys, fetched }),
+            refresh: Mutex::new(Refresh { last_attempt }),
+            clock,
         }
     }
     pub async fn discover() -> anyhow::Result<Self> {
@@ -49,16 +119,29 @@ impl Actions {
             jwks_url.starts_with("https://token.actions.githubusercontent.com/"),
             "invalid Actions JWKS endpoint"
         );
+        let attempt = Instant::now();
         let keys = bounded_json(
             http.get(&jwks_url).send().await?.error_for_status()?,
-            256 << 10,
+            JWKS_BODY_LIMIT,
         )
         .await?;
-        Ok(Self {
+        // The startup fetch counts as the first refresh attempt for the retry interval.
+        Ok(Self::build(
             http,
             jwks_url,
-            keys: RwLock::new((serde_json::from_value(keys)?, Instant::now())),
-        })
+            serde_json::from_value(keys)?,
+            Some(attempt),
+            Arc::new(Instant::now),
+        ))
+    }
+    #[cfg(test)]
+    pub(crate) fn with_clock(
+        http: reqwest::Client,
+        jwks_url: String,
+        keys: JwkSet,
+        clock: Clock,
+    ) -> Self {
+        Self::build(http, jwks_url, keys, None, clock)
     }
     pub async fn verify(&self, raw: &str) -> Result<Value> {
         let header = jsonwebtoken::decode_header(raw).map_err(|_| Fault::denied())?;
@@ -66,26 +149,7 @@ impl Actions {
             return Err(Fault::denied());
         }
         let kid = header.kid.ok_or_else(Fault::denied)?;
-        let read = self.keys.read().await;
-        if read.1.elapsed() > Duration::from_secs(300) || read.0.find(&kid).is_none() {
-            drop(read);
-            let mut keys = self.keys.write().await;
-            if keys.1.elapsed() > Duration::from_secs(300) || keys.0.find(&kid).is_none() {
-                let response = self.http.get(&self.jwks_url).send().await?;
-                if !response.status().is_success() {
-                    return Err(Fault::unavailable());
-                }
-                *keys = (
-                    serde_json::from_value(bounded_json(response, 256 << 10).await?)?,
-                    Instant::now(),
-                );
-            }
-        } else {
-            drop(read)
-        }
-        let keys = self.keys.read().await;
-        let key = keys.0.find(&kid).ok_or_else(Fault::denied)?;
-        let key = DecodingKey::from_jwk(key).map_err(|_| Fault::denied())?;
+        let key = self.signing_key(&kid).await?;
         let mut validation = Validation::new(Algorithm::RS256);
         validation.set_issuer(&["https://token.actions.githubusercontent.com"]);
         validation.set_audience(&["https://git-tracker.api.delino.io"]);
@@ -93,6 +157,101 @@ impl Actions {
         jsonwebtoken::decode::<Value>(raw, &key, &validation)
             .map(|t| t.claims)
             .map_err(|_| Fault::denied())
+    }
+    /// Resolves the decoding key for `kid` from a fresh snapshot, refreshing at most once per
+    /// [`REFRESH_INTERVAL`] when the key is absent or the snapshot has expired.
+    async fn signing_key(&self, kid: &str) -> Result<DecodingKey> {
+        if let Some(key) = self.cached_key(kid).await? {
+            return Ok(key);
+        }
+        self.refresh_for(kid).await?;
+        match self.cached_key(kid).await? {
+            Some(key) => Ok(key),
+            // An expired snapshot fails closed as a dependency failure; an unknown key in a
+            // fresh snapshot is a credential the provider does not publish.
+            None if self.snapshot_expired().await => Err(Fault::unavailable()),
+            None => Err(Fault::denied()),
+        }
+    }
+    /// Returns the key only when the snapshot is within [`SNAPSHOT_FRESHNESS`]. The read lock is
+    /// held only for the in-memory lookup.
+    async fn cached_key(&self, kid: &str) -> Result<Option<DecodingKey>> {
+        let snapshot = self.keys.read().await;
+        if self.expired(&snapshot) {
+            return Ok(None);
+        }
+        snapshot
+            .set
+            .find(kid)
+            .map(|jwk| DecodingKey::from_jwk(jwk).map_err(|_| Fault::denied()))
+            .transpose()
+    }
+    async fn snapshot_expired(&self) -> bool {
+        self.expired(&*self.keys.read().await)
+    }
+    fn expired(&self, snapshot: &Snapshot) -> bool {
+        (self.clock)().saturating_duration_since(snapshot.fetched) > SNAPSHOT_FRESHNESS
+    }
+    /// Joins or starts the single refresh. Callers queue on the coordinator (not the cache lock),
+    /// then re-evaluate the shared result: a refresh that already supplied the key, or a recent
+    /// attempt, means no further fetch. Returns an error only when this call's own fetch failed.
+    async fn refresh_for(&self, kid: &str) -> Result<()> {
+        let mut refresh = self.refresh.lock().await;
+        if self.cached_key(kid).await?.is_some() {
+            return Ok(());
+        }
+        let now = (self.clock)();
+        if let Some(last) = refresh.last_attempt {
+            let since = now.saturating_duration_since(last);
+            if since < REFRESH_INTERVAL {
+                tracing::debug!(
+                    outcome = RefreshOutcome::Suppressed.as_str(),
+                    retry_after_ms = (REFRESH_INTERVAL - since).as_millis() as u64,
+                    "Actions JWKS refresh suppressed"
+                );
+                return Ok(());
+            }
+        }
+        // Record the attempt before the first await so cancellation cannot permit a retry storm.
+        refresh.last_attempt = Some(now);
+        match self.fetch_keys().await {
+            Ok(set) => {
+                let key_count = set.keys.len();
+                *self.keys.write().await = Snapshot {
+                    set,
+                    fetched: (self.clock)(),
+                };
+                tracing::info!(
+                    outcome = RefreshOutcome::Refreshed.as_str(),
+                    key_count,
+                    "Actions JWKS refreshed"
+                );
+                Ok(())
+            }
+            Err(outcome) => {
+                tracing::warn!(
+                    outcome = outcome.as_str(),
+                    "Actions JWKS refresh failed; keeping the previous snapshot"
+                );
+                Err(Fault::unavailable())
+            }
+        }
+    }
+    /// Fetches and parses the key set without holding the cache lock.
+    async fn fetch_keys(&self) -> std::result::Result<JwkSet, RefreshOutcome> {
+        let response = self
+            .http
+            .get(&self.jwks_url)
+            .send()
+            .await
+            .map_err(|_| RefreshOutcome::TransportFailed)?;
+        if !response.status().is_success() {
+            return Err(RefreshOutcome::StatusFailed);
+        }
+        let body = bounded_json(response, JWKS_BODY_LIMIT)
+            .await
+            .map_err(|_| RefreshOutcome::BodyFailed)?;
+        serde_json::from_value(body).map_err(|_| RefreshOutcome::ParseFailed)
     }
 }
 impl Server {
