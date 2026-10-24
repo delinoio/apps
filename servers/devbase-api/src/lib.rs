@@ -5,6 +5,7 @@ mod fingerprint;
 pub mod http;
 pub mod maintenance;
 mod operations;
+mod response;
 mod size;
 pub mod store;
 mod validation;
