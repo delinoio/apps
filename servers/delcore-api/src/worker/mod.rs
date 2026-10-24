@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+mod allowance_recovery;
 mod cancellation;
 mod maintenance;
 mod metering;
@@ -16,6 +17,7 @@ use crate::{
     postgres,
     provider::{self, Client, Error},
 };
+pub use allowance_recovery::ALLOWANCE_RECOVERY_BATCH;
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use reqwest::Method;
@@ -121,6 +123,11 @@ impl Worker {
         let _lock = self.step_lock.lock().await;
         self.recover().await?;
         self.maintain(Utc::now()).await?;
+        // The backlog sweep has its own transaction and never blocks ordinary work: a failure is
+        // reported and retried by the next step while metering and jobs continue.
+        if let Err(error) = self.recover_free_allowances().await {
+            tracing::error!(category = "allowance_recovery", %error, "free allowance recovery step failed");
+        }
         self.process_metering(metering::METERING_BATCH).await?;
         let Some(j) = self.claim_next().await? else {
             return Ok(());

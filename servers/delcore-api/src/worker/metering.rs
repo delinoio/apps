@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-use super::{Worker, rating::rate_metering};
+use super::{
+    Worker,
+    rating::{rate_metering, recover_allowances},
+};
 use crate::{events, telemetry::Outcome};
 use anyhow::{Result, anyhow};
 use chrono::{Duration, Utc};
@@ -71,6 +74,7 @@ impl Worker {
                 .filter(|id| !id.is_empty()).ok_or(InvalidPayload)?;
             let now = Utc::now();
             let applied = events::process(&mut tx, now, event_id).await?;
+            recover_allowances(&mut tx, &applied).await?;
             let entries = rate_metering(&mut tx, now, &applied).await?;
             sqlx::query("UPDATE jobs SET state='done',error_category='',attempts=attempts+1,updated_at=now() WHERE id=$1::text::uuid")
                 .bind(&job_id).execute(&mut *tx).await?;

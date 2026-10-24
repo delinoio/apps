@@ -1,0 +1,592 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//! Missed free-month baseline recovery. Clocks are explicit: the target tenant holds its free
+//! price since three months before the current month, and no maintenance pass granted the
+//! previous month.
+use super::{Fixture, key};
+use chrono::{DateTime, Datelike, Duration, Months, TimeZone, Utc};
+use delcore_api::{
+    events,
+    metering::{Limits, Value},
+    postgres::{self, LedgerKind, MeterPeriod, recovery},
+    worker::Worker,
+};
+use serde_json::json;
+use sqlx::Row;
+use std::collections::BTreeMap;
+use uuid::Uuid;
+
+struct World {
+    f: Fixture,
+    tenant: String,
+    service: String,
+    plan: String,
+    /// Start of the current UTC month.
+    cur: DateTime<Utc>,
+    /// Start of the previous UTC month, the wholly skipped period.
+    prev: DateTime<Utc>,
+}
+
+fn month_start(at: DateTime<Utc>) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(at.year(), at.month(), 1, 0, 0, 0)
+        .unwrap()
+}
+
+impl World {
+    async fn new() -> Self {
+        let f = Fixture::setup().await;
+        f.bootstrap().await;
+        let service = f.service().await;
+        let catalog = f.rpc("owner", "GetCatalog", json!({})).await;
+        let plan = catalog["plans"][0]["id"].as_str().unwrap().to_owned();
+        f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":service,"key":"requests","name":"requests","eventType":"request","aggregation":"METER_AGGREGATION_SUM","valueAttribute":"quantity"}})).await;
+        let cur = month_start(Utc::now());
+        let mut w = Self {
+            f,
+            tenant: String::new(),
+            service,
+            plan,
+            cur,
+            prev: cur - Months::new(1),
+        };
+        w.price("100").await;
+        w.tenant = w.tenant("Target", true).await;
+        w
+    }
+    async fn price(&self, included: &str) -> String {
+        let response = self.f.rpc("owner", "CreatePrice", json!({"requestKey":key(),"reason":"publish price","price":{"key":"requests-usd","planId":self.plan,"serviceId":self.service,"meter":"requests","unitPrice":"1","included":included,"currency":"USD"}})).await;
+        response["price"]["id"].as_str().unwrap().to_owned()
+    }
+    /// Creates a tenant holding the active price. A held tenant is backdated to three months before
+    /// the current month and credited with 1000 purchased units; its current-month grant stays.
+    async fn tenant(&self, name: &str, held: bool) -> String {
+        let created = self
+            .f
+            .rpc(
+                "owner",
+                "CreateTenant",
+                json!({"requestKey":key(),"name":name}),
+            )
+            .await;
+        let tenant = created["tenant"]["id"].as_str().unwrap().to_owned();
+        if held {
+            let back = self.cur - Months::new(3);
+            for table in ["tenant_catalog_selections", "entitlements"] {
+                sqlx::query(&format!(
+                    "UPDATE {table} SET starts_at=$2 WHERE tenant_id=$1::text::uuid"
+                ))
+                .bind(&tenant)
+                .bind(back)
+                .execute(&self.f.db)
+                .await
+                .unwrap();
+            }
+            sqlx::query("INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2::text::uuid,'credit',1000,$3,$4)")
+                .bind(Uuid::now_v7()).bind(&tenant).bind(format!("seed:{tenant}")).bind(back).execute(&self.f.db).await.unwrap();
+        }
+        tenant
+    }
+    fn policy(&self) -> events::Policy {
+        events::Policy {
+            lateness: Duration::seconds(self.f.config.usage_lateness_seconds),
+            reporting_grace: Duration::seconds(self.f.config.reporting_grace_seconds),
+            limits: Limits {
+                max_groups_per_meter: self.f.config.max_meter_groups,
+                max_distinct_values_per_group: self.f.config.max_meter_group_values,
+            },
+        }
+    }
+    /// Accepts an event occurring at `occurred`, as if the request arrived at `now`.
+    async fn ingest(
+        &self,
+        event: &str,
+        quantity: &str,
+        occurred: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("quantity".to_owned(), Value::number(quantity).unwrap());
+        let input = events::Input {
+            tenant_id: self.tenant.clone(),
+            service_id: self.service.clone(),
+            key: event.to_owned(),
+            event_type: "request".into(),
+            occurred_at: occurred,
+            attributes,
+        };
+        let mut tx = self.f.db.begin().await.unwrap();
+        events::ingest(&mut tx, now, &self.policy(), input)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+    /// Rates the queued events the way a worker without recovery did: no baseline is recovered.
+    async fn rate_without_recovery(&self) {
+        let jobs: Vec<(Uuid, serde_json::Value)> = sqlx::query_as("SELECT id,payload FROM jobs WHERE kind='metering' AND state='pending' ORDER BY available_at,id")
+            .fetch_all(&self.f.db).await.unwrap();
+        for (job, payload) in jobs {
+            let now = Utc::now();
+            let mut tx = self.f.db.begin().await.unwrap();
+            let applied = events::process(&mut tx, now, payload["event_id"].as_str().unwrap())
+                .await
+                .unwrap();
+            for change in &applied.changes {
+                let period = MeterPeriod {
+                    tenant_id: applied.tenant_id.clone(),
+                    service_id: applied.service_id.clone(),
+                    meter_id: change.meter_id.clone(),
+                    meter_key: change.change.meter_key.clone(),
+                    start: applied.period_start,
+                    end: applied.period_end,
+                };
+                postgres::reconcile_meter_period(
+                    &mut tx,
+                    &period,
+                    LedgerKind::Usage,
+                    &format!("rating:{}:1:{}", applied.event_id, change.meter_id),
+                    now,
+                )
+                .await
+                .unwrap();
+            }
+            sqlx::query("UPDATE jobs SET state='done' WHERE id=$1")
+                .bind(job)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+        }
+    }
+    async fn balance_is(&self, expected: &str) -> bool {
+        sqlx::query_scalar("SELECT COALESCE(sum(amount),0)=$2::numeric FROM ledger WHERE tenant_id=$1::text::uuid AND kind IN ('credit','usage','refund','correction')")
+            .bind(&self.tenant).bind(expected).fetch_one(&self.f.db).await.unwrap()
+    }
+    /// Grants of one period: (source key, amount, applied at).
+    async fn grants(&self, start: DateTime<Utc>) -> Vec<(String, String, DateTime<Utc>)> {
+        sqlx::query_as("SELECT source_key,amount::text,applied_at FROM allowance_grants WHERE tenant_id=$1::text::uuid AND period_start=$2 ORDER BY source_key")
+            .bind(&self.tenant).bind(start).fetch_all(&self.f.db).await.unwrap()
+    }
+    /// Ledger entries of the period: (kind, amount, source key prefix).
+    async fn ledger(&self, start: DateTime<Utc>) -> Vec<(String, String)> {
+        sqlx::query_as("SELECT kind,amount::text FROM ledger WHERE tenant_id=$1::text::uuid AND period_start=$2 ORDER BY created_at,id")
+            .bind(&self.tenant).bind(start).fetch_all(&self.f.db).await.unwrap()
+    }
+    async fn ledger_total(&self) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM ledger WHERE tenant_id=$1::text::uuid")
+            .bind(&self.tenant)
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+    async fn cursor(&self) -> DateTime<Utc> {
+        sqlx::query_scalar("SELECT period_start FROM allowance_recovery_cursor")
+            .fetch_one(&self.f.db)
+            .await
+            .unwrap()
+    }
+    async fn audits(&self, action: &str) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM audit WHERE tenant_id=$1::text::uuid AND action=$2",
+        )
+        .bind(&self.tenant)
+        .bind(action)
+        .fetch_one(&self.f.db)
+        .await
+        .unwrap()
+    }
+    fn prev_key(&self) -> String {
+        format!(
+            "free:{}:{}:{}:requests",
+            self.tenant,
+            self.prev.format("%Y-%m"),
+            self.service
+        )
+    }
+    fn restarted(&self) -> Worker {
+        Worker::new(self.f.db.clone(), self.f.config.clone()).unwrap()
+    }
+    async fn recover(
+        &self,
+        tenant: &str,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> anyhow::Result<recovery::Recovery> {
+        let mut conn = self.f.db.acquire().await?;
+        recovery::recover_free_period(&mut conn, tenant, start, end).await
+    }
+}
+
+/// Quantity 50 against an included 100 bills nothing, whether the event was accepted in the
+/// skipped month and processed in the current one or first delivered within the lateness window.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn skipped_month_usage_uses_a_recovered_baseline_instead_of_purchased_credit() {
+    for delivered_late in [false, true] {
+        let w = World::new().await;
+        let (occurred, now) = if delivered_late {
+            (w.cur - Duration::days(2), w.cur + Duration::days(2))
+        } else {
+            (w.prev + Duration::days(14), w.prev + Duration::days(14))
+        };
+        w.ingest("february", "50", occurred, now).await;
+        assert!(w.grants(w.prev).await.is_empty());
+        w.f.process_metering().await;
+
+        let grants = w.grants(w.prev).await;
+        assert_eq!(grants.len(), 1, "late={delivered_late}");
+        assert_eq!(grants[0].0, w.prev_key());
+        assert_eq!(grants[0].1, "100");
+        assert_eq!(grants[0].2, w.prev, "applied at the month start");
+        assert!(w.balance_is("1000").await);
+        assert!(w.ledger(w.prev).await.is_empty(), "nothing was charged");
+        // The current month keeps its own allowance; it never covered the skipped month.
+        let current = w.grants(w.cur).await;
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0].1, "100");
+        assert_ne!(current[0].2, w.prev);
+
+        // Repeats, a sweep, a fresh worker and ordinary maintenance add nothing.
+        w.f.process_metering().await;
+        assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 0);
+        w.restarted().maintain(Utc::now()).await.unwrap();
+        assert_eq!(w.restarted().recover_free_allowances().await.unwrap(), 0);
+        assert_eq!(w.grants(w.prev).await.len(), 1);
+        assert_eq!(w.grants(w.cur).await.len(), 1);
+        assert!(w.balance_is("1000").await);
+    }
+}
+
+/// Several events share one recovered allowance; a month whose grant was committed earlier is
+/// left untouched and rates the same way.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn events_of_a_skipped_month_share_one_allowance_with_or_without_a_committed_grant() {
+    for committed in [false, true] {
+        let w = World::new().await;
+        if committed {
+            let mut conn = w.f.db.acquire().await.unwrap();
+            postgres::grant_allowances_held_at(
+                &mut conn,
+                &w.tenant,
+                w.prev,
+                w.cur,
+                w.prev,
+                &format!("free:{}:{}", w.tenant, w.prev.format("%Y-%m")),
+            )
+            .await
+            .unwrap();
+        }
+        for (index, quantity) in ["50", "50", "50"].iter().enumerate() {
+            let at = w.prev + Duration::days(3 + index as i64);
+            w.ingest(
+                &format!("e{index}"),
+                quantity,
+                at,
+                w.cur + Duration::days(1),
+            )
+            .await;
+        }
+        w.f.process_metering().await;
+        let grants = w.grants(w.prev).await;
+        assert_eq!(grants.len(), 1, "committed={committed}");
+        assert_eq!(grants[0].1, "100");
+        // 150 used against one shared 100 allowance charges 50.
+        assert!(w.balance_is("950").await, "committed={committed}");
+        let charged: String = sqlx::query_scalar("SELECT (-COALESCE(sum(amount),0))::text FROM ledger WHERE tenant_id=$1::text::uuid AND kind IN ('usage','correction')")
+            .bind(&w.tenant).fetch_one(&w.f.db).await.unwrap();
+        assert_eq!(charged.parse::<f64>().unwrap(), 50.0);
+    }
+}
+
+/// A period charged before recovery existed is corrected by one period-attributed difference when
+/// the sweep records its missing baseline, and a repeat or restart adds nothing.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn an_already_rated_charge_is_corrected_once_by_the_sweep() {
+    let w = World::new().await;
+    w.ingest(
+        "february",
+        "50",
+        w.prev + Duration::days(14),
+        w.cur + Duration::days(1),
+    )
+    .await;
+    w.rate_without_recovery().await;
+    assert!(w.grants(w.prev).await.is_empty());
+    assert!(w.balance_is("950").await);
+    assert_eq!(w.ledger(w.prev).await.len(), 1);
+    let before = w.cursor().await;
+
+    // The regular step runs the sweep without blocking the other work.
+    w.f.worker.step().await.unwrap();
+    assert!(w.cursor().await > before);
+    let grants = w.grants(w.prev).await;
+    assert_eq!(grants.len(), 1);
+    assert_eq!(grants[0].2, w.prev);
+    assert!(w.balance_is("1000").await);
+    let ledger = w.ledger(w.prev).await;
+    assert_eq!(ledger.len(), 2, "{ledger:?}");
+    assert_eq!(ledger[0].0, "usage");
+    assert_eq!(ledger[1].0, "correction");
+    assert_eq!(ledger[0].1.parse::<f64>().unwrap(), -50.0);
+    assert_eq!(ledger[1].1.parse::<f64>().unwrap(), 50.0);
+    let source: String = sqlx::query_scalar(
+        "SELECT source_key FROM ledger WHERE tenant_id=$1::text::uuid AND kind='correction'",
+    )
+    .bind(&w.tenant)
+    .fetch_one(&w.f.db)
+    .await
+    .unwrap();
+    assert!(source.starts_with("allowance:"), "{source}");
+    let rated: bool = sqlx::query_scalar("SELECT charge=0 FROM metering_rated_periods WHERE tenant_id=$1::text::uuid AND period_start=$2")
+        .bind(&w.tenant).bind(w.prev).fetch_one(&w.f.db).await.unwrap();
+    assert!(rated);
+
+    let total = w.ledger_total().await;
+    assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 0);
+    w.restarted().step().await.unwrap();
+    // Even a cursor reset only replays keys that already exist.
+    sqlx::query("UPDATE allowance_recovery_cursor SET tenant_id='00000000-0000-0000-0000-000000000000',period_start='1970-01-01T00:00:00Z'")
+        .execute(&w.f.db).await.unwrap();
+    assert_eq!(w.restarted().recover_free_allowances().await.unwrap(), 0);
+    assert_eq!(w.grants(w.prev).await.len(), 1);
+    assert_eq!(w.ledger_total().await, total);
+    assert!(w.balance_is("1000").await);
+}
+
+/// A failed recovery transaction keeps its work for the retry: grants, the rating correction and
+/// the sweep position commit together or not at all.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn a_rolled_back_recovery_is_retried_without_duplicate_effects() {
+    let w = World::new().await;
+    w.ingest(
+        "february",
+        "50",
+        w.prev + Duration::days(14),
+        w.cur + Duration::days(1),
+    )
+    .await;
+    w.rate_without_recovery().await;
+    let before = (w.cursor().await, w.ledger_total().await);
+    sqlx::query(&format!("ALTER TABLE allowance_grants ADD CONSTRAINT reject_recovery CHECK (period_start<>'{}'::timestamptz) NOT VALID", w.prev.to_rfc3339()))
+        .execute(&w.f.db).await.unwrap();
+    assert!(w.f.worker.recover_free_allowances().await.is_err());
+    assert!(w.restarted().recover_free_allowances().await.is_err());
+    assert_eq!((w.cursor().await, w.ledger_total().await), before);
+    assert!(w.grants(w.prev).await.is_empty());
+    assert!(w.balance_is("950").await);
+
+    sqlx::query("ALTER TABLE allowance_grants DROP CONSTRAINT reject_recovery")
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 1);
+    assert_eq!(w.restarted().recover_free_allowances().await.unwrap(), 0);
+    assert_eq!(w.grants(w.prev).await.len(), 1);
+    assert_eq!(w.ledger_total().await, before.1 + 1);
+    assert!(w.balance_is("1000").await);
+}
+
+/// The baseline is what was held at the month boundary: neither a later catalog price, nor the
+/// plan the tenant holds now, nor a mid-month change replaces it.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn the_recovered_baseline_follows_the_entitlements_held_at_the_month_boundary() {
+    let w = World::new().await;
+    // A later publication does not touch the tenant's selection, and a mid-month change moves the
+    // tenant to a larger allowance that the previous month's boundary never held.
+    let raised = w.price("300").await;
+    sqlx::query(
+        "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1::text::uuid AND ends_at IS NULL",
+    )
+    .bind(&w.tenant)
+    .bind(w.prev + Duration::days(10))
+    .execute(&w.f.db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2::text::uuid,$3::text::uuid,$4)")
+        .bind(Uuid::now_v7()).bind(&w.tenant).bind(&raised).bind(w.prev + Duration::days(10)).execute(&w.f.db).await.unwrap();
+    w.ingest(
+        "late",
+        "150",
+        w.prev + Duration::days(20),
+        w.cur + Duration::days(1),
+    )
+    .await;
+    w.f.process_metering().await;
+    let grants = w.grants(w.prev).await;
+    assert_eq!(grants.len(), 1);
+    assert_eq!(
+        grants[0].1, "100",
+        "the boundary held 100, not the current 300"
+    );
+    assert!(w.balance_is("950").await);
+}
+
+/// Nothing is minted for a meter added later, a tenant that did not exist yet, a month that starts
+/// with paid coverage, or a period that is not a calendar month.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn recovery_never_fabricates_a_baseline() {
+    let w = World::new().await;
+    // A second meter and price first held in the middle of the skipped month.
+    w.f.rpc("owner","PutMeter",json!({"requestKey":key(),"reason":"declare meter","meter":{"serviceId":w.service,"key":"extra","name":"extra","eventType":"extra","aggregation":"METER_AGGREGATION_COUNT"}})).await;
+    let extra = w.f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"publish price","price":{"key":"extra-usd","planId":w.plan,"serviceId":w.service,"meter":"extra","unitPrice":"1","included":"40","currency":"USD"}})).await;
+    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2::text::uuid,$3::text::uuid,$4)")
+        .bind(Uuid::now_v7()).bind(&w.tenant).bind(extra["price"]["id"].as_str().unwrap()).bind(w.prev + Duration::days(10)).execute(&w.f.db).await.unwrap();
+    assert_eq!(
+        w.recover(&w.tenant, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Granted(1)
+    );
+    let grants = w.grants(w.prev).await;
+    assert_eq!(grants.len(), 1, "{grants:?}");
+    assert_eq!(grants[0].0, w.prev_key());
+    // A repeat adds nothing.
+    assert_eq!(
+        w.recover(&w.tenant, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Skipped(recovery::Skip::AlreadyInitialized)
+    );
+
+    // Created after the boundary: its entitlements start now.
+    let late = w.tenant("Late", false).await;
+    assert_eq!(
+        w.recover(&late, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Granted(0)
+    );
+    let none: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM allowance_grants WHERE tenant_id=$1::text::uuid AND period_start=$2",
+    )
+    .bind(&late)
+    .bind(w.prev)
+    .fetch_one(&w.f.db)
+    .await
+    .unwrap();
+    assert_eq!(none, 0);
+
+    // A paid period recorded for the month start owns the key; the free period starts later.
+    let paid = w.tenant("Paid", true).await;
+    sqlx::query("INSERT INTO billing_periods VALUES($1::text::uuid,$2,$3,false)")
+        .bind(&paid)
+        .bind(w.prev)
+        .bind(w.cur)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.recover(&paid, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Skipped(recovery::Skip::PaidPeriodCollision)
+    );
+
+    // Periods that are not whole calendar months belong to creation, cancellation and refresh.
+    let held = w.tenant("Held", true).await;
+    assert_eq!(
+        w.recover(&held, w.prev + Duration::microseconds(1), w.cur)
+            .await
+            .unwrap(),
+        recovery::Recovery::Skipped(recovery::Skip::NotCalendarMonth)
+    );
+    assert_eq!(
+        w.recover(&held, w.prev, w.cur + Duration::days(1))
+            .await
+            .unwrap(),
+        recovery::Recovery::Skipped(recovery::Skip::NotCalendarMonth)
+    );
+
+    // A tenant whose only plan evidence is a paid plan at the boundary is not on a free month.
+    let legacy = w.tenant("Legacy", true).await;
+    sqlx::query("DELETE FROM tenant_catalog_selections WHERE tenant_id=$1::text::uuid")
+        .bind(&legacy)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE plans SET free=false,is_default=false WHERE id=$1::text::uuid")
+        .bind(&w.plan)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.recover(&legacy, w.prev, w.cur).await.unwrap(),
+        recovery::Recovery::Skipped(recovery::Skip::NotFree)
+    );
+}
+
+/// Contradictory retained history is reported and grants nothing: the metering work fails
+/// permanently with the existing failure audit, and the sweep records its own audit entry once.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn malformed_history_is_reported_and_never_guessed() {
+    for through_sweep in [false, true] {
+        let w = World::new().await;
+        w.ingest(
+            "february",
+            "50",
+            w.prev + Duration::days(14),
+            w.cur + Duration::days(1),
+        )
+        .await;
+        if through_sweep {
+            w.rate_without_recovery().await;
+        }
+        // A second plan selection that overlaps the month start.
+        sqlx::query("INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at,ends_at) SELECT $2,cs.tenant_id,cs.product_id,cs.version_id,cs.starts_at,$3 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id WHERE cs.tenant_id=$1::text::uuid AND ce.kind='plan' AND cs.ends_at IS NULL")
+            .bind(&w.tenant).bind(Uuid::now_v7()).bind(w.prev + Duration::days(1)).execute(&w.f.db).await.unwrap();
+
+        if through_sweep {
+            assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 0);
+            assert_eq!(w.audits("allowance_recovery.invalid").await, 1);
+            let cursor = w.cursor().await;
+            assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 0);
+            assert_eq!(w.cursor().await, cursor);
+            assert_eq!(w.audits("allowance_recovery.invalid").await, 1);
+            assert!(w.balance_is("950").await, "no guessed correction");
+        } else {
+            w.f.worker.process_metering(10).await.unwrap();
+            let (state, category): (String, String) =
+                sqlx::query_as("SELECT state,error_category FROM jobs WHERE kind='metering'")
+                    .fetch_one(&w.f.db)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                (state.as_str(), category.as_str()),
+                ("failed", "metering_invalid")
+            );
+            assert_eq!(w.audits("metering.failed").await, 1);
+            assert!(w.balance_is("1000").await, "no silent charge either");
+        }
+        assert!(w.grants(w.prev).await.is_empty());
+    }
+}
+
+/// The sweep reads a fixed number of rated periods per step, resumes from its position and stops
+/// at the end; sparse history costs one row per rated period, not one per elapsed month.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn the_sweep_is_bounded_and_resumable_over_sparse_history() {
+    let w = World::new().await;
+    let meter: String = sqlx::query_scalar(
+        "SELECT id::text FROM catalog_entities WHERE kind='meter' AND key='requests'",
+    )
+    .fetch_one(&w.f.db)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO metering_rated_periods(tenant_id,meter_id,service_id,meter,period_start,period_end,charge,remaining_included,rated_at) SELECT $1::text::uuid,$2::text::uuid,$3::text::uuid,'requests',m AT TIME ZONE 'UTC',(m+interval '1 month') AT TIME ZONE 'UTC',0,0,now() FROM generate_series('2001-01-01'::timestamp,'2003-06-01'::timestamp,interval '1 month') m")
+        .bind(&w.tenant).bind(&meter).bind(&w.service).execute(&w.f.db).await.unwrap();
+    let batch = delcore_api::worker::ALLOWANCE_RECOVERY_BATCH as usize;
+    let mut positions = Vec::new();
+    for _ in 0..3 {
+        w.f.worker.recover_free_allowances().await.unwrap();
+        positions.push(w.cursor().await);
+    }
+    // 30 rated months: a full batch, the remainder, then idle.
+    let expected =
+        Utc.with_ymd_and_hms(2001, 1, 1, 0, 0, 0).unwrap() + Months::new(batch as u32 - 1);
+    assert_eq!(positions[0], expected);
+    assert_eq!(
+        positions[1],
+        Utc.with_ymd_and_hms(2003, 6, 1, 0, 0, 0).unwrap()
+    );
+    assert_eq!(positions[2], positions[1]);
+    let any: i64 = sqlx::query("SELECT count(*) FROM allowance_grants WHERE tenant_id=$1::text::uuid AND period_start<'2010-01-01'")
+        .bind(&w.tenant).fetch_one(&w.f.db).await.unwrap().get(0);
+    assert_eq!(any, 0, "no history before the tenant held anything");
+}

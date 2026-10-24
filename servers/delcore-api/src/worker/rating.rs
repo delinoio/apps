@@ -6,6 +6,53 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use std::collections::HashSet;
 
+/// Record the free monthly baseline the applied event's period should already have, before the
+/// period is rated, so rating never charges purchased credit for usage the free plan covers.
+///
+/// Maintenance only grants the month that contains its own run, so an event of a wholly skipped
+/// earlier month would otherwise find no allowance. The grants share the event transaction: a
+/// rollback leaves both the recovery and the rating for the retry. Contradictory retained history
+/// fails the metering work permanently, which the existing failure reporting surfaces.
+pub(super) async fn recover_allowances(
+    tx: &mut PgConnection,
+    applied: &events::Applied,
+) -> Result<()> {
+    if applied.changes.is_empty() {
+        return Ok(());
+    }
+    match postgres::recovery::recover_free_period(
+        tx,
+        &applied.tenant_id,
+        applied.period_start,
+        applied.period_end,
+    )
+    .await
+    {
+        Ok(postgres::recovery::Recovery::Granted(grants)) if grants > 0 => {
+            tracing::info!(
+                category = "allowance_recovery",
+                grants,
+                "recovered missed free allowance baseline before rating"
+            );
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(error)
+            if error
+                .downcast_ref::<postgres::recovery::HistoryInvalid>()
+                .is_some() =>
+        {
+            tracing::error!(
+                category = "allowance_recovery_invalid",
+                reason = %error,
+                "free allowance history is inconsistent; metering work failed"
+            );
+            Err(error.context(events::permanent("inconsistent free allowance history")))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Append each changed meter period's charge difference in the event transaction.
 /// The source identifies the event revision, so committed work cannot charge twice.
 pub(super) async fn rate_metering(

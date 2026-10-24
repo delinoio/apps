@@ -35,8 +35,9 @@ async fn grant_allowances_inner(
     source: &str,
     previous: Option<&Allowances>,
     as_of: Option<DateTime<Utc>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
     let current = allowances_inner(db, tenant, as_of).await?;
+    let mut inserted = 0;
     for (key, mut amount) in current {
         if let Some(previous) = previous {
             amount = amount.sub(previous.get(&key).unwrap_or(&Decimal::zero()));
@@ -61,6 +62,7 @@ async fn grant_allowances_inner(
             .bind(grant_id).bind(Uuid::parse_str(tenant)?).bind(Uuid::parse_str(service)?).bind(meter).bind(amount.to_string()).bind(start).bind(end).bind(at).bind(format!("{source}:{service}:{meter}")).execute(&mut *db).await?;
         // Replayed grants change nothing. A new backdated grant can reduce an existing charge.
         if result.rows_affected() == 1 {
+            inserted += 1;
             super::rating::reconcile_granted_periods(
                 db,
                 &grant_id.to_string(),
@@ -73,7 +75,7 @@ async fn grant_allowances_inner(
             .await?;
         }
     }
-    Ok(())
+    Ok(inserted)
 }
 
 pub async fn current_allowances(db: &mut PgConnection, tenant: &str) -> crate::Result<Allowances> {
@@ -91,6 +93,7 @@ pub async fn grant_allowances(
 ) -> crate::Result<()> {
     grant_allowances_inner(db, tenant, start, end, at, source, previous, None)
         .await
+        .map(|_| ())
         .map_err(Into::into)
 }
 
@@ -98,7 +101,8 @@ pub async fn grant_allowances(
 ///
 /// A late payment for an already ended period must grant what the tenant held when that period
 /// began, not what it holds now: later plan changes never rewrite older periods. The grant is
-/// keyed by `source`, so repeating the call adds nothing.
+/// keyed by `source`, so repeating the call adds nothing. Returns the number of grants this call
+/// recorded.
 pub async fn grant_allowances_held_at(
     db: &mut PgConnection,
     tenant: &str,
@@ -106,8 +110,17 @@ pub async fn grant_allowances_held_at(
     end: DateTime<Utc>,
     held_at: DateTime<Utc>,
     source: &str,
-) -> crate::Result<()> {
+) -> crate::Result<usize> {
     grant_allowances_inner(db, tenant, start, end, held_at, source, None, Some(held_at))
         .await
         .map_err(Into::into)
+}
+
+/// Sums the usage allowances of the entitlements the tenant held at `at`, without granting them.
+pub async fn allowances_held_at(
+    db: &mut PgConnection,
+    tenant: &str,
+    at: DateTime<Utc>,
+) -> anyhow::Result<Allowances> {
+    allowances_inner(db, tenant, Some(at)).await
 }
