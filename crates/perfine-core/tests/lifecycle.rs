@@ -417,3 +417,22 @@ fn deleted_workspaces_stay_reserved_until_cleanup_succeeds() {
     e.cleanup_result(&old.experiment, true).unwrap();
     start(&e, &next, next.candidate.clone(), 0, 105).unwrap();
 }
+
+#[test]
+fn fractional_configuration_survives_durable_json_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = config();
+    cfg.conditions.cases.values_mut().next().unwrap().frequency = Some(0.9176884786531495);
+    let frozen = cfg.freeze().unwrap();
+    let id = ResourceId::generate();
+    let e = Engine::new(FileStore::open(dir.path()).unwrap());
+    e.create(&request(), id.clone(), frozen.clone(), 100)
+        .unwrap();
+    drop(e);
+    let reopened = Engine::new(FileStore::open(dir.path()).unwrap());
+    assert_eq!(
+        reopened.status(&id).unwrap().config.fingerprint(),
+        frozen.fingerprint()
+    );
+    reopened.resume(&request(), &id, &frozen, 101).unwrap();
+}
