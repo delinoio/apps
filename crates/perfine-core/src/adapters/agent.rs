@@ -141,6 +141,22 @@ impl<'a> HeadlessAgentAdapter<'a> {
                     "read-only",
                     "--ephemeral",
                 ]);
+                // Prompt source is untrusted. Disable execution/delegation and
+                // extension tools in addition to withholding repository mounts.
+                // Unsupported CLI feature flags fail closed at startup.
+                for feature in [
+                    "shell_tool",
+                    "unified_exec",
+                    "shell_snapshot",
+                    "multi_agent",
+                    "apps",
+                    "plugins",
+                    "code_mode",
+                    "code_mode_host",
+                ] {
+                    cmd.args(["--disable", feature]);
+                }
+                cmd.args(["-c", "web_search=\"disabled\""]);
                 if let Some(model) = &self.config.model {
                     cmd.args(["--model", model]);
                 }
