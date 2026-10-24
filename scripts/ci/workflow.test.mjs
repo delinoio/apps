@@ -60,7 +60,13 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     const steps = job.steps;
     assert.equal(
       steps.some((step) => step.run?.includes("apt-get")),
-      check === "clippy",
+      true,
+    );
+    const protoc = steps.find((step) => step.id === "protoc");
+    assert.equal(protoc.if, "contains(fromJSON(env.RUST_PACKAGES), 'perfine')");
+    assert.match(protoc.run, /protobuf-compiler libprotobuf-dev/u);
+    assert.ok(
+      steps.indexOf(protoc) < steps.findIndex((step) => step.id === check),
     );
     const command = steps.find((step) => step.id === check);
     assert.equal(command.run, `node scripts/ci/rust-check.mjs ${check}`);
