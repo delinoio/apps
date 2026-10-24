@@ -61,6 +61,10 @@ async fn run() -> anyhow::Result<()> {
     anyhow::ensure!(acquired, "delitools instance lock unavailable");
     let listen = config.listen.clone();
     let shutdown_grace = config.limits.execution_timeout;
+    let write_limit = config
+        .limits
+        .transport_allowance()
+        .ok_or_else(|| anyhow::anyhow!("DELITOOLS_EXECUTION_TIMEOUT is too large"))?;
     let server = Server::new(db.clone(), config)?;
     let app = http::router(server.clone());
     let listener = tokio::net::TcpListener::bind(&listen).await?;
@@ -99,7 +103,7 @@ async fn run() -> anyhow::Result<()> {
         server_common::transport::Limits {
             header: Duration::from_secs(5),
             idle: Duration::from_secs(60),
-            write: shutdown_grace + Duration::from_secs(5),
+            write: write_limit,
             shutdown: shutdown_grace,
         },
         shutdown,

@@ -217,7 +217,18 @@ impl Server {
         request_id: Uuid,
         prepare: impl FnOnce(&Config) -> Result<(Task, models::ModelEntry), ApiError>,
     ) -> Result<Output, ApiError> {
-        let deadline = tokio::time::Instant::now() + self.config.limits.execution_timeout;
+        // A configuration that bypassed validation must fail the request, never panic.
+        let Some(deadline) = self
+            .config
+            .limits
+            .deadline_from(tokio::time::Instant::now())
+        else {
+            tracing::error!(
+                category = "deadline",
+                "the execution timeout exceeds the monotonic clock range"
+            );
+            return Err(ApiError::internal());
+        };
         let admitted = tokio::time::timeout_at(deadline, async {
             let principal = self
                 .auth
@@ -337,4 +348,33 @@ impl Server {
 /// Current time truncated to microseconds, matching PostgreSQL precision.
 pub fn now() -> chrono::DateTime<Utc> {
     server_common::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::telemetry::Procedure;
+
+    /// A request-time deadline that does not fit the clock must produce the internal error,
+    /// even when the transport layer is bypassed and the configuration skipped validation.
+    #[tokio::test]
+    async fn an_unrepresentable_deadline_is_an_internal_error_not_a_panic() {
+        let dir = config::tests::tempdir();
+        let env = config::tests::base_env(&dir);
+        let mut config = Config::from_lookup(&|key| env.get(key).cloned()).unwrap();
+        config.limits.execution_timeout = std::time::Duration::MAX;
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://nobody:nobody@127.0.0.1:1/none")
+            .unwrap();
+        let server = Server::new(db, config).unwrap();
+        let result = server
+            .admit_and_run("", Procedure::Translate, "tenant", Uuid::now_v7(), |_| {
+                unreachable!("the request must fail before preparation")
+            })
+            .await;
+        let Err(error) = result else {
+            panic!("the request must fail");
+        };
+        assert_eq!(error.code, connectrpc::ErrorCode::Internal);
+    }
 }

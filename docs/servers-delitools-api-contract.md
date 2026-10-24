@@ -75,13 +75,15 @@ All limits are configured and validated at startup (see [environment configurati
 | Translation items                     | `DELITOOLS_MAX_TRANSLATION_ITEMS`                                 | 200     | at most 1000                     |
 | Extraction schema bytes               | `DELITOOLS_MAX_SCHEMA_BYTES`                                      | 32768   | not above the input limit        |
 | Provider output tokens per attempt    | `DELITOOLS_MAX_OUTPUT_TOKENS`                                     | 16384   | at most 1000000                  |
-| Execution timeout (whole request)     | `DELITOOLS_EXECUTION_TIMEOUT`                                     | 120s    |                                  |
+| Execution timeout (whole request)     | `DELITOOLS_EXECUTION_TIMEOUT`                                     | 120s    | see the monotonic clock bound    |
 | Tenant request rate and burst         | `DELITOOLS_TENANT_RATE_PER_SECOND`, `DELITOOLS_TENANT_RATE_BURST` | 5, 10   | burst not below rate, at least 1 |
 | Tenant concurrent executions          | `DELITOOLS_TENANT_CONCURRENCY`                                    | 4       | at least 1                       |
 | Transient retries after the first try | `DELITOOLS_MAX_RETRIES`                                           | 2       | 0 to 5                           |
 | Delcore call timeout                  | `DEPENDENCY_TIMEOUT`                                              | 3s      | not above the execution timeout  |
 
 Input bytes count UTF-8 bytes of the submitted texts (or of the extraction text). Schema depth (8), schema nodes (256), properties per object (64) and enum values (64) are fixed. The rate limit and concurrency limit are process-local token bucket and counter keyed by the authenticated tenant ID, evicted when idle; extra credentials never add capacity. A rate rejection sets `Retry-After`. A limit is a protection, not a throughput guarantee.
+
+**Monotonic clock bound.** Deadlines are monotonic instants. Startup rejects a `DELITOOLS_EXECUTION_TIMEOUT` that, together with the fixed 5-second transport margin (HTTP layer and connection write limit), cannot be represented as a duration or as an instant measured from the current monotonic clock. The error names the setting and never echoes the value; nothing is clamped. The largest accepted value depends on the platform's clock range, so operators should choose a practical timeout far below it. If a configuration that skipped validation ever reaches request handling, the request fails closed with the `INTERNAL` error instead of panicking.
 
 Apply checks in this order: transport message bound, credential classification, delcore authentication and authorization, tenant rate and concurrency, request validation, model and price check, execution. The execution timeout starts when the request is received and covers all of these steps and every backoff; expiry before execution is `TIMEOUT`, and during execution it aborts the provider call. A shorter deadline set by the caller is not interpreted separately: when the caller closes the call, the request is canceled as for a disconnect.
 

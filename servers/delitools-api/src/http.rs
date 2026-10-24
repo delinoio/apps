@@ -16,9 +16,6 @@ use axum::{
 use connectrpc::ErrorCode;
 use std::{sync::Arc, time::Duration};
 
-/// Margin added to the execution timeout before the HTTP layer gives up.
-const TRANSPORT_MARGIN: Duration = Duration::from_secs(5);
-
 pub fn router(server: Server) -> Router {
     // One decoded byte can take six bytes on the wire (`\u00XX` for a control
     // character), so the transport bound covers the worst-case JSON escaping of the
@@ -36,7 +33,12 @@ pub fn router(server: Server) -> Router {
         .with_limits(connectrpc::Limits::default().with_max_message_size(limit));
     let metrics = server.metrics.clone();
     let ready = server.db.clone();
-    let deadline = server.config.limits.execution_timeout + TRANSPORT_MARGIN;
+    // `None` only for a configuration that bypassed validation: requests then fail closed.
+    let deadline = server
+        .config
+        .limits
+        .transport_deadline_from(tokio::time::Instant::now())
+        .and(server.config.limits.transport_allowance());
     Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
         .route(
@@ -71,13 +73,27 @@ pub fn router(server: Server) -> Router {
 }
 
 async fn transport_policy(
-    State(deadline): State<Duration>,
+    State(deadline): State<Option<Duration>>,
     request: Request,
     next: Next,
 ) -> Response {
     if request.headers().contains_key("origin") {
         return StatusCode::FORBIDDEN.into_response();
     }
+    let Some(deadline) = deadline else {
+        let request_id = uuid::Uuid::now_v7().to_string();
+        tracing::error!(category = "deadline", request_id = %request_id, "the execution timeout exceeds the monotonic clock range");
+        let error = ApiError::internal().into_connect(&request_id);
+        return (
+            error.http_status(),
+            [
+                ("Content-Type", "application/json"),
+                (REQUEST_ID_HEADER, request_id.as_str()),
+            ],
+            error.to_json(),
+        )
+            .into_response();
+    };
     match tokio::time::timeout(deadline, next.run(request)).await {
         Ok(response) => response,
         Err(_) => {
