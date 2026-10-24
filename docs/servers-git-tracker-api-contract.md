@@ -85,6 +85,7 @@ External individuals and organizations, CI jobs and service operators.
 - The flow covers Delino sign-in, space selection, GitHub linking/App repository connection, upload setup guidance, dataset/history browsing, execution details, comparisons, and authorized token/deletion management.
 - Graph controls include dataset, branch, measurement column, multiple items, date range, and commit range. A point links to its execution details.
 - Use equally spaced commits on the horizontal axis, ordered along the branch's first-parent path. Dates appear in details.
+- Commit-range bounds `fromCommit` (oldest) and `toCommit` (newest) are inclusive positions on the first-parent path. For connected explicit-branch history, the server extends the first-parent walk until every nonempty bound is reached, regardless of whether the bound commit has a completed measurement or predates the oldest measurement; unmeasured commits gain no measurements. A bound absent from the walked path is ignored, and an unbounded request, disconnected history and branch-omitted history keep their existing behavior.
 - Plot actual measurements only and connect surrounding measured points across skipped commits. Do not fabricate or carry forward values.
 - Provide automatic-baseline comparisons and user-selected two-commit comparisons in tables.
 - Support keyboard use of primary functions, tabular alternatives to graphs, and text as well as color for improvement/regression. Follow this repository's existing UI instructions.
