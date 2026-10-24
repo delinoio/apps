@@ -527,6 +527,53 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .await
             .is_ok()
     );
+    // A full batch of inaccessible repositories must not starve the next connection.
+    let blocked_space = uuid::Uuid::now_v7();
+    for repository in 1000..1100 {
+        let blocked = uuid::Uuid::now_v7();
+        let blocked_run = uuid::Uuid::now_v7();
+        let mut data = c.clone();
+        data["id"] = json!(blocked);
+        data["spaceId"] = json!(blocked_space);
+        data["repository"]["githubRepositoryId"] = json!(repository.to_string());
+        data["_lastExecutionCheckAt"] = json!("2000-01-01T00:00:00Z");
+        sqlx::query("INSERT INTO perfine_connections(id,space,repository,owner_subject,github_actor,active,data) VALUES($1,$2,$3,$4,'99',true,$5)")
+            .bind(blocked).bind(blocked_space).bind(i64::from(repository)).bind(&actor).bind(data).execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+            .bind(blocked_run).bind(blocked_space).bind(blocked)
+            .bind(json!({"id":blocked_run,"spaceId":blocked_space,"connectionId":blocked,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"999","runAttempt":1}})).execute(&db).await.unwrap();
+    }
+    let eligible_run = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(eligible_run).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(json!({"id":eligible_run,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"1","runAttempt":1}})).execute(&db).await.unwrap();
+    sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{_lastExecutionCheckAt}','\"2001-01-01T00:00:00Z\"') WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+    server.maintain().await.unwrap();
+    let execution_state = || {
+        sqlx::query_scalar::<_, String>(
+            "SELECT data->>'executionState' FROM perfine_experiments WHERE id=$1",
+        )
+        .bind(eligible_run)
+        .fetch_one(&db)
+    };
+    assert_eq!(execution_state().await.unwrap(), "EXECUTION_STATE_RUNNING");
+    server.maintain().await.unwrap();
+    assert_eq!(
+        execution_state().await.unwrap(),
+        "EXECUTION_STATE_CANCELLED"
+    );
+    sqlx::query("DELETE FROM perfine_experiments WHERE space=$1 OR id=$2")
+        .bind(blocked_space)
+        .bind(eligible_run)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM perfine_connections WHERE space=$1")
+        .bind(blocked_space)
+        .execute(&db)
+        .await
+        .unwrap();
     *grants.lock().unwrap() = vec!["manage".into()];
     assert!(
         server

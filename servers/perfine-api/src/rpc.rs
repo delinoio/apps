@@ -1412,15 +1412,17 @@ impl Server {
         Ok(cancellations)
     }
     async fn reconcile_executions(&self) -> Result<()> {
-        let rows=sqlx::query("SELECT DISTINCT c.id,c.space FROM perfine_connections c JOIN perfine_experiments e ON e.connection=c.id WHERE e.data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND e.data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED') LIMIT 100").fetch_all(&self.db).await?;
+        let rows=sqlx::query("SELECT c.id,c.space FROM perfine_connections c WHERE EXISTS(SELECT 1 FROM perfine_experiments e WHERE e.connection=c.id AND e.data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND e.data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED')) ORDER BY (c.data->>'_lastExecutionCheckAt')::timestamptz NULLS FIRST,c.id LIMIT 100").fetch_all(&self.db).await?;
         for row in rows {
             let mut tx = self.db.begin().await?;
             let space: uuid::Uuid = row.get("space");
             lock(&mut tx, &space.to_string()).await?;
             // The candidate query runs before the space lock. A reconnect may have
             // replaced both authority and connection state while this worker waited.
+            // Persist the visit even when provider checks cannot finish, so blocked
+            // connections yield later batches to the least recently checked work.
             let current = sqlx::query(
-                "SELECT data,owner_subject FROM perfine_connections WHERE id=$1 AND space=$2",
+                "UPDATE perfine_connections SET data=jsonb_set(data,'{_lastExecutionCheckAt}',to_jsonb(now())) WHERE id=$1 AND space=$2 RETURNING data,owner_subject",
             )
             .bind(row.get::<uuid::Uuid, _>("id"))
             .bind(space)
