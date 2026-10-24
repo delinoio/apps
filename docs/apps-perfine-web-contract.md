@@ -63,3 +63,54 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## Browser integration
+
+The app uses the generated Perfine v1 services and `@connectrpc/connect-query`.
+Logto supplies bearer tokens; Delcore `GetCurrentUser` supplies paginated personal
+and organization spaces. There is no anonymous result route. Query state is
+scoped by space/resource and cleared on sign-out. Permission failures hide cached
+results. Manage, experiment and publish controls remain independent of read.
+
+Repository setup uses an operator-configured GitHub App installation URL and
+explicit repository/installation IDs. The API resolves IDs and verifies both
+management and GitHub administrator authority. Connections and histories use
+cursor pagination. Evidence links are issued on demand, after server checks.
+
+Cloud start imports a complete v1 `ExperimentSpecification` JSON prepared by the
+local engine. The browser reviews all limits, metric/units, policies, exceptions,
+workloads and reproducibility inputs before explicit confirmation. It does not
+invent an engine fingerprint or change frozen policy fields. To change inputs,
+prepare and import a new specification with its canonical fingerprint. The API
+must validate the fingerprint, schema, limits and policy independently.
+
+Publication has a separate review view at both widths. Confirmation resets on
+content edits. The client compares the returned approval binding with the exact
+submitted draft, then sends that binding to `PublishDraft`. It polls retained
+approval/publication records on uncertain outcomes without creating another
+approval or automatically resubmitting publication. Source changes require
+remeasurement; prose-only edits require new approval, not new measurements.
+
+## App-local configuration and checks
+
+`pnpm dev` in `apps/perfine` injects the root Infisical development configuration,
+then registers the Portless name `perfine` with fixed upstream
+`127.0.0.1:46324`. Port conflicts fail. Root orchestration and CI selection belong
+to the repository workflow; this app does not start API servers or databases.
+
+Public browser settings are `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`,
+`PUBLIC_DELCORE_API_URL`, `PUBLIC_DELCORE_RESOURCE`, `PUBLIC_PERFINE_API_URL`,
+`PUBLIC_PERFINE_RESOURCE` and `PUBLIC_PERFINE_GITHUB_APP_URL`. The Perfine resource
+defaults to the Delcore resource, matching existing service identity patterns.
+Configure `/callback` and the sign-out origin in Logto. Cross-origin APIs must
+permit the exact frontend origin and authorization headers. Only public client
+configuration may enter the frontend; service credentials remain server-owned.
+
+`pnpm test` runs TypeScript and mocked typed-RPC interaction tests. `pnpm build`
+produces the Pages bundle and license notices. `tests/browser.config.ts` is a
+separate mocked-RPC browser entry for responsive inspection; it is not imported
+by the production entry and does not bypass production authentication. Start it
+only for verification with `pnpm exec rsbuild dev --config tests/browser.config.ts`.
+It displays an explicit mock-data banner. These checks do not establish live
+Logto, Delcore, GitHub, Actions, R2 or backend acceptance. Remove generated `dist`
+output after validation.
