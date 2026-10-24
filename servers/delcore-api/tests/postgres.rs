@@ -323,3 +323,54 @@ async fn retention_removes_requests_and_audits_at_the_thirty_day_boundary() {
             .unwrap();
     assert!(!retained);
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn non_rfc_variant_uuid_v7_inputs_are_rejected_without_committing() {
+    const COUNTS: &str = "SELECT (SELECT count(*) FROM tenants),(SELECT count(*) FROM requests),(SELECT count(*) FROM audit),(SELECT count(*) FROM catalog_entities),(SELECT count(*) FROM plans),(SELECT count(*) FROM services)";
+    let f = Fixture::setup().await;
+    f.bootstrap().await;
+    let before: (i64, i64, i64, i64, i64, i64) =
+        sqlx::query_as(COUNTS).fetch_one(&f.db).await.unwrap();
+    for variant in ['0', '7', 'c', 'e', 'f'] {
+        let bad = format!("01900000-0000-7000-{variant}000-000000000001");
+        let rejected = f
+            .error(
+                "owner",
+                "CreateTenant",
+                json!({"requestKey":bad,"name":"Variant"}),
+                "invalid_argument",
+            )
+            .await;
+        assert_eq!(rejected["message"], "request_key must be a UUID v7");
+        f.error(
+            "owner",
+            "PutPlan",
+            json!({"requestKey":key(),"reason":"variant fixture","plan":{"id":bad,"name":"Variant Plan","rank":10}}),
+            "invalid_argument",
+        )
+        .await;
+        f.error(
+            "owner",
+            "PutService",
+            json!({"requestKey":key(),"reason":"variant fixture","service":{"id":bad,"name":"variant","clientId":"variant","capabilities":["execute"],"scopes":["authorize"]}}),
+            "invalid_argument",
+        )
+        .await;
+        let after: (i64, i64, i64, i64, i64, i64) =
+            sqlx::query_as(COUNTS).fetch_one(&f.db).await.unwrap();
+        assert_eq!(before, after, "{bad}");
+    }
+    // RFC 9562 variants remain accepted for the same inputs.
+    for variant in ['8', '9', 'a', 'b'] {
+        let good = format!("01900000-0000-7000-{variant}000-000000000001");
+        let tenant = f
+            .rpc(
+                "owner",
+                "CreateTenant",
+                json!({"requestKey":good,"name":format!("Variant {variant}")}),
+            )
+            .await;
+        assert!(tenant["tenant"]["id"].is_string());
+    }
+}

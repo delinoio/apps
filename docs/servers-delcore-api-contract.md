@@ -125,7 +125,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
   - Reusable personal and tenant [API keys](#api-keys): creation, metadata listing, revocation and service-side authorization.
   - Billing-period group aggregate queries and metering lag and failure status.
   - Operator catalog management, tenant blocking, audit inspection, and failed-job inspection/reprocessing.
-- Use typed errors, correlation identifiers, bounded pagination, and UUID v7 for delcore entities. Keep external provider identifiers as explicit external references.
+- Use typed errors, correlation identifiers, bounded pagination, and UUID v7 for delcore entities. Keep external provider identifiers as explicit external references. Supplied request keys and entity IDs must be canonical lowercase hyphenated UUID v7 values with the RFC 9562 variant (the fourth group starts with `8`, `9`, `a` or `b`); values with another variant are invalid input and commit nothing.
 - Authenticate and verify inbound provider events before processing. Apply duplicate and stale-event protection.
 - Use Cloudflare Email REST for invitations, insufficient-balance notices, automatic top-up failures, and paid-use blocking notices.
 - Send English email only. Organization billing notifications go to Owner and Billing users; personal tenant notifications go to the owner.
