@@ -85,6 +85,45 @@ struct Journal {
     #[serde(default)]
     attempts: BTreeMap<Fingerprint, Attempt>,
 }
+#[derive(Serialize, Deserialize)]
+struct Initialization {
+    config: FrozenConfig,
+    journal: Journal,
+}
+
+fn recover_initialization(
+    engine: &Engine<FileStore>,
+    id: &ResourceId,
+    journal_path: &Path,
+    settings: &Fingerprint,
+) -> Result<()> {
+    let intent = journal_path.with_file_name("initialization.json");
+    if journal_path.exists() || !intent.exists() {
+        return Ok(());
+    }
+    let saved: Initialization = serde_json::from_slice(&fs::read(intent)?)?;
+    ensure!(
+        &saved.journal.settings == settings,
+        "initialization settings fingerprint changed"
+    );
+    match engine.status(id) {
+        Ok(existing) => ensure!(
+            existing.config.fingerprint() == saved.config.fingerprint(),
+            "initialization config mismatch"
+        ),
+        Err(perfine_core::Error::State) => {
+            engine.create(
+                &saved.journal.created_request,
+                id.clone(),
+                saved.config,
+                now(),
+            )?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    atomic(journal_path, &saved.journal)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Attempt {
     candidate: ResourceId,
@@ -351,6 +390,7 @@ impl App {
             .context("experiment already has an active runner")?;
         let journal_path = dir.join("journal.json");
         let engine = self.engine()?;
+        recover_initialization(&engine, &id, &journal_path, &fingerprint(&cfg)?)?;
         if journal_path.exists() {
             let saved: Journal = serde_json::from_slice(&fs::read(&journal_path)?)?;
             ensure!(
@@ -479,7 +519,6 @@ impl App {
                 !resume,
                 "unknown experiment; start measure or optimize first"
             );
-            engine.create(req, id.clone(), frozen.clone(), now())?;
             let j = Journal {
                 schema_version: Version,
                 settings: fingerprint(&cfg)?,
@@ -489,6 +528,16 @@ impl App {
                 failure: None,
                 attempts: BTreeMap::new(),
             };
+            // Persist the original operation before the engine transaction. Recovery
+            // can restore the journal after a crash between the two durable writes.
+            atomic(
+                &journal_path.with_file_name("initialization.json"),
+                &Initialization {
+                    config: frozen.clone(),
+                    journal: j.clone(),
+                },
+            )?;
+            engine.create(req, id.clone(), frozen.clone(), now())?;
             atomic(&journal_path, &j)?;
             j
         };
@@ -1064,5 +1113,55 @@ mod tests {
             value["on"]["workflow_dispatch"]["inputs"]["experiment"]["required"],
             true
         );
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../crates/perfine-core/tests/common/mod.rs"]
+mod initialization_fixtures;
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+    #[test]
+    fn journal_recovers_original_operation_after_engine_creation() {
+        for created in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let engine = Engine::new(FileStore::open(dir.path().join("engine")).unwrap());
+            let id = ResourceId::generate();
+            let config = super::initialization_fixtures::config().freeze().unwrap();
+            let settings = digest(b"original settings");
+            let journal = Journal {
+                schema_version: Version,
+                settings: settings.clone(),
+                optimize: false,
+                created_request: request(),
+                runs: BTreeMap::new(),
+                failure: None,
+                attempts: BTreeMap::new(),
+            };
+            let path = dir.path().join("journal.json");
+            atomic(
+                &path.with_file_name("initialization.json"),
+                &Initialization {
+                    config: config.clone(),
+                    journal: journal.clone(),
+                },
+            )
+            .unwrap();
+            if created {
+                engine
+                    .create(&journal.created_request, id.clone(), config, now())
+                    .unwrap();
+            }
+            assert!(recover_initialization(&engine, &id, &path, &digest(b"changed")).is_err());
+            recover_initialization(&engine, &id, &path, &settings).unwrap();
+            let restored: Journal = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert_eq!(restored.created_request, journal.created_request);
+            assert!(!restored.optimize);
+            let deadline = engine.status(&id).unwrap().start_deadline;
+            recover_initialization(&engine, &id, &path, &settings).unwrap();
+            assert_eq!(engine.status(&id).unwrap().start_deadline, deadline);
+        }
     }
 }
