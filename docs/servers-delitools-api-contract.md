@@ -265,7 +265,7 @@ Optional with defaults:
 | `DELITOOLS_OUTBOX_ALERT_BACKLOG`, `DELITOOLS_OUTBOX_ALERT_AGE`                                    | 1000, `15m`                       |
 | `LOG_FORMAT`                                                                                      | `text`                            |
 
-Durations use forms such as `250ms`, `3s`, `5m` and `1h30m`. Standard `OTEL_*` and `NO_COLOR` keep their names; PostgreSQL integration tests read `TEST_DATABASE_URL`. The Go example reads `DELITOOLS_URL` and `DELITOOLS_TOKEN`. Reject missing, contradictory or out-of-range values at startup without printing them; only `DELITOOLS_MAX_RETRIES` accepts 0. Commit only safe placeholders in `servers/delitools-api/.env.example` and `servers/delitools-api/models.example.yaml`; real configuration stays outside Git.
+Durations use forms such as `250ms`, `3s`, `5m` and `1h30m`. A duration must stay positive after conversion to nanosecond precision; a value that rounds to zero, such as `0.0000000001s`, is rejected at startup naming the setting. Standard `OTEL_*` and `NO_COLOR` keep their names; PostgreSQL integration tests read `TEST_DATABASE_URL`. The Go example reads `DELITOOLS_URL` and `DELITOOLS_TOKEN`. Reject missing, contradictory or out-of-range values at startup without printing them; only `DELITOOLS_MAX_RETRIES` accepts 0. Commit only safe placeholders in `servers/delitools-api/.env.example` and `servers/delitools-api/models.example.yaml`; real configuration stays outside Git.
 
 ## Local development
 
