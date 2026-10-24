@@ -178,6 +178,17 @@ pub struct Event {
     pub occurred_at: DateTime<Utc>,
     pub data: Value,
 }
+/// Reads the cancellation time of a canceled subscription object.
+///
+/// Returns the RFC 3339 `canceled_at` instant in UTC, or `None` when the field is missing, null,
+/// not a string, malformed, before the Unix epoch, or later than `now`. A cancellation that
+/// has not happened yet cannot be the boundary at which paid products end.
+pub fn canceled_at(subscription: &Value, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let parsed = DateTime::parse_from_rfc3339(subscription["canceled_at"].as_str()?)
+        .ok()?
+        .with_timezone(&Utc);
+    (parsed.timestamp() >= 0 && parsed <= now).then_some(parsed)
+}
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CustomData {
@@ -333,6 +344,36 @@ mod tests {
         assert!(t.custom.job_id.is_empty());
         let e: Event = serde_json::from_value(json!({"event_id":"evt_1"})).unwrap();
         assert_eq!(e.occurred_at, zero_time());
+    }
+    #[test]
+    fn cancellation_time_requires_a_past_rfc3339_instant() {
+        let now = DateTime::parse_from_rfc3339("2026-10-06T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let at = |value: Value| canceled_at(&json!({"status":"canceled","canceled_at":value}), now);
+        let expected = DateTime::parse_from_rfc3339("2026-10-05T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(at(json!("2026-10-05T00:00:00Z")), Some(expected));
+        assert_eq!(at(json!("2026-10-05T09:00:00+09:00")), Some(expected));
+        assert_eq!(
+            at(json!("2026-10-05T00:00:00.250Z")),
+            Some(expected + chrono::Duration::milliseconds(250))
+        );
+        assert_eq!(at(json!("2026-10-06T12:00:00Z")), Some(now));
+        for invalid in [
+            Value::Null,
+            json!(""),
+            json!("not a time"),
+            json!("2026-10-05"),
+            json!(1_790_000_000),
+            json!("2026-10-06T12:00:01Z"),
+            json!("1969-12-31T23:59:59Z"),
+        ] {
+            assert_eq!(at(invalid.clone()), None, "{invalid}");
+        }
+        assert_eq!(canceled_at(&json!({"status":"canceled"}), now), None);
+        assert_eq!(canceled_at(&Value::Null, now), None);
     }
     #[test]
     fn payment_time_is_bounded() {

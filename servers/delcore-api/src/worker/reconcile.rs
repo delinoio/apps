@@ -64,9 +64,24 @@ impl Worker {
                     return self.retry(&j, Error::Ambiguous, true).await;
                 }
                 if raw["status"] == "canceled" {
+                    // The cancellation boundary is the provider's own `canceled_at`. The
+                    // observation time is not a substitute: it would move the paid/free
+                    // transition and the subscription watermark past the real cancellation and
+                    // make the genuine notification stale. Paddle sets `canceled_at` only when
+                    // the cancellation takes effect (a scheduled cancellation keeps the
+                    // subscription active with `canceled_at` null), so a canceled subscription
+                    // without a usable value is unexpected and is retried as ambiguous without
+                    // any projection.
+                    let Some(canceled_at) = provider::canceled_at(&raw, Utc::now()) else {
+                        tracing::warn!(
+                            kind = j.kind,
+                            "canceled subscription has no valid cancellation time; retrying"
+                        );
+                        return self.retry(&j, Error::Ambiguous, true).await;
+                    };
                     let event = provider::Event {
                         r#type: "subscription.canceled".into(),
-                        occurred_at: Utc::now(),
+                        occurred_at: canceled_at,
                         data: raw,
                         ..Default::default()
                     };
