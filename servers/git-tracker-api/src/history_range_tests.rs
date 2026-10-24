@@ -136,7 +136,7 @@ impl Fixture {
 fn record(id: &str, commit: char, order: u64, registered_at: &str) -> Value {
     json!({
         "execution": {
-            "context": {"repositoryId":"r","executionId":id,"commit":sha(commit),"branch":"main"},
+            "context": {"repositoryId":"r","executionId":id,"commit":sha(commit),"branch":branch_of(id)},
             "state": "EXECUTION_STATE_COMPLETED",
             // Storage keeps the order as a zero-padded decimal string, as `State::upload` writes it.
             "registrationOrder": format!("{order:020}"),
@@ -151,6 +151,15 @@ fn record(id: &str, commit: char, order: u64, registered_at: &str) -> Value {
         "base": {"execution":"","commit":""},
         "push": true
     })
+}
+
+/// Fixture executions whose ID starts with `other-` belong to the `other` branch.
+fn branch_of(id: &str) -> &'static str {
+    if id.starts_with("other-") {
+        "other"
+    } else {
+        "main"
+    }
 }
 
 const T0: &str = "2026-01-01T00:00:00Z";
@@ -283,4 +292,106 @@ async fn range_filtering_precedes_pagination() {
     assert_eq!(ids(&v).len(), 30);
     assert!(ids(&v).iter().all(|id| id.starts_with("in-")));
     assert_eq!(v["nextCursor"], "");
+}
+
+#[test]
+fn history_page_window_cursor_is_empty_on_every_final_page() {
+    use crate::history_page_window;
+    let w = |offset, len| history_page_window(offset, len);
+    assert_eq!(w(0, 0), (0, 0, String::new()));
+    assert_eq!(w(0, 99), (0, 99, String::new()));
+    // An exactly full first page is also the final page.
+    assert_eq!(w(0, 100), (0, 100, String::new()));
+    assert_eq!(w(0, 101), (0, 100, "100".into()));
+    assert_eq!(w(100, 101), (100, 101, String::new()));
+    assert_eq!(w(0, 200), (0, 100, "100".into()));
+    assert_eq!(w(100, 200), (100, 200, String::new()));
+    assert_eq!(w(100, 201), (100, 200, "200".into()));
+    // Cursors at or beyond the collection length clamp to an empty final page.
+    assert_eq!(w(100, 100), (100, 100, String::new()));
+    assert_eq!(w(150, 100), (100, 100, String::new()));
+    assert_eq!(w(usize::MAX, 100), (100, 100, String::new()));
+}
+
+/// Follows `nextCursor` from an empty cursor and returns every page's execution IDs and cursor.
+async fn pages(
+    f: &Fixture,
+    runs: &[(&str, char, u64, &str)],
+    mut q: Value,
+) -> Vec<(Vec<String>, String)> {
+    let mut out = Vec::new();
+    let mut cursor = String::new();
+    loop {
+        q["cursor"] = json!(cursor);
+        let v = f.history(runs, q.clone()).await;
+        let next = v["nextCursor"].as_str().unwrap().to_owned();
+        out.push((
+            ids(&v).into_iter().map(str::to_owned).collect(),
+            next.clone(),
+        ));
+        if next.is_empty() {
+            return out;
+        }
+        assert!(out.len() < 10, "cursor never terminated: {out:?}");
+        cursor = next;
+    }
+}
+
+#[tokio::test]
+async fn history_cursor_terminates_on_exact_page_boundaries() {
+    let f = Fixture::new("A").await;
+    for (count, sizes, cursors) in [
+        (0usize, vec![0usize], vec![""]),
+        (99, vec![99], vec![""]),
+        (100, vec![100], vec![""]),
+        (101, vec![100, 1], vec!["100", ""]),
+        (200, vec![100, 100], vec!["100", ""]),
+    ] {
+        let owned: Vec<(String, char, u64)> = (1..=count as u64)
+            .map(|i| (format!("run-{i:03}"), 'A', i))
+            .collect();
+        let runs: Vec<(&str, char, u64, &str)> = owned
+            .iter()
+            .map(|(id, c, o)| (id.as_str(), *c, *o, T0))
+            .collect();
+        let got = pages(&f, &runs, json!({})).await;
+        assert_eq!(
+            got.iter().map(|p| p.0.len()).collect::<Vec<_>>(),
+            sizes,
+            "{count}"
+        );
+        assert_eq!(
+            got.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(),
+            cursors,
+            "{count}"
+        );
+        // Every execution is returned once, newest registration first.
+        let all: Vec<String> = got.into_iter().flat_map(|p| p.0).collect();
+        let expected: Vec<String> = owned.iter().rev().map(|(id, _, _)| id.clone()).collect();
+        assert_eq!(all, expected, "{count}");
+        // A cursor at or beyond the collection length is an empty final page.
+        for cursor in [count.to_string(), (count + 50).to_string()] {
+            let v = f.history(&runs, json!({"cursor": cursor})).await;
+            assert!(ids(&v).is_empty(), "{count}: {v}");
+            assert_eq!(v["nextCursor"], "", "{count}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn history_cursor_ignores_executions_on_other_branches() {
+    let f = Fixture::new("A").await;
+    let mut owned: Vec<(String, char, u64)> =
+        (1..=100).map(|i| (format!("run-{i:03}"), 'A', i)).collect();
+    owned.extend((101..=130).map(|i| (format!("other-{i}"), 'A', i)));
+    let runs: Vec<(&str, char, u64, &str)> = owned
+        .iter()
+        .map(|(id, c, o)| (id.as_str(), *c, *o, T0))
+        .collect();
+    // Exactly 100 executions remain for `main`, so the first page is also the final page.
+    let got = pages(&f, &runs, json!({"branch": "main"})).await;
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0.len(), 100);
+    assert!(got[0].0.iter().all(|id| id.starts_with("run-")));
+    assert_eq!(got[0].1, "");
 }
