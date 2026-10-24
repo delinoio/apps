@@ -249,3 +249,26 @@ fn artifact_traversal_is_rejected_before_calling_the_reader() {
         .is_err()
     );
 }
+
+#[test]
+fn constant_ir_baselines_preserve_exact_counts_across_repetition_counts() {
+    let cfg = config().freeze().unwrap();
+    let experiment = ResourceId::generate();
+    let single = manifest(
+        &cfg,
+        &experiment,
+        None,
+        cfg.config().incremental_base.clone(),
+        [100_000.0, 100_000.0],
+    );
+    let mut repeated = single.clone();
+    repeated.identity.run = ResourceId::generate();
+    for samples in repeated.measurements.values_mut() {
+        samples.values = vec![100_000.0; 7];
+        assert_eq!(samples.mean(), 100_000.0);
+    }
+    let left = verified(&cfg, single);
+    let right = verified(&cfg, repeated);
+    validate_baseline(&cfg, &left, &right).unwrap();
+    validate_baseline(&cfg, &right, &left).unwrap();
+}
