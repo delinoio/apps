@@ -27,6 +27,8 @@ const env = {
   INPUT_EXPERIMENT: id,
   INPUT_CONFIG: "schema_version: 1\nexperiment: {}\n",
   GITHUB_EVENT_NAME: "workflow_dispatch",
+  GITHUB_RUN_ID: "42",
+  GITHUB_RUN_ATTEMPT: "2",
   GITHUB_WORKSPACE: "/work",
   OPENAI_API_KEY: "excluded",
   GH_TOKEN: "excluded",
@@ -35,9 +37,20 @@ const env = {
 };
 test("inline YAML is immutable and runner secrets/cached home do not enter CLI execution", (t) => {
   const dir = temporary(t);
+  for (const values of [
+    { GITHUB_RUN_ID: "" },
+    { GITHUB_RUN_ATTEMPT: "0" },
+    { GITHUB_RUN_ATTEMPT: "4294967296" },
+  ])
+    assert.throws(
+      () => executionPlan({ ...env, ...values }, dir),
+      /run ID and attempt/,
+    );
   const plan = executionPlan(env, dir);
   assert.deepEqual(plan.args.slice(-3), ["measure", "--experiment", id]);
   assert.equal(plan.env.HOME, dir);
+  assert.equal(plan.env.PERFINE_GITHUB_RUN_ID, "42");
+  assert.equal(plan.env.PERFINE_GITHUB_RUN_ATTEMPT, "2");
   assert.equal(plan.env.GH_TOKEN, undefined);
   assert.equal(plan.env.OPENAI_API_KEY, undefined);
   assert.equal(plan.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, undefined);

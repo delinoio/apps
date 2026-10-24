@@ -92,3 +92,5 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+The official Action passes only non-secret `PERFINE_GITHUB_RUN_ID` and `PERFINE_GITHUB_RUN_ATTEMPT` execution context to the measurement CLI. Both must be canonical positive integers. The journal retains that identity, every measured run includes it, and resume rejects a changed or omitted identity. These values are provenance, not credentials; hosted authorization independently verifies Actions OIDC and the exact GitHub execution.
