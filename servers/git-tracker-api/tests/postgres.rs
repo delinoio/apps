@@ -61,6 +61,15 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
             "/repos/owner/repo"|"/repositories/42"=>json!({"id":42,"full_name":"owner/repo","private":false,"permissions":{"admin":true}}),
             "/repos/owner/repo/installation"=>json!({"id":1}),
             "/app/installations/1/access_tokens"=>json!({"token":"installation"}),
+            // Exact branch-head lookups. The generic commit route below also resolves SHAs and tags, so
+            // only these routes may make a caller-supplied value a branch. Unlisted names (a tag such as
+            // `v1`, or a commit SHA) answer 401 like a missing ref.
+            "/repos/owner/repo/git/ref/heads/main"=>json!({"ref":"refs/heads/main","object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/release/1%2E0"=>json!({"ref":"refs/heads/release/1.0","object":{"type":"commit","sha":commit}}),
+            p if p==format!("/repos/owner/repo/git/ref/heads/{}","b".repeat(40))=>json!({"ref":format!("refs/heads/{}","b".repeat(40)),"object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/mismatch"=>json!({"ref":"refs/heads/other","object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/annotated"=>json!({"ref":"refs/heads/annotated","object":{"type":"tag","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/badsha"=>json!({"ref":"refs/heads/badsha","object":{"type":"commit","sha":"not-a-sha"}}),
             p if p.starts_with("/repos/owner/repo/commits/")=>json!({"sha":commit,"parents":[]}),
             _=>return (StatusCode::UNAUTHORIZED,Json(json!({"code":"unauthenticated"}))),
         };(StatusCode::OK,Json(out))
@@ -249,6 +258,91 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     assert_eq!(status, StatusCode::OK, "{warning}");
     assert_eq!(warning["warnings"][0], "PR comment could not be updated");
     assert_eq!(github_failures.get(), before + 2);
+    // Only an exact `refs/heads/<branch>` head may name a branch. Commit SHAs, tags and mismatching or
+    // non-commit refs fail with the GitHub unavailable fault and persist nothing.
+    let recorded = |id: String| {
+        let db = db.clone();
+        let rid = rid.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT jsonb_exists(state->'records',$2) FROM git_tracker_repositories WHERE id::text=$1",
+            )
+            .bind(rid)
+            .bind(id)
+            .fetch_one(&db)
+            .await
+            .unwrap()
+        }
+    };
+    let rejected = [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "v1",
+        "mismatch",
+        "annotated",
+        "badsha",
+        "main/",
+        "a//b",
+        "../main",
+    ];
+    for (i, branch) in rejected.iter().enumerate() {
+        let id = format!("rejected-upload-{i}");
+        let mut c = context.clone();
+        c["executionId"] = json!(&id);
+        c["branch"] = json!(branch);
+        let (_, failed) = call(
+            &http,
+            &base,
+            "Upload",
+            &auth,
+            json!({"context":c,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+        )
+        .await;
+        assert_eq!(failed["code"], "unavailable", "upload branch {branch}");
+        assert!(!recorded(id.clone()).await, "upload branch {branch}");
+        let id = format!("rejected-complete-{i}");
+        c["executionId"] = json!(&id);
+        let (_, failed) = call(&http, &base, "Complete", &auth, json!({"context":c})).await;
+        assert_eq!(failed["code"], "unavailable", "complete branch {branch}");
+        assert!(!recorded(id.clone()).await, "complete branch {branch}");
+        let (_, failed) = call(
+            &http,
+            &base,
+            "GetHistory",
+            "",
+            json!({"repositoryId":rid,"branch":branch}),
+        )
+        .await;
+        assert_eq!(failed["code"], "unavailable", "history branch {branch}");
+    }
+    for (i, branch) in ["release/1.0", &"b".repeat(40)].iter().enumerate() {
+        let id = format!("exact-upload-{i}");
+        let mut c = context.clone();
+        c["executionId"] = json!(&id);
+        c["branch"] = json!(branch);
+        let (status, v) = call(
+            &http,
+            &base,
+            "Upload",
+            &auth,
+            json!({"context":c,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "upload branch {branch}: {v}");
+        assert!(recorded(id.clone()).await);
+        let id = format!("exact-complete-{i}");
+        c["executionId"] = json!(&id);
+        let (status, v) = call(&http, &base, "Complete", &auth, json!({"context":c})).await;
+        assert_eq!(status, StatusCode::OK, "complete branch {branch}: {v}");
+        let (status, v) = call(
+            &http,
+            &base,
+            "GetHistory",
+            "",
+            json!({"repositoryId":rid,"branch":branch}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "history branch {branch}: {v}");
+    }
     let (_, revoked) = call(
         &http,
         &base,

@@ -289,7 +289,7 @@ impl DelcoreClient {
             }
         });
         match self.call("IngestEvent", body).await {
-            Ok(value) if value.is_object() => Ok(()),
+            Ok(value) if is_valid_ingest_ack(&value) => Ok(()),
             Ok(_) => Err(IngestFailure::Retryable("malformed_response")),
             Err((kind, reason)) => Err(classify_ingest_failure(kind, reason)),
         }
@@ -395,10 +395,22 @@ pub fn parse_verdict(value: &Value) -> Result<Verdict, DelcoreError> {
     })
 }
 
+/// Connect `type` of the only error detail that carries a Delcore reason. Connect uses the bare
+/// fully qualified message name, so an `Any` URL such as
+/// `type.googleapis.com/delcore.v1.ErrorDetail` is deliberately not an alias.
+const DELCORE_ERROR_DETAIL_TYPE: &str = "delcore.v1.ErrorDetail";
+
 /// Decodes the Delcore `ErrorDetail.reason` number from a Connect error body.
+///
+/// Protobuf bytes carry no message name, so an unrelated message can decode as `ErrorDetail`
+/// (for example `08 01` is field 1, varint 1). Only details declared as
+/// [`DELCORE_ERROR_DETAIL_TYPE`] are decoded; any other, absent or non-string `type` is skipped.
 fn error_reason(body: &Value) -> Option<i32> {
     let engine = base64::engine::general_purpose::STANDARD_NO_PAD;
     for detail in body["details"].as_array()? {
+        if detail["type"].as_str() != Some(DELCORE_ERROR_DETAIL_TYPE) {
+            continue;
+        }
         let Some(raw) = detail["value"].as_str() else {
             continue;
         };
@@ -410,6 +422,24 @@ fn error_reason(body: &Value) -> Option<i32> {
         }
     }
     None
+}
+
+/// Revision Delcore assigns to the original acceptance of an event, and to its identical replay.
+const ORIGINAL_EVENT_REVISION: i32 = 1;
+
+/// Reports whether an HTTP-success `IngestEvent` body is a contractual acknowledgment.
+///
+/// The body is decoded with the generated `IngestEventResponse` ProtoJSON decoder, which keeps
+/// the legal integer encodings (number or integer string) and field-name aliases. Proto3 decoding
+/// accepts absent, null and default values, so the acknowledgment is also checked semantically:
+/// Delcore assigns a canonical UUID v7 event ID and returns revision 1 for the original
+/// ingestion and for an identical replay. The returned ID is deliberately not compared with the
+/// caller's keys, and metadata or aggregation progress is not a delivery condition.
+fn is_valid_ingest_ack(value: &Value) -> bool {
+    serde_json::from_value::<delino_protocol::delcore::v1::IngestEventResponse>(value.clone())
+        .is_ok_and(|ack| {
+            server_common::canonical_id(&ack.event_id) && ack.revision == ORIGINAL_EVENT_REVISION
+        })
 }
 
 /// Maps a Delcore failure to delivery handling.
@@ -531,6 +561,101 @@ mod tests {
         let body = json!({"code":"already_exists","details":[{"type":"delcore.v1.ErrorDetail","value":encoded}]});
         assert_eq!(error_reason(&body), Some(11));
         assert_eq!(error_reason(&json!({"code":"x"})), None);
-        assert_eq!(error_reason(&json!({"details":[{"value":"!!"}]})), None);
+        assert_eq!(
+            error_reason(&json!({"details":[{"type":"delcore.v1.ErrorDetail","value":"!!"}]})),
+            None
+        );
+    }
+
+    /// A correctly typed detail whose bytes are field 1 (`reason`) as a raw varint, so reasons
+    /// this build does not know can be encoded too.
+    fn typed_detail(reason: u32) -> Value {
+        let mut bytes = vec![0x08];
+        let mut rest = reason;
+        loop {
+            let low = (rest & 0x7f) as u8;
+            rest >>= 7;
+            if rest == 0 {
+                bytes.push(low);
+                break;
+            }
+            bytes.push(low | 0x80);
+        }
+        json!({
+            "type": "delcore.v1.ErrorDetail",
+            "value": base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes),
+        })
+    }
+
+    #[test]
+    fn details_with_another_type_never_supply_a_reason() {
+        // Field 1 varint 1, 9, 11 and 14 collide with the permanent Delcore reasons.
+        for value in ["CAE", "CAk", "CAs", "CA4"] {
+            let types = [
+                json!("other.v1.Failure"),
+                json!("type.googleapis.com/delcore.v1.ErrorDetail"),
+                json!("delcore.v1.errordetail"),
+                json!(" delcore.v1.ErrorDetail"),
+                json!(""),
+                json!(7),
+                Value::Null,
+            ];
+            for ty in types {
+                let body = json!({"code":"unavailable","details":[{"type":ty,"value":value}]});
+                assert_eq!(error_reason(&body), None, "{value} {ty}");
+            }
+            let untyped = json!({"code":"unavailable","details":[{"value":value}]});
+            assert_eq!(error_reason(&untyped), None, "{value} without type");
+        }
+        assert_eq!(
+            classify_ingest_failure(DelcoreError::Unavailable, None),
+            IngestFailure::Retryable("unavailable")
+        );
+    }
+
+    #[test]
+    fn skipped_or_undecodable_details_fall_through_to_a_later_typed_detail() {
+        let body = json!({"details":[
+            {"type":"other.v1.Failure","value":"CAE"},
+            {"value":"CAk"},
+            typed_detail(11),
+        ]});
+        assert_eq!(error_reason(&body), Some(11));
+        for broken in ["!!", "CAAAAA", "/////"] {
+            let body = json!({"details":[
+                {"type":"delcore.v1.ErrorDetail","value":broken},
+                typed_detail(14),
+            ]});
+            assert_eq!(error_reason(&body), Some(14), "{broken}");
+        }
+        // A typed detail without a string value is skipped as well.
+        let body = json!({"details":[{"type":"delcore.v1.ErrorDetail"}, typed_detail(9)]});
+        assert_eq!(error_reason(&body), Some(9));
+    }
+
+    #[test]
+    fn typed_reasons_keep_their_delivery_classification() {
+        for (reason, expected) in [
+            (1, IngestFailure::Poison("invalid_input")),
+            (9, IngestFailure::Poison("invalid_attribute")),
+            (11, IngestFailure::Poison("identity_conflict")),
+            (14, IngestFailure::Poison("reporting_window_closed")),
+            (8, IngestFailure::Retryable("no_matching_meter")),
+            (10, IngestFailure::Retryable("cardinality_exceeded")),
+            (9999, IngestFailure::Retryable("unavailable")),
+        ] {
+            let body = json!({"details":[typed_detail(reason)]});
+            let found = error_reason(&body);
+            assert_eq!(
+                classify_ingest_failure(DelcoreError::Unavailable, found),
+                expected,
+                "{reason}"
+            );
+        }
+        // Padded base64 stays accepted.
+        let mut padded = typed_detail(11);
+        let text = padded["value"].as_str().unwrap().to_owned();
+        padded["value"] = json!(format!("{text}{}", "=".repeat((4 - text.len() % 4) % 4)));
+        assert_eq!(error_reason(&json!({"details":[padded]})), Some(11));
     }
 }

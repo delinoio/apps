@@ -3,6 +3,8 @@ pub mod alerts;
 pub mod auth;
 pub mod decimal;
 pub mod github;
+#[cfg(test)]
+mod history_range_tests;
 pub mod maintenance;
 pub mod measurement;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -419,7 +421,7 @@ impl Server {
             })
             .unwrap_or_default();
         if repo.connected && !branch.is_empty() {
-            let needed: HashSet<_> = records
+            let mut needed: HashSet<_> = records
                 .iter()
                 .filter(|r| {
                     r.execution.context.pull_request == 0
@@ -427,6 +429,16 @@ impl Server {
                 })
                 .map(|r| r.execution.context.commit.clone())
                 .collect();
+            // The first-parent walk stops once every required commit is on the path. Requested
+            // range endpoints must be required too: a valid endpoint without a completed
+            // measurement, or older than the oldest measurement, would otherwise be missing from
+            // the path and silently ignored by the slicing below.
+            needed.extend(
+                [string(q, "fromCommit"), string(q, "toCommit")]
+                    .into_iter()
+                    .filter(|c| !c.is_empty())
+                    .map(str::to_owned),
+            );
             commits = self.github.branch(repo, branch, needed).await?;
         }
         let to = string(q, "toCommit");

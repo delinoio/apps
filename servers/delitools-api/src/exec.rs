@@ -16,6 +16,11 @@
 //!    interpreted, so failed, invalid or canceled-after-response attempts are still billed.
 //!    Missing or invalid usage is counted and logged, never estimated.
 //! 5. Output is validated; invalid output is final (no repair retry, no model substitution).
+//!
+//! Cancellation has two sources: the caller (handler drop) and the service-wide fence that closes
+//! when the process loses the instance lock. Each job's token is a child of the fence, so both end
+//! provider calls and retries the same way, and neither blocks the storing of confirmed usage; the
+//! finite persistence budget (`DEPENDENCY_TIMEOUT`) bounds that storing so the old process can exit.
 
 use crate::{
     Inner,
@@ -90,6 +95,7 @@ impl Inner {
     /// Sleeps for `wait` unless canceled or past the deadline.
     async fn pause(&self, job: &Job, wait: Duration) -> Result<(), Stop> {
         tokio::select! {
+            biased;
             _ = job.cancel.cancelled() => Err(Stop::Canceled),
             _ = tokio::time::sleep_until(job.deadline) => Err(Stop::TimedOut),
             _ = tokio::time::sleep(wait) => Ok(()),
@@ -137,6 +143,7 @@ impl Inner {
                 self.pause(job, wait).await.map_err(|s| self.stopped(s))?;
                 // Revocation, expiry, permission loss or a billing block stops further attempts.
                 tokio::select! {
+                    biased;
                     _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
                     _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
                     checked = self.auth.recheck(&job.principal) => {
@@ -147,7 +154,10 @@ impl Inner {
                     }
                 }
             }
+            // Biased: cancellation, including the instance fence, is observed before the Gateway
+            // future is first polled, so no attempt starts once the job is canceled.
             let outcome = tokio::select! {
+                biased;
                 _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
                 _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
                 result = self.gateway.complete(&request) => result,
@@ -275,8 +285,11 @@ impl Inner {
         }
         let tenant = Uuid::parse_str(&job.principal.tenant_id).map_err(|_| ApiError::internal())?;
         // One finite budget covers every try, backoff, acquisition and commit. It starts when
-        // persistence begins and ignores caller cancellation and the provider deadline, so a held
-        // lock cannot keep the tenant permit or a pooled connection indefinitely.
+        // persistence begins and ignores caller cancellation, the instance fence and the provider
+        // deadline, so a held lock cannot keep the tenant permit or a pooled connection
+        // indefinitely. Because the budget is `DEPENDENCY_TIMEOUT`, confirmed usage is stored
+        // whatever cancels the job, and a fenced process finishes this step within the same bound;
+        // the rows already written stay in the outbox for the replacement to deliver.
         let deadline = Instant::now() + self.config.dependency_timeout;
         for tries in 0..PERSIST_ATTEMPTS {
             let remaining = deadline.saturating_duration_since(Instant::now());
