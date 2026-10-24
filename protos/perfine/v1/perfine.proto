@@ -1,0 +1,1011 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package perfine.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/perfine/v1;perfinev1";
+
+// All resource IDs are UUID v7 strings. GitHub numeric IDs and commit SHAs
+// are separate fields. Authentication travels in transport headers only.
+// Servers validate required fields, nonzero enum values and immutable bindings;
+// protobuf defaults do not constitute consent, approval or a performance pass.
+
+enum Permission {
+  PERMISSION_UNSPECIFIED = 0;
+  PERMISSION_READ = 1;
+  PERMISSION_EXPERIMENT = 2;
+  PERMISSION_PUBLISH = 3;
+  PERMISSION_MANAGE = 4;
+}
+
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  EXECUTION_STATE_QUEUED = 1;
+  EXECUTION_STATE_RUNNING = 2;
+  EXECUTION_STATE_COMPLETED = 3;
+  EXECUTION_STATE_FAILED = 4;
+  EXECUTION_STATE_CANCELLED = 5;
+}
+
+enum PerformanceVerdict {
+  PERFORMANCE_VERDICT_UNSPECIFIED = 0;
+  PERFORMANCE_VERDICT_PASS = 1;
+  PERFORMANCE_VERDICT_REGRESSION = 2;
+  PERFORMANCE_VERDICT_INCONCLUSIVE = 3;
+  PERFORMANCE_VERDICT_NOT_EVALUATED = 4;
+}
+
+enum CancellationMode {
+  CANCELLATION_MODE_UNSPECIFIED = 0;
+  CANCELLATION_MODE_GRACEFUL = 1;
+  CANCELLATION_MODE_IMMEDIATE = 2;
+}
+
+enum CancellationState {
+  CANCELLATION_STATE_UNSPECIFIED = 0;
+  CANCELLATION_STATE_REQUESTED = 1;
+  CANCELLATION_STATE_CONFIRMED = 2;
+  CANCELLATION_STATE_FAILED = 3;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_CONNECTED = 1;
+  CONNECTION_STATE_DISCONNECTED = 2;
+  CONNECTION_STATE_APP_REMOVED = 3;
+  CONNECTION_STATE_AUTHORITY_LOST = 4;
+}
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_INPUT = 1;
+  ERROR_REASON_UNAUTHENTICATED = 2;
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  ERROR_REASON_AUTHORITY_UNAVAILABLE = 4;
+  ERROR_REASON_UNSUPPORTED_VERSION = 5;
+  ERROR_REASON_NOT_FOUND = 6;
+  ERROR_REASON_DELETED = 7;
+  ERROR_REASON_CONNECTION_INACTIVE = 8;
+  ERROR_REASON_REPOSITORY_ALREADY_CONNECTED = 9;
+  ERROR_REASON_REPOSITORY_ADMIN_REQUIRED = 10;
+  ERROR_REASON_LIMIT_EXCEEDED = 11;
+  ERROR_REASON_REQUEST_ID_CONFLICT = 12;
+  ERROR_REASON_FINGERPRINT_MISMATCH = 13;
+  ERROR_REASON_EVIDENCE_INCOMPLETE = 14;
+  ERROR_REASON_ARTIFACT_INELIGIBLE = 15;
+  ERROR_REASON_CONSENT_REQUIRED = 16;
+  ERROR_REASON_SECRET_DETECTED = 17;
+  ERROR_REASON_APPROVAL_STALE = 18;
+  ERROR_REASON_PUBLICATION_UNCERTAIN = 19;
+  ERROR_REASON_CLOUD_UNAVAILABLE = 20;
+  ERROR_REASON_TRANSIENT_FAILURE = 21;
+}
+
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_ENGINE_EVIDENCE = 1;
+  ARTIFACT_KIND_MEASUREMENTS = 2;
+  ARTIFACT_KIND_PROFILE_SUMMARY = 3;
+  ARTIFACT_KIND_CORRECTNESS_RESULTS = 4;
+  ARTIFACT_KIND_RAW_PROFILE = 5;
+  ARTIFACT_KIND_RAW_TEST_LOG = 6;
+}
+
+enum ArtifactEligibility {
+  ARTIFACT_ELIGIBILITY_UNSPECIFIED = 0;
+  ARTIFACT_ELIGIBILITY_ELIGIBLE = 1;
+  ARTIFACT_ELIGIBILITY_CONSENT_REQUIRED = 2;
+  ARTIFACT_ELIGIBILITY_CONSENT_REVOKED = 3;
+  ARTIFACT_ELIGIBILITY_SECRET_REJECTED = 4;
+  ARTIFACT_ELIGIBILITY_SOURCE_REJECTED = 5;
+  ARTIFACT_ELIGIBILITY_LIMIT_EXCEEDED = 6;
+}
+
+enum CompletionState {
+  COMPLETION_STATE_UNSPECIFIED = 0;
+  COMPLETION_STATE_INCOMPLETE = 1;
+  COMPLETION_STATE_COMPLETE = 2;
+}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  UPLOAD_STATE_PENDING = 1;
+  UPLOAD_STATE_COMPLETE = 2;
+  UPLOAD_STATE_FAILED = 3;
+}
+
+enum DeletionState {
+  DELETION_STATE_UNSPECIFIED = 0;
+  DELETION_STATE_PENDING = 1;
+  DELETION_STATE_RETRYING = 2;
+  DELETION_STATE_COMPLETE = 3;
+}
+
+enum ApprovalState {
+  APPROVAL_STATE_UNSPECIFIED = 0;
+  APPROVAL_STATE_VALID = 1;
+  APPROVAL_STATE_INVALIDATED = 2;
+}
+
+enum PublicationState {
+  PUBLICATION_STATE_UNSPECIFIED = 0;
+  PUBLICATION_STATE_PENDING = 1;
+  PUBLICATION_STATE_RECONCILING = 2;
+  PUBLICATION_STATE_PUBLISHED = 3;
+  PUBLICATION_STATE_FAILED = 4;
+}
+
+enum CloudEligibilityState {
+  CLOUD_ELIGIBILITY_STATE_UNSPECIFIED = 0;
+  CLOUD_ELIGIBILITY_STATE_ELIGIBLE = 1;
+  CLOUD_ELIGIBILITY_STATE_UNAVAILABLE = 2;
+}
+
+enum CloudUnavailableReason {
+  CLOUD_UNAVAILABLE_REASON_UNSPECIFIED = 0;
+  CLOUD_UNAVAILABLE_REASON_UNATTENDED_AUTH_UNVERIFIED = 1;
+  CLOUD_UNAVAILABLE_REASON_EXECUTION_UNVERIFIED = 2;
+  CLOUD_UNAVAILABLE_REASON_CONNECTION_INACTIVE = 3;
+  CLOUD_UNAVAILABLE_REASON_AUTHORITY_UNAVAILABLE = 4;
+  CLOUD_UNAVAILABLE_REASON_CAPACITY_EXCEEDED = 5;
+}
+
+enum MetricObjective {
+  METRIC_OBJECTIVE_UNSPECIFIED = 0;
+  METRIC_OBJECTIVE_MINIMIZE = 1;
+  METRIC_OBJECTIVE_MAXIMIZE = 2;
+}
+
+enum PolicyKind {
+  POLICY_KIND_UNSPECIFIED = 0;
+  POLICY_KIND_CALLGRIND_IR = 1;
+  POLICY_KIND_DECLARED = 2;
+  POLICY_KIND_MEASUREMENTS_ONLY = 3;
+}
+
+enum PolicyException {
+  POLICY_EXCEPTION_UNSPECIFIED = 0;
+  POLICY_EXCEPTION_BELOW_MINIMUM_IMPROVEMENT = 1;
+  POLICY_EXCEPTION_SINGLE_UNPROTECTED_REGRESSION = 2;
+  POLICY_EXCEPTION_HUMAN_JUDGMENT_REQUIRED = 3;
+}
+
+enum CorrectnessState {
+  CORRECTNESS_STATE_UNSPECIFIED = 0;
+  CORRECTNESS_STATE_PASSED = 1;
+  CORRECTNESS_STATE_FAILED = 2;
+  CORRECTNESS_STATE_INCOMPLETE = 3;
+}
+
+enum ComparisonKind {
+  COMPARISON_KIND_UNSPECIFIED = 0;
+  COMPARISON_KIND_SAME_SHA = 1;
+  COMPARISON_KIND_INCREMENTAL = 2;
+  COMPARISON_KIND_CUMULATIVE = 3;
+}
+
+enum Language {
+  LANGUAGE_UNSPECIFIED = 0;
+  LANGUAGE_RUST = 1;
+  LANGUAGE_C = 2;
+  LANGUAGE_CPP = 3;
+  LANGUAGE_ZIG = 4;
+  LANGUAGE_GO = 5;
+  LANGUAGE_JAVASCRIPT = 6;
+}
+
+enum ExecutionOrigin {
+  EXECUTION_ORIGIN_UNSPECIFIED = 0;
+  EXECUTION_ORIGIN_LOCAL = 1;
+  EXECUTION_ORIGIN_GITHUB_ACTIONS = 2;
+}
+
+enum FrequencySource {
+  FREQUENCY_SOURCE_UNSPECIFIED = 0;
+  FREQUENCY_SOURCE_DECLARED = 1;
+  FREQUENCY_SOURCE_ASSUMED_ONE = 2;
+}
+
+// Attach to every application Connect error; also return request ID in transport metadata, including transport failures.
+
+message ErrorDetail {
+  string request_id = 1;
+  ErrorReason reason = 2;
+  string message = 3;
+  repeated FieldViolation violations = 4;
+}
+
+message FieldViolation {
+  string field_path = 1;
+  string description = 2;
+}
+
+// Cursors are opaque, bound to space, filters and ordering. Reject mismatches; no offset pagination.
+
+message PageRequest {
+  uint32 page_size = 1;
+  string cursor = 2;
+}
+
+message PageResponse {
+  string next_cursor = 1;
+}
+
+// Resolve mutable names against the immutable GitHub repository ID.
+
+message GitHubRepository {
+  uint64 github_repository_id = 1;
+  string owner = 2;
+  string name = 3;
+}
+
+message GitHubExecution {
+  uint64 github_run_id = 1;
+  uint32 run_attempt = 2;
+  string workflow_path = 3;
+  string workflow_sha = 4;
+  string source_sha = 5;
+}
+
+// Current independent grants. This response is informational; every RPC rechecks authority.
+
+message Authorization {
+  string space_id = 1;
+  repeated Permission permissions = 2;
+}
+
+message Cancellation {
+  CancellationMode mode = 1;
+  CancellationState state = 2;
+  string reason = 3;
+  string direct_cancel_url = 4;
+}
+
+// Reconnect in the same space reuses this connection and history. Cross-space connection creates a new resource; old data stays private.
+
+message Connection {
+  string id = 1;
+  string space_id = 2;
+  GitHubRepository repository = 3;
+  uint64 github_installation_id = 4;
+  ConnectionState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  RawArtifactConsent consent = 8;
+  repeated Cancellation execution_cancellations = 9;
+}
+
+// Only RAW_PROFILE and RAW_TEST_LOG are valid. Applies to subsequent runs; revocation blocks new uploads. Never permits secrets.
+
+message RawArtifactConsent {
+  uint64 revision = 1;
+  repeated ArtifactKind allowed_kinds = 2;
+  google.protobuf.Timestamp effective_at = 3;
+}
+
+message ToolVersion {
+  string name = 1;
+  string version = 2;
+  string configuration_sha256 = 3;
+}
+
+// Contains public reproducibility settings only; never environment variables or credentials.
+
+message ExecutionEnvironment {
+  string operating_system = 1;
+  string architecture = 2;
+  string runner = 3;
+  string runtime = 4;
+  string runtime_version = 5;
+  repeated string build_options = 6;
+  repeated string runtime_flags = 7;
+  repeated ToolVersion tools = 8;
+  string environment_sha256 = 9;
+}
+
+message InputHash {
+  string name = 1;
+  string sha256 = 2;
+}
+
+message WorkloadCase {
+  string id = 1;
+  string family = 2;
+  double frequency = 3;
+  FrequencySource frequency_source = 4;
+  bool protected_case = 5;
+  repeated InputHash inputs = 6;
+}
+
+// Names and original units are preserved. Do not aggregate incompatible units; Ir denotes instructions, not elapsed time.
+
+message Metric {
+  string name = 1;
+  string unit = 2;
+  MetricObjective objective = 3;
+}
+
+// Ratios are fractions, not percentage points. CALLGRIND_IR uses the documented preset; DECLARED requires all numeric criteria. Frozen before evaluation.
+
+message PerformancePolicy {
+  uint32 schema_version = 1;
+  PolicyKind kind = 2;
+  Metric metric = 3;
+  double minimum_improvement = 4;
+  double maximum_case_regression = 5;
+  uint32 repetitions = 6;
+  UncertaintyCriteria uncertainty = 7;
+  repeated PolicyException allowed_exceptions = 8;
+  string policy_sha256 = 9;
+}
+
+message UncertaintyCriteria {
+  double confidence_level = 1;
+  double maximum_relative_interval_width = 2;
+  double near_threshold_margin = 3;
+}
+
+// All fields required and positive; simultaneous_candidates <= 5. Deadline stops new starts, not active candidates.
+
+message ExecutionLimits {
+  uint32 candidate_count = 1;
+  uint32 simultaneous_candidates = 2;
+  google.protobuf.Timestamp start_deadline = 3;
+  google.protobuf.Duration candidate_timeout = 4;
+}
+
+// Fingerprint covers immutable source, harness, inputs, cases, tools/environment and policy. Require confirmation before baseline measurement.
+
+message ExperimentSpecification {
+  uint32 schema_version = 1;
+  string base_sha = 2;
+  string initial_base_sha = 3;
+  string harness_sha = 4;
+  Language language = 5;
+  ExecutionEnvironment environment = 6;
+  repeated WorkloadCase cases = 7;
+  PerformancePolicy policy = 8;
+  ExecutionLimits limits = 9;
+  string fingerprint_sha256 = 10;
+  bool workload_representativeness_confirmed = 11;
+  repeated string parent_candidate_ids = 12;
+}
+
+// COMPLETED may have no candidates. Execution success alone never establishes a pass.
+
+message Experiment {
+  string id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  ExperimentSpecification specification = 4;
+  ExecutionOrigin origin = 5;
+  ExecutionState execution_state = 6;
+  PerformanceVerdict verdict = 7;
+  CompletionState evidence_completion = 8;
+  repeated PolicyException exceptions = 9;
+  bool human_judgment_required = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  Cancellation cancellation = 13;
+  GitHubExecution github_execution = 14;
+  string status_reason = 15;
+}
+
+message CaseMeasurement {
+  string case_id = 1;
+  double base_value = 2;
+  double head_value = 3;
+  double relative_change = 4;
+  double weighted_absolute_change = 5;
+  uint32 repetitions = 6;
+  double uncertainty_lower = 7;
+  double uncertainty_upper = 8;
+}
+
+// The engine artifact preserves original lossless values and full evaluation evidence; numeric summaries are not an alternative evaluator.
+
+message Comparison {
+  ComparisonKind kind = 1;
+  string base_sha = 2;
+  string head_sha = 3;
+  Metric metric = 4;
+  repeated CaseMeasurement cases = 5;
+  double portfolio_score = 6;
+  double improvement = 7;
+  double geometric_mean_ratio = 8;
+  PerformanceVerdict verdict = 9;
+  repeated PolicyException exceptions = 10;
+  bool human_judgment_required = 11;
+  string engine_artifact_name = 12;
+}
+
+message CorrectnessResult {
+  string check_name = 1;
+  CorrectnessState state = 2;
+  string artifact_name = 3;
+}
+
+// Never contains source or diff content. Publication requires complete evidence for the exact measured production source.
+
+message Candidate {
+  string id = 1;
+  string experiment_id = 2;
+  string base_sha = 3;
+  string head_sha = 4;
+  ExecutionState execution_state = 5;
+  PerformanceVerdict verdict = 6;
+  repeated Comparison comparisons = 7;
+  repeated CorrectnessResult correctness = 8;
+  repeated PolicyException exceptions = 9;
+  bool human_judgment_required = 10;
+  string github_diff_url = 11;
+  string evidence_manifest_sha256 = 12;
+  repeated string parent_candidate_ids = 13;
+}
+
+// Name is a manifest-local identifier, not a filesystem path. Declarations do not replace server validation.
+
+message ArtifactManifest {
+  string name = 1;
+  ArtifactKind kind = 2;
+  string media_type = 3;
+  uint64 size_bytes = 4;
+  string sha256 = 5;
+  CompletionState completion = 6;
+  bool contains_source_snippets = 7;
+  bool secrets_removed = 8;
+  bool required_for_evaluation = 9;
+}
+
+// candidate_id may be empty for baseline/no-candidate evidence. ENGINE_EVIDENCE is versioned engine JSON; manifest checksums bind exact bytes.
+
+message EvidenceManifest {
+  uint32 schema_version = 1;
+  string experiment_id = 2;
+  string candidate_id = 3;
+  string source_base_sha = 4;
+  string source_head_sha = 5;
+  string harness_sha = 6;
+  ExecutionEnvironment environment = 7;
+  repeated InputHash inputs = 8;
+  PerformancePolicy policy = 9;
+  repeated Metric metrics = 10;
+  repeated ArtifactManifest artifacts = 11;
+  CompletionState completion = 12;
+  string experiment_fingerprint_sha256 = 13;
+  string engine_artifact_name = 14;
+  string manifest_sha256 = 15;
+  google.protobuf.Timestamp run_started_at = 16;
+  uint64 consent_revision = 17;
+}
+
+message ArtifactDecision {
+  string artifact_name = 1;
+  ArtifactEligibility eligibility = 2;
+  string reason = 3;
+}
+
+// Issue URLs only for eligible artifacts. Completion verifies stored bytes, hashes and sizes independently.
+
+message UploadTarget {
+  string artifact_name = 1;
+  string signed_put_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  repeated UploadHeader required_headers = 4;
+}
+
+// Storage-required headers only; never AI credentials.
+
+message UploadHeader {
+  string name = 1;
+  string value = 2;
+}
+
+message Upload {
+  string id = 1;
+  string experiment_id = 2;
+  string candidate_id = 3;
+  UploadState state = 4;
+  EvidenceManifest manifest = 5;
+  repeated ArtifactDecision decisions = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// Client receipt is a claim; server verifies storage before accepting completion.
+
+message ArtifactReceipt {
+  string artifact_name = 1;
+  string sha256 = 2;
+  uint64 size_bytes = 3;
+}
+
+// Accepting deletion blocks reads/link issuance immediately. Keep minimal ID/deleted-state tombstone indefinitely; retry cleanup until complete.
+
+message Deletion {
+  string experiment_id = 1;
+  DeletionState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  string failure_reason = 4;
+}
+
+// Exact approval binding. Ref movement, target/base/SHA/content changes invalidate approval; changed production content requires remeasurement.
+
+message DraftBinding {
+  GitHubRepository target_repository = 1;
+  string base_ref = 2;
+  string base_sha = 3;
+  GitHubRepository head_repository = 4;
+  string head_ref = 5;
+  string head_sha = 6;
+  string title = 7;
+  string body = 8;
+  string candidate_id = 9;
+  string evidence_manifest_sha256 = 10;
+}
+
+// Publish permission allows self-approval. Human judgment is explicit when evidence requires it.
+
+message Approval {
+  string id = 1;
+  string experiment_id = 2;
+  DraftBinding draft = 3;
+  ApprovalState state = 4;
+  string approver_subject = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string human_judgment = 7;
+}
+
+// Only draft PRs. Reconcile uncertain outcomes against GitHub before retry; no automatic merge.
+
+message Publication {
+  string approval_id = 1;
+  string candidate_id = 2;
+  PublicationState state = 3;
+  uint64 github_pull_request_number = 4;
+  string github_pull_request_url = 5;
+  DraftBinding draft = 6;
+  string failure_reason = 7;
+}
+
+// Eligibility requires current official unattended execution/authentication support. No credentials cross this API.
+
+message CloudTool {
+  string tool_id = 1;
+  string display_name = 2;
+  CloudEligibilityState state = 3;
+  CloudUnavailableReason unavailable_reason = 4;
+  string reason = 5;
+  string local_alternative = 6;
+  repeated string official_documentation_urls = 7;
+  google.protobuf.Timestamp verified_at = 8;
+}
+
+message GetAuthorizationRequest {
+  string request_id = 1;
+  string space_id = 2;
+}
+
+message GetAuthorizationResponse {
+  string request_id = 1;
+  Authorization authorization = 2;
+}
+
+message ListConnectionsRequest {
+  string request_id = 1;
+  string space_id = 2;
+  PageRequest page = 3;
+}
+
+message ListConnectionsResponse {
+  string request_id = 1;
+  repeated Connection connections = 2;
+  PageResponse page = 3;
+}
+
+message GetConnectionRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+}
+
+message GetConnectionResponse {
+  string request_id = 1;
+  Connection connection = 2;
+}
+
+message ConnectRepositoryRequest {
+  string request_id = 1;
+  string space_id = 2;
+  GitHubRepository repository = 3;
+  uint64 github_installation_id = 4;
+}
+
+message ConnectRepositoryResponse {
+  string request_id = 1;
+  Connection connection = 2;
+}
+
+message DisconnectRepositoryRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+}
+
+message DisconnectRepositoryResponse {
+  string request_id = 1;
+  Connection connection = 2;
+}
+
+message SetRawArtifactConsentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  uint64 expected_revision = 4;
+  repeated ArtifactKind allowed_kinds = 5;
+}
+
+message SetRawArtifactConsentResponse {
+  string request_id = 1;
+  RawArtifactConsent consent = 2;
+}
+
+// Management can inspect consent without obtaining result-read permission.
+message GetRawArtifactConsentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+}
+
+message GetRawArtifactConsentResponse {
+  string request_id = 1;
+  RawArtifactConsent consent = 2;
+}
+
+message ListExperimentsRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  PageRequest page = 4;
+  optional ExecutionState execution_state = 5;
+  optional PerformanceVerdict verdict = 6;
+}
+
+message ListExperimentsResponse {
+  string request_id = 1;
+  repeated Experiment experiments = 2;
+  PageResponse page = 3;
+}
+
+message GetExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+}
+
+message GetExperimentResponse {
+  string request_id = 1;
+  Experiment experiment = 2;
+}
+
+message StartExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  string connection_id = 4;
+  ExperimentSpecification specification = 5;
+  string cloud_tool_id = 6;
+}
+
+message StartExperimentResponse {
+  string request_id = 1;
+  Experiment experiment = 2;
+}
+
+message ResumeExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  string expected_fingerprint_sha256 = 4;
+}
+
+message ResumeExperimentResponse {
+  string request_id = 1;
+  Experiment experiment = 2;
+}
+
+message CancelExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  CancellationMode mode = 4;
+}
+
+message CancelExperimentResponse {
+  string request_id = 1;
+  Experiment experiment = 2;
+}
+
+message ListCandidatesRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  PageRequest page = 4;
+}
+
+message ListCandidatesResponse {
+  string request_id = 1;
+  repeated Candidate candidates = 2;
+  PageResponse page = 3;
+}
+
+message GetCandidateRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  string candidate_id = 4;
+}
+
+message GetCandidateResponse {
+  string request_id = 1;
+  Candidate candidate = 2;
+}
+
+message CheckUploadEligibilityRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  EvidenceManifest manifest = 4;
+}
+
+message CheckUploadEligibilityResponse {
+  string request_id = 1;
+  repeated ArtifactDecision decisions = 2;
+  bool eligible_for_complete_evaluation = 3;
+}
+
+message BeginUploadRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  string experiment_id = 4;
+  ExperimentSpecification specification = 5;
+  ExecutionOrigin origin = 6;
+  GitHubExecution github_execution = 7;
+  EvidenceManifest manifest = 8;
+}
+
+message BeginUploadResponse {
+  string request_id = 1;
+  Upload upload = 2;
+  repeated UploadTarget targets = 3;
+}
+
+message GetUploadRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string upload_id = 3;
+}
+
+message GetUploadResponse {
+  string request_id = 1;
+  Upload upload = 2;
+}
+
+message CompleteUploadRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string upload_id = 3;
+  repeated ArtifactReceipt receipts = 4;
+}
+
+message CompleteUploadResponse {
+  string request_id = 1;
+  Upload upload = 2;
+  CompletionState evidence_completion = 3;
+}
+
+message ListEvidenceRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  string candidate_id = 4;
+  PageRequest page = 5;
+}
+
+message ListEvidenceResponse {
+  string request_id = 1;
+  repeated EvidenceManifest manifests = 2;
+  PageResponse page = 3;
+}
+
+message GetEvidenceDownloadRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  string manifest_sha256 = 4;
+  string artifact_name = 5;
+}
+
+message GetEvidenceDownloadResponse {
+  string request_id = 1;
+  string signed_get_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message DeleteExperimentRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+}
+
+message DeleteExperimentResponse {
+  string request_id = 1;
+  Deletion deletion = 2;
+}
+
+message GetDeletionRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+}
+
+message GetDeletionResponse {
+  string request_id = 1;
+  Deletion deletion = 2;
+}
+
+message ApproveDraftRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string experiment_id = 3;
+  DraftBinding draft = 4;
+  string human_judgment = 5;
+}
+
+message ApproveDraftResponse {
+  string request_id = 1;
+  Approval approval = 2;
+}
+
+message GetApprovalRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string approval_id = 3;
+}
+
+message GetApprovalResponse {
+  string request_id = 1;
+  Approval approval = 2;
+}
+
+message PublishDraftRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string approval_id = 3;
+  DraftBinding expected_draft = 4;
+}
+
+message PublishDraftResponse {
+  string request_id = 1;
+  Publication publication = 2;
+}
+
+message GetPublicationRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string approval_id = 3;
+}
+
+message GetPublicationResponse {
+  string request_id = 1;
+  Publication publication = 2;
+}
+
+message ListCloudToolsRequest {
+  string request_id = 1;
+  string space_id = 2;
+  string connection_id = 3;
+  PageRequest page = 4;
+}
+
+message ListCloudToolsResponse {
+  string request_id = 1;
+  repeated CloudTool tools = 2;
+  PageResponse page = 3;
+}
+
+service AccessService {
+  // Returns the caller’s independent grants; does not authorize subsequent calls.
+  rpc GetAuthorization(GetAuthorizationRequest) returns (GetAuthorizationResponse);
+}
+
+service ConnectionService {
+  // MANAGE. Read the current consent revision without result-read authority.
+  rpc GetRawArtifactConsent(GetRawArtifactConsentRequest) returns (GetRawArtifactConsentResponse);
+  // READ or MANAGE. Lists connection metadata only, including disconnected repositories.
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+
+  // READ or MANAGE. Returns connection metadata, not retained evidence.
+  rpc GetConnection(GetConnectionRequest) returns (GetConnectionResponse);
+
+  // MANAGE plus current GitHub repository administrator authority. Same-space reconnect reuses history.
+  rpc ConnectRepository(ConnectRepositoryRequest) returns (ConnectRepositoryResponse);
+
+  // MANAGE. Blocks new jobs, uploads and publication; requests Actions cancellation without deleting evidence.
+  rpc DisconnectRepository(DisconnectRepositoryRequest) returns (DisconnectRepositoryResponse);
+
+  // MANAGE. Atomic revision check; empty allowed_kinds revokes consent. No retroactive grants.
+  rpc SetRawArtifactConsent(SetRawArtifactConsentRequest) returns (SetRawArtifactConsentResponse);
+}
+
+service ExperimentService {
+  // READ. Cursor binds connection and filters; order by creation time and ID descending.
+  rpc ListExperiments(ListExperimentsRequest) returns (ListExperimentsResponse);
+
+  // READ. Poll execution and cancellation status separately from performance verdict.
+  rpc GetExperiment(GetExperimentRequest) returns (GetExperimentResponse);
+
+  // EXPERIMENT. Cloud execution only after eligibility and authority checks; client supplies a new UUID v7.
+  rpc StartExperiment(StartExperimentRequest) returns (StartExperimentResponse);
+
+  // EXPERIMENT. Reuse completed steps only for the same immutable fingerprint; reject deleted IDs.
+  rpc ResumeExperiment(ResumeExperimentRequest) returns (ResumeExperimentResponse);
+
+  // EXPERIMENT. Graceful stops new starts; immediate also stops active work. Preserve completed evidence.
+  rpc CancelExperiment(CancelExperimentRequest) returns (CancelExperimentResponse);
+
+  // READ. Empty candidates is a valid completed outcome.
+  rpc ListCandidates(ListCandidatesRequest) returns (ListCandidatesResponse);
+
+  // READ. Returns comparisons, correctness and approval requirements.
+  rpc GetCandidate(GetCandidateRequest) returns (GetCandidateResponse);
+}
+
+service EvidenceService {
+  // EXPERIMENT. Advisory preflight only; recheck consent, authority, secrets and quotas at upload and completion.
+  rpc CheckUploadEligibility(CheckUploadEligibilityRequest) returns (CheckUploadEligibilityResponse);
+
+  // EXPERIMENT. Register a local experiment without dispatch, or append scoped Actions evidence. Reject tombstones and immutable mismatches.
+  rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
+
+  // EXPERIMENT. Poll upload status without granting evidence download or result-read authority.
+  rpc GetUpload(GetUploadRequest) returns (GetUploadResponse);
+
+  // EXPERIMENT. Verify object contents and engine evidence; incomplete or ineligible evidence cannot establish a hosted pass.
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
+
+  // READ. Empty candidate_id lists experiment-level and candidate evidence.
+  rpc ListEvidence(ListEvidenceRequest) returns (ListEvidenceResponse);
+
+  // READ. Recheck authority and tombstone before issuing a 15-minute URL; already-issued URLs may survive revocation.
+  rpc GetEvidenceDownload(GetEvidenceDownloadRequest) returns (GetEvidenceDownloadResponse);
+}
+
+service ManagementService {
+  // MANAGE. Immediately deny reads and new download URLs; asynchronous durable cleanup retains a tombstone.
+  rpc DeleteExperiment(DeleteExperimentRequest) returns (DeleteExperimentResponse);
+
+  // MANAGE. Exposes persistent cleanup failures without returning deleted evidence.
+  rpc GetDeletion(GetDeletionRequest) returns (GetDeletionResponse);
+}
+
+service PublicationService {
+  // PUBLISH. Explicit human approval of exact draft and evidence; require judgment when policy demands it.
+  rpc ApproveDraft(ApproveDraftRequest) returns (ApproveDraftResponse);
+
+  // PUBLISH. Recheck current binding before use; self-approval is permitted.
+  rpc GetApproval(GetApprovalRequest) returns (GetApprovalResponse);
+
+  // PUBLISH. Revalidate authority, evidence and exact binding; always create draft, reconcile uncertainty before retry.
+  rpc PublishDraft(PublishDraftRequest) returns (PublishDraftResponse);
+
+  // PUBLISH. Returns pending/reconciling/published state without creating another PR.
+  rpc GetPublication(GetPublicationRequest) returns (GetPublicationResponse);
+}
+
+service CloudService {
+  // EXPERIMENT. Unavailable tools include reason and local alternative; no eligible tools is valid.
+  rpc ListCloudTools(ListCloudToolsRequest) returns (ListCloudToolsResponse);
+}
