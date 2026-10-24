@@ -666,3 +666,98 @@ fn procedure_allowlist_matches_operation_names() {
         assert_eq!(Op::from_procedure_path(path), None, "{path:?}");
     }
 }
+
+/// Fourth-group leading nibbles 0-7 and c-f give version-7 text without the RFC 4122 variant.
+fn non_rfc_vectors() -> Vec<String> {
+    (0..16u8)
+        .filter(|n| !(8..12).contains(n))
+        .map(|n| format!("01900000-0000-7000-{n:x}000-000000000001"))
+        .collect()
+}
+
+/// Sends one JSON RPC with an optional `Authorization` header value.
+async fn rpc(fx: &Fixture, method: &str, authorization: Option<&str>, body: &str) -> Reply {
+    let extra = authorization
+        .map(|value| format!("Authorization: {value}\r\n"))
+        .unwrap_or_default();
+    exchange(
+        fx.addr,
+        &rpc_head(&format!("{PREFIX}{method}"), body.len(), &extra),
+        &[(Duration::ZERO, body.as_bytes())],
+    )
+    .await
+}
+
+/// Parses the typed error of a reply: status line prefix, code, message, reason and trace match.
+fn assert_typed_error(reply: &Reply, status: &str, code: &str, message: &str, reason: i32) {
+    assert!(reply.head.starts_with(status), "{}", reply.head);
+    let trace = reply.header("x-devbase-trace-id").expect("trace header");
+    assert!(uuid::Uuid::parse_str(trace).is_ok());
+    let object = &reply.body[reply.body.find('{').unwrap()..=reply.body.rfind('}').unwrap()];
+    let json: serde_json::Value = serde_json::from_str(object).unwrap();
+    assert_eq!(json["code"], code, "{object}");
+    assert_eq!(json["message"], message, "{object}");
+    let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(json["details"][0]["value"].as_str().unwrap())
+        .unwrap();
+    let detail = delino_protocol::devbase::v1::ErrorDetail::decode_from_slice(&raw).unwrap();
+    assert_eq!(detail.trace_id, trace);
+    assert_eq!(detail.reason.to_i32(), reason);
+}
+
+#[tokio::test]
+async fn non_rfc_variant_targets_of_reads_and_key_requests_are_rejected_at_once() {
+    // The pool is lazy and unreachable: a rejection that reached credential or database work
+    // would end as `unavailable` or `unauthenticated` instead of the typed target error.
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    let valid_key = format!("dbk_{}_{}", uuid::Uuid::now_v7().simple(), "A".repeat(43));
+    for vector in non_rfc_vectors() {
+        let project = format!(r#"{{"projectId":"{vector}"}}"#);
+        let tenant = format!(r#"{{"tenantId":"{vector}"}}"#);
+        for (method, body, bearer) in [
+            ("GetProject", &project, "Bearer synthetic-token"),
+            ("ListApiKeys", &project, "Bearer synthetic-token"),
+            ("ListProjects", &tenant, "Bearer synthetic-token"),
+            // API-key requests reject the target before the compact key is even parsed.
+            ("GetProject", &project, valid_key.as_str()),
+        ] {
+            let bearer = if bearer.starts_with("dbk_") {
+                format!("Bearer {bearer}")
+            } else {
+                bearer.to_owned()
+            };
+            let reply = rpc(&fx, method, Some(&bearer), body).await;
+            assert_typed_error(
+                &reply,
+                "HTTP/1.1 400",
+                "invalid_argument",
+                "target must be a canonical UUID v7",
+                1,
+            );
+        }
+        // The earlier structural Bearer check still wins over the target.
+        let reply = rpc(&fx, "GetProject", Some("Bearer"), &project).await;
+        assert!(reply.head.starts_with("HTTP/1.1 401"), "{}", reply.head);
+        let reply = rpc(&fx, "GetProject", None, &project).await;
+        assert!(reply.head.starts_with("HTTP/1.1 401"), "{}", reply.head);
+    }
+}
+
+#[tokio::test]
+async fn compact_keys_with_a_non_rfc_variant_id_are_unauthenticated_before_key_lookup() {
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    let secret = "A".repeat(43);
+    let body = format!(r#"{{"projectId":"{PROJECT}"}}"#);
+    for vector in non_rfc_vectors() {
+        let key = format!("dbk_{}_{secret}", vector.replace('-', ""));
+        let reply = rpc(&fx, "GetProject", Some(&format!("Bearer {key}")), &body).await;
+        // A lookup would reach the unreachable pool and end as `unavailable`.
+        assert_typed_error(
+            &reply,
+            "HTTP/1.1 401",
+            "unauthenticated",
+            "authentication failed",
+            2,
+        );
+    }
+}
