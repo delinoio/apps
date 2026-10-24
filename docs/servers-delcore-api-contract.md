@@ -32,6 +32,7 @@ The official API server base URL is `https://delcore.api.delino.io`.
 
 - Logto owns authentication and user identity. Delcore owns tenants, memberships, groups, roles, and service permissions.
 - Validate user access tokens and service-specific Logto M2M tokens. Bind each service identity to its permitted reporting and query operations.
+- Verify tokens against the cached provider key set first. Refresh the key set only after a cached verification failure, to recover unknown-key and same-key-ID rotation. Serialize refreshes with a lock separate from the key cache, recheck the cache after acquiring it, and fetch and parse the provider response without holding the cache lock, so a valid cached token never waits for an unrelated refresh. Publish only a complete successful snapshot; failed or cancelled refreshes keep the previous keys and release the refresh lock. No refresh cooldown or negative cache applies.
 - Create one personal tenant on first authenticated use. Personal tenants belong exclusively to their user.
 - Allow users to create organization tenants and join multiple organizations through email invitations.
 - Tenants, memberships, and groups are shared across Delino services.
