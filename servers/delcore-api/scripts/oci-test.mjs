@@ -204,10 +204,16 @@ try {
   });
   await rejected([...run, "serve"]);
   await sql(`
+BEGIN;
 INSERT INTO users VALUES('01900000-0000-7000-8000-000000000001','fixture','fixture','fixture@example.test',NULL);
 INSERT INTO plans VALUES('01900000-0000-7000-8000-000000000002','free',0,true,true,false);
+INSERT INTO catalog_entities(id,kind,scope,key) VALUES('01900000-0000-7000-8000-000000000002','plan','','free');
+INSERT INTO catalog_versions(id,entity_id,semantic_hash,definition) VALUES('01900000-0000-7000-8000-000000000005','01900000-0000-7000-8000-000000000002','9a5611e2ab7fe315273f427050c2676dd887cd08ccae40f306c3c86dd4df1a91','{"features":[],"free":true,"postpaid":false,"prices":[],"rank":0}');
+UPDATE catalog_entities SET active_version_id='01900000-0000-7000-8000-000000000005' WHERE id='01900000-0000-7000-8000-000000000002';
 INSERT INTO tenants(id,name,personal,owner_id,plan_id,period_start,period_end) VALUES('01900000-0000-7000-8000-000000000003','Fixture',true,'01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000002',now(),now()+interval '1 month');
-INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES('01900000-0000-7000-8000-000000000004','01900000-0000-7000-8000-000000000003','topup','crash-fixture','{"amount":"10","minor_units":"1000","currency":"USD","return_url":"https://consumer.example.invalid/delcore/return"}',now(),now(),now());`);
+INSERT INTO tenant_catalog_selections(id,tenant_id,product_id,version_id,starts_at) VALUES('01900000-0000-7000-8000-000000000006','01900000-0000-7000-8000-000000000003','01900000-0000-7000-8000-000000000002','01900000-0000-7000-8000-000000000005',now());
+INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES('01900000-0000-7000-8000-000000000004','01900000-0000-7000-8000-000000000003','topup','crash-fixture','{"amount":"10","minor_units":"1000","currency":"USD","return_url":"https://consumer.example.invalid/delcore/return"}',now(),now(),now());
+COMMIT;`);
   await until(
     "payment acceptance",
     async () =>
