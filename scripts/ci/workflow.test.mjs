@@ -352,6 +352,9 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
+    perfine: "true",
+    perfine_distribution: "true",
+    perfine_fixtures: "true",
     protocol: "true",
   };
   assert.equal(run(needs).status, 0);
@@ -386,6 +389,10 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     protocol: "true",
   };
   for (const id of [
+    "perfine-frontend",
+    "perfine-distribution",
+    "perfine-profiles",
+    "perfine-adapters",
     "git-tracker-clients",
     "devbase-frontend",
     "delino-site-frontend",
@@ -615,6 +622,10 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delino-docs-frontend": "delino_docs",
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
+      "perfine-frontend": "perfine",
+      "perfine-distribution": "perfine_distribution",
+      "perfine-profiles": "perfine_fixtures",
+      "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
     };
     for (const [id, key] of Object.entries(jobOwners))
@@ -648,4 +659,55 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       assert.notEqual(run(changed).status, 0, `${paths}: ${id}`);
     }
   }
+});
+
+test("Perfine jobs use owned package contracts and real fixture interfaces", () => {
+  for (const [id, owner] of [
+    ["perfine-frontend", "perfine"],
+    ["perfine-distribution", "perfine_distribution"],
+    ["perfine-profiles", "perfine_fixtures"],
+    ["perfine-adapters", "perfine_fixtures"],
+  ]) {
+    const job = workflow.jobs[id];
+    assert.equal(job.needs, "changes");
+    assert.equal(job.if, `needs.changes.outputs.${owner} == 'true'`);
+    assert.ok(workflow.jobs["ci-result"].needs.includes(id));
+    assert.equal(job.env.TURBO_SCM_BASE, "${{ needs.changes.outputs.base }}");
+    assert.equal(job.env.TURBO_SCM_HEAD, "${{ needs.changes.outputs.head }}");
+    assert.equal(
+      job.steps.find((step) => step.name === "Preserve validation evidence").if,
+      "${{ always() }}",
+    );
+  }
+  const commands = workflow.jobs["perfine-distribution"].steps
+    .map((step) => step.run ?? "")
+    .join("\n");
+  for (const directory of ["actions/perfine", "packages/perfine"])
+    for (const command of ["test", "build"])
+      assert.ok(commands.includes(`pnpm --dir "${directory}" ${command}`));
+  assert.match(commands, /cargo build --locked -p perfine --release/u);
+  const profiles = workflow.jobs["perfine-profiles"];
+  assert.deepEqual(
+    [
+      ...new Set(
+        profiles.strategy.matrix.include.map(({ language }) => language),
+      ),
+    ],
+    ["rust", "c", "cpp", "zig", "go", "javascript"],
+  );
+  assert.equal(profiles.strategy["fail-fast"], false);
+  assert.match(
+    profiles.steps.find((step) => step.id === "zig").run,
+    /sha256sum --check/u,
+  );
+  assert.match(
+    profiles.steps.find((step) => step.id === "gungraun").run,
+    /--version 0\.19\.4/u,
+  );
+  assert.match(
+    workflow.jobs["perfine-adapters"].steps.find(
+      (step) => step.id === "adapters",
+    ).run,
+    /--test adapter_execution -- --ignored/u,
+  );
 });

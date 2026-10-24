@@ -9,3 +9,4 @@
 ## Owning contracts
 
 - [Repository workflow](../../docs/repository-workflow-contract.md)
+- [Perfine fixture and adapter validation](../../docs/repository-workflow-contract.md#perfine-repository-validation)
