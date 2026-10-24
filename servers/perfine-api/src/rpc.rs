@@ -18,6 +18,11 @@ fn complete_evidence(experiment: &mut Value) {
     }
 }
 
+struct RejectedUpload {
+    id: uuid::Uuid,
+    keys: Vec<String>,
+}
+
 fn permission(op: &str) -> Permission {
     match op {
         "ConnectRepository"
@@ -304,7 +309,36 @@ impl Server {
                 }
             }
         }
-        let out = self.operation(&mut tx, actor, gh, op, q).await?;
+        if op == "CompleteUpload" {
+            sqlx::query("SAVEPOINT perfine_completion")
+                .execute(&mut *tx)
+                .await?;
+        }
+        let mut rejected = None;
+        let out = match self
+            .operation(&mut tx, actor, gh, op, q, &mut rejected)
+            .await
+        {
+            Ok(value) => value,
+            Err(fault) => {
+                if let Some(rejected) = rejected {
+                    // Roll back completion changes, then durably enqueue cleanup on
+                    // the same connection. Never acquire a second pool connection
+                    // while retaining the space lock and transaction connection.
+                    sqlx::query("ROLLBACK TO SAVEPOINT perfine_completion")
+                        .execute(&mut *tx)
+                        .await?;
+                    for key in &rejected.keys {
+                        sqlx::query("INSERT INTO perfine_rejected_objects(object_key,expires_at) SELECT $1,staging_expires_at FROM perfine_uploads WHERE id=$2 ON CONFLICT(object_key) DO UPDATE SET expires_at=GREATEST(perfine_rejected_objects.expires_at,EXCLUDED.expires_at)").bind(key).bind(rejected.id).execute(&mut *tx).await?;
+                    }
+                    tx.commit().await?;
+                    for key in &rejected.keys {
+                        let _ = self.storage.delete(key).await;
+                    }
+                }
+                return Err(fault);
+            }
+        };
         sqlx::query(
             "INSERT INTO perfine_audit(id,space,actor,method,request) VALUES($1,$2,$3,$4,$5)",
         )
@@ -334,6 +368,7 @@ impl Server {
         gh: &str,
         op: &str,
         q: &Value,
+        rejected: &mut Option<RejectedUpload>,
     ) -> Result<Value> {
         let space = string(q, "spaceId");
         match op {
@@ -498,7 +533,7 @@ impl Server {
                 Ok(json!({"experiment":e}))
             }
             "CheckUploadEligibility" | "BeginUpload" => self.begin(db, op, q).await,
-            "GetUpload" | "CompleteUpload" => self.complete(db, op, q).await,
+            "GetUpload" | "CompleteUpload" => self.complete(db, op, q, rejected).await,
             "GetEvidenceDownload" => {
                 experiment(db, space, string(q, "experimentId")).await?;
                 let rows=sqlx::query("SELECT id,data,staging_expires_at FROM perfine_uploads WHERE experiment=$1 AND data->>'state'='UPLOAD_STATE_COMPLETE' AND data->'manifest'->>'manifestSha256'=$2").bind(id(string(q,"experimentId"))?).bind(string(q,"manifestSha256")).fetch_all(db).await?;
@@ -845,7 +880,13 @@ impl Server {
         }
         Ok(json!({"upload":u,"targets":targets}))
     }
-    async fn complete(&self, db: &mut PgConnection, op: &str, q: &Value) -> Result<Value> {
+    async fn complete(
+        &self,
+        db: &mut PgConnection,
+        op: &str,
+        q: &Value,
+        rejected: &mut Option<RejectedUpload>,
+    ) -> Result<Value> {
         let space = string(q, "spaceId");
         let uid = string(q, "uploadId");
         let mut u:Value=sqlx::query_scalar("SELECT u.data FROM perfine_uploads u JOIN perfine_experiments e ON e.id=u.experiment WHERE u.id=$1 AND e.space=$2 FOR UPDATE OF u").bind(id(uid)?).bind(id(space)?).fetch_one(&mut *db).await?;
@@ -886,13 +927,15 @@ impl Server {
                 return Err(Fault::precondition("artifact hash or size mismatch"));
             }
             if let Err(fault) = crate::evidence::content_allowed(&content, string(a, "kind")) {
-                // This queue must survive rollback of the rejected completion transaction.
-                // The keys contain generated resource IDs and manifest-local names, never content.
-                for artifact in m["artifacts"].as_array().ok_or_else(Fault::unavailable)? {
-                    let key = crate::storage::key(&eid, uid, string(artifact, "name"));
-                    sqlx::query("INSERT INTO perfine_rejected_objects(object_key,expires_at) SELECT $1,staging_expires_at FROM perfine_uploads WHERE id=$2 ON CONFLICT(object_key) DO UPDATE SET expires_at=GREATEST(perfine_rejected_objects.expires_at,EXCLUDED.expires_at)").bind(&key).bind(id(uid)?).execute(&self.db).await?;
-                    let _ = self.storage.delete(&key).await;
-                }
+                *rejected = Some(RejectedUpload {
+                    id: id(uid)?,
+                    keys: m["artifacts"]
+                        .as_array()
+                        .ok_or_else(Fault::unavailable)?
+                        .iter()
+                        .map(|artifact| crate::storage::key(&eid, uid, string(artifact, "name")))
+                        .collect(),
+                });
                 return Err(fault);
             }
             bytes.insert(name.to_owned(), content);
