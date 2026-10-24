@@ -464,3 +464,135 @@ fn captured_callgrind_retains_actual_c_hot_function() {
             .is_some_and(|s| s.as_str() == "count_pairs")
     }));
 }
+
+#[cfg(unix)]
+#[test]
+fn mock_headless_agents_apply_only_profile_linked_edits_in_owned_checkouts() {
+    use perfine_core::adapters::agent::{HeadlessAgentAdapter, LocalAgentConfig};
+    use std::os::unix::fs::PermissionsExt;
+    for provider in [LocalAgent::Codex, LocalAgent::Claude] {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        git(&repo, &["init", "-q"]);
+        fs::write(repo.join("kernel.c"), "int value(void) { return 1; }\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-qm", "base"]);
+        let base = CommitSha::new(git(&repo, &["rev-parse", "HEAD"])).unwrap();
+        let fake = tmp.path().join("mock-docker");
+        let args_log = tmp.path().join("argv.json");
+        let script = format!(
+            r#"#!/usr/bin/python3
+import sys,json
+json.dump(sys.argv,open({:?},'w'))
+data=json.loads(sys.stdin.read().split('\n',1)[1])
+if 'profile' in data:
+    result={{'hypotheses':[{{'explanation':'Profile shows the measured function','source_paths':['kernel.c'],'profile_evidence':data['profile']['raw_artifacts']}}]}}
+else:
+    result={{'edits':[{{'path':'kernel.c','content':'int value(void) {{ return 2; }}\n'}}]}}
+if '--output-schema' in sys.argv:
+    print(json.dumps({{'type':'turn.started'}}))
+    print(json.dumps({{'type':'item.completed','item':{{'type':'agent_message','text':json.dumps(result)}}}}))
+    print(json.dumps({{'type':'turn.completed'}}))
+else:
+    print(json.dumps({{'type':'result','subtype':'success','is_error':False,'structured_output':result}}))
+"#,
+            args_log
+        );
+        fs::write(&fake, script).unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut docker = config();
+        docker.executable = fake;
+        let store = ArtifactStore::new(tmp.path().join("evidence")).unwrap();
+        let environment = DockerEnvironment::new(
+            &repo,
+            tmp.path().join("jobs"),
+            docker.clone(),
+            store.clone(),
+        )
+        .unwrap();
+        let workspace = Workspace {
+            directory: name(environment.root().join("candidate").to_str().unwrap()),
+            build_directory: name(environment.root().join("build").to_str().unwrap()),
+            branch: name("perfine/agent"),
+        };
+        let request = EnvironmentRequest {
+            role: ExecutionRole::Candidate,
+            base: base.clone(),
+            workspace: workspace.clone(),
+            environment: BTreeMap::new(),
+            dependency_access: vec![name("compiler")],
+            network_access: vec![],
+        };
+        environment.prepare(&request).unwrap();
+        let auth = tmp.path().join("auth.json");
+        fs::write(&auth, "mock local authentication sentinel").unwrap();
+        let agent = HeadlessAgentAdapter::new(
+            LocalAgentConfig {
+                provider,
+                docker,
+                executable: "agent-cli".into(),
+                auth_file: auth,
+                network: "perfine-agent-egress".into(),
+                model: None,
+                maximum_source_bytes: 8192,
+                maximum_edits: 2,
+            },
+            &environment,
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            workspace: &workspace,
+            deadline_unix_seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 30,
+            cancellation: &Continue,
+        };
+        let hash = store.put(b"mock profile").unwrap();
+        let profile = Profile {
+            costs: vec![ProfileCost {
+                source: SourceLocation {
+                    file: name("kernel.c"),
+                    line: Some(1),
+                    symbol: Some(name("value")),
+                },
+                metric: MetricSpec {
+                    metric: Metric::Ir,
+                    unit: name("instructions"),
+                },
+                cost: 10.0,
+                callees: vec![],
+            }],
+            edges: vec![],
+            raw_artifacts: vec![hash],
+            missing_source_mappings: vec![],
+        };
+        let hypotheses = agent.propose(&profile, &context).unwrap();
+        assert_eq!(hypotheses.len(), 1);
+        let sha = agent.implement(&hypotheses[0], &context).unwrap();
+        assert_ne!(sha, base);
+        assert_eq!(
+            fs::read_to_string(repo.join("kernel.c")).unwrap(),
+            "int value(void) { return 1; }\n"
+        );
+        let argv: Vec<String> = serde_json::from_slice(&fs::read(args_log).unwrap()).unwrap();
+        assert!(
+            !argv
+                .iter()
+                .any(|arg| arg.contains(workspace.directory.as_str())
+                    || arg.contains(repo.to_str().unwrap()))
+        );
+        assert!(agent.implement(&hypotheses[0], &context).is_err());
+        let user_workspace = Workspace {
+            directory: name(repo.to_str().unwrap()),
+            ..workspace.clone()
+        };
+        let context = ExecutionContext {
+            workspace: &user_workspace,
+            ..context
+        };
+        assert!(agent.propose(&profile, &context).is_err());
+    }
+}
