@@ -32,3 +32,6 @@ tokio-util = "0.7"
 yaml-rust2 = "0.10"
 oxilangtag = "0.1"
 jsonschema = { version = "0.60", default-features = false }
+
+[dev-dependencies]
+tracing-subscriber.workspace = true

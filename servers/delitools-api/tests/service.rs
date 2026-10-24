@@ -613,3 +613,320 @@ async fn each_request_executes_anew_without_replay() {
     assert_ne!(first.body["requestId"], second.body["requestId"]);
     assert_eq!(h.gateway.calls(), 2);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Request decoding failures: the dependency decodes the body before any handler runs, and its
+// diagnostics can echo submitted values. The router replaces them with a fixed typed error.
+// ---------------------------------------------------------------------------------------------
+
+const DECODE_MESSAGE: &str = "request body is invalid";
+
+/// A synthetic body that fails to decode, with the marker it must never reveal.
+struct BadBody {
+    name: &'static str,
+    method: &'static str,
+    marker: &'static str,
+    body: Vec<u8>,
+}
+
+fn bad_bodies() -> Vec<BadBody> {
+    let json = |value: serde_json::Value| serde_json::to_vec(&value).unwrap();
+    vec![
+        BadBody {
+            name: "scalar texts",
+            method: "Translate",
+            marker: "PRIVATE-CONTENT-MARKER",
+            body: json(
+                json!({"texts": "PRIVATE-CONTENT-MARKER", "targetLanguage": "en", "model": "m"}),
+            ),
+        },
+        BadBody {
+            name: "scalar texts with tenant",
+            method: "Translate",
+            marker: "PRIVATE-SECOND-MARKER",
+            body: json(translate_body_with_texts(json!("PRIVATE-SECOND-MARKER"))),
+        },
+        BadBody {
+            name: "object item",
+            method: "Translate",
+            marker: "PRIVATE-ITEM-MARKER",
+            body: json(translate_body_with_texts(
+                json!(["safe", {"privateField": "PRIVATE-ITEM-MARKER"}]),
+            )),
+        },
+        BadBody {
+            name: "numeric target language",
+            method: "Translate",
+            marker: "12345",
+            body: json(json!({
+                "tenantId": TENANT, "texts": ["safe"], "targetLanguage": 12345, "model": MODEL
+            })),
+        },
+        BadBody {
+            name: "object model",
+            method: "Translate",
+            marker: "PRIVATE-MODEL-MARKER",
+            body: json(json!({
+                "tenantId": TENANT, "texts": ["safe"], "targetLanguage": "fr",
+                "model": {"privateField": "PRIVATE-MODEL-MARKER"}
+            })),
+        },
+        BadBody {
+            name: "extract text array",
+            method: "Extract",
+            marker: "PRIVATE-EXTRACT-MARKER",
+            body: json(json!({
+                "tenantId": TENANT, "text": ["PRIVATE-EXTRACT-MARKER"], "jsonSchema": PERSON_SCHEMA
+            })),
+        },
+        BadBody {
+            name: "truncated json",
+            method: "Translate",
+            marker: "PRIVATE-TRUNCATED-MARKER",
+            body: br#"{"tenantId":"x","texts":["PRIVATE-TRUNCATED-MARKER"#.to_vec(),
+        },
+        BadBody {
+            name: "syntax error",
+            method: "Extract",
+            marker: "PRIVATE-SYNTAX-MARKER",
+            body: br#"{"text": PRIVATE-SYNTAX-MARKER, "jsonSchema": }"#.to_vec(),
+        },
+    ]
+}
+
+fn translate_body_with_texts(texts: serde_json::Value) -> serde_json::Value {
+    json!({"tenantId": TENANT, "texts": texts, "targetLanguage": "fr", "model": MODEL})
+}
+
+fn assert_no_business_calls(h: &Harness) {
+    assert_eq!(h.gateway.calls(), 0);
+    let delcore = h.delcore.lock().unwrap();
+    assert_eq!(delcore.token_calls, 0, "authentication ran");
+    assert_eq!(delcore.key_calls, 0, "authentication ran");
+    assert!(delcore.authorize_calls.is_empty(), "authorization ran");
+    assert!(delcore.ingested.is_empty());
+}
+
+#[tokio::test]
+async fn undecodable_json_requests_get_a_fixed_typed_error_before_authentication() {
+    let logs = LogCapture::start();
+    let h = Harness::start(None).await;
+    let mut count = 0;
+    for case in bad_bodies() {
+        for token in [None, Some(USER_TOKEN), Some(KEY_SECRET), Some("garbage")] {
+            let wire = h
+                .post(
+                    case.method,
+                    token,
+                    "application/json",
+                    case.body.clone(),
+                    None,
+                )
+                .await;
+            let context = format!("{} / {token:?}: {}", case.name, wire.raw);
+            assert_eq!(wire.status, 400, "{context}");
+            assert_eq!(wire.code(), "invalid_argument", "{context}");
+            assert_eq!(wire.body["message"], DECODE_MESSAGE, "{context}");
+            assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT", "{context}");
+            let header = wire.request_id_header.clone().expect(&context);
+            assert_eq!(header, wire.detail().1, "{context}");
+            assert_eq!(
+                uuid::Uuid::parse_str(&header).unwrap().get_version_num(),
+                7,
+                "{context}"
+            );
+            assert!(!wire.raw.contains(case.marker), "{context}");
+            assert!(
+                wire.body
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "code" | "message" | "details")),
+                "{context}"
+            );
+            count += 1;
+        }
+    }
+    assert_no_business_calls(&h);
+    // Each rejection is counted as a denied call with the invalid-input reason.
+    let metrics = h.server.metrics.encode();
+    assert!(
+        metrics.contains(&format!(
+            "delitools_denied_total{{reason=\"invalid_input\"}} {count}"
+        )),
+        "{metrics}"
+    );
+    // The rejection is logged with a bounded category and no submitted value or decoder text.
+    let logged = logs.text();
+    assert!(
+        logged.contains("request body could not be decoded"),
+        "{logged}"
+    );
+    for case in bad_bodies() {
+        assert!(!logged.contains(case.marker), "{}: {logged}", case.name);
+    }
+    for diagnostic in [
+        "invalid type",
+        "expected a sequence",
+        "EOF while",
+        "at line",
+    ] {
+        assert!(!logged.contains(diagnostic), "{diagnostic}: {logged}");
+    }
+}
+
+#[tokio::test]
+async fn correctly_decoded_requests_keep_authentication_validation_and_success() {
+    let h = Harness::start(None).await;
+    // A string array in place of the scalar is decoded and then authenticated as usual.
+    let wire = h
+        .call(
+            "Translate",
+            None,
+            translate_body_with_texts(json!(["PRIVATE-CONTENT-MARKER"])),
+        )
+        .await;
+    assert_eq!(wire.status, 401);
+    assert_eq!(wire.reason(), "ERROR_REASON_UNAUTHENTICATED");
+    assert_eq!(wire.body["message"], "authentication failed");
+    assert_eq!(h.gateway.calls(), 0);
+    // Handler validation keeps its own typed errors and messages.
+    let wire = h
+        .translate(USER_TOKEN, translate_body_with_texts(json!([])))
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT");
+    assert_ne!(wire.body["message"], DECODE_MESSAGE);
+    let mut body = translate_body(&["a"]);
+    body["model"] = json!("vendor/not-listed");
+    let wire = h.translate(USER_TOKEN, body).await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_MODEL_UNAVAILABLE");
+    // Valid requests still succeed.
+    h.gateway
+        .push(Reply::without_usage(r#"{"translations":["Bonjour"]}"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+    assert!(wire.ok(), "{}", wire.raw);
+    h.gateway
+        .push(Reply::without_usage(&extracted(json!({"name": "Ada"}))));
+    let wire = h.extract(USER_TOKEN, extract_body()).await;
+    assert!(wire.ok(), "{}", wire.raw);
+    assert_eq!(h.gateway.calls(), 2);
+    // Handler failures are not counted as decode failures.
+    let metrics = h.server.metrics.encode();
+    assert!(metrics.contains("delitools_denied_total{reason=\"invalid_input\"} 1"));
+}
+
+#[tokio::test]
+async fn binary_requests_keep_their_behavior() {
+    use buffa::Message;
+    use delino_protocol::delitools::v1::{TranslateRequest, TranslateResponse};
+    let h = Harness::start(None).await;
+    let request = TranslateRequest {
+        tenant_id: TENANT.into(),
+        texts: vec!["Hello".into()],
+        target_language: "fr".into(),
+        model: MODEL.into(),
+        ..Default::default()
+    };
+    h.gateway
+        .push(Reply::without_usage(r#"{"translations":["Bonjour"]}"#));
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            request.encode_to_vec(),
+            None,
+        )
+        .await;
+    // The success body is binary protobuf, not JSON.
+    assert_eq!(wire.status, 200);
+    assert!(wire.request_id_header.is_some());
+    assert_eq!(wire.body, serde_json::Value::Null);
+    let reply = TranslateResponse::decode_from_slice(&wire.bytes).unwrap();
+    assert_eq!(reply.translations, vec!["Bonjour".to_owned()]);
+    assert_eq!(
+        wire.request_id_header.as_deref(),
+        Some(reply.request_id.as_str())
+    );
+    // Typed handler errors of binary calls keep their detail.
+    let invalid = TranslateRequest {
+        tenant_id: TENANT.into(),
+        ..Default::default()
+    };
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            invalid.encode_to_vec(),
+            None,
+        )
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT");
+    assert_ne!(wire.body["message"], DECODE_MESSAGE);
+    // A malformed binary body is not rewritten: it carries no DeliTools detail.
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            vec![0xff, 0xff, 0xff],
+            None,
+        )
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.code(), "invalid_argument");
+    assert!(wire.body.get("details").is_none(), "{}", wire.raw);
+    assert!(wire.request_id_header.is_none());
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn oversize_bodies_keep_the_plain_untyped_rejection() {
+    let logs = LogCapture::start();
+    let h = Harness::start(None).await;
+    // The default configuration allows (4096 + 2048) * 6 + 64 KiB = 102,400 bytes.
+    let text = format!("PRIVATE-OVERSIZE-MARKER{}", "a".repeat(102_468));
+    let body = serde_json::to_vec(&translate_body_with_texts(json!([text]))).unwrap();
+    assert!(body.len() > 102_400);
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/json",
+            body,
+            None,
+        )
+        .await;
+    assert_eq!(wire.code(), "resource_exhausted", "{}", wire.raw);
+    assert_ne!(wire.status, 200);
+    assert!(wire.body.get("details").is_none(), "{}", wire.raw);
+    assert!(wire.request_id_header.is_none());
+    assert!(!wire.raw.contains("PRIVATE-OVERSIZE-MARKER"));
+    assert!(!logs.text().contains("PRIVATE-OVERSIZE-MARKER"));
+    assert_no_business_calls(&h);
+}
+
+#[tokio::test]
+async fn origin_rejection_precedes_decoding() {
+    let h = Harness::start(None).await;
+    for case in bad_bodies() {
+        let response = reqwest::Client::new()
+            .post(format!(
+                "{}/delitools.v1.DelitoolsService/{}",
+                h.base, case.method
+            ))
+            .header("Content-Type", "application/json")
+            .header("Origin", "https://evil.example")
+            .body(case.body.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403, "{}", case.name);
+        assert!(!response.text().await.unwrap().contains(case.marker));
+    }
+    assert_no_business_calls(&h);
+}

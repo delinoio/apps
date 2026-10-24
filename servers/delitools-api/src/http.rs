@@ -4,7 +4,7 @@
 //! There is no CORS support: the API is called by server-side developers with API keys or user
 //! tokens, so any request that carries an `Origin` header is rejected.
 
-use crate::{REQUEST_ID_HEADER, Server, error::ApiError, store};
+use crate::{REQUEST_ID_HEADER, Server, error::ApiError, store, telemetry::Metrics};
 use axum::{
     Router,
     extract::{Request, State},
@@ -13,7 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use connectrpc::ErrorCode;
+use connectrpc::{
+    CodecFormat, ConnectError, ErrorCode, Interceptor, Next as RpcNext, async_trait,
+    interceptor::{UnaryRequest, UnaryResponse},
+};
 use std::{sync::Arc, time::Duration};
 
 /// Margin added to the execution timeout before the HTTP layer gives up.
@@ -33,7 +36,10 @@ pub fn router(server: Server) -> Router {
     let rpc = connectrpc::Router::new()
         .add_service(Arc::new(server.clone()))
         .into_axum_service()
-        .with_limits(connectrpc::Limits::default().with_max_message_size(limit));
+        .with_limits(connectrpc::Limits::default().with_max_message_size(limit))
+        .with_interceptor(DecodeErrorSanitizer {
+            metrics: server.metrics.clone(),
+        });
     let metrics = server.metrics.clone();
     let ready = server.db.clone();
     let deadline = server.config.limits.execution_timeout + TRANSPORT_MARGIN;
@@ -69,6 +75,52 @@ pub fn router(server: Server) -> Router {
                 .layer(middleware::from_fn_with_state(deadline, transport_policy)),
         )
 }
+
+/// Replaces the dependency's JSON decoding diagnostics with the fixed, typed
+/// `INVALID_INPUT` error.
+///
+/// Workaround scope: `connectrpc` decodes a JSON request body after the interceptor chain
+/// starts and reports a failure as an untyped `invalid_argument` whose message embeds the
+/// `serde_json` diagnostic. That diagnostic can echo submitted content, for example a string
+/// supplied where `texts` expects an array. The server contract forbids echoing content, and
+/// the failure happens before any handler can classify it. Every error that a handler returns
+/// is an [`ApiError`] and carries an `ErrorDetail`, so an `invalid_argument` without details
+/// on a JSON call can only come from the decoder. Binary calls and all other codes pass
+/// through unchanged. Remove this interceptor when `connectrpc` offers a content-free decode
+/// error or a decode error hook.
+struct DecodeErrorSanitizer {
+    metrics: Arc<Metrics>,
+}
+
+#[async_trait]
+impl Interceptor for DecodeErrorSanitizer {
+    async fn intercept_unary(
+        &self,
+        req: UnaryRequest,
+        next: RpcNext<'_>,
+    ) -> Result<UnaryResponse, ConnectError> {
+        let json = req.payload.format() == CodecFormat::Json;
+        match next.run(req).await {
+            Err(error)
+                if json && error.code == ErrorCode::InvalidArgument && error.details.is_empty() =>
+            {
+                let request_id = uuid::Uuid::now_v7().to_string();
+                // The original diagnostic is deliberately dropped: it may contain content.
+                tracing::warn!(category = "decode", request_id = %request_id, "request body could not be decoded");
+                let error = ApiError::invalid_input(DECODE_FAILURE_MESSAGE);
+                self.metrics
+                    .denied
+                    .with_label_values(&[error.label()])
+                    .inc();
+                Err(error.into_connect(&request_id))
+            }
+            other => other,
+        }
+    }
+}
+
+/// Fixed public message of a request body that cannot be decoded.
+const DECODE_FAILURE_MESSAGE: &str = "request body is invalid";
 
 async fn transport_policy(
     State(deadline): State<Duration>,
