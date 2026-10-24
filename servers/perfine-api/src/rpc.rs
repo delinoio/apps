@@ -340,6 +340,10 @@ impl Server {
                     sqlx::query("ROLLBACK TO SAVEPOINT perfine_completion")
                         .execute(&mut *tx)
                         .await?;
+                    // Rejected content is terminal for this immutable manifest. Never
+                    // renew PUT URLs beyond the cleanup deadline retained below.
+                    sqlx::query("UPDATE perfine_uploads SET data=jsonb_set(data,'{state}','\"UPLOAD_STATE_FAILED\"') WHERE id=$1")
+                        .bind(rejected.id).execute(&mut *tx).await?;
                     for key in &rejected.keys {
                         sqlx::query("INSERT INTO perfine_rejected_objects(object_key,expires_at) SELECT $1,staging_expires_at FROM perfine_uploads WHERE id=$2 ON CONFLICT(object_key) DO UPDATE SET expires_at=GREATEST(perfine_rejected_objects.expires_at,EXCLUDED.expires_at)").bind(key).bind(rejected.id).execute(&mut *tx).await?;
                     }
@@ -921,6 +925,9 @@ impl Server {
         }
         if u["state"] == "UPLOAD_STATE_COMPLETE" {
             return Ok(json!({"upload":u,"evidenceCompletion":e["evidenceCompletion"]}));
+        }
+        if u["state"] != "UPLOAD_STATE_PENDING" {
+            return Err(Fault::precondition("rejected upload cannot be completed"));
         }
         let m = &u["manifest"];
         let mut bytes = std::collections::BTreeMap::new();

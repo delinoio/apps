@@ -878,8 +878,37 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
                 .fetch_one(&db)
                 .await
                 .unwrap(),
-                "UPLOAD_STATE_PENDING"
+                "UPLOAD_STATE_FAILED"
             );
+            let upload_id = uuid::Uuid::parse_str(begin["upload"]["id"].as_str().unwrap()).unwrap();
+            let expiry: chrono::DateTime<chrono::Utc> =
+                sqlx::query_scalar("SELECT staging_expires_at FROM perfine_uploads WHERE id=$1")
+                    .bind(upload_id)
+                    .fetch_one(&db)
+                    .await
+                    .unwrap();
+            let retry = call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":raw_id,"specification":rs,"manifest":rm,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap();
+            assert_eq!(retry["upload"]["state"], "UPLOAD_STATE_FAILED");
+            assert!(retry["targets"].as_array().unwrap().is_empty());
+            assert_eq!(
+                sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+                    "SELECT staging_expires_at FROM perfine_uploads WHERE id=$1"
+                )
+                .bind(upload_id)
+                .fetch_one(&db)
+                .await
+                .unwrap(),
+                expiry
+            );
+            let error = call(
+                &server,
+                &space,
+                "CompleteUpload",
+                json!({"uploadId":begin["upload"]["id"]}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.message, "rejected upload cannot be completed");
             *fail_delete.lock().unwrap() = false;
             sqlx::query("UPDATE perfine_rejected_objects SET expires_at=now()-interval '1 minute',next_attempt=now()")
                 .execute(&db).await.unwrap();
@@ -891,6 +920,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
                     .unwrap(),
                 0
             );
+            // Removing the cleanup record must not permit a later URL renewal.
+            let retry = call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":raw_id,"specification":rs,"manifest":rm,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap();
+            assert_eq!(retry["upload"]["state"], "UPLOAD_STATE_FAILED");
+            assert!(retry["targets"].as_array().unwrap().is_empty());
             let prefix = format!("/bucket/{raw_id}/");
             assert!(
                 !objects

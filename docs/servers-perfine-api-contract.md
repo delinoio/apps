@@ -156,3 +156,9 @@ Actions upload admission reloads the connection delegate and rechecks its curren
 experiment grant after acquiring the space lock. That check and upload mutation
 share one transaction, including deduplicated retries; a concurrent reconnect
 cannot substitute a different delegate after authorization.
+
+Content-inspection rejection durably marks that immutable upload failed in the
+same transaction as rejected-object cleanup. Begin retries report the failed state
+without issuing PUT URLs or extending expiry, and completion retries are rejected.
+The failure remains terminal after cleanup finishes, so expired rejected-object
+records cannot be used to obtain fresh write URLs.
