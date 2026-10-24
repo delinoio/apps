@@ -297,7 +297,16 @@ fn tombstones_survive_dedup_expiry_and_cleanup_failure() {
     e.create(&request(), f.experiment.clone(), f.cfg.clone(), 100)
         .unwrap();
     start(&e, &f, f.candidate.clone(), 0, 101).unwrap();
+    let hypothesis = e.status(&f.experiment).unwrap().candidates[&f.candidate]
+        .hypothesis
+        .clone();
     e.delete(&request(), &f.experiment, 102).unwrap();
+    assert!(
+        e.cleanup_result(&f.experiment, false)
+            .unwrap()
+            .cleanup_evidence
+            .contains(&hypothesis)
+    );
     assert!(matches!(e.status(&f.experiment), Err(Error::Deleted)));
     for _ in 0..3 {
         assert!(
@@ -318,7 +327,8 @@ fn tombstones_survive_dedup_expiry_and_cleanup_failure() {
     ));
     let t = e.cleanup_result(&f.experiment, true).unwrap();
     assert!(!t.cleanup_pending);
-    assert_eq!(t.cleanup_failures, 3);
+    assert_eq!(t.cleanup_failures, 4);
+    assert!(t.cleanup_evidence.is_empty());
     assert!(t.cleanup_workspaces.is_empty());
     assert!(matches!(
         e.resume(&request(), &f.experiment, &f.cfg, DEDUP_SECONDS + 104),
