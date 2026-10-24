@@ -169,6 +169,8 @@ Successful GitHub draft creation responses must match the exact approved base/he
 
 Deletion batches process eligible jobs by earliest retry time, with experiment ID as a stable tie-breaker. A full batch of blocked cleanup jobs must yield to older unvisited work while retaining every pending cancellation and storage reservation.
 
+A bundle may reuse an identical validated baseline manifest as a comparison base. Bind each run ID to the complete manifest fingerprint and reject changed observations under the same ID. Same-SHA validation and repeat measurement identity rules remain enforced by the server-owned evaluator.
+
 ### Independent evaluation implementation
 
 The server evaluator preserves the v1 JSON field order, sorted map keys, float round-trip parsing, configuration fingerprints, manifest verification, same-SHA baseline requirements and policy thresholds used by local clients. It owns only evidence types, limits validation and policy evaluation; local execution, filesystem storage and adapters remain client concerns. Server-owned policy and evidence regression suites cover threshold boundaries, repeats, exceptions and invalid evidence. Golden client-format fixtures pin canonical hashes across the boundary. Server tests keep raw profiler fixtures under `tests/fixtures` and must compile from `servers/` and `protos/` alone. Update compatibility fixtures and both implementations when changing versioned semantics.

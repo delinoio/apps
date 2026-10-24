@@ -184,14 +184,19 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
     {
         return Err(Fault::precondition("policy mapping mismatch"));
     }
-    let mut runs = BTreeSet::new();
+    let mut runs = BTreeMap::new();
     let mut inspected = BTreeSet::from([string(m, "engineArtifactName").to_owned()]);
     let mut verify = |manifest: &engine::Manifest,
                       source: &str,
                       candidate: bool|
      -> Result<engine::VerifiedRun> {
         let identity = &manifest.identity;
-        if !runs.insert(identity.run.clone())
+        // A validated baseline may also be the comparison base. Reuse only exact
+        // manifests; one run identity must never describe different observations.
+        let digest = types::fingerprint(manifest).map_err(engine_error)?;
+        if runs
+            .insert(identity.run.clone(), digest.clone())
+            .is_some_and(|prior| prior != digest)
             || identity.experiment.as_str() != string(e, "id")
             || identity.source.as_str() != source
             || identity.candidate.as_ref().map(|v| v.as_str())
