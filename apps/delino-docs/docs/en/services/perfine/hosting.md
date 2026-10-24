@@ -25,21 +25,25 @@ AI credentials stay with your locally authenticated AI CLI. For a future eligibl
 
 ## Upload and manual resend
 
-The current CLI requires an externally prepared v1 envelope. It does not automatically prepare configuration, construct an evidence bundle, or encode its manifest. Do not assume that a local run automatically appears in the dashboard.
+The CLI builds the evidence bundle, normalized observations, raw artifact references, and manifest checksum from the retained local experiment. You do not need to prepare an upload envelope. Upload is explicit; a local run does not automatically appear in the dashboard.
 
-Configuration preparation uses the public `perfine.v1.ExperimentService.PrepareExperiment` interface. Supply typed configuration and all limits; preparation returns the immutable specification with calculated fingerprints. Preparation alone does not start an experiment or make cloud execution available. A prepared specification expires after 30 days. Do not calculate fingerprints by hashing transport JSON.
-
-For an integration that already provides the envelope, it contains `specification` and `manifest`. Use the final v1 metric, hardware, and uncertainty fields, including `metric.engineKind` and `environment.hardware`. The manifest digest covers deterministic protobuf bytes, not JSON. Preserve exact artifact bytes and hashes. Deprecated confidence-interval fields are not supported uncertainty inputs.
-
-Set `DELCORE_API_KEY` securely in your local environment with the exact space and Perfine experiment grant. Do not paste a key into a command, file to be committed, or support report. With the corresponding IDs and prepared file, run:
+Set `DELCORE_API_KEY` securely in your local environment with the exact space and Perfine experiment grant. With UUID v7 request, experiment, space, and connection IDs, run:
 
 ```sh
-perfine --request-id "$PERFINE_REQUEST_ID" upload   --experiment "$PERFINE_EXPERIMENT_ID"   --envelope "upload-envelope.json"   --endpoint "https://perfine.api.delino.io"   --space "$PERFINE_SPACE_ID"   --connection "$PERFINE_CONNECTION_ID"
+perfine --request-id "$PERFINE_REQUEST_ID" upload \
+  --experiment "$PERFINE_EXPERIMENT_ID" \
+  --endpoint "https://perfine.api.delino.io" \
+  --space "$PERFINE_SPACE_ID" \
+  --connection "$PERFINE_CONNECTION_ID"
 ```
 
-Upload failure preserves local results. Resolve the reported eligibility, authority, size, or quota problem before resending. For an unchanged interrupted upload, reuse the same UUID v7 request ID and immutable envelope. Do not replace accepted evidence or change frozen inputs. A corrected artifact set needs a newly eligible manifest.
+Add `--candidate "$PERFINE_CANDIDATE_ID"` to select a candidate. For repository-approved raw evidence, supply the applicable `--consent-revision`; the server verifies that consent predates the run and is still valid. A revision number does not grant consent. Never paste a key into a command, committed file, or support report.
 
-Hosting currently rejects opaque binary artifacts without a privacy parser. A native profile can therefore remain local-only even when local evaluation succeeds. Partial uploads remain incomplete and cannot support a hosted pass. Space storage limits, single-upload limits, request limits, and cloud concurrency limits can reject new work; authorized read/delete access remains available.
+Upload failure preserves local results and durable upload progress. Resolve eligibility, authority, size, or quota errors before resending. For an unchanged interrupted upload, reuse the same UUID v7 request ID. The CLI reuses the retained bundle and checks upload state before continuing. Do not replace accepted evidence or change frozen inputs.
+
+Hosting inspects supported raw profiles, including bounded gzip pprof, and rejects unknown binary formats or secrets. Frozen configuration containing environment variables is ineligible for hosting. Keep rejected originals locally. Partial uploads remain incomplete and cannot support a hosted pass. Space storage, single-upload, request, and cloud-concurrency limits can reject new work; authorized read/delete access remains available.
+
+For custom integrations, `perfine.v1.ExperimentService.PrepareExperiment` accepts typed configuration and returns a specification with authoritative fingerprints. Preparation does not start an experiment or enable unavailable cloud execution. The manifest digest covers deterministic protobuf bytes, not transport JSON. Use the versioned engine uncertainty fields; deprecated confidence-interval fields are rejected.
 
 Actions evidence uses scoped GitHub Actions OIDC rather than exporting your local API key. The actor must have the required current authority; running a workflow is not sufficient. An API key is not a human approval and cannot dispatch hosted publication.
 

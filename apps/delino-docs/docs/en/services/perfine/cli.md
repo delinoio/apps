@@ -41,7 +41,7 @@ perfine resume --experiment "$PERFINE_EXPERIMENT_ID"
 
 Graceful cancellation stops new candidates and lets active work finish within its timeout. Immediate cancellation also signals active processes. Completed evidence and candidate branches remain available. Incomplete work cannot support a performance conclusion.
 
-Resume verifies source, workload inputs, tools, environment, policy, and artifact identities. It reuses verified completed measurements, does not repeat an attempted hypothesis, and does not reset deadlines. If conditions changed, create a new experiment instead of editing frozen evidence.
+Resume verifies source, workload inputs, tools, environment, policy, and artifact identities. It reuses verified completed measurements and restores unfinished attempts only when the task-owned workspace is unchanged and the original admission deadline permits it. Dirty, expired, or legacy workspaces without an ownership record fail closed. Resume does not reset deadlines or repeat completed publication. If conditions changed, create a new experiment instead of editing frozen evidence.
 
 ## Output and automation
 

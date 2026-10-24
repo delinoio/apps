@@ -33,7 +33,18 @@ The preset retains these explicitly disclosed exceptions and review requirements
 - A protected-case regression of at least 1%, or any case regression of at least 3%, requires explicit human judgment before publication.
 - Incremental portfolio deterioration or widespread regressions are rejected. Two or more cases regressing by at least 1% constitute widespread regressions.
 
-Near a threshold, or when profile and aggregate evidence conflict, repeat once under identical conditions. Inconsistent evidence remains inconclusive. Review explanations are required for an exception; enabling an exception in the preset does not supply those explanations. The current CLI has no documented command to enter all exception-review evidence. Do not treat an unavailable review path as an approved exception.
+Near a threshold, or when profile and aggregate evidence conflict, repeat once under identical conditions. Inconsistent evidence remains inconclusive. Review explanations are required for an exception; enabling an exception in the preset does not supply those explanations. Use the explicit review flow below to attach attestations to retained evidence. An attestation does not waive correctness or immutable-input checks.
+
+## Review retained evidence
+
+Create a v1 review JSON file with `schema_version: 1`, a nonempty `statement`, and a `review` object. Its optional `equally_simple_or_simpler`, `regression_explanation`, and `no_family_recurrence` fields contain SHA-256 fingerprints of retained supporting artifacts, or `null`. Set `profile_aggregate_conflict` explicitly. Inspect the referenced artifacts; do not invent hashes or attest to evidence you have not checked.
+
+```sh
+perfine compare --experiment "$PERFINE_EXPERIMENT_ID" \
+  --candidate "$PERFINE_CANDIDATE_ID" --review "review.json"
+```
+
+Review the returned statement, measurements, and `confirm_review` token. To confirm that exact input, repeat the command with `--confirm-review "$PERFINE_REVIEW_TOKEN"`, using the returned token. Perfine retains the attestation and reevaluates the same verified measurements. Changing the review input or measurements requires a new confirmation. This step does not approve publication.
 
 ## Time, throughput, memory, and other metrics
 
