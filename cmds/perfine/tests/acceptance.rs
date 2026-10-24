@@ -42,6 +42,10 @@ fn run(root: &Path, args: &[&str]) -> Value {
 fn seeded(candidate: bool) -> (tempfile::TempDir, ResourceId, ResourceId) {
     seeded_values(candidate, [9950., 9950.])
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the complete persisted experiment fixture visible in one setup function"
+)]
 fn seeded_values(candidate: bool, values: [f64; 2]) -> (tempfile::TempDir, ResourceId, ResourceId) {
     let root = tempfile::tempdir().unwrap();
     assert!(
@@ -139,7 +143,7 @@ fn seeded_values(candidate: bool, values: [f64; 2]) -> (tempfile::TempDir, Resou
     fs::create_dir_all(root.path().join(".perfine").join(id.as_str())).unwrap();
     fs::write(root.path().join(".perfine").join(id.as_str()).join("journal.json"),serde_json::to_vec(&json!({"schema_version":1,"settings":digest(b"settings"),"language":"rust","optimize":candidate,"created_request":request(),"runs":runs,"failure":null,"attempts":{}})).unwrap()).unwrap();
     let command = json!({"executable":"true","arguments":[]});
-    let settings = json!({"schema_version":1,"experiment":cfg.config(),"adapter":{"schema_version":1,"language":"rust","discovery_files":["src/hot.rs"],"build":[],"correctness":{"project-tests":command},"workloads":{"large":{"command":command,"profiles":["profile"],"format":"callgrind","output":{"kind":"callgrind"},"repetitions":1,"required_paths":["src/hot.rs"]}},"tool_probes":{"callgrind":command},"source_prefixes":{}},"docker":{"executable":"/usr/bin/docker","image":format!("sha256:{}","a".repeat(64)),"dependency_names":[],"user":"1:1","memory_bytes":1000000,"cpus":1,"process_limit":10,"command_timeout_seconds":10},"execution_root":"/tmp/perfine-acceptance","toolchain_probe":"callgrind","agent":null,"action_commit":null});
+    let settings = json!({"schema_version":1,"experiment":cfg.config(),"adapter":{"schema_version":1,"language":"rust","discovery_files":["src/hot.rs"],"build":[],"correctness":{"project-tests":command},"workloads":{"large":{"command":command,"profiles":["profile"],"format":"callgrind","output":{"kind":"callgrind"},"repetitions":1,"required_paths":["src/hot.rs"]}},"tool_probes":{"callgrind":command},"source_prefixes":{}},"docker":{"executable":"/usr/bin/docker","image":format!("sha256:{}","a".repeat(64)),"dependency_names":[],"user":"1:1","memory_bytes":1_000_000,"cpus":1,"process_limit":10,"command_timeout_seconds":10},"execution_root":"/tmp/perfine-acceptance","toolchain_probe":"callgrind","agent":null,"action_commit":null});
     fs::write(
         root.path().join("perfine.yaml"),
         serde_json::to_vec(&settings).unwrap(),
@@ -266,6 +270,10 @@ fn subprocess_automatic_upload_checks_protobuf_hashes_retries_and_reconciles() {
 fn subprocess_candidate_upload_preserves_real_baseline_reuse() {
     upload_roundtrip(true);
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the mock upload protocol exchange and its assertions in execution order"
+)]
 fn upload_roundtrip(candidate: bool) {
     let (root, id, cid) = seeded(candidate);
     // Upload must use retained provenance even after the local config is removed.

@@ -617,10 +617,11 @@ impl<'de> serde::de::Visitor<'de> for PrivacyScan {
 }
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     #[test]
     fn privacy_checks_escaped_duplicate_fields_and_compressed_bytes() {
         assert!(super::screen(br#"{"value":"\u0067hp_hidden","value":"safe"}"#).is_err());
-        use std::io::Write;
         let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         gzip.write_all(b"pprof string table: authorization: bearer fixture")
             .unwrap();
