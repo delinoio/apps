@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::Read,
     path::Path,
 };
 
@@ -473,7 +474,7 @@ impl MeasurementAdapter for NativeMeasurementAdapter<'_> {
                 let mut observed = BTreeSet::new();
                 let mut ir = None;
                 for path in &workload.profiles {
-                    let bytes = fs::read(regular_file(
+                    let bytes = read_profile(&regular_file(
                         Path::new(context.workspace.build_directory.as_str()),
                         path.as_str(),
                     )?)?;
@@ -607,4 +608,37 @@ pub fn verify_local(
     store: &ArtifactStore,
 ) -> Result<VerifiedRun> {
     verify(config, expected, manifest, store)
+}
+
+const PROFILE_BYTE_LIMIT: u64 = 64 * 1024 * 1024;
+
+fn read_profile(path: &Path) -> Result<Vec<u8>> {
+    let file = fs::File::open(path)?;
+    if file.metadata()?.len() > PROFILE_BYTE_LIMIT {
+        return Err(Error::Limit);
+    }
+    // The file may grow after metadata inspection. Bound the read itself before
+    // any parser or artifact allocation, independently of container memory limits.
+    let mut bytes = Vec::new();
+    file.take(PROFILE_BYTE_LIMIT + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > PROFILE_BYTE_LIMIT {
+        return Err(Error::Limit);
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod profile_read_tests {
+    use super::*;
+    #[test]
+    fn sparse_oversized_profile_is_rejected_before_reading() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().set_len(1_u64 << 40).unwrap();
+        assert!(matches!(read_profile(file.path()), Err(Error::Limit)));
+        fs::write(file.path(), b"events: Ir\ntotals: 1\n").unwrap();
+        assert_eq!(
+            read_profile(file.path()).unwrap(),
+            b"events: Ir\ntotals: 1\n"
+        );
+    }
 }

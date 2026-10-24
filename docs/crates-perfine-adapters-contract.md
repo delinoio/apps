@@ -85,3 +85,5 @@ Update the project index and affected owning contracts together when ownership, 
 - [pprof profile schema](https://github.com/google/pprof/blob/main/proto/profile.proto)
 - [Node CPU profiling options](https://nodejs.org/api/cli.html#--cpu-prof)
 - [Docker container execution boundary](https://docs.docker.com/reference/cli/docker/container/run/)
+
+Each native profile file is limited to 64 MiB before parsing or copying into the artifact store. Oversized files fail the candidate with a bounded read, independently of container memory and captured-output limits.
