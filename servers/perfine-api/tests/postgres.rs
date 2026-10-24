@@ -329,6 +329,8 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let space = uid();
     let grants = Arc::new(Mutex::new(vec!["manage".to_owned()]));
     let state = Arc::new(Mutex::new("TENANT_STATE_ACTIVE".to_owned()));
+    let denied_delegate = Arc::new(Mutex::new(None::<String>));
+    let denied = denied_delegate.clone();
     let objects = Arc::new(Mutex::new(BTreeMap::<String, Vec<u8>>::new()));
     let fail_delete = Arc::new(Mutex::new(false));
     let (g, st, o, fd, act) = (
@@ -341,7 +343,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let pulls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let creates = Arc::new(Mutex::new(0u32));
     let (p, posts) = (pulls.clone(), creates.clone());
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone());async move{
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -350,7 +352,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    "/token"=>json!({"access_token":"fixture-service","expires_in":3600}),
    "/delcore.v1.DelcoreService/GetCurrentUser"=>json!({"userId":act}),
    "/delcore.v1.DelcoreService/GetTenantStates"=>json!({"states":q["tenantIds"].as_array().unwrap().iter().map(|id|json!({"tenantId":id,"state":*st.lock().unwrap()})).collect::<Vec<_>>()}),
-   "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v)})},
+   "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v) && denied.lock().unwrap().as_ref().is_none_or(|subject| q["userId"] != *subject)})},
    "/repos/owner/repo/pulls" if method=="POST"=>{
     assert_eq!(q["draft"],true);*posts.lock().unwrap()+=1;
     p.lock().unwrap().push(json!({"number":1,"html_url":"https://github.com/owner/repo/pull/1","title":q["title"],"body":q["body"],"draft":true,"head":{"sha":"d".repeat(40)},"base":{"sha":"a".repeat(40)}}));
@@ -552,6 +554,54 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .await
             .is_ok()
     );
+    // Replace the delegate after the initial Actions check but before admission.
+    let replacement_subject = uid();
+    *denied_delegate.lock().unwrap() = Some(replacement_subject.clone());
+    let mut reconnect = admin.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(&space)
+        .execute(&mut *reconnect)
+        .await
+        .unwrap();
+    let replacement = async {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND wait_event='advisory')").bind(worker_pid).fetch_one(&admin).await.unwrap();
+                if waiting { break; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("Actions admission must wait for the space lock");
+        sqlx::query(&format!(
+            "UPDATE {schema}.perfine_connections SET owner_subject=$2 WHERE id=$1"
+        ))
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&replacement_subject)
+        .execute(&mut *reconnect)
+        .await
+        .unwrap();
+        reconnect.commit().await.unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        server.execute(
+            &token,
+            "",
+            "CheckUploadEligibility",
+            eligibility.clone(),
+            &request
+        ),
+        replacement
+    );
+    assert_eq!(
+        result.unwrap_err().code,
+        connectrpc::ErrorCode::PermissionDenied
+    );
+    sqlx::query("UPDATE perfine_connections SET owner_subject=$2 WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&actor)
+        .execute(&db)
+        .await
+        .unwrap();
+    *denied_delegate.lock().unwrap() = None;
     // A full batch of inaccessible repositories must not starve the next connection.
     let blocked_space = uuid::Uuid::now_v7();
     for repository in 1000..1100 {

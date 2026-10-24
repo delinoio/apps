@@ -151,3 +151,8 @@ Affected CI registers Perfine in the shared Rust server matrix. API, protocol,
 and shared-core changes select its Clippy, unit, and disposable PostgreSQL checks.
 The existing matrix result gate rejects failed, cancelled, or skipped selected jobs;
 ordinary and affected manual validation remain on Ubuntu.
+
+Actions upload admission reloads the connection delegate and rechecks its current
+experiment grant after acquiring the space lock. That check and upload mutation
+share one transaction, including deduplicated retries; a concurrent reconnect
+cannot substitute a different delegate after authorization.

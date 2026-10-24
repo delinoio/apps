@@ -230,7 +230,7 @@ impl Server {
                 other => other?,
             }
         };
-        self.authorized(&actor, gh, op, &q, trace).await
+        self.authorized(&actor, gh, op, &q, trace, None).await
     }
     async fn authorized(
         &self,
@@ -239,6 +239,7 @@ impl Server {
         op: &str,
         q: &Value,
         trace: &str,
+        actions_connection: Option<&str>,
     ) -> Result<Value> {
         let space = string(q, "spaceId");
         // Count admission before reserving a transaction connection. A second pool
@@ -260,6 +261,14 @@ impl Server {
         let mut tx = self.db.begin().await?;
         // Serialize space quota reservations and lifecycle mutations across all replicas.
         lock(&mut tx, space).await?;
+        if let Some(cid) = actions_connection {
+            // Authentication releases its initial row lock before admission. A reconnect
+            // can replace the delegate in that gap, so bind the current grant to this
+            // same space-serialized transaction as the upload and its idempotency check.
+            let c = connection(&mut tx, space, cid).await?;
+            inactive(&c)?;
+            self.actions_delegate(&mut tx, space, cid).await?;
+        }
         if let Some(eid) = q.get("experimentId").and_then(Value::as_str) {
             tombstone(&mut tx, eid).await.or_else(|e| {
                 if matches!(op, "DeleteExperiment" | "GetDeletion") {
@@ -1082,6 +1091,28 @@ impl Server {
                 .await?;
         Ok(json!({"publication":p.ok_or_else(Fault::missing)?}))
     }
+    async fn actions_delegate(&self, db: &mut PgConnection, space: &str, cid: &str) -> Result<()> {
+        let principal = sqlx::query("SELECT owner_subject FROM perfine_connections WHERE id=$1")
+            .bind(id(cid)?)
+            .fetch_one(&mut *db)
+            .await?;
+        let subject: String = principal.get("owner_subject");
+        id(&subject).map_err(|_| Fault::denied())?;
+        // The connection delegates repository execution to its current Delcore principal.
+        // GitHub's signed run actor need not be the human who connected an organization repo.
+        let permission = self
+            .authority
+            .call(
+                "Authorize",
+                &format!("Bearer {}", self.authority.service_token().await?),
+                json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false}),
+            )
+            .await?;
+        if permission["allowed"] != true {
+            return Err(Fault::denied());
+        }
+        Ok(())
+    }
     async fn actions_execute(&self, h: &str, op: &str, q: Value, trace: &str) -> Result<Value> {
         if !matches!(
             op,
@@ -1124,25 +1155,7 @@ impl Server {
         };
         let c = connection(&mut tx, space, &cid).await?;
         inactive(&c)?;
-        let principal = sqlx::query("SELECT owner_subject FROM perfine_connections WHERE id=$1")
-            .bind(id(&cid)?)
-            .fetch_one(&mut *tx)
-            .await?;
-        let subject: String = principal.get("owner_subject");
-        id(&subject).map_err(|_| Fault::denied())?;
-        // The connection delegates repository execution to its current Delcore principal.
-        // GitHub's signed run actor need not be the human who connected an organization repo.
-        let permission = self
-            .authority
-            .call(
-                "Authorize",
-                &format!("Bearer {}", self.authority.service_token().await?),
-                json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false}),
-            )
-            .await?;
-        if permission["allowed"] != true {
-            return Err(Fault::denied());
-        }
+        self.actions_delegate(&mut tx, space, &cid).await?;
         let token = self.github.current(&c).await?;
         let rid = integer(&c["repository"], "githubRepositoryId");
         let run = integer(&execution, "githubRunId");
@@ -1183,8 +1196,15 @@ impl Server {
             return Err(Fault::denied());
         }
         tx.rollback().await?;
-        self.authorized(&format!("actions:{rid}:{run}:{attempt}"), "", op, &q, trace)
-            .await
+        self.authorized(
+            &format!("actions:{rid}:{run}:{attempt}"),
+            "",
+            op,
+            &q,
+            trace,
+            Some(&cid),
+        )
+        .await
     }
     pub async fn maintain(&self) -> Result<()> {
         for table in [
