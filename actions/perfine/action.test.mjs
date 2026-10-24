@@ -278,6 +278,13 @@ test("bundle includes dependency license texts and action metadata", () => {
   assert.match(readFileSync("action.yml", "utf8"), /main: action.cjs/);
   const tracked = execFileSync("git", ["ls-files", "."], { encoding: "utf8" });
   assert.ok(!tracked.split("\n").some((p) => p.split("/").includes("dist")));
+  assert.ok(!tracked.split("\n").includes("action.cjs"));
+  assert.equal(
+    execFileSync("git", ["check-ignore", "action.cjs"], {
+      encoding: "utf8",
+    }).trim(),
+    "action.cjs",
+  );
 });
 
 test("same-ID retry reconciles a committed upload after a lost response", async (t) => {

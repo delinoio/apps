@@ -362,7 +362,6 @@ for (const [paths, expected] of [
         "delidev",
         "delitools",
         "perfine_api",
-
         "perfine_fixtures",
       ],
     ],
@@ -378,7 +377,6 @@ for (const [paths, expected] of [
       "git_tracker",
       "perfine_api",
       "perfine",
-
       "protocol",
     ],
   ],
@@ -392,7 +390,6 @@ for (const [paths, expected] of [
       "git_tracker",
       "perfine_api",
       "perfine",
-
       "protocol",
     ],
   ],

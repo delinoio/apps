@@ -627,7 +627,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
       "perfine-frontend": "perfine",
-
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
