@@ -16,6 +16,7 @@ buffa-types.workspace = true
 chrono.workspace = true
 connectrpc.workspace = true
 hex.workspace = true
+httpdate.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true

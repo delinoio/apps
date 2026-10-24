@@ -16,6 +16,20 @@ const KEY: &[u8] = include_bytes!("fixtures/github-test-key.pem");
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
+    permissions_atomic_upload_oidc_visibility_and_cleanup(chrono::Duration::days(90), false).await;
+}
+// A retention accepted at startup but too large for any representable cutoff must not stop the
+// ordinary maintenance duties and must keep every audit row.
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_full_cycle_with_unrepresentable_audit_retention() {
+    let retention = chrono::Duration::from_std(Duration::from_secs(9_999_999_999 * 3600)).unwrap();
+    permissions_atomic_upload_oidc_visibility_and_cleanup(retention, true).await;
+}
+async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
+    retention: chrono::Duration,
+    retains_audit: bool,
+) {
     let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
     let admin = sqlx::PgPool::connect(&url).await.unwrap();
     let schema = format!("tracker_{}", uuid::Uuid::now_v7().simple());
@@ -61,6 +75,15 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
             "/repos/owner/repo"|"/repositories/42"=>json!({"id":42,"full_name":"owner/repo","private":false,"permissions":{"admin":true}}),
             "/repos/owner/repo/installation"=>json!({"id":1}),
             "/app/installations/1/access_tokens"=>json!({"token":"installation"}),
+            // Exact branch-head lookups. The generic commit route below also resolves SHAs and tags, so
+            // only these routes may make a caller-supplied value a branch. Unlisted names (a tag such as
+            // `v1`, or a commit SHA) answer 401 like a missing ref.
+            "/repos/owner/repo/git/ref/heads/main"=>json!({"ref":"refs/heads/main","object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/release/1%2E0"=>json!({"ref":"refs/heads/release/1.0","object":{"type":"commit","sha":commit}}),
+            p if p==format!("/repos/owner/repo/git/ref/heads/{}","b".repeat(40))=>json!({"ref":format!("refs/heads/{}","b".repeat(40)),"object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/mismatch"=>json!({"ref":"refs/heads/other","object":{"type":"commit","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/annotated"=>json!({"ref":"refs/heads/annotated","object":{"type":"tag","sha":commit}}),
+            "/repos/owner/repo/git/ref/heads/badsha"=>json!({"ref":"refs/heads/badsha","object":{"type":"commit","sha":"not-a-sha"}}),
             p if p.starts_with("/repos/owner/repo/commits/")=>json!({"sha":commit,"parents":[]}),
             _=>return (StatusCode::UNAUTHORIZED,Json(json!({"code":"unauthenticated"}))),
         };(StatusCode::OK,Json(out))
@@ -91,7 +114,7 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
             EncodingKey::from_rsa_pem(KEY).unwrap(),
         ),
         actions: Actions::new(http.clone(), format!("{base}/jwks"), jwks),
-        audit_retention: chrono::Duration::days(90),
+        audit_retention: retention,
         webhook_secret: "fixture-only".into(),
         metrics: Arc::new(Metrics::new(Service::GitTracker)),
     });
@@ -249,6 +272,91 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     assert_eq!(status, StatusCode::OK, "{warning}");
     assert_eq!(warning["warnings"][0], "PR comment could not be updated");
     assert_eq!(github_failures.get(), before + 2);
+    // Only an exact `refs/heads/<branch>` head may name a branch. Commit SHAs, tags and mismatching or
+    // non-commit refs fail with the GitHub unavailable fault and persist nothing.
+    let recorded = |id: String| {
+        let db = db.clone();
+        let rid = rid.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT jsonb_exists(state->'records',$2) FROM git_tracker_repositories WHERE id::text=$1",
+            )
+            .bind(rid)
+            .bind(id)
+            .fetch_one(&db)
+            .await
+            .unwrap()
+        }
+    };
+    let rejected = [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "v1",
+        "mismatch",
+        "annotated",
+        "badsha",
+        "main/",
+        "a//b",
+        "../main",
+    ];
+    for (i, branch) in rejected.iter().enumerate() {
+        let id = format!("rejected-upload-{i}");
+        let mut c = context.clone();
+        c["executionId"] = json!(&id);
+        c["branch"] = json!(branch);
+        let (_, failed) = call(
+            &http,
+            &base,
+            "Upload",
+            &auth,
+            json!({"context":c,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+        )
+        .await;
+        assert_eq!(failed["code"], "unavailable", "upload branch {branch}");
+        assert!(!recorded(id.clone()).await, "upload branch {branch}");
+        let id = format!("rejected-complete-{i}");
+        c["executionId"] = json!(&id);
+        let (_, failed) = call(&http, &base, "Complete", &auth, json!({"context":c})).await;
+        assert_eq!(failed["code"], "unavailable", "complete branch {branch}");
+        assert!(!recorded(id.clone()).await, "complete branch {branch}");
+        let (_, failed) = call(
+            &http,
+            &base,
+            "GetHistory",
+            "",
+            json!({"repositoryId":rid,"branch":branch}),
+        )
+        .await;
+        assert_eq!(failed["code"], "unavailable", "history branch {branch}");
+    }
+    for (i, branch) in ["release/1.0", &"b".repeat(40)].iter().enumerate() {
+        let id = format!("exact-upload-{i}");
+        let mut c = context.clone();
+        c["executionId"] = json!(&id);
+        c["branch"] = json!(branch);
+        let (status, v) = call(
+            &http,
+            &base,
+            "Upload",
+            &auth,
+            json!({"context":c,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "upload branch {branch}: {v}");
+        assert!(recorded(id.clone()).await);
+        let id = format!("exact-complete-{i}");
+        c["executionId"] = json!(&id);
+        let (status, v) = call(&http, &base, "Complete", &auth, json!({"context":c})).await;
+        assert_eq!(status, StatusCode::OK, "complete branch {branch}: {v}");
+        let (status, v) = call(
+            &http,
+            &base,
+            "GetHistory",
+            "",
+            json!({"repositoryId":rid,"branch":branch}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "history branch {branch}: {v}");
+    }
     let (_, revoked) = call(
         &http,
         &base,
@@ -333,10 +441,28 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     stale["execution"]["context"]["execution_id"] = json!("stale-maintenance");
     sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-maintenance'],$2) WHERE id::text=$1")
         .bind(&rid).bind(&stale).execute(&db).await.unwrap();
+    // An audit row of an unrelated space that is far older than any ordinary retention.
+    let old_audit = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO git_tracker_audit VALUES($1,$2,'old_fixture',$3,'2000-01-01T00:00:00Z')",
+    )
+    .bind(old_audit)
+    .bind(uuid::Uuid::now_v7())
+    .bind(uuid::Uuid::now_v7())
+    .execute(&db)
+    .await
+    .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(events.get(), before + 2);
     server.maintain().await.unwrap();
     assert_eq!(events.get(), before + 2);
+    let old_audit_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM git_tracker_audit WHERE id=$1")
+            .bind(old_audit)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(old_audit_rows, i64::from(retains_audit));
     let (status, _) = call(
         &http,
         &base,
@@ -353,6 +479,13 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+    let old_audit_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM git_tracker_audit WHERE id=$1")
+            .bind(old_audit)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(old_audit_rows, i64::from(retains_audit));
     let failures = server
         .metrics
         .events

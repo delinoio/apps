@@ -1,11 +1,24 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use crate::{Server, audit, repository};
+use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde_json::Value;
 use server_common::{Fault, Result, integer, now, string, uuid};
 use sha2::Sha256;
+/// Returns the instant before which audit rows have expired, or `None` when `retention` reaches
+/// back past the earliest representable timestamp. In that case no application-created audit row
+/// can be older than the cutoff, so there is nothing to expire. Never substitute a sentinel or a
+/// clamped value: the cutoff must stay the exact `now - retention` or be absent.
+pub fn audit_cutoff(now: DateTime<Utc>, retention: chrono::Duration) -> Option<DateTime<Utc>> {
+    now.checked_sub_signed(retention)
+}
 impl Server {
     pub async fn maintain(&self) -> Result<()> {
+        self.maintain_at(now()).await
+    }
+    /// Runs one maintenance cycle as of `now`. Production uses [`Server::maintain`]; tests pass a
+    /// fixed instant to exercise the audit retention boundary deterministically.
+    pub async fn maintain_at(&self, now: DateTime<Utc>) -> Result<()> {
         let spaces: Vec<uuid::Uuid> = sqlx::query_scalar(
             "SELECT DISTINCT space_id FROM git_tracker_repositories ORDER BY space_id",
         )
@@ -70,7 +83,7 @@ impl Server {
                     }
                 }
             }
-            let count = state.interrupt(now());
+            let count = state.interrupt(now);
             if count > 0 {
                 sqlx::query("UPDATE git_tracker_repositories SET state=$2 WHERE id=$1")
                     .bind(id)
@@ -87,10 +100,18 @@ impl Server {
                 tracing::info!(count, "executions interrupted");
             }
         }
-        sqlx::query("DELETE FROM git_tracker_audit WHERE created_at<$1")
-            .bind(now() - self.audit_retention)
-            .execute(&self.db)
-            .await?;
+        match audit_cutoff(now, self.audit_retention) {
+            Some(cutoff) => {
+                sqlx::query("DELETE FROM git_tracker_audit WHERE created_at<$1")
+                    .bind(cutoff)
+                    .execute(&self.db)
+                    .await?;
+            }
+            None => tracing::debug!(
+                retention_seconds = self.audit_retention.num_seconds(),
+                "audit expiration skipped: retention predates every representable timestamp"
+            ),
+        }
         Ok(())
     }
     pub async fn webhook(&self, event_type: &str, signature: &str, raw: &[u8]) -> Result<()> {
@@ -150,5 +171,53 @@ impl Server {
         }
         tx.commit().await?;
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn at(rfc3339: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(rfc3339).unwrap().to_utc()
+    }
+
+    #[test]
+    fn huge_accepted_retention_parses_and_converts() {
+        // SAFETY: the key is read only by this test.
+        unsafe { std::env::set_var("GIT_TRACKER_TEST_HUGE_RETENTION", "9999999999h") };
+        let parsed = server_common::config::duration(
+            "GIT_TRACKER_TEST_HUGE_RETENTION",
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(parsed.as_secs(), 35_999_999_996_400);
+        assert_eq!(parsed.subsec_nanos(), 0);
+        let retention = chrono::Duration::from_std(parsed).unwrap();
+        assert_eq!(retention.num_seconds(), 35_999_999_996_400);
+    }
+
+    #[test]
+    fn two_thousand_one_hundred_sixty_hours_is_ninety_days() {
+        let retention = chrono::Duration::from_std(Duration::from_secs(2160 * 3600)).unwrap();
+        assert_eq!(retention, chrono::Duration::days(90));
+        assert_eq!(retention.num_seconds(), 7_776_000);
+        assert_eq!(
+            audit_cutoff(at("2026-10-22T00:00:00Z"), retention),
+            Some(at("2026-07-24T00:00:00Z"))
+        );
+    }
+
+    #[test]
+    fn cutoff_is_absent_only_below_the_minimum_timestamp() {
+        let now = at("2026-10-22T00:00:00Z");
+        let exact = now - DateTime::<Utc>::MIN_UTC;
+        assert_eq!(audit_cutoff(now, exact), Some(DateTime::<Utc>::MIN_UTC));
+        assert_eq!(
+            audit_cutoff(now, exact + chrono::Duration::microseconds(1)),
+            None
+        );
+        let huge = chrono::Duration::from_std(Duration::from_secs(35_999_999_996_400)).unwrap();
+        assert_eq!(audit_cutoff(now, huge), None);
     }
 }
