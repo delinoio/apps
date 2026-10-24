@@ -1,0 +1,129 @@
+name: Release Perfine
+run-name: Prepare Perfine ${{ inputs.tag }} (publish=${{ inputs.publish }})
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact vX.Y.Z; existing perfine@vX.Y.Z source tag must belong to main
+        required: true
+        type: string
+      publish:
+        description: Publish the reviewed artifacts to npm, GitHub Releases and the existing Action repository
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-perfine
+  cancel-in-progress: false
+jobs:
+  source:
+    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: source
+        env:
+          PERFINE_RELEASE_TAG: ${{ inputs.tag }}
+        run: node "packages/perfine/scripts/release.mjs" source
+  build:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          lfs: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: cargo build --locked --release -p perfine
+      - run: |
+          pnpm --dir "actions/perfine" test
+          pnpm --dir "actions/perfine" build
+          git diff --exit-code -- "actions/perfine/action.cjs" "actions/perfine/ACTION_NOTICES"
+          pnpm --dir "packages/perfine" test
+          pnpm --dir "packages/perfine" build
+      - name: Preserve reviewable release candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: perfine-release-${{ needs.source.outputs.revision }}
+          path: packages/perfine/dist/release/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Record scope of verification
+        env:
+          SOURCE_REVISION: ${{ needs.source.outputs.revision }}
+        run: |
+          echo "Source: $SOURCE_REVISION" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Built Linux x86_64 CLI; ran Action/npm fixture tests and packaging. Native profiler, provider, OIDC, installation and account acceptance are separate and unperformed by this job.' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        run: rm -rf "packages/perfine/dist" "actions/perfine/dist"
+  publish:
+    if: inputs.publish
+    needs: [source, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: perfine-production
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: perfine-release-${{ needs.source.outputs.revision }}
+          path: packages/perfine/dist/release/
+      - name: Verify preserved archive checksums
+        working-directory: packages/perfine/dist/release
+        run: sha256sum -c SHA256SUMS
+      - name: Publish immutable Action tag and verify its commit
+        id: action
+        env:
+          GH_TOKEN: ${{ secrets.PERFINE_DISTRIBUTION_TOKEN }}
+          PERFINE_APPROVE_RELEASE: "true"
+          PERFINE_RELEASE_TAG: ${{ inputs.tag }}
+          PERFINE_SOURCE_COMMIT: ${{ needs.source.outputs.revision }}
+          PERFINE_RELEASE_DIRECTORY: packages/perfine/dist/release
+        run: |
+          gh auth setup-git
+          chmod +x "packages/perfine/dist/release/action/runtime/perfine"
+          node "packages/perfine/scripts/release.mjs" publish-action
+      - name: Publish exact npm archive
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PERFINE_NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: npm publish "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" --access public --provenance --ignore-scripts
+      - name: Publish standalone release and verified Action record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "perfine@$RELEASE_TAG" --repo delinoio/apps --verify-tag --title "Perfine $RELEASE_TAG" --notes-file "packages/perfine/dist/release/action-release.json" "packages/perfine/dist/release/perfine-v$RELEASE_VERSION-linux-x86_64.tar.gz" "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" "packages/perfine/dist/release/SHA256SUMS" "packages/perfine/dist/release/action-release.json"
+      - name: Record verified Action SHA
+        env:
+          ACTION_COMMIT: ${{ steps.action.outputs.action-commit }}
+        run: echo "Verified distribution commit for generated workflows $ACTION_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        run: rm -rf "packages/perfine/dist" "actions/perfine/dist"
