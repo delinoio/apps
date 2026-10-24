@@ -22,6 +22,8 @@ import {
 } from "../servers/scripts/dev-api.mjs";
 
 const urls = {
+  [Api.Perfine]:
+    "postgres://perfine:fixture@127.0.0.1:15436/perfine?sslmode=disable",
   [Api.Delcore]:
     "postgres://delcore:fixture@127.0.0.1:15432/delcore?sslmode=disable",
   [Api.DeliTools]:
@@ -32,6 +34,7 @@ const urls = {
     "postgres://git_tracker:fixture@127.0.0.1:15433/git_tracker?sslmode=disable",
 };
 const listeners = {
+  [Api.Perfine]: "127.0.0.1:46323",
   [Api.Delcore]: "127.0.0.1:8080",
   [Api.DeliTools]: "127.0.0.1:46322",
   [Api.DevBase]: "127.0.0.1:46317",
@@ -548,6 +551,7 @@ test("Rust API launchers execute shared build outputs without another Cargo proc
     [Api.DeliTools, "delitools-api"],
     [Api.DevBase, "devbase-api"],
     [Api.GitTracker, "git-tracker-api"],
+    [Api.Perfine, "perfine-api"],
   ]) {
     const [command, args] = apiCommand(api, { CARGO_TARGET_DIR: target });
     assert.equal(
@@ -607,4 +611,41 @@ test("root, service-local and Portless Delcore development share the catalog-app
   assert.ok(builder.inputs.includes("servers/**/*.sql"));
   assert.ok(!builder.inputs.some((input) => /ya?ml/u.test(input)));
   assert.deepEqual(apiCommand(Api.Delcore, {})[1], ["serve", "--dev-env"]);
+});
+
+test("Perfine Compose database and Turbo handoff remain service-owned", async () => {
+  const yaml = (await import("js-yaml")).default;
+  const compose = yaml.load(
+    readFileSync(new URL("../compose.yaml", import.meta.url), "utf8"),
+  );
+  const service = compose.services["perfine-postgres"];
+  assert.deepEqual(service.ports, [
+    "127.0.0.1:${PERFINE_POSTGRES_PORT:-55436}:5432",
+  ]);
+  assert.ok(service.healthcheck.test.join(" ").includes("-h 127.0.0.1"));
+  assert.deepEqual(service.volumes, [
+    "perfine-postgres-data:/var/lib/postgresql/data",
+  ]);
+  assert.equal(Api.Perfine, "perfine");
+  const config = JSON.parse(
+    readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
+  );
+  const task = config.tasks["@delinoio/perfine-api#dev"];
+  for (const key of [
+    "SPACE_STORAGE_QUOTA_BYTES",
+    "SINGLE_UPLOAD_LIMIT_BYTES",
+    "REQUESTS_PER_MINUTE",
+    "CONCURRENT_CLOUD_EXECUTIONS",
+    "RUST_LOG",
+  ])
+    assert.ok(task.passThroughEnv.includes(key), key);
+  for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GH_TOKEN"])
+    assert.equal(task.passThroughEnv.includes(key), false, key);
+  assert.deepEqual(task.dependsOn, ["//#server-build"]);
+  assert.ok(task.passThroughEnv.includes(databaseHandoff));
+  assert.equal(config.globalPassThroughEnv.includes(databaseHandoff), false);
+  assert.ok(
+    config.tasks["//#server-build"].inputs.includes("crates/perfine-core/**"),
+  );
+  assert.ok(config.tasks["//#server-build"].inputs.includes("Cargo.toml"));
 });
