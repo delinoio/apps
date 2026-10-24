@@ -49,6 +49,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
       - run: cargo build --locked --release -p perfine
       - run: |
           pnpm --dir "actions/perfine" test
@@ -56,6 +59,7 @@ jobs:
           git diff --exit-code -- "actions/perfine/action.cjs" "actions/perfine/ACTION_NOTICES"
           pnpm --dir "packages/perfine" test
           pnpm --dir "packages/perfine" build
+          node "packages/perfine/scripts/smoke.mjs"
       - name: Preserve reviewable release candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -68,7 +72,7 @@ jobs:
           SOURCE_REVISION: ${{ needs.source.outputs.revision }}
         run: |
           echo "Source: $SOURCE_REVISION" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Built Linux x86_64 CLI; ran Action/npm fixture tests and packaging. Native profiler, provider, OIDC, installation and account acceptance are separate and unperformed by this job.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Built Linux x86_64 CLI; ran Action/npm fixture tests, packaging and disposable local-archive npm/standalone version and doctor diagnostic smoke checks. Native profiler, provider, OIDC, live registry and account acceptance are separate and unperformed by this job.' >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         run: rm -rf "packages/perfine/dist" "actions/perfine/dist"
   publish:

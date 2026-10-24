@@ -23,7 +23,7 @@ inputs:
     description: Upload-only repository connection UUID
     required: false
   request-id:
-    description: Upload-only stable request identifier for manual resend
+    description: Upload-only stable UUID v7 request identifier for manual resend
     required: false
 outputs:
   config-sha256:

@@ -3686,7 +3686,7 @@ async function upload(env, fetcher = fetch) {
   const experiment = required(env, "INPUT_EXPERIMENT", uuid);
   const space = required(env, "INPUT_SPACE", uuid);
   const connection = required(env, "INPUT_CONNECTION", uuid);
-  const requestId = required(env, "INPUT_REQUEST-ID", /^[\w:.-]{1,100}$/);
+  const requestId = required(env, "INPUT_REQUEST-ID", uuid);
   const envelope = JSON.parse(
     (0, import_node_fs.readFileSync)(env.INPUT_ENVELOPE, "utf8"),
   );
@@ -3816,12 +3816,23 @@ async function upload(env, fetcher = fetch) {
     const headers = {};
     for (const header of target.requiredHeaders ?? []) {
       if (
-        !["content-type", "content-md5", "x-amz-checksum-sha256"].includes(
-          header.name.toLowerCase(),
-        )
+        ![
+          "content-type",
+          "content-length",
+          "content-md5",
+          "x-amz-checksum-sha256",
+        ].includes(header.name.toLowerCase())
       )
         throw new Error("Unsupported artifact header");
-      headers[header.name] = header.value;
+      const name = header.name.toLowerCase();
+      if (Object.hasOwn(headers, name))
+        throw new Error("Duplicate artifact header");
+      if (
+        name === "content-length" &&
+        header.value !== String(artifact.bytes.length)
+      )
+        throw new Error("Artifact content-length mismatch");
+      headers[name] = header.value;
     }
     await request(fetcher, url, {
       method: "PUT",
@@ -3835,13 +3846,13 @@ async function upload(env, fetcher = fetch) {
     });
   }
   const complete = await rpc("CompleteUpload", {
-    requestId: `${requestId}:complete`,
+    requestId,
     spaceId: space,
     uploadId: begun.upload.id,
     receipts,
   });
   if (
-    complete.requestId !== `${requestId}:complete` ||
+    complete.requestId !== requestId ||
     complete.upload?.id !== begun.upload.id ||
     complete.upload?.state !== "UPLOAD_STATE_COMPLETE" ||
     complete.evidenceCompletion !== "COMPLETION_STATE_COMPLETE"
