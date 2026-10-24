@@ -105,3 +105,14 @@ Historical DeliDev validation describes the retired implementation and does not 
 
 - [Project index](project-ui.md)
 - [Shared UI foundation](packages-ui-foundation.md)
+
+### perfine
+
+- [Project index](project-perfine.md)
+- [Engine contract](crates-perfine-core-contract.md)
+- [Adapters contract](crates-perfine-adapters-contract.md)
+- [Cli contract](cmds-perfine-cli-contract.md)
+- [Api contract](servers-perfine-api-contract.md)
+- [Protocol contract](protos-perfine-v1-contract.md)
+- [Web contract](apps-perfine-web-contract.md)
+- [Distribution contract](packages-perfine-distribution-contract.md)

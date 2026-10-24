@@ -189,3 +189,7 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 - `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
 Read [Git Tracker contracts](docs/project-git-tracker.md) before changing these paths.
+
+## Perfine ownership
+
+Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfine-core`, `cmds/perfine`, `apps/perfine`, `servers/perfine-api`, `protos/perfine/v1`, `actions/perfine`, or `packages/perfine`. These paths own the shared engine, CLI/MCP, web dashboard, hosted API, schemas, Action source, and npm distribution respectively. Follow the scoped instructions for each affected domain.
