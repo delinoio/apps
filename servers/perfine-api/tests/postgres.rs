@@ -292,6 +292,8 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     return StatusCode::SERVICE_UNAVAILABLE.into_response();
    },
    "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
+   "/repos/owner/repo/actions/runs/1/cancel"=>json!({}),
+   "/repos/owner/repo/actions/runs/1"=>json!({"status":"completed","conclusion":"cancelled"}),
    "/repos/owner/repo"=>json!({"id":42}),
    "/repos/owner/repo/commits/main"=>json!({"sha":"a".repeat(40)}),
    "/repos/owner/repo/commits/candidate"=>json!({"sha":"d".repeat(40)}),
@@ -603,6 +605,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     )
     .await
     .unwrap();
+    *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
+    server.maintain().await.unwrap();
+    assert_eq!(*creates.lock().unwrap(), 0);
+    grants.lock().unwrap().push("publish".into());
     server.maintain().await.unwrap();
     let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
         .await
@@ -712,6 +718,41 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap(),
         1
     );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+        0
+    );
+    let running = uid();
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(uuid::Uuid::parse_str(&running).unwrap()).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(json!({"id":running,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"1","runAttempt":1}})).execute(&db).await.unwrap();
+    call(
+        &server,
+        &space,
+        "DeleteExperiment",
+        json!({"experimentId":running}),
+    )
+    .await
+    .unwrap();
+    server.maintain().await.unwrap();
+    let retained: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(&running).unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(retained["executionState"], "EXECUTION_STATE_CANCELLED");
+    assert_eq!(
+        retained["cancellation"]["state"],
+        "CANCELLATION_STATE_CONFIRMED"
+    );
+    sqlx::query("UPDATE perfine_cleanup SET next_attempt=now()")
+        .execute(&db)
+        .await
+        .unwrap();
+    server.maintain().await.unwrap();
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
             .fetch_one(&db)

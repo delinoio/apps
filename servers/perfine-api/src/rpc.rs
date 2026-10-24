@@ -996,6 +996,9 @@ impl Server {
         }
         let aid = id(string(&approval, "id"))?;
         if op == "PublishDraft" {
+            // Persist only a human subject that Delcore can reauthorize at dispatch time.
+            // API-key dispatch needs a future key-ID introspection API; never retain the secret.
+            id(actor).map_err(|_| Fault::denied())?;
             if approval["draft"] != q["expectedDraft"] {
                 return Err(Fault::precondition("approval stale"));
             }
@@ -1004,7 +1007,7 @@ impl Server {
             inactive(&c)?;
             let token = self.github.current(&c).await?;
             self.github.binding(&approval["draft"], &token).await?;
-            let p = json!({"approvalId":approval["id"],"candidateId":approval["draft"]["candidateId"],"state":"PUBLICATION_STATE_PENDING","draft":approval["draft"]});
+            let p = json!({"approvalId":approval["id"],"candidateId":approval["draft"]["candidateId"],"state":"PUBLICATION_STATE_PENDING","draft":approval["draft"],"_publisherSubject":actor});
             sqlx::query(
                 "UPDATE perfine_approvals SET publication=$2 WHERE id=$1 AND publication IS NULL",
             )
@@ -1239,6 +1242,42 @@ impl Server {
             .fetch_all(&mut *tx)
             .await?;
             let mut failed = false;
+            let execution: Option<Value> =
+                sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+                    .bind(eid)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if let Some(mut e) = execution
+                && e["origin"] == "EXECUTION_ORIGIN_GITHUB_ACTIONS"
+                && matches!(
+                    string(&e, "executionState"),
+                    "EXECUTION_STATE_RUNNING" | "EXECUTION_STATE_QUEUED"
+                )
+            {
+                // Retain execution identity until remote termination is confirmed, even after object deletion.
+                // Otherwise tenant deletion could remove the only durable cancellation retry record.
+                failed = true;
+                let c = connection(&mut tx, &space.to_string(), string(&e, "connectionId")).await?;
+                let run = integer(&e["githubExecution"], "githubRunId");
+                let cancelled = match self.github.token(&c).await {
+                    Ok(token) => self
+                        .github
+                        .call(
+                            "POST",
+                            &format!(
+                                "{}/actions/runs/{run}/cancel",
+                                crate::github::path(&c["repository"])
+                            ),
+                            &token,
+                            None,
+                        )
+                        .await
+                        .is_ok(),
+                    Err(_) => false,
+                };
+                e["cancellation"] = json!({"mode":"CANCELLATION_MODE_IMMEDIATE","state":if cancelled{"CANCELLATION_STATE_REQUESTED"}else{"CANCELLATION_STATE_FAILED"},"reason":"Deletion awaits GitHub termination; cancellation retries continue","directCancelUrl":format!("https://github.com/{}/{}/actions/runs/{run}",string(&c["repository"],"owner"),string(&c["repository"],"name"))});
+                save_experiment(&mut tx, &e).await?;
+            }
             for u in uploads {
                 let uid = u.get::<uuid::Uuid, _>("id").to_string();
                 let data: Value = u.get("data");
@@ -1439,9 +1478,22 @@ impl Server {
         {
             return Err(Fault::denied());
         }
-        let v=self.authority.call("Authorize",&format!("Bearer {}",self.authority.service_token().await?),json!({"tenantId":space,"userId":a["approverSubject"],"capability":"publish","paid":false})).await?;
-        if v["allowed"] != true {
-            return Err(Fault::denied());
+        for subject in [
+            string(&a, "approverSubject"),
+            string(&p, "_publisherSubject"),
+        ] {
+            id(subject).map_err(|_| Fault::denied())?;
+            let v = self
+                .authority
+                .call(
+                    "Authorize",
+                    &format!("Bearer {}", self.authority.service_token().await?),
+                    json!({"tenantId":space,"userId":subject,"capability":"publish","paid":false}),
+                )
+                .await?;
+            if v["allowed"] != true {
+                return Err(Fault::denied());
+            }
         }
         let c = connection(db, space, string(&e, "connectionId")).await?;
         inactive(&c)?;
