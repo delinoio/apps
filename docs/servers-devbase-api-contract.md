@@ -194,16 +194,9 @@ Run `pnpm dev` at the repository root for all development servers, or from `serv
 
 The `replays.fingerprint` column is an existing unconstrained `bytea`; the format is told apart by length and needs no SQL migration. The fingerprint is `SHA-256(operation name || 0x00 || request encoding)`. The encoding drops the idempotency key and follows Go's deterministic protobuf marshalling: in a metadata `google.protobuf.Struct` (and the Value, list and entry messages nested in it) only the known map entries (field 1, length-delimited) are sorted by key, and every other field keeps its retained order and bytes, appended after the sorted entries. Unknown payloads are opaque and never read as messages or map entries.
 
-| Format        | Stored value                                          | Written          | Comparison                                                                                                                                  |
-| ------------- | ----------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CanonicalV1` | 33 bytes: `0x01` followed by the Go-compatible digest | every new record | only the Go-compatible digest of the received request                                                                                       |
-| `Legacy`      | 32 bytes: an unversioned digest                       | never            | the Go-compatible digest or the exact digest of the earlier Rust encoding (which also sorted unknown Struct fields) of the received request |
-| Scrubbed      | empty, marked `scrubbed`                              | by scrubbing     | never compared; the marker answers `not_found`                                                                                              |
+Every non-scrubbed record stores `CanonicalV1`: 33 bytes consisting of `0x01` followed by the canonical digest. Comparison accepts only that digest. An unversioned digest, another length or another marker fails as `unavailable`; logs contain only the stored length. Routing, scrubbed-record and payload checks retain their precedence. An expired record is no record. Scrubbing clears the fingerprint and marks the record `scrubbed`; retries receive `not_found` without comparing it.
 
-- A `Legacy` row written by the Go implementation and one written by an earlier Rust release cannot be told apart, so both digests are accepted until the row expires. The earlier encoding could not tell apart two requests that differ only in the order of opaque unknown fields in a metadata Struct, so a `Legacy` row keeps that ambiguity for its original 24-hour life. A `CanonicalV1` row does not.
-- A replay never rewrites, promotes or extends a `Legacy` row, and never changes its response, routing IDs or times.
-- A non-scrubbed stored value of another length, or a 33-byte value with another marker, is an unsupported format. The request fails as `unavailable` and the log records only the stored length, never the stored bytes. The check comes after routing, scrubbed and payload outcomes, so those keep their precedence; an expired record is no record.
-- Deploy with one writer at a time. Stop and drain the old writer before the new binary serves traffic and writes `CanonicalV1` rows: an older binary cannot read the 33-byte envelope and answers a new row as a conflict. Do not overlap writers and do not roll back to an older image after new rows exist (see fix-forward recovery). No feature flag or separate release gate is needed. Component tests do not establish this ordering; record the drain as deployment evidence.
+The service has not been deployed. Reset development databases that contain fingerprints from retired implementations; no transition reader or deployment drain is required.
 
 ## Operator procedures
 
@@ -211,7 +204,6 @@ The `replays.fingerprint` column is an existing unconstrained `bytea`; the forma
 - **Schema compatibility:** `devbase-api check-schema` exits non-zero when the schema is missing, newer or modified.
 - **Audit query:** `devbase-api audit --since <RFC3339> [--target <uuid>] [--actor <actor>] [--limit <n>]` prints matching records as JSON lines, newest first. Equivalent SQL: `SELECT occurred_at, action, actor, target_id, trace_id FROM audit_events WHERE occurred_at >= $1 ORDER BY occurred_at DESC`.
 - **Cleanup failures:** watch the cleanup failure counter and the `tenant cleanup failed` log events. Failures retry on the next cycle. A persistent failure usually means Delcore or database unavailability; check Delcore health and the service credentials first.
-- **Replay fingerprint transition:** stop and drain the previous writer before the first start of a binary that writes `CanonicalV1` fingerprints; see [replay fingerprint formats](#replay-fingerprint-formats).
 - **Fix-forward recovery:** deploy a corrected image and, if data needs correction, a new forward migration. Take a database backup before applying a migration. Do not roll back images or reverse migrations.
 - **Key loss:** a lost key secret is unrecoverable. Revoke the key and issue another.
 
@@ -226,4 +218,4 @@ Lists are not snapshot-consistent. The key secret cannot be recovered. An extern
 - [Protocol contract](protos-devbase-v1-contract.md)
 - [Project index](project-devbase.md)
 
-Rust validation and protocol generation ownership follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Existing database schemas, immutable SQL migration bytes, Connect messages and stored replay/state representations remain compatible across the runtime port.
+Rust validation and protocol generation ownership follow the [server workspace contract](servers-rust-workspace-contract.md#validation-and-packaging). Retired runtime replay formats are not supported; reset development state when changing these pre-release representations.

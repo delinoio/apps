@@ -6,12 +6,7 @@ use sha2::{Digest, Sha256};
 // google.protobuf.Struct maps sort their known entries by string key, including nested values,
 // and every other (unknown) field keeps its retained order and bytes.
 //
-// Two persisted formats exist in the `replays.fingerprint` column, told apart by length:
-// - `Legacy`: 32 bytes, an unversioned SHA-256. Rows from the Go implementation hold the
-//   Go-compatible digest. Rows from earlier Rust releases hold the digest of a canonicalizer that
-//   also sorted unknown Struct fields. The two cannot be told apart from the stored value.
-// - `CanonicalV1`: 33 bytes, `0x01` followed by the Go-compatible digest. All new rows use it.
-// Legacy rows are only read, until their original expiry; they are never rewritten or promoted.
+// Stored fingerprints contain a 0x01 marker followed by the canonical SHA-256 digest.
 // Wire types that open and close a protobuf group. Groups cannot be declared in proto3, but the
 // generated decoder keeps a balanced unknown group and the re-encoded request contains it.
 const START_GROUP: u64 = 3;
@@ -139,33 +134,8 @@ fn encode(fields: Vec<Field>) -> Vec<u8> {
     }
     out
 }
-/// Persisted layout of a replay fingerprint.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FingerprintFormat {
-    /// 32 bytes: an unversioned digest, either Go-compatible or from the earlier Rust sorting.
-    Legacy,
-    /// 33 bytes: `CANONICAL_V1_MARKER` followed by the Go-compatible digest.
-    CanonicalV1,
-}
 const DIGEST_LEN: usize = 32;
 const CANONICAL_V1_MARKER: u8 = 1;
-impl FingerprintFormat {
-    /// Identifies a stored non-scrubbed value. Anything else is a persistence failure that is
-    /// reported as unavailable without exposing the stored bytes.
-    fn of_stored(stored: &[u8]) -> Result<Self> {
-        match stored {
-            _ if stored.len() == DIGEST_LEN => Ok(Self::Legacy),
-            [CANONICAL_V1_MARKER, rest @ ..] if rest.len() == DIGEST_LEN => Ok(Self::CanonicalV1),
-            _ => {
-                tracing::error!(
-                    stored_len = stored.len(),
-                    "unsupported replay fingerprint format"
-                );
-                Err(Fault::unavailable())
-            }
-        }
-    }
-}
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -185,7 +155,7 @@ fn entry_key(f: &Field) -> Vec<u8> {
         .map(|f| f.payload)
         .unwrap_or_default()
 }
-fn canonical(raw: &[u8], kind: Kind, format: FingerprintFormat) -> Result<Vec<u8>> {
+fn canonical(raw: &[u8], kind: Kind) -> Result<Vec<u8>> {
     let mut fs = fields(raw)?;
     for f in &mut fs {
         let child = match (kind, f.number, f.wire) {
@@ -196,28 +166,20 @@ fn canonical(raw: &[u8], kind: Kind, format: FingerprintFormat) -> Result<Vec<u8
             _ => None,
         };
         if let Some(child) = child {
-            f.payload = canonical(&f.payload, child, format)?
+            f.payload = canonical(&f.payload, child)?
         }
     }
     if matches!(kind, Kind::Struct) {
-        match format {
-            // Earlier Rust releases sorted every Struct field, which reordered opaque unknown
-            // fields and could read their payload as a map key. Kept only to match old rows.
-            FingerprintFormat::Legacy => fs.sort_by_cached_key(entry_key),
-            // Only known map entries (field 1, length-delimited) are sorted. They come first;
-            // unknown fields follow in their retained order and are never inspected.
-            FingerprintFormat::CanonicalV1 => {
-                let (mut known, unknown): (Vec<_>, Vec<_>) =
-                    fs.into_iter().partition(|f| f.number == 1 && f.wire == 2);
-                known.sort_by_cached_key(entry_key);
-                known.extend(unknown);
-                fs = known;
-            }
-        }
+        // Sort known map entries only; opaque unknown fields keep their retained order.
+        let (mut known, unknown): (Vec<_>, Vec<_>) =
+            fs.into_iter().partition(|f| f.number == 1 && f.wire == 2);
+        known.sort_by_cached_key(entry_key);
+        known.extend(unknown);
+        fs = known;
     }
     Ok(encode(fs))
 }
-fn digest(op: Op, raw: &[u8], format: FingerprintFormat) -> Result<Vec<u8>> {
+fn digest(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
     let mut fs = fields(raw)?;
     fs.retain(|f| f.number != 1);
     let metadata = match op {
@@ -227,7 +189,7 @@ fn digest(op: Op, raw: &[u8], format: FingerprintFormat) -> Result<Vec<u8>> {
     };
     for f in &mut fs {
         if Some(f.number) == metadata && f.wire == 2 {
-            f.payload = canonical(&f.payload, Kind::Struct, format)?
+            f.payload = canonical(&f.payload, Kind::Struct)?
         }
     }
     let mut hash = Sha256::new();
@@ -240,24 +202,21 @@ fn digest(op: Op, raw: &[u8], format: FingerprintFormat) -> Result<Vec<u8>> {
 /// The value stored with a new replay record: `CanonicalV1`.
 pub fn fingerprint(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
     let mut stored = vec![CANONICAL_V1_MARKER];
-    stored.extend(digest(op, raw, FingerprintFormat::CanonicalV1)?);
+    stored.extend(digest(op, raw)?);
     Ok(stored)
 }
 
-/// Compares a stored non-scrubbed value with the received request. A `CanonicalV1` row accepts
-/// only the corrected digest. An unexpired `Legacy` row accepts the corrected digest or the exact
-/// legacy Rust digest of the same request, because the stored value does not say which wrote it;
-/// the legacy ambiguity ends with the row's original expiry.
+/// Compares a canonical stored fingerprint with the received request.
 pub fn matches(stored: &[u8], op: Op, raw: &[u8]) -> Result<bool> {
-    // Request shape errors come first, and a valid corrected comparison never depends on the
-    // legacy calculation.
-    let corrected = digest(op, raw, FingerprintFormat::CanonicalV1)?;
-    Ok(match FingerprintFormat::of_stored(stored)? {
-        FingerprintFormat::CanonicalV1 => stored[1..] == corrected[..],
-        FingerprintFormat::Legacy => {
-            stored == corrected || stored == digest(op, raw, FingerprintFormat::Legacy)?
-        }
-    })
+    let received = fingerprint(op, raw)?;
+    if stored.len() != DIGEST_LEN + 1 || stored.first() != Some(&CANONICAL_V1_MARKER) {
+        tracing::error!(
+            stored_len = stored.len(),
+            "unsupported replay fingerprint format"
+        );
+        return Err(Fault::unavailable());
+    }
+    Ok(stored == received)
 }
 
 #[cfg(test)]
@@ -279,12 +238,8 @@ mod tests {
         .unwrap();
         let raw = request.encode_to_vec();
         const GO: &str = "c610c6b7dd3f6f4343d4a7d1b6977c522497ba909d19793a366d5a3a08c3c3b0";
-        // Ordinary input has the same digest in both algorithms; new rows add the envelope.
+        // The stored value includes the format marker.
         assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &raw)), GO);
-        assert_eq!(
-            hex::encode(super::digest(Op::CreateEndUser, &raw, FingerprintFormat::Legacy).unwrap()),
-            GO
-        );
         assert_eq!(
             hex::encode(fingerprint(Op::CreateEndUser, &raw).unwrap()),
             format!("01{GO}")
@@ -292,10 +247,7 @@ mod tests {
     }
 
     fn go_digest(op: Op, raw: &[u8]) -> Vec<u8> {
-        super::digest(op, raw, FingerprintFormat::CanonicalV1).unwrap()
-    }
-    fn legacy_digest(op: Op, raw: &[u8]) -> Vec<u8> {
-        super::digest(op, raw, FingerprintFormat::Legacy).unwrap()
+        super::digest(op, raw).unwrap()
     }
     fn unhex(s: &str) -> Vec<u8> {
         hex::decode(s).unwrap()
@@ -303,10 +255,9 @@ mod tests {
 
     // Requests and digests below come from the pinned Go oracle: the repository's generated Go
     // types, `proto.Unmarshal`, a cleared idempotency key, `Deterministic: true` marshalling and
-    // SHA-256 over operation, NUL and the encoding. Legacy digests are the earlier Rust output.
+    // SHA-256 over operation, NUL and the encoding.
     const PRIMARY: &str = "0a08692d757365722d31122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a08692d757365722d31320c0a070a016112022001a00601";
     const PRIMARY_GO: &str = "d817bf7c3dc45bd987c7941965565720171959134ef5a3b8d8de2c625528a574";
-    const PRIMARY_LEGACY: &str = "23a22c402237ce8aab02a30688b12eb0ee42cb6e564cbc010b572ea7b4746287";
     const REQUEST_PREFIX: &str = "0a08692d757365722d31122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a08692d757365722d31";
     const KNOWN_ENTRY: &str = "0a070a016112022001";
     const OPAQUE_B: &str = "a206030a0162";
@@ -330,36 +281,26 @@ mod tests {
     }
 
     #[test]
-    fn corrected_digest_matches_the_go_oracle_and_legacy_differs_where_expected() {
-        let cases: [(Op, &str, &str, Option<&str>); 4] = [
-            (Op::CreateEndUser, PRIMARY, PRIMARY_GO, Some(PRIMARY_LEGACY)),
-            (Op::CreateEndUser, CREATE_NESTED, CREATE_NESTED_GO, None),
-            (Op::UpdateEndUser, UPDATE_NESTED, UPDATE_NESTED_GO, None),
-            (Op::CreateEndUser, CREATE_SCALARS, CREATE_SCALARS_GO, None),
-        ];
-        for (op, request, go, legacy) in cases {
-            let raw = unhex(request);
-            assert_eq!(hex::encode(go_digest(op, &raw)), go, "{request}");
-            // Unknown fields moved before the known keys, so the earlier Rust digest differs.
-            assert_ne!(hex::encode(legacy_digest(op, &raw)), go, "{request}");
-            if let Some(legacy) = legacy {
-                assert_eq!(hex::encode(legacy_digest(op, &raw)), legacy);
-            }
+    fn canonical_digest_matches_the_go_oracle() {
+        for (op, request, expected) in [
+            (Op::CreateEndUser, PRIMARY, PRIMARY_GO),
+            (Op::CreateEndUser, CREATE_NESTED, CREATE_NESTED_GO),
+            (Op::UpdateEndUser, UPDATE_NESTED, UPDATE_NESTED_GO),
+            (Op::CreateEndUser, CREATE_SCALARS, CREATE_SCALARS_GO),
+        ] {
+            assert_eq!(hex::encode(go_digest(op, &unhex(request))), expected);
         }
     }
 
     #[test]
-    fn opaque_unknown_field_order_is_kept_by_the_corrected_digest_only() {
+    fn opaque_unknown_field_order_is_preserved() {
         let bc = bc_cb(OPAQUE_B, OPAQUE_C);
         let cb = bc_cb(OPAQUE_C, OPAQUE_B);
         assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &bc)), BC_GO);
         assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &cb)), CB_GO);
-        // The earlier algorithm sorted the opaque payloads and could not tell them apart.
-        assert_eq!(
-            legacy_digest(Op::CreateEndUser, &bc),
-            legacy_digest(Op::CreateEndUser, &cb)
-        );
-        assert_eq!(hex::encode(legacy_digest(Op::CreateEndUser, &bc)), BC_GO);
+        let stored = fingerprint(Op::CreateEndUser, &bc).unwrap();
+        assert!(matches(&stored, Op::CreateEndUser, &bc).unwrap());
+        assert!(!matches(&stored, Op::CreateEndUser, &cb).unwrap());
     }
 
     #[test]
@@ -401,20 +342,14 @@ mod tests {
         let raw = unhex(PRIMARY);
         let op = Op::CreateEndUser;
         let go = unhex(PRIMARY_GO);
-        let legacy = unhex(PRIMARY_LEGACY);
         let envelope = |d: &[u8]| [&[1u8][..], d].concat();
         // New rows are the envelope around the corrected digest.
         assert_eq!(fingerprint(op, &raw).unwrap(), envelope(&go));
-        // Legacy rows accept the corrected or the earlier Rust digest and nothing else.
-        assert!(matches(&go, op, &raw).unwrap());
-        assert!(matches(&legacy, op, &raw).unwrap());
-        assert!(!matches(&[7; 32], op, &raw).unwrap());
-        // CanonicalV1 rows accept only the corrected digest.
         assert!(matches(&envelope(&go), op, &raw).unwrap());
-        assert!(!matches(&envelope(&legacy), op, &raw).unwrap());
         assert!(!matches(&envelope(&[7; 32]), op, &raw).unwrap());
         // Unsupported lengths and markers fail as unavailable.
         for stored in [
+            go.clone(),
             vec![],
             vec![1],
             vec![1; 31],
@@ -425,29 +360,6 @@ mod tests {
         ] {
             assert!(matches(&stored, op, &raw).is_err(), "{}", stored.len());
         }
-    }
-
-    #[test]
-    fn opaque_order_is_ambiguous_only_in_legacy_rows() {
-        let bc = bc_cb(OPAQUE_B, OPAQUE_C);
-        let cb = bc_cb(OPAQUE_C, OPAQUE_B);
-        let op = Op::CreateEndUser;
-        // A legacy row cannot tell the orders apart; a new row can.
-        let legacy_row = legacy_digest(op, &bc);
-        assert!(matches(&legacy_row, op, &bc).unwrap());
-        assert!(matches(&legacy_row, op, &cb).unwrap());
-        let new_row = fingerprint(op, &bc).unwrap();
-        assert!(matches(&new_row, op, &bc).unwrap());
-        assert!(!matches(&new_row, op, &cb).unwrap());
-        // A Go-hashed legacy BC row also accepts CB, because the earlier Rust digest of CB equals
-        // the Go digest of BC. This original ambiguity exists only in unexpired legacy rows.
-        let go_row = unhex(BC_GO);
-        assert!(matches(&go_row, op, &bc).unwrap());
-        assert!(matches(&go_row, op, &cb).unwrap());
-        // A Go-hashed legacy CB row accepts CB only.
-        let go_cb = unhex(CB_GO);
-        assert!(matches(&go_cb, op, &cb).unwrap());
-        assert!(!matches(&go_cb, op, &bc).unwrap());
     }
 
     fn create_project() -> Vec<u8> {
