@@ -451,6 +451,7 @@ test(
       "run",
       "dev",
       "--concurrency=20",
+      "--continue=dependencies-successful",
       "--ui=stream",
       "--filter=@delinoio/delcore-api",
     ]);

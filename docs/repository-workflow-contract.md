@@ -16,7 +16,7 @@ Run `pnpm install` from each worktree root after checkout or dependency changes.
 
 ## Development task orchestration
 
-The pinned Turborepo dependency manages development through `pnpm exec turbo run dev --concurrency=20`. No separate process supervisor is required. Frontend `dev` tasks remain persistent and use their existing HMR watchers. The four API `dev` tasks are persistent, and each depends on the root `//#server-build` task. The concurrency limit leaves room for all eleven persistent application tasks and the shared build.
+The pinned Turborepo dependency manages development through `pnpm exec turbo run dev --concurrency=20 --continue=dependencies-successful`. No separate process supervisor is required. Frontend `dev` tasks remain persistent and use their existing HMR watchers. The four API `dev` tasks are persistent, and each depends on the root `//#server-build` task. The concurrency limit leaves room for all eleven persistent application tasks and the shared build.
 
 The root launcher forwards `SIGINT` and `SIGTERM` to the Turbo process tree and waits for its descendants even if the immediate `pnpm` process exits first. On POSIX hosts, it owns a separate process group and sends `SIGKILL` to remaining group members after a ten-second grace period. On Windows, it terminates the tree with `taskkill`. The Compose databases and shared Portless proxy keep their separate lifetimes.
 
@@ -24,7 +24,7 @@ The root `server-build` script invokes `servers/scripts/build-rust.mjs`, the onl
 
 The shared build declares server Rust source, Cargo manifests and lockfile, SQL, protocol source and the build helper as inputs. API task inputs include their package manifest and shared launch helpers. Turbo does not watch these inputs or automatically rebuild or restart APIs. Stop and rerun `pnpm dev` after server changes, including catalog YAML edits; frontend HMR continues through each frontend's own watcher.
 
-A failed shared build blocks dependent API startup. A failed build or application task ends the Turbo run; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@delinoio/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
+A failed shared build blocks dependent API startup while independent frontend tasks continue to run. A failed application task does not stop other tasks whose dependencies succeeded. Turbo reports task failures and returns a nonzero exit code when the run finishes. Failed tasks do not restart automatically; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@delinoio/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
 
 ## Local development databases
 

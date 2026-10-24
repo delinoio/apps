@@ -77,7 +77,15 @@ export async function main(args = process.argv.slice(2)) {
 export function supervise(args, env = process.env) {
   return spawnDevServer(
     "pnpm",
-    ["exec", "turbo", "run", "dev", "--concurrency=20", ...args],
+    [
+      "exec",
+      "turbo",
+      "run",
+      "dev",
+      "--concurrency=20",
+      "--continue=dependencies-successful",
+      ...args,
+    ],
     {
       cwd: root,
       stdio: "inherit",
