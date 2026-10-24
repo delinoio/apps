@@ -359,7 +359,9 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
    "/repos/owner/repo/actions/runs/7/attempts/2"=>json!({"id":7,"run_attempt":2,"repository":{"id":42},"head_repository":{"id":42},"actor":{"id":99},"head_sha":"d".repeat(40),"path":".github/workflows/perfine.yml","event":"workflow_dispatch"}),
    "/repos/owner/repo/actions/runs/1/cancel"=>json!({}),
-   "/repos/owner/repo/actions/runs/1"=>json!({"status":"completed","conclusion":"cancelled"}),
+   "/repos/owner/repo/actions/runs/1"=>json!({"id":1,"run_attempt":2,"status":"completed","conclusion":"success"}),
+   "/repos/owner/repo/actions/runs/1/attempts/1"=>json!({"id":1,"run_attempt":1,"status":"completed","conclusion":"cancelled"}),
+   "/repos/owner/repo/actions/runs/2/attempts/1"=>json!({"id":2,"run_attempt":2,"status":"completed","conclusion":"success"}),
    "/repos/owner/repo"=>json!({"id":42}),
    "/repos/owner/repo/commits/main"=>json!({"sha":"a".repeat(40)}),
    "/repos/owner/repo/commits/candidate"=>json!({"sha":"d".repeat(40)}),
@@ -465,6 +467,29 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT data->>'executionState' FROM perfine_experiments WHERE id=$1"
+        )
+        .bind(race_run)
+        .fetch_one(&db)
+        .await
+        .unwrap(),
+        "EXECUTION_STATE_CANCELLED"
+    );
+    // Even an attempt-scoped endpoint must not be trusted if its identity disagrees.
+    sqlx::query("UPDATE perfine_experiments SET data=jsonb_set(jsonb_set(data,'{executionState}','\"EXECUTION_STATE_RUNNING\"'),'{githubExecution,githubRunId}','\"2\"') WHERE id=$1").bind(race_run).execute(&db).await.unwrap();
+    server.maintain().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT data->>'executionState' FROM perfine_experiments WHERE id=$1"
+        )
+        .bind(race_run)
+        .fetch_one(&db)
+        .await
+        .unwrap(),
+        "EXECUTION_STATE_RUNNING"
     );
     sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
         .bind(race_run)

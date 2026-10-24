@@ -1453,18 +1453,24 @@ impl Server {
                 let executions:Vec<Value>=sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE connection=$1 AND data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED')").bind(id(string(&c,"id"))?).fetch_all(&mut *tx).await?;
                 for mut e in executions {
                     let run = integer(&e["githubExecution"], "githubRunId");
+                    let attempt = integer(&e["githubExecution"], "runAttempt");
+                    if run == 0 || attempt == 0 {
+                        continue;
+                    }
                     if let Ok(remote) = self
                         .github
                         .call(
                             "GET",
                             &format!(
-                                "{}/actions/runs/{run}",
+                                "{}/actions/runs/{run}/attempts/{attempt}",
                                 crate::github::path(&c["repository"])
                             ),
                             &token,
                             None,
                         )
                         .await
+                        && integer(&remote, "id") == run
+                        && integer(&remote, "run_attempt") == attempt
                         && remote["status"] == "completed"
                     {
                         let cancelled = remote["conclusion"] == "cancelled";
