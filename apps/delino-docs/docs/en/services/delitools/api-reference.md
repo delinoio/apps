@@ -113,6 +113,8 @@ Errors use a standard Connect code. The error details include a stable reason an
 
 A request that is larger than the operator's overall request size limit can receive a plain `resource_exhausted` error without these details. See [Troubleshooting](/services/delitools/troubleshooting) for what to do.
 
+A JSON request body that cannot be decoded, for example a value of the wrong type, a truncated body or a syntax error, receives HTTP 400 with the Connect code `invalid_argument`, the reason `ERROR_REASON_INVALID_INPUT`, a request ID and exactly the message `request body is invalid`. DeliTools checks the body before it checks your credential. The message never repeats any part of your content. Correct the JSON encoding or the field types and send the request again.
+
 ## Limits and retries
 
 The operator configures these limits, and they can change: input size, number of translation items, schema size and depth, execution timeout, request rate and burst per tenant, concurrent executions per tenant, and the maximum number of transient retries. Contact the service operator for the values that apply to you. A limit is a protection, not a throughput guarantee.

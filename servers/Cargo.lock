@@ -668,6 +668,7 @@ dependencies = [
  "chrono",
  "connectrpc",
  "delino-protocol",
+ "flate2",
  "hex",
  "httpdate",
  "jsonschema",

@@ -34,6 +34,7 @@ Esta página te ayuda a configurar un cliente para DeliTools y a solucionar erro
 ## Problemas habituales
 
 - **Una clave funciona en una solicitud y falla en la siguiente.** Una clave que ha caducado, se ha revocado o pertenece a un usuario que ha perdido los permisos deja de funcionar de inmediato. Compruébala con `ListApiKeys`.
+- **`invalid_argument` con el mensaje `request body is invalid`.** DeliTools no pudo decodificar el cuerpo JSON de su solicitud. Compruebe que el cuerpo esté completo, sea JSON válido y que cada campo tenga el tipo documentado; por ejemplo, `texts` debe ser una matriz de cadenas. El mensaje no indica el campo defectuoso, así que compare su solicitud con la [referencia de la API](/es/services/delitools/api-reference). La respuesta sigue incluyendo un ID de solicitud.
 - **Un error `resource_exhausted` sin un motivo adicional.** El cuerpo de tu solicitud supera el límite de tamaño general del operador. Envía menos datos.
 - **Un resultado parece incorrecto.** Los modelos pueden cometer errores, y un resultado que se ajuste a tu esquema no es necesariamente correcto. Aclara las instrucciones de los campos `description` de tu esquema y comprueba los valores importantes.
 - **Cargos inesperados.** Los intentos fallidos con un uso conocido y las solicitudes repetidas generan cargos. Consulta [Facturación](/es/services/delitools/billing).

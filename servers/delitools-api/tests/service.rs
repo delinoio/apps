@@ -5,9 +5,11 @@
 
 mod common;
 
+use buffa::Message;
 use common::*;
 use delitools_api::delcore::IngestFailure;
 use serde_json::{Value, json};
+use std::io::Write;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -919,6 +921,270 @@ async fn transport_bound_admits_input_that_only_escaping_makes_large() {
     assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
 }
 
+/// Transport allowance for the given limits: six bytes per decoded byte plus 64 KiB.
+fn allowance(input: usize, schema: usize) -> usize {
+    (input + schema) * 6 + (64 << 10)
+}
+
+async fn harness_with_input_limit(input: usize) -> Harness {
+    Harness::start_with(None, |c| {
+        c.limits.max_input_bytes = input;
+        c.limits.max_schema_bytes = 32_768;
+    })
+    .await
+}
+
+fn json_translate(text: &str) -> Vec<u8> {
+    serde_json::to_vec(&translate_body(&[text])).unwrap()
+}
+
+fn proto_translate(text: &str) -> Vec<u8> {
+    delino_protocol::delitools::v1::TranslateRequest {
+        tenant_id: TENANT.into(),
+        texts: vec![text.into()],
+        target_language: "fr".into(),
+        model: MODEL.into(),
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
+/// A valid JSON request followed by trailing whitespace up to exactly `size` bytes.
+fn json_padded_to(size: usize) -> Vec<u8> {
+    let mut body = json_translate("a");
+    assert!(body.len() <= size);
+    body.resize(size, b' ');
+    body
+}
+
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// The documented transport rejection: plain `resource_exhausted`, no `ErrorDetail` and no
+/// request ID, produced before any handler work.
+fn assert_transport_rejection(reply: &RawReply, what: &str) {
+    assert_eq!(reply.status, 429, "{what}: {}", reply.head);
+    let body = reply.json();
+    assert_eq!(body["code"], "resource_exhausted", "{what}: {body}");
+    assert!(
+        body.get("details")
+            .and_then(|d| d.as_array())
+            .is_none_or(|d| d.is_empty()),
+        "{what}: {body}"
+    );
+    assert_eq!(reply.header(REQUEST_ID), None, "{what}");
+}
+
+/// A body that reached the handler: typed `UNAUTHENTICATED` (no credentials were sent) with a
+/// request ID that matches the response header.
+fn assert_reached_handler(reply: &RawReply, what: &str) {
+    let wire = reply.wire();
+    assert_eq!(wire.status, 401, "{what}: {}", reply.head);
+    let (reason, request_id) = wire.detail();
+    assert_eq!(reason, "ERROR_REASON_UNAUTHENTICATED", "{what}");
+    assert!(!request_id.is_empty(), "{what}");
+    assert_eq!(wire.request_id_header.as_deref(), Some(request_id.as_str()));
+}
+
+#[tokio::test]
+async fn escaped_bodies_above_four_mib_reach_the_handler_within_the_allowance() {
+    let h = harness_with_input_limit(1_000_000).await;
+    // 1,000,000 U+0001 characters encode as six bytes each: about 6 MB on the wire, above the
+    // 4 MiB default body limit and below the computed allowance.
+    let text = "\u{1}".repeat(1_000_000);
+    let body = json_translate(&text);
+    assert!(body.len() > 4 << 20);
+    assert!(body.len() <= allowance(1_000_000, 32_768));
+
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            None,
+            Framing::ContentLength,
+            body,
+        )
+        .await;
+    assert_reached_handler(&reply, "without credentials");
+    assert_eq!(h.gateway.calls(), 0);
+
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&[&text])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+
+    // A decoded input one byte above the limit still gets the typed handler error, even though
+    // its escaped body is also above 4 MiB.
+    let too_large = "\u{1}".repeat(1_000_001);
+    let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+    assert_eq!(wire.code(), "resource_exhausted");
+    assert!(!wire.detail().1.is_empty());
+    assert_eq!(
+        wire.request_id_header.as_deref(),
+        Some(wire.detail().1.as_str())
+    );
+    let too_large = "a".repeat(1_000_001);
+    let wire = h.translate(USER_TOKEN, translate_body(&[&too_large])).await;
+    assert_eq!(wire.reason(), "ERROR_REASON_LIMIT_EXCEEDED");
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn four_mib_of_decoded_input_is_transportable_for_json_and_protobuf() {
+    let max = 4_194_304;
+    let h = harness_with_input_limit(max).await;
+    let text = "a".repeat(max);
+
+    let json = json_translate(&text);
+    assert!(json.len() > 4 << 20);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&[&text])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+
+    let proto = proto_translate(&text);
+    assert!(proto.len() > 4 << 20);
+    h.gateway.push(Reply::without_usage(r#"["x"]"#));
+    let reply = h
+        .raw(
+            "Translate",
+            "application/proto",
+            None,
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            proto,
+        )
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.head);
+    assert!(reply.header(REQUEST_ID).is_some());
+    assert_eq!(h.gateway.calls(), 2);
+
+    // The same request without credentials is classified by the handler, not the transport.
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            None,
+            Framing::Chunked,
+            json,
+        )
+        .await;
+    assert_reached_handler(&reply, "chunked 4 MiB input");
+
+    // One byte above the computed allowance is still rejected before any handler work.
+    let limit = allowance(max, 32_768);
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            None,
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            json_padded_to(limit + 1),
+        )
+        .await;
+    assert_transport_rejection(&reply, "maximum configuration");
+    assert_eq!(h.gateway.calls(), 2);
+}
+
+#[tokio::test]
+async fn bodies_above_the_allowance_are_rejected_before_handler_work() {
+    let h = Harness::start(None).await;
+    let limit = allowance(
+        h.config.limits.max_input_bytes,
+        h.config.limits.max_schema_bytes,
+    );
+    for (framing, name) in [
+        (Framing::ContentLength, "content-length"),
+        (Framing::Chunked, "chunked"),
+    ] {
+        h.gateway.push(Reply::without_usage(r#"["x"]"#));
+        let reply = h
+            .raw(
+                "Translate",
+                "application/json",
+                None,
+                Some(USER_TOKEN),
+                framing,
+                json_padded_to(limit),
+            )
+            .await;
+        // Exactly the allowance is admitted: the padded body is a valid request, so the
+        // handler runs and the scripted Gateway answers it.
+        assert_eq!(reply.status, 200, "{name}: {}", reply.head);
+        assert!(reply.header(REQUEST_ID).is_some(), "{name}");
+
+        let reply = h
+            .raw(
+                "Translate",
+                "application/json",
+                None,
+                Some(USER_TOKEN),
+                framing,
+                json_padded_to(limit + 1),
+            )
+            .await;
+        assert_transport_rejection(&reply, name);
+    }
+    let reply = h
+        .raw(
+            "Extract",
+            "application/proto",
+            None,
+            None,
+            Framing::Chunked,
+            vec![0; limit + 1],
+        )
+        .await;
+    assert_transport_rejection(&reply, "protobuf");
+    // Only the two admitted boundary requests reached the Gateway.
+    assert_eq!(h.gateway.calls(), 2);
+}
+
+#[tokio::test]
+async fn decompressed_messages_above_the_allowance_are_rejected() {
+    let h = Harness::start(None).await;
+    let limit = allowance(
+        h.config.limits.max_input_bytes,
+        h.config.limits.max_schema_bytes,
+    );
+
+    // The compressed body is tiny, so only the decompression limit can reject it.
+    let bomb = gzip(&json_padded_to(limit + 1));
+    assert!(bomb.len() < limit);
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            Some("gzip"),
+            Some(USER_TOKEN),
+            Framing::ContentLength,
+            bomb,
+        )
+        .await;
+    assert_transport_rejection(&reply, "decompression above the allowance");
+
+    // A body that expands to exactly the allowance is handed to the handler.
+    let reply = h
+        .raw(
+            "Translate",
+            "application/json",
+            Some("gzip"),
+            None,
+            Framing::ContentLength,
+            gzip(&json_padded_to(limit)),
+        )
+        .await;
+    assert_reached_handler(&reply, "decompression at the allowance");
+    assert_eq!(h.gateway.calls(), 0);
+}
+
 #[tokio::test]
 async fn extraction_returns_schema_conformant_json_with_the_fixed_model() {
     let h = Harness::start(None).await;
@@ -943,6 +1209,8 @@ async fn extraction_rejects_unsupported_schemas_before_execution() {
         r##"{"$ref":"#/$defs/x"}"##,
         r#"{"oneOf":[{"type":"string"}]}"#,
         r#"{"type":"object","patternProperties":{"a":{"type":"string"}}}"#,
+        r#"{"enum":[1,1.0]}"#,
+        r#"{"type":"object","properties":{"a":{"enum":[{"x":1},{"x":1.0}]}}}"#,
     ] {
         let mut body = extract_body();
         body["jsonSchema"] = json!(schema);
@@ -963,6 +1231,79 @@ async fn extraction_rejects_unsupported_schemas_before_execution() {
         "ERROR_REASON_INVALID_INPUT"
     );
     assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn extraction_accepts_integral_float_count_keywords_with_one_gateway_call() {
+    let h = Harness::start(None).await;
+    h.gateway.push(Reply::without_usage(&extracted(
+        json!({"name":"Ada","tags":["a"]}),
+    )));
+    let mut body = extract_body();
+    body["jsonSchema"] = json!(
+        r#"{"type":"object","properties":{"name":{"type":"string","minLength":1.0,"maxLength":1e1},"tags":{"type":"array","items":{"type":"string"},"minItems":-0.0,"maxItems":2.0}},"required":["name"]}"#
+    );
+    let wire = h.extract(USER_TOKEN, body).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn extraction_rejects_invalid_count_keywords_without_a_gateway_call() {
+    let h = Harness::start(None).await;
+    for schema in [
+        r#"{"type":"string","minLength":1.5}"#,
+        r#"{"type":"string","maxLength":-1.0}"#,
+        r#"{"type":"array","maxItems":1000001.0}"#,
+        r#"{"type":"array","minItems":"1"}"#,
+        r#"{"type":"array","minItems":2.0,"maxItems":1}"#,
+        r#"{"type":"object","properties":{"a":{"type":"string","minLength":3,"maxLength":2.0}}}"#,
+    ] {
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_UNSUPPORTED_SCHEMA", "{schema}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn extraction_rejects_reversed_integer_bounds_beyond_f64_precision_without_a_gateway_call() {
+    let h = Harness::start(None).await;
+    for schema in [
+        r#"{"type":"integer","minimum":9007199254740993,"maximum":9007199254740992}"#,
+        r#"{"type":"integer","minimum":18446744073709551615,"maximum":18446744073709551614}"#,
+        r#"{"type":"number","minimum":9007199254740993,"maximum":9007199254740992.0}"#,
+        r#"{"type":"object","properties":{"n":{"type":"integer","minimum":-9223372036854775807,"maximum":-9223372036854775808}}}"#,
+        r#"{"type":"array","items":{"type":"integer","minimum":9223372036854775808,"maximum":9223372036854775807}}"#,
+    ] {
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert_eq!(wire.reason(), "ERROR_REASON_UNSUPPORTED_SCHEMA", "{schema}");
+        assert_eq!(wire.code(), "invalid_argument", "{schema}");
+    }
+    assert_eq!(h.gateway.calls(), 0);
+
+    // Counterfactual: ascending and equal ranges succeed with one provider call each.
+    for (schema, output) in [
+        (
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740992,"maximum":9007199254740993}},"required":["n"]}"#,
+            json!({"n": 9007199254740993_u64}),
+        ),
+        (
+            r#"{"type":"object","properties":{"n":{"type":"integer","minimum":18446744073709551615,"maximum":18446744073709551615}},"required":["n"]}"#,
+            json!({"n": 18446744073709551615_u64}),
+        ),
+    ] {
+        let calls = h.gateway.calls();
+        h.gateway.push(Reply::without_usage(&extracted(output)));
+        let mut body = extract_body();
+        body["jsonSchema"] = json!(schema);
+        let wire = h.extract(USER_TOKEN, body).await;
+        assert!(wire.ok(), "{}", wire.body);
+        assert_eq!(h.gateway.calls(), calls + 1, "{schema}");
+    }
 }
 
 #[tokio::test]
@@ -1780,7 +2121,10 @@ async fn origin_and_message_size_rejection_ignore_the_caller_deadline_header() {
         .await
         .unwrap();
     assert_eq!(response.status(), 403);
-    let oversized = "a".repeat(400_000);
+    // Just above the 102,400-byte default allowance. The transport now also bounds the on-wire
+    // body, so a far larger body is rejected mid-upload and the client can see the connection
+    // reset instead of the typed reply.
+    let oversized = "a".repeat(103_000);
     for encoding in ENCODINGS {
         let wire = h
             .call_with(
@@ -1798,4 +2142,321 @@ async fn origin_and_message_size_rejection_ignore_the_caller_deadline_header() {
         );
     }
     assert_eq!(h.gateway.calls(), 0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Request decoding failures: the dependency decodes the body before any handler runs, and its
+// diagnostics can echo submitted values. The router replaces them with a fixed typed error.
+// ---------------------------------------------------------------------------------------------
+
+const DECODE_MESSAGE: &str = "request body is invalid";
+
+/// A synthetic body that fails to decode, with the marker it must never reveal.
+struct BadBody {
+    name: &'static str,
+    method: &'static str,
+    marker: &'static str,
+    body: Vec<u8>,
+}
+
+fn bad_bodies() -> Vec<BadBody> {
+    let json = |value: serde_json::Value| serde_json::to_vec(&value).unwrap();
+    vec![
+        BadBody {
+            name: "scalar texts",
+            method: "Translate",
+            marker: "PRIVATE-CONTENT-MARKER",
+            body: json(
+                json!({"texts": "PRIVATE-CONTENT-MARKER", "targetLanguage": "en", "model": "m"}),
+            ),
+        },
+        BadBody {
+            name: "scalar texts with tenant",
+            method: "Translate",
+            marker: "PRIVATE-SECOND-MARKER",
+            body: json(translate_body_with_texts(json!("PRIVATE-SECOND-MARKER"))),
+        },
+        BadBody {
+            name: "object item",
+            method: "Translate",
+            marker: "PRIVATE-ITEM-MARKER",
+            body: json(translate_body_with_texts(
+                json!(["safe", {"privateField": "PRIVATE-ITEM-MARKER"}]),
+            )),
+        },
+        BadBody {
+            name: "numeric target language",
+            method: "Translate",
+            marker: "12345",
+            body: json(json!({
+                "tenantId": TENANT, "texts": ["safe"], "targetLanguage": 12345, "model": MODEL
+            })),
+        },
+        BadBody {
+            name: "object model",
+            method: "Translate",
+            marker: "PRIVATE-MODEL-MARKER",
+            body: json(json!({
+                "tenantId": TENANT, "texts": ["safe"], "targetLanguage": "fr",
+                "model": {"privateField": "PRIVATE-MODEL-MARKER"}
+            })),
+        },
+        BadBody {
+            name: "extract text array",
+            method: "Extract",
+            marker: "PRIVATE-EXTRACT-MARKER",
+            body: json(json!({
+                "tenantId": TENANT, "text": ["PRIVATE-EXTRACT-MARKER"], "jsonSchema": PERSON_SCHEMA
+            })),
+        },
+        BadBody {
+            name: "truncated json",
+            method: "Translate",
+            marker: "PRIVATE-TRUNCATED-MARKER",
+            body: br#"{"tenantId":"x","texts":["PRIVATE-TRUNCATED-MARKER"#.to_vec(),
+        },
+        BadBody {
+            name: "syntax error",
+            method: "Extract",
+            marker: "PRIVATE-SYNTAX-MARKER",
+            body: br#"{"text": PRIVATE-SYNTAX-MARKER, "jsonSchema": }"#.to_vec(),
+        },
+    ]
+}
+
+fn translate_body_with_texts(texts: serde_json::Value) -> serde_json::Value {
+    json!({"tenantId": TENANT, "texts": texts, "targetLanguage": "fr", "model": MODEL})
+}
+
+fn assert_no_business_calls(h: &Harness) {
+    assert_eq!(h.gateway.calls(), 0);
+    let delcore = h.delcore.lock().unwrap();
+    assert_eq!(delcore.token_calls, 0, "authentication ran");
+    assert_eq!(delcore.key_calls, 0, "authentication ran");
+    assert!(delcore.authorize_calls.is_empty(), "authorization ran");
+    assert!(delcore.ingested.is_empty());
+}
+
+#[tokio::test]
+async fn undecodable_json_requests_get_a_fixed_typed_error_before_authentication() {
+    let logs = LogCapture::start();
+    let h = Harness::start(None).await;
+    let mut count = 0;
+    for case in bad_bodies() {
+        for token in [None, Some(USER_TOKEN), Some(KEY_SECRET), Some("garbage")] {
+            let wire = h
+                .post(
+                    case.method,
+                    token,
+                    "application/json",
+                    case.body.clone(),
+                    None,
+                )
+                .await;
+            let context = format!("{} / {token:?}: {}", case.name, wire.raw);
+            assert_eq!(wire.status, 400, "{context}");
+            assert_eq!(wire.code(), "invalid_argument", "{context}");
+            assert_eq!(wire.body["message"], DECODE_MESSAGE, "{context}");
+            assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT", "{context}");
+            let header = wire.request_id_header.clone().expect(&context);
+            assert_eq!(header, wire.detail().1, "{context}");
+            assert_eq!(
+                uuid::Uuid::parse_str(&header).unwrap().get_version_num(),
+                7,
+                "{context}"
+            );
+            assert!(!wire.raw.contains(case.marker), "{context}");
+            assert!(
+                wire.body
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "code" | "message" | "details")),
+                "{context}"
+            );
+            count += 1;
+        }
+    }
+    assert_no_business_calls(&h);
+    // Each rejection is counted as a denied call with the invalid-input reason.
+    let metrics = h.server.metrics.encode();
+    assert!(
+        metrics.contains(&format!(
+            "delitools_denied_total{{reason=\"invalid_input\"}} {count}"
+        )),
+        "{metrics}"
+    );
+    // The rejection is logged with a bounded category and no submitted value or decoder text.
+    let logged = logs.text();
+    assert!(
+        logged.contains("request body could not be decoded"),
+        "{logged}"
+    );
+    for case in bad_bodies() {
+        assert!(!logged.contains(case.marker), "{}: {logged}", case.name);
+    }
+    for diagnostic in [
+        "invalid type",
+        "expected a sequence",
+        "EOF while",
+        "at line",
+    ] {
+        assert!(!logged.contains(diagnostic), "{diagnostic}: {logged}");
+    }
+}
+
+#[tokio::test]
+async fn correctly_decoded_requests_keep_authentication_validation_and_success() {
+    let h = Harness::start(None).await;
+    // A string array in place of the scalar is decoded and then authenticated as usual.
+    let wire = h
+        .call(
+            "Translate",
+            None,
+            translate_body_with_texts(json!(["PRIVATE-CONTENT-MARKER"])),
+        )
+        .await;
+    assert_eq!(wire.status, 401);
+    assert_eq!(wire.reason(), "ERROR_REASON_UNAUTHENTICATED");
+    assert_eq!(wire.body["message"], "authentication failed");
+    assert_eq!(h.gateway.calls(), 0);
+    // Handler validation keeps its own typed errors and messages.
+    let wire = h
+        .translate(USER_TOKEN, translate_body_with_texts(json!([])))
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT");
+    assert_ne!(wire.body["message"], DECODE_MESSAGE);
+    let mut body = translate_body(&["a"]);
+    body["model"] = json!("vendor/not-listed");
+    let wire = h.translate(USER_TOKEN, body).await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_MODEL_UNAVAILABLE");
+    // Valid requests still succeed.
+    h.gateway
+        .push(Reply::without_usage(r#"{"translations":["Bonjour"]}"#));
+    let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
+    assert!(wire.ok(), "{}", wire.raw);
+    h.gateway
+        .push(Reply::without_usage(&extracted(json!({"name": "Ada"}))));
+    let wire = h.extract(USER_TOKEN, extract_body()).await;
+    assert!(wire.ok(), "{}", wire.raw);
+    assert_eq!(h.gateway.calls(), 2);
+    // Handler failures are not counted as decode failures.
+    let metrics = h.server.metrics.encode();
+    assert!(metrics.contains("delitools_denied_total{reason=\"invalid_input\"} 1"));
+}
+
+#[tokio::test]
+async fn binary_requests_keep_their_behavior() {
+    use buffa::Message;
+    use delino_protocol::delitools::v1::{TranslateRequest, TranslateResponse};
+    let h = Harness::start(None).await;
+    let request = TranslateRequest {
+        tenant_id: TENANT.into(),
+        texts: vec!["Hello".into()],
+        target_language: "fr".into(),
+        model: MODEL.into(),
+        ..Default::default()
+    };
+    h.gateway
+        .push(Reply::without_usage(r#"{"translations":["Bonjour"]}"#));
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            request.encode_to_vec(),
+            None,
+        )
+        .await;
+    // The success body is binary protobuf, not JSON.
+    assert_eq!(wire.status, 200);
+    assert!(wire.request_id_header.is_some());
+    assert_eq!(wire.body, serde_json::Value::Null);
+    let reply = TranslateResponse::decode_from_slice(&wire.bytes).unwrap();
+    assert_eq!(reply.translations, vec!["Bonjour".to_owned()]);
+    assert_eq!(
+        wire.request_id_header.as_deref(),
+        Some(reply.request_id.as_str())
+    );
+    // Typed handler errors of binary calls keep their detail.
+    let invalid = TranslateRequest {
+        tenant_id: TENANT.into(),
+        ..Default::default()
+    };
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            invalid.encode_to_vec(),
+            None,
+        )
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.reason(), "ERROR_REASON_INVALID_INPUT");
+    assert_ne!(wire.body["message"], DECODE_MESSAGE);
+    // A malformed binary body is not rewritten: it carries no DeliTools detail.
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/proto",
+            vec![0xff, 0xff, 0xff],
+            None,
+        )
+        .await;
+    assert_eq!(wire.status, 400);
+    assert_eq!(wire.code(), "invalid_argument");
+    assert!(wire.body.get("details").is_none(), "{}", wire.raw);
+    assert!(wire.request_id_header.is_none());
+    assert_eq!(h.gateway.calls(), 1);
+}
+
+#[tokio::test]
+async fn oversize_bodies_keep_the_plain_untyped_rejection() {
+    let logs = LogCapture::start();
+    let h = Harness::start(None).await;
+    // The default configuration allows (4096 + 2048) * 6 + 64 KiB = 102,400 bytes.
+    let text = format!("PRIVATE-OVERSIZE-MARKER{}", "a".repeat(102_468));
+    let body = serde_json::to_vec(&translate_body_with_texts(json!([text]))).unwrap();
+    assert!(body.len() > 102_400);
+    let wire = h
+        .post(
+            "Translate",
+            Some(USER_TOKEN),
+            "application/json",
+            body,
+            None,
+        )
+        .await;
+    assert_eq!(wire.code(), "resource_exhausted", "{}", wire.raw);
+    assert_ne!(wire.status, 200);
+    assert!(wire.body.get("details").is_none(), "{}", wire.raw);
+    assert!(wire.request_id_header.is_none());
+    assert!(!wire.raw.contains("PRIVATE-OVERSIZE-MARKER"));
+    assert!(!logs.text().contains("PRIVATE-OVERSIZE-MARKER"));
+    assert_no_business_calls(&h);
+}
+
+#[tokio::test]
+async fn origin_rejection_precedes_decoding() {
+    let h = Harness::start(None).await;
+    for case in bad_bodies() {
+        let response = reqwest::Client::new()
+            .post(format!(
+                "{}/delitools.v1.DelitoolsService/{}",
+                h.base, case.method
+            ))
+            .header("Content-Type", "application/json")
+            .header("Origin", "https://evil.example")
+            .body(case.body.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403, "{}", case.name);
+        assert!(!response.text().await.unwrap().contains(case.marker));
+    }
+    assert_no_business_calls(&h);
 }
