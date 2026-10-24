@@ -362,8 +362,7 @@ impl Server {
             payload?;
             // The fingerprint can fail on a malformed wire shape, so it is computed only after the
             // operation, tenant, project and scrubbed outcomes and the payload result.
-            let fingerprint=fingerprint::fingerprint(op,&request.encode_to_vec())?;
-            if row.get::<Vec<u8>,_>("fingerprint")!=fingerprint{return Err(Fault::conflict())}
+            if !fingerprint::matches(&row.get::<Vec<u8>,_>("fingerprint"),op,&request.encode_to_vec())?{return Err(Fault::conflict())}
             let bytes:Vec<u8>=row.get("response");let result=R::decode_from_slice(&bytes).map_err(|_|Fault::unavailable())?;return Ok(serde_json::to_value(result)?)
         }
         payload?;

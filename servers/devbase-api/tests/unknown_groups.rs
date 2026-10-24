@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-//! Unknown protobuf groups in binary mutations. The generated decoder keeps a balanced group, so the
+//! Unknown protobuf fields in binary mutations. The generated decoder keeps a balanced group, so the
 //! replay fingerprint must hash it, and the fingerprint must not preempt the documented replay
-//! precedence. These tests drive the real router with a disposable PostgreSQL schema and a mocked
-//! Delcore.
+//! precedence. The same harness covers the persisted fingerprint formats: legacy 32-byte rows and
+//! new `0x01`-prefixed rows. These tests drive the real router with a disposable PostgreSQL schema
+//! and a mocked Delcore.
 use axum::{
     Json, Router,
     http::{HeaderMap, StatusCode},
@@ -10,11 +11,12 @@ use axum::{
 };
 use buffa::Message;
 use delino_protocol::devbase::v1::{
-    CreateEndUserRequest, CreateEndUserResponse, CreateProjectRequest,
+    CreateEndUserRequest, CreateEndUserResponse, CreateProjectRequest, UpdateEndUserRequest,
 };
 use devbase_api::{Server, config::Config, store};
 use serde_json::{Value, json};
 use server_common::authority::Authority;
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::{sync::Arc, time::Duration};
 
@@ -438,6 +440,385 @@ async fn unknown_groups_are_fingerprinted_and_replay_precedence_is_kept() {
     }
     assert_eq!(h.count("SELECT count(*) FROM end_users").await, users);
     assert_eq!(h.count("SELECT count(*) FROM replays").await, replays);
+
+    h.finish().await;
+}
+
+// A metadata Struct with the known entry {"a":true}, an unknown varint field 100 and two opaque
+// occurrences of unknown length-delimited field 100.
+const ENTRY_A: [u8; 9] = [0x0a, 0x07, 0x0a, 0x01, 0x61, 0x12, 0x02, 0x20, 0x01];
+const UNKNOWN_VARINT: [u8; 3] = [0xa0, 0x06, 0x01];
+const OPAQUE_B: [u8; 6] = [0xa2, 0x06, 0x03, 0x0a, 0x01, 0x62];
+const OPAQUE_C: [u8; 6] = [0xa2, 0x06, 0x03, 0x0a, 0x01, 0x63];
+
+fn field(number: u8, payload: &[u8]) -> Vec<u8> {
+    assert!(number < 16 && payload.len() < 128);
+    [&[number << 3 | 2, payload.len() as u8][..], payload].concat()
+}
+fn sha(operation: &str, encoded: &[u8]) -> Vec<u8> {
+    let mut hash = Sha256::new();
+    hash.update(operation);
+    hash.update([0]);
+    hash.update(encoded);
+    hash.finalize().to_vec()
+}
+/// Binary CreateEndUser bytes (the key included) with `metadata` as field 6.
+fn user_with_metadata(project: &str, key: &str, external: &str, metadata: &[u8]) -> Vec<u8> {
+    [
+        user(project, key, external).encode_to_vec(),
+        field(6, metadata),
+    ]
+    .concat()
+}
+/// The hashed bytes of the same request: no key and the given (Go or legacy) metadata order.
+fn user_hash_input(project: &str, external: &str, metadata: &[u8]) -> Vec<u8> {
+    [
+        user(project, "", external).encode_to_vec(),
+        field(6, metadata),
+    ]
+    .concat()
+}
+
+/// Binary UpdateEndUser bytes whose masked metadata is `metadata`, in field-number order.
+fn update_bytes(project: &str, user: &str, key: &str, metadata: &[u8]) -> Vec<u8> {
+    let head: UpdateEndUserRequest =
+        serde_json::from_value(json!({"projectId":project,"endUserId":user,"idempotencyKey":key}))
+            .unwrap();
+    let tail: UpdateEndUserRequest =
+        serde_json::from_value(json!({"updateMask":"metadata","version":"1"})).unwrap();
+    [
+        head.encode_to_vec(),
+        field(7, metadata),
+        tail.encode_to_vec(),
+    ]
+    .concat()
+}
+
+#[derive(Debug, PartialEq)]
+struct ReplayRow {
+    fingerprint: Vec<u8>,
+    response: Option<Vec<u8>>,
+    scrubbed: bool,
+    tenant_id: uuid::Uuid,
+    project_id: Option<uuid::Uuid>,
+    target_user_id: Option<uuid::Uuid>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+impl Harness {
+    async fn replay(&self, key: &str) -> ReplayRow {
+        let row = sqlx::query("SELECT fingerprint,response,scrubbed,tenant_id,project_id,target_user_id,created_at,expires_at FROM replays WHERE idempotency_key=$1")
+            .bind(key)
+            .fetch_one(&self.db)
+            .await
+            .unwrap();
+        ReplayRow {
+            fingerprint: row.get("fingerprint"),
+            response: row.get("response"),
+            scrubbed: row.get("scrubbed"),
+            tenant_id: row.get("tenant_id"),
+            project_id: row.get("project_id"),
+            target_user_id: row.get("target_user_id"),
+            created_at: row.get("created_at"),
+            expires_at: row.get("expires_at"),
+        }
+    }
+    async fn set_fingerprint(&self, key: &str, fingerprint: &[u8]) {
+        sqlx::query("UPDATE replays SET fingerprint=$2 WHERE idempotency_key=$1")
+            .bind(key)
+            .bind(fingerprint)
+            .execute(&self.db)
+            .await
+            .unwrap();
+    }
+    async fn proto(&self, method: &str, body: Vec<u8>) -> Reply {
+        self.send(method, "application/proto", &[], body).await
+    }
+    /// Counters that a replay must leave alone.
+    async fn state(&self) -> (i64, i64, i64) {
+        (
+            self.count("SELECT count(*) FROM end_users").await,
+            self.count("SELECT count(*) FROM replays").await,
+            self.count("SELECT count(*) FROM audit_events").await,
+        )
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() {
+    let h = Harness::start().await;
+    let pid = h.project.clone();
+    let go_metadata = [&ENTRY_A[..], &UNKNOWN_VARINT[..]].concat();
+    // The earlier Rust canonicalizer sorted the opaque unknown field before the known key.
+    let legacy_metadata = [&UNKNOWN_VARINT[..], &ENTRY_A[..]].concat();
+
+    // A new record stores 0x01 followed by the Go-compatible digest.
+    let created = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-new", "ext-new", &go_metadata),
+        )
+        .await;
+    assert_eq!(
+        created.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&created.body)
+    );
+    let go_digest = sha(
+        "CreateEndUser",
+        &user_hash_input(&pid, "ext-new", &go_metadata),
+    );
+    let new_row = h.replay("format-new").await;
+    assert_eq!(new_row.fingerprint, [&[1u8][..], &go_digest].concat());
+    // The new row compares only the corrected digest: the retry replays, other input conflicts.
+    let before = h.state().await;
+    let retry = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-new", "ext-new", &go_metadata),
+        )
+        .await;
+    assert_eq!(retry.status, StatusCode::OK);
+    let changed = [&ENTRY_A[..], &[0xa0, 0x06, 0x02][..]].concat();
+    for (what, request) in [
+        (
+            "unknown value",
+            user_with_metadata(&pid, "format-new", "ext-new", &changed),
+        ),
+        (
+            "known input",
+            user_with_metadata(&pid, "format-new", "ext-other", &go_metadata),
+        ),
+    ] {
+        let reply = h.proto("CreateEndUser", request).await;
+        assert_eq!(error_code(&reply), "already_exists", "{what}");
+    }
+    assert_eq!(h.state().await, before);
+    assert_eq!(h.replay("format-new").await, new_row);
+
+    // Legacy rows hold either the Go digest or the earlier Rust digest. Both replay the same
+    // request unchanged: no rewrite, promotion, expiry extension or new mutation.
+    for (key, external, digest) in [
+        (
+            "format-legacy-go",
+            "ext-legacy-go",
+            sha(
+                "CreateEndUser",
+                &user_hash_input(&pid, "ext-legacy-go", &go_metadata),
+            ),
+        ),
+        (
+            "format-legacy-rust",
+            "ext-legacy-rust",
+            sha(
+                "CreateEndUser",
+                &user_hash_input(&pid, "ext-legacy-rust", &legacy_metadata),
+            ),
+        ),
+    ] {
+        let request = user_with_metadata(&pid, key, external, &go_metadata);
+        assert_eq!(
+            h.proto("CreateEndUser", request.clone()).await.status,
+            StatusCode::OK
+        );
+        h.set_fingerprint(key, &digest).await;
+        let seeded = h.replay(key).await;
+        assert_eq!(seeded.fingerprint.len(), 32);
+        let before = h.state().await;
+        let reply = h.proto("CreateEndUser", request).await;
+        assert_eq!(reply.status, StatusCode::OK, "{key}");
+        assert_eq!(h.state().await, before, "{key}");
+        assert_eq!(h.replay(key).await, seeded, "{key}");
+        // Different known input and different unknown content still conflict.
+        let other = user_with_metadata(&pid, key, "ext-different", &go_metadata);
+        assert_eq!(
+            error_code(&h.proto("CreateEndUser", other).await),
+            "already_exists",
+            "{key} known input"
+        );
+        let other = user_with_metadata(&pid, key, external, &changed);
+        assert_eq!(
+            error_code(&h.proto("CreateEndUser", other).await),
+            "already_exists",
+            "{key} unknown content"
+        );
+        assert_eq!(h.replay(key).await, seeded, "{key}");
+    }
+
+    // Opaque unknown-field order: a new BC record rejects CB. A legacy BC record still accepts CB,
+    // which is the original ambiguity that ends with that record's expiry.
+    let bc = [&ENTRY_A[..], &OPAQUE_B, &OPAQUE_C].concat();
+    let cb = [&ENTRY_A[..], &OPAQUE_C, &OPAQUE_B].concat();
+    let first = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-bc", "ext-bc", &bc),
+        )
+        .await;
+    assert_eq!(first.status, StatusCode::OK);
+    let bc_digest = sha("CreateEndUser", &user_hash_input(&pid, "ext-bc", &bc));
+    let bc_row = h.replay("format-bc").await;
+    assert_eq!(bc_row.fingerprint, [&[1u8][..], &bc_digest].concat());
+    let reply = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-bc", "ext-bc", &cb),
+        )
+        .await;
+    assert_eq!(error_code(&reply), "already_exists", "CB against new BC");
+    let reply = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-bc", "ext-bc", &bc),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "BC against new BC");
+    assert_eq!(h.replay("format-bc").await, bc_row);
+    h.set_fingerprint("format-bc", &bc_digest).await;
+    let legacy_bc = h.replay("format-bc").await;
+    let before = h.state().await;
+    let reply = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-bc", "ext-bc", &cb),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "CB against legacy BC");
+    assert_eq!(h.state().await, before);
+    assert_eq!(h.replay("format-bc").await, legacy_bc);
+
+    // Unsupported stored formats fail safely as unavailable, with nothing changed.
+    let request = user_with_metadata(&pid, "format-new", "ext-new", &go_metadata);
+    let supported = h.replay("format-new").await.fingerprint;
+    for (what, stored) in [
+        ("short", supported[..31].to_vec()),
+        ("long", [&supported[..], &[0][..]].concat()),
+        ("empty", Vec::new()),
+        ("marker", [&[2u8][..], &supported[1..]].concat()),
+    ] {
+        h.set_fingerprint("format-new", &stored).await;
+        let before = h.state().await;
+        let reply = h.proto("CreateEndUser", request.clone()).await;
+        assert_eq!(error_code(&reply), "unavailable", "{what}");
+        assert!(
+            stored.is_empty()
+                || !String::from_utf8_lossy(&reply.body).contains(&hex::encode(&stored)),
+            "{what}"
+        );
+        assert_eq!(h.state().await, before, "{what}");
+        // The checks that come first are unchanged: an invalid payload and a routing conflict win.
+        let invalid = user_with_metadata(&pid, "format-new", "", &go_metadata);
+        assert_eq!(
+            error_code(&h.proto("CreateEndUser", invalid).await),
+            "invalid_argument",
+            "{what} payload"
+        );
+        let json = h
+            .call(
+                "CreateProject",
+                json!({"tenantId":h.tenant,"name":"","idempotencyKey":"format-new"}),
+            )
+            .await;
+        assert_eq!(error_code(&json), "already_exists", "{what} routing");
+    }
+    // An expired record is no record, so a bad stored format is irrelevant and a new canonical
+    // row replaces it.
+    sqlx::query(
+        "UPDATE replays SET expires_at=now()-interval '1 second' WHERE idempotency_key='format-new'",
+    )
+    .execute(&h.db)
+    .await
+    .unwrap();
+    let reply = h
+        .proto(
+            "CreateEndUser",
+            user_with_metadata(&pid, "format-new", "ext-after-expiry", &go_metadata),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(h.replay("format-new").await.fingerprint.len(), 33);
+
+    // A scrubbed record has an empty fingerprint and answers not_found, never unavailable.
+    let created = h
+        .call(
+            "CreateEndUser",
+            json!({"projectId":pid,"externalId":"ext-format-scrub","idempotencyKey":"format-scrub"}),
+        )
+        .await;
+    let uid = created.json()["endUser"]["id"].as_str().unwrap().to_owned();
+    let deleted = h
+        .call(
+            "DeleteEndUser",
+            json!({"projectId":pid,"endUserId":uid,"version":"1","idempotencyKey":"format-delete"}),
+        )
+        .await;
+    assert_eq!(deleted.status, StatusCode::OK);
+    let scrubbed = h.replay("format-scrub").await;
+    assert!(scrubbed.scrubbed && scrubbed.fingerprint.is_empty());
+    let reply = h
+        .call(
+            "CreateEndUser",
+            json!({"projectId":pid,"externalId":"ext-format-scrub","idempotencyKey":"format-scrub"}),
+        )
+        .await;
+    assert_eq!(error_code(&reply), "not_found");
+
+    // A delete record replays from a new row and from a legacy 32-byte row.
+    let delete =
+        json!({"projectId":pid,"endUserId":uid,"version":"1","idempotencyKey":"format-delete"});
+    let delete_row = h.replay("format-delete").await;
+    assert_eq!(delete_row.fingerprint.len(), 33);
+    let before = h.state().await;
+    assert_eq!(
+        h.call("DeleteEndUser", delete.clone()).await.status,
+        StatusCode::OK
+    );
+    h.set_fingerprint("format-delete", &delete_row.fingerprint[1..])
+        .await;
+    let legacy_delete = h.replay("format-delete").await;
+    assert_eq!(h.call("DeleteEndUser", delete).await.status, StatusCode::OK);
+    assert_eq!(h.state().await, before);
+    assert_eq!(h.replay("format-delete").await, legacy_delete);
+
+    // Update with masked metadata holding an unknown field: both legacy digests replay it.
+    for (n, external) in ["ext-upd-go", "ext-upd-rust"].into_iter().enumerate() {
+        let created = h
+            .call(
+                "CreateEndUser",
+                json!({"projectId":pid,"externalId":external,"idempotencyKey":format!("format-upd-create-{n}")}),
+            )
+            .await;
+        let uid = created.json()["endUser"]["id"].as_str().unwrap().to_owned();
+        let key = format!("format-upd-{n}");
+        let bytes = update_bytes(&pid, &uid, &key, &go_metadata);
+        let reply = h.proto("UpdateEndUser", bytes.clone()).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&reply.body)
+        );
+        let stored = h.replay(&key).await;
+        assert_eq!(stored.fingerprint.len(), 33);
+        let digest = if n == 0 {
+            let digest = sha("UpdateEndUser", &update_bytes(&pid, &uid, "", &go_metadata));
+            assert_eq!(stored.fingerprint[1..], digest[..]);
+            digest
+        } else {
+            sha(
+                "UpdateEndUser",
+                &update_bytes(&pid, &uid, "", &legacy_metadata),
+            )
+        };
+        h.set_fingerprint(&key, &digest).await;
+        let seeded = h.replay(&key).await;
+        let before = h.state().await;
+        assert_eq!(h.proto("UpdateEndUser", bytes).await.status, StatusCode::OK);
+        assert_eq!(h.state().await, before);
+        assert_eq!(h.replay(&key).await, seeded);
+    }
 
     h.finish().await;
 }
