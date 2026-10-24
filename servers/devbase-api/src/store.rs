@@ -4,6 +4,8 @@ use sqlx::{PgPool, Row};
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/00001_devbase.sql"),
     include_str!("../migrations/00002_deleted_tenants.sql"),
+    include_str!("../migrations/00003_clear_scrubbed_replay_targets.sql"),
+    include_str!("../migrations/00004_scrub_orphaned_revoke_replays.sql"),
 ];
 pub async fn check(pool: &PgPool) -> anyhow::Result<()> {
     let rows = sqlx::query("SELECT version,digest FROM devbase_schema ORDER BY version")

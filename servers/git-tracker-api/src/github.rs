@@ -6,11 +6,18 @@ use delino_protocol::gittracker::v1::{
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
 use server_common::{Fault, Result, authority::bounded_json, integer, string};
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
+/// Default wall-clock budget for one pull request membership check, covering the REST fast path
+/// and the GraphQL traversal. Expiry fails closed as unavailable; it never proves non-membership.
+pub const MEMBERSHIP_DEADLINE: Duration = Duration::from_secs(120);
+/// Page size for the GraphQL pull request commit connection (the GitHub maximum).
+const COMMIT_PAGE: usize = 100;
+const COMMITS_QUERY: &str = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){databaseId pullRequest(number:$number){id number state baseRefName headRefOid commits(first:100,after:$after){totalCount nodes{commit{oid}} pageInfo{hasNextPage endCursor}}}}}";
 pub struct GitHub {
     pub http: reqwest::Client,
     pub base: String,
     pub app_id: String,
+    pub membership_deadline: Duration,
     key: EncodingKey,
 }
 pub fn escape(s: &str) -> String {
@@ -26,6 +33,7 @@ impl GitHub {
             http,
             base,
             app_id,
+            membership_deadline: MEMBERSHIP_DEADLINE,
             key,
         }
     }
@@ -39,6 +47,7 @@ impl GitHub {
                 .build()?,
             base: "https://api.github.com".into(),
             app_id: required("GITHUB_APP_ID")?,
+            membership_deadline: MEMBERSHIP_DEADLINE,
             key: EncodingKey::from_rsa_pem(&std::fs::read(required("GITHUB_KEY_FILE")?)?)?,
         })
     }
@@ -113,6 +122,7 @@ impl GitHub {
         }
         Ok(id.to_string())
     }
+    /// Confirms administrator access and discovers the App installation for `name`.
     pub async fn connect(&self, name: &str, token: &str) -> Result<Repository> {
         let parts: Vec<_> = name.split('/').collect();
         if parts.len() != 2 || parts.iter().any(|v| v.is_empty()) {
@@ -131,16 +141,15 @@ impl GitHub {
                 None,
             )
             .await?;
-        let mut r = Repository {
+        // Discovery only: the returned identity carries no visibility. A visibility or name
+        // observed here predates the connection transaction, so `connect_repository` must refresh
+        // it with `metadata` while holding the writer locks instead of persisting this snapshot.
+        Ok(Repository {
             github_repository_id: integer(&v, "id").to_string(),
             installation_id: integer(&install, "id").to_string(),
             connected: true,
             ..Default::default()
-        };
-        let v = self.metadata(&r).await?;
-        r.full_name = string(&v, "full_name").into();
-        r.public = v["private"] == false;
-        Ok(r)
+        })
     }
     pub async fn metadata(&self, r: &Repository) -> Result<Value> {
         self.call(
@@ -229,6 +238,147 @@ impl GitHub {
         }
         Ok(result)
     }
+    /// Decides whether a non-head commit belongs to the pull request. The capped REST list is
+    /// only a positive fast path: GitHub returns at most 250 commits in total, so a miss (or a
+    /// short final page) never proves absence. Every miss falls through to the GraphQL commit
+    /// connection, which needs a complete, consistent traversal before reporting a negative.
+    async fn pull_contains(&self, r: &Repository, c: &Context, token: &str) -> Result<bool> {
+        let mut page = 1;
+        loop {
+            let rows = self
+                .call(
+                    "GET",
+                    &format!(
+                        "{}/pulls/{}/commits?per_page=100&page={page}",
+                        path(r),
+                        c.pull_request
+                    ),
+                    token,
+                    None,
+                )
+                .await?;
+            let rows = rows.as_array().ok_or_else(Fault::unavailable)?;
+            if rows.iter().any(|v| v["sha"] == c.commit) {
+                return Ok(true);
+            }
+            if rows.len() < COMMIT_PAGE {
+                break;
+            }
+            page += 1;
+        }
+        self.graphql_contains(r, c, token).await
+    }
+    /// Walks `repository.pullRequest.commits` until the commit is found (positive) or the
+    /// traversal is provably complete (negative). Any inconsistency returns unavailable.
+    async fn graphql_contains(&self, r: &Repository, c: &Context, token: &str) -> Result<bool> {
+        let fail = |category: &'static str| {
+            tracing::warn!(
+                category,
+                pull_request = c.pull_request,
+                "pull request commit traversal failed closed"
+            );
+            Fault::unavailable()
+        };
+        let (owner, name) = r
+            .full_name
+            .split_once('/')
+            .ok_or_else(|| fail("repository"))?;
+        let mut after = Value::Null;
+        let mut cursors = HashSet::new();
+        let mut seen = HashSet::new();
+        let mut snapshot: Option<(Value, i64)> = None;
+        loop {
+            let response = self
+                .call(
+                    "POST",
+                    "/graphql",
+                    token,
+                    Some(json!({"query":COMMITS_QUERY,"variables":{
+                        "owner":owner,"name":name,"number":c.pull_request,"after":after
+                    }})),
+                )
+                .await?;
+            if response.get("errors").is_some_and(|e| !e.is_null()) {
+                return Err(fail("graphql_errors"));
+            }
+            let repository = &response["data"]["repository"];
+            let pull = &repository["pullRequest"];
+            let connection = &pull["commits"];
+            if !pull.is_object() || !connection.is_object() {
+                return Err(fail("missing_pull_request"));
+            }
+            if repository["databaseId"]
+                .as_i64()
+                .map(|v| v.to_string())
+                .as_deref()
+                != Some(r.github_repository_id.as_str())
+                || pull["number"].as_i64() != Some(c.pull_request)
+                || pull["baseRefName"] != c.branch
+            {
+                return Err(fail("identity_mismatch"));
+            }
+            let total = connection["totalCount"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| fail("total_count"))?;
+            let metadata = json!([
+                pull["id"],
+                pull["state"],
+                pull["baseRefName"],
+                pull["headRefOid"]
+            ]);
+            if !pull["id"].as_str().is_some_and(|v| !v.is_empty())
+                || !pull["state"].as_str().is_some_and(|v| !v.is_empty())
+                || !pull["headRefOid"].as_str().is_some_and(crate::valid_sha)
+            {
+                return Err(fail("metadata"));
+            }
+            match &snapshot {
+                None => snapshot = Some((metadata, total)),
+                Some((m, t)) if *m == metadata && *t == total => {}
+                Some(_) => return Err(fail("snapshot_changed")),
+            }
+            let nodes = connection["nodes"]
+                .as_array()
+                .filter(|v| v.len() <= COMMIT_PAGE)
+                .ok_or_else(|| fail("nodes"))?;
+            for node in nodes {
+                let oid = node["commit"]["oid"]
+                    .as_str()
+                    .filter(|v| crate::valid_sha(v))
+                    .ok_or_else(|| fail("oid"))?;
+                if oid == c.commit {
+                    return Ok(true);
+                }
+                if !seen.insert(oid.to_owned()) {
+                    return Err(fail("duplicate_oid"));
+                }
+            }
+            if seen.len() as i64 > total {
+                return Err(fail("count_mismatch"));
+            }
+            let info = &connection["pageInfo"];
+            match info["hasNextPage"].as_bool() {
+                Some(false) => {
+                    if seen.len() as i64 != total {
+                        return Err(fail("count_mismatch"));
+                    }
+                    return Ok(false);
+                }
+                Some(true) => {
+                    let cursor = info["endCursor"]
+                        .as_str()
+                        .filter(|v| !v.is_empty())
+                        .ok_or_else(|| fail("cursor"))?;
+                    if !cursors.insert(cursor.to_owned()) {
+                        return Err(fail("cursor"));
+                    }
+                    after = json!(cursor);
+                }
+                None => return Err(fail("page_info")),
+            }
+        }
+    }
     pub async fn resolve(&self, r: &Repository, c: &Context) -> Result<(Vec<String>, String)> {
         self.resolve_inner(r, c).await.map_err(github_failure)
     }
@@ -243,30 +393,25 @@ impl GitHub {
             if p["base"]["ref"] != c.branch {
                 return Err(Fault::unavailable());
             }
-            let mut found = p["head"]["sha"] == c.commit;
-            let mut page = 1;
-            while !found {
-                let rows = self
-                    .call(
-                        "GET",
-                        &format!(
-                            "{}/pulls/{}/commits?per_page=100&page={page}",
-                            path(r),
-                            c.pull_request
-                        ),
-                        &token,
-                        None,
-                    )
-                    .await?;
-                let rows = rows.as_array().ok_or_else(Fault::unavailable)?;
-                found = rows.iter().any(|v| v["sha"] == c.commit);
-                if rows.len() < 100 {
-                    break;
+            if p["head"]["sha"] != c.commit {
+                match tokio::time::timeout(
+                    self.membership_deadline,
+                    self.pull_contains(r, c, &token),
+                )
+                .await
+                {
+                    Ok(Ok(true)) => {}
+                    Ok(Ok(false)) => return Err(Fault::unavailable()),
+                    Ok(Err(fault)) => return Err(fault),
+                    Err(_) => {
+                        tracing::warn!(
+                            category = "membership_deadline",
+                            pull_request = c.pull_request,
+                            "pull request membership check exceeded its deadline"
+                        );
+                        return Err(Fault::unavailable());
+                    }
                 }
-                page += 1;
-            }
-            if !found {
-                return Err(Fault::unavailable());
             }
             let base = if c.baseline_commit.is_empty() {
                 let v = self

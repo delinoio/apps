@@ -790,12 +790,232 @@ impl Harness {
         request.send()
     }
 
+    /// Sends a request over a raw socket whose body arrives slowly: the headers and the first
+    /// body byte go out at once and the rest after `hold`. No caller timeout header is sent.
+    /// Returns the reply and the time until it was fully read, or panics after `watchdog`.
+    pub async fn call_slow(
+        &self,
+        method: &str,
+        token: &str,
+        body: Value,
+        hold: Duration,
+        watchdog: Duration,
+    ) -> (Wire, Duration) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let payload = serde_json::to_vec(&body).unwrap();
+        let head = format!(
+            "POST /delitools.v1.DelitoolsService/{method} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nConnect-Protocol-Version: 1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            self.base.trim_start_matches("http://"),
+            payload.len()
+        );
+        let stream = tokio::net::TcpStream::connect(self.base.trim_start_matches("http://"))
+            .await
+            .unwrap();
+        let (mut reader, mut writer) = stream.into_split();
+        let started = tokio::time::Instant::now();
+        let sender = tokio::spawn(async move {
+            // The peer may answer and close before the body ends, so write errors are expected.
+            let _ = writer.write_all(head.as_bytes()).await;
+            let _ = writer.write_all(&payload[..1]).await;
+            tokio::time::sleep(hold).await;
+            let _ = writer.write_all(&payload[1..]).await;
+            let _ = writer.flush().await;
+            // Keep the write half open until the reply is read.
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let mut raw = Vec::new();
+        let read = tokio::time::timeout(watchdog, async {
+            let mut chunk = [0u8; 4096];
+            loop {
+                match reader.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => raw.extend_from_slice(&chunk[..n]),
+                    // A reset after the reply was received only means the peer stopped reading.
+                    Err(_) if !raw.is_empty() => break,
+                    Err(error) => panic!("no reply before the connection broke: {error}"),
+                }
+            }
+        })
+        .await;
+        let elapsed = started.elapsed();
+        sender.abort();
+        read.expect("the reply must arrive before the watchdog");
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        let (head, body) = text.split_once("\r\n\r\n").expect("an HTTP reply");
+        let mut lines = head.lines();
+        let status = lines
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .expect("a status line");
+        let header = |name: &str| {
+            lines
+                .clone()
+                .filter_map(|l| l.split_once(':'))
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| v.trim().to_owned())
+        };
+        let reply_text =
+            if header("transfer-encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
+                dechunk(body)
+            } else {
+                body.to_owned()
+            };
+        let wire = Wire {
+            status,
+            request_id_header: header("x-delitools-request-id"),
+            retry_after: header("retry-after"),
+            body: serde_json::from_str(&reply_text).unwrap_or(Value::Null),
+            bytes: reply_text.clone().into_bytes(),
+            raw: reply_text,
+        };
+        (wire, elapsed)
+    }
+
+    /// Builds a Connect unary request in the given encoding, optionally asserting a caller
+    /// deadline through `Connect-Timeout-Ms` (the value is sent verbatim, even when malformed).
+    pub fn request_with(
+        &self,
+        method: &str,
+        token: &str,
+        body: &Value,
+        encoding: Encoding,
+        timeout_header: Option<&str>,
+    ) -> reqwest::RequestBuilder {
+        let mut request = self
+            .client
+            .post(format!(
+                "{}/delitools.v1.DelitoolsService/{method}",
+                self.base
+            ))
+            .header("Connect-Protocol-Version", "1")
+            .bearer_auth(token);
+        request = match encoding {
+            Encoding::Json => request
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_vec(body).unwrap()),
+            Encoding::Proto => request
+                .header("Content-Type", "application/proto")
+                .body(proto_request(method, body)),
+        };
+        if let Some(value) = timeout_header {
+            request = request.header("Connect-Timeout-Ms", value);
+        }
+        request
+    }
+
+    /// Like [`Harness::call`], but in either encoding and with an optional asserted deadline.
+    /// A successful binary reply is decoded into the JSON shape of the Connect JSON reply.
+    pub async fn call_with(
+        &self,
+        method: &str,
+        token: &str,
+        body: &Value,
+        encoding: Encoding,
+        timeout_header: Option<&str>,
+    ) -> Wire {
+        let response = self
+            .request_with(method, token, body, encoding, timeout_header)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        };
+        let request_id_header = header("x-delitools-request-id");
+        let retry_after = header("retry-after");
+        let binary = header("content-type").is_some_and(|v| v.starts_with("application/proto"));
+        let bytes = response.bytes().await.unwrap();
+        let body = if binary && status == 200 {
+            proto_response(method, &bytes)
+        } else {
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+        };
+        Wire {
+            status,
+            request_id_header,
+            retry_after,
+            body,
+            raw: String::from_utf8_lossy(&bytes).into_owned(),
+            bytes: bytes.to_vec(),
+        }
+    }
+
     pub async fn translate(&self, token: &str, body: Value) -> Wire {
         self.call("Translate", Some(token), body).await
     }
     pub async fn extract(&self, token: &str, body: Value) -> Wire {
         self.call("Extract", Some(token), body).await
     }
+}
+
+/// The two Connect unary encodings of the business RPCs.
+#[derive(Clone, Copy, Debug)]
+pub enum Encoding {
+    Json,
+    Proto,
+}
+
+fn proto_request(method: &str, body: &Value) -> Vec<u8> {
+    use delino_protocol::delitools::v1::{ExtractRequest, TranslateRequest};
+    let text = |key: &str| body[key].as_str().unwrap_or_default().to_owned();
+    if method == "Translate" {
+        TranslateRequest {
+            tenant_id: text("tenantId"),
+            texts: body["texts"]
+                .as_array()
+                .map(|texts| {
+                    texts
+                        .iter()
+                        .filter_map(|t| t.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            target_language: text("targetLanguage"),
+            source_language: text("sourceLanguage"),
+            model: text("model"),
+            ..Default::default()
+        }
+        .encode_to_vec()
+    } else {
+        ExtractRequest {
+            tenant_id: text("tenantId"),
+            text: text("text"),
+            json_schema: text("jsonSchema"),
+            ..Default::default()
+        }
+        .encode_to_vec()
+    }
+}
+
+fn proto_response(method: &str, bytes: &[u8]) -> Value {
+    use delino_protocol::delitools::v1::{ExtractResponse, TranslateResponse};
+    if method == "Translate" {
+        let reply = TranslateResponse::decode_from_slice(bytes).unwrap();
+        json!({"requestId": reply.request_id, "translations": reply.translations})
+    } else {
+        let reply = ExtractResponse::decode_from_slice(bytes).unwrap();
+        json!({"requestId": reply.request_id, "json": reply.json})
+    }
+}
+
+/// Joins the chunks of a `Transfer-Encoding: chunked` body.
+fn dechunk(mut rest: &str) -> String {
+    let mut out = String::new();
+    while let Some((size, tail)) = rest.split_once("\r\n") {
+        let size = usize::from_str_radix(size.split(';').next().unwrap().trim(), 16).unwrap_or(0);
+        if size == 0 || tail.len() < size {
+            break;
+        }
+        out.push_str(&tail[..size]);
+        rest = tail[size..].trim_start_matches("\r\n");
+    }
+    out
 }
 
 pub fn translate_body(texts: &[&str]) -> Value {
