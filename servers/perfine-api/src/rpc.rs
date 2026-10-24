@@ -156,14 +156,7 @@ impl Server {
                     .failed
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 tracing::warn!(request_id=%trace,procedure=op,code=?f.code,"Perfine request failed");
-                let reason = match f.code {
-                    connectrpc::ErrorCode::Unauthenticated => 2,
-                    connectrpc::ErrorCode::PermissionDenied => 3,
-                    connectrpc::ErrorCode::Unavailable => 4,
-                    connectrpc::ErrorCode::NotFound => 6,
-                    connectrpc::ErrorCode::ResourceExhausted => 11,
-                    _ => 1,
-                };
+                let reason = crate::error::reason(&f);
                 let detail = ErrorDetail {
                     request_id: trace.clone(),
                     reason: reason.into(),
@@ -277,7 +270,10 @@ impl Server {
             // Upload/publication retries re-enter their state machines to recheck mutable authority and bindings.
             if let Some(row) = cached {
                 if row.get::<String, _>("digest") != digest {
-                    return Err(Fault::conflict());
+                    return Err(crate::error::domain(
+                        Fault::conflict(),
+                        ErrorReason::RequestIdConflict,
+                    ));
                 }
                 if op == "PrepareExperiment" {
                     let c = connection(&mut tx, space, string(q, "connectionId")).await?;
@@ -1011,7 +1007,10 @@ impl Server {
             // API-key dispatch needs a future key-ID introspection API; never retain the secret.
             id(actor).map_err(|_| Fault::denied())?;
             if approval["draft"] != q["expectedDraft"] {
-                return Err(Fault::precondition("approval stale"));
+                return Err(crate::error::domain(
+                    Fault::precondition("approval stale"),
+                    ErrorReason::ApprovalStale,
+                ));
             }
             let e = experiment(db, space, string(&approval, "experimentId")).await?;
             let c = connection(db, space, string(&e, "connectionId")).await?;
