@@ -29,6 +29,7 @@ use chrono::{DateTime, Utc};
 use server_common::authority::TenantState;
 use sqlx::{PgPool, Row};
 use std::{collections::HashSet, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// Result of one delivery attempt of one row.
@@ -324,6 +325,9 @@ impl Outbox {
 
 /// Delivery worker. One instance runs inside the single serving process.
 pub struct Delivery {
+    /// Closes when the process loses the instance lock; no cycle phase or `IngestEvent` starts
+    /// afterwards and a running call is dropped.
+    pub fence: CancellationToken,
     pub outbox: Outbox,
     pub delcore: Arc<DelcoreClient>,
     pub settings: OutboxSettings,
@@ -333,6 +337,9 @@ pub struct Delivery {
 impl Delivery {
     /// Runs one expiry, tenant-lifecycle and delivery cycle at `now`.
     pub async fn cycle(&self, now: DateTime<Utc>) -> Result<Stats, CycleError> {
+        if self.fence.is_cancelled() {
+            return Ok(self.outbox.stats(now).await?);
+        }
         let expired = self.outbox.expire(now).await?;
         if expired > 0 {
             self.metrics.expired.inc_by(expired);
@@ -351,7 +358,12 @@ impl Delivery {
                 .into_iter()
                 .collect();
             // A failed lifecycle lookup only skips this optimization; delivery still runs.
-            if let Ok(states) = self.delcore.tenant_states(&tenants).await {
+            let states = tokio::select! {
+                biased;
+                _ = self.fence.cancelled() => return Ok(self.outbox.stats(now).await?),
+                states = self.delcore.tenant_states(&tenants) => states,
+            };
+            if let Ok(states) = states {
                 for (tenant, state) in states {
                     if state == TenantState::Deleted
                         && let Ok(id) = Uuid::parse_str(&tenant)
@@ -372,7 +384,14 @@ impl Delivery {
             }
         }
         for row in rows {
-            let outcome = match self.delcore.ingest_event(&row.event).await {
+            // An ingest whose answer is lost to the fence is simply retried by the replacement;
+            // Delcore's service-scoped idempotency makes that replay safe.
+            let ingest = tokio::select! {
+                biased;
+                _ = self.fence.cancelled() => return Ok(self.outbox.stats(now).await?),
+                ingest = self.delcore.ingest_event(&row.event) => ingest,
+            };
+            let outcome = match ingest {
                 Ok(()) => Outcome::Delivered,
                 Err(IngestFailure::Retryable(category)) => Outcome::Retry(category),
                 Err(IngestFailure::Poison(category)) => Outcome::Poison(category),
@@ -437,12 +456,19 @@ impl Delivery {
         }
     }
 
-    /// Runs cycles until the task is aborted.
+    /// Runs cycles until the task is aborted or the fence closes.
     pub async fn run(self: Arc<Self>) {
         let mut ticker = tokio::time::interval(self.settings.interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            ticker.tick().await;
+            tokio::select! {
+                biased;
+                _ = self.fence.cancelled() => return,
+                _ = ticker.tick() => {}
+            }
+            if self.fence.is_cancelled() {
+                return;
+            }
             if self.cycle(server_common::now()).await.is_err() {
                 tracing::error!(category = "usage_cycle", "usage delivery cycle failed");
             }

@@ -61,36 +61,51 @@ async fn run() -> anyhow::Result<()> {
     anyhow::ensure!(acquired, "delitools instance lock unavailable");
     let listen = config.listen.clone();
     let shutdown_grace = config.limits.execution_timeout;
+    let dependency_timeout = config.dependency_timeout;
     let server = Server::new(db.clone(), config)?;
     let app = http::router(server.clone());
     let listener = tokio::net::TcpListener::bind(&listen).await?;
     tracing::info!(address = listen, "delitools-api listening");
     let delivery = tokio::spawn(server.delivery().run());
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-    let monitor = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            let ping = tokio::time::timeout(
-                Duration::from_secs(1),
-                sqlx::query("SELECT 1").execute(&mut lock),
-            )
-            .await;
-            if !matches!(ping, Ok(Ok(_))) {
-                let _ = stop_tx.send(());
-                break;
-            }
-        }
-    });
     let lost = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let lost_signal = lost.clone();
+    // Losing the lock session means a replacement may already own the database. The monitor
+    // therefore fences the service and stops delivery itself, immediately and without waiting for
+    // the transport drain that an ordinary SIGTERM shutdown performs. The drain that follows
+    // ends as soon as the canceled jobs finish; confirmed usage is still stored, bounded by
+    // `DEPENDENCY_TIMEOUT`. See the instance-lock rules in the server contract.
+    let monitor = {
+        let lost = lost.clone();
+        let server = server.clone();
+        let delivery = delivery.abort_handle();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let ping = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    sqlx::query("SELECT 1").execute(&mut lock),
+                )
+                .await;
+                if !matches!(ping, Ok(Ok(_))) {
+                    lost.store(true, std::sync::atomic::Ordering::SeqCst);
+                    server.fence();
+                    delivery.abort();
+                    tracing::error!(
+                        category = "instance_lock",
+                        alert = true,
+                        "instance lock session lost"
+                    );
+                    let _ = stop_tx.send(());
+                    break;
+                }
+            }
+        })
+    };
     let shutdown = async move {
         tokio::select! {
             _ = server_common::shutdown() => {},
-            _ = stop_rx => {
-                lost_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-                tracing::error!("instance lock session lost");
-            }
+            _ = stop_rx => {},
         }
     };
     server_common::transport::serve(
@@ -109,12 +124,18 @@ async fn run() -> anyhow::Result<()> {
     let _ = delivery.await;
     monitor.abort();
     let _ = monitor.await;
-    db.close().await;
+    if lost.load(std::sync::atomic::Ordering::SeqCst) {
+        // Closing waits for checked-out connections; a stuck accounting statement must not keep a
+        // fenced process alive after its replacement took over.
+        let _ = tokio::time::timeout(dependency_timeout, db.close()).await;
+    } else {
+        db.close().await;
+    }
     if let Some(provider) = provider {
         provider.shutdown()?
     }
     anyhow::ensure!(
-        !lost.load(std::sync::atomic::Ordering::Relaxed),
+        !lost.load(std::sync::atomic::Ordering::SeqCst),
         "instance lock session lost"
     );
     Ok(())
