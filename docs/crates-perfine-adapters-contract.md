@@ -85,3 +85,7 @@ Update the project index and affected owning contracts together when ownership, 
 - [pprof profile schema](https://github.com/google/pprof/blob/main/proto/profile.proto)
 - [Node CPU profiling options](https://nodejs.org/api/cli.html#--cpu-prof)
 - [Docker container execution boundary](https://docs.docker.com/reference/cli/docker/container/run/)
+
+### Interrupted workspace reattachment
+
+The Docker adapter writes a host-owned ownership record outside candidate mounts after preparing an isolated checkout. Reattachment checks the original request and Docker configuration, direct canonical workspace paths, branch, clean source, pinned-base ancestry, absent remotes and Git alternates, and active container mounts. Reject changed or legacy workspaces without the record. Refuse reattachment while a container uses the retained source or build directory. Reattachment preserves the original checkout and build directory; it does not reset deadlines or authorize new candidate work.
