@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use server_common::{
     Fault, Result,
     authority::{Authority, Role},
-    now, string, uuid,
+    integer, now, string, uuid,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
@@ -450,6 +450,31 @@ impl Server {
         if active.is_some_and(|id| id != space_id) {
             return Err(Fault::exists());
         }
+        // Lock the same-space row even when it is disconnected so a concurrent webhook or
+        // maintenance pass cannot commit a visibility change between the refresh and the upsert.
+        sqlx::query(
+            "SELECT id FROM git_tracker_repositories WHERE github_id=$1 AND space_id=$2 FOR UPDATE",
+        )
+        .bind(github_id)
+        .bind(space_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        // Discovery ran before this transaction, so its visibility may be older than a committed
+        // private update. Persist only metadata fetched under the locks; a failed or malformed
+        // refresh aborts the whole connection (the transaction rolls back) with no stale fallback.
+        let metadata = self.github.metadata(&r).await.map_err(|fault| {
+            self.record_failure(&fault);
+            Fault::denied()
+        })?;
+        if integer(&metadata, "id") != github_id || string(&metadata, "full_name").is_empty() {
+            self.metrics
+                .events
+                .with_label_values(&["github", "failure"])
+                .inc();
+            return Err(Fault::denied());
+        }
+        r.full_name = string(&metadata, "full_name").into();
+        r.public = metadata["private"] == false;
         let id:uuid::Uuid=sqlx::query_scalar("INSERT INTO git_tracker_repositories(id,github_id,space_id,full_name,installation_id,public) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(github_id,space_id) DO UPDATE SET full_name=EXCLUDED.full_name,installation_id=EXCLUDED.installation_id,public=EXCLUDED.public,connected=true RETURNING id") .bind(uuid::Uuid::now_v7()).bind(github_id).bind(space_id).bind(&r.full_name).bind(&r.installation_id).bind(r.public).fetch_one(&mut *tx).await?;
         r.id = id.to_string();
         sqlx::query("INSERT INTO git_tracker_links(space_id,user_id,github_id) VALUES($1,$2,$3) ON CONFLICT(space_id,user_id) DO UPDATE SET github_id=EXCLUDED.github_id").bind(space_id).bind(uuid(&actor)?).bind(user).execute(&mut *tx).await?;

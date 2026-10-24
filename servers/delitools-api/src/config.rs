@@ -71,6 +71,32 @@ pub struct Limits {
     pub tenant_concurrency: usize,
 }
 
+/// Margin added to the execution timeout before the HTTP layer and the connection writer give up.
+pub const TRANSPORT_MARGIN: Duration = Duration::from_secs(5);
+
+impl Limits {
+    /// The execution timeout plus [`TRANSPORT_MARGIN`], or `None` when the sum is not
+    /// representable as a `Duration`.
+    pub fn transport_allowance(&self) -> Option<Duration> {
+        self.execution_timeout.checked_add(TRANSPORT_MARGIN)
+    }
+
+    /// The monotonic deadline of an execution that starts at `start`, or `None` when it is
+    /// beyond the platform's `Instant` range. Never panics, unlike `start + timeout`.
+    pub fn deadline_from(&self, start: tokio::time::Instant) -> Option<tokio::time::Instant> {
+        start.checked_add(self.execution_timeout)
+    }
+
+    /// The deadline of the transport allowance that starts at `start`, with the same
+    /// guarantees as [`Limits::deadline_from`].
+    pub fn transport_deadline_from(
+        &self,
+        start: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        start.checked_add(self.transport_allowance()?)
+    }
+}
+
 /// Retry policy for transient Gateway failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -247,6 +273,14 @@ impl Config {
         ensure!(
             l.tenant_burst >= 1 && l.tenant_concurrency >= 1,
             "tenant burst and concurrency must be at least 1"
+        );
+        // Deadlines are monotonic instants, so the timeout and its transport allowance must be
+        // representable from now on this platform, not only as a `Duration`. The bound is
+        // platform dependent. The message never echoes the configured value.
+        ensure!(
+            l.transport_deadline_from(tokio::time::Instant::now())
+                .is_some(),
+            "DELITOOLS_EXECUTION_TIMEOUT is too large for this platform's monotonic clock"
         );
         ensure!(
             self.dependency_timeout <= l.execution_timeout,
@@ -592,6 +626,97 @@ pub(crate) mod tests {
         let mut env = base_env(&dir);
         env.insert("DELITOOLS_OUTBOX_INTERVAL".into(), "0.000000001s".into());
         assert_eq!(load(&env).unwrap().outbox.interval, Duration::from_nanos(1));
+    }
+
+    #[test]
+    fn execution_timeouts_beyond_the_clock_range_are_rejected_without_panicking() {
+        let dir = tempdir();
+        for value in ["10000000000000000000s", "18446744073709551615s"] {
+            let mut env = base_env(&dir);
+            env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), value.into());
+            let error = load(&env).unwrap_err().to_string();
+            assert!(
+                error.contains("DELITOOLS_EXECUTION_TIMEOUT"),
+                "{value}: {error}"
+            );
+            assert!(
+                !error.contains(value),
+                "the value must not be echoed: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn direct_validation_rejects_unrepresentable_deadlines() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        // Duration::MAX cannot take the transport margin; this used to panic in the router.
+        config.limits.execution_timeout = Duration::MAX;
+        config.dependency_timeout = Duration::from_secs(3);
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("DELITOOLS_EXECUTION_TIMEOUT"), "{error}");
+        // The margin fits a Duration but the deadline does not fit the monotonic clock.
+        config.limits.execution_timeout = Duration::MAX - TRANSPORT_MARGIN;
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("DELITOOLS_EXECUTION_TIMEOUT"), "{error}");
+    }
+
+    #[test]
+    fn deadline_helpers_agree_with_the_clock_at_the_boundary() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        let start = tokio::time::Instant::now();
+        assert_eq!(
+            config.limits.transport_allowance(),
+            Some(Duration::from_secs(125))
+        );
+        assert_eq!(
+            config.limits.deadline_from(start),
+            Some(start + Duration::from_secs(120))
+        );
+        // The largest whole-second offset the platform clock accepts from `start`.
+        let (mut ok, mut bad) = (0u64, u64::MAX);
+        while bad - ok > 1 {
+            let mid = ok + (bad - ok) / 2;
+            if start.checked_add(Duration::from_secs(mid)).is_some() {
+                ok = mid;
+            } else {
+                bad = mid;
+            }
+        }
+        let margin = TRANSPORT_MARGIN.as_secs();
+        config.limits.execution_timeout = Duration::from_secs(ok - margin);
+        assert!(config.limits.deadline_from(start).is_some());
+        assert!(config.limits.transport_deadline_from(start).is_some());
+        // Only the transport margin crosses the boundary: the execution deadline still fits.
+        config.limits.execution_timeout = Duration::from_secs(ok - margin + 1);
+        assert!(config.limits.deadline_from(start).is_some());
+        assert!(config.limits.transport_deadline_from(start).is_none());
+        config.limits.execution_timeout = Duration::from_secs(bad);
+        assert!(config.limits.deadline_from(start).is_none());
+    }
+
+    #[test]
+    fn defaults_compound_durations_and_larger_valid_timeouts_are_kept() {
+        let dir = tempdir();
+        let config = load(&base_env(&dir)).unwrap();
+        assert_eq!(config.limits.execution_timeout, Duration::from_secs(120));
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "1h30m".into());
+        assert_eq!(
+            load(&env).unwrap().limits.execution_timeout,
+            Duration::from_secs(5400)
+        );
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "720h".into());
+        env.insert("DEPENDENCY_TIMEOUT".into(), "1h".into());
+        assert_eq!(
+            load(&env).unwrap().limits.execution_timeout,
+            Duration::from_secs(720 * 3600)
+        );
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "10s".into());
+        env.insert("DEPENDENCY_TIMEOUT".into(), "11s".into());
+        let error = load(&env).unwrap_err().to_string();
+        assert!(error.contains("DEPENDENCY_TIMEOUT"), "{error}");
     }
 
     pub(crate) fn tempdir() -> std::path::PathBuf {

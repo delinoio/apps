@@ -594,3 +594,451 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
         .unwrap();
     admin.close().await;
 }
+
+/// GitHub visibility state and one-shot gate shared with the metadata mock.
+///
+/// The gate parks the next `/repositories/42` response so a test can hold a webhook or maintenance
+/// transaction open (it holds the repository row lock while it fetches metadata) and order a
+/// connection attempt behind it without sleeping.
+struct GitHubMock {
+    private: std::sync::atomic::AtomicBool,
+    fail_metadata: std::sync::atomic::AtomicBool,
+    gate: std::sync::Mutex<Option<(Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>>,
+}
+
+struct Fixture {
+    server: Arc<Server>,
+    http: reqwest::Client,
+    base: String,
+    github: Arc<GitHubMock>,
+    schema: String,
+    admin: sqlx::PgPool,
+    space: String,
+    commit: String,
+    _tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+async fn fixture() -> Fixture {
+    use std::sync::atomic::Ordering;
+    let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
+    let admin = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!("tracker_{}", uuid::Uuid::now_v7().simple());
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let search = schema.clone();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(10)
+        .after_connect(move |c, _| {
+            let search = search.clone();
+            Box::pin(async move {
+                // The application name lets a test find its own lock waiters in pg_stat_activity.
+                sqlx::query(&format!("SET search_path TO {search}"))
+                    .execute(&mut *c)
+                    .await?;
+                sqlx::query(&format!("SET application_name TO '{search}'"))
+                    .execute(c)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!("../migrations/00001_git_tracker.sql"))
+        .execute(&db)
+        .await
+        .unwrap();
+    let actor = uuid::Uuid::now_v7().to_string();
+    let space = uuid::Uuid::now_v7().to_string();
+    let commit = "a".repeat(40);
+    let github = Arc::new(GitHubMock {
+        private: false.into(),
+        fail_metadata: false.into(),
+        gate: std::sync::Mutex::new(None),
+    });
+    let (commit_mock, actor_mock, github_mock) = (commit.clone(), actor.clone(), github.clone());
+    let mock = Router::new().fallback(move |r: Request| {
+        let (commit, actor, github) = (commit_mock.clone(), actor_mock.clone(), github_mock.clone());
+        async move {
+            let p = r.uri().path().to_owned();
+            let auth = r
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_owned();
+            if p == "/repositories/42" {
+                if github.fail_metadata.load(Ordering::SeqCst) {
+                    return (StatusCode::UNAUTHORIZED, Json(json!({"code":"unauthenticated"})));
+                }
+                let gate = github.gate.lock().unwrap().take();
+                if let Some((entered, release)) = gate {
+                    entered.notify_one();
+                    release.notified().await;
+                }
+            }
+            let private = github.private.load(Ordering::SeqCst);
+            let out = match p.as_str() {
+                "/token" => json!({"access_token":"service","expires_in":3600}),
+                "/delcore.v1.DelcoreService/GetCurrentUser" if auth == "Bearer manager" => {
+                    json!({"userId":actor})
+                }
+                "/delcore.v1.DelcoreService/ListMembers" if auth == "Bearer manager" => json!({}),
+                "/delcore.v1.DelcoreService/Authorize" => json!({"allowed":true}),
+                "/delcore.v1.DelcoreService/CheckTenantLifecycle" => {
+                    json!({"finalizedTenantIds":[]})
+                }
+                "/user" => json!({"id":7}),
+                // Discovery deliberately reports the repository as public so a stale snapshot
+                // would be visible if the connection persisted it.
+                "/repos/owner/repo" => {
+                    json!({"id":42,"full_name":"owner/repo","private":false,"permissions":{"admin":true}})
+                }
+                "/repositories/42" => json!({"id":42,"full_name":"owner/repo","private":private}),
+                "/repos/owner/repo/installation" => json!({"id":1}),
+                "/app/installations/1/access_tokens" => json!({"token":"installation"}),
+                "/repos/owner/repo/git/ref/heads/main" => {
+                    json!({"ref":"refs/heads/main","object":{"type":"commit","sha":commit}})
+                }
+                p if p.starts_with("/repos/owner/repo/commits/") => {
+                    json!({"sha":commit,"parents":[]})
+                }
+                _ => return (StatusCode::UNAUTHORIZED, Json(json!({"code":"unauthenticated"}))),
+            };
+            (StatusCode::OK, Json(out))
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mock_task = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    let private_key = RsaPrivateKey::from_pkcs8_pem(std::str::from_utf8(KEY).unwrap()).unwrap();
+    let jwks: JwkSet = serde_json::from_value(json!({"keys":[{"kty":"RSA","kid":"fixture","alg":"RS256","use":"sig","n":URL_SAFE_NO_PAD.encode(private_key.n().to_bytes_be()),"e":URL_SAFE_NO_PAD.encode(private_key.e().to_bytes_be())}]})).unwrap();
+    let server = Arc::new(Server {
+        db,
+        authority: Authority::new(
+            http.clone(),
+            base.clone(),
+            format!("{base}/token"),
+            "resource".into(),
+            "client".into(),
+            "fixture".into(),
+        ),
+        github: GitHub::new(
+            http.clone(),
+            base.clone(),
+            "1".into(),
+            EncodingKey::from_rsa_pem(KEY).unwrap(),
+        ),
+        actions: Actions::new(http.clone(), format!("{base}/jwks"), jwks),
+        audit_retention: chrono::Duration::days(90),
+        webhook_secret: "fixture-only".into(),
+        metrics: Arc::new(Metrics::new(Service::GitTracker)),
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!(
+        "http://{}/gittracker.v1.GitTrackerService",
+        listener.local_addr().unwrap()
+    );
+    let router = Router::new().fallback_service(
+        connectrpc::Router::new()
+            .add_service(server.clone())
+            .into_axum_service(),
+    );
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    Fixture {
+        server,
+        http,
+        base,
+        github,
+        schema,
+        admin,
+        space,
+        commit,
+        _tasks: vec![mock_task, task],
+    }
+}
+
+impl Fixture {
+    async fn call(&self, method: &str, authorization: &str, q: Value) -> (StatusCode, Value) {
+        let r = self
+            .http
+            .post(format!("{}/{method}", self.base))
+            .header("Authorization", authorization)
+            .header("Connect-Protocol-Version", "1")
+            .json(&q)
+            .send()
+            .await
+            .unwrap();
+        (r.status(), r.json().await.unwrap())
+    }
+    async fn connect(&self) -> (StatusCode, Value) {
+        self.call(
+            "ConnectRepository",
+            "Bearer manager",
+            json!({"spaceId":self.space,"fullName":"owner/repo","githubAccessToken":"fixture"}),
+        )
+        .await
+    }
+    /// Arms the one-shot metadata gate and returns `(entered, release)`.
+    fn arm_gate(&self) -> (Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>) {
+        let gate = (
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(tokio::sync::Notify::new()),
+        );
+        *self.github.gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+    /// Waits until a statement of this fixture's schema is blocked on a lock.
+    async fn wait_for_lock_waiter(&self) {
+        for _ in 0..500 {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type='Lock'",
+            )
+            .bind(&self.schema)
+            .fetch_one(&self.admin)
+            .await
+            .unwrap();
+            if waiting > 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the connection never blocked on the repository lock");
+    }
+    async fn row(&self) -> Option<(String, bool, bool)> {
+        sqlx::query(&format!(
+            "SELECT id::text,public,connected FROM {}.git_tracker_repositories",
+            self.schema
+        ))
+        .fetch_optional(&self.admin)
+        .await
+        .unwrap()
+        .map(|r| {
+            use sqlx::Row;
+            (r.get(0), r.get(1), r.get(2))
+        })
+    }
+    async fn audit_count(&self) -> i64 {
+        sqlx::query_scalar(&format!(
+            "SELECT count(*) FROM {}.git_tracker_audit",
+            self.schema
+        ))
+        .fetch_one(&self.admin)
+        .await
+        .unwrap()
+    }
+    async fn upload(&self, rid: &str) {
+        let (_, issued) = self
+            .call(
+                "IssueToken",
+                "Bearer manager",
+                json!({"repositoryId":rid,"expiresAt":(chrono::Utc::now()+chrono::Duration::days(1)).to_rfc3339()}),
+            )
+            .await;
+        let auth = format!("Bearer {}", issued["token"].as_str().unwrap());
+        let context =
+            json!({"repositoryId":rid,"executionId":"run","commit":self.commit,"branch":"main"});
+        let dataset = json!({"id":"size","name":"Size","columns":[{"id":"bytes","unit":"B","direction":"DIRECTION_LOWER"}]});
+        let (status, body) = self
+            .call(
+                "Upload",
+                &auth,
+                json!({"context":context,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    /// Asserts private visibility: anonymous reads are denied and listings omit the repository,
+    /// while an authorized member still reads the retained history.
+    async fn assert_private_with_history(&self, rid: &str) {
+        let (status, listed) = self
+            .call("ListRepositories", "", json!({"spaceId":""}))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert!(
+            listed["repositories"]
+                .as_array()
+                .is_none_or(|repositories| repositories.is_empty()),
+            "{listed}"
+        );
+        let (status, denied) = self
+            .call(
+                "GetExecution",
+                "",
+                json!({"repositoryId":rid,"executionId":"run"}),
+            )
+            .await;
+        assert_ne!(status, StatusCode::OK, "{denied}");
+        let (status, execution) = self
+            .call(
+                "GetExecution",
+                "Bearer manager",
+                json!({"repositoryId":rid,"executionId":"run"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{execution}");
+        assert_eq!(
+            execution["execution"]["measurements"][0]["rows"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+}
+
+fn webhook_event() -> (String, Vec<u8>) {
+    let raw = serde_json::to_vec(
+        &json!({"action":"privatized","repository":{"id":42},"installation":{"id":1}}),
+    )
+    .unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(b"fixture-only").unwrap();
+    mac.update(&raw);
+    (
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes())),
+        raw,
+    )
+}
+
+/// Which committed private update runs while a same-space connection waits for the row lock.
+#[derive(Clone, Copy)]
+enum Interleaving {
+    Webhook,
+    Maintenance,
+}
+
+async fn connect_does_not_restore_anonymous_access(interleaving: Interleaving) {
+    use std::sync::atomic::Ordering;
+    let f = fixture().await;
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    assert_eq!(connected["repository"]["public"], true);
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    f.upload(&rid).await;
+    let (status, anonymous) = f
+        .call(
+            "GetExecution",
+            "",
+            json!({"repositoryId":rid,"executionId":"run"}),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "public history must be anonymously readable: {anonymous}"
+    );
+
+    // The webhook or maintenance pass holds the row lock while it fetches metadata. GitHub still
+    // reports the repository as public at this point, which is the connection's older observation.
+    let (entered, release) = f.arm_gate();
+    let server = f.server.clone();
+    let update = tokio::spawn(async move {
+        match interleaving {
+            Interleaving::Webhook => {
+                let (signature, raw) = webhook_event();
+                server.webhook("repository", &signature, &raw).await
+            }
+            Interleaving::Maintenance => server.maintain().await,
+        }
+    });
+    entered.notified().await;
+    let reconnect = {
+        let (http, base, space) = (f.http.clone(), f.base.clone(), f.space.clone());
+        tokio::spawn(async move {
+            let r = http
+                .post(format!("{base}/ConnectRepository"))
+                .header("Authorization", "Bearer manager")
+                .header("Connect-Protocol-Version", "1")
+                .json(
+                    &json!({"spaceId":space,"fullName":"owner/repo","githubAccessToken":"fixture"}),
+                )
+                .send()
+                .await
+                .unwrap();
+            (r.status(), r.json::<Value>().await.unwrap())
+        })
+    };
+    f.wait_for_lock_waiter().await;
+    f.github.private.store(true, Ordering::SeqCst);
+    release.notify_one();
+    update.await.unwrap().unwrap();
+    let (status, reconnected) = reconnect.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{reconnected}");
+    assert_eq!(reconnected["repository"]["id"], rid);
+    assert_ne!(reconnected["repository"]["public"], true, "{reconnected}");
+    assert_eq!(f.row().await, Some((rid.clone(), false, true)));
+    f.assert_private_with_history(&rid).await;
+
+    // A genuinely newer public observation enables public reads again on the same connection.
+    f.github.private.store(false, Ordering::SeqCst);
+    let (status, republic) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{republic}");
+    assert_eq!(republic["repository"]["id"], rid);
+    assert_eq!(republic["repository"]["public"], true);
+    assert_eq!(f.row().await, Some((rid.clone(), true, true)));
+    let (status, anonymous) = f
+        .call(
+            "GetExecution",
+            "",
+            json!({"repositoryId":rid,"executionId":"run"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{anonymous}");
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_connect_keeps_private_visibility_committed_by_webhook() {
+    connect_does_not_restore_anonymous_access(Interleaving::Webhook).await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_connect_keeps_private_visibility_committed_by_maintenance() {
+    connect_does_not_restore_anonymous_access(Interleaving::Maintenance).await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn postgres_connect_aborts_without_partial_state_when_locked_refresh_fails() {
+    use std::sync::atomic::Ordering;
+    let f = fixture().await;
+
+    // A first connection whose refresh fails must create nothing.
+    f.github.fail_metadata.store(true, Ordering::SeqCst);
+    let (status, failed) = f.connect().await;
+    assert_ne!(status, StatusCode::OK, "{failed}");
+    assert_eq!(f.row().await, None);
+    assert_eq!(f.audit_count().await, 0);
+    let links: i64 = sqlx::query_scalar(&format!(
+        "SELECT count(*) FROM {}.git_tracker_links",
+        f.schema
+    ))
+    .fetch_one(&f.admin)
+    .await
+    .unwrap();
+    assert_eq!(links, 0);
+
+    // A reconnect of a disconnected repository must neither reconnect it nor fall back to the
+    // public snapshot taken during discovery.
+    f.github.fail_metadata.store(false, Ordering::SeqCst);
+    let (status, connected) = f.connect().await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    let rid = connected["repository"]["id"].as_str().unwrap().to_owned();
+    let (status, body) = f
+        .call("Disconnect", "Bearer manager", json!({"repositoryId":rid}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let audits = f.audit_count().await;
+    f.github.fail_metadata.store(true, Ordering::SeqCst);
+    let (status, failed) = f.connect().await;
+    assert_ne!(status, StatusCode::OK, "{failed}");
+    assert_eq!(f.row().await, Some((rid, false, false)));
+    assert_eq!(f.audit_count().await, audits);
+}
