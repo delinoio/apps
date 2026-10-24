@@ -1086,6 +1086,38 @@ async fn unknown_or_invalid_usage_creates_no_charge_and_zero_tokens_create_no_ev
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn a_truncated_2xx_gateway_body_creates_no_usage_outbox_rows() {
+    let db = TestDb::migrated().await;
+    for extract in [false, true] {
+        // The incomplete bytes carry a usage fragment that must never be billed or estimated.
+        let gateway = RawGateway::start(vec![
+            RawGatewayReply::Truncated(
+                r#"{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":7,"completion_tokens":3"#
+                    .to_owned(),
+            ),
+            RawGatewayReply::Complete {
+                content: r#"["never reached"]"#.to_owned(),
+                usage: json!({"prompt_tokens": 5, "completion_tokens": 2}),
+            },
+        ])
+        .await;
+        let url = gateway.base_url.clone();
+        let h = Harness::start_with(Some(db.pool.clone()), |c| c.gateway.base_url = url).await;
+        let wire = if extract {
+            h.extract(USER_TOKEN, extract_body()).await
+        } else {
+            h.translate(USER_TOKEN, translate_body(&["Hello"])).await
+        };
+        assert_eq!(wire.reason(), "ERROR_REASON_INVALID_OUTPUT", "{extract}");
+        assert_eq!(wire.code(), "internal", "{extract}");
+        assert_eq!(gateway.calls(), 1, "{extract}");
+        assert_eq!(count(&db.pool, None).await, 0, "{extract}");
+    }
+    db.finish().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
 async fn the_billed_attempt_number_follows_the_provider_attempt() {
     let db = TestDb::migrated().await;
     let h = Harness::start(Some(db.pool.clone())).await;

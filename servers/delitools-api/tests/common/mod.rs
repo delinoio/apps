@@ -177,6 +177,110 @@ async fn gateway_handler(
     }
 }
 
+/// A scripted answer of the raw TCP Gateway mock.
+#[derive(Clone)]
+pub enum RawGatewayReply {
+    /// Flushes `200` headers that declare a 1000-byte body, writes `prefix`, then closes the
+    /// connection, so the client sees a successful status followed by a body transport failure.
+    Truncated(String),
+    /// Reads the whole request, then closes without writing any response bytes.
+    CloseBeforeHeaders,
+    /// A complete `200` chat completion; a null `usage` omits the usage object.
+    Complete { content: String, usage: Value },
+}
+
+/// A Gateway mock on a raw TCP listener, for failures that a well-formed HTTP server cannot
+/// produce. It reads each complete request (headers and body) before answering, which avoids an
+/// unrelated connection reset caused by unread request bytes, and answers the scripted replies in
+/// order (`500` once the script is exhausted).
+pub struct RawGateway {
+    pub base_url: String,
+    pub calls: Arc<AtomicUsize>,
+}
+
+impl RawGateway {
+    pub async fn start(script: Vec<RawGatewayReply>) -> Self {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let script = Arc::new(Mutex::new(VecDeque::from(script)));
+        let counter = calls.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let counter = counter.clone();
+                let script = script.clone();
+                tokio::spawn(async move {
+                    let mut received = Vec::new();
+                    let mut chunk = [0u8; 4096];
+                    loop {
+                        let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") else {
+                            match stream.read(&mut chunk).await {
+                                Ok(0) | Err(_) => return,
+                                Ok(n) => {
+                                    received.extend_from_slice(&chunk[..n]);
+                                    continue;
+                                }
+                            }
+                        };
+                        let head = String::from_utf8_lossy(&received[..end]).to_lowercase();
+                        let length: usize = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(0);
+                        if received.len() >= end + 4 + length {
+                            break;
+                        }
+                        match stream.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => received.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let reply = script.lock().unwrap().pop_front();
+                    let bytes = match reply {
+                        None => b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+                        Some(RawGatewayReply::CloseBeforeHeaders) => Vec::new(),
+                        Some(RawGatewayReply::Truncated(prefix)) => format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n{prefix}"
+                        )
+                        .into_bytes(),
+                        Some(RawGatewayReply::Complete { content, usage }) => {
+                            let mut body = json!({
+                                "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+                            });
+                            if !usage.is_null() {
+                                body["usage"] = usage;
+                            }
+                            let body = body.to_string();
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                                body.len()
+                            )
+                            .into_bytes()
+                        }
+                    };
+                    let _ = stream.write_all(&bytes).await;
+                    let _ = stream.flush().await;
+                    // Dropping the stream closes it before the declared body length is reached.
+                });
+            }
+        });
+        Self {
+            base_url: format!("http://{addr}/v1"),
+            calls,
+        }
+    }
+
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
 /// A scripted `IngestEvent` answer.
 #[derive(Clone)]
 pub enum Ingest {

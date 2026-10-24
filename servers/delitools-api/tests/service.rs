@@ -603,6 +603,92 @@ async fn an_unreadable_gateway_body_is_invalid_output_without_retry() {
     assert_eq!(h.gateway.calls(), 1);
 }
 
+/// A `200` response whose body is cut off mid-transfer is an unreadable 2xx body: the provider
+/// already answered, so it is final `INVALID_OUTPUT` after one call, never a retry.
+fn broken_then_valid() -> Vec<RawGatewayReply> {
+    vec![
+        // The prefix includes a usage fragment that must never be recovered or estimated.
+        RawGatewayReply::Truncated(
+            r#"{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":7,"completion_tokens":3"#
+                .to_owned(),
+        ),
+        RawGatewayReply::Complete {
+            content: r#"["never reached"]"#.to_owned(),
+            usage: serde_json::Value::Null,
+        },
+        RawGatewayReply::Truncated("{".to_owned()),
+        RawGatewayReply::Truncated("{".to_owned()),
+    ]
+}
+
+fn assert_unreadable_body_metrics(h: &Harness) {
+    let metrics = h.server.metrics.encode();
+    assert!(
+        metrics.contains("delitools_gateway_attempts_total{outcome=\"invalid_output\"} 1"),
+        "{metrics}"
+    );
+    assert!(
+        metrics.contains("delitools_unknown_usage_total{reason=\"missing\"} 1"),
+        "{metrics}"
+    );
+    assert!(!metrics.contains("outcome=\"transient\""), "{metrics}");
+    assert!(
+        !metrics.contains("delitools_usage_persisted_total{"),
+        "{metrics}"
+    );
+}
+
+#[tokio::test]
+async fn a_truncated_2xx_gateway_body_is_invalid_output_after_one_call() {
+    for retries in [2u32, 0] {
+        for extract in [false, true] {
+            let gateway = RawGateway::start(broken_then_valid()).await;
+            let url = gateway.base_url.clone();
+            let h = Harness::start_with(None, |c| {
+                c.gateway.base_url = url;
+                c.retry.max_retries = retries;
+            })
+            .await;
+            let wire = if extract {
+                h.extract(USER_TOKEN, extract_body()).await
+            } else {
+                h.translate(USER_TOKEN, translate_body(&["a"])).await
+            };
+            let label = format!("retries={retries} extract={extract}");
+            assert_eq!(wire.reason(), "ERROR_REASON_INVALID_OUTPUT", "{label}");
+            assert_eq!(wire.code(), "internal", "{label}");
+            // The queued valid reply and the repeated broken replies are never consumed.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            assert_eq!(gateway.calls(), 1, "{label}");
+            assert_unreadable_body_metrics(&h);
+            // No response content is exposed to the caller.
+            assert!(!wire.body.to_string().contains("prompt_tokens"), "{label}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_connection_closed_before_response_headers_still_retries() {
+    let gateway = RawGateway::start(vec![
+        RawGatewayReply::CloseBeforeHeaders,
+        RawGatewayReply::Complete {
+            content: r#"["ok"]"#.to_owned(),
+            usage: serde_json::Value::Null,
+        },
+    ])
+    .await;
+    let url = gateway.base_url.clone();
+    let h = Harness::start_with(None, |c| c.gateway.base_url = url).await;
+    let wire = h.translate(USER_TOKEN, translate_body(&["a"])).await;
+    assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(gateway.calls(), 2);
+    let metrics = h.server.metrics.encode();
+    assert!(
+        metrics.contains("delitools_gateway_attempts_total{outcome=\"transient\"} 1"),
+        "{metrics}"
+    );
+}
+
 #[tokio::test]
 async fn retries_are_disabled_by_zero_max_retries() {
     let h = Harness::start_with(None, |c| c.retry.max_retries = 0).await;
