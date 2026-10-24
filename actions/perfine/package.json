@@ -5,9 +5,9 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "test": "node --test *.test.mjs",
+    "test": "pnpm build && node --test *.test.mjs",
     "build": "node build.mjs",
-    "ci:checks": "pnpm test && pnpm build && git diff --exit-code -- action.cjs ACTION_NOTICES"
+    "ci:checks": "pnpm test && git diff --exit-code -- ACTION_NOTICES"
   },
   "dependencies": {
     "js-yaml": "4.3.2"

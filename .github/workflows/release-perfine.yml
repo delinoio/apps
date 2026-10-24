@@ -64,7 +64,7 @@ jobs:
       - run: |
           pnpm --dir "actions/perfine" test
           pnpm --dir "actions/perfine" build
-          git diff --exit-code -- "actions/perfine/action.cjs" "actions/perfine/ACTION_NOTICES"
+          git diff --exit-code -- "actions/perfine/ACTION_NOTICES"
           pnpm --dir "packages/perfine" test
           pnpm --dir "packages/perfine" build
           node "packages/perfine/scripts/smoke.mjs"

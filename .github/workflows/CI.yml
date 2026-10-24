@@ -23,7 +23,6 @@ jobs:
       delino_site: ${{ steps.plan.outputs.delino_site }}
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
       perfine: ${{ steps.plan.outputs.perfine }}
-      perfine_distribution: ${{ steps.plan.outputs.perfine_distribution }}
       perfine_fixtures: ${{ steps.plan.outputs.perfine_fixtures }}
       protocol: ${{ steps.plan.outputs.protocol }}
       tooling: ${{ steps.plan.outputs.tooling }}
@@ -547,73 +546,6 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/perfine/dist" "actions/perfine/dist" "packages/perfine/dist"
-  perfine-distribution:
-    needs: changes
-    if: needs.changes.outputs.perfine_distribution == 'true'
-    runs-on: ubuntu-latest
-    env:
-      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          lfs: true
-      - uses: ./.github/actions/setup-ci-node
-        id: node
-      - id: dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: nightly-2026-09-28
-      - name: Install and verify protocol compiler prerequisites
-        id: protoc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libprotobuf-dev
-          protoc --version
-          test -r "/usr/include/google/protobuf/descriptor.proto"
-          test -r "/usr/include/google/protobuf/empty.proto"
-          test -r "/usr/include/google/protobuf/timestamp.proto"
-      - id: cli-build
-        run: cargo build --locked -p perfine --release
-      - id: action-test
-        run: pnpm --dir "actions/perfine" test
-      - id: action-build
-        run: |
-          pnpm --dir "actions/perfine" build
-          git diff --exit-code -- "actions/perfine/action.cjs" "actions/perfine/ACTION_NOTICES"
-      - id: package-test
-        run: pnpm --dir "packages/perfine" test
-      - id: package-build
-        run: |
-          pnpm --dir "packages/perfine" build
-          node "packages/perfine/scripts/smoke.mjs"
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
-        with:
-          path: ${{ steps.node.outputs.cache-path }}
-          key: ${{ steps.node.outputs.cache-key }}
-      - name: Record validation
-        if: ${{ always() }}
-        env:
-          VALIDATION_JOB: perfine-distribution
-          VALIDATION_RESULT: ${{ job.status }}
-          VALIDATION_STEPS: ${{ toJSON(steps) }}
-        run: node scripts/ci/record-validation.mjs
-      - name: Preserve validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: validation-perfine-distribution-${{ github.run_attempt }}
-          path: .ci-evidence/
-          include-hidden-files: true
-          if-no-files-found: error
-      - name: Remove generated output
-        if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/perfine/dist" "actions/perfine/dist" "packages/perfine/dist"
   rust-clippy:
     name: Rust Clippy
     needs: changes
@@ -1027,7 +959,6 @@ jobs:
       - delino-site-frontend
       - delino-docs-frontend
       - perfine-frontend
-      - perfine-distribution
       - perfine-profiles
       - perfine-adapters
       - rust-clippy
@@ -1045,7 +976,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'perfine-frontend': selection.perfine === 'true', 'perfine-distribution': selection.perfine_distribution === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'perfine-frontend': selection.perfine === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

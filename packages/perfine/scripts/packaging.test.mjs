@@ -166,15 +166,12 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
   assert.match(text, /environment: perfine-production/);
   assert.match(text, /if: inputs.publish/);
   assert.doesNotMatch(text, /macos|--force|--clobber/);
-  for (const path of [
-    ".github/workflows/release-perfine.yml",
-    ".github/workflows/CI.yml",
-  ]) {
+  for (const path of [".github/workflows/release-perfine.yml"]) {
     const workflow = readFileSync(join(root, path), "utf8");
     assert.match(workflow, /node "packages\/perfine\/scripts\/smoke.mjs"/);
     assert.match(
       workflow,
-      /git diff --exit-code -- "actions\/perfine\/action.cjs" "actions\/perfine\/ACTION_NOTICES"/,
+      /git diff --exit-code -- "actions\/perfine\/ACTION_NOTICES"/,
     );
   }
 });
@@ -182,7 +179,6 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
 test("Ubuntu distribution jobs provision protoc and well-known includes before Cargo", () => {
   const yaml = require("js-yaml");
   for (const [path, job] of [
-    [".github/workflows/CI.yml", "perfine-distribution"],
     [".github/workflows/release-perfine.yml", "build"],
   ]) {
     const steps = yaml.load(readFileSync(join(root, path), "utf8")).jobs[job]

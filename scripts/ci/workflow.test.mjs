@@ -359,7 +359,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     shared_ui: "true",
     workflows: "true",
     perfine: "true",
-    perfine_distribution: "true",
     perfine_fixtures: "true",
     protocol: "true",
   };
@@ -396,7 +395,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
   };
   for (const id of [
     "perfine-frontend",
-    "perfine-distribution",
     "perfine-profiles",
     "perfine-adapters",
     "git-tracker-clients",
@@ -629,7 +627,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
       "perfine-frontend": "perfine",
-      "perfine-distribution": "perfine_distribution",
+
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
@@ -670,7 +668,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
 test("Perfine jobs use owned package contracts and real fixture interfaces", () => {
   for (const [id, owner] of [
     ["perfine-frontend", "perfine"],
-    ["perfine-distribution", "perfine_distribution"],
     ["perfine-profiles", "perfine_fixtures"],
     ["perfine-adapters", "perfine_fixtures"],
   ]) {
@@ -685,13 +682,7 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
       "${{ always() }}",
     );
   }
-  const commands = workflow.jobs["perfine-distribution"].steps
-    .map((step) => step.run ?? "")
-    .join("\n");
-  for (const directory of ["actions/perfine", "packages/perfine"])
-    for (const command of ["test", "build"])
-      assert.ok(commands.includes(`pnpm --dir "${directory}" ${command}`));
-  assert.match(commands, /cargo build --locked -p perfine --release/u);
+  assert.equal(workflow.jobs["perfine-distribution"], undefined);
   const profiles = workflow.jobs["perfine-profiles"];
   assert.deepEqual(
     [

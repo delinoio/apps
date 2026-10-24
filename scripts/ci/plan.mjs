@@ -190,15 +190,6 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
-    perfine_distribution:
-      repositoryShared ||
-      shared.rust ||
-      shared.protocol ||
-      paths.some((path) =>
-        /^(actions\/perfine\/|packages\/perfine\/|cmds\/perfine\/|crates\/perfine-core\/|Cargo\.(toml|lock)$|protos\/perfine\/|docs\/(?:project-perfine|cmds-perfine|crates-perfine|packages-perfine|protos-perfine))/u.test(
-          path,
-        ),
-      ),
     perfine_fixtures:
       repositoryShared ||
       shared.rust ||
