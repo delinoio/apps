@@ -178,3 +178,28 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
     );
   }
 });
+
+test("Ubuntu distribution jobs provision protoc and well-known includes before Cargo", () => {
+  const yaml = require("js-yaml");
+  for (const [path, job] of [
+    [".github/workflows/CI.yml", "perfine-distribution"],
+    [".github/workflows/release-perfine.yml", "build"],
+  ]) {
+    const steps = yaml.load(readFileSync(join(root, path), "utf8")).jobs[job]
+      .steps;
+    const build = steps.findIndex((step) => step.run?.includes("cargo build"));
+    const setup = steps.findIndex((step) =>
+      step.run?.includes(
+        "apt-get install -y protobuf-compiler libprotobuf-dev",
+      ),
+    );
+    assert.ok(setup >= 0 && setup < build);
+    assert.match(steps[setup].run, /protoc --version/);
+    for (const file of ["descriptor", "empty", "timestamp"])
+      assert.ok(
+        steps[setup].run.includes(
+          `test -r "/usr/include/google/protobuf/${file}.proto"`,
+        ),
+      );
+  }
+});

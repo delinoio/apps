@@ -52,6 +52,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
+      - name: Install and verify protocol compiler prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+          protoc --version
+          test -r "/usr/include/google/protobuf/descriptor.proto"
+          test -r "/usr/include/google/protobuf/empty.proto"
+          test -r "/usr/include/google/protobuf/timestamp.proto"
       - run: cargo build --locked --release -p perfine
       - run: |
           pnpm --dir "actions/perfine" test
