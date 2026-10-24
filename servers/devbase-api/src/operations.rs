@@ -199,11 +199,26 @@ impl Server {
                 let row = match changed {
                     Some(r) => r,
                     None => {
-                        sqlx::query("SELECT * FROM api_keys WHERE id=$1 AND project_id=$2")
-                            .bind(id)
-                            .bind(pid)
-                            .fetch_one(&mut *db)
-                            .await?
+                        // An already-revoked key matched no row of the UPDATE above, so nothing
+                        // holds it. A repeated revocation therefore takes a shared row lock here
+                        // and keeps it through the replay insert and commit: a concurrent project
+                        // deletion or tenant cleanup waits for this commit and then scrubs the new
+                        // replay record, instead of finishing its scrub first and leaving a late
+                        // unscrubbed record behind. A key already removed by a committed deletion
+                        // is a missing row, which is `not_found` and writes no replay. GetApiKey is
+                        // a plain read outside any transaction and takes no lock.
+                        let lock = if op == Op::RevokeApiKey {
+                            " FOR SHARE"
+                        } else {
+                            ""
+                        };
+                        sqlx::query(&format!(
+                            "SELECT * FROM api_keys WHERE id=$1 AND project_id=$2{lock}"
+                        ))
+                        .bind(id)
+                        .bind(pid)
+                        .fetch_one(&mut *db)
+                        .await?
                     }
                 };
                 out.body["apiKey"] = key(&row);
