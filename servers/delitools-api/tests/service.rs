@@ -1638,7 +1638,10 @@ async fn origin_and_message_size_rejection_ignore_the_caller_deadline_header() {
         .await
         .unwrap();
     assert_eq!(response.status(), 403);
-    let oversized = "a".repeat(400_000);
+    // Just above the 102,400-byte default allowance. The transport now also bounds the on-wire
+    // body, so a far larger body is rejected mid-upload and the client can see the connection
+    // reset instead of the typed reply.
+    let oversized = "a".repeat(103_000);
     for encoding in ENCODINGS {
         let wire = h
             .call_with(
