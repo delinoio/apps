@@ -10,3 +10,5 @@
 
 - [Repository workflow](../../docs/repository-workflow-contract.md)
 - [Perfine fixture and adapter validation](../../docs/repository-workflow-contract.md#perfine-repository-validation)
+
+- Perfine CLI acceptance uses `perfine-acceptance.mjs <language>` and the six-language Linux matrix. Preserve raw failure evidence and label local emulation explicitly; do not enable the emulation override in CI.

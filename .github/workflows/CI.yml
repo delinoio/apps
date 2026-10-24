@@ -955,7 +955,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.perfine_fixtures == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, c, cpp, zig, go, javascript]
     env:
       TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
       TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
@@ -971,23 +975,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
-      - id: adapter-image
-        run: |
-          test "$(uname -m)" = x86_64
-          docker build --tag perfine-fixture:ci - <<'DOCKERFILE'
-          FROM ubuntu:24.04
-          RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev valgrind util-linux && rm -rf /var/lib/apt/lists/*
-          DOCKERFILE
-          mkdir -p ".ci-evidence"
-          docker image inspect perfine-fixture:ci --format '{{.Id}}' > ".ci-evidence/adapter-image.txt"
-          docker run --rm perfine-fixture:ci dpkg-query -W gcc valgrind util-linux >> ".ci-evidence/adapter-image.txt"
       - id: adapters
-        run: |
-          git config --global user.name 'Perfine fixture'
-          git config --global user.email 'perfine-fixture@example.invalid'
-          export PERFINE_TEST_DOCKER="$(command -v docker)"
-          export PERFINE_TEST_IMAGE="$(docker image inspect perfine-fixture:ci --format '{{.Id}}')"
-          cargo test --locked -p perfine-core --test adapter_execution -- --ignored --nocapture
+        env:
+          FIXTURE_LANGUAGE: ${{ matrix.language }}
+        run: node scripts/ci/perfine-acceptance.mjs "$FIXTURE_LANGUAGE"
       - name: Record validation
         if: ${{ always() }}
         env:
@@ -999,13 +990,10 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: validation-perfine-adapters-${{ github.run_attempt }}
+          name: validation-perfine-adapters-${{ matrix.language }}-${{ github.run_attempt }}
           path: .ci-evidence/
           include-hidden-files: true
           if-no-files-found: error
-      - name: Remove fixture image
-        if: ${{ always() }}
-        run: docker image rm --force perfine-fixture:ci || true
   ci-result:
     if: ${{ always() }}
     needs:

@@ -704,10 +704,19 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
     profiles.steps.find((step) => step.id === "gungraun").run,
     /--version 0\.19\.4/u,
   );
+  assert.deepEqual(workflow.jobs["perfine-adapters"].strategy.matrix.language, [
+    "rust",
+    "c",
+    "cpp",
+    "zig",
+    "go",
+    "javascript",
+  ]);
+  assert.equal(workflow.jobs["perfine-adapters"].strategy["fail-fast"], false);
   assert.match(
     workflow.jobs["perfine-adapters"].steps.find(
       (step) => step.id === "adapters",
     ).run,
-    /--test adapter_execution -- --ignored/u,
+    /node scripts\/ci\/perfine-acceptance\.mjs/u,
   );
 });

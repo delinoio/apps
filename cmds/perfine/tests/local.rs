@@ -352,14 +352,12 @@ fn interrupted_candidate_resume(before_admission: bool) {
             continue;
         }
         let status = run(&repo, &["status", "--experiment", id.as_str()]);
-        if let Ok(v) = serde_json::from_slice::<Value>(&status.stdout) {
-            if let Some(candidates) = v["result"]["experiment"]["candidates"].as_object() {
-                if let Some((id, c)) = candidates.iter().next() {
-                    if c["state"] == "running" {
-                        break (id.clone(), c.clone());
-                    }
-                }
-            }
+        if let Ok(v) = serde_json::from_slice::<Value>(&status.stdout)
+            && let Some(candidates) = v["result"]["experiment"]["candidates"].as_object()
+            && let Some((id, c)) = candidates.iter().next()
+            && c["state"] == "running"
+        {
+            break (id.clone(), c.clone());
         }
         thread::sleep(Duration::from_millis(50));
     };
@@ -386,3 +384,6 @@ fn interrupted_candidate_resume(before_admission: bool) {
     }
     assert_eq!(completed["evaluation"]["verdict"], "pass");
 }
+
+#[path = "support/six_languages.rs"]
+mod six_languages;
