@@ -94,6 +94,15 @@ impl<'a> HeadlessAgentAdapter<'a> {
         }
         let mut schema_file = tempfile::NamedTempFile::new()?;
         schema_file.write_all(&serde_json::to_vec(&schema)?)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // This schema contains no credentials or prompt data. A bind mount keeps
+            // host ownership, so a distinct configured container UID must be able to read it.
+            schema_file
+                .as_file()
+                .set_permissions(fs::Permissions::from_mode(0o644))?;
+        }
         let name = format!("perfine-agent-{}", ResourceId::generate().as_str());
         let mut cmd = self.config.docker.base(&name, &self.config.network)?;
         cmd.args([

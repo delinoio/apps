@@ -496,6 +496,11 @@ if 'profile' in data:
 else:
     result={{'edits':[{{'path':'kernel.c','content':'int value(void) {{ return 2; }}\n'}}]}}
 if '--output-schema' in sys.argv:
+    import os,stat
+    mount=next(a for a in sys.argv if ',dst=/schema.json,' in a)
+    schema_path=mount.split('src=',1)[1].split(',dst=',1)[0]
+    assert stat.S_IMODE(os.stat(schema_path).st_mode) & 0o044 == 0o044
+    assert json.load(open(schema_path))['type'] == 'object'
     print(json.dumps({{'type':'turn.started'}}))
     print(json.dumps({{'type':'item.completed','item':{{'type':'agent_message','text':json.dumps(result)}}}}))
     print(json.dumps({{'type':'turn.completed'}}))
