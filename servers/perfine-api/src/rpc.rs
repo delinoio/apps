@@ -1466,7 +1466,7 @@ impl Server {
         Ok(())
     }
     async fn publish_pending(&self) -> Result<()> {
-        let ids:Vec<uuid::Uuid>=sqlx::query_scalar("SELECT id FROM perfine_approvals WHERE publication->>'state' IN ('PUBLICATION_STATE_PENDING','PUBLICATION_STATE_RECONCILING') LIMIT 20").fetch_all(&self.db).await?;
+        let ids:Vec<uuid::Uuid>=sqlx::query_scalar("SELECT id FROM perfine_approvals WHERE publication->>'state' IN ('PUBLICATION_STATE_PENDING','PUBLICATION_STATE_RECONCILING') AND COALESCE((publication->>'_nextAttemptAt')::timestamptz,'-infinity'::timestamptz)<=now() ORDER BY COALESCE((publication->>'_nextAttemptAt')::timestamptz,'-infinity'::timestamptz),created_at,id LIMIT 20").fetch_all(&self.db).await?;
         for aid in ids {
             // A session lock spans the committed dispatch intent and external request. A process crash releases it.
             let mut db = self.db.acquire().await?;
@@ -1484,7 +1484,15 @@ impl Server {
                     .bind(space.to_string())
                     .execute(&mut *db)
                     .await?;
-                let result = self.publish_one(&mut db, aid).await;
+                // Persist a due-time claim before any fallible authority/provider
+                // work. Blocked approvals must yield the next batch to other rows.
+                let claim = sqlx::query("UPDATE perfine_approvals SET publication=jsonb_set(publication,'{_nextAttemptAt}',to_jsonb(now()+interval '1 minute')) WHERE id=$1 AND publication->>'state' IN ('PUBLICATION_STATE_PENDING','PUBLICATION_STATE_RECONCILING') AND COALESCE((publication->>'_nextAttemptAt')::timestamptz,'-infinity'::timestamptz)<=now()")
+                    .bind(aid).execute(&mut *db).await;
+                let result = match claim {
+                    Ok(claim) if claim.rows_affected() == 1 => self.publish_one(&mut db, aid).await,
+                    Ok(_) => Ok(()),
+                    Err(error) => Err(error.into()),
+                };
                 sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
                     .bind(space.to_string())
                     .execute(&mut *db)
