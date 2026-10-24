@@ -521,15 +521,20 @@ impl Server {
                 .registration_order
                 .cmp(&a.execution.registration_order)
         });
-        let mut commits = records
-            .iter()
-            .find(|r| r.execution.context.pull_request == 0)
-            .map(|r| {
-                std::iter::once(r.execution.context.commit.clone())
-                    .chain(r.ancestors.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let mut commits = if branch.is_empty() {
+            // Branch-omitted history keeps the registration-order choice among date-filtered
+            // records.
+            records
+                .iter()
+                .find(|r| r.execution.context.pull_request == 0)
+                .map(|r| stored_path(r))
+                .unwrap_or_default()
+        } else {
+            // Explicit-branch fallback path (also the disconnected path; connected repositories
+            // replace it below). Candidates are taken before date filtering so a historical
+            // upload cannot hide a known descendant.
+            disconnected_branch_path(state, branch)
+        };
         if repo.connected && !branch.is_empty() {
             let mut needed: HashSet<_> = records
                 .iter()
@@ -587,6 +592,42 @@ impl Server {
         Ok(json!({"executions":executions,"nextCursor":next,"commits":commits}))
     }
 }
+/// Returns the stored first-parent path of a record: its commit followed by its ancestors.
+fn stored_path(r: &measurement::Record) -> Vec<String> {
+    std::iter::once(r.execution.context.commit.clone())
+        .chain(r.ancestors.iter().cloned())
+        .collect()
+}
+
+/// Selects the stored first-parent path for an explicit branch without asking GitHub.
+///
+/// Every retained non-PR record of the branch is an anchor candidate, regardless of the
+/// request's date filters. A candidate whose commit appears in another candidate's stored
+/// ancestors is a known ancestor of that candidate and is discarded, so a late historical upload
+/// of an ancestor cannot displace its known descendant. Among the remaining incomparable
+/// candidates the highest registration order wins; paths are never concatenated.
+fn disconnected_branch_path(state: &State, branch: &str) -> Vec<String> {
+    let candidates: Vec<_> = state
+        .records
+        .values()
+        .filter(|r| r.execution.context.branch == branch && r.execution.context.pull_request == 0)
+        .collect();
+    let known_ancestors: HashSet<&str> = candidates
+        .iter()
+        .flat_map(|r| r.ancestors.iter().map(String::as_str))
+        .collect();
+    candidates
+        .iter()
+        .filter(|r| !known_ancestors.contains(r.execution.context.commit.as_str()))
+        .max_by(|a, b| {
+            a.execution
+                .registration_order
+                .cmp(&b.execution.registration_order)
+        })
+        .map(|r| stored_path(r))
+        .unwrap_or_default()
+}
+
 /// Number of executions in one history page.
 const HISTORY_PAGE_SIZE: usize = 100;
 
