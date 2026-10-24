@@ -166,7 +166,8 @@ fn record(id: &str, commit: char, order: u64, registered_at: &str) -> Value {
                 "rows": [{"id":"bundle","values":{"bytes":"40"}}]
             }]
         },
-        "lastData": registered_at,
+        "removed": {}, "ancestors": [], "baselines": {},
+        "last_data": registered_at,
         "cutoff": registered_at,
         "base": {"execution":"","commit":""},
         "push": true

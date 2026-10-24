@@ -22,7 +22,7 @@ Track numeric measurements for Git commits and identify regressions without repo
 - `protos/package.json`: Internal `@delino/protos` workspace for generated TypeScript exports and runtime dependencies.
 - `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
-Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Rust runtime, migrations and persistence in this repository.
+Stored executions use the current protobuf JSON representation without a retired Go storage adapter. Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Rust runtime, migrations and persistence in this repository.
 
 The API directory contains Rust source and tests plus canonical SQL migrations. The retired Go implementation and Air configuration are removed; generated Go protocol bindings and Go consumer examples remain supported.
 

@@ -492,7 +492,7 @@ async fn permissions_atomic_upload_oidc_visibility_and_cleanup(
     let mut stale = state["records"]["run"].clone();
     stale["execution"]["state"] = json!(1);
     stale["execution"]["context"]["execution_id"] = json!("stale-rpc");
-    stale["lastData"] = json!((chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339());
+    stale["last_data"] = json!((chrono::Utc::now() - chrono::Duration::hours(7)).to_rfc3339());
     sqlx::query("UPDATE git_tracker_repositories SET state=jsonb_set(state,ARRAY['records','stale-rpc'],$2) WHERE id::text=$1")
         .bind(&rid).bind(&stale).execute(&db).await.unwrap();
     sqlx::query("ALTER TABLE git_tracker_repositories ADD CONSTRAINT reject_interruption CHECK ((state #>> '{records,stale-rpc,execution,state}')::int <> 3)")

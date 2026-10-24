@@ -14,29 +14,18 @@ pub struct Baseline {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Record {
-    #[serde(default, rename = "removedDatasets")]
     pub removed: BTreeMap<String, bool>,
-    #[serde(serialize_with = "storage_execution")]
     pub execution: Execution,
-    #[serde(rename = "lastData")]
     pub last_data: DateTime<Utc>,
     pub cutoff: DateTime<Utc>,
-    #[serde(default, deserialize_with = "null_default")]
     pub ancestors: Vec<String>,
     pub base: Baseline,
     pub push: bool,
-    #[serde(default, deserialize_with = "null_default")]
     pub baselines: BTreeMap<String, Baseline>,
-}
-fn null_default<'de, D: serde::Deserializer<'de>, T: Deserialize<'de> + Default>(
-    d: D,
-) -> std::result::Result<T, D::Error> {
-    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct State {
-    #[serde(rename = "deletedExecutions")]
     pub deleted: BTreeMap<String, bool>,
     pub next: u64,
     pub records: BTreeMap<String, Record>,
@@ -376,60 +365,4 @@ impl State {
         out.sort_by_key(|v| format!("{}{}", key(&v.dataset_id, &v.row_id), v.column_id));
         out
     }
-}
-
-// Preserve the encoding/json representation used by the existing Go database rows.
-// ProtoJSON remains the public wire representation, not the persisted state format.
-fn storage_execution<S: serde::Serializer>(
-    execution: &Execution,
-    serializer: S,
-) -> std::result::Result<S::Ok, S::Error> {
-    fn convert(v: serde_json::Value) -> serde_json::Value {
-        match v {
-            serde_json::Value::Array(a) => a.into_iter().map(convert).collect(),
-            serde_json::Value::Object(m) => {
-                let mut out = serde_json::Map::new();
-                for (key, value) in m {
-                    let value = if key == "values" {
-                        value
-                    } else {
-                        convert(value)
-                    };
-                    let value = if let Some(name) = value.as_str() {
-                        let number = match name {
-                            "EXECUTION_STATE_MEASURING" | "DIRECTION_LOWER" => Some(1),
-                            "EXECUTION_STATE_COMPLETED" | "DIRECTION_HIGHER" => Some(2),
-                            "EXECUTION_STATE_INTERRUPTED" | "DIRECTION_NEUTRAL" => Some(3),
-                            _ => None,
-                        };
-                        if matches!(key.as_str(), "state" | "direction") {
-                            number.map(serde_json::Value::from).unwrap_or(value)
-                        } else if key == "pullRequest" {
-                            name.parse::<i64>()
-                                .map(serde_json::Value::from)
-                                .unwrap_or(value)
-                        } else {
-                            value
-                        }
-                    } else {
-                        value
-                    };
-                    let mut snake = String::new();
-                    for c in key.chars() {
-                        if c.is_ascii_uppercase() {
-                            snake.push('_');
-                            snake.push(c.to_ascii_lowercase())
-                        } else {
-                            snake.push(c)
-                        }
-                    }
-                    out.insert(snake, value);
-                }
-                serde_json::Value::Object(out)
-            }
-            v => v,
-        }
-    }
-    convert(serde_json::to_value(execution).map_err(serde::ser::Error::custom)?)
-        .serialize(serializer)
 }
