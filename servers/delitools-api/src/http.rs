@@ -98,7 +98,21 @@ pub fn router(server: Server) -> Router {
         )
 }
 
+/// Request headers through which a caller can ask Connect to apply its own deadline.
+///
+/// Connect resolves these before any interceptor runs, drops the handler future when the
+/// deadline passes (cancelling provider work) and answers with a plain `deadline_exceeded`
+/// that carries neither `ErrorDetail` nor the request ID. They are removed in
+/// [`transport_policy`]. `grpc-timeout` is not a documented protocol of this API; it is removed
+/// only because the router also accepts it and it would select the same untyped deadline.
+const CALLER_DEADLINE_HEADERS: [&str; 2] = ["connect-timeout-ms", "grpc-timeout"];
+
 /// Rejects browser-origin requests and enforces the request deadline.
+///
+/// Caller-asserted deadline headers are ignored: the server-owned execution deadline is the only
+/// deadline. A caller that wants a shorter wait cancels by closing the call, which cancels the
+/// provider work as for any disconnect. Absent, short, long and malformed header values therefore
+/// behave identically.
 ///
 /// The execution timeout starts here, at receipt. Until the handler is dispatched (the body is
 /// complete and decoded) the request is cut at the execution deadline with the typed `TIMEOUT`
@@ -113,6 +127,9 @@ async fn transport_policy(
 ) -> Response {
     if request.headers().contains_key("origin") {
         return StatusCode::FORBIDDEN.into_response();
+    }
+    for header in CALLER_DEADLINE_HEADERS {
+        request.headers_mut().remove(header);
     }
     let received_at = Instant::now();
     // `None` only for a configuration that bypassed validation: requests then fail closed.

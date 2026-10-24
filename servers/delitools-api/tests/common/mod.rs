@@ -800,11 +800,133 @@ impl Harness {
         (wire, elapsed)
     }
 
+    /// Builds a Connect unary request in the given encoding, optionally asserting a caller
+    /// deadline through `Connect-Timeout-Ms` (the value is sent verbatim, even when malformed).
+    pub fn request_with(
+        &self,
+        method: &str,
+        token: &str,
+        body: &Value,
+        encoding: Encoding,
+        timeout_header: Option<&str>,
+    ) -> reqwest::RequestBuilder {
+        let mut request = self
+            .client
+            .post(format!(
+                "{}/delitools.v1.DelitoolsService/{method}",
+                self.base
+            ))
+            .header("Connect-Protocol-Version", "1")
+            .bearer_auth(token);
+        request = match encoding {
+            Encoding::Json => request
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_vec(body).unwrap()),
+            Encoding::Proto => request
+                .header("Content-Type", "application/proto")
+                .body(proto_request(method, body)),
+        };
+        if let Some(value) = timeout_header {
+            request = request.header("Connect-Timeout-Ms", value);
+        }
+        request
+    }
+
+    /// Like [`Harness::call`], but in either encoding and with an optional asserted deadline.
+    /// A successful binary reply is decoded into the JSON shape of the Connect JSON reply.
+    pub async fn call_with(
+        &self,
+        method: &str,
+        token: &str,
+        body: &Value,
+        encoding: Encoding,
+        timeout_header: Option<&str>,
+    ) -> Wire {
+        let response = self
+            .request_with(method, token, body, encoding, timeout_header)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status().as_u16();
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        };
+        let request_id_header = header("x-delitools-request-id");
+        let retry_after = header("retry-after");
+        let binary = header("content-type").is_some_and(|v| v.starts_with("application/proto"));
+        let bytes = response.bytes().await.unwrap();
+        let body = if binary && status == 200 {
+            proto_response(method, &bytes)
+        } else {
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+        };
+        Wire {
+            status,
+            request_id_header,
+            retry_after,
+            body,
+        }
+    }
+
     pub async fn translate(&self, token: &str, body: Value) -> Wire {
         self.call("Translate", Some(token), body).await
     }
     pub async fn extract(&self, token: &str, body: Value) -> Wire {
         self.call("Extract", Some(token), body).await
+    }
+}
+
+/// The two Connect unary encodings of the business RPCs.
+#[derive(Clone, Copy, Debug)]
+pub enum Encoding {
+    Json,
+    Proto,
+}
+
+fn proto_request(method: &str, body: &Value) -> Vec<u8> {
+    use delino_protocol::delitools::v1::{ExtractRequest, TranslateRequest};
+    let text = |key: &str| body[key].as_str().unwrap_or_default().to_owned();
+    if method == "Translate" {
+        TranslateRequest {
+            tenant_id: text("tenantId"),
+            texts: body["texts"]
+                .as_array()
+                .map(|texts| {
+                    texts
+                        .iter()
+                        .filter_map(|t| t.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            target_language: text("targetLanguage"),
+            source_language: text("sourceLanguage"),
+            model: text("model"),
+            ..Default::default()
+        }
+        .encode_to_vec()
+    } else {
+        ExtractRequest {
+            tenant_id: text("tenantId"),
+            text: text("text"),
+            json_schema: text("jsonSchema"),
+            ..Default::default()
+        }
+        .encode_to_vec()
+    }
+}
+
+fn proto_response(method: &str, bytes: &[u8]) -> Value {
+    use delino_protocol::delitools::v1::{ExtractResponse, TranslateResponse};
+    if method == "Translate" {
+        let reply = TranslateResponse::decode_from_slice(bytes).unwrap();
+        json!({"requestId": reply.request_id, "translations": reply.translations})
+    } else {
+        let reply = ExtractResponse::decode_from_slice(bytes).unwrap();
+        json!({"requestId": reply.request_id, "json": reply.json})
     }
 }
 
