@@ -352,7 +352,7 @@ export function ConfigurationForm({
           c.parentCandidateIds,
           (v) =>
             edit((n) => {
-              n.parentCandidateIds = lines(v.join("\n"));
+              n.parentCandidateIds = v;
             }),
           false,
         )}

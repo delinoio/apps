@@ -375,7 +375,17 @@ export function Start({
             setConfirmed(false);
             setError(undefined);
             preparation.mutate(
-              { requestId: uuid7(), spaceId, connectionId: id, configuration },
+              {
+                requestId: uuid7(),
+                spaceId,
+                connectionId: id,
+                configuration: {
+                  ...configuration,
+                  parentCandidateIds: configuration.parentCandidateIds
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                },
+              },
               {
                 onSuccess: (r) => {
                   // A response for earlier settings must never restore an obsolete review.
