@@ -19,8 +19,6 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) =>
   __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// main.mjs
 var main_exports = {};
 __export(main_exports, {
   executionPlan: () => executionPlan,
@@ -31,8 +29,6 @@ var import_node_crypto2 = require("node:crypto");
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = require("node:path");
 var import_node_child_process = require("node:child_process");
-
-// ../../../../../../.pnpm-store/v11/links/@/js-yaml/4.3.2/193c8de653297f957734baec8b0ca23fbac779cbb6447b63a3fbc17b3bf260e2/node_modules/js-yaml/dist/js-yaml.mjs
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default")
     ? x["default"]
@@ -153,7 +149,6 @@ function requireSnippet() {
       str:
         head + buffer.slice(lineStart, lineEnd).replace(/\t/g, "\u2192") + tail,
       pos: position - lineStart + head.length,
-      // relative position
     };
   }
   function padStart(string, max) {
@@ -345,12 +340,7 @@ function requireSchema() {
       sequence: {},
       mapping: {},
       fallback: {},
-      multi: {
-        scalar: [],
-        sequence: [],
-        mapping: [],
-        fallback: [],
-      },
+      multi: { scalar: [], sequence: [], mapping: [], fallback: [] },
     };
     function collectType(type2) {
       if (type2.multi) {
@@ -699,7 +689,6 @@ function requireFloat() {
   const common2 = requireCommon();
   const Type2 = requireType();
   const YAML_FLOAT_PATTERN = new RegExp(
-    // 2.5e4, 2.5 and integers
     "^(?:[-+]?(?:[0-9]+)(?:\\.[0-9]*)?(?:[eE][-+]?[0-9]+)?|\\.[0-9]+(?:[eE][-+]?[0-9]+)?|[-+]?\\.(?:inf|Inf|INF)|\\.(?:nan|NaN|NAN))$",
   );
   const YAML_FLOAT_SPECIAL_PATTERN = new RegExp(
@@ -1250,7 +1239,6 @@ function requireLoader() {
     const mark = {
       name: state.filename,
       buffer: state.input.slice(0, -1),
-      // omit trailing \0
       position: state.position,
       line: state.line,
       column: state.position - state.lineStart,
@@ -1280,7 +1268,7 @@ function requireLoader() {
     state.anchorMap[name] = value;
   }
   function beginAnchorTransaction(state) {
-    state.anchorMapTransactions.push(/* @__PURE__ */ Object.create(null));
+    state.anchorMapTransactions.push(Object.create(null));
   }
   function commitAnchorTransaction(state) {
     const transaction = state.anchorMapTransactions.pop();
@@ -1810,7 +1798,7 @@ function requireLoader() {
     let isPair;
     let isExplicitPair;
     let isMapping;
-    const overridableKeys = /* @__PURE__ */ Object.create(null);
+    const overridableKeys = Object.create(null);
     let keyNode;
     let keyTag;
     let valueNode;
@@ -2087,7 +2075,7 @@ function requireLoader() {
     const _tag = state.tag;
     const _anchor = state.anchor;
     const _result = {};
-    const overridableKeys = /* @__PURE__ */ Object.create(null);
+    const overridableKeys = Object.create(null);
     let keyTag = null;
     let keyNode = null;
     let valueNode = null;
@@ -2626,8 +2614,8 @@ function requireLoader() {
     let ch;
     state.version = null;
     state.checkLineBreaks = state.legacy;
-    state.tagMap = /* @__PURE__ */ Object.create(null);
-    state.anchorMap = /* @__PURE__ */ Object.create(null);
+    state.tagMap = Object.create(null);
+    state.anchorMap = Object.create(null);
     while ((ch = state.input.charCodeAt(state.position)) !== 0) {
       skipSeparationSpace(state, true, -1);
       ch = state.input.charCodeAt(state.position);
@@ -2962,7 +2950,7 @@ function requireDumper() {
   function isNsCharOrWhitespace(c) {
     return (
       isPrintable(c) &&
-      c !== CHAR_BOM && // - b-char
+      c !== CHAR_BOM &&
       c !== CHAR_CARRIAGE_RETURN &&
       c !== CHAR_LINE_FEED
     );
@@ -2971,18 +2959,17 @@ function requireDumper() {
     const cIsNsCharOrWhitespace = isNsCharOrWhitespace(c);
     const cIsNsChar = cIsNsCharOrWhitespace && !isWhitespace(c);
     return (
-      // ns-plain-safe
       ((inblock
         ? cIsNsCharOrWhitespace
-        : cIsNsCharOrWhitespace && // - c-flow-indicator
+        : cIsNsCharOrWhitespace &&
           c !== CHAR_COMMA &&
           c !== CHAR_LEFT_SQUARE_BRACKET &&
           c !== CHAR_RIGHT_SQUARE_BRACKET &&
           c !== CHAR_LEFT_CURLY_BRACKET &&
-          c !== CHAR_RIGHT_CURLY_BRACKET) && // ns-plain-char
-        c !== CHAR_SHARP && // false on '#'
-        !(prev === CHAR_COLON && !cIsNsChar)) || // false on ': '
-      (isNsCharOrWhitespace(prev) && !isWhitespace(prev) && c === CHAR_SHARP) || // change to true on '[^ ]#'
+          c !== CHAR_RIGHT_CURLY_BRACKET) &&
+        c !== CHAR_SHARP &&
+        !(prev === CHAR_COLON && !cIsNsChar)) ||
+      (isNsCharOrWhitespace(prev) && !isWhitespace(prev) && c === CHAR_SHARP) ||
       (prev === CHAR_COLON && cIsNsChar)
     );
   }
@@ -2990,9 +2977,7 @@ function requireDumper() {
     return (
       isPrintable(c) &&
       c !== CHAR_BOM &&
-      !isWhitespace(c) && // - s-white
-      // - (c-indicator ::=
-      // “-” | “?” | “:” | “,” | “[” | “]” | “{” | “}”
+      !isWhitespace(c) &&
       c !== CHAR_MINUS &&
       c !== CHAR_QUESTION &&
       c !== CHAR_COLON &&
@@ -3000,7 +2985,7 @@ function requireDumper() {
       c !== CHAR_LEFT_SQUARE_BRACKET &&
       c !== CHAR_RIGHT_SQUARE_BRACKET &&
       c !== CHAR_LEFT_CURLY_BRACKET &&
-      c !== CHAR_RIGHT_CURLY_BRACKET && // | “#” | “&” | “*” | “!” | “|” | “=” | “>” | “'” | “"”
+      c !== CHAR_RIGHT_CURLY_BRACKET &&
       c !== CHAR_SHARP &&
       c !== CHAR_AMPERSAND &&
       c !== CHAR_ASTERISK &&
@@ -3009,7 +2994,7 @@ function requireDumper() {
       c !== CHAR_EQUALS &&
       c !== CHAR_GREATER_THAN &&
       c !== CHAR_SINGLE_QUOTE &&
-      c !== CHAR_DOUBLE_QUOTE && // | “%” | “@” | “`”)
+      c !== CHAR_DOUBLE_QUOTE &&
       c !== CHAR_PERCENT &&
       c !== CHAR_COMMERCIAL_AT &&
       c !== CHAR_GRAVE_ACCENT
@@ -3074,7 +3059,7 @@ function requireDumper() {
           hasLineBreak = true;
           if (shouldTrackWidth) {
             hasFoldableLine =
-              hasFoldableLine || // Foldable line = too long, and not more-indented.
+              hasFoldableLine ||
               (i - previousLineBreak - 1 > lineWidth &&
                 string[previousLineBreak + 1] !== " ");
             previousLineBreak = i;
@@ -3126,8 +3111,7 @@ function requireDumper() {
           ? -1
           : Math.max(Math.min(state.lineWidth, 40), state.lineWidth - indent);
       const singleLineOnly =
-        iskey || // No block styles in flow mode.
-        (state.flowLevel > -1 && level >= state.flowLevel);
+        iskey || (state.flowLevel > -1 && level >= state.flowLevel);
       function testAmbiguity(string2) {
         return testImplicitResolving(state, string2);
       }
@@ -3607,7 +3591,7 @@ function requireJsYaml() {
   return jsYaml;
 }
 var jsYamlExports = requireJsYaml();
-var yaml = /* @__PURE__ */ getDefaultExportFromCjs(jsYamlExports);
+var yaml = getDefaultExportFromCjs(jsYamlExports);
 var {
   Type,
   Schema,
@@ -3624,8 +3608,6 @@ var {
   safeLoadAll,
   safeDump,
 } = yaml;
-
-// upload.mjs
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
 var import_node_crypto = require("node:crypto");
@@ -3701,7 +3683,7 @@ async function upload(env, fetcher = fetch) {
     throw new Error("Upload experiment/source/completion mismatch");
   if (!Array.isArray(manifest.artifacts) || !manifest.artifacts.length)
     throw new Error("Complete evidence artifacts required");
-  const artifacts = /* @__PURE__ */ new Map();
+  const artifacts = new Map();
   for (const item of manifest.artifacts) {
     if (
       !/^[0-9a-f]{64}$/.test(item.sha256) ||
@@ -3804,7 +3786,7 @@ async function upload(env, fetcher = fetch) {
   )
     throw new Error("Invalid upload response");
   const receipts = [];
-  const seen = /* @__PURE__ */ new Set();
+  const seen = new Set();
   for (const target of begun.targets) {
     const artifact = artifacts.get(target.artifactName);
     if (!artifact || seen.has(target.artifactName))
@@ -3869,8 +3851,6 @@ async function upload(env, fetcher = fetch) {
   );
   return complete;
 }
-
-// main.mjs
 function executionPlan(env, directory) {
   const command = env.INPUT_COMMAND;
   if (command === "optimize" || command === "resume")
@@ -3995,9 +3975,4 @@ if (typeof require !== "undefined" && require.main === module)
     );
     process.exitCode = 1;
   });
-// Annotate the CommonJS export names for ESM import in node:
-0 &&
-  (module.exports = {
-    executionPlan,
-    main,
-  });
+0 && (module.exports = { executionPlan, main });

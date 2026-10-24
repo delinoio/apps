@@ -256,6 +256,10 @@ test("unsafe or incomplete evidence fails without discarding local files or obta
   assert.ok(readFileSync(vars.INPUT_ENVELOPE).length);
 });
 test("bundle includes dependency license texts and action metadata", () => {
+  assert.doesNotMatch(
+    readFileSync("action.cjs", "utf8"),
+    /\.pnpm-store|setup-pnpm\/node_modules|\/Users\//u,
+  );
   assert.match(readFileSync("ACTION_NOTICES", "utf8"), /js-yaml/);
   assert.match(readFileSync("ACTION_NOTICES", "utf8"), /argparse/);
   assert.match(readFileSync("action.yml", "utf8"), /main: action.cjs/);
