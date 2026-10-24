@@ -1,0 +1,22 @@
+[package]
+name = "perfine-core"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared evidence validation and durable experiment engine for Perfine"
+repository = "https://github.com/delinoio/apps"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+tracing = "0.1"
+fs2 = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+# Standalone metadata: this crate is also consumed from the independent server workspace.
+[lints]
