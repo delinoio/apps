@@ -522,8 +522,15 @@ impl App {
             request: request.clone(),
         };
         let review_path = directory.join(format!("review-{candidate}.json"));
-        crate::local::atomic(&review_path.with_extension("pending.json"), &record)?;
-        self.engine()?.finish_candidate(
+        let pending_path = review_path.with_extension("pending.json");
+        let previous_pending = match fs::read(&pending_path) {
+            Ok(bytes) => Some(serde_json::from_slice::<ReviewRecord>(&bytes)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        let engine = self.engine()?;
+        crate::local::atomic(&pending_path, &record)?;
+        if let Err(error) = engine.finish_candidate(
             request,
             &id,
             &cid,
@@ -531,7 +538,21 @@ impl App {
             repeat.as_ref(),
             &record.input.review,
             crate::local::now(),
-        )?;
+        ) {
+            // Semantic rejection cannot commit the transaction. Restore the prior intent;
+            // retain the new intent for storage errors whose commit outcome is uncertain.
+            if !matches!(
+                error,
+                perfine_core::types::Error::Io(_) | perfine_core::types::Error::Json(_)
+            ) {
+                if let Some(previous) = previous_pending {
+                    crate::local::atomic(&pending_path, &previous)?;
+                } else {
+                    fs::remove_file(&pending_path)?;
+                }
+            }
+            return Err(error.into());
+        }
         crate::local::atomic(&review_path, &record)?;
         crate::local::atomic(
             &directory.join(format!(
