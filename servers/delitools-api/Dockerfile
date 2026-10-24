@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 WORKDIR /src
 COPY protos ./protos
 COPY servers ./servers
+COPY crates/perfine-core ./crates/perfine-core
 RUN cargo build --locked --release --manifest-path servers/Cargo.toml -p delitools-api --bin delitools-api
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=build /src/servers/target/release/delitools-api /delitools-api
