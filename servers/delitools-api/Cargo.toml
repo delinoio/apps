@@ -16,6 +16,7 @@ buffa-types.workspace = true
 chrono.workspace = true
 connectrpc.workspace = true
 hex.workspace = true
+httpdate.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -32,3 +33,7 @@ tokio-util = "0.7"
 yaml-rust2 = "0.10"
 oxilangtag = "0.1"
 jsonschema = { version = "0.60", default-features = false }
+
+[dev-dependencies]
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+tracing-subscriber.workspace = true

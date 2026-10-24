@@ -113,6 +113,8 @@ schema 按 JSON Schema 2020-12 读取。它必须是 JSON 对象。`$schema` 是
 
 超过运营方总体请求大小限制的请求，可能会收到不含这些详情的普通 `resource_exhausted` 错误。有关处理方法，请参阅[故障排查](/zh-Hans/services/delitools/troubleshooting)。
 
+无法解码的 JSON 请求体（例如值的类型错误、请求体被截断或存在语法错误）会收到 HTTP 400 响应，其中包含 Connect 错误码 `invalid_argument`、原因 `ERROR_REASON_INVALID_INPUT`、请求 ID，以及内容严格为 `request body is invalid` 的消息。DeliTools 会先检查请求体，再检查凭证。该消息绝不会复述你的任何内容。请修正 JSON 编码或字段类型，然后重新发送请求。
+
 ## 限制与重试
 
 以下限制由运营方配置，且可能发生变化：输入大小、翻译项数、schema 大小和深度、执行超时时间、每个租户的请求速率及突发请求量、每个租户的并发执行数，以及暂时性故障的最大重试次数。请联系服务运营方，了解适用于你的具体数值。限制是一种保护措施，而非吞吐量保证。

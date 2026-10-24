@@ -13,11 +13,14 @@ pub mod api_keys;
 pub mod billing_domain;
 pub mod billing_safeguards;
 pub mod catalog;
+pub mod checkout_recovery;
 pub mod free_allowance;
+pub mod group_deletion;
 pub mod late_renewal;
 pub mod metering;
 pub mod period_selection;
 pub mod rank_downgrade;
+pub mod reconcile_pagination;
 pub mod subscription_cancellation;
 
 pub fn key() -> String {

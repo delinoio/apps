@@ -113,6 +113,8 @@ curl --request POST "$DELITOOLS_URL/delitools.v1.DelitoolsService/Extract" \
 
 운영자의 전체 요청 크기 제한을 초과하는 요청은 이러한 세부 정보 없이 일반 `resource_exhausted` 오류를 받을 수 있습니다. 대처 방법은 [문제 해결](/ko/services/delitools/troubleshooting)을 참조하세요.
 
+잘못된 유형의 값, 잘린 본문 또는 구문 오류 등으로 인해 디코딩할 수 없는 JSON 요청 본문에는 HTTP 400이 반환되며, Connect 코드 `invalid_argument`, 사유 `ERROR_REASON_INVALID_INPUT`, 요청 ID, 그리고 정확히 `request body is invalid`라는 메시지가 포함됩니다. DeliTools는 자격 증명을 확인하기 전에 본문을 검사합니다. 메시지는 사용자 콘텐츠의 어떤 부분도 반복하지 않습니다. JSON 인코딩 또는 필드 유형을 수정하고 요청을 다시 전송하세요.
+
 ## 제한 및 재시도
 
 운영자가 다음 제한을 설정하며, 제한은 변경될 수 있습니다. 입력 크기, 번역 항목 수, 스키마 크기 및 깊이, 실행 제한 시간, 테넌트별 요청 빈도 및 버스트, 테넌트별 동시 실행 수, 일시적 오류에 대한 최대 재시도 횟수. 적용되는 값은 서비스 운영자에게 문의하세요. 제한은 보호 장치이며 처리량을 보장하지 않습니다.

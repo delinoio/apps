@@ -71,6 +71,32 @@ pub struct Limits {
     pub tenant_concurrency: usize,
 }
 
+/// Margin added to the execution timeout before the HTTP layer and the connection writer give up.
+pub const TRANSPORT_MARGIN: Duration = Duration::from_secs(5);
+
+impl Limits {
+    /// The execution timeout plus [`TRANSPORT_MARGIN`], or `None` when the sum is not
+    /// representable as a `Duration`.
+    pub fn transport_allowance(&self) -> Option<Duration> {
+        self.execution_timeout.checked_add(TRANSPORT_MARGIN)
+    }
+
+    /// The monotonic deadline of an execution that starts at `start`, or `None` when it is
+    /// beyond the platform's `Instant` range. Never panics, unlike `start + timeout`.
+    pub fn deadline_from(&self, start: tokio::time::Instant) -> Option<tokio::time::Instant> {
+        start.checked_add(self.execution_timeout)
+    }
+
+    /// The deadline of the transport allowance that starts at `start`, with the same
+    /// guarantees as [`Limits::deadline_from`].
+    pub fn transport_deadline_from(
+        &self,
+        start: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        start.checked_add(self.transport_allowance()?)
+    }
+}
+
 /// Retry policy for transient Gateway failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -244,9 +270,26 @@ impl Config {
             l.tenant_burst as f64 >= l.tenant_rate,
             "burst must not be smaller than the sustained tenant rate"
         );
+        // The limiter converts `1 / rate` into a `Duration` for `Retry-After` while it holds
+        // its bucket lock; an unrepresentable wait would panic and poison that lock for every
+        // tenant. Reject such rates here without echoing the configured value.
+        ensure!(
+            l.tenant_rate > 0.0
+                && l.tenant_rate.is_finite()
+                && Duration::try_from_secs_f64(1.0 / l.tenant_rate).is_ok(),
+            "DELITOOLS_TENANT_RATE_PER_SECOND is too small for a representable retry wait"
+        );
         ensure!(
             l.tenant_burst >= 1 && l.tenant_concurrency >= 1,
             "tenant burst and concurrency must be at least 1"
+        );
+        // Deadlines are monotonic instants, so the timeout and its transport allowance must be
+        // representable from now on this platform, not only as a `Duration`. The bound is
+        // platform dependent. The message never echoes the configured value.
+        ensure!(
+            l.transport_deadline_from(tokio::time::Instant::now())
+                .is_some(),
+            "DELITOOLS_EXECUTION_TIMEOUT is too large for this platform's monotonic clock"
         );
         ensure!(
             self.dependency_timeout <= l.execution_timeout,
@@ -264,6 +307,9 @@ impl Config {
             self.outbox.backoff_min <= self.outbox.backoff_max,
             "DELITOOLS_OUTBOX_BACKOFF_MIN must not exceed DELITOOLS_OUTBOX_BACKOFF_MAX"
         );
+        // A bound that cannot form a calendar deadline would make every retry fail to schedule.
+        ensure_schedulable("DELITOOLS_OUTBOX_BACKOFF_MIN", self.outbox.backoff_min)?;
+        ensure_schedulable("DELITOOLS_OUTBOX_BACKOFF_MAX", self.outbox.backoff_max)?;
         ensure!(
             self.outbox.batch <= 500,
             "DELITOOLS_OUTBOX_BATCH must not exceed 500"
@@ -275,6 +321,22 @@ impl Config {
         self.models.require_extraction_model()?;
         Ok(())
     }
+}
+
+/// Rejects a backoff bound that cannot be added to the current time as a calendar deadline.
+///
+/// Both the conversion to a signed chrono delta and the checked calendar addition must succeed.
+/// The error names the setting only and never prints its value.
+fn ensure_schedulable(key: &str, bound: Duration) -> Result<()> {
+    let schedulable = chrono::Duration::from_std(bound)
+        .ok()
+        .and_then(|delta| server_common::now().checked_add_signed(delta))
+        .is_some();
+    ensure!(
+        schedulable,
+        "{key} is too large to schedule a retry deadline"
+    );
+    Ok(())
 }
 
 /// Parses durations such as `250ms`, `5s`, `2m` or `1h30m`.
@@ -299,7 +361,15 @@ pub fn parse_duration(key: &str, value: &str) -> Result<Duration> {
     if !seconds.is_finite() || seconds <= 0.0 {
         bail!("{key} must be positive");
     }
-    Duration::try_from_secs_f64(seconds).with_context(|| format!("{key} is out of range"))
+    let parsed =
+        Duration::try_from_secs_f64(seconds).with_context(|| format!("{key} is out of range"))?;
+    // A positive input below 0.5ns passes the check above but rounds to Duration::ZERO. Consumers
+    // such as tokio::time::interval panic on a zero period, so reject it at startup. The error
+    // names the setting only and never prints its value.
+    if parsed.is_zero() {
+        bail!("{key} must be at least 1ns after conversion to nanosecond precision");
+    }
+    Ok(parsed)
 }
 
 #[cfg(test)]
@@ -395,6 +465,10 @@ pub(crate) mod tests {
             ("DELITOOLS_MAX_RETRIES", "-1"),
             ("DELITOOLS_RETRY_BASE_DELAY", "1h"),
             ("DELITOOLS_OUTBOX_BACKOFF_MIN", "2h"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MIN", "10000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MIN", "10000000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MAX", "10000000000000s"),
+            ("DELITOOLS_OUTBOX_BACKOFF_MAX", "10000000000000000s"),
             ("DELITOOLS_OUTBOX_BATCH", "1000"),
             ("AI_GATEWAY_BASE_URL", "http://gateway.example/v1"),
             ("DELCORE_URL", "ftp://delcore"),
@@ -405,6 +479,100 @@ pub(crate) mod tests {
             env.insert(key.into(), value.into());
             assert!(load(&env).is_err(), "{key}={value}");
         }
+    }
+
+    #[test]
+    fn unschedulable_backoff_bounds_fail_loading_and_validation_without_panicking() {
+        let dir = tempdir();
+        for secs in ["10000000000000s", "10000000000000000s"] {
+            let mut env = base_env(&dir);
+            env.insert("DELITOOLS_OUTBOX_BACKOFF_MIN".into(), secs.into());
+            env.insert("DELITOOLS_OUTBOX_BACKOFF_MAX".into(), secs.into());
+            let message = format!("{:#}", load(&env).unwrap_err());
+            assert!(
+                message.contains("DELITOOLS_OUTBOX_BACKOFF_MIN"),
+                "{message}"
+            );
+            assert!(!message.contains(secs), "{message}");
+
+            let mut valid = load(&base_env(&dir)).unwrap();
+            valid.outbox.backoff_min = Duration::from_secs(5);
+            valid.outbox.backoff_max =
+                Duration::from_secs(secs.trim_end_matches('s').parse().unwrap());
+            let message = format!("{:#}", valid.validate().unwrap_err());
+            assert!(
+                message.contains("DELITOOLS_OUTBOX_BACKOFF_MAX"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn large_representable_backoff_bounds_are_accepted() {
+        let dir = tempdir();
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_OUTBOX_BACKOFF_MIN".into(), "1440h".into());
+        env.insert("DELITOOLS_OUTBOX_BACKOFF_MAX".into(), "5184000s".into());
+        assert!(load(&env).is_ok());
+    }
+
+    #[test]
+    fn unrepresentable_retry_wait_rates_fail_loading_and_validation() {
+        let dir = tempdir();
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_BURST".into(), "1".into());
+        env.insert("DELITOOLS_TENANT_CONCURRENCY".into(), "1".into());
+        env.insert(
+            "DELITOOLS_TENANT_RATE_PER_SECOND".into(),
+            "0.00000000000000000001".into(),
+        );
+        let message = format!("{:#}", load(&env).unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("0.00000000000000000001"), "{message}");
+
+        let mut config = load(&base_env(&dir)).unwrap();
+        config.limits.tenant_rate = 1e-20;
+        let message = format!("{:#}", config.validate().unwrap_err());
+        assert!(
+            message.contains("DELITOOLS_TENANT_RATE_PER_SECOND"),
+            "{message}"
+        );
+        assert!(!message.contains("e-20"), "{message}");
+
+        config.limits.tenant_rate = f64::from_bits(1);
+        assert!(config.validate().is_err(), "smallest subnormal");
+    }
+
+    #[test]
+    fn retry_wait_boundary_follows_the_checked_duration_conversion() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        let boundary = 2f64.powi(-64);
+        let predecessor = f64::from_bits(boundary.to_bits() - 1);
+        let successor = f64::from_bits(boundary.to_bits() + 1);
+        for rate in [predecessor, boundary, successor] {
+            config.limits.tenant_rate = rate;
+            let representable = Duration::try_from_secs_f64(1.0 / rate).is_ok();
+            assert_eq!(config.validate().is_ok(), representable, "{rate:e}");
+        }
+        config.limits.tenant_rate = predecessor;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = boundary;
+        assert!(config.validate().is_err());
+        config.limits.tenant_rate = successor;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn supported_tenant_rates_are_accepted() {
+        let dir = tempdir();
+        assert!(load(&base_env(&dir)).is_ok());
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_TENANT_RATE_PER_SECOND".into(), "0.001".into());
+        assert_eq!(load(&env).unwrap().limits.tenant_rate, 0.001);
     }
 
     #[test]
@@ -468,6 +636,155 @@ pub(crate) mod tests {
         assert!(parse_duration("K", "10").is_err());
         assert!(parse_duration("K", "5x").is_err());
         assert!(parse_duration("K", "0s").is_err());
+    }
+
+    #[test]
+    fn durations_that_round_to_zero_are_rejected_naming_the_key() {
+        for value in ["0.0000000001s", "0.0000001ms", "0.0000000004s"] {
+            let error = parse_duration("DELITOOLS_OUTBOX_INTERVAL", value).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("DELITOOLS_OUTBOX_INTERVAL"), "{value}");
+            assert!(!message.contains(value), "{value}");
+        }
+        assert!(parse_duration("K", "0s").is_err());
+        assert!(parse_duration("K", "5x").is_err());
+        assert!(parse_duration("K", "99999999999999999999999s").is_err());
+    }
+
+    #[test]
+    fn nonzero_nanosecond_durations_keep_their_values() {
+        assert_eq!(
+            parse_duration("K", "0.000000001s").unwrap(),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            parse_duration("K", "0.0000000006s").unwrap(),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(
+            parse_duration("K", "250ms").unwrap(),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            parse_duration("K", "1m30s").unwrap(),
+            Duration::from_secs(90)
+        );
+    }
+
+    #[test]
+    fn zero_rounding_durations_fail_loading_naming_the_setting() {
+        let dir = tempdir();
+        for key in ["DELITOOLS_OUTBOX_INTERVAL", "DELITOOLS_RETRY_BASE_DELAY"] {
+            for value in ["0.0000000001s", "0.0000001ms"] {
+                let mut env = base_env(&dir);
+                env.insert(key.into(), value.into());
+                let error = load(&env).unwrap_err();
+                let message = format!("{error:#}");
+                assert!(message.contains(key), "{key}={value}: {message}");
+                assert!(!message.contains(value), "{key}={value}: {message}");
+            }
+        }
+    }
+
+    #[test]
+    fn outbox_interval_defaults_to_five_seconds_and_accepts_one_nanosecond() {
+        let dir = tempdir();
+        let config = load(&base_env(&dir)).unwrap();
+        assert_eq!(config.outbox.interval, Duration::from_secs(5));
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_OUTBOX_INTERVAL".into(), "0.000000001s".into());
+        assert_eq!(load(&env).unwrap().outbox.interval, Duration::from_nanos(1));
+    }
+
+    #[test]
+    fn execution_timeouts_beyond_the_clock_range_are_rejected_without_panicking() {
+        let dir = tempdir();
+        for value in ["10000000000000000000s", "18446744073709551615s"] {
+            let mut env = base_env(&dir);
+            env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), value.into());
+            let error = load(&env).unwrap_err().to_string();
+            assert!(
+                error.contains("DELITOOLS_EXECUTION_TIMEOUT"),
+                "{value}: {error}"
+            );
+            assert!(
+                !error.contains(value),
+                "the value must not be echoed: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn direct_validation_rejects_unrepresentable_deadlines() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        // Duration::MAX cannot take the transport margin; this used to panic in the router.
+        config.limits.execution_timeout = Duration::MAX;
+        config.dependency_timeout = Duration::from_secs(3);
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("DELITOOLS_EXECUTION_TIMEOUT"), "{error}");
+        // The margin fits a Duration but the deadline does not fit the monotonic clock.
+        config.limits.execution_timeout = Duration::MAX - TRANSPORT_MARGIN;
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("DELITOOLS_EXECUTION_TIMEOUT"), "{error}");
+    }
+
+    #[test]
+    fn deadline_helpers_agree_with_the_clock_at_the_boundary() {
+        let dir = tempdir();
+        let mut config = load(&base_env(&dir)).unwrap();
+        let start = tokio::time::Instant::now();
+        assert_eq!(
+            config.limits.transport_allowance(),
+            Some(Duration::from_secs(125))
+        );
+        assert_eq!(
+            config.limits.deadline_from(start),
+            Some(start + Duration::from_secs(120))
+        );
+        // The largest whole-second offset the platform clock accepts from `start`.
+        let (mut ok, mut bad) = (0u64, u64::MAX);
+        while bad - ok > 1 {
+            let mid = ok + (bad - ok) / 2;
+            if start.checked_add(Duration::from_secs(mid)).is_some() {
+                ok = mid;
+            } else {
+                bad = mid;
+            }
+        }
+        let margin = TRANSPORT_MARGIN.as_secs();
+        config.limits.execution_timeout = Duration::from_secs(ok - margin);
+        assert!(config.limits.deadline_from(start).is_some());
+        assert!(config.limits.transport_deadline_from(start).is_some());
+        // Only the transport margin crosses the boundary: the execution deadline still fits.
+        config.limits.execution_timeout = Duration::from_secs(ok - margin + 1);
+        assert!(config.limits.deadline_from(start).is_some());
+        assert!(config.limits.transport_deadline_from(start).is_none());
+        config.limits.execution_timeout = Duration::from_secs(bad);
+        assert!(config.limits.deadline_from(start).is_none());
+    }
+
+    #[test]
+    fn defaults_compound_durations_and_larger_valid_timeouts_are_kept() {
+        let dir = tempdir();
+        let config = load(&base_env(&dir)).unwrap();
+        assert_eq!(config.limits.execution_timeout, Duration::from_secs(120));
+        let mut env = base_env(&dir);
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "1h30m".into());
+        assert_eq!(
+            load(&env).unwrap().limits.execution_timeout,
+            Duration::from_secs(5400)
+        );
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "720h".into());
+        env.insert("DEPENDENCY_TIMEOUT".into(), "1h".into());
+        assert_eq!(
+            load(&env).unwrap().limits.execution_timeout,
+            Duration::from_secs(720 * 3600)
+        );
+        env.insert("DELITOOLS_EXECUTION_TIMEOUT".into(), "10s".into());
+        env.insert("DEPENDENCY_TIMEOUT".into(), "11s".into());
+        let error = load(&env).unwrap_err().to_string();
+        assert!(error.contains("DEPENDENCY_TIMEOUT"), "{error}");
     }
 
     pub(crate) fn tempdir() -> std::path::PathBuf {

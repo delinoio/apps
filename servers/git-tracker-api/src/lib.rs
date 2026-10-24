@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 pub mod alerts;
 pub mod auth;
+#[cfg(test)]
+mod auth_tests;
 pub mod decimal;
 pub mod github;
+#[cfg(test)]
+mod history_range_tests;
 pub mod maintenance;
 pub mod measurement;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -15,11 +19,44 @@ use serde_json::{Value, json};
 use server_common::{
     Fault, Result,
     authority::{Authority, Role},
-    now, string, uuid,
+    integer, now, string, uuid,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
+/// Response envelope the official Action tolerates per attempt (its `AbortSignal.timeout`). It is
+/// the compatibility ceiling for optional work when the client declares no earlier deadline.
+const ACTION_RESPONSE_ENVELOPE: Duration = Duration::from_secs(30);
+/// Time kept after the optional cutoff to release resources and write the response.
+const RESPONSE_RESERVE: Duration = Duration::from_secs(2);
+/// Computes the absolute cutoff for optional PR comment publication. The cutoff is fixed at
+/// request ingress from the earliest of the declared Connect client deadline and the Action
+/// envelope, minus the response reserve. It is carried through the request and never restarted
+/// after persistence. `None` means the cutoff is not representable and no budget remains.
+fn publication_cutoff(ingress: Instant, client_deadline: Option<Instant>) -> Option<Instant> {
+    let envelope = ingress.checked_add(ACTION_RESPONSE_ENVELOPE)?;
+    let effective = client_deadline.map_or(envelope, |deadline| deadline.min(envelope));
+    effective.checked_sub(RESPONSE_RESERVE)
+}
+/// Moment the HTTP stack received the request headers, before any body bytes are read or decoded.
+/// [`capture_ingress`] stores it in the request extensions so the optional-publication cutoff
+/// starts when the Action's own response timer is already running, not after a slow upload body
+/// has been received and decoded.
+#[derive(Clone, Copy, Debug)]
+pub struct Ingress(pub Instant);
+/// HTTP middleware that records [`Ingress`] before the Connect service consumes the request body.
+/// It must run in front of the Connect service. Without it the handler has no trustworthy ingress
+/// time and skips optional publication instead of restarting the budget after the body arrived.
+pub async fn capture_ingress(
+    mut request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    request.extensions_mut().insert(Ingress(Instant::now()));
+    next.run(request).await
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Op {
     Upload,
@@ -125,13 +162,23 @@ impl Server {
         op: Op,
         q: Value,
     ) -> ServiceResult<R> {
+        // The cutoff is anchored at the ingress time captured before the body was read, so slow
+        // request-body delivery and all mandatory work consume the same budget. A missing marker
+        // means the middleware is not installed; fail closed by leaving no publication budget.
+        let cutoff = match ctx.extensions().get::<Ingress>() {
+            Some(Ingress(ingress)) => publication_cutoff(*ingress, ctx.deadline()),
+            None => {
+                tracing::error!("request ingress time is missing; optional publication is skipped");
+                None
+            }
+        };
         let trace = server_common::id();
         let authorization = ctx
             .headers()
             .get("authorization")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
-        match self.execute(authorization, op, q, &trace).await {
+        match self.execute(authorization, op, q, &trace, cutoff).await {
             Ok(out) => Ok(Response::new(
                 serde_json::from_value(out).map_err(|_| Fault::unavailable().connect())?,
             )
@@ -147,7 +194,14 @@ impl Server {
             }
         }
     }
-    async fn execute(&self, authorization: &str, op: Op, q: Value, trace: &str) -> Result<Value> {
+    async fn execute(
+        &self,
+        authorization: &str,
+        op: Op,
+        q: Value,
+        trace: &str,
+        cutoff: Option<Instant>,
+    ) -> Result<Value> {
         if op == Op::ConnectRepository {
             return self.connect_repository(authorization, &q, trace).await;
         }
@@ -309,8 +363,14 @@ impl Server {
         }
         if op.role() == Role::Edit {
             let c = context.as_ref().unwrap();
-            if let Err(fault) = self.publish(rid, &c.execution_id).await {
+            if let Err(fault) = self.publish_by(cutoff, rid, &c.execution_id).await {
                 self.record_failure(&fault);
+                tracing::warn!(
+                    correlation_id = trace,
+                    execution_id = c.execution_id,
+                    category = ?fault.code,
+                    "PR comment could not be updated"
+                );
                 out["warnings"] = json!(["PR comment could not be updated"])
             }
             tracing::info!(
@@ -321,9 +381,36 @@ impl Server {
         }
         Ok(out)
     }
-    async fn publish(&self, rid: &str, execution: &str) -> Result<()> {
+    /// Publishes within the absolute `cutoff`. Pool acquisition, the repository lock, the reread
+    /// and every GitHub request share that one budget. Expiry drops the publication future, which
+    /// drops its transaction so the lock is released and no publisher keeps running. Committed
+    /// measurement state is never touched here.
+    async fn publish_by(&self, cutoff: Option<Instant>, rid: &str, execution: &str) -> Result<()> {
+        let expired = || {
+            let mut fault = Fault::unavailable();
+            fault.source = server_common::error::FaultSource::GitHub;
+            fault
+        };
+        let cutoff = cutoff
+            .filter(|cutoff| *cutoff > Instant::now())
+            .ok_or_else(expired)?;
+        tokio::time::timeout_at(
+            tokio::time::Instant::from_std(cutoff),
+            self.publish(cutoff, rid, execution),
+        )
+        .await
+        .unwrap_or_else(|_| Err(expired()))
+    }
+    async fn publish(&self, cutoff: Instant, rid: &str, execution: &str) -> Result<()> {
         // Re-read under the writer lock so delayed requests cannot replace a newer PR comment.
         let mut tx = self.db.begin().await?;
+        // Also bound the server-side lock wait so an abandoned statement cannot keep waiting
+        // for the repository row after the local deadline passed. A zero value disables it.
+        let remaining = cutoff.saturating_duration_since(Instant::now());
+        sqlx::query("SELECT set_config('lock_timeout',$1,true)")
+            .bind(format!("{}ms", remaining.as_millis().max(1)))
+            .execute(&mut *tx)
+            .await?;
         let (repo, state) = repository(&mut tx, rid).await?;
         if let Some(record) = state.records.get(execution) {
             self.github.comment(&repo, &state, record).await?
@@ -363,6 +450,31 @@ impl Server {
         if active.is_some_and(|id| id != space_id) {
             return Err(Fault::exists());
         }
+        // Lock the same-space row even when it is disconnected so a concurrent webhook or
+        // maintenance pass cannot commit a visibility change between the refresh and the upsert.
+        sqlx::query(
+            "SELECT id FROM git_tracker_repositories WHERE github_id=$1 AND space_id=$2 FOR UPDATE",
+        )
+        .bind(github_id)
+        .bind(space_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        // Discovery ran before this transaction, so its visibility may be older than a committed
+        // private update. Persist only metadata fetched under the locks; a failed or malformed
+        // refresh aborts the whole connection (the transaction rolls back) with no stale fallback.
+        let metadata = self.github.metadata(&r).await.map_err(|fault| {
+            self.record_failure(&fault);
+            Fault::denied()
+        })?;
+        if integer(&metadata, "id") != github_id || string(&metadata, "full_name").is_empty() {
+            self.metrics
+                .events
+                .with_label_values(&["github", "failure"])
+                .inc();
+            return Err(Fault::denied());
+        }
+        r.full_name = string(&metadata, "full_name").into();
+        r.public = metadata["private"] == false;
         let id:uuid::Uuid=sqlx::query_scalar("INSERT INTO git_tracker_repositories(id,github_id,space_id,full_name,installation_id,public) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(github_id,space_id) DO UPDATE SET full_name=EXCLUDED.full_name,installation_id=EXCLUDED.installation_id,public=EXCLUDED.public,connected=true RETURNING id") .bind(uuid::Uuid::now_v7()).bind(github_id).bind(space_id).bind(&r.full_name).bind(&r.installation_id).bind(r.public).fetch_one(&mut *tx).await?;
         r.id = id.to_string();
         sqlx::query("INSERT INTO git_tracker_links(space_id,user_id,github_id) VALUES($1,$2,$3) ON CONFLICT(space_id,user_id) DO UPDATE SET github_id=EXCLUDED.github_id").bind(space_id).bind(uuid(&actor)?).bind(user).execute(&mut *tx).await?;
@@ -409,17 +521,22 @@ impl Server {
                 .registration_order
                 .cmp(&a.execution.registration_order)
         });
-        let mut commits = records
-            .iter()
-            .find(|r| r.execution.context.pull_request == 0)
-            .map(|r| {
-                std::iter::once(r.execution.context.commit.clone())
-                    .chain(r.ancestors.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let mut commits = if branch.is_empty() {
+            // Branch-omitted history keeps the registration-order choice among date-filtered
+            // records.
+            records
+                .iter()
+                .find(|r| r.execution.context.pull_request == 0)
+                .map(|r| stored_path(r))
+                .unwrap_or_default()
+        } else {
+            // Explicit-branch fallback path (also the disconnected path; connected repositories
+            // replace it below). Candidates are taken before date filtering so a historical
+            // upload cannot hide a known descendant.
+            disconnected_branch_path(state, branch)
+        };
         if repo.connected && !branch.is_empty() {
-            let needed: HashSet<_> = records
+            let mut needed: HashSet<_> = records
                 .iter()
                 .filter(|r| {
                     r.execution.context.pull_request == 0
@@ -427,6 +544,16 @@ impl Server {
                 })
                 .map(|r| r.execution.context.commit.clone())
                 .collect();
+            // The first-parent walk stops once every required commit is on the path. Requested
+            // range endpoints must be required too: a valid endpoint without a completed
+            // measurement, or older than the oldest measurement, would otherwise be missing from
+            // the path and silently ignored by the slicing below.
+            needed.extend(
+                [string(q, "fromCommit"), string(q, "toCommit")]
+                    .into_iter()
+                    .filter(|c| !c.is_empty())
+                    .map(str::to_owned),
+            );
             commits = self.github.branch(repo, branch, needed).await?;
         }
         let to = string(q, "toCommit");
@@ -444,19 +571,16 @@ impl Server {
         if !to.is_empty() || !from.is_empty() {
             records.retain(|r| commits.contains(&r.execution.context.commit))
         }
-        let offset = offset.min(records.len());
-        let end = offset.saturating_add(100).min(records.len());
-        let next = if offset.saturating_add(100) <= records.len() {
-            end.to_string()
-        } else {
-            String::new()
-        };
+        let (offset, end, next) = history_page_window(offset, records.len());
         let executions: Vec<_> = records[offset..end]
             .iter()
             .map(|r| {
                 let mut e = r.execution.clone();
+                // Branch-only selection over the complete state, before history filters: a PR
+                // execution sharing the commit SHA never displaces the branch graph point, and a
+                // PR-only commit has no representative. PR executions stay in the response.
                 e.representative = state
-                    .representative(&e.context.commit, None, false)
+                    .representative(&e.context.commit, None, true)
                     .is_some_and(|v| v.execution.registration_order == e.registration_order);
                 let dataset = string(q, "datasetId");
                 if !dataset.is_empty() {
@@ -468,6 +592,60 @@ impl Server {
         Ok(json!({"executions":executions,"nextCursor":next,"commits":commits}))
     }
 }
+/// Returns the stored first-parent path of a record: its commit followed by its ancestors.
+fn stored_path(r: &measurement::Record) -> Vec<String> {
+    std::iter::once(r.execution.context.commit.clone())
+        .chain(r.ancestors.iter().cloned())
+        .collect()
+}
+
+/// Selects the stored first-parent path for an explicit branch without asking GitHub.
+///
+/// Every retained non-PR record of the branch is an anchor candidate, regardless of the
+/// request's date filters. A candidate whose commit appears in another candidate's stored
+/// ancestors is a known ancestor of that candidate and is discarded, so a late historical upload
+/// of an ancestor cannot displace its known descendant. Among the remaining incomparable
+/// candidates the highest registration order wins; paths are never concatenated.
+fn disconnected_branch_path(state: &State, branch: &str) -> Vec<String> {
+    let candidates: Vec<_> = state
+        .records
+        .values()
+        .filter(|r| r.execution.context.branch == branch && r.execution.context.pull_request == 0)
+        .collect();
+    let known_ancestors: HashSet<&str> = candidates
+        .iter()
+        .flat_map(|r| r.ancestors.iter().map(String::as_str))
+        .collect();
+    candidates
+        .iter()
+        .filter(|r| !known_ancestors.contains(r.execution.context.commit.as_str()))
+        .max_by(|a, b| {
+            a.execution
+                .registration_order
+                .cmp(&b.execution.registration_order)
+        })
+        .map(|r| stored_path(r))
+        .unwrap_or_default()
+}
+
+/// Number of executions in one history page.
+const HISTORY_PAGE_SIZE: usize = 100;
+
+/// Computes the `[offset, end)` window and next cursor for a history page over `len` matching
+/// executions. The offset is clamped to `len`. The cursor is the decimal end offset only when at
+/// least one matching execution remains after the page; a final page, including one that is
+/// exactly full, returns an empty cursor.
+fn history_page_window(offset: usize, len: usize) -> (usize, usize, String) {
+    let offset = offset.min(len);
+    let end = offset.saturating_add(HISTORY_PAGE_SIZE).min(len);
+    let next = if end < len {
+        end.to_string()
+    } else {
+        String::new()
+    };
+    (offset, end, next)
+}
+
 // The generated trait permits borrowed responses; these handlers return owned messages.
 #[allow(refining_impl_trait)]
 impl GitTrackerService for Server {
@@ -613,5 +791,87 @@ impl GitTrackerService for Server {
                 .map_err(|_| Fault::invalid("invalid request").connect())?,
         )
         .await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn publication_cutoff_uses_action_envelope_without_client_deadline() {
+        let ingress = Instant::now();
+        assert_eq!(
+            publication_cutoff(ingress, None),
+            Some(ingress + ACTION_RESPONSE_ENVELOPE - RESPONSE_RESERVE)
+        );
+    }
+    #[test]
+    fn publication_cutoff_prefers_the_earlier_client_deadline() {
+        let ingress = Instant::now();
+        let early = ingress + Duration::from_secs(10);
+        assert_eq!(
+            publication_cutoff(ingress, Some(early)),
+            Some(early - RESPONSE_RESERVE)
+        );
+        let late = ingress + Duration::from_secs(120);
+        assert_eq!(
+            publication_cutoff(ingress, Some(late)),
+            publication_cutoff(ingress, None)
+        );
+    }
+    #[test]
+    fn publication_cutoff_is_not_extended_by_mandatory_elapsed_time() {
+        // The cutoff is a pure function of ingress, so work done after ingress cannot move it.
+        let ingress = Instant::now() - Duration::from_secs(29);
+        let cutoff = publication_cutoff(ingress, None).unwrap();
+        assert!(cutoff <= Instant::now());
+    }
+    #[tokio::test]
+    async fn ingress_is_captured_before_a_slow_request_body_is_read() {
+        use axum::{Extension, Router, body::Bytes, routing::post};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        // The handler runs only after the whole body is read, like the Connect service. It reports
+        // how long ago the middleware stamped the request.
+        async fn handler(Extension(Ingress(at)): Extension<Ingress>, body: Bytes) -> String {
+            assert_eq!(body.as_ref(), b"{}");
+            at.elapsed().as_millis().to_string()
+        }
+        let app = Router::new()
+            .route("/", post(handler))
+            .layer(axum::middleware::from_fn(capture_ingress));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(
+                b"POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        // The body arrives late; the stamp must predate this delay.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        stream.write_all(b"{}").await.unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        server.abort();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let elapsed: u64 = response
+            .rsplit("\r\n\r\n")
+            .next()
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // The body was held back 400 ms; allow timer jitter below that.
+        assert!(
+            elapsed >= 300,
+            "ingress was stamped after the body: {elapsed} ms"
+        );
+        // A cutoff built from that stamp is already consumed by the delay and is not restarted.
+        let ingress = Instant::now() - Duration::from_millis(elapsed);
+        assert_eq!(
+            publication_cutoff(ingress, None),
+            Some(ingress + ACTION_RESPONSE_ENVELOPE - RESPONSE_RESERVE)
+        );
     }
 }

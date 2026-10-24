@@ -167,7 +167,7 @@ pub fn parse_grants(value: &Value) -> Result<Vec<GrantRequest>> {
     let mut out = Vec::new();
     for grant in list {
         let service = grant["serviceId"].as_str().unwrap_or("");
-        if !server_common::canonical_id(service) {
+        if !crate::rpc::canonical(service) {
             return Err(Fault::invalid("grant service ID must be a UUID v7"));
         }
         let service_id = Uuid::parse_str(service).map_err(|_| Fault::invalid("invalid UUID"))?;

@@ -34,6 +34,7 @@ This page helps you set up a client for DeliTools and fix errors. For field rule
 ## Common problems
 
 - **A key works in one request and fails in the next.** A key that expired, was revoked, or belongs to a user who lost permission stops working immediately. Check it with `ListApiKeys`.
+- **`invalid_argument` with the message `request body is invalid`.** DeliTools could not decode your JSON request body. Check that the body is complete, valid JSON and that every field has the documented type, for example `texts` as an array of strings. The message does not name the faulty field, so compare your request with the [API reference](/services/delitools/api-reference). The response still carries a request ID.
 - **A plain `resource_exhausted` error without a reason.** Your request body is larger than the operator's overall size limit. Send less data.
 - **A result looks wrong.** Models can make mistakes, and a result that follows your schema is not necessarily correct. Make the instructions in your schema's `description` fields clearer and check important values.
 - **Unexpected charges.** Failed attempts with known usage and repeated requests are charged. See [Billing](/services/delitools/billing).

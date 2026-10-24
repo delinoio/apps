@@ -5,7 +5,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
 use serde::Deserialize;
 use sha2::Sha256;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 #[derive(Clone, Debug, Default)]
 pub struct Identity {
@@ -35,7 +35,11 @@ struct Claims {
 pub struct Verifier {
     http: reqwest::Client,
     jwks_url: String,
+    /// Cached key snapshot. Hold this lock only for in-memory decoding or publication,
+    /// never across provider I/O, so cached verification stays available during a refresh.
     keys: RwLock<(JwkSet, Instant)>,
+    /// Serializes provider refreshes without blocking readers of `keys`.
+    refresh_lock: Mutex<()>,
     issuer: String,
     audience: String,
     identity_key: String,
@@ -75,6 +79,7 @@ impl Verifier {
             http,
             jwks_url,
             keys: RwLock::new((keys, Instant::now())),
+            refresh_lock: Mutex::new(()),
             issuer: config.issuer.clone(),
             audience: config.audience.clone(),
             identity_key: config.identity_key.clone(),
@@ -95,37 +100,47 @@ impl Verifier {
         validation.set_audience(&[&self.audience]);
         validation.leeway = 0;
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
-        let cached = self.keys.read().await;
-        let claims = Self::decode(parts[1], header.kid.as_deref(), &cached.0, &validation);
-        if let Ok(claims) = claims {
+        let cached =
+            Self::decode_cached(&self.keys, parts[1], header.kid.as_deref(), &validation).await;
+        if let Ok(claims) = cached {
             return self.identity(claims);
         }
-        drop(cached);
         // Refresh after verification failure to support provider key rotation,
-        // including rotation that keeps the key ID. Serialize concurrent refreshes.
-        let mut keys = self.keys.write().await;
-        if let Ok(claims) = Self::decode(parts[1], header.kid.as_deref(), &keys.0, &validation) {
+        // including rotation that keeps the key ID. Serialize concurrent refreshes
+        // with a dedicated lock so cached verification never waits for provider I/O.
+        let _refresh = self.refresh_lock.lock().await;
+        // An earlier refresh may already have published the needed key.
+        let rechecked =
+            Self::decode_cached(&self.keys, parts[1], header.kid.as_deref(), &validation).await;
+        if let Ok(claims) = rechecked {
             return self.identity(claims);
         }
-        *keys = (
-            self.http
-                .get(&self.jwks_url)
-                .send()
-                .await
-                .map_err(|_| Fault::unauthenticated())?
-                .error_for_status()
-                .map_err(|_| Fault::unauthenticated())?
-                .json()
-                .await
-                .map_err(|_| Fault::unauthenticated())?,
-            Instant::now(),
-        );
-        self.identity(Self::decode(
-            parts[1],
-            header.kid.as_deref(),
-            &keys.0,
-            &validation,
-        )?)
+        // Fetch and parse outside the key lock. Any failure or cancellation drops the
+        // refresh guard and leaves the previously cached keys untouched.
+        let fresh: JwkSet = self
+            .http
+            .get(&self.jwks_url)
+            .send()
+            .await
+            .map_err(|_| Fault::unauthenticated())?
+            .error_for_status()
+            .map_err(|_| Fault::unauthenticated())?
+            .json()
+            .await
+            .map_err(|_| Fault::unauthenticated())?;
+        let claims = Self::decode(parts[1], header.kid.as_deref(), &fresh, &validation);
+        // Publish the complete snapshot under a short write lock.
+        *self.keys.write().await = (fresh, Instant::now());
+        self.identity(claims?)
+    }
+    async fn decode_cached(
+        keys: &RwLock<(JwkSet, Instant)>,
+        raw: &str,
+        kid: Option<&str>,
+        validation: &Validation,
+    ) -> Result<Claims> {
+        let cached = keys.read().await;
+        Self::decode(raw, kid, &cached.0, validation)
     }
     fn decode(
         raw: &str,
@@ -190,6 +205,7 @@ mod tests {
             http: reqwest::Client::new(),
             jwks_url: String::new(),
             keys: RwLock::new((JwkSet { keys: vec![] }, Instant::now())),
+            refresh_lock: Mutex::new(()),
             issuer: "https://issuer.example".into(),
             audience: "api".into(),
             identity_key: "test-identity-key".into(),

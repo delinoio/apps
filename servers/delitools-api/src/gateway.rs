@@ -7,11 +7,11 @@
 
 use crate::{
     config::GatewaySettings,
-    retry::{Failure, classify_status},
+    retry::{Failure, classify_status, parse_retry_after},
     usage::{self, UsageReading},
 };
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const MAX_RESPONSE_BYTES: usize = 8 << 20;
 
@@ -81,13 +81,13 @@ impl Gateway {
             .send()
             .await
             .map_err(|_| Failure::Transient { retry_after: None })?;
+        let received_at = SystemTime::now();
         let status = response.status().as_u16();
         let retry_after = response
             .headers()
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_secs);
+            .and_then(|v| parse_retry_after(v, received_at));
         if !(200..300).contains(&status) {
             return Err(classify_status(status, retry_after));
         }
@@ -97,30 +97,36 @@ impl Gateway {
             match response.chunk().await {
                 Ok(Some(chunk)) => {
                     if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES {
-                        return Ok(Completion {
-                            content: None,
-                            truncated: false,
-                            usage: UsageReading::Unknown(usage::UnknownUsage::Missing),
-                        });
+                        return Ok(unreadable_completion());
                     }
                     bytes.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                Err(_) => return Err(Failure::Transient { retry_after: None }),
+                // The status line already reported success, so the provider may have run (and
+                // billed) the request. A body transport failure is therefore an unreadable 2xx
+                // body, not a pre-response network failure: it must not be retried, and the
+                // partial bytes are discarded without recovering any usage from them.
+                Err(_) => return Ok(unreadable_completion()),
             }
         }
         Ok(parse_completion(&bytes))
     }
 }
 
+/// The completion of a 2xx response whose body cannot be read: no content, no truncation and
+/// unknown usage, which is never charged or estimated.
+fn unreadable_completion() -> Completion {
+    Completion {
+        content: None,
+        truncated: false,
+        usage: UsageReading::Unknown(usage::UnknownUsage::Missing),
+    }
+}
+
 /// Parses a completion body. An unreadable body has no content and unknown usage.
 pub fn parse_completion(bytes: &[u8]) -> Completion {
     let Ok(body) = serde_json::from_slice::<Value>(bytes) else {
-        return Completion {
-            content: None,
-            truncated: false,
-            usage: UsageReading::Unknown(usage::UnknownUsage::Missing),
-        };
+        return unreadable_completion();
     };
     let choice = &body["choices"][0];
     Completion {
