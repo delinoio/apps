@@ -647,3 +647,56 @@ async fn held_entitlements_use_the_plan_policy_pinned_at_the_month_boundary() {
         "{error}"
     );
 }
+
+/// A deleting tenant whose purchased balance was exhausted by a charge that the sweep will correct
+/// is not finalized before the sweep reaches its rated period: the correction credits a balance
+/// that still has to be refunded, and a de-identified tenant could no longer receive it.
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL database"]
+async fn final_deletion_waits_for_the_historical_allowance_recovery() {
+    let w = World::new().await;
+    w.ingest(
+        "february",
+        "50",
+        w.prev + Duration::days(14),
+        w.cur + Duration::days(1),
+    )
+    .await;
+    w.rate_without_recovery().await;
+    // The refunded purchase leaves a zero balance after the overcharge, so only the pending
+    // recovery stands between the tenant and final deletion.
+    sqlx::query("INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2::text::uuid,'refund',-950,$3,now())")
+        .bind(Uuid::now_v7()).bind(&w.tenant).bind(format!("refund:{}", w.tenant)).execute(&w.f.db).await.unwrap();
+    assert!(w.balance_is("0").await);
+    sqlx::query("UPDATE tenants SET deleting_at=now()-interval '1 year' WHERE id=$1::text::uuid")
+        .bind(&w.tenant)
+        .execute(&w.f.db)
+        .await
+        .unwrap();
+    let deleted = || async {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT deleted_at IS NOT NULL FROM tenants WHERE id=$1::text::uuid",
+        )
+        .bind(&w.tenant)
+        .fetch_one(&w.f.db)
+        .await
+        .unwrap()
+    };
+
+    // The backlog has not been swept: deletion is held and nothing is de-identified.
+    w.f.worker.maintain(Utc::now()).await.unwrap();
+    assert!(!deleted().await);
+
+    // Once the sweep applied the correction the balance is owed back, so deletion stays held by
+    // the ordinary balance gate instead of finalizing around it.
+    assert_eq!(w.f.worker.recover_free_allowances().await.unwrap(), 1);
+    assert!(w.balance_is("50").await);
+    w.f.worker.maintain(Utc::now()).await.unwrap();
+    assert!(!deleted().await);
+
+    // After the refund of that credit nothing remains outstanding and deletion finalizes.
+    sqlx::query("INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2::text::uuid,'refund',-50,$3,now())")
+        .bind(Uuid::now_v7()).bind(&w.tenant).bind(format!("refund-correction:{}", w.tenant)).execute(&w.f.db).await.unwrap();
+    w.f.worker.maintain(Utc::now()).await.unwrap();
+    assert!(deleted().await);
+}

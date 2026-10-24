@@ -74,13 +74,21 @@ AND COALESCE((SELECT sum((payload->>'amount')::numeric) FROM jobs WHERE tenant_i
         }
         self.round_usage(&mut tx, now).await?;
         self.settle(&mut tx, now).await?;
-        // Every independent debt, dispute, refund, and unfinished-job gate holds deletion.
+        // Every independent debt, dispute, refund, and unfinished-job gate holds deletion. So does
+        // historical free allowance recovery: a rated period beyond the sweep position
+        // (`allowance_recovery_cursor`, ascending by tenant and period start) may still receive a
+        // missing baseline whose correction credits the tenant's balance. That credit has to exist
+        // before the balance is checked and refunded, not after the tenant is de-identified.
+        // Periods rated from now on recover inside their metering transaction, so only the
+        // backlog the sweep has not examined yet holds deletion, and the sweep passes every
+        // period it examined, including one with inconsistent history.
         let rows = sqlx::query(r#"SELECT t.id,t.owner_id,t.personal FROM tenants t WHERE t.deleting_at<$1 AND t.deleted_at IS NULL
 AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
 AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)=0
 AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)=0
 AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind<>'email' AND state<>'done' AND NOT (kind IN ('topup','auto_topup') AND state='failed' AND error_category IN ('provider_rejected','payment_failed','payment_method_required')))
-AND t.external_subscription_id=''"#).bind(now-Duration::seconds(self.config.reporting_grace_seconds+self.config.deletion_grace_seconds)).fetch_all(&mut *tx).await?;
+AND t.external_subscription_id=''
+AND NOT EXISTS(SELECT 1 FROM metering_rated_periods rp,allowance_recovery_cursor c WHERE rp.tenant_id=t.id AND (rp.tenant_id,rp.period_start)>(c.tenant_id,c.period_start))"#).bind(now-Duration::seconds(self.config.reporting_grace_seconds+self.config.deletion_grace_seconds)).fetch_all(&mut *tx).await?;
         for row in rows {
             let tenant: Uuid = row.try_get(0)?;
             let user: Option<Uuid> = row.try_get(1)?;
