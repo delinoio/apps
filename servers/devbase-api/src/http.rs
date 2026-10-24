@@ -14,7 +14,13 @@ pub fn rpc_router(server: Arc<Server>) -> Router {
         // Must stay the first interceptor: it measures and limits the received message before
         // any other interceptor could replace the payload and before the lazy decode.
         .with_interceptor(crate::size::LimitReceivedSize);
-    Router::new().fallback_service(rpc)
+    // Runs around the whole service, so it sees the dependency's own decoding failures; the
+    // outer request policy still wraps it for deadlines, CORS and accounting.
+    Router::new()
+        .fallback_service(rpc)
+        .layer(middleware::from_fn(
+            crate::response::sanitize_decode_failure,
+        ))
 }
 
 pub fn router(server: Arc<Server>) -> Router {

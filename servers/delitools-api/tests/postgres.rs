@@ -963,6 +963,7 @@ async fn provider_totals_are_billed_without_double_counting_breakdowns() {
     });
     let wire = h.translate(USER_TOKEN, translate_body(&["Hello"])).await;
     assert!(wire.ok(), "{}", wire.body);
+    assert_eq!(h.unknown_usage("missing") + h.unknown_usage("invalid"), 0);
     let id = wire.body["requestId"].as_str().unwrap().to_owned();
     let stored = rows(&db.pool).await;
     assert_eq!(
@@ -1077,6 +1078,9 @@ async fn unknown_or_invalid_usage_creates_no_charge_and_zero_tokens_create_no_ev
     let stored = rows(&db.pool).await;
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].1, "gem_out");
+    // Known totals, including a zero direction, are confirmed usage and add no observation.
+    assert_eq!(h.unknown_usage("missing"), 1);
+    assert_eq!(h.unknown_usage("invalid"), 1);
     db.finish().await;
 }
 
@@ -1139,6 +1143,11 @@ async fn a_canceled_caller_does_not_lose_usage_that_is_being_stored() {
         count(&db.pool, None).await,
         2,
         "confirmed usage is stored after cancellation"
+    );
+    assert_eq!(
+        h.unknown_usage("missing") + h.unknown_usage("invalid"),
+        0,
+        "confirmed usage is not reclassified as unknown by the cancellation"
     );
     assert_eq!(h.gateway.calls(), 1);
     for _ in 0..50 {

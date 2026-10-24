@@ -683,6 +683,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "yaml-rust2",
 ]
@@ -729,6 +730,7 @@ dependencies = [
  "subtle",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

@@ -365,8 +365,9 @@ async fn malformed_oversized_messages_get_the_typed_size_rejection_before_decodi
     assert_eq!(samples(&fx.server, "GetProject").0, 3);
     assert_eq!(count(&fx.server, "GetProject", "deadline_exceeded"), 0);
 
-    // At or below the limit a malformed body keeps the dispatcher's own decode error: no DevBase
-    // trace header, no observation.
+    // At or below the limit a malformed JSON body fails in the dispatcher's decoder, before the
+    // handler. The response adapter gives that failure the typed error shape; like any
+    // transport-level rejection it creates no observation.
     let small = br#"{"projectId": [[["#;
     let reply = exchange(
         fx.addr,
@@ -375,7 +376,7 @@ async fn malformed_oversized_messages_get_the_typed_size_rejection_before_decodi
     )
     .await;
     assert!(reply.head.starts_with("HTTP/1.1 400"), "{}", reply.head);
-    assert!(reply.header("x-devbase-trace-id").is_none());
+    assert!(reply.header("x-devbase-trace-id").is_some());
     assert_eq!(count(&fx.server, "GetProject", "invalid_argument"), 3);
 }
 
@@ -665,6 +666,425 @@ fn procedure_allowlist_matches_operation_names() {
     ] {
         assert_eq!(Op::from_procedure_path(path), None, "{path:?}");
     }
+}
+
+const SAFE_DECODE_MESSAGE: &str = "request body could not be decoded";
+
+/// Log sink shared with a scoped subscriber so a test can search everything the server logged.
+#[derive(Clone, Default)]
+struct LogBuffer(Arc<std::sync::Mutex<Vec<u8>>>);
+impl std::io::Write for LogBuffer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogBuffer {
+    type Writer = LogBuffer;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn update_end_user_json(update_mask: &str) -> String {
+    format!(
+        r#"{{"idempotencyKey":"mask-privacy-fixture","projectId":"{PROJECT}","endUserId":"01900000-0000-7000-8000-000000000003","version":"1","updateMask":"{update_mask}"}}"#
+    )
+}
+
+/// Decodes the typed error of a reply and returns `(code, message, trace, reason)`.
+fn typed_error_of(reply: &Reply) -> (String, String, String, i32) {
+    let trace = reply
+        .header("x-devbase-trace-id")
+        .expect("trace header")
+        .to_owned();
+    let parsed = uuid::Uuid::parse_str(&trace).unwrap();
+    assert_eq!(parsed.get_version_num(), 7, "trace must be a UUID v7");
+    assert_eq!(reply.header("content-type"), Some("application/json"));
+    let object = &reply.body[reply.body.find('{').unwrap()..=reply.body.rfind('}').unwrap()];
+    let json: serde_json::Value = serde_json::from_str(object).unwrap();
+    let raw = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(json["details"][0]["value"].as_str().unwrap())
+        .unwrap();
+    let detail = delino_protocol::devbase::v1::ErrorDetail::decode_from_slice(&raw).unwrap();
+    assert_eq!(detail.trace_id, trace, "detail must match the header");
+    (
+        json["code"].as_str().unwrap().to_owned(),
+        json["message"].as_str().unwrap().to_owned(),
+        trace,
+        detail.reason.to_i32(),
+    )
+}
+
+#[tokio::test]
+async fn invalid_update_mask_components_get_a_fixed_typed_error_without_echo() {
+    let logs = LogBuffer::default();
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    );
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    let path = format!("{PREFIX}UpdateEndUser");
+    // Invalid-character branches (email-shaped and not), the underscore branch and a comma list
+    // whose later component is invalid.
+    let masks = [
+        "alice@example.test",
+        "private-customer-name@example.test",
+        "private_customer_name",
+        "name,private_customer_name",
+        // Components with a quote or a backslash: the transport's JSON error body escapes them,
+        // so the inspection must accept an escaped message.
+        r#"private\"customer"#,
+        r#"private\\customer"#,
+    ];
+    for mask in masks {
+        let body = update_end_user_json(mask);
+        // Without Origin and without credentials: decoding fails before authentication.
+        let reply = exchange(
+            fx.addr,
+            &rpc_head(&path, body.len(), ""),
+            &[(Duration::ZERO, body.as_bytes())],
+        )
+        .await;
+        assert!(
+            reply.head.starts_with("HTTP/1.1 400"),
+            "{mask}: {}",
+            reply.head
+        );
+        let (code, message, _, reason) = typed_error_of(&reply);
+        assert_eq!(code, "invalid_argument", "{mask}");
+        assert_eq!(message, SAFE_DECODE_MESSAGE, "{mask}");
+        assert_eq!(reason, 1, "ERROR_REASON_INVALID_INPUT");
+        for sentinel in [
+            "alice",
+            "example.test",
+            "private",
+            "customer",
+            "lowerCamelCase",
+            "FieldMask",
+            "line ",
+        ] {
+            assert!(
+                !reply.head.contains(sentinel) && !reply.body.contains(sentinel),
+                "{mask}: {sentinel}"
+            );
+        }
+
+        // With the configured Origin and an untrusted incoming trace header.
+        let extra = format!("Origin: {ORIGIN}\r\nX-Devbase-Trace-Id: untrusted-client-value\r\n");
+        let reply = exchange(
+            fx.addr,
+            &rpc_head(&path, body.len(), &extra),
+            &[(Duration::ZERO, body.as_bytes())],
+        )
+        .await;
+        assert!(
+            reply.head.starts_with("HTTP/1.1 400"),
+            "{mask}: {}",
+            reply.head
+        );
+        let (code, message, trace, _) = typed_error_of(&reply);
+        assert_eq!(code, "invalid_argument");
+        assert_eq!(message, SAFE_DECODE_MESSAGE);
+        assert_ne!(trace, "untrusted-client-value");
+        assert_eq!(reply.header("access-control-allow-origin"), Some(ORIGIN));
+        assert_eq!(reply.header("vary"), Some("Origin"));
+        assert!(
+            reply
+                .header("access-control-expose-headers")
+                .is_some_and(|v| v.contains("X-Devbase-Trace-Id"))
+        );
+    }
+    // The adaptation logs a bounded category with the trace and never the replaced diagnostic.
+    let logged = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+    assert!(logged.contains("request_decode"), "{logged}");
+    for sentinel in [
+        "alice",
+        "example.test",
+        "private",
+        "customer",
+        "lowerCamelCase",
+        "FieldMask",
+    ] {
+        assert!(
+            !logged.contains(sentinel),
+            "log leaked {sentinel}: {logged}"
+        );
+    }
+    // The handler never ran, so Delcore, authentication and storage were not reached and no
+    // procedure outcome was recorded.
+    assert_eq!(count(&fx.server, "UpdateEndUser", "invalid_argument"), 0);
+    assert_eq!(count(&fx.server, "UpdateEndUser", "unauthenticated"), 0);
+    assert_eq!(count(&fx.server, "UpdateEndUser", "unavailable"), 0);
+}
+
+#[tokio::test]
+async fn valid_update_masks_and_binary_requests_still_reach_the_handler() {
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    let path = format!("{PREFIX}UpdateEndUser");
+    // Decodable masks, including a well-formed but unsupported path, pass the decoder; the
+    // handler then answers the missing credentials with its own typed authentication error.
+    for mask in ["name", "name,email", "unsupportedField"] {
+        let body = update_end_user_json(mask);
+        let reply = exchange(
+            fx.addr,
+            &rpc_head(&path, body.len(), ""),
+            &[(Duration::ZERO, body.as_bytes())],
+        )
+        .await;
+        assert!(
+            reply.head.starts_with("HTTP/1.1 401"),
+            "{mask}: {}",
+            reply.head
+        );
+        let (code, message, _, _) = typed_error_of(&reply);
+        assert_eq!(code, "unauthenticated", "{mask}");
+        assert_ne!(message, SAFE_DECODE_MESSAGE);
+    }
+    // Binary requests do not use the JSON parser: a mask that the JSON parser would refuse is
+    // an ordinary value here and reaches the handler.
+    let request = delino_protocol::devbase::v1::UpdateEndUserRequest {
+        project_id: PROJECT.into(),
+        update_mask: Some(buffa_types::google::protobuf::FieldMask {
+            paths: vec!["private_customer_name".into()],
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    let body = request.encode_to_vec();
+    let reply = exchange(
+        fx.addr,
+        &typed_head(&path, "application/proto", body.len())
+            .replace("Authorization: Bearer login-token\r\n", ""),
+        &[(Duration::ZERO, body.as_slice())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 401"), "{}", reply.head);
+    assert_eq!(typed_error_of(&reply).0, "unauthenticated");
+    assert_eq!(count(&fx.server, "UpdateEndUser", "unauthenticated"), 4);
+}
+
+#[tokio::test]
+async fn decoding_adaptation_leaves_other_responses_and_unknown_paths_unchanged() {
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    // A message above 256 KiB keeps the plain transport rejection, including with an invalid
+    // mask at its start.
+    let mut large = update_end_user_json("alice@example.test").into_bytes();
+    large.resize((256 << 10) + 1, b' ');
+    let path = format!("{PREFIX}UpdateEndUser");
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&path, large.len(), ""),
+        &[(Duration::ZERO, large.as_slice())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 429"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_none());
+    assert!(reply.body.contains("resource_exhausted"));
+    // An unknown procedure is not a decoding failure: it receives the fixed unmatched-procedure
+    // reply (separately covered below), never the decoding message.
+    let unknown = format!("{PREFIX}NoSuchProcedure");
+    let body = update_end_user_json("alice@example.test");
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&unknown, body.len(), ""),
+        &[(Duration::ZERO, body.as_bytes())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 404"), "{}", reply.head);
+    assert_eq!(typed_error_of(&reply).1, SAFE_UNKNOWN_MESSAGE);
+}
+
+const SAFE_UNKNOWN_MESSAGE: &str = "procedure not found";
+
+#[tokio::test]
+async fn unmatched_procedures_get_a_fixed_typed_not_found_without_echo() {
+    let logs = LogBuffer::default();
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    );
+    let fx = fixture(Duration::from_secs(5), Delcore::Fail).await;
+    // The exact synthetic request, other personal-looking selectors, an unrelated path, a
+    // percent-encoded selector and a query sentinel.
+    let paths = [
+        format!("{PREFIX}alice@example.test"),
+        format!("{PREFIX}bob@example.test"),
+        format!("{PREFIX}alice%40example.test"),
+        format!("{PREFIX}GetProject?who=carol@example.test"),
+        format!("{PREFIX}NoSuchProcedure?who=carol@example.test"),
+        "/private-customer-name/anything".to_owned(),
+        "/devbase.v1.OtherService/GetProject".to_owned(),
+    ];
+    for path in &paths {
+        for extra in [
+            String::new(),
+            format!("Origin: {ORIGIN}\r\nX-Devbase-Trace-Id: untrusted-client-value\r\n"),
+        ] {
+            let reply = exchange(
+                fx.addr,
+                &rpc_head(path, 2, &extra),
+                &[(Duration::ZERO, b"{}")],
+            )
+            .await;
+            // A known procedure with a query string is not an exact path match either, so it
+            // only reaches the handler when the path itself is exact.
+            if path.starts_with(&format!("{PREFIX}GetProject?")) {
+                assert!(
+                    reply.head.starts_with("HTTP/1.1 401"),
+                    "{path}: {}",
+                    reply.head
+                );
+                continue;
+            }
+            assert!(
+                reply.head.starts_with("HTTP/1.1 404"),
+                "{path}: {}",
+                reply.head
+            );
+            let (code, message, trace, reason) = typed_error_of(&reply);
+            assert_eq!(code, "unimplemented", "{path}");
+            assert_eq!(message, SAFE_UNKNOWN_MESSAGE, "{path}");
+            assert_eq!(reason, 1, "ERROR_REASON_INVALID_INPUT");
+            assert_ne!(trace, "untrusted-client-value");
+            for sentinel in [
+                "alice",
+                "bob",
+                "example.test",
+                "private",
+                "customer",
+                "carol",
+                "NoSuchProcedure",
+                "OtherService",
+                "method not found",
+                "%40",
+            ] {
+                assert!(
+                    !reply.head.contains(sentinel) && !reply.body.contains(sentinel),
+                    "{path}: {sentinel}"
+                );
+            }
+            if extra.is_empty() {
+                assert!(reply.header("access-control-allow-origin").is_none());
+            } else {
+                assert_eq!(reply.header("access-control-allow-origin"), Some(ORIGIN));
+                assert!(
+                    reply
+                        .header("access-control-expose-headers")
+                        .is_some_and(|v| v.contains("X-Devbase-Trace-Id"))
+                );
+            }
+        }
+    }
+    // Each reply carries its own fresh trace.
+    let first = exchange(
+        fx.addr,
+        &rpc_head(&paths[0], 2, ""),
+        &[(Duration::ZERO, b"{}")],
+    )
+    .await;
+    let second = exchange(
+        fx.addr,
+        &rpc_head(&paths[0], 2, ""),
+        &[(Duration::ZERO, b"{}")],
+    )
+    .await;
+    assert_ne!(typed_error_of(&first).2, typed_error_of(&second).2);
+
+    // A GET on an unknown path takes the same transport rejection and the same replacement.
+    let get = "GET /devbase.v1.DevBaseService/alice@example.test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    let reply = exchange(fx.addr, get, &[]).await;
+    assert!(reply.head.starts_with("HTTP/1.1 404"), "{}", reply.head);
+    assert_eq!(typed_error_of(&reply).1, SAFE_UNKNOWN_MESSAGE);
+
+    // The adaptation logs a bounded category with the trace and never the selector.
+    let logged = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+    assert!(logged.contains("unknown_procedure"), "{logged}");
+    // The production router's `api.request` span is part of every event's context, so a span
+    // that recorded the raw request path would leak the selector here.
+    for sentinel in [
+        "alice",
+        "bob",
+        "example.test",
+        "private",
+        "customer",
+        "carol",
+        "NoSuchProcedure",
+        "OtherService",
+        "%40",
+    ] {
+        assert!(
+            !logged.contains(sentinel),
+            "log leaked {sentinel}: {logged}"
+        );
+    }
+
+    // Known procedures keep their own outcomes: a typed authentication error with accounting,
+    // an unsupported method on a known procedure and a rejected Origin.
+    let known = format!("{PREFIX}ListProjects");
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&known, 2, ""),
+        &[(Duration::ZERO, b"{}")],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 401"), "{}", reply.head);
+    assert_eq!(typed_error_of(&reply).0, "unauthenticated");
+    assert_eq!(count(&fx.server, "ListProjects", "unauthenticated"), 1);
+    let rejected = rpc_head(&paths[0], 2, "Origin: https://evil.example\r\n");
+    let reply = exchange(fx.addr, &rejected, &[(Duration::ZERO, b"{}")]).await;
+    assert!(reply.head.starts_with("HTTP/1.1 403"), "{}", reply.head);
+
+    // Unknown paths create no procedure series.
+    let encoded = fx.server.metrics.encode();
+    assert!(
+        !encoded.contains("procedure=\"alice") && !encoded.contains("example.test"),
+        "{encoded}"
+    );
+}
+
+#[tokio::test]
+async fn unmatched_procedure_keeps_earlier_deadline_and_body_rejections() {
+    let fx = fixture(Duration::from_millis(300), Delcore::Fail).await;
+    let path = format!("{PREFIX}alice@example.test");
+    // A body that stays pending is cut by the whole-request deadline before the transport can
+    // report the routing failure, so the existing typed timeout is preserved.
+    let reply = exchange(fx.addr, &rpc_head(&path, 10, ""), &[]).await;
+    assert!(reply.head.starts_with("HTTP/1.1 504"), "{}", reply.head);
+    // The interceptor-level message limit applies only to registered methods, so a body between
+    // 256 KiB and the transport's body bound is still drained and then reported as unmatched.
+    let mut medium = vec![b' '; (256 << 10) + 1];
+    medium[0] = b'{';
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&path, medium.len(), ""),
+        &[(Duration::ZERO, medium.as_slice())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 404"), "{}", reply.head);
+    assert_eq!(typed_error_of(&reply).1, SAFE_UNKNOWN_MESSAGE);
+    // A body above the transport's own bound is rejected while it is read, before routing. That
+    // earlier plain rejection is preserved rather than turned into the unmatched reply.
+    let mut huge = vec![b' '; (4 << 20) + 1];
+    huge[0] = b'{';
+    let reply = exchange(
+        fx.addr,
+        &rpc_head(&path, huge.len(), ""),
+        &[(Duration::ZERO, huge.as_slice())],
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 429"), "{}", reply.head);
+    assert!(reply.header("x-devbase-trace-id").is_none());
+    assert!(reply.body.contains("resource_exhausted"), "{}", reply.body);
+    assert!(!reply.body.contains("procedure not found"));
 }
 
 /// Fourth-group leading nibbles 0-7 and c-f give version-7 text without the RFC 4122 variant.
