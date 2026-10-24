@@ -21,6 +21,7 @@ import {
   type Experiment,
 } from "@delino/protos/perfine/v1/perfine_pb";
 import {
+  candidateDiffURL,
   completenessLabel,
   executionLabel,
   percent,
@@ -463,7 +464,10 @@ export function Detail({
               complete={e.evidenceCompletion === CompletionState.COMPLETE}
             />
             <div className="actions">
-              <External github url={c.githubDiffUrl}>
+              <External
+                github
+                url={candidateDiffURL(c, connection.repository) || ""}
+              >
                 Inspect exact GitHub diff
               </External>
               <Button

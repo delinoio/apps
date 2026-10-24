@@ -7,6 +7,8 @@ import {
   ExecutionState,
   PerformanceVerdict,
   ErrorDetailSchema,
+  type Candidate,
+  type GitHubRepository,
 } from "@delino/protos/perfine/v1/perfine_pb";
 
 export function uuid7() {
@@ -82,4 +84,21 @@ export function errorInfo(error: unknown) {
     requestId:
       detail?.requestId || e.metadata.get("x-request-id") || "unavailable",
   };
+}
+
+export function candidateDiffURL(
+  candidate: Candidate,
+  repository?: GitHubRepository,
+) {
+  if (
+    !repository ||
+    !/^[a-z0-9-]+$/iu.test(repository.owner) ||
+    !/^[a-z0-9_.-]+$/iu.test(repository.name) ||
+    [".", ".."].includes(repository.name) ||
+    ![candidate.baseSha, candidate.headSha].every((sha) =>
+      /^[a-f0-9]{40}$/iu.test(sha),
+    )
+  )
+    return undefined;
+  return `https://github.com/${repository.owner}/${repository.name}/compare/${candidate.baseSha}...${candidate.headSha}`;
 }

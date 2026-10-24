@@ -21,7 +21,7 @@ import {
 import { CandidateEvidence } from "./experiments";
 import { Specification } from "./start";
 import { Button, Card, External, Failure, Field, Notice } from "./ui";
-import { safeURL, useRequestId, uuid7 } from "./core";
+import { candidateDiffURL, useRequestId, uuid7 } from "./core";
 export function Review({
   spaceId,
   experiment,
@@ -89,11 +89,12 @@ export function Review({
     candidate.correctness.length > 0 &&
     candidate.correctness.every((c) => c.state === CorrectnessState.PASSED) &&
     candidate.comparisons.length > 0;
+  const diffURL = candidateDiffURL(candidate, connection.repository);
   const permitted =
     allowed &&
     connection.state === ConnectionState.CONNECTED &&
     complete &&
-    !!safeURL(candidate.githubDiffUrl, true);
+    !!diffURL;
   const busy = approve.isPending || publish.isPending;
   function update(next: DraftBinding) {
     setDraft(next);
@@ -179,7 +180,7 @@ export function Review({
           <Specification spec={experiment.specification} />
         </details>
       )}
-      <External github url={candidate.githubDiffUrl}>
+      <External github url={diffURL || ""}>
         Inspect measured source on GitHub
       </External>
       <Card className="panel">

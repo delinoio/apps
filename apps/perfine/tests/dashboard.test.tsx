@@ -17,7 +17,7 @@ import {
 } from "../src/configuration";
 import { Start } from "../src/start";
 import { Confirm } from "../src/ui";
-import { queryClient, safeURL, uuid7 } from "../src/core";
+import { candidateDiffURL, queryClient, safeURL, uuid7 } from "../src/core";
 import {
   candidate,
   connection,
@@ -230,6 +230,38 @@ describe("mocked typed RPC dashboard", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(called).toBe(false);
+  });
+  it("derives exact diff links from measured SHAs and rejects malformed repository paths", () => {
+    const expected = `https://github.com/example/parser/compare/${candidate.baseSha}...${candidate.headSha}`;
+    expect(candidate.githubDiffUrl).toBe("");
+    expect(candidateDiffURL(candidate, connection.repository)).toBe(expected);
+    expect(
+      candidateDiffURL(candidate, {
+        ...connection.repository!,
+        name: "../other",
+      }),
+    ).toBeUndefined();
+    expect(
+      candidateDiffURL(
+        { ...candidate, headSha: "main" },
+        connection.repository,
+      ),
+    ).toBeUndefined();
+    mount(() => (
+      <Review
+        spaceId={spaceId}
+        experiment={experiment}
+        candidate={candidate}
+        connection={connection}
+        allowed
+        back={() => {}}
+      />
+    ));
+    expect(
+      screen
+        .getByRole("link", { name: /Inspect measured source on GitHub/ })
+        .getAttribute("href"),
+    ).toBe(expected);
   });
   it("clears approval confirmation when content changes and publishes exactly the approved binding", async () => {
     const f = mount(() => (
