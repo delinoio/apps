@@ -4,6 +4,10 @@ use crate::{Fault, Result, integer, string};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
 use server_common::authority::bounded_json;
+pub struct PublicationTokens {
+    pub head: String,
+    pub target: String,
+}
 pub struct GitHub {
     pub http: reqwest::Client,
     pub base: String,
@@ -97,6 +101,39 @@ impl GitHub {
         }
         Ok(token)
     }
+    pub async fn publication_tokens(&self, c: &Value, d: &Value) -> Result<PublicationTokens> {
+        if d["headRepository"] != c["repository"] {
+            return Err(Fault::denied());
+        }
+        let head = self.current(c).await?;
+        let target = if d["targetRepository"] == d["headRepository"] {
+            head.clone()
+        } else {
+            let repository = &d["targetRepository"];
+            if integer(repository, "githubRepositoryId") == 0 {
+                return Err(Fault::denied());
+            }
+            // A fork's repository-scoped token cannot authorize a private upstream.
+            // Resolve its installation as the App and mint a separate exact-repository token.
+            let installation = self
+                .call(
+                    "GET",
+                    &format!("{}/installation", path(repository)),
+                    &self.app_token()?,
+                    None,
+                )
+                .await?;
+            let installation_id = integer(&installation, "id");
+            if installation_id == 0 {
+                return Err(Fault::denied());
+            }
+            self.current(
+                &json!({"repository": repository, "githubInstallationId": installation_id}),
+            )
+            .await?
+        };
+        Ok(PublicationTokens { head, target })
+    }
     pub async fn admin(&self, c: &Value, user_token: &str) -> Result<()> {
         if user_token.is_empty() {
             return Err(Fault::denied());
@@ -118,7 +155,12 @@ impl GitHub {
         self.current(c).await?;
         Ok(())
     }
-    pub async fn production_diff(&self, d: &Value, candidate: &Value, token: &str) -> Result<()> {
+    pub async fn production_diff(
+        &self,
+        d: &Value,
+        candidate: &Value,
+        tokens: &PublicationTokens,
+    ) -> Result<()> {
         if candidate["_publicationAllowed"] != true
             || candidate["baseSha"] != d["baseSha"]
             || candidate["headSha"] != d["headSha"]
@@ -139,7 +181,7 @@ impl GitHub {
                         string(d, "headSha")
                     ))
                 ),
-                token,
+                &tokens.target,
                 None,
             )
             .await?;
@@ -178,7 +220,7 @@ impl GitHub {
                 .call(
                     "GET",
                     &format!("{}/commits/{}", path(&d["headRepository"]), escape(sha)),
-                    token,
+                    &tokens.head,
                     None,
                 )
                 .await?;
@@ -200,10 +242,10 @@ impl GitHub {
         }
         Ok(())
     }
-    pub async fn binding(&self, d: &Value, token: &str) -> Result<()> {
-        for (repository, reference, sha) in [
-            ("targetRepository", "baseRef", "baseSha"),
-            ("headRepository", "headRef", "headSha"),
+    pub async fn binding(&self, d: &Value, tokens: &PublicationTokens) -> Result<()> {
+        for (repository, reference, sha, token) in [
+            ("targetRepository", "baseRef", "baseSha", &tokens.target),
+            ("headRepository", "headRef", "headSha", &tokens.head),
         ] {
             let r = &d[repository];
             let v = self

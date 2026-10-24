@@ -291,7 +291,10 @@ impl Server {
                     let e = experiment(&mut tx, space, string(q, "experimentId")).await?;
                     let c = connection(&mut tx, space, string(&e, "connectionId")).await?;
                     inactive(&c)?;
-                    let token = self.github.current(&c).await?;
+                    let token = self
+                        .github
+                        .publication_tokens(&c, &response["approval"]["draft"])
+                        .await?;
                     self.github
                         .binding(&response["approval"]["draft"], &token)
                         .await?;
@@ -1025,7 +1028,7 @@ impl Server {
             if d["headRepository"] != c["repository"] {
                 return Err(Fault::denied());
             }
-            let token = self.github.current(&c).await?;
+            let token = self.github.publication_tokens(&c, d).await?;
             self.github.binding(d, &token).await?;
             self.github.production_diff(d, &candidate, &token).await?;
             let a = json!({"id":uuid::Uuid::now_v7().to_string(),"experimentId":e["id"],"draft":d,"state":"APPROVAL_STATE_VALID","approverSubject":actor,"createdAt":stamp(),"humanJudgment":string(q,"humanJudgment")});
@@ -1058,7 +1061,10 @@ impl Server {
             let e = experiment(db, space, string(&approval, "experimentId")).await?;
             let c = connection(db, space, string(&e, "connectionId")).await?;
             inactive(&c)?;
-            let token = self.github.current(&c).await?;
+            let token = self
+                .github
+                .publication_tokens(&c, &approval["draft"])
+                .await?;
             self.github.binding(&approval["draft"], &token).await?;
             let p = json!({"approvalId":approval["id"],"candidateId":approval["draft"]["candidateId"],"state":"PUBLICATION_STATE_PENDING","draft":approval["draft"],"_publisherSubject":actor});
             sqlx::query(
@@ -1579,8 +1585,8 @@ impl Server {
         }
         let c = connection(db, space, string(&e, "connectionId")).await?;
         inactive(&c)?;
-        let token = self.github.current(&c).await?;
         let d = &a["draft"];
+        let token = self.github.publication_tokens(&c, d).await?;
         self.github.binding(d, &token).await?;
         let candidate: Value =
             sqlx::query_scalar("SELECT data FROM perfine_candidates WHERE id=$1 AND experiment=$2")
@@ -1605,7 +1611,7 @@ impl Server {
                     crate::storage::escape(&head),
                     crate::storage::escape(string(d, "baseRef"))
                 ),
-                &token,
+                &token.target,
                 None,
             )
             .await?;
@@ -1647,7 +1653,7 @@ impl Server {
             .execute(&mut *db)
             .await?;
             // Persist intent before dispatch. Lost replies are reconciled on the next maintenance cycle.
-            let result=self.github.call("POST",&format!("{path}/pulls"),&token,Some(json!({"title":d["title"],"body":d["body"],"base":d["baseRef"],"head":head,"draft":true}))).await;
+            let result=self.github.call("POST",&format!("{path}/pulls"),&token.target,Some(json!({"title":d["title"],"body":d["body"],"base":d["baseRef"],"head":head,"head_repo":d["headRepository"]["name"],"draft":true}))).await;
             if let Ok(pr) = result {
                 p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
                 p["githubPullRequestNumber"] = json!(integer(&pr, "number").to_string());
