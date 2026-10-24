@@ -162,6 +162,11 @@ impl Server {
     {
         let request_id = Uuid::now_v7();
         let started = std::time::Instant::now();
+        // The transport anchored the deadline at request receipt, before the body was read.
+        let ingress = ctx.extensions().get::<http::IngressClock>().cloned();
+        if let Some(clock) = &ingress {
+            clock.dispatch();
+        }
         let span = tracing::info_span!("delitools.request", request_id = %request_id, procedure = procedure.name());
         let authorization = ctx
             .headers()
@@ -170,7 +175,14 @@ impl Server {
             .unwrap_or("")
             .to_owned();
         let result = self
-            .admit_and_run(&authorization, procedure, &tenant_id, request_id, prepare)
+            .admit_and_run(
+                &authorization,
+                procedure,
+                &tenant_id,
+                request_id,
+                ingress.map(|clock| clock.deadline),
+                prepare,
+            )
             .instrument(span.clone())
             .await;
         let outcome = result.as_ref().err().map_or("ok", ApiError::label);
@@ -228,13 +240,42 @@ impl Server {
         procedure: Procedure,
         tenant_id: &str,
         request_id: Uuid,
+        ingress_deadline: Option<tokio::time::Instant>,
         prepare: impl FnOnce(&Config) -> Result<(Task, models::ModelEntry), ApiError>,
     ) -> Result<Output, ApiError> {
-        let deadline = tokio::time::Instant::now() + self.config.limits.execution_timeout;
+        // One absolute deadline covers admission and execution. Use the one the transport
+        // anchored at receipt; without it (no transport layer) start the budget now. A
+        // configuration that bypassed validation must fail the request, never panic.
+        let deadline = match ingress_deadline {
+            Some(deadline) => deadline,
+            None => {
+                let Some(deadline) = self
+                    .config
+                    .limits
+                    .deadline_from(tokio::time::Instant::now())
+                else {
+                    tracing::error!(
+                        category = "deadline",
+                        "the execution timeout exceeds the monotonic clock range"
+                    );
+                    return Err(ApiError::internal());
+                };
+                deadline
+            }
+        };
         if self.fence.is_cancelled() {
             return Err(ApiError::canceled());
         }
         let fence = self.fence.clone();
+        // Receiving and decoding the body may have consumed the whole budget. An expired
+        // request must not authenticate, reserve a slot or reach the provider.
+        if tokio::time::Instant::now() >= deadline {
+            tracing::warn!(
+                category = "timeout",
+                "the request deadline passed before admission"
+            );
+            return Err(ApiError::timeout());
+        }
         let admitted = tokio::time::timeout_at(deadline, async {
             tokio::select! {
                 biased;
@@ -361,4 +402,38 @@ impl Server {
 /// Current time truncated to microseconds, matching PostgreSQL precision.
 pub fn now() -> chrono::DateTime<Utc> {
     server_common::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::telemetry::Procedure;
+
+    /// A request-time deadline that does not fit the clock must produce the internal error,
+    /// even when the transport layer is bypassed and the configuration skipped validation.
+    #[tokio::test]
+    async fn an_unrepresentable_deadline_is_an_internal_error_not_a_panic() {
+        let dir = config::tests::tempdir();
+        let env = config::tests::base_env(&dir);
+        let mut config = Config::from_lookup(&|key| env.get(key).cloned()).unwrap();
+        config.limits.execution_timeout = std::time::Duration::MAX;
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://nobody:nobody@127.0.0.1:1/none")
+            .unwrap();
+        let server = Server::new(db, config).unwrap();
+        let result = server
+            .admit_and_run(
+                "",
+                Procedure::Translate,
+                "tenant",
+                Uuid::now_v7(),
+                None,
+                |_| unreachable!("the request must fail before preparation"),
+            )
+            .await;
+        let Err(error) = result else {
+            panic!("the request must fail");
+        };
+        assert_eq!(error.code, connectrpc::ErrorCode::Internal);
+    }
 }

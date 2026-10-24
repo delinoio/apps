@@ -78,8 +78,17 @@ async fn run() -> anyhow::Result<()> {
     let listen = config.listen.clone();
     // A request can still be storing confirmed usage after its execution deadline, for up to one
     // dependency timeout; the shutdown and write allowances include that persistence budget.
+    // `Config::validate` rejects a timeout whose allowances are not representable, so the checked
+    // arithmetic below only fails closed for a configuration that bypassed validation.
     let persist_budget = config.dependency_timeout;
-    let shutdown_grace = config.limits.execution_timeout + persist_budget;
+    let shutdown_grace = config
+        .limits
+        .execution_timeout
+        .checked_add(persist_budget)
+        .ok_or_else(|| anyhow::anyhow!("DELITOOLS_EXECUTION_TIMEOUT is too large"))?;
+    let write_limit = shutdown_grace
+        .checked_add(delitools_api::config::TRANSPORT_MARGIN)
+        .ok_or_else(|| anyhow::anyhow!("DELITOOLS_EXECUTION_TIMEOUT is too large"))?;
     let server = Server::new(db.clone(), config)?;
     let app = http::router(server.clone());
     let listener = tokio::net::TcpListener::bind(&listen).await?;
@@ -132,7 +141,7 @@ async fn run() -> anyhow::Result<()> {
         server_common::transport::Limits {
             header: Duration::from_secs(5),
             idle: Duration::from_secs(60),
-            write: shutdown_grace + Duration::from_secs(5),
+            write: write_limit,
             shutdown: shutdown_grace,
         },
         shutdown,
