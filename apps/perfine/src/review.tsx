@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef, useState } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { create, equals } from "@bufbuild/protobuf";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { Textarea } from "@delino/ui/components/textarea";
@@ -103,6 +104,15 @@ export function Review({
     setError(undefined);
   }
   const result = publication.data?.publication || publish.data?.publication;
+  const missingPublication =
+    !result &&
+    publication.error instanceof ConnectError &&
+    publication.error.code === Code.NotFound;
+  const validLockedApproval =
+    currentApproval.data?.approval?.state === ApprovalState.VALID &&
+    !!locked &&
+    !!currentApproval.data.approval.draft &&
+    equals(DraftBindingSchema, currentApproval.data.approval.draft, locked);
   const frozen = !!approvalId || busy;
   async function submit() {
     if (!checked || !permitted || frozen) return;
@@ -460,12 +470,17 @@ export function Review({
                 exact draft. Changed production content requires remeasurement.
               </Notice>
             )}
-            {result?.state === PublicationState.FAILED &&
-              currentApproval.data?.approval?.state === ApprovalState.VALID &&
+            {(result?.state === PublicationState.FAILED ||
+              missingPublication) &&
+              validLockedApproval &&
               locked && (
                 <Button
                   disabled={
-                    busy || !!publication.error || !!currentApproval.error
+                    busy ||
+                    publication.isFetching ||
+                    currentApproval.isFetching ||
+                    (!!publication.error && !missingPublication) ||
+                    !!currentApproval.error
                   }
                   onClick={() =>
                     publish.mutate({
