@@ -677,3 +677,37 @@ fn node_signed_deltas_reorder_samples_without_losing_elapsed_cost() {
         assert!(profile::parse(ProfileFormat::NodeCpu, invalid.as_bytes()).is_err());
     }
 }
+
+#[test]
+fn captured_node_signed_timeline_preserves_total_and_source_coverage() {
+    // Actual normal-JIT capture, used only as an offline parser regression.
+    let bytes = include_bytes!("adapter-data/node-linux-amd64-emulated.cpuprofile");
+    assert_eq!(
+        digest(bytes).as_str(),
+        "e9e7563ef45efbe7b0adfc2297e33ffe3ed286b75c43e36f69adc0c44e4a87e6"
+    );
+    let parsed = profile::parse(ProfileFormat::NodeCpu, bytes).unwrap();
+    assert_eq!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .map(|cost| cost.cost)
+            .sum::<f64>(),
+        9_615_385.0
+    );
+    assert!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .any(|cost| cost.source.file.as_str() == "file:///work/kernel.mjs" && cost.cost > 0.0)
+    );
+    assert!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .all(|cost| cost.metric.unit.as_str() == "microseconds")
+    );
+}
