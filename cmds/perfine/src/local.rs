@@ -592,7 +592,7 @@ impl App {
                 &mut journal,
                 &journal_path,
             )?;
-            let baseline = validate_baseline(&frozen, &a, &b)?;
+            let baseline = validate_execution_baseline(&engine, &id, &frozen, &a, &b)?;
             let initial = if cfg.experiment.initial_base == cfg.experiment.incremental_base {
                 None
             } else {
@@ -627,7 +627,8 @@ impl App {
                     &mut journal,
                     &journal_path,
                 )?;
-                let validation = validate_baseline(&frozen, &first, &second)?;
+                let validation =
+                    validate_execution_baseline(&engine, &id, &frozen, &first, &second)?;
                 Some((initial_request, first, validation))
             };
             if !journal.optimize {
@@ -1076,6 +1077,24 @@ fn measure_step(
     Ok(run)
 }
 
+fn validate_execution_baseline(
+    engine: &Engine<FileStore>,
+    id: &ResourceId,
+    config: &FrozenConfig,
+    first: &VerifiedRun,
+    second: &VerifiedRun,
+) -> Result<perfine_core::evidence::BaselineValidation> {
+    match validate_baseline(config, first, second) {
+        Ok(validation) => Ok(validation),
+        Err(error) => {
+            // These checks consume retained immutable evidence, so retrying cannot repair it.
+            // Persist failure before returning; deadline processing must not report completion.
+            engine.fail_baseline(&request(), id, now())?;
+            Err(error.into())
+        }
+    }
+}
+
 fn workflow(config: &str, action: &CommitSha, base: &CommitSha, image: &str) -> String {
     let mut inline = String::new();
     for line in config.lines() {
@@ -1124,6 +1143,37 @@ mod initialization_fixtures;
 #[cfg(test)]
 mod initialization_tests {
     use super::*;
+    #[test]
+    fn rejected_baseline_stays_failed_after_reopen_resume_and_deadline() {
+        use super::initialization_fixtures as f;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("engine");
+        let engine = Engine::new(FileStore::open(&path).unwrap());
+        let id = ResourceId::generate();
+        let config = f::config().freeze().unwrap();
+        engine
+            .create(&request(), id.clone(), config.clone(), now())
+            .unwrap();
+        let mut manifest = f::manifest(&config, &id, None, f::sha('a'), [100.0, 10.0]);
+        manifest.correctness.insert(
+            f::name("project-tests"),
+            perfine_core::evidence::CheckResult::Failed,
+        );
+        let first = f::verified(&config, manifest);
+        let second = f::run(&config, &id, None, f::sha('a'), [100.0, 10.0]);
+        assert!(validate_execution_baseline(&engine, &id, &config, &first, &second).is_err());
+        drop(engine);
+        let engine = Engine::new(FileStore::open(&path).unwrap());
+        let deadline = engine.status(&id).unwrap().start_deadline;
+        for time in [now(), deadline + 1] {
+            engine.resume(&request(), &id, &config, time).unwrap();
+            engine.tick(&request(), &id, time).unwrap();
+            let status = engine.status(&id).unwrap();
+            assert_eq!(status.state, ExecutionState::Failed);
+            assert!(status.candidates.is_empty());
+        }
+    }
+
     #[test]
     fn journal_recovers_original_operation_after_engine_creation() {
         for created in [false, true] {

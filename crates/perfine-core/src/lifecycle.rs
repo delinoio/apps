@@ -550,6 +550,24 @@ impl<S: Store> Engine<S> {
             })
         })
     }
+    /// Reject an invalid baseline before candidate admission. This failure is terminal.
+    pub fn fail_baseline(&self, request: &RequestId, id: &ResourceId, now: u64) -> Result<Receipt> {
+        self.mutate(request, id, now, &("fail_baseline", id), |db| {
+            let exp = db.experiments.get_mut(id).ok_or(Error::State)?;
+            if exp.state != ExecutionState::Queued || !exp.candidates.is_empty() {
+                return Err(Error::State);
+            }
+            exp.state = ExecutionState::Failed;
+            exp.stop_requested = true;
+            Ok(Receipt {
+                replayed: false,
+                request_id: request.clone(),
+                experiment: id.clone(),
+                candidate: None,
+                state: exp.state,
+            })
+        })
+    }
     /// Graceful stop completes normally, including the valid no-candidate outcome.
     pub fn stop(
         &self,
