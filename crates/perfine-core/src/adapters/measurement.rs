@@ -512,7 +512,15 @@ impl MeasurementAdapter for NativeMeasurementAdapter<'_> {
                         ir.ok_or(Error::Incomplete("Ir total"))?
                     }
                     MeasurementOutput::GoBenchmark { benchmark, unit } => {
-                        if &conditions.metric.unit != unit {
+                        let expected_metric = match unit.as_str() {
+                            "ns/op" => Metric::Time,
+                            "B/op" => Metric::Memory,
+                            "MB/s" => Metric::Throughput,
+                            _ => Metric::Custom,
+                        };
+                        if &conditions.metric.unit != unit
+                            || conditions.metric.metric != expected_metric
+                        {
                             return Err(Error::Mismatch("Go measurement unit"));
                         }
                         parse_go_benchmark(&stdout, benchmark.as_str(), unit.as_str())?

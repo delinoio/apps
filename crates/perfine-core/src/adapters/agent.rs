@@ -3,7 +3,7 @@
 //! The credentialed CLI sees prompt data, never a repository mount, hook or build.
 use super::{
     ArtifactStore,
-    environment::{DockerConfig, git},
+    environment::{DockerConfig, DockerEnvironment, git},
     process, regular_file, relative,
 };
 use crate::{interfaces::*, types::*};
@@ -40,7 +40,8 @@ pub struct LocalAgentConfig {
     pub maximum_source_bytes: usize,
     pub maximum_edits: usize,
 }
-pub struct HeadlessAgentAdapter {
+pub struct HeadlessAgentAdapter<'a> {
+    environment: &'a DockerEnvironment,
     pub config: LocalAgentConfig,
     pub artifacts: ArtifactStore,
     issued: Mutex<BTreeMap<Fingerprint, BTreeMap<Name, Fingerprint>>>,
@@ -61,8 +62,9 @@ struct Edit {
     path: Name,
     content: String,
 }
-impl HeadlessAgentAdapter {
-    pub fn new(config: LocalAgentConfig, artifacts: ArtifactStore) -> Result<Self> {
+impl<'a> HeadlessAgentAdapter<'a> {
+    pub fn new(config: LocalAgentConfig, environment: &'a DockerEnvironment) -> Result<Self> {
+        let artifacts = environment.artifacts.clone();
         config.docker.validate()?;
         if config.maximum_source_bytes == 0
             || config.maximum_edits == 0
@@ -78,6 +80,7 @@ impl HeadlessAgentAdapter {
             ));
         }
         Ok(Self {
+            environment,
             config,
             artifacts,
             issued: Mutex::new(BTreeMap::new()),
@@ -274,12 +277,14 @@ fn safe_edit_path(path: &str) -> Result<()> {
     }
     Ok(())
 }
-impl AgentAdapter for HeadlessAgentAdapter {
+impl AgentAdapter for HeadlessAgentAdapter<'_> {
     fn propose(
         &self,
         profile: &Profile,
         context: &ExecutionContext<'_>,
     ) -> Result<Vec<Hypothesis>> {
+        self.environment.validate_workspace(context.workspace)?;
+        self.environment.require_clean(context.workspace)?;
         if profile.raw_artifacts.is_empty() || profile.costs.is_empty() {
             return Err(Error::Incomplete("profile-backed agent context"));
         }
@@ -337,6 +342,7 @@ impl AgentAdapter for HeadlessAgentAdapter {
         hypothesis: &Hypothesis,
         context: &ExecutionContext<'_>,
     ) -> Result<CommitSha> {
+        self.environment.validate_workspace(context.workspace)?;
         let hashes = self
             .issued
             .lock()

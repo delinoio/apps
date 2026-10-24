@@ -174,6 +174,18 @@ impl DockerEnvironment {
         }
         Ok(())
     }
+    /// Agent writes and candidate execution must reference a checkout prepared by
+    /// this instance, never an arbitrary clean user repository.
+    pub fn validate_workspace(&self, workspace: &Workspace) -> Result<()> {
+        let prepared = self.prepared.lock().map_err(|_| Error::State)?;
+        let (owned, _) = prepared
+            .get(workspace.directory.as_str())
+            .ok_or(Error::Invalid("unprepared candidate workspace"))?;
+        if serde_json::to_vec(owned)? != serde_json::to_vec(workspace)? {
+            return Err(Error::Mismatch("task-owned workspace"));
+        }
+        Ok(())
+    }
     pub fn source(&self, workspace: &Workspace) -> Result<CommitSha> {
         let out = git(
             Path::new(workspace.directory.as_str()),
