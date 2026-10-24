@@ -9,6 +9,9 @@ use delitools_api::{Server, config::Config, http, store};
 use server_common::{config::required, telemetry};
 use std::{sync::Arc, time::Duration};
 
+/// Pool acquire timeout for commands that do not load the serving configuration.
+const DEFAULT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(3);
+
 #[tokio::main]
 async fn main() {
     if let Err(error) = run().await {
@@ -31,8 +34,21 @@ async fn run() -> anyhow::Result<()> {
         matches!(command.as_str(), "serve" | "migrate" | "check-schema"),
         "unknown command; use serve, migrate or check-schema"
     );
+    // `serve` validates its settings first so the pool can share the dependency timeout; the other
+    // commands need only `DATABASE_URL`.
+    let config = if command == "serve" {
+        Some(Config::load()?)
+    } else {
+        None
+    };
+    // Bounds waiting for a pooled connection. It does not bound a running query: usage persistence
+    // enforces its own finite budget (`Outbox::insert_attempt`).
+    let acquire_timeout = config
+        .as_ref()
+        .map_or(DEFAULT_ACQUIRE_TIMEOUT, |c| c.dependency_timeout);
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(20)
+        .acquire_timeout(acquire_timeout)
         .connect(&required("DATABASE_URL")?)
         .await
         .map_err(|_| anyhow::anyhow!("database unavailable"))?;
@@ -49,7 +65,7 @@ async fn run() -> anyhow::Result<()> {
         }
         _ => {}
     }
-    let config = Config::load()?;
+    let config = config.expect("serve loads its configuration");
     store::check(&db).await?;
     // The dedicated connection is detached so dropping it closes the session lock. One process
     // owns API execution and usage delivery.
@@ -60,7 +76,10 @@ async fn run() -> anyhow::Result<()> {
         .await?;
     anyhow::ensure!(acquired, "delitools instance lock unavailable");
     let listen = config.listen.clone();
-    let shutdown_grace = config.limits.execution_timeout;
+    // A request can still be storing confirmed usage after its execution deadline, for up to one
+    // dependency timeout; the shutdown and write allowances include that persistence budget.
+    let persist_budget = config.dependency_timeout;
+    let shutdown_grace = config.limits.execution_timeout + persist_budget;
     let server = Server::new(db.clone(), config)?;
     let app = http::router(server.clone());
     let listener = tokio::net::TcpListener::bind(&listen).await?;
@@ -109,7 +128,14 @@ async fn run() -> anyhow::Result<()> {
     let _ = delivery.await;
     monitor.abort();
     let _ = monitor.await;
-    db.close().await;
+    // Persistence is bounded by `persist_budget` and detaches timed-out connections, so closing
+    // the pool normally returns at once; the timeout is a final guard against a stuck close.
+    if tokio::time::timeout(persist_budget, db.close())
+        .await
+        .is_err()
+    {
+        tracing::error!("database pool did not close within the persistence budget");
+    }
     if let Some(provider) = provider {
         provider.shutdown()?
     }

@@ -78,6 +78,9 @@ pub struct Job {
     pub permit: Permit,
 }
 
+/// Maximum tries to store the events of one attempt, within one `dependency_timeout` budget.
+const PERSIST_ATTEMPTS: u32 = 3;
+
 enum Stop {
     Canceled,
     TimedOut,
@@ -271,7 +274,15 @@ impl Inner {
             return Ok(());
         }
         let tenant = Uuid::parse_str(&job.principal.tenant_id).map_err(|_| ApiError::internal())?;
-        for tries in 0..3u64 {
+        // One finite budget covers every try, backoff, acquisition and commit. It starts when
+        // persistence begins and ignores caller cancellation and the provider deadline, so a held
+        // lock cannot keep the tenant permit or a pooled connection indefinitely.
+        let deadline = Instant::now() + self.config.dependency_timeout;
+        for tries in 0..PERSIST_ATTEMPTS {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
             match self
                 .outbox
                 .insert_attempt(
@@ -281,6 +292,7 @@ impl Inner {
                     job.started_at,
                     &events,
                     server_common::now(),
+                    remaining,
                 )
                 .await
             {
@@ -293,7 +305,22 @@ impl Inner {
                     }
                     return Ok(());
                 }
-                Err(_) => tokio::time::sleep(Duration::from_millis(50 * (tries + 1))).await,
+                Err(error) => {
+                    tracing::warn!(
+                        category = "usage_persist",
+                        attempt,
+                        try_number = tries + 1,
+                        error = %error,
+                        "storing confirmed usage failed"
+                    );
+                    if tries + 1 < PERSIST_ATTEMPTS {
+                        let backoff = Duration::from_millis(50 * (u64::from(tries) + 1));
+                        tokio::time::sleep(
+                            backoff.min(deadline.saturating_duration_since(Instant::now())),
+                        )
+                        .await;
+                    }
+                }
             }
         }
         self.metrics.persist_failures.inc();
