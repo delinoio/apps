@@ -3,6 +3,8 @@ pub mod alerts;
 pub mod auth;
 pub mod decimal;
 pub mod github;
+#[cfg(test)]
+mod history_range_tests;
 pub mod maintenance;
 pub mod measurement;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -419,7 +421,7 @@ impl Server {
             })
             .unwrap_or_default();
         if repo.connected && !branch.is_empty() {
-            let needed: HashSet<_> = records
+            let mut needed: HashSet<_> = records
                 .iter()
                 .filter(|r| {
                     r.execution.context.pull_request == 0
@@ -427,6 +429,16 @@ impl Server {
                 })
                 .map(|r| r.execution.context.commit.clone())
                 .collect();
+            // The first-parent walk stops once every required commit is on the path. Requested
+            // range endpoints must be required too: a valid endpoint without a completed
+            // measurement, or older than the oldest measurement, would otherwise be missing from
+            // the path and silently ignored by the slicing below.
+            needed.extend(
+                [string(q, "fromCommit"), string(q, "toCommit")]
+                    .into_iter()
+                    .filter(|c| !c.is_empty())
+                    .map(str::to_owned),
+            );
             commits = self.github.branch(repo, branch, needed).await?;
         }
         let to = string(q, "toCommit");
@@ -444,13 +456,7 @@ impl Server {
         if !to.is_empty() || !from.is_empty() {
             records.retain(|r| commits.contains(&r.execution.context.commit))
         }
-        let offset = offset.min(records.len());
-        let end = offset.saturating_add(100).min(records.len());
-        let next = if offset.saturating_add(100) <= records.len() {
-            end.to_string()
-        } else {
-            String::new()
-        };
+        let (offset, end, next) = history_page_window(offset, records.len());
         let executions: Vec<_> = records[offset..end]
             .iter()
             .map(|r| {
@@ -468,6 +474,24 @@ impl Server {
         Ok(json!({"executions":executions,"nextCursor":next,"commits":commits}))
     }
 }
+/// Number of executions in one history page.
+const HISTORY_PAGE_SIZE: usize = 100;
+
+/// Computes the `[offset, end)` window and next cursor for a history page over `len` matching
+/// executions. The offset is clamped to `len`. The cursor is the decimal end offset only when at
+/// least one matching execution remains after the page; a final page, including one that is
+/// exactly full, returns an empty cursor.
+fn history_page_window(offset: usize, len: usize) -> (usize, usize, String) {
+    let offset = offset.min(len);
+    let end = offset.saturating_add(HISTORY_PAGE_SIZE).min(len);
+    let next = if end < len {
+        end.to_string()
+    } else {
+        String::new()
+    };
+    (offset, end, next)
+}
+
 // The generated trait permits borrowed responses; these handlers return owned messages.
 #[allow(refining_impl_trait)]
 impl GitTrackerService for Server {

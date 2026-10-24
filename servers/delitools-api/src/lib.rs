@@ -66,6 +66,9 @@ pub struct Inner {
     pub(crate) prices: PriceCheck,
     pub(crate) gateway: Gateway,
     pub(crate) gate: TenantGate,
+    /// Service-wide fence. Cancelled once this process no longer owns the instance lock; every
+    /// job holds a child token, so a job admitted while the fence closes is already cancelled.
+    pub(crate) fence: CancellationToken,
 }
 
 /// The DeliTools Connect service. Cloning shares the same state.
@@ -118,6 +121,7 @@ impl Server {
                 prices: PriceCheck::new(delcore.clone(), config.price_cache_ttl),
                 gateway: Gateway::new(&config.gateway)?,
                 gate: TenantGate::new(&config.limits),
+                fence: CancellationToken::new(),
                 delcore,
                 db,
                 config,
@@ -125,13 +129,22 @@ impl Server {
         })
     }
 
+    /// Fences the service after the instance lock is lost: no new provider attempt, retry or
+    /// usage delivery starts, and unconfirmed provider calls are canceled at once. Usage that a
+    /// provider already confirmed is still stored (bounded by `DEPENDENCY_TIMEOUT`). Idempotent.
+    pub fn fence(&self) {
+        self.fence.cancel();
+    }
+
     /// The usage delivery worker bound to this server's state.
     pub fn delivery(&self) -> Arc<Delivery> {
         Arc::new(Delivery {
+            fence: self.fence.clone(),
             outbox: self.outbox.clone(),
             delcore: self.delcore.clone(),
             settings: self.config.outbox.clone(),
             metrics: self.metrics.clone(),
+            clock: outbox::system_clock(),
         })
     }
 
@@ -229,21 +242,32 @@ impl Server {
             );
             return Err(ApiError::internal());
         };
+        if self.fence.is_cancelled() {
+            return Err(ApiError::canceled());
+        }
+        let fence = self.fence.clone();
         let admitted = tokio::time::timeout_at(deadline, async {
-            let principal = self
-                .auth
-                .authenticate(authorization, tenant_id, procedure.capability())
-                .await?;
-            let permit = self.gate.admit(&principal.tenant_id)?;
-            let (task, model) = prepare(&self.config)?;
-            self.prices.verify(&model).await?;
-            Ok::<_, ApiError>((principal, permit, task, model))
+            tokio::select! {
+                biased;
+                _ = fence.cancelled() => Err(ApiError::canceled()),
+                admitted = async {
+                    let principal = self
+                        .auth
+                        .authenticate(authorization, tenant_id, procedure.capability())
+                        .await?;
+                    let permit = self.gate.admit(&principal.tenant_id)?;
+                    let (task, model) = prepare(&self.config)?;
+                    self.prices.verify(&model).await?;
+                    Ok::<_, ApiError>((principal, permit, task, model))
+                } => admitted,
+            }
         })
         .await
         .map_err(|_| ApiError::timeout())?;
         let (principal, permit, task, model) = admitted?;
         tracing::info!(category = "admitted", tenant_id = %principal.tenant_id, credential = principal.kind(), "request admitted");
-        let cancel = CancellationToken::new();
+        // A child of the fence: a job admitted while the fence closes starts out canceled.
+        let cancel = self.fence.child_token();
         let _guard = CancelOnDrop(cancel.clone());
         let job = Job {
             request_id,

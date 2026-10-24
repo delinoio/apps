@@ -2,12 +2,27 @@
 use crate::Op;
 use server_common::{Fault, Result};
 use sha2::{Digest, Sha256};
-// Existing replay fingerprints use Go's deterministic protobuf encoding. In particular,
-// google.protobuf.Struct maps must sort by their string keys, including nested values.
-// Keep this wire canonicalization until persisted replay formats are explicitly migrated.
+// Replay fingerprints follow Go's deterministic protobuf encoding. In particular,
+// google.protobuf.Struct maps sort their known entries by string key, including nested values,
+// and every other (unknown) field keeps its retained order and bytes.
+//
+// Two persisted formats exist in the `replays.fingerprint` column, told apart by length:
+// - `Legacy`: 32 bytes, an unversioned SHA-256. Rows from the Go implementation hold the
+//   Go-compatible digest. Rows from earlier Rust releases hold the digest of a canonicalizer that
+//   also sorted unknown Struct fields. The two cannot be told apart from the stored value.
+// - `CanonicalV1`: 33 bytes, `0x01` followed by the Go-compatible digest. All new rows use it.
+// Legacy rows are only read, until their original expiry; they are never rewritten or promoted.
+// Wire types that open and close a protobuf group. Groups cannot be declared in proto3, but the
+// generated decoder keeps a balanced unknown group and the re-encoded request contains it.
+const START_GROUP: u64 = 3;
+const END_GROUP: u64 = 4;
+// Maximum group nesting accepted. It matches the pinned decoder's recursion limit
+// (`buffa::RECURSION_LIMIT`), so every group the decoder keeps fits this parser.
+const MAX_GROUP_DEPTH: usize = 100;
 struct Field {
     number: u64,
     wire: u64,
+    // For a group, the opaque content including the nested tags and the matching end tag.
     payload: Vec<u8>,
 }
 fn varint(input: &mut &[u8]) -> Result<u64> {
@@ -58,6 +73,50 @@ fn fields(mut input: &[u8]) -> Result<Vec<Field>> {
                 input = &input[n..];
                 b
             }
+            START_GROUP => {
+                // The content is opaque unknown data. Scan it iteratively with an explicit
+                // stack so hostile nesting cannot exhaust the call stack.
+                let mut open = vec![tag >> 3];
+                let mut rest = input;
+                while let Some(&expected) = open.last() {
+                    let inner = varint(&mut rest)?;
+                    match inner & 7 {
+                        0 => {
+                            varint(&mut rest)?;
+                        }
+                        1 | 5 => {
+                            let n = if inner & 7 == 1 { 8 } else { 4 };
+                            if rest.len() < n {
+                                return Err(Fault::unavailable());
+                            }
+                            rest = &rest[n..];
+                        }
+                        2 => {
+                            let n = varint(&mut rest)? as usize;
+                            if rest.len() < n {
+                                return Err(Fault::unavailable());
+                            }
+                            rest = &rest[n..];
+                        }
+                        START_GROUP => {
+                            if open.len() >= MAX_GROUP_DEPTH {
+                                return Err(Fault::invalid("protobuf group nesting too deep"));
+                            }
+                            open.push(inner >> 3);
+                        }
+                        END_GROUP => {
+                            if inner >> 3 != expected {
+                                return Err(Fault::invalid("mismatched protobuf end group"));
+                            }
+                            open.pop();
+                        }
+                        _ => return Err(Fault::invalid("unsupported protobuf wire field")),
+                    }
+                }
+                let b = input[..input.len() - rest.len()].to_vec();
+                input = rest;
+                b
+            }
             _ => return Err(Fault::invalid("unsupported protobuf wire field")),
         };
         out.push(Field {
@@ -72,6 +131,7 @@ fn encode(fields: Vec<Field>) -> Vec<u8> {
     let mut out = Vec::new();
     for f in fields {
         put(f.number << 3 | f.wire, &mut out);
+        // A group payload already holds its nested tags and end tag, so it has no length prefix.
         if f.wire == 2 {
             put(f.payload.len() as u64, &mut out)
         }
@@ -79,6 +139,34 @@ fn encode(fields: Vec<Field>) -> Vec<u8> {
     }
     out
 }
+/// Persisted layout of a replay fingerprint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FingerprintFormat {
+    /// 32 bytes: an unversioned digest, either Go-compatible or from the earlier Rust sorting.
+    Legacy,
+    /// 33 bytes: `CANONICAL_V1_MARKER` followed by the Go-compatible digest.
+    CanonicalV1,
+}
+const DIGEST_LEN: usize = 32;
+const CANONICAL_V1_MARKER: u8 = 1;
+impl FingerprintFormat {
+    /// Identifies a stored non-scrubbed value. Anything else is a persistence failure that is
+    /// reported as unavailable without exposing the stored bytes.
+    fn of_stored(stored: &[u8]) -> Result<Self> {
+        match stored {
+            _ if stored.len() == DIGEST_LEN => Ok(Self::Legacy),
+            [CANONICAL_V1_MARKER, rest @ ..] if rest.len() == DIGEST_LEN => Ok(Self::CanonicalV1),
+            _ => {
+                tracing::error!(
+                    stored_len = stored.len(),
+                    "unsupported replay fingerprint format"
+                );
+                Err(Fault::unavailable())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Kind {
     Struct,
@@ -86,7 +174,18 @@ enum Kind {
     List,
     Entry,
 }
-fn canonical(raw: &[u8], kind: Kind) -> Result<Vec<u8>> {
+fn entry_key(f: &Field) -> Vec<u8> {
+    fields(&f.payload)
+        .ok()
+        // An unknown group numbered 1 is opaque data, never the map key.
+        .and_then(|fs| {
+            fs.into_iter()
+                .find(|f| f.number == 1 && f.wire != START_GROUP)
+        })
+        .map(|f| f.payload)
+        .unwrap_or_default()
+}
+fn canonical(raw: &[u8], kind: Kind, format: FingerprintFormat) -> Result<Vec<u8>> {
     let mut fs = fields(raw)?;
     for f in &mut fs {
         let child = match (kind, f.number, f.wire) {
@@ -97,21 +196,28 @@ fn canonical(raw: &[u8], kind: Kind) -> Result<Vec<u8>> {
             _ => None,
         };
         if let Some(child) = child {
-            f.payload = canonical(&f.payload, child)?
+            f.payload = canonical(&f.payload, child, format)?
         }
     }
     if matches!(kind, Kind::Struct) {
-        fs.sort_by_cached_key(|f| {
-            fields(&f.payload)
-                .ok()
-                .and_then(|fs| fs.into_iter().find(|f| f.number == 1))
-                .map(|f| f.payload)
-                .unwrap_or_default()
-        });
+        match format {
+            // Earlier Rust releases sorted every Struct field, which reordered opaque unknown
+            // fields and could read their payload as a map key. Kept only to match old rows.
+            FingerprintFormat::Legacy => fs.sort_by_cached_key(entry_key),
+            // Only known map entries (field 1, length-delimited) are sorted. They come first;
+            // unknown fields follow in their retained order and are never inspected.
+            FingerprintFormat::CanonicalV1 => {
+                let (mut known, unknown): (Vec<_>, Vec<_>) =
+                    fs.into_iter().partition(|f| f.number == 1 && f.wire == 2);
+                known.sort_by_cached_key(entry_key);
+                known.extend(unknown);
+                fs = known;
+            }
+        }
     }
     Ok(encode(fs))
 }
-pub fn fingerprint(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
+fn digest(op: Op, raw: &[u8], format: FingerprintFormat) -> Result<Vec<u8>> {
     let mut fs = fields(raw)?;
     fs.retain(|f| f.number != 1);
     let metadata = match op {
@@ -121,7 +227,7 @@ pub fn fingerprint(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
     };
     for f in &mut fs {
         if Some(f.number) == metadata && f.wire == 2 {
-            f.payload = canonical(&f.payload, Kind::Struct)?
+            f.payload = canonical(&f.payload, Kind::Struct, format)?
         }
     }
     let mut hash = Sha256::new();
@@ -131,11 +237,34 @@ pub fn fingerprint(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
     Ok(hash.finalize().to_vec())
 }
 
+/// The value stored with a new replay record: `CanonicalV1`.
+pub fn fingerprint(op: Op, raw: &[u8]) -> Result<Vec<u8>> {
+    let mut stored = vec![CANONICAL_V1_MARKER];
+    stored.extend(digest(op, raw, FingerprintFormat::CanonicalV1)?);
+    Ok(stored)
+}
+
+/// Compares a stored non-scrubbed value with the received request. A `CanonicalV1` row accepts
+/// only the corrected digest. An unexpired `Legacy` row accepts the corrected digest or the exact
+/// legacy Rust digest of the same request, because the stored value does not say which wrote it;
+/// the legacy ambiguity ends with the row's original expiry.
+pub fn matches(stored: &[u8], op: Op, raw: &[u8]) -> Result<bool> {
+    // Request shape errors come first, and a valid corrected comparison never depends on the
+    // legacy calculation.
+    let corrected = digest(op, raw, FingerprintFormat::CanonicalV1)?;
+    Ok(match FingerprintFormat::of_stored(stored)? {
+        FingerprintFormat::CanonicalV1 => stored[1..] == corrected[..],
+        FingerprintFormat::Legacy => {
+            stored == corrected || stored == digest(op, raw, FingerprintFormat::Legacy)?
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use buffa::Message;
-    use delino_protocol::devbase::v1::CreateEndUserRequest;
+    use delino_protocol::devbase::v1::{CreateEndUserRequest, CreateProjectRequest};
 
     #[test]
     fn matches_go_deterministic_metadata_fingerprint() {
@@ -148,9 +277,304 @@ mod tests {
             "metadata": {"z": 1.0, "a": {"y": 2.0, "b": [null, true, 3.0, "text"]}, "": false}
         }))
         .unwrap();
+        let raw = request.encode_to_vec();
+        const GO: &str = "c610c6b7dd3f6f4343d4a7d1b6977c522497ba909d19793a366d5a3a08c3c3b0";
+        // Ordinary input has the same digest in both algorithms; new rows add the envelope.
+        assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &raw)), GO);
         assert_eq!(
-            hex::encode(fingerprint(Op::CreateEndUser, &request.encode_to_vec()).unwrap()),
-            "c610c6b7dd3f6f4343d4a7d1b6977c522497ba909d19793a366d5a3a08c3c3b0"
+            hex::encode(super::digest(Op::CreateEndUser, &raw, FingerprintFormat::Legacy).unwrap()),
+            GO
         );
+        assert_eq!(
+            hex::encode(fingerprint(Op::CreateEndUser, &raw).unwrap()),
+            format!("01{GO}")
+        );
+    }
+
+    fn go_digest(op: Op, raw: &[u8]) -> Vec<u8> {
+        super::digest(op, raw, FingerprintFormat::CanonicalV1).unwrap()
+    }
+    fn legacy_digest(op: Op, raw: &[u8]) -> Vec<u8> {
+        super::digest(op, raw, FingerprintFormat::Legacy).unwrap()
+    }
+    fn unhex(s: &str) -> Vec<u8> {
+        hex::decode(s).unwrap()
+    }
+
+    // Requests and digests below come from the pinned Go oracle: the repository's generated Go
+    // types, `proto.Unmarshal`, a cleared idempotency key, `Deterministic: true` marshalling and
+    // SHA-256 over operation, NUL and the encoding. Legacy digests are the earlier Rust output.
+    const PRIMARY: &str = "0a08692d757365722d31122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a08692d757365722d31320c0a070a016112022001a00601";
+    const PRIMARY_GO: &str = "d817bf7c3dc45bd987c7941965565720171959134ef5a3b8d8de2c625528a574";
+    const PRIMARY_LEGACY: &str = "23a22c402237ce8aab02a30688b12eb0ee42cb6e564cbc010b572ea7b4746287";
+    const REQUEST_PREFIX: &str = "0a08692d757365722d31122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a08692d757365722d31";
+    const KNOWN_ENTRY: &str = "0a070a016112022001";
+    const OPAQUE_B: &str = "a206030a0162";
+    const OPAQUE_C: &str = "a206030a0163";
+    const BC_GO: &str = "1d9e2ae1441faf0ea127333ad005d9cdaaa5e24ff5205bfa440aad6a79db6f3e";
+    const CB_GO: &str = "cfaf2e90860d386ea113cb5fef40954e7dc9f3eb35621136a88e34984e0472c4";
+    const CREATE_NESTED: &str = "0a016b122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a0365787432710a4d0a016d12482a460a070a017a120220010a310a0161122c322a0a1d2a1b0a070a0179120220010a070a016212020800a00601ba06030a017a0a031a0174ad0601020304b10601020304050607080a070a016312020800a00601ad0601020304b1060102030405060708ba06030a017a";
+    const CREATE_NESTED_GO: &str =
+        "5b45708bcbd156a5c708b8f8889d7954f16812dd8f249dade22a61958d13bc61";
+    const UPDATE_NESTED: &str = "0a016b122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a037569643a710a4d0a016d12482a460a070a017a120220010a310a0161122c322a0a1d2a1b0a070a0179120220010a070a016212020800a00601ba06030a017a0a031a0174ad0601020304b10601020304050607080a070a016312020800a00601ad0601020304b1060102030405060708ba06030a017a420a0a086d65746164617461";
+    const UPDATE_NESTED_GO: &str =
+        "5a9280f27794d2160b55f7dc691056b5be197a75faf7883fe66b61566b0a31d6";
+    const CREATE_SCALARS: &str = "0a016b122430313962303030302d303030302d373030302d383030302d3030303030303030303030311a0365787432330a070a0162120220010a060a00120208000a070a016112020800ad0601020304b1060102030405060708ba06030a017aa00601";
+    const CREATE_SCALARS_GO: &str =
+        "728df06e89ec98bfa7c834b18dab9643b6fe529866e99894fc08e2f5d5a1df3d";
+
+    fn bc_cb(first: &str, second: &str) -> Vec<u8> {
+        // Common request prefix, then a metadata Struct holding a known entry and two opaque
+        // occurrences of unknown field 100.
+        unhex(&format!("{REQUEST_PREFIX}3215{KNOWN_ENTRY}{first}{second}"))
+    }
+
+    #[test]
+    fn corrected_digest_matches_the_go_oracle_and_legacy_differs_where_expected() {
+        let cases: [(Op, &str, &str, Option<&str>); 4] = [
+            (Op::CreateEndUser, PRIMARY, PRIMARY_GO, Some(PRIMARY_LEGACY)),
+            (Op::CreateEndUser, CREATE_NESTED, CREATE_NESTED_GO, None),
+            (Op::UpdateEndUser, UPDATE_NESTED, UPDATE_NESTED_GO, None),
+            (Op::CreateEndUser, CREATE_SCALARS, CREATE_SCALARS_GO, None),
+        ];
+        for (op, request, go, legacy) in cases {
+            let raw = unhex(request);
+            assert_eq!(hex::encode(go_digest(op, &raw)), go, "{request}");
+            // Unknown fields moved before the known keys, so the earlier Rust digest differs.
+            assert_ne!(hex::encode(legacy_digest(op, &raw)), go, "{request}");
+            if let Some(legacy) = legacy {
+                assert_eq!(hex::encode(legacy_digest(op, &raw)), legacy);
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_unknown_field_order_is_kept_by_the_corrected_digest_only() {
+        let bc = bc_cb(OPAQUE_B, OPAQUE_C);
+        let cb = bc_cb(OPAQUE_C, OPAQUE_B);
+        assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &bc)), BC_GO);
+        assert_eq!(hex::encode(go_digest(Op::CreateEndUser, &cb)), CB_GO);
+        // The earlier algorithm sorted the opaque payloads and could not tell them apart.
+        assert_eq!(
+            legacy_digest(Op::CreateEndUser, &bc),
+            legacy_digest(Op::CreateEndUser, &cb)
+        );
+        assert_eq!(hex::encode(legacy_digest(Op::CreateEndUser, &bc)), BC_GO);
+    }
+
+    #[test]
+    fn known_entries_sort_and_unknown_fields_change_the_digest() {
+        let sorted = unhex(CREATE_SCALARS);
+        // Changing an unknown scalar value or the order of unknown fields changes the digest.
+        let mut changed = sorted.clone();
+        *changed.last_mut().unwrap() = 2;
+        assert_ne!(
+            go_digest(Op::CreateEndUser, &sorted),
+            go_digest(Op::CreateEndUser, &changed)
+        );
+        // Known entries in another order are the same request; unknown content is not reordered.
+        let a = create_user(&[entry("a"), entry("b")].concat());
+        let b = create_user(&[entry("b"), entry("a")].concat());
+        assert_eq!(
+            go_digest(Op::CreateEndUser, &a),
+            go_digest(Op::CreateEndUser, &b)
+        );
+        // Absent metadata and an explicit empty Struct stay distinct.
+        let empty_struct = [create_user(&[]), vec![0x32, 0x00]].concat();
+        assert_ne!(
+            go_digest(Op::CreateEndUser, &create_user(&[])),
+            go_digest(Op::CreateEndUser, &empty_struct)
+        );
+    }
+
+    fn entry(key: &str) -> Vec<u8> {
+        let mut e = vec![0x0a, key.len() as u8];
+        e.extend_from_slice(key.as_bytes());
+        e.extend_from_slice(&[0x12, 0x02, 0x08, 0x00]);
+        let mut f = vec![0x0a, e.len() as u8];
+        f.extend(e);
+        f
+    }
+
+    #[test]
+    fn stored_formats_are_routed_by_length_and_marker() {
+        let raw = unhex(PRIMARY);
+        let op = Op::CreateEndUser;
+        let go = unhex(PRIMARY_GO);
+        let legacy = unhex(PRIMARY_LEGACY);
+        let envelope = |d: &[u8]| [&[1u8][..], d].concat();
+        // New rows are the envelope around the corrected digest.
+        assert_eq!(fingerprint(op, &raw).unwrap(), envelope(&go));
+        // Legacy rows accept the corrected or the earlier Rust digest and nothing else.
+        assert!(matches(&go, op, &raw).unwrap());
+        assert!(matches(&legacy, op, &raw).unwrap());
+        assert!(!matches(&[7; 32], op, &raw).unwrap());
+        // CanonicalV1 rows accept only the corrected digest.
+        assert!(matches(&envelope(&go), op, &raw).unwrap());
+        assert!(!matches(&envelope(&legacy), op, &raw).unwrap());
+        assert!(!matches(&envelope(&[7; 32]), op, &raw).unwrap());
+        // Unsupported lengths and markers fail as unavailable.
+        for stored in [
+            vec![],
+            vec![1],
+            vec![1; 31],
+            vec![1; 34],
+            [&[2u8][..], &go].concat(),
+            [&[0u8][..], &go].concat(),
+            [&go[..], &[1][..]].concat(),
+        ] {
+            assert!(matches(&stored, op, &raw).is_err(), "{}", stored.len());
+        }
+    }
+
+    #[test]
+    fn opaque_order_is_ambiguous_only_in_legacy_rows() {
+        let bc = bc_cb(OPAQUE_B, OPAQUE_C);
+        let cb = bc_cb(OPAQUE_C, OPAQUE_B);
+        let op = Op::CreateEndUser;
+        // A legacy row cannot tell the orders apart; a new row can.
+        let legacy_row = legacy_digest(op, &bc);
+        assert!(matches(&legacy_row, op, &bc).unwrap());
+        assert!(matches(&legacy_row, op, &cb).unwrap());
+        let new_row = fingerprint(op, &bc).unwrap();
+        assert!(matches(&new_row, op, &bc).unwrap());
+        assert!(!matches(&new_row, op, &cb).unwrap());
+        // A Go-hashed legacy BC row also accepts CB, because the earlier Rust digest of CB equals
+        // the Go digest of BC. This original ambiguity exists only in unexpired legacy rows.
+        let go_row = unhex(BC_GO);
+        assert!(matches(&go_row, op, &bc).unwrap());
+        assert!(matches(&go_row, op, &cb).unwrap());
+        // A Go-hashed legacy CB row accepts CB only.
+        let go_cb = unhex(CB_GO);
+        assert!(matches(&go_cb, op, &cb).unwrap());
+        assert!(!matches(&go_cb, op, &bc).unwrap());
+    }
+
+    fn create_project() -> Vec<u8> {
+        let request: CreateProjectRequest = serde_json::from_value(serde_json::json!({
+            "idempotencyKey": "h-group-1",
+            "tenantId": "019b0000-0000-7000-8000-000000000001",
+            "name": "h-group-1"
+        }))
+        .unwrap();
+        request.encode_to_vec()
+    }
+    fn create_user(metadata: &[u8]) -> Vec<u8> {
+        let request: CreateEndUserRequest = serde_json::from_value(serde_json::json!({
+            "idempotencyKey": "h-user-1",
+            "projectId": "019b0000-0000-7000-8000-000000000001",
+            "externalId": "h-user-1"
+        }))
+        .unwrap();
+        let mut bytes = request.encode_to_vec();
+        if !metadata.is_empty() {
+            bytes.push(0x32);
+            put(metadata.len() as u64, &mut bytes);
+            bytes.extend_from_slice(metadata);
+        }
+        bytes
+    }
+    fn with(base: &[u8], extra: &[u8]) -> Vec<u8> {
+        [base, extra].concat()
+    }
+    fn digest(op: Op, raw: &[u8]) -> Vec<u8> {
+        fingerprint(op, raw).unwrap()
+    }
+    // Field 100 empty group, and the same group wrapping a nested group (field 101).
+    const EMPTY: [u8; 4] = [0xa3, 0x06, 0xa4, 0x06];
+    const NESTED: [u8; 8] = [0xa3, 0x06, 0xab, 0x06, 0xac, 0x06, 0xa4, 0x06];
+
+    #[test]
+    fn balanced_unknown_groups_are_retained_in_the_hash() {
+        let base = create_project();
+        let plain = digest(Op::CreateProject, &base);
+        let empty = digest(Op::CreateProject, &with(&base, &EMPTY));
+        let nested = digest(Op::CreateProject, &with(&base, &NESTED));
+        assert_eq!(empty, digest(Op::CreateProject, &with(&base, &EMPTY)));
+        assert_ne!(plain, empty);
+        assert_ne!(plain, nested);
+        assert_ne!(empty, nested);
+        // Changing only the content of the group changes the hash.
+        let varint_inside = [0xa3, 0x06, 0x08, 0x01, 0xa4, 0x06];
+        let other_inside = [0xa3, 0x06, 0x08, 0x02, 0xa4, 0x06];
+        assert_ne!(
+            digest(Op::CreateProject, &with(&base, &varint_inside)),
+            digest(Op::CreateProject, &with(&base, &other_inside))
+        );
+        // Length-delimited and fixed-width content and an unknown scalar still parse.
+        let mixed = [
+            0xa3, 0x06, 0x0a, 0x02, b'h', b'i', 0x0d, 1, 2, 3, 4, 0x09, 1, 2, 3, 4, 5, 6, 7, 8,
+            0xa4, 0x06,
+        ];
+        digest(Op::CreateProject, &with(&base, &mixed));
+        digest(Op::CreateProject, &with(&base, &[0xa0, 0x06, 0x01]));
+    }
+
+    #[test]
+    fn unknown_groups_inside_metadata_stay_opaque_and_keep_known_keys_canonical() {
+        // Struct { fields: { "b": Value{null}, "a": Value{null} } } plus an unknown group in the
+        // Struct, in an entry and in a value. Entry key order stays canonical.
+        let entry = |key: &str, group: &[u8]| {
+            let mut e = vec![0x0a, key.len() as u8];
+            e.extend_from_slice(key.as_bytes());
+            e.extend_from_slice(&[0x12, 0x02, 0x08, 0x00]);
+            e.extend_from_slice(group);
+            let mut f = vec![0x0a, e.len() as u8];
+            f.extend(e);
+            f
+        };
+        // A group numbered 1 in an entry must not be taken for the key.
+        let group_one = [0x0b, 0x0c];
+        let ab = [entry("a", &[]), entry("b", &group_one)].concat();
+        let ba = [entry("b", &group_one), entry("a", &[])].concat();
+        let with_group = |md: &[u8]| [md, &EMPTY[..]].concat();
+        assert_eq!(
+            digest(Op::CreateEndUser, &create_user(&with_group(&ab))),
+            digest(Op::CreateEndUser, &create_user(&with_group(&ba)))
+        );
+        // Group content inside metadata changes the hash; without it the hash differs again.
+        assert_ne!(
+            digest(Op::CreateEndUser, &create_user(&with_group(&ab))),
+            digest(Op::CreateEndUser, &create_user(&ab))
+        );
+        assert_ne!(
+            digest(Op::CreateEndUser, &create_user(&EMPTY)),
+            digest(Op::CreateEndUser, &create_user(&NESTED))
+        );
+        // Absent metadata and an explicit empty Struct stay distinct.
+        let empty_struct = [create_user(&[]), vec![0x32, 0x00]].concat();
+        assert_ne!(
+            digest(Op::CreateEndUser, &create_user(&[])),
+            digest(Op::CreateEndUser, &empty_struct)
+        );
+    }
+
+    #[test]
+    fn malformed_and_excessive_groups_are_rejected() {
+        let base = create_project();
+        let reject = |extra: &[u8]| fingerprint(Op::CreateProject, &with(&base, extra)).is_err();
+        // Unterminated, mismatched end tag, top-level end group, truncated content.
+        assert!(reject(&[0xa3, 0x06]));
+        assert!(reject(&[0xa3, 0x06, 0xac, 0x06]));
+        assert!(reject(&[0xa4, 0x06]));
+        assert!(reject(&[0xa3, 0x06, 0xab, 0x06, 0xa4, 0x06]));
+        assert!(reject(&[0xa3, 0x06, 0x0a, 0x05, 1]));
+        // Wire types 6 and 7 stay unsupported, inside a group too.
+        assert!(reject(&[0xa3, 0x06, 0x06, 0xa4, 0x06]));
+        assert!(reject(&[0xa6, 0x06]));
+        // Nesting at the decoder's limit is accepted and one level deeper is not.
+        let nested = |depth: usize| {
+            let mut v = Vec::new();
+            for _ in 0..depth {
+                v.extend_from_slice(&[0xa3, 0x06]);
+            }
+            for _ in 0..depth {
+                v.extend_from_slice(&[0xa4, 0x06]);
+            }
+            v
+        };
+        assert!(!reject(&nested(MAX_GROUP_DEPTH)));
+        assert!(reject(&nested(MAX_GROUP_DEPTH + 1)));
+        assert!(reject(&nested(100_000)));
     }
 }

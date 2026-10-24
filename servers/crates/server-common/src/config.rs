@@ -114,6 +114,8 @@ mod tests {
             ("3s", Duration::from_secs(3)),
             ("5m", Duration::from_secs(300)),
             ("1m30s", Duration::from_secs(90)),
+            ("2160h", Duration::from_secs(7_776_000)),
+            ("9999999999h", Duration::from_secs(35_999_999_996_400)),
         ];
         for (input, expected) in cases {
             assert_eq!(parse_duration("K", input).unwrap(), expected, "{input}");

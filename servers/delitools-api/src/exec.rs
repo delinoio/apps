@@ -16,6 +16,11 @@
 //!    interpreted, so failed, invalid or canceled-after-response attempts are still billed.
 //!    Missing or invalid usage is counted and logged, never estimated.
 //! 5. Output is validated; invalid output is final (no repair retry, no model substitution).
+//!
+//! Cancellation has two sources: the caller (handler drop) and the service-wide fence that closes
+//! when the process loses the instance lock. Each job's token is a child of the fence, so both end
+//! provider calls and retries the same way, and neither blocks the storing of confirmed usage; the
+//! finite persistence budget (`DEPENDENCY_TIMEOUT`) bounds that storing so the old process can exit.
 
 use crate::{
     Inner,
@@ -78,6 +83,9 @@ pub struct Job {
     pub permit: Permit,
 }
 
+/// Maximum tries to store the events of one attempt, within one `dependency_timeout` budget.
+const PERSIST_ATTEMPTS: u32 = 3;
+
 enum Stop {
     Canceled,
     TimedOut,
@@ -87,6 +95,7 @@ impl Inner {
     /// Sleeps for `wait` unless canceled or past the deadline.
     async fn pause(&self, job: &Job, wait: Duration) -> Result<(), Stop> {
         tokio::select! {
+            biased;
             _ = job.cancel.cancelled() => Err(Stop::Canceled),
             _ = tokio::time::sleep_until(job.deadline) => Err(Stop::TimedOut),
             _ = tokio::time::sleep(wait) => Ok(()),
@@ -134,6 +143,7 @@ impl Inner {
                 self.pause(job, wait).await.map_err(|s| self.stopped(s))?;
                 // Revocation, expiry, permission loss or a billing block stops further attempts.
                 tokio::select! {
+                    biased;
                     _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
                     _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
                     checked = self.auth.recheck(&job.principal) => {
@@ -144,7 +154,10 @@ impl Inner {
                     }
                 }
             }
+            // Biased: cancellation, including the instance fence, is observed before the Gateway
+            // future is first polled, so no attempt starts once the job is canceled.
             let outcome = tokio::select! {
+                biased;
                 _ = job.cancel.cancelled() => return Err(self.stopped(Stop::Canceled)),
                 _ = tokio::time::sleep_until(job.deadline) => return Err(self.stopped(Stop::TimedOut)),
                 result = self.gateway.complete(&request) => result,
@@ -271,7 +284,18 @@ impl Inner {
             return Ok(());
         }
         let tenant = Uuid::parse_str(&job.principal.tenant_id).map_err(|_| ApiError::internal())?;
-        for tries in 0..3u64 {
+        // One finite budget covers every try, backoff, acquisition and commit. It starts when
+        // persistence begins and ignores caller cancellation, the instance fence and the provider
+        // deadline, so a held lock cannot keep the tenant permit or a pooled connection
+        // indefinitely. Because the budget is `DEPENDENCY_TIMEOUT`, confirmed usage is stored
+        // whatever cancels the job, and a fenced process finishes this step within the same bound;
+        // the rows already written stay in the outbox for the replacement to deliver.
+        let deadline = Instant::now() + self.config.dependency_timeout;
+        for tries in 0..PERSIST_ATTEMPTS {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
             match self
                 .outbox
                 .insert_attempt(
@@ -281,6 +305,7 @@ impl Inner {
                     job.started_at,
                     &events,
                     server_common::now(),
+                    remaining,
                 )
                 .await
             {
@@ -293,7 +318,22 @@ impl Inner {
                     }
                     return Ok(());
                 }
-                Err(_) => tokio::time::sleep(Duration::from_millis(50 * (tries + 1))).await,
+                Err(error) => {
+                    tracing::warn!(
+                        category = "usage_persist",
+                        attempt,
+                        try_number = tries + 1,
+                        error = %error,
+                        "storing confirmed usage failed"
+                    );
+                    if tries + 1 < PERSIST_ATTEMPTS {
+                        let backoff = Duration::from_millis(50 * (u64::from(tries) + 1));
+                        tokio::time::sleep(
+                            backoff.min(deadline.saturating_duration_since(Instant::now())),
+                        )
+                        .await;
+                    }
+                }
             }
         }
         self.metrics.persist_failures.inc();
