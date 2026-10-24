@@ -35,6 +35,60 @@ fn rpc_procedures(router: &connectrpc::Router) -> HashSet<String> {
         .map(|method| format!("/{method}"))
         .collect()
 }
+/// Gives every unary decode failure the typed Delcore error contract.
+///
+/// connectrpc decodes the request message inside its generated handler wrapper,
+/// before `Server::handle` runs. A malformed JSON or protobuf body therefore
+/// fails with a plain `invalid_argument` error that has no `delcore.v1.ErrorDetail`
+/// and no correlation header, and `bounded` returns the resulting response
+/// unchanged. This interceptor wraps the handler chain and rebuilds only that
+/// untyped error as a reason-1 `Fault::invalid` carrying the server correlation ID
+/// that `bounded` injected into the request headers, so header, detail and span
+/// share one ID. The decode runs before any handler code, so malformed requests
+/// still stop before authentication and the database. Successful responses and
+/// errors that already carry a Delcore detail pass through untouched. Streaming
+/// RPCs keep the default passthrough; Delcore registers unary methods only.
+struct TypedDecodeErrors;
+#[connectrpc::async_trait]
+impl connectrpc::Interceptor for TypedDecodeErrors {
+    async fn intercept_unary(
+        &self,
+        req: connectrpc::interceptor::UnaryRequest,
+        next: connectrpc::Next<'_>,
+    ) -> Result<connectrpc::interceptor::UnaryResponse, connectrpc::ConnectError> {
+        let correlation = req
+            .ctx
+            .header(CORRELATION_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| server_common::canonical_id(value))
+            .map(str::to_owned);
+        match next.run(req).await {
+            Err(error)
+                if error.code == connectrpc::ErrorCode::InvalidArgument
+                    && !error
+                        .details
+                        .iter()
+                        .any(|detail| detail.type_url == DELCORE_ERROR_DETAIL_TYPE) =>
+            {
+                // The ID always exists in production because `bounded` runs first;
+                // fall back to a fresh one rather than emit an untyped error.
+                let correlation = correlation.unwrap_or_else(server_common::id);
+                tracing::warn!(
+                    correlation_id = %correlation,
+                    category = "invalid_argument",
+                    "request message could not be decoded"
+                );
+                Err(crate::Fault::invalid("request message is invalid")
+                    .with_correlation(&correlation))
+            }
+            other => other,
+        }
+    }
+}
+/// Request and response header carrying the server-generated correlation ID.
+const CORRELATION_HEADER: &str = "X-Delcore-Correlation-Id";
+/// Protobuf type name of the typed Delcore error detail.
+const DELCORE_ERROR_DETAIL_TYPE: &str = "delcore.v1.ErrorDetail";
 /// Decides whether the Nth rejected request of one window writes a diagnostic.
 /// Logging only the 1st, 2nd, 4th, 8th, ... rejection keeps the log volume of an
 /// exhausted window logarithmic in the request volume, so the limiter does not
@@ -134,9 +188,12 @@ async fn bounded(State(policy): State<Policy>, mut request: Request, next: Next)
 pub fn router(server: Arc<Server>, worker: Arc<Worker>) -> Router {
     let rpc = connectrpc::Router::new().add_service(server.clone());
     let procedures = Arc::new(rpc_procedures(&rpc));
-    let rpc = rpc.into_axum_service().with_limits(
-        connectrpc::Limits::default().with_max_message_size(server.config.max_payload_bytes),
-    );
+    let rpc = rpc
+        .into_axum_service()
+        .with_limits(
+            connectrpc::Limits::default().with_max_message_size(server.config.max_payload_bytes),
+        )
+        .with_interceptor(TypedDecodeErrors);
     let ready = server.db.clone();
     let metrics = server.metrics.clone();
     Router::new()
@@ -602,7 +659,20 @@ mod tests {
     /// reaches it fails, and the returned pool handle lets a test assert that no
     /// connection was ever opened.
     async fn production_router(overrides: &[(&str, &str)]) -> (Router, sqlx::PgPool) {
+        let (app, db, _jwks_hits) = production_router_counting_jwks(overrides).await;
+        (app, db)
+    }
+    /// Like `production_router`, and also returns the number of JWKS fetches the
+    /// mock identity provider served after the verifier started. Authentication
+    /// refreshes the keys for every bearer token it cannot verify, so a stable
+    /// count shows that no request reached the verifier.
+    async fn production_router_counting_jwks(
+        overrides: &[(&str, &str)],
+    ) -> (Router, sqlx::PgPool, Arc<std::sync::atomic::AtomicUsize>) {
         use axum::{Json, routing::get};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let jwks_hits = Arc::new(AtomicUsize::new(0));
+        let served_hits = jwks_hits.clone();
         let oidc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let issuer = format!("http://{}", oidc.local_addr().unwrap());
         let discovery = serde_json::json!({"issuer":issuer,"jwks_uri":format!("{issuer}/jwks")});
@@ -613,7 +683,10 @@ mod tests {
             )
             .route(
                 "/jwks",
-                get(|| async { Json(serde_json::json!({"keys":[]})) }),
+                get(move || {
+                    served_hits.fetch_add(1, Ordering::SeqCst);
+                    async { Json(serde_json::json!({"keys":[]})) }
+                }),
             );
         tokio::spawn(async move { axum::serve(oidc, mock).await.unwrap() });
         let mut values: std::collections::HashMap<_, _> =
@@ -633,7 +706,9 @@ mod tests {
             .unwrap();
         let server = Arc::new(Server::new(db.clone(), auth, config.clone()));
         let worker = Arc::new(Worker::new(db.clone(), config).unwrap());
-        (router(server, worker), db)
+        // The verifier fetched the keys once during startup; count only later fetches.
+        jwks_hits.store(0, Ordering::SeqCst);
+        (router(server, worker), db, jwks_hits)
     }
     /// Builds the production router with a one-request window and consumes the
     /// only admitted request. The admitted `/healthz` request and every rejected
@@ -967,6 +1042,90 @@ mod tests {
                 assert_eq!(detail.reason.to_i32(), 6, "{label}");
             }
         }
+        task.abort();
+    }
+    /// Unsigned RS256 token with an unknown key ID. If a request reached the
+    /// verifier, the cache miss would refresh the JWKS and increment the counter.
+    const UNVERIFIABLE_BEARER: &str = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6InVua25vd24ifQ.e30.c2ln";
+    #[tokio::test]
+    async fn malformed_unary_bodies_get_typed_invalid_argument_before_auth_and_database() {
+        use std::sync::atomic::Ordering;
+        let _serial = WARNING_TESTS.lock().await;
+        let (app, db, jwks_hits) = production_router_counting_jwks(&[]).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        let vectors: [(&str, &[u8]); 2] =
+            [("application/json", b"{"), ("application/proto", &[0x80])];
+        let mut correlations = HashSet::new();
+        for (content_type, body) in vectors {
+            for round in 0..2 {
+                let label = format!("{content_type} round {round}");
+                let response = client
+                    .post(format!("{base}{RPC_PATH}"))
+                    .header("content-type", content_type)
+                    .header("authorization", UNVERIFIABLE_BEARER)
+                    .header("X-Delcore-Correlation-Id", "untrusted-client-value")
+                    .body(body.to_vec())
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{label}");
+                assert_eq!(
+                    response.headers()["content-type"],
+                    "application/json",
+                    "{label}"
+                );
+                let correlation = correlation_of(&response, &label);
+                let body: serde_json::Value = response.json().await.unwrap();
+                assert_eq!(body["code"], "invalid_argument", "{label}");
+                // Exactly one detail, and it is the typed Delcore error.
+                assert_eq!(body["details"].as_array().unwrap().len(), 1, "{label}");
+                let detail = decode_detail(&body);
+                assert_eq!(detail.reason.to_i32(), 1, "{label}");
+                assert_eq!(detail.correlation_id, correlation, "{label}");
+                assert!(
+                    uuid::Uuid::parse_str(&correlation).is_ok_and(|id| id.get_version_num() == 7),
+                    "{label}: {correlation}"
+                );
+                assert!(correlations.insert(correlation), "{label}: reused ID");
+            }
+        }
+        assert_eq!(jwks_hits.load(Ordering::SeqCst), 0, "verifier was called");
+        assert_eq!(db.size(), 0, "database connection was opened");
+        task.abort();
+    }
+    #[tokio::test]
+    async fn typed_handler_errors_and_valid_requests_are_not_rewritten_by_the_decode_interceptor() {
+        use std::sync::atomic::Ordering;
+        let _serial = WARNING_TESTS.lock().await;
+        let (app, db, jwks_hits) = production_router_counting_jwks(&[]).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        // A well-formed request reaches the handler, which rejects the missing
+        // credential with its own typed unauthenticated error (reason 2), so the
+        // interceptor must not touch it.
+        let response = client
+            .post(format!("{base}{RPC_PATH}"))
+            .header("content-type", "application/json")
+            .header("X-Delcore-Correlation-Id", "untrusted-client-value")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let correlation = correlation_of(&response, "valid body");
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["code"], "unauthenticated");
+        assert_eq!(body["details"].as_array().unwrap().len(), 1);
+        let detail = decode_detail(&body);
+        assert_eq!(detail.reason.to_i32(), 2);
+        assert_eq!(detail.correlation_id, correlation);
+        assert_eq!(jwks_hits.load(Ordering::SeqCst), 0);
+        assert_eq!(db.size(), 0);
         task.abort();
     }
     #[test]
