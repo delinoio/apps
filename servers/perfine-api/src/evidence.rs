@@ -185,6 +185,7 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
         return Err(Fault::precondition("policy mapping mismatch"));
     }
     let mut runs = BTreeSet::new();
+    let mut inspected = BTreeSet::from([string(m, "engineArtifactName").to_owned()]);
     let mut verify = |manifest: &engine::Manifest,
                       source: &str,
                       candidate: bool|
@@ -263,6 +264,7 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
                     "structured artifact observations disagree with engine manifest",
                 ));
             }
+            inspected.insert(name.as_str().to_owned());
             observations.insert(summary_kind);
         }
         if observations.len() != 3 {
@@ -316,10 +318,12 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
         if !string(m, "candidateId").is_empty() || bundle.repeat.is_some() {
             return Err(Fault::precondition("candidate round required"));
         }
+        require_inspected_artifacts(m, &inspected)?;
         return Ok(None);
     };
     let first = verify_round(first)?;
     let repeat = bundle.repeat.as_ref().map(&mut verify_round).transpose()?;
+    require_inspected_artifacts(m, &inspected)?;
     fn round<'a>(
         r: &'a VerifiedRound,
         baseline: &'a engine::BaselineValidation,
@@ -367,4 +371,21 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
     Ok(Some(
         json!({"_publicationAllowed":result.verdict==types::Verdict::Pass || result.reason==policy::Reason::HumanJudgment, "_measuredPaths":first.head.manifest().profile_paths.values().flatten().map(|p|p.as_str()).collect::<BTreeSet<_>>(), "id":m["candidateId"],"experimentId":e["id"],"baseSha":m["sourceBaseSha"],"headSha":m["sourceHeadSha"],"executionState":"EXECUTION_STATE_COMPLETED","verdict":verdict,"comparisons":[comparison(&result.incremental,2,cfg.incremental_base.as_str()),comparison(&result.cumulative,3,cfg.initial_base.as_str())],"correctness":first.head.manifest().correctness.iter().map(|(n,v)|json!({"checkName":n.as_str(),"state":match v {engine::CheckResult::Passed=>1,engine::CheckResult::Failed=>2,engine::CheckResult::NotRun=>3}})).collect::<Vec<_>>(),"exceptions":exceptions,"humanJudgmentRequired":result.human_judgment_required,"evidenceManifestSha256":m["manifestSha256"],"parentCandidateIds":spec.get("parentCandidateIds").cloned().unwrap_or(json!([]))}),
     ))
+}
+
+fn require_inspected_artifacts(m: &Value, inspected: &BTreeSet<String>) -> Result<()> {
+    // Raw originals have their own consent and privacy checks. Every other file must
+    // have passed exact typed inspection above, including baseline-only uploads.
+    for artifact in m["artifacts"].as_array().ok_or_else(Fault::unavailable)? {
+        if !matches!(
+            string(artifact, "kind"),
+            "ARTIFACT_KIND_RAW_PROFILE" | "ARTIFACT_KIND_RAW_TEST_LOG"
+        ) && !inspected.contains(string(artifact, "name"))
+        {
+            return Err(Fault::precondition(
+                "unreferenced structured artifact is not eligible for hosting",
+            ));
+        }
+    }
+    Ok(())
 }

@@ -230,6 +230,47 @@ fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
     );
 }
 #[test]
+fn unreferenced_structured_artifacts_are_rejected_with_or_without_candidates() {
+    for candidate in [true, false] {
+        let eid = uid();
+        let (spec, mut manifest, mut bytes) = fixture(&eid);
+        let e = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+        if !candidate {
+            let mut bundle: perfine_api::evidence::Bundle =
+                serde_json::from_slice(&bytes["engine"]).unwrap();
+            bundle.first = None;
+            manifest["candidateId"] = json!("");
+            let retained: BTreeSet<_> = bundle
+                .incremental_baseline
+                .iter()
+                .flat_map(|r| r.artifacts.keys().map(|n| n.as_str().to_owned()))
+                .chain(std::iter::once("engine".into()))
+                .collect();
+            bytes.retain(|name, _| retained.contains(name));
+            manifest["artifacts"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|a| retained.contains(a["name"].as_str().unwrap()));
+            bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+        }
+        assert!(perfine_api::evidence::evaluate(&e, &manifest, &bytes).is_ok());
+        let extra = br#"{"payload":"fn private_implementation() {}"}"#.to_vec();
+        bytes.insert("extra".into(), extra.clone());
+        for kind in [
+            "ARTIFACT_KIND_PROFILE_SUMMARY",
+            "ARTIFACT_KIND_MEASUREMENTS",
+            "ARTIFACT_KIND_CORRECTNESS_RESULTS",
+        ] {
+            let mut m = manifest.clone();
+            m["artifacts"].as_array_mut().unwrap().push(json!({"name":"extra","kind":kind,"mediaType":"application/json","sizeBytes":extra.len().to_string(),"sha256":perfine_api::hash(&extra),"completion":"COMPLETION_STATE_COMPLETE","containsSourceSnippets":false}));
+            assert!(
+                perfine_api::evidence::evaluate(&e, &m, &bytes).is_err(),
+                "{candidate}: {kind}"
+            );
+        }
+    }
+}
+#[test]
 fn raw_profiles_cannot_replace_normalized_observations() {
     let eid = uid();
     let (spec, mut m, mut bytes) = fixture(&eid);
