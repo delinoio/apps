@@ -357,7 +357,7 @@ impl App {
 // Connect JSON wire envelopes keep uint64 values as decimal strings. The caller's
 // protocol envelope is verified against local content hashes before network access.
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum ArtifactKind {
+pub enum ArtifactKind {
     #[serde(rename = "ARTIFACT_KIND_ENGINE_EVIDENCE")]
     EngineEvidence,
     #[serde(rename = "ARTIFACT_KIND_MEASUREMENTS")]
@@ -372,7 +372,7 @@ enum ArtifactKind {
     RawTestLog,
 }
 #[derive(Clone, Copy, Serialize, Deserialize)]
-enum Completion {
+pub enum Completion {
     #[serde(rename = "COMPLETION_STATE_INCOMPLETE")]
     Incomplete,
     #[serde(rename = "COMPLETION_STATE_COMPLETE")]
@@ -380,44 +380,44 @@ enum Completion {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Artifact {
-    name: String,
-    kind: ArtifactKind,
-    media_type: String,
-    size_bytes: String,
-    sha256: Fingerprint,
-    completion: Completion,
-    contains_source_snippets: bool,
-    secrets_removed: bool,
-    required_for_evaluation: bool,
+pub struct Artifact {
+    pub(crate) name: String,
+    pub(crate) kind: ArtifactKind,
+    pub(crate) media_type: String,
+    pub(crate) size_bytes: String,
+    pub(crate) sha256: Fingerprint,
+    pub(crate) completion: Completion,
+    pub(crate) contains_source_snippets: bool,
+    pub(crate) secrets_removed: bool,
+    pub(crate) required_for_evaluation: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Manifest {
-    schema_version: Version,
-    experiment_id: ResourceId,
-    candidate_id: Option<ResourceId>,
-    source_base_sha: CommitSha,
-    source_head_sha: CommitSha,
-    harness_sha: CommitSha,
-    environment: crate::wire::Environment,
-    inputs: Vec<crate::wire::Input>,
-    policy: crate::wire::Policy,
-    metrics: Vec<crate::wire::Metric>,
-    artifacts: Vec<Artifact>,
-    completion: Completion,
-    experiment_fingerprint_sha256: Fingerprint,
-    engine_artifact_name: String,
+pub struct Manifest {
+    pub(crate) schema_version: Version,
+    pub(crate) experiment_id: ResourceId,
+    pub(crate) candidate_id: Option<ResourceId>,
+    pub(crate) source_base_sha: CommitSha,
+    pub(crate) source_head_sha: CommitSha,
+    pub(crate) harness_sha: CommitSha,
+    pub(crate) environment: crate::wire::Environment,
+    pub(crate) inputs: Vec<crate::wire::Input>,
+    pub(crate) policy: crate::wire::Policy,
+    pub(crate) metrics: Vec<crate::wire::Metric>,
+    pub(crate) artifacts: Vec<Artifact>,
+    pub(crate) completion: Completion,
+    pub(crate) experiment_fingerprint_sha256: Fingerprint,
+    pub(crate) engine_artifact_name: String,
     #[serde(rename = "manifestSha256")]
-    checksum: String,
-    run_started_at: String,
-    consent_revision: String,
+    pub(crate) checksum: String,
+    pub(crate) run_started_at: String,
+    pub(crate) consent_revision: String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Envelope {
-    specification: crate::wire::Specification,
-    manifest: Manifest,
+pub struct Envelope {
+    pub(crate) specification: crate::wire::Specification,
+    pub(crate) manifest: Manifest,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -495,7 +495,7 @@ struct Upload {
     id: ResourceId,
     state: String,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Receipt {
     artifact_name: String,
@@ -517,11 +517,26 @@ struct Completed {
     upload: Upload,
     evidence_completion: Completion,
 }
+#[derive(Serialize, Deserialize)]
+struct UploadJournal {
+    binding: Fingerprint,
+    completion_request: RequestId,
+    begin_request: RequestId,
+    upload: Option<ResourceId>,
+    attempts: std::collections::BTreeMap<String, u8>,
+    receipts: std::collections::BTreeMap<String, Receipt>,
+}
 fn secure_url(value: &str) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(value)?;
     ensure!(
-        url.scheme() == "https" && url.username().is_empty() && url.password().is_none(),
-        "HTTPS URL without userinfo required"
+        (url.scheme() == "https"
+            || (url.scheme() == "http"
+                && url.host_str().is_some_and(|h| h
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback()))))
+            && url.username().is_empty()
+            && url.password().is_none(),
+        "HTTPS URL without userinfo required (HTTP permitted only for literal loopback addresses)"
     );
     Ok(url)
 }
@@ -565,21 +580,38 @@ fn rpc<T: Serialize, R: serde::de::DeserializeOwned>(
 impl App {
     #[expect(
         clippy::too_many_lines,
-        reason = "Upload phases preserve ordered provenance and receipts"
+        clippy::too_many_arguments,
+        reason = "Upload phases preserve explicit authorization scope and ordered provenance"
     )]
     pub(crate) fn upload(
         &self,
         experiment: &str,
         req: &RequestId,
-        envelope: &Path,
+        candidate: Option<&str>,
+        consent_revision: u64,
         endpoint: &str,
         space: &str,
         connection: &str,
     ) -> Result<Value> {
         let id = ResourceId::new(experiment)?;
         ResourceId::new(req.as_str()).context("hosted mutation request IDs must be UUID v7")?;
+        let directory = self.root()?.join(id.as_str());
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("upload.lock"))?;
+        fs2::FileExt::try_lock_exclusive(&lock).context("upload already active")?;
+        let runner = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("runner.lock"))?;
+        fs2::FileExt::try_lock_shared(&runner).context("experiment execution or review active")?;
         let exp = self.engine()?.status(&id)?;
-        let envelope: Envelope = serde_json::from_slice(&fs::read(envelope)?)?;
+        let envelope = self.upload_bundle(&id, candidate, consent_revision)?;
         ensure!(
             envelope.manifest.experiment_id == id
                 && envelope.manifest.experiment_fingerprint_sha256 == *exp.config.fingerprint(),
@@ -640,6 +672,52 @@ impl App {
             .timeout(Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
+        let binding = fingerprint(&(endpoint, space, connection, &envelope))?;
+        let journal_path = directory.join(format!("upload-request-{}.json", req.as_str()));
+        let mut journal: UploadJournal = if journal_path.exists() {
+            let saved: UploadJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+            ensure!(saved.binding == binding, "upload request binding changed");
+            saved
+        } else {
+            let saved = UploadJournal {
+                binding,
+                completion_request: request(),
+                begin_request: req.clone(),
+                upload: None,
+                attempts: std::collections::BTreeMap::new(),
+                receipts: std::collections::BTreeMap::new(),
+            };
+            atomic(&journal_path, &saved)?;
+            atomic(
+                &directory.join(format!("upload-envelope-{}.json", req.as_str())),
+                &envelope,
+            )?;
+            saved
+        };
+        if let Some(upload) = &journal.upload {
+            let status_request = request();
+            let status: Value = rpc(
+                &client,
+                endpoint,
+                &key,
+                "GetUpload",
+                &json!({"requestId":status_request,"spaceId":space,"uploadId":upload}),
+            )?;
+            ensure!(
+                status["requestId"] == status_request.as_str()
+                    && status["upload"]["id"] == upload.as_str(),
+                "upload reconciliation identity mismatch"
+            );
+            if status["upload"]["state"] == "UPLOAD_STATE_COMPLETE" {
+                return Ok(
+                    json!({"reconciled":true,"upload":status["upload"],"local_evidence_preserved":true}),
+                );
+            }
+            // BeginUpload deduplicates the envelope to the same upload resource. A new
+            // operation ID refreshes expired signed URLs instead of replaying cached URLs.
+            journal.begin_request = request();
+            atomic(&journal_path, &journal)?;
+        }
         let eligibility: EligibilityResponse = rpc(
             &client,
             endpoint,
@@ -656,8 +734,22 @@ impl App {
             eligibility.request_id == req.as_str(),
             "Connect eligibility request ID mismatch"
         );
+        atomic(
+            &directory.join(format!("upload-eligibility-{}.json", req.as_str())),
+            &eligibility,
+        )?;
+        if !eligibility.eligible_for_complete_evaluation
+            || eligibility
+                .decisions
+                .iter()
+                .any(|d| !matches!(d.eligibility, Eligibility::Eligible))
+        {
+            return Ok(
+                json!({"eligibility":eligibility,"uploaded":false,"evidence_completion":"incomplete","local_evidence_preserved":true}),
+            );
+        }
         let upload_request = Begin {
-            request_id: req,
+            request_id: &journal.begin_request,
             space_id: space,
             connection_id: connection,
             experiment_id: &id,
@@ -667,11 +759,26 @@ impl App {
         };
         let begun: Begun = rpc(&client, endpoint, &key, "BeginUpload", &upload_request)?;
         ensure!(
-            begun.request_id == req.as_str(),
+            begun.request_id == journal.begin_request.as_str(),
             "Connect request ID mismatch"
         );
-        let mut receipts = vec![];
+        if let Some(prior) = &journal.upload {
+            ensure!(*prior == begun.upload.id, "upload resource changed");
+        }
+        journal.upload = Some(begun.upload.id.clone());
+        atomic(&journal_path, &journal)?;
+        if begun.upload.state == "UPLOAD_STATE_COMPLETE" {
+            return Ok(json!({"reconciled":true,"upload":begun.upload}));
+        }
+        let mut targets = std::collections::BTreeSet::new();
         for target in begun.targets {
+            ensure!(
+                targets.insert(target.artifact_name.clone()),
+                "duplicate upload target"
+            );
+            if journal.receipts.contains_key(&target.artifact_name) {
+                continue;
+            }
             let artifact = envelope
                 .manifest
                 .artifacts
@@ -679,7 +786,10 @@ impl App {
                 .find(|a| a.name == target.artifact_name)
                 .context("server selected undeclared artifact")?;
             let url = secure_url(&target.signed_put_url)?;
-            let mut put = client.put(url).body(store.get(&artifact.sha256)?);
+            let mut put = client
+                .put(url)
+                .header("content-length", &artifact.size_bytes)
+                .body(store.get(&artifact.sha256)?);
             for header in target.required_headers {
                 ensure!(
                     matches!(
@@ -696,42 +806,50 @@ impl App {
                 }
                 put = put.header(header.name, header.value);
             }
-            ensure!(
-                put.send()
-                    .map_err(|_| anyhow::anyhow!(
-                        "storage transport failed; local results retained"
-                    ))?
-                    .status()
-                    .is_success(),
-                "artifact upload failed; resend with same request ID; local results retained"
+            loop {
+                let attempts = journal.attempts.entry(artifact.name.clone()).or_default();
+                ensure!(
+                    *attempts < 2,
+                    "storage retry exhausted; reconcile upload before a new explicit request; local evidence retained"
+                );
+                *attempts += 1;
+                let attempt = *attempts;
+                atomic(&journal_path, &journal)?;
+                let response = put.try_clone().context("replayable upload body")?.send();
+                match response {
+                    Ok(r) if r.status().is_success() => break,
+                    Ok(r)
+                        if attempt < 2
+                            && (r.status().as_u16() == 429 || r.status().is_server_error()) => {}
+                    Err(_) if attempt < 2 => (),
+                    _ => bail!("storage upload failed; local evidence retained"),
+                }
+            }
+            journal.receipts.insert(
+                artifact.name.clone(),
+                Receipt {
+                    artifact_name: artifact.name.clone(),
+                    sha256: artifact.sha256.clone(),
+                    size_bytes: artifact.size_bytes.clone(),
+                },
             );
-            receipts.push(Receipt {
-                artifact_name: artifact.name.clone(),
-                sha256: artifact.sha256.clone(),
-                size_bytes: artifact.size_bytes.clone(),
-            });
+            atomic(&journal_path, &journal)?;
         }
-        let complete_path = self
-            .root()?
-            .join(id.as_str())
-            .join(format!("upload-request-{}.json", req.as_str()));
-        let complete_request: RequestId = if complete_path.exists() {
-            serde_json::from_slice(&fs::read(&complete_path)?)?
-        } else {
-            let value = request();
-            atomic(&complete_path, &value)?;
-            value
-        };
+        ensure!(
+            journal.receipts.len() == envelope.manifest.artifacts.len(),
+            "missing upload targets; incomplete evidence retained"
+        );
+        let complete_request = &journal.completion_request;
         let completed: Completed = rpc(
             &client,
             endpoint,
             &key,
             "CompleteUpload",
             &Complete {
-                request_id: &complete_request,
+                request_id: complete_request,
                 space_id: space,
                 upload_id: &begun.upload.id,
-                receipts,
+                receipts: journal.receipts.values().cloned().collect(),
             },
         )?;
         ensure!(
