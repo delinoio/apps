@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-//! Connected explicit-branch `GetHistory` commit-range regressions.
+//! `GetHistory` commit-range and stored-ancestry regressions.
 //!
 //! These tests run `Server::history` against a mocked GitHub first-parent chain and synthetic
 //! repository state, so they need neither PostgreSQL nor live GitHub credentials.
@@ -116,12 +116,23 @@ impl Fixture {
                 ((*id).to_owned(), record(id, *commit, *order, registered_at))
             })
             .collect();
+        self.history_of(true, records, extra).await
+    }
+
+    /// Runs `history` for `branch=main` over prepared records on a connected or disconnected
+    /// repository.
+    async fn history_of(
+        &self,
+        connected: bool,
+        records: serde_json::Map<String, Value>,
+        extra: Value,
+    ) -> Value {
         let state: State = serde_json::from_value(json!({"next": 1000, "records": records}))
             .expect("fixture state");
         let repo = Repository {
             full_name: "owner/repo".into(),
             installation_id: "1".into(),
-            connected: true,
+            connected,
             ..Default::default()
         };
         let mut q = json!({"branch":"main"});
@@ -394,4 +405,107 @@ async fn history_cursor_ignores_executions_on_other_branches() {
     assert_eq!(got[0].0.len(), 100);
     assert!(got[0].0.iter().all(|id| id.starts_with("run-")));
     assert_eq!(got[0].1, "");
+}
+
+/// A stored fixture record with first-parent `ancestors` (commit labels, newest first).
+fn stored(id: &str, commit: char, order: u64, at: &str, ancestors: &str) -> (String, Value) {
+    let mut r = record(id, commit, order, at);
+    r["ancestors"] = json!(ancestors.chars().map(sha).collect::<Vec<_>>());
+    (id.to_owned(), r)
+}
+
+fn records_of(items: Vec<(String, Value)>) -> serde_json::Map<String, Value> {
+    items.into_iter().collect()
+}
+
+/// Uploads C, B, then a historical A, as in a disconnected repository.
+fn cba_records() -> serde_json::Map<String, Value> {
+    records_of(vec![
+        stored("run-c", 'C', 1, "2026-01-01T00:00:00Z", "BA"),
+        stored("run-b", 'B', 2, "2026-01-02T00:00:00Z", "A"),
+        stored("run-a", 'A', 3, "2026-01-03T00:00:00Z", ""),
+    ])
+}
+
+#[tokio::test]
+async fn disconnected_history_keeps_known_descendants_after_historical_upload() {
+    // The mocked GitHub chain is unrelated to the stored paths: any request would fail the test.
+    let f = Fixture::new("A").await;
+    let v = f.history_of(false, cba_records(), json!({})).await;
+    assert_eq!(commits(&v), "CBA", "{v}");
+    assert_eq!(ids(&v), ["run-a", "run-b", "run-c"], "{v}");
+    assert!(f.requested.lock().unwrap().is_empty());
+
+    let v = f
+        .history_of(false, cba_records(), bounds(Some('B'), Some('C')))
+        .await;
+    assert_eq!(commits(&v), "CB", "{v}");
+    assert_eq!(ids(&v), ["run-b", "run-c"], "{v}");
+    assert!(f.requested.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn disconnected_date_filter_does_not_let_a_later_ancestor_anchor_the_path() {
+    let f = Fixture::new("A").await;
+    let v = f
+        .history_of(
+            false,
+            cba_records(),
+            json!({"since":"2026-01-02T00:00:00Z"}),
+        )
+        .await;
+    // C is excluded by the date filter but still defines the path; B and A stay eligible.
+    assert_eq!(commits(&v), "CBA", "{v}");
+    assert_eq!(ids(&v), ["run-a", "run-b"], "{v}");
+    // No representative is promoted: each remaining commit keeps its own representative.
+    assert!(
+        v["executions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["representative"] == true)
+    );
+}
+
+#[tokio::test]
+async fn disconnected_path_ignores_pull_requests_and_other_branches() {
+    let f = Fixture::new("A").await;
+    let mut items = vec![
+        stored("run-c", 'C', 1, T0, "BA"),
+        stored("run-a", 'A', 2, T0, ""),
+        stored("pr-d", 'D', 3, T0, "CBA"),
+        stored("other-e", 'E', 4, T0, "DCBA"),
+    ];
+    items[2].1["execution"]["context"]["pullRequest"] = json!(7);
+    let v = f.history_of(false, records_of(items), json!({})).await;
+    assert_eq!(commits(&v), "CBA", "{v}");
+}
+
+#[tokio::test]
+async fn disconnected_incomparable_paths_keep_registration_order_without_merging() {
+    let f = Fixture::new("A").await;
+    // D and C diverge from A. A's later upload must not anchor; the newer maximal anchor wins.
+    let items = vec![
+        stored("run-d", 'D', 1, T0, "A"),
+        stored("run-c", 'C', 2, T0, "BA"),
+        stored("run-a", 'A', 3, T0, ""),
+    ];
+    let v = f.history_of(false, records_of(items), json!({})).await;
+    assert_eq!(commits(&v), "CBA", "{v}");
+    let items = vec![
+        stored("run-c", 'C', 1, T0, "BA"),
+        stored("run-d", 'D', 2, T0, "A"),
+        stored("run-a", 'A', 3, T0, ""),
+    ];
+    let v = f.history_of(false, records_of(items), json!({})).await;
+    assert_eq!(commits(&v), "DA", "{v}");
+}
+
+#[tokio::test]
+async fn branch_omitted_history_keeps_registration_order_path() {
+    let f = Fixture::new("A").await;
+    let v = f
+        .history_of(false, cba_records(), json!({"branch": ""}))
+        .await;
+    assert_eq!(commits(&v), "A", "{v}");
 }
