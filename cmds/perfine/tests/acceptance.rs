@@ -14,6 +14,7 @@ mod protocol {
 }
 use buffa::Message;
 use common::*;
+use perfine_core::publication::{ApprovalBinding, PublicationContent, PublishAuthority};
 use perfine_core::{
     adapters::ArtifactStore, evidence::*, lifecycle::*, policy::*, storage::FileStore, types::*,
 };
@@ -153,6 +154,10 @@ fn seeded_values(candidate: bool, values: [f64; 2]) -> (tempfile::TempDir, Resou
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exercise confirmation, approval rejection and retained evidence in one subprocess flow"
+)]
 fn subprocess_review_confirmation_reuses_measurements_and_retains_attestation() {
     let (root, id, cid) = seeded(true);
     let report = run(
@@ -213,6 +218,62 @@ fn subprocess_review_confirmation_reuses_measurements_and_retains_attestation() 
     );
     assert_eq!(journal_before, fs::read(dir.join("journal.json")).unwrap());
     assert!(dir.join(format!("review-{}.json", cid.as_str())).exists());
+    // Approval rejects later attestations without poisoning previously verified evidence.
+    let engine = Engine::new(FileStore::open(root.path().join(".perfine/engine")).unwrap());
+    let status = engine.status(&id).unwrap();
+    let evaluation = status.candidates[&cid].evaluation.as_ref().unwrap();
+    engine
+        .approve(
+            &request(),
+            ResourceId::generate(),
+            ApprovalBinding {
+                experiment: id.clone(),
+                candidate: cid.clone(),
+                evaluation: fingerprint(evaluation).unwrap(),
+                content: PublicationContent {
+                    target_repository: name("owner/repo"),
+                    target_base: name("main"),
+                    base_sha: sha('a'),
+                    head_sha: sha('d'),
+                    title: name("Improve performance"),
+                    body: String::new(),
+                    production_diff: digest(b"diff"),
+                },
+            },
+            name("reviewer"),
+            Some(name("Reviewed exception")),
+            PublishAuthority {
+                currently_authorized: true,
+            },
+            chrono::Utc::now().timestamp().unsigned_abs(),
+        )
+        .unwrap();
+    let pending = dir.join(format!("review-{}.pending.json", cid.as_str()));
+    let before = fs::read(&pending).unwrap();
+    let mut revised: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    revised["statement"] = json!("A different review after approval");
+    fs::write(&file, serde_json::to_vec(&revised).unwrap()).unwrap();
+    let preview = run(root.path(), &args);
+    let mut rejected = args.to_vec();
+    rejected.extend([
+        "--confirm-review",
+        preview["result"]["confirm_review"].as_str().unwrap(),
+    ]);
+    assert!(run(root.path(), &rejected)["error"].is_object());
+    assert_eq!(fs::read(&pending).unwrap(), before);
+    assert_eq!(
+        run(
+            root.path(),
+            &[
+                "compare",
+                "--experiment",
+                id.as_str(),
+                "--candidate",
+                cid.as_str()
+            ]
+        )["result"]["candidate"]["evaluation"]["verdict"],
+        "pass"
+    );
     let mut bad: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
     bad["review"]["equally_simple_or_simpler"] = json!(digest(b"absent"));
     fs::write(&file, serde_json::to_vec(&bad).unwrap()).unwrap();
