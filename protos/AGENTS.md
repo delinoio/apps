@@ -25,3 +25,5 @@
 - [Git Tracker protocol](../docs/protos-git-tracker-v1-contract.md)
 - [DeliTools protocol](../docs/protos-delitools-v1-contract.md)
 - [DeliTools server](../docs/servers-delitools-api-contract.md)
+
+- Perfine ownership: [project](../docs/project-perfine.md); [protocol contract](../docs/protos-perfine-v1-contract.md).
