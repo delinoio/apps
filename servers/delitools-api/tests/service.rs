@@ -1081,3 +1081,126 @@ async fn ingest_sends_when_the_row_is_still_live_after_the_token_is_available() 
     assert_eq!(h.delcore.lock().unwrap().ingested.len(), 1);
     assert_eq!(h.delcore.lock().unwrap().token_calls, 1);
 }
+
+const SLOW: std::time::Duration = std::time::Duration::from_millis(300);
+const WATCHDOG: std::time::Duration = std::time::Duration::from_secs(7);
+
+fn body_for(method: &str) -> serde_json::Value {
+    if method == "Translate" {
+        translate_body(&["Hello"])
+    } else {
+        extract_body()
+    }
+}
+
+#[tokio::test]
+async fn a_body_that_completes_after_the_deadline_never_reaches_the_provider() {
+    for method in ["Translate", "Extract"] {
+        let h = Harness::start_with(None, |c| {
+            c.limits.execution_timeout = std::time::Duration::from_millis(100);
+            c.dependency_timeout = std::time::Duration::from_millis(80);
+        })
+        .await;
+        h.gateway.push(Reply::without_usage(r#"["Bonjour"]"#));
+        let (wire, elapsed) = h
+            .call_slow(method, USER_TOKEN, body_for(method), SLOW, WATCHDOG)
+            .await;
+        assert_eq!(wire.status, 504, "{method}");
+        assert_eq!(wire.code(), "deadline_exceeded", "{method}");
+        assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT", "{method}");
+        let (_, detail_request_id) = wire.detail();
+        assert_eq!(
+            wire.request_id_header.as_deref(),
+            Some(detail_request_id.as_str()),
+            "{method}"
+        );
+        assert!(elapsed < SLOW, "{method} answered at {elapsed:?}");
+        // The body completes after the reply; give a late handler time to misbehave.
+        tokio::time::sleep(SLOW).await;
+        assert_eq!(h.gateway.calls(), 0, "{method}");
+        assert_eq!(h.server.in_flight(TENANT), 0, "{method}");
+    }
+}
+
+#[tokio::test]
+async fn an_incomplete_body_is_cut_at_the_execution_timeout_not_the_transport_margin() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(150);
+        c.dependency_timeout = std::time::Duration::from_millis(80);
+    })
+    .await;
+    // The body never completes within the test.
+    let (wire, elapsed) = h
+        .call_slow(
+            "Translate",
+            USER_TOKEN,
+            translate_body(&["Hello"]),
+            std::time::Duration::from_secs(30),
+            WATCHDOG,
+        )
+        .await;
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "the reply must not wait for the five-second margin: {elapsed:?}"
+    );
+    assert_eq!(h.gateway.calls(), 0);
+}
+
+#[tokio::test]
+async fn body_time_reduces_the_provider_budget() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_millis(500);
+        c.dependency_timeout = std::time::Duration::from_millis(80);
+    })
+    .await;
+    // 300ms of body plus 300ms of provider time exceeds the 500ms budget measured from receipt.
+    h.gateway.push(Reply::Delay(
+        300,
+        Box::new(Reply::without_usage(r#"["Bonjour"]"#)),
+    ));
+    let (wire, elapsed) = h
+        .call_slow(
+            "Translate",
+            USER_TOKEN,
+            translate_body(&["Hello"]),
+            SLOW,
+            WATCHDOG,
+        )
+        .await;
+    assert_eq!(wire.reason(), "ERROR_REASON_TIMEOUT");
+    assert!(
+        elapsed >= std::time::Duration::from_millis(480)
+            && elapsed < std::time::Duration::from_millis(900),
+        "the provider call must be canceled near the original deadline: {elapsed:?}"
+    );
+    assert_eq!(h.gateway.calls(), 1);
+    for _ in 0..50 {
+        if h.gateway.dropped() == 0 && h.server.in_flight(TENANT) == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.server.in_flight(TENANT), 0);
+    assert_eq!(h.gateway.calls(), 1, "no attempt starts after expiry");
+}
+
+#[tokio::test]
+async fn a_slow_body_within_the_budget_still_succeeds() {
+    let h = Harness::start_with(None, |c| {
+        c.limits.execution_timeout = std::time::Duration::from_secs(5)
+    })
+    .await;
+    for method in ["Translate", "Extract"] {
+        h.gateway.push(if method == "Translate" {
+            Reply::without_usage(r#"["Bonjour"]"#)
+        } else {
+            Reply::without_usage(&extracted(json!({"name": "Ada", "age": 36})))
+        });
+        let (wire, _) = h
+            .call_slow(method, USER_TOKEN, body_for(method), SLOW, WATCHDOG)
+            .await;
+        assert!(wire.ok(), "{method}: {:?}", wire.body);
+    }
+    assert_eq!(h.gateway.calls(), 2);
+}

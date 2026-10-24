@@ -719,12 +719,107 @@ impl Harness {
         request.send()
     }
 
+    /// Sends a request over a raw socket whose body arrives slowly: the headers and the first
+    /// body byte go out at once and the rest after `hold`. No caller timeout header is sent.
+    /// Returns the reply and the time until it was fully read, or panics after `watchdog`.
+    pub async fn call_slow(
+        &self,
+        method: &str,
+        token: &str,
+        body: Value,
+        hold: Duration,
+        watchdog: Duration,
+    ) -> (Wire, Duration) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let payload = serde_json::to_vec(&body).unwrap();
+        let head = format!(
+            "POST /delitools.v1.DelitoolsService/{method} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nConnect-Protocol-Version: 1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            self.base.trim_start_matches("http://"),
+            payload.len()
+        );
+        let stream = tokio::net::TcpStream::connect(self.base.trim_start_matches("http://"))
+            .await
+            .unwrap();
+        let (mut reader, mut writer) = stream.into_split();
+        let started = tokio::time::Instant::now();
+        let sender = tokio::spawn(async move {
+            // The peer may answer and close before the body ends, so write errors are expected.
+            let _ = writer.write_all(head.as_bytes()).await;
+            let _ = writer.write_all(&payload[..1]).await;
+            tokio::time::sleep(hold).await;
+            let _ = writer.write_all(&payload[1..]).await;
+            let _ = writer.flush().await;
+            // Keep the write half open until the reply is read.
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let mut raw = Vec::new();
+        let read = tokio::time::timeout(watchdog, async {
+            let mut chunk = [0u8; 4096];
+            loop {
+                match reader.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => raw.extend_from_slice(&chunk[..n]),
+                    // A reset after the reply was received only means the peer stopped reading.
+                    Err(_) if !raw.is_empty() => break,
+                    Err(error) => panic!("no reply before the connection broke: {error}"),
+                }
+            }
+        })
+        .await;
+        let elapsed = started.elapsed();
+        sender.abort();
+        read.expect("the reply must arrive before the watchdog");
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        let (head, body) = text.split_once("\r\n\r\n").expect("an HTTP reply");
+        let mut lines = head.lines();
+        let status = lines
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .expect("a status line");
+        let header = |name: &str| {
+            lines
+                .clone()
+                .filter_map(|l| l.split_once(':'))
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| v.trim().to_owned())
+        };
+        let wire = Wire {
+            status,
+            request_id_header: header("x-delitools-request-id"),
+            retry_after: header("retry-after"),
+            body: serde_json::from_str(&if header("transfer-encoding")
+                .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+            {
+                dechunk(body)
+            } else {
+                body.to_owned()
+            })
+            .unwrap_or(Value::Null),
+        };
+        (wire, elapsed)
+    }
+
     pub async fn translate(&self, token: &str, body: Value) -> Wire {
         self.call("Translate", Some(token), body).await
     }
     pub async fn extract(&self, token: &str, body: Value) -> Wire {
         self.call("Extract", Some(token), body).await
     }
+}
+
+/// Joins the chunks of a `Transfer-Encoding: chunked` body.
+fn dechunk(mut rest: &str) -> String {
+    let mut out = String::new();
+    while let Some((size, tail)) = rest.split_once("\r\n") {
+        let size = usize::from_str_radix(size.split(';').next().unwrap().trim(), 16).unwrap_or(0);
+        if size == 0 || tail.len() < size {
+            break;
+        }
+        out.push_str(&tail[..size]);
+        rest = tail[size..].trim_start_matches("\r\n");
+    }
+    out
 }
 
 pub fn translate_body(texts: &[&str]) -> Value {

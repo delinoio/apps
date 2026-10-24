@@ -4,7 +4,7 @@
 //! There is no CORS support: the API is called by server-side developers with API keys or user
 //! tokens, so any request that carries an `Origin` header is rejected.
 
-use crate::{REQUEST_ID_HEADER, Server, error::ApiError, store};
+use crate::{REQUEST_ID_HEADER, Server, config::Limits, error::ApiError, store};
 use axum::{
     Router,
     extract::{Request, State},
@@ -15,6 +15,37 @@ use axum::{
 };
 use connectrpc::ErrorCode;
 use std::{sync::Arc, time::Duration};
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
+
+/// The absolute execution deadline of one request, anchored when the HTTP layer received it.
+///
+/// `transport_policy` inserts it into the request extensions so that the handler, which only
+/// runs after the whole body is received and decoded, shares one deadline with the transport
+/// instead of starting a fresh execution budget.
+#[derive(Clone, Debug)]
+pub struct IngressClock {
+    /// The instant the execution timeout expires, measured from request receipt.
+    pub deadline: Instant,
+    /// Cancelled by the handler as soon as it is dispatched; see [`IngressClock::dispatch`].
+    dispatched: CancellationToken,
+}
+
+impl IngressClock {
+    fn new(deadline: Instant) -> Self {
+        Self {
+            deadline,
+            dispatched: CancellationToken::new(),
+        }
+    }
+
+    /// Tells the transport that the body is complete and the handler runs. From then on the
+    /// transport grants the finalization allowance beyond the deadline instead of cutting the
+    /// request at the deadline.
+    pub fn dispatch(&self) {
+        self.dispatched.cancel();
+    }
+}
 
 pub fn router(server: Server) -> Router {
     // One decoded byte can take six bytes on the wire (`\u00XX` for a control
@@ -33,12 +64,7 @@ pub fn router(server: Server) -> Router {
         .with_limits(connectrpc::Limits::default().with_max_message_size(limit));
     let metrics = server.metrics.clone();
     let ready = server.db.clone();
-    // `None` only for a configuration that bypassed validation: requests then fail closed.
-    let deadline = server
-        .config
-        .limits
-        .transport_deadline_from(tokio::time::Instant::now())
-        .and(server.config.limits.transport_allowance());
+    let limits = server.config.limits.clone();
     Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
         .route(
@@ -68,48 +94,77 @@ pub fn router(server: Server) -> Router {
         .fallback_service(
             Router::new()
                 .fallback_service(rpc)
-                .layer(middleware::from_fn_with_state(deadline, transport_policy)),
+                .layer(middleware::from_fn_with_state(limits, transport_policy)),
         )
 }
 
+/// Rejects browser-origin requests and enforces the request deadline.
+///
+/// The execution timeout starts here, at receipt. Until the handler is dispatched (the body is
+/// complete and decoded) the request is cut at the execution deadline with the typed `TIMEOUT`
+/// error, so a slow upload can neither reach provider execution nor outlive the budget. After
+/// dispatch the handler owns the deadline: it cancels provider work at the same instant, and the
+/// transport margin only leaves time to finalize accounting and write the response. The margin
+/// never authorizes another provider attempt.
 async fn transport_policy(
-    State(deadline): State<Option<Duration>>,
-    request: Request,
+    State(limits): State<Limits>,
+    mut request: Request,
     next: Next,
 ) -> Response {
     if request.headers().contains_key("origin") {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(deadline) = deadline else {
+    let received_at = Instant::now();
+    // `None` only for a configuration that bypassed validation: requests then fail closed.
+    let (Some(deadline), Some(final_deadline)) = (
+        limits.deadline_from(received_at),
+        limits.transport_deadline_from(received_at),
+    ) else {
         let request_id = uuid::Uuid::now_v7().to_string();
         tracing::error!(category = "deadline", request_id = %request_id, "the execution timeout exceeds the monotonic clock range");
-        let error = ApiError::internal().into_connect(&request_id);
-        return (
-            error.http_status(),
-            [
-                ("Content-Type", "application/json"),
-                (REQUEST_ID_HEADER, request_id.as_str()),
-            ],
-            error.to_json(),
-        )
-            .into_response();
+        return error_response(ApiError::internal(), &request_id);
     };
-    match tokio::time::timeout(deadline, next.run(request)).await {
-        Ok(response) => response,
-        Err(_) => {
-            let request_id = uuid::Uuid::now_v7().to_string();
-            tracing::warn!(category = "timeout", request_id = %request_id, "request deadline exceeded");
-            let error = ApiError::timeout().into_connect(&request_id);
-            debug_assert_eq!(error.code, ErrorCode::DeadlineExceeded);
-            (
-                error.http_status(),
-                [
-                    ("Content-Type", "application/json"),
-                    (REQUEST_ID_HEADER, request_id.as_str()),
-                ],
-                error.to_json(),
-            )
-                .into_response()
+    let clock = IngressClock::new(deadline);
+    let dispatched = clock.dispatched.clone();
+    request.extensions_mut().insert(clock);
+    let response = next.run(request);
+    tokio::pin!(response);
+    // Phase 1: receiving and decoding the body. The execution deadline applies.
+    let phase_one = tokio::select! {
+        response = &mut response => Some(response),
+        _ = dispatched.cancelled() => None,
+        _ = tokio::time::sleep_until(deadline) => {
+            return timeout_response("the request deadline passed before the request was complete");
         }
+    };
+    if let Some(response) = phase_one {
+        return response;
     }
+    // Phase 2: the handler runs against the same absolute deadline; the margin is only the
+    // allowance to finalize accounting and answer.
+    match tokio::time::timeout_at(final_deadline, response).await {
+        Ok(response) => response,
+        Err(_) => timeout_response("the request deadline passed with the margin"),
+    }
+}
+
+fn timeout_response(message: &'static str) -> Response {
+    let request_id = uuid::Uuid::now_v7().to_string();
+    tracing::warn!(category = "timeout", request_id = %request_id, "request deadline exceeded: {message}");
+    let error = ApiError::timeout();
+    debug_assert_eq!(error.code, ErrorCode::DeadlineExceeded);
+    error_response(error, &request_id)
+}
+
+fn error_response(error: ApiError, request_id: &str) -> Response {
+    let error = error.into_connect(request_id);
+    (
+        error.http_status(),
+        [
+            ("Content-Type", "application/json"),
+            (REQUEST_ID_HEADER, request_id),
+        ],
+        error.to_json(),
+    )
+        .into_response()
 }
