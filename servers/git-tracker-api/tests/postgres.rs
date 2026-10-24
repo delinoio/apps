@@ -49,8 +49,20 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     let actor_mock = actor.clone();
     let finalized = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let finalized_mock = finalized.clone();
-    let mock=Router::new().route("/delcore.v1.DelcoreService/CheckTenantLifecycle",post(move||{let finalized=finalized_mock.clone();async move{Json(json!({"finalizedTenantIds":*finalized.lock().unwrap()}))}})).fallback(move|r:Request|{let commit=commit_mock.clone();let actor=actor_mock.clone();async move{
-        let p=r.uri().path();let auth=r.headers().get("authorization").and_then(|v|v.to_str().ok()).unwrap_or("");
+    // Per-page delay (ms) for the optional PR comment listing; zero keeps the immediate 401.
+    let page_delay = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let page_delay_mock = page_delay.clone();
+    let pages_served = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let pages_served_mock = pages_served.clone();
+    let mock=Router::new().route("/delcore.v1.DelcoreService/CheckTenantLifecycle",post(move||{let finalized=finalized_mock.clone();async move{Json(json!({"finalizedTenantIds":*finalized.lock().unwrap()}))}})).fallback(move|r:Request|{let commit=commit_mock.clone();let actor=actor_mock.clone();let page_delay=page_delay_mock.clone();let pages_served=pages_served_mock.clone();async move{
+        let p=r.uri().path();
+        let delay=page_delay.load(std::sync::atomic::Ordering::SeqCst);
+        if delay>0&&p=="/repos/owner/repo/issues/1/comments"{
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            pages_served.fetch_add(1,std::sync::atomic::Ordering::SeqCst);
+            // A full page without a Git Tracker comment forces pagination to continue.
+            return (StatusCode::OK,Json(json!((0..100).map(|i|json!({"id":i+1,"body":"unrelated"})).collect::<Vec<_>>())));
+        }let auth=r.headers().get("authorization").and_then(|v|v.to_str().ok()).unwrap_or("");
         let out=match p{
             "/token"=>json!({"access_token":"service","expires_in":3600}),
             "/delcore.v1.DelcoreService/GetCurrentUser" if auth=="Bearer manager"=>json!({"userId":actor}),
@@ -258,6 +270,77 @@ async fn postgres_permissions_atomic_upload_oidc_visibility_and_cleanup() {
     assert_eq!(status, StatusCode::OK, "{warning}");
     assert_eq!(warning["warnings"][0], "PR comment could not be updated");
     assert_eq!(github_failures.get(), before + 2);
+    // Slow optional publication must not turn a saved upload into a timeout: every listing page
+    // succeeds within its own limit, but the pages together exceed the client deadline.
+    page_delay.store(700, std::sync::atomic::Ordering::SeqCst);
+    let mut slow_context = pr_context.clone();
+    slow_context["executionId"] = json!("pr-slow");
+    let started = std::time::Instant::now();
+    let slow = http
+        .post(format!("{base}/Upload"))
+        .header("Authorization", &auth)
+        .header("Connect-Protocol-Version", "1")
+        .header("Connect-Timeout-Ms", "4000")
+        .json(&json!({"context":slow_context,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(slow.status(), StatusCode::OK);
+    let slow: Value = slow.json().await.unwrap();
+    assert_eq!(slow["warnings"][0], "PR comment could not be updated");
+    // Cutoff is the client deadline minus the reserve, so the response arrives before 4 s.
+    assert!(
+        started.elapsed() < Duration::from_millis(3900),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(github_failures.get(), before + 3);
+    assert!(pages_served.load(std::sync::atomic::Ordering::SeqCst) < 4);
+    // The execution is committed and the repository lock was released by the timed-out publisher.
+    let (status, saved) = call(
+        &http,
+        &base,
+        "GetExecution",
+        "",
+        json!({"repositoryId":rid,"executionId":"pr-slow"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(
+        saved["execution"]["measurements"][0]["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    page_delay.store(0, std::sync::atomic::Ordering::SeqCst);
+    let lock_probe = std::time::Instant::now();
+    let (status, after) = call(
+        &http,
+        &base,
+        "Complete",
+        &auth,
+        json!({"context":slow_context}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    assert!(lock_probe.elapsed() < Duration::from_secs(2));
+    // A client deadline shorter than the reserve leaves no publication budget at all.
+    let mut spent_context = pr_context.clone();
+    spent_context["executionId"] = json!("pr-spent");
+    let spent = http
+        .post(format!("{base}/Upload"))
+        .header("Authorization", &auth)
+        .header("Connect-Protocol-Version", "1")
+        .header("Connect-Timeout-Ms", "1500")
+        .json(&json!({"context":spent_context,"dataset":dataset,"rows":[{"id":"one","values":{"bytes":"1"}}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(spent.status(), StatusCode::OK);
+    let spent: Value = spent.json().await.unwrap();
+    assert_eq!(spent["warnings"][0], "PR comment could not be updated");
+    assert_eq!(github_failures.get(), before + 5);
     // Only an exact `refs/heads/<branch>` head may name a branch. Commit SHAs, tags and mismatching or
     // non-commit refs fail with the GitHub unavailable fault and persist nothing.
     let recorded = |id: String| {

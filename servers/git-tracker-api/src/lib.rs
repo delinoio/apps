@@ -21,7 +21,24 @@ use server_common::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
+/// Response envelope the official Action tolerates per attempt (its `AbortSignal.timeout`). It is
+/// the compatibility ceiling for optional work when the client declares no earlier deadline.
+const ACTION_RESPONSE_ENVELOPE: Duration = Duration::from_secs(30);
+/// Time kept after the optional cutoff to release resources and write the response.
+const RESPONSE_RESERVE: Duration = Duration::from_secs(2);
+/// Computes the absolute cutoff for optional PR comment publication. The cutoff is fixed at
+/// request ingress from the earliest of the declared Connect client deadline and the Action
+/// envelope, minus the response reserve. It is carried through the request and never restarted
+/// after persistence. `None` means the cutoff is not representable and no budget remains.
+fn publication_cutoff(ingress: Instant, client_deadline: Option<Instant>) -> Option<Instant> {
+    let envelope = ingress.checked_add(ACTION_RESPONSE_ENVELOPE)?;
+    let effective = client_deadline.map_or(envelope, |deadline| deadline.min(envelope));
+    effective.checked_sub(RESPONSE_RESERVE)
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Op {
     Upload,
@@ -127,13 +144,16 @@ impl Server {
         op: Op,
         q: Value,
     ) -> ServiceResult<R> {
+        // Captured first so the optional-publication cutoff covers all mandatory work.
+        let ingress = Instant::now();
+        let cutoff = publication_cutoff(ingress, ctx.deadline());
         let trace = server_common::id();
         let authorization = ctx
             .headers()
             .get("authorization")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
-        match self.execute(authorization, op, q, &trace).await {
+        match self.execute(authorization, op, q, &trace, cutoff).await {
             Ok(out) => Ok(Response::new(
                 serde_json::from_value(out).map_err(|_| Fault::unavailable().connect())?,
             )
@@ -149,7 +169,14 @@ impl Server {
             }
         }
     }
-    async fn execute(&self, authorization: &str, op: Op, q: Value, trace: &str) -> Result<Value> {
+    async fn execute(
+        &self,
+        authorization: &str,
+        op: Op,
+        q: Value,
+        trace: &str,
+        cutoff: Option<Instant>,
+    ) -> Result<Value> {
         if op == Op::ConnectRepository {
             return self.connect_repository(authorization, &q, trace).await;
         }
@@ -311,8 +338,14 @@ impl Server {
         }
         if op.role() == Role::Edit {
             let c = context.as_ref().unwrap();
-            if let Err(fault) = self.publish(rid, &c.execution_id).await {
+            if let Err(fault) = self.publish_by(cutoff, rid, &c.execution_id).await {
                 self.record_failure(&fault);
+                tracing::warn!(
+                    correlation_id = trace,
+                    execution_id = c.execution_id,
+                    category = ?fault.code,
+                    "PR comment could not be updated"
+                );
                 out["warnings"] = json!(["PR comment could not be updated"])
             }
             tracing::info!(
@@ -323,9 +356,36 @@ impl Server {
         }
         Ok(out)
     }
-    async fn publish(&self, rid: &str, execution: &str) -> Result<()> {
+    /// Publishes within the absolute `cutoff`. Pool acquisition, the repository lock, the reread
+    /// and every GitHub request share that one budget. Expiry drops the publication future, which
+    /// drops its transaction so the lock is released and no publisher keeps running. Committed
+    /// measurement state is never touched here.
+    async fn publish_by(&self, cutoff: Option<Instant>, rid: &str, execution: &str) -> Result<()> {
+        let expired = || {
+            let mut fault = Fault::unavailable();
+            fault.source = server_common::error::FaultSource::GitHub;
+            fault
+        };
+        let cutoff = cutoff
+            .filter(|cutoff| *cutoff > Instant::now())
+            .ok_or_else(expired)?;
+        tokio::time::timeout_at(
+            tokio::time::Instant::from_std(cutoff),
+            self.publish(cutoff, rid, execution),
+        )
+        .await
+        .unwrap_or_else(|_| Err(expired()))
+    }
+    async fn publish(&self, cutoff: Instant, rid: &str, execution: &str) -> Result<()> {
         // Re-read under the writer lock so delayed requests cannot replace a newer PR comment.
         let mut tx = self.db.begin().await?;
+        // Also bound the server-side lock wait so an abandoned statement cannot keep waiting
+        // for the repository row after the local deadline passed. A zero value disables it.
+        let remaining = cutoff.saturating_duration_since(Instant::now());
+        sqlx::query("SELECT set_config('lock_timeout',$1,true)")
+            .bind(format!("{}ms", remaining.as_millis().max(1)))
+            .execute(&mut *tx)
+            .await?;
         let (repo, state) = repository(&mut tx, rid).await?;
         if let Some(record) = state.records.get(execution) {
             self.github.comment(&repo, &state, record).await?
@@ -625,5 +685,38 @@ impl GitTrackerService for Server {
                 .map_err(|_| Fault::invalid("invalid request").connect())?,
         )
         .await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn publication_cutoff_uses_action_envelope_without_client_deadline() {
+        let ingress = Instant::now();
+        assert_eq!(
+            publication_cutoff(ingress, None),
+            Some(ingress + ACTION_RESPONSE_ENVELOPE - RESPONSE_RESERVE)
+        );
+    }
+    #[test]
+    fn publication_cutoff_prefers_the_earlier_client_deadline() {
+        let ingress = Instant::now();
+        let early = ingress + Duration::from_secs(10);
+        assert_eq!(
+            publication_cutoff(ingress, Some(early)),
+            Some(early - RESPONSE_RESERVE)
+        );
+        let late = ingress + Duration::from_secs(120);
+        assert_eq!(
+            publication_cutoff(ingress, Some(late)),
+            publication_cutoff(ingress, None)
+        );
+    }
+    #[test]
+    fn publication_cutoff_is_not_extended_by_mandatory_elapsed_time() {
+        // The cutoff is a pure function of ingress, so work done after ingress cannot move it.
+        let ingress = Instant::now() - Duration::from_secs(29);
+        let cutoff = publication_cutoff(ingress, None).unwrap();
+        assert!(cutoff <= Instant::now());
     }
 }
