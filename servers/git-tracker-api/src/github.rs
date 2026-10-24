@@ -113,6 +113,7 @@ impl GitHub {
         }
         Ok(id.to_string())
     }
+    /// Confirms administrator access and discovers the App installation for `name`.
     pub async fn connect(&self, name: &str, token: &str) -> Result<Repository> {
         let parts: Vec<_> = name.split('/').collect();
         if parts.len() != 2 || parts.iter().any(|v| v.is_empty()) {
@@ -131,16 +132,15 @@ impl GitHub {
                 None,
             )
             .await?;
-        let mut r = Repository {
+        // Discovery only: the returned identity carries no visibility. A visibility or name
+        // observed here predates the connection transaction, so `connect_repository` must refresh
+        // it with `metadata` while holding the writer locks instead of persisting this snapshot.
+        Ok(Repository {
             github_repository_id: integer(&v, "id").to_string(),
             installation_id: integer(&install, "id").to_string(),
             connected: true,
             ..Default::default()
-        };
-        let v = self.metadata(&r).await?;
-        r.full_name = string(&v, "full_name").into();
-        r.public = v["private"] == false;
-        Ok(r)
+        })
     }
     pub async fn metadata(&self, r: &Repository) -> Result<Value> {
         self.call(
