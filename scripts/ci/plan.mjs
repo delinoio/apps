@@ -44,6 +44,9 @@ function classifyShared(paths) {
   const repositoryShared = paths.some(
     (path) =>
       !Object.values(sharedPatterns).some((pattern) => pattern.test(path)) &&
+      !/^(crates\/perfine-core\/|cmds\/perfine\/|packages\/perfine\/)/u.test(
+        path,
+      ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
   );
   return { shared, repositoryShared };
@@ -178,12 +181,38 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    perfine:
+      repositoryShared ||
+      shared.frontend ||
+      shared.protocol ||
+      paths.some((path) =>
+        /^(apps\/perfine\/|protos\/|docs\/(?:project-perfine|apps-perfine|protos-perfine))/u.test(
+          path,
+        ),
+      ),
+    perfine_distribution:
+      repositoryShared ||
+      shared.rust ||
+      shared.protocol ||
+      paths.some((path) =>
+        /^(actions\/perfine\/|packages\/perfine\/|cmds\/perfine\/|crates\/perfine-core\/|Cargo\.(toml|lock)$|protos\/perfine\/|docs\/(?:project-perfine|cmds-perfine|crates-perfine|packages-perfine|protos-perfine))/u.test(
+          path,
+        ),
+      ),
+    perfine_fixtures:
+      repositoryShared ||
+      shared.rust ||
+      paths.some((path) =>
+        /^(crates\/perfine-core\/|cmds\/perfine\/|Cargo\.(toml|lock)$|docs\/(?:project-perfine|crates-perfine|cmds-perfine))/u.test(
+          path,
+        ),
+      ),
     protocol:
       repositoryShared ||
       shared.protocol ||
       shared.go ||
       paths.some((path) =>
-        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1))/u.test(
+        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1|protos-perfine|project-perfine))/u.test(
           path,
         ),
       ),

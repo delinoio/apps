@@ -150,3 +150,37 @@ test("instruction files do not force global Rust selection with other changes", 
     { rust_clippy: ["core"], rust_test: ["app", "core"] },
   );
 });
+
+test("Perfine core selects its root CLI reverse dependency", () => {
+  assert.deepEqual(
+    planner(
+      ["crates/perfine-core/src/lib.rs"],
+      ["perfine-core"],
+      ["perfine-core", "perfine"],
+    ),
+    { rust_clippy: ["perfine-core"], rust_test: ["perfine-core", "perfine"] },
+  );
+});
+
+test("Perfine contracts and distribution select available core and CLI consumers only", () => {
+  for (const path of [
+    "actions/perfine/src/main.ts",
+    "packages/perfine/package.json",
+    "docs/crates-perfine-adapters-contract.md",
+    "protos/perfine/v1/perfine.proto",
+  ]) {
+    const result = selectRust(base, [path], (command) =>
+      command === "list"
+        ? {
+            packages: ["perfine-core", "perfine", "delitools-shell"].map(
+              (name) => ({ name }),
+            ),
+          }
+        : { merge_base: base, packages: [] },
+    );
+    assert.deepEqual(result, {
+      rust_clippy: ["perfine-core", "perfine"],
+      rust_test: ["perfine-core", "perfine"],
+    });
+  }
+});

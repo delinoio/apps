@@ -35,9 +35,22 @@ export function selectRust(
       ),
     );
   const all = global ? run("list").packages.map((pkg) => pkg.name) : null;
+  // Distribution and contract changes can affect CLI behavior without touching
+  // a Cargo package. The independent hosted workspace is selected by plan.mjs.
+  const perfineContract = paths.some((path) =>
+    /^(actions\/perfine\/|packages\/perfine\/|protos\/perfine\/|docs\/(?:project-perfine|cmds-perfine|crates-perfine|packages-perfine|protos-perfine))/u.test(
+      path,
+    ),
+  );
+  const consumers =
+    !global && perfineContract
+      ? run("list")
+          .packages.map((pkg) => pkg.name)
+          .filter((name) => ["perfine-core", "perfine"].includes(name))
+      : [];
   return {
-    rust_clippy: all ?? direct.packages,
-    rust_test: all ?? affected.packages,
+    rust_clippy: all ?? [...new Set([...direct.packages, ...consumers])],
+    rust_test: all ?? [...new Set([...affected.packages, ...consumers])],
   };
 }
 

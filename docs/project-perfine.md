@@ -34,6 +34,8 @@ Directory skeletons reserve these canonical paths before runtime implementation.
 - [Web contract](apps-perfine-web-contract.md)
 - [Distribution contract](packages-perfine-distribution-contract.md)
 
+Repository CI ownership, six-language fixture profiling gates and Compose/Turbo development integration follow the [workflow contract](repository-workflow-contract.md#perfine-repository-validation). The frontend and API own fixed loopback ports `46324` and `46323`, respectively; configuration injection follows the [environment contract](repository-environment-contract.md).
+
 ## Cross-Domain Invariants
 
 Rust is the explicit CLI/shared-engine language choice instead of the non-server Go default. TypeScript/React serves the browser UI; hosted Rust, PostgreSQL, Connect, R2 signed URLs, and Cloudflare Pages follow repository defaults. Local filesystem evidence is required for account-free offline operation rather than mandatory R2 storage. Repository-owned server files/distributions use FSL-1.1-ALv2; other owned files/distributions use Apache-2.0, with original third-party notices retained.
