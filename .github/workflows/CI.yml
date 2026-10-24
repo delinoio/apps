@@ -572,11 +572,15 @@ jobs:
       - id: action-test
         run: pnpm --dir "actions/perfine" test
       - id: action-build
-        run: pnpm --dir "actions/perfine" build
+        run: |
+          pnpm --dir "actions/perfine" build
+          git diff --exit-code -- "actions/perfine/action.cjs" "actions/perfine/ACTION_NOTICES"
       - id: package-test
         run: pnpm --dir "packages/perfine" test
       - id: package-build
-        run: pnpm --dir "packages/perfine" build
+        run: |
+          pnpm --dir "packages/perfine" build
+          node "packages/perfine/scripts/smoke.mjs"
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25

@@ -137,7 +137,7 @@ function uploadFixture(t) {
     INPUT_EXPERIMENT: id,
     INPUT_SPACE: id,
     INPUT_CONNECTION: id,
-    "INPUT_REQUEST-ID": "request-1",
+    "INPUT_REQUEST-ID": id,
     INPUT_ENVELOPE: join(dir, "envelope.json"),
     INPUT_ARTIFACTS: dir,
     ACTIONS_ID_TOKEN_REQUEST_URL:
@@ -172,19 +172,21 @@ test("separate OIDC upload binds repository/run and never forwards credentials t
       };
     else if (String(url).endsWith("/BeginUpload"))
       data = {
-        requestId: "request-1",
+        requestId: id,
         upload: { id },
         targets: [
           {
             artifactName: artifact.name,
             signedPutUrl: "https://bucket.example.invalid/object",
-            requiredHeaders: [],
+            requiredHeaders: [
+              { name: "Content-Length", value: artifact.sizeBytes },
+            ],
           },
         ],
       };
     else if (String(url).endsWith("/CompleteUpload"))
       data = {
-        requestId: "request-1:complete",
+        requestId: id,
         upload: { id, state: "UPLOAD_STATE_COMPLETE" },
         evidenceCompletion: "COMPLETION_STATE_COMPLETE",
       };
@@ -193,11 +195,49 @@ test("separate OIDC upload binds repository/run and never forwards credentials t
   };
   await upload(vars, fetcher);
   const begin = JSON.parse(calls[1].body);
+  assert.equal(begin.requestId, id);
+  assert.equal(JSON.parse(calls[3].body).requestId, id);
+  assert.equal(calls[2].headers["content-length"], artifact.sizeBytes);
   assert.equal(begin.githubExecution.githubRunId, "456");
   assert.equal(begin.githubExecution.sourceSha, sha);
   assert.match(calls[1].headers.Authorization, /^Actions /);
   assert.equal(calls[2].headers.Authorization, undefined);
   assert.ok(!JSON.stringify(calls).includes("must-not-send"));
+  for (const invalid of [
+    "request-1",
+    `${id}:complete`,
+    id.replace("-7000-", "-4000-"),
+  ]) {
+    await assert.rejects(
+      upload({ ...vars, "INPUT_REQUEST-ID": invalid }, async () => {
+        assert.fail("Invalid IDs must fail before obtaining credentials");
+      }),
+      /INPUT_REQUEST-ID/,
+    );
+  }
+  for (const headers of [
+    [{ name: "content-length", value: "1" }],
+    [{ name: "Authorization", value: "forbidden" }],
+    [
+      { name: "Content-Length", value: artifact.sizeBytes },
+      { name: "content-length", value: artifact.sizeBytes },
+    ],
+  ]) {
+    await assert.rejects(
+      upload(vars, async (url, options) => {
+        assert.notEqual(
+          options.method,
+          "PUT",
+          "Reject invalid signed headers before storage transfer",
+        );
+        const response = await fetcher(url, options);
+        const data = await response.json();
+        if (data.targets) data.targets[0].requiredHeaders = headers;
+        return { ok: true, json: async () => data };
+      }),
+      /header|content-length/,
+    );
+  }
   claims.repository_id = "another";
   await assert.rejects(upload(vars, fetcher), /binding/);
 });

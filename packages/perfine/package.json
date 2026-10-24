@@ -33,6 +33,7 @@
   "scripts": {
     "test": "node --test scripts/*.test.mjs",
     "build": "node scripts/build.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "release:verify": "node scripts/release.mjs verify"
   }
 }
