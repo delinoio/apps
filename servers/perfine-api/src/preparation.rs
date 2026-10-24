@@ -169,6 +169,14 @@ pub fn prepare(c: &Value, repository: &Value, now: chrono::DateTime<chrono::Utc>
     {
         return Err(invalid());
     }
+    if string(&c["policy"]["metric"], "name").is_empty()
+        || !matches!(
+            string(&c["policy"]["metric"], "objective"),
+            "METRIC_OBJECTIVE_MINIMIZE" | "METRIC_OBJECTIVE_MAXIMIZE"
+        )
+    {
+        return Err(invalid());
+    }
     let policy = policy(&c["policy"])?;
     let inputs = unique_map(c, "inputs", "sha256")?;
     let mut cases = BTreeMap::new();
@@ -219,10 +227,6 @@ pub fn prepare(c: &Value, repository: &Value, now: chrono::DateTime<chrono::Utc>
         crate::id(parent.as_str().ok_or_else(invalid)?)?;
     }
     let mut spec = c.clone();
-    spec.as_object_mut()
-        .ok_or_else(invalid)?
-        .remove("workloadConfirmation");
-    spec["workloadConfirmation"] = c["workloadConfirmation"].clone();
     spec["fingerprintSha256"] = json!(frozen.fingerprint());
     spec["environment"]["environmentSha256"] =
         json!(types::fingerprint(&cfg.conditions.environment).map_err(|_| invalid())?);
