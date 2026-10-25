@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 mod capture;
 mod domain;
+mod migration;
+pub use migration::migrate;
 pub mod normalize;
 mod query;
 pub mod sync;
