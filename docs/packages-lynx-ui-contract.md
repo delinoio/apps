@@ -88,9 +88,11 @@ selected panel has the `tabpanel` role and uses its tab label as its accessible
 name. Changing or clearing that label updates the panel's accessible name.
 
 `Button`, `Input`, `Checkbox` and `Switch` accept `focusRef`, a ReactLynx ref to
-`FocusHandle` (`focus()`). Dialog requires `returnFocusRef` pointing to its trigger;
-set `initialFocusRef` to the sole critical input when present. Render Dialog near
-the root, outside clipped or transformed containers. Use library controls inside
+`FocusHandle` (`focus()`). Callback refs receive `null` on replacement and unmount,
+followed by their returned cleanup when present. Replacing a callback ref alone
+does not restart `Input` automatic focus. Dialog requires `returnFocusRef` pointing
+to its trigger; set `initialFocusRef` to the sole critical input when present.
+Render Dialog near the root, outside clipped or transformed containers. Use library controls inside
 Dialog so its native focus scope can register them. Nested dialogs and arbitrary
 third-party focusable children require a separate host integration.
 
