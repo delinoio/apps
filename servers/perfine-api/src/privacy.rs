@@ -38,6 +38,66 @@ fn secret(text: &str) -> Result<()> {
     Ok(())
 }
 
+fn secret_in_decoded_text(text: &str) -> Result<()> {
+    // Plain logs may contain JSON-style escapes without being JSON documents. Decode ASCII
+    // escapes before scanning so a log prefix cannot conceal an existing secret needle.
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && bytes.get(i + 1) == Some(&b'u')
+            && let Some(hex) = bytes.get(i + 2..i + 6)
+            && let Ok(hex) = std::str::from_utf8(hex)
+            && let Ok(value) = u16::from_str_radix(hex, 16)
+            && let Ok(value) = u8::try_from(value)
+            && value.is_ascii()
+        {
+            decoded.push(value);
+            i += 6;
+            continue;
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    secret(std::str::from_utf8(&decoded).map_err(|_| invalid())?)
+}
+
+fn inspect_json(bytes: &[u8], raw: bool) -> Result<()> {
+    let mut d = serde_json::Deserializer::from_slice(bytes);
+    Inspect { raw }.deserialize(&mut d).map_err(|_| invalid())?;
+    d.end().map_err(|_| invalid())
+}
+
+fn complete_json_prefix(bytes: &[u8]) -> bool {
+    let mut d = serde_json::Deserializer::from_slice(bytes);
+    Inspect { raw: true }.deserialize(&mut d).is_ok()
+}
+
+fn text_label_prefix(line: &str) -> bool {
+    // A closed, non-JSON bracket label is ordinary log text (GoogleTest, timestamps,
+    // progress, or logger levels). JSON punctuation inside it retains fail-closed parsing.
+    let line = line.trim_start();
+    let Some(open) = line.chars().next() else {
+        return false;
+    };
+    let close = match open {
+        '[' => ']',
+        '{' => '}',
+        _ => return false,
+    };
+    let Some(end) = line.find(close) else {
+        return false;
+    };
+    let label = &line[1..end];
+    !label.is_empty()
+        && !label
+            .chars()
+            .any(|c| matches!(c, '[' | ']' | '{' | '}' | '"' | ','))
+        && (open == '[' || !label.contains(':'))
+        && inspect_json(&line.as_bytes()[..=end], true).is_err()
+}
+
 // Visit every JSON key and string, including duplicate keys and escaped values. A Value alone
 // discards overwritten keys, which could hide secrets in the original retained bytes.
 #[derive(Clone, Copy)]
@@ -134,13 +194,34 @@ pub fn content_allowed(bytes: &[u8], kind: &str) -> Result<()> {
         return Err(invalid());
     }
     secret(text)?;
-    if !raw || text.trim_start().starts_with(['{', '[']) {
-        // Do not fall back to plain text on malformed/deep JSON: escaped secrets must not
-        // evade inspection merely by exceeding the JSON parser's nesting limit.
-        let mut d = serde_json::Deserializer::from_slice(bytes);
-        Inspect { raw }.deserialize(&mut d).map_err(|_| invalid())?;
-        d.end().map_err(|_| invalid())?;
+    if !raw {
+        return inspect_json(bytes, false);
     }
+    if inspect_json(bytes, true).is_ok() {
+        return Ok(());
+    }
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let first = lines.next().unwrap_or("").trim_start();
+    if let Some(second) = lines.next()
+        && inspect_json(first.as_bytes(), true).is_ok()
+    {
+        if inspect_json(second.as_bytes(), true).is_ok()
+            && lines.all(|line| inspect_json(line.as_bytes(), true).is_ok())
+        {
+            return Ok(());
+        }
+        return Err(invalid());
+    }
+    if first.starts_with(['{', '[', '"']) && complete_json_prefix(first.as_bytes()) {
+        // A complete JSON value followed by non-JSON text on the same line is not a log label.
+        return Err(invalid());
+    }
+    if first.starts_with(['{', '[']) && !text_label_prefix(first) {
+        // A JSON-looking first line that fails single-document or NDJSON inspection remains
+        // ineligible, including truncated/deep JSON and mixed streams.
+        return Err(invalid());
+    }
+    secret_in_decoded_text(text)?;
     Ok(())
 }
 

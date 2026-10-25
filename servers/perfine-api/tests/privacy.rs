@@ -2,6 +2,7 @@
 use perfine_api::{evidence::content_allowed, hash};
 use std::io::Write;
 const RAW: &str = "ARTIFACT_KIND_RAW_PROFILE";
+const LOG: &str = "ARTIFACT_KIND_RAW_TEST_LOG";
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
@@ -140,6 +141,51 @@ fn json_escapes_and_duplicate_keys_do_not_hide_secrets_or_source() {
         .is_err()
     );
     assert!(content_allowed(br#"{"source\u005fcode":"fn hot() {}"}"#, RAW).is_ok());
+}
+
+#[test]
+fn raw_text_labels_and_ndjson_keep_json_and_secret_boundaries() {
+    for (text, kind) in [
+        ("[==========] Running 3 tests from 1 test suite.", LOG),
+        ("[INFO] starting build", LOG),
+        ("[2026-01-01T00:00:00Z] test_foo PASSED", LOG),
+        ("[gw0] [ 50%] PASSED ...", LOG),
+        ("[1/3] Compiling main.c", LOG),
+        ("{INFO} build ok", LOG),
+        ("[profile]\nevents: Ir\n...", RAW),
+        ("x[==========] Running 3 tests", LOG),
+        ("ok  \tpkg\t0.012s", LOG),
+        ("version: 1\nevents: Ir", RAW),
+        ("true benchmark started", LOG),
+        (r#"{"event":"start"}"#, LOG),
+        (r#"["start","pass"]"#, LOG),
+        ("{\"event\":\"start\"}\n{\"event\":\"pass\"}\n", LOG),
+    ] {
+        assert!(content_allowed(text.as_bytes(), kind).is_ok(), "{text}");
+    }
+    let deep = format!("{}0{}", "[".repeat(200), "]".repeat(200));
+    for text in [
+        "[INFO] password=hunter2",
+        r#"[INFO] ghp\u005ffixture"#,
+        r#"{INFO} api\u005fkey=fixture"#,
+        r#"{"name":"ghp\u005ffixture"}"#,
+        "[{\"a\":",
+        deep.as_str(),
+        "{\"event\":\"start\"}\n{\"event\":",
+        "{\"event\":\"start\"}\n[INFO] pass",
+        "true\n{\"event\":",
+        "{\"event\":\"start\"} trailing",
+        "\"start\" trailing",
+        "{\"event\":\"start\"}\n{\"token\":\"ghp\\u005ffixture\"}",
+    ] {
+        assert!(content_allowed(text.as_bytes(), LOG).is_err(), "{text}");
+    }
+    for text in ["[INFO] pass", "{INFO} build ok"] {
+        assert!(
+            content_allowed(text.as_bytes(), "ARTIFACT_KIND_PROFILE_SUMMARY").is_err(),
+            "{text}"
+        );
+    }
 }
 
 #[test]
