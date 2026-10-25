@@ -26,6 +26,8 @@ Authorized readers, experiment operators, publishers, space managers, and servic
 - On App removal, disconnection, or loss of execution authority: block new jobs, uploads, and publication, and request cancellation of running Actions. If cancellation is no longer permitted, display failure and instructions to cancel directly. Previously retained results stay private in the original space.
 - Fail closed when current authorization cannot be established. Feature availability, resource limits, and UI controls do not replace authorization checks.
 
+Connect errors keep their transport codes and credential-safe messages while `ErrorDetail.reason` identifies the recovery condition. Report unsupported major versions, deleted experiments, inactive connections, repository binding or admin denial, fingerprint mismatch, incomplete evidence, ineligible artifacts, missing raw consent, detected secrets, and unavailable cloud execution with their corresponding v1 reasons. `PUBLICATION_UNCERTAIN` applies when reconciliation requires operator inspection; a persisted `RECONCILING` state alone is not an RPC error. Use `TRANSIENT_FAILURE` for unavailable PostgreSQL, R2, or GitHub operations and `AUTHORITY_UNAVAILABLE` for unavailable Delcore or Logto authority checks.
+
 ### Deployment and operations
 
 Local development registers the API at `perfine-api.localhost` on fixed loopback port `46323`. The shared API launcher selects `perfine-api`; root development prepares `perfine-postgres` and passes its resolved database URL through the service-owned Turbo task after Infisical injection. The service uses `/perfine-api` development settings.

@@ -1,8 +1,28 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+use delino_protocol::perfine::v1::ErrorReason;
 use perfine_api::{evidence::content_allowed, hash};
 use std::io::Write;
 const RAW: &str = "ARTIFACT_KIND_RAW_PROFILE";
 const LOG: &str = "ARTIFACT_KIND_RAW_TEST_LOG";
+#[test]
+fn privacy_reasons_keep_safe_messages_and_precondition_codes() {
+    for bytes in [
+        b"password=fixture".as_slice(),
+        br#"{"value":"pass\u0077ord=fixture"}"#.as_slice(),
+    ] {
+        let fault = content_allowed(bytes, "ARTIFACT_KIND_RAW_TEST_LOG").unwrap_err();
+        assert_eq!(fault.reason, -(ErrorReason::SecretDetected as i32));
+        assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+        assert!(!fault.message.contains("fixture"));
+    }
+    let fault = content_allowed(&gzip(&profile(&["password=fixture"])), RAW).unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::SecretDetected as i32));
+    assert!(!fault.message.contains("fixture"));
+    let fault =
+        content_allowed(br#"{"diff":"content"}"#, "ARTIFACT_KIND_PROFILE_SUMMARY").unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::ArtifactIneligible as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+}
 fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();

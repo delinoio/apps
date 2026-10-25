@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use crate::{Fault, Result, hash};
+use delino_protocol::perfine::v1::ErrorReason;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::time::Duration;
@@ -9,6 +10,9 @@ pub struct R2 {
     pub access: String,
     pub secret: String,
     pub http: reqwest::Client,
+}
+fn transient(fault: Fault) -> Fault {
+    crate::error::domain(fault, ErrorReason::TransientFailure)
 }
 fn mac(key: &[u8], value: &str) -> Vec<u8> {
     let mut h = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key size");
@@ -58,10 +62,18 @@ impl R2 {
         let date = now.format("%Y%m%d").to_string();
         let time = now.format("%Y%m%dT%H%M%SZ").to_string();
         let scope = format!("{date}/auto/s3/aws4_request");
-        let host = reqwest::Url::parse(&self.endpoint).map_err(|_| Fault::unavailable())?;
+        let host =
+            reqwest::Url::parse(&self.endpoint).map_err(|_| transient(Fault::unavailable()))?;
         let host = match host.port() {
-            Some(port) => format!("{}:{port}", host.host_str().ok_or_else(Fault::unavailable)?),
-            None => host.host_str().ok_or_else(Fault::unavailable)?.to_owned(),
+            Some(port) => format!(
+                "{}:{port}",
+                host.host_str()
+                    .ok_or_else(|| transient(Fault::unavailable()))?
+            ),
+            None => host
+                .host_str()
+                .ok_or_else(|| transient(Fault::unavailable()))?
+                .to_owned(),
         };
         let path = format!(
             "/{}/{}",
@@ -108,12 +120,21 @@ impl R2 {
         ))
     }
     pub async fn read(&self, key: &str, limit: u64) -> Result<Vec<u8>> {
-        let mut response = self.http.get(self.signed("GET", key)?).send().await?;
+        let mut response = self
+            .http
+            .get(self.signed("GET", key)?)
+            .send()
+            .await
+            .map_err(|error| transient(error.into()))?;
         if !response.status().is_success() {
             return Err(Fault::precondition("artifact is unavailable"));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| transient(error.into()))?
+        {
             if bytes.len() as u64 + chunk.len() as u64 > limit {
                 return Err(Fault::quota());
             }
@@ -127,18 +148,24 @@ impl R2 {
             .put(self.signed("PUT", key)?)
             .body(bytes.to_vec())
             .send()
-            .await?;
+            .await
+            .map_err(|error| transient(error.into()))?;
         if !response.status().is_success() {
-            return Err(Fault::unavailable());
+            return Err(transient(Fault::unavailable()));
         }
         Ok(())
     }
     pub async fn delete(&self, key: &str) -> Result<()> {
-        let response = self.http.delete(self.signed("DELETE", key)?).send().await?;
+        let response = self
+            .http
+            .delete(self.signed("DELETE", key)?)
+            .send()
+            .await
+            .map_err(|error| transient(error.into()))?;
         if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
             Ok(())
         } else {
-            Err(Fault::unavailable())
+            Err(transient(Fault::unavailable()))
         }
     }
 }

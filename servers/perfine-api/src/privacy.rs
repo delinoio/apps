@@ -1,12 +1,22 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Inspect original evidence without rewriting it. Consent is checked by the upload transaction.
 use crate::{Fault, Result};
+use delino_protocol::perfine::v1::ErrorReason;
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
-use std::{fmt, io::Read};
+use std::{cell::Cell, fmt, io::Read};
 
 const MAX_DECODED: usize = 64 << 20;
 fn invalid() -> Fault {
-    Fault::precondition("uninspectable artifact; retain original locally or on GitHub")
+    crate::error::domain(
+        Fault::precondition("uninspectable artifact; retain original locally or on GitHub"),
+        ErrorReason::ArtifactIneligible,
+    )
+}
+fn secret_fault() -> Fault {
+    crate::error::domain(
+        Fault::precondition("secret detected; remove credentials before upload"),
+        ErrorReason::SecretDetected,
+    )
 }
 fn secret(text: &str) -> Result<()> {
     let lower = text.to_ascii_lowercase();
@@ -31,9 +41,7 @@ fn secret(text: &str) -> Result<()> {
     .iter()
     .any(|needle| lower.contains(needle))
     {
-        return Err(Fault::precondition(
-            "secret detected; remove credentials before upload",
-        ));
+        return Err(secret_fault());
     }
     Ok(())
 }
@@ -64,8 +72,20 @@ fn secret_in_decoded_text(text: &str) -> Result<()> {
 }
 
 fn inspect_json(bytes: &[u8], raw: bool) -> Result<()> {
+    let secret_found = Cell::new(false);
     let mut d = serde_json::Deserializer::from_slice(bytes);
-    Inspect { raw }.deserialize(&mut d).map_err(|_| invalid())?;
+    Inspect {
+        raw,
+        secret_found: &secret_found,
+    }
+    .deserialize(&mut d)
+    .map_err(|_| {
+        if secret_found.get() {
+            secret_fault()
+        } else {
+            invalid()
+        }
+    })?;
     d.end().map_err(|_| invalid())
 }
 
@@ -101,22 +121,26 @@ fn text_label_prefix(line: &str) -> bool {
 // Visit every JSON key and string, including duplicate keys and escaped values. A Value alone
 // discards overwritten keys, which could hide secrets in the original retained bytes.
 #[derive(Clone, Copy)]
-struct Inspect {
+struct Inspect<'a> {
     raw: bool,
+    secret_found: &'a Cell<bool>,
 }
-impl<'de> DeserializeSeed<'de> for Inspect {
+impl<'de> DeserializeSeed<'de> for Inspect<'_> {
     type Value = ();
     fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> std::result::Result<(), D::Error> {
         d.deserialize_any(self)
     }
 }
-impl<'de> Visitor<'de> for Inspect {
+impl<'de> Visitor<'de> for Inspect<'_> {
     type Value = ();
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("eligible evidence")
     }
     fn visit_str<E: de::Error>(self, s: &str) -> std::result::Result<(), E> {
-        secret(s).map_err(|_| E::custom("secret detected"))?;
+        secret(s).map_err(|_| {
+            self.secret_found.set(true);
+            E::custom("secret detected")
+        })?;
         if !self.raw && (s.contains("diff --git") || s.contains("@@ -")) {
             return Err(E::custom("source content is not eligible"));
         }
@@ -197,7 +221,11 @@ pub fn content_allowed(bytes: &[u8], kind: &str) -> Result<()> {
     if !raw {
         return inspect_json(bytes, false);
     }
-    if inspect_json(bytes, true).is_ok() {
+    if let Err(fault) = inspect_json(bytes, true) {
+        if fault.reason == -(ErrorReason::SecretDetected as i32) {
+            return Err(fault);
+        }
+    } else {
         return Ok(());
     }
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());

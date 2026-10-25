@@ -2,6 +2,7 @@
 //! Versioned wire-to-engine conversion, shared by preparation and evidence acceptance.
 use crate::evaluation::{evidence::Config, policy, types};
 use crate::{Fault, Result, integer, string};
+use delino_protocol::perfine::v1::ErrorReason;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -47,6 +48,12 @@ pub fn metric(p: &Value) -> Result<types::Metric> {
     })
 }
 pub fn policy(p: &Value) -> Result<policy::Policy> {
+    if crate::error::unsupported_major(p, "schemaVersion") {
+        return Err(crate::error::domain(
+            invalid(),
+            ErrorReason::UnsupportedVersion,
+        ));
+    }
     if integer(p, "schemaVersion") != 1 {
         return Err(invalid());
     }
@@ -85,6 +92,12 @@ pub fn policy(p: &Value) -> Result<policy::Policy> {
             policy::Policy::MeasurementsOnly
         }
         kind => {
+            if crate::error::unsupported_major(u, "engineSchemaVersion") {
+                return Err(crate::error::domain(
+                    invalid(),
+                    ErrorReason::UnsupportedVersion,
+                ));
+            }
             if integer(u, "engineSchemaVersion") != 1 {
                 return Err(invalid());
             }
@@ -164,6 +177,12 @@ fn unique_map(v: &Value, key: &str, value_key: &str) -> Result<Value> {
 }
 pub fn prepare(c: &Value, repository: &Value, now: chrono::DateTime<chrono::Utc>) -> Result<Value> {
     let env = &c["environment"];
+    if crate::error::unsupported_major(c, "schemaVersion") {
+        return Err(crate::error::domain(
+            invalid(),
+            ErrorReason::UnsupportedVersion,
+        ));
+    }
     if integer(c, "schemaVersion") != 1
         || !string(env, "environmentSha256").is_empty()
         || !string(&c["policy"], "policySha256").is_empty()
@@ -269,7 +288,10 @@ pub fn verify_spec(s: &Value, repository: &Value) -> Result<Config> {
         || canonical["policy"]["policySha256"] != s["policy"]["policySha256"]
         || canonical["environment"]["environmentSha256"] != s["environment"]["environmentSha256"]
     {
-        return Err(Fault::precondition("frozen engine fingerprint mismatch"));
+        return Err(crate::error::domain(
+            Fault::precondition("frozen engine fingerprint mismatch"),
+            ErrorReason::FingerprintMismatch,
+        ));
     }
     Ok(serde_json::from_str(string(&result, "engineConfigJson"))?)
 }

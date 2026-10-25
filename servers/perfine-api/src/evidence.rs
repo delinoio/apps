@@ -3,6 +3,7 @@
 //! must be in the upload. Hosted summaries are derived only after shared verification.
 use crate::evaluation::{evidence as engine, policy, types};
 use crate::{Fault, Result, hash, integer, string};
+use delino_protocol::perfine::v1::ErrorReason;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,22 +43,30 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
                 .any(|v| v["completion"] != "COMPLETION_STATE_COMPLETE")
         })
     {
-        return Err(Fault::precondition("evidence incomplete"));
+        return Err(crate::error::domain(
+            Fault::precondition("evidence incomplete"),
+            ErrorReason::EvidenceIncomplete,
+        ));
     }
-    let raw = bytes
-        .get(string(m, "engineArtifactName"))
-        .ok_or_else(|| Fault::precondition("engine artifact missing"))?;
+    let raw = bytes.get(string(m, "engineArtifactName")).ok_or_else(|| {
+        crate::error::domain(
+            Fault::precondition("engine artifact missing"),
+            ErrorReason::EvidenceIncomplete,
+        )
+    })?;
     let bundle: Bundle = serde_json::from_slice(raw)?;
     // Reject unmodeled nested JSON too: the core allows additive fields for local compatibility,
     // but the hosted privacy boundary cannot accept uninspected extensions.
     if serde_json::from_slice::<Value>(raw)? != serde_json::to_value(&bundle)? {
-        return Err(Fault::precondition(
-            "unmodeled engine fields are not eligible for hosting",
+        return Err(crate::error::domain(
+            Fault::precondition("unmodeled engine fields are not eligible for hosting"),
+            ErrorReason::ArtifactIneligible,
         ));
     }
     if !bundle.config.conditions.environment.variables.is_empty() {
-        return Err(Fault::precondition(
-            "environment variables must not be uploaded",
+        return Err(crate::error::domain(
+            Fault::precondition("environment variables must not be uploaded"),
+            ErrorReason::ArtifactIneligible,
         ));
     }
     let frozen = bundle.config.clone().freeze().map_err(engine_error)?;
@@ -79,8 +88,13 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
         ));
     }
 
-    if frozen.fingerprint().as_str() != string(m, "experimentFingerprintSha256")
-        || cfg.incremental_base.as_str() != string(m, "sourceBaseSha")
+    if frozen.fingerprint().as_str() != string(m, "experimentFingerprintSha256") {
+        return Err(crate::error::domain(
+            Fault::precondition("engine provenance mismatch"),
+            ErrorReason::FingerprintMismatch,
+        ));
+    }
+    if cfg.incremental_base.as_str() != string(m, "sourceBaseSha")
         || cfg.initial_base.as_str() != string(spec, "initialBaseSha")
         || cfg.conditions.harness.as_str() != string(m, "harnessSha")
     {
@@ -414,8 +428,9 @@ fn require_inspected_artifacts(m: &Value, inspected: &BTreeSet<String>) -> Resul
             "ARTIFACT_KIND_RAW_PROFILE" | "ARTIFACT_KIND_RAW_TEST_LOG"
         ) && !inspected.contains(string(artifact, "name"))
         {
-            return Err(Fault::precondition(
-                "unreferenced structured artifact is not eligible for hosting",
+            return Err(crate::error::domain(
+                Fault::precondition("unreferenced structured artifact is not eligible for hosting"),
+                ErrorReason::ArtifactIneligible,
             ));
         }
     }

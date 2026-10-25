@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use axum::{Json, Router, extract::Request, http::StatusCode, response::IntoResponse};
 use buffa::Message;
+use delino_protocol::perfine::v1::ErrorReason;
 use perfine_api::evaluation::{Limits, evidence as engine, policy, types::*};
 use perfine_api::{Server, auth::Actions, github::GitHub, storage::R2};
 use serde_json::{Value, json};
 use server_common::authority::Authority;
+use server_common::error::FaultSource;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
@@ -416,6 +418,17 @@ fn preparation_freezes_exact_policy_and_rejects_statistical_aliases() {
     let mut c = configuration(&spec);
     let repo = json!({"owner":"owner","name":"repo"});
     let now = chrono::Utc::now();
+    for (field, nested) in [("schemaVersion", false), ("schemaVersion", true)] {
+        let mut versioned = c.clone();
+        if nested {
+            versioned["policy"][field] = json!(2);
+        } else {
+            versioned[field] = json!(2);
+        }
+        let fault = perfine_api::preparation::prepare(&versioned, &repo, now).unwrap_err();
+        assert_eq!(fault.reason, -(ErrorReason::UnsupportedVersion as i32));
+        assert_eq!(fault.code, connectrpc::ErrorCode::InvalidArgument);
+    }
     let prepared = perfine_api::preparation::prepare(&c, &repo, now).unwrap();
     assert_eq!(
         prepared["specification"]["fingerprintSha256"],
@@ -452,7 +465,9 @@ fn preparation_freezes_exact_policy_and_rejects_statistical_aliases() {
     assert!(perfine_api::preparation::prepare(&c, &repo, now).is_err());
     let mut altered = spec.clone();
     altered["limits"]["candidateCount"] = json!(2);
-    assert!(perfine_api::preparation::verify_spec(&altered, &repo).is_err());
+    let fault = perfine_api::preparation::verify_spec(&altered, &repo).unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::FingerprintMismatch as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
 }
 #[test]
 fn policy_ratios_reject_non_numbers_without_changing_valid_fingerprints() {
@@ -588,6 +603,16 @@ fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
         .unwrap()
         .unwrap();
     assert_eq!(result["verdict"], "PERFORMANCE_VERDICT_PASS");
+    let mut incomplete = m.clone();
+    incomplete["completion"] = json!("COMPLETION_STATE_INCOMPLETE");
+    let fault = perfine_api::evidence::evaluate(&e, &incomplete, &bytes).unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::EvidenceIncomplete as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+    let mut mismatched = m.clone();
+    mismatched["experimentFingerprintSha256"] = json!("f".repeat(64));
+    let fault = perfine_api::evidence::evaluate(&e, &mismatched, &bytes).unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::FingerprintMismatch as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
     bytes.insert("base-measurement".into(), b"{}".to_vec());
     assert!(perfine_api::evidence::evaluate(&e, &m, &bytes).is_err());
     assert!(
@@ -756,15 +781,24 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let creates = Arc::new(Mutex::new(0u32));
     let creation_override = Arc::new(Mutex::new(None::<Value>));
     let create_failure = Arc::new(Mutex::new(None::<&'static str>));
+    let admin_allowed = Arc::new(Mutex::new(true));
+    let provider_outage = Arc::new(Mutex::new(None::<&'static str>));
     let response = creation_override.clone();
     let failure = create_failure.clone();
+    let admin_permission = admin_allowed.clone();
+    let outage = provider_outage.clone();
     let (p, posts) = (pulls.clone(), creates.clone());
     let cancel_posts = Arc::new(Mutex::new(Vec::<String>::new()));
     let cancels = cancel_posts.clone();
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,failure,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),failure.clone(),cancels.clone());async move{
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,failure,admin_permission,outage,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),failure.clone(),admin_permission.clone(),outage.clone(),cancels.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
+  }
+  if (*outage.lock().unwrap() == Some("github") && path == "/repositories/42")
+   || (*outage.lock().unwrap() == Some("delcore") && path.ends_with("/GetTenantStates"))
+   || (*outage.lock().unwrap() == Some("logto") && path == "/token") {
+   return StatusCode::SERVICE_UNAVAILABLE.into_response();
   }
   let q:Value=serde_json::from_slice(&body).unwrap_or(json!({}));let value=match path.as_str(){
    "/token"=>json!({"access_token":"fixture-service","expires_in":3600}),
@@ -806,7 +840,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    path if path.starts_with("/repos/owner/repo/compare/")=>json!({"total_commits":2,"status":"ahead","base_commit":{"sha":"a".repeat(40)},"merge_base_commit":{"sha":"a".repeat(40)},"commits":[{"sha":"e".repeat(40)},{"sha":"d".repeat(40)}],"files":[{"filename":"src/hot.rs","status":"modified"}]}),
    path if path.starts_with("/repos/owner/repo/commits/")=>{let sha=path.rsplit('/').next().unwrap();json!({"sha":sha,"parents":[{"sha":if sha=="e".repeat(40){"a".repeat(40)}else{"e".repeat(40)}}],"files":[{"filename":"src/hot.rs","status":"modified"}]})},
    "/user"=>json!({"id":7}),
-   "/repositories/42"=>json!({"id":42,"full_name":"owner/repo","permissions":{"admin":true}}),
+   "/repositories/42"=>json!({"id":42,"full_name":"owner/repo","permissions":{"admin":*admin_permission.lock().unwrap()}}),
    "/app/installations/1/access_tokens"=>json!({"token":"fixture-installation"}),
    _=>return StatusCode::NOT_FOUND.into_response(),
   };Json(value).into_response()
@@ -974,6 +1008,52 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         .execute(&db)
         .await
         .unwrap();
+    *admin_allowed.lock().unwrap() = false;
+    let fault = server.github.admin(&c, "github-fixture").await.unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::RepositoryAdminRequired as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::PermissionDenied);
+    *admin_allowed.lock().unwrap() = true;
+    let fault = call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap_err();
+    assert_eq!(
+        fault.reason,
+        -(ErrorReason::RepositoryAlreadyConnected as i32)
+    );
+    assert_eq!(fault.code, connectrpc::ErrorCode::AlreadyExists);
+    *provider_outage.lock().unwrap() = Some("github");
+    let fault = server.github.current(&c).await.unwrap_err();
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    assert_eq!(fault.source, FaultSource::GitHub);
+    *provider_outage.lock().unwrap() = Some("delcore");
+    let fault = server.authority.states(&[space.clone()]).await.unwrap_err();
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    assert_eq!(fault.source, FaultSource::Application);
+    *provider_outage.lock().unwrap() = Some("logto");
+    let uncached_authority = Authority::new(
+        http.clone(),
+        server.github.base.clone(),
+        format!("{}/token", server.github.base),
+        "resource".into(),
+        "client".into(),
+        "fixture".into(),
+    );
+    let fault = uncached_authority.service_token().await.unwrap_err();
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    assert_eq!(fault.source, FaultSource::Application);
+    *provider_outage.lock().unwrap() = None;
+    *fail_delete.lock().unwrap() = true;
+    let fault = server.storage.delete("unavailable").await.unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::TransientFailure as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    *fail_delete.lock().unwrap() = false;
+    let closed = sqlx::PgPool::connect_lazy(&url).unwrap();
+    closed.close().await;
+    server.db = closed;
+    let fault = call(&server, &space, "ListConnections", json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
+    assert_eq!(fault.source, FaultSource::Persistence);
+    server.db = db.clone();
     // Block reconciliation after its candidate query, then commit a reconnect.
     // It must inspect the replacement state after acquiring the space lock.
     let race_run = uuid::Uuid::now_v7();
@@ -1075,6 +1155,70 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
     let eid = uid();
     let (spec, m, bytes) = fixture(&eid);
+    let mut unsupported = m.clone();
+    unsupported["schemaVersion"] = json!(2);
+    let fault = call(
+        &server,
+        &space,
+        "CheckUploadEligibility",
+        json!({"connectionId":cid,"manifest":unsupported}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::UnsupportedVersion as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::InvalidArgument);
+    sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{state}','\"CONNECTION_STATE_DISCONNECTED\"') WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+    let fault = call(
+        &server,
+        &space,
+        "CheckUploadEligibility",
+        json!({"connectionId":cid,"manifest":m}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::ConnectionInactive as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+    sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{state}','\"CONNECTION_STATE_CONNECTED\"') WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
+    let mut ineligible = m.clone();
+    ineligible["artifacts"][0]["sizeBytes"] = json!("0");
+    checksum(&mut ineligible);
+    let fault = call(&server, &space, "BeginUpload", json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":ineligible,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::ArtifactIneligible as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+    let mut raw_without_consent = m.clone();
+    raw_without_consent["artifacts"].as_array_mut().unwrap().push(json!({"name":"native-profile","kind":"ARTIFACT_KIND_RAW_PROFILE","mediaType":"text/plain","sizeBytes":"8","sha256":perfine_api::hash(b"profile"),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":false}));
+    checksum(&mut raw_without_consent);
+    let fault = call(&server, &space, "BeginUpload", json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":raw_without_consent,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::ConsentRequired as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+    let cloud_preparation = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO perfine_preparations(space,connection,specification,id) VALUES($1,$2,$3,$4)",
+    )
+    .bind(uuid::Uuid::parse_str(&space).unwrap())
+    .bind(uuid::Uuid::parse_str(cid).unwrap())
+    .bind(&spec)
+    .bind(cloud_preparation)
+    .execute(&db)
+    .await
+    .unwrap();
+    let fault = call(
+        &server,
+        &space,
+        "StartExperiment",
+        json!({"connectionId":cid,"experimentId":uid(),"specification":spec}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::CloudUnavailable as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+    sqlx::query("DELETE FROM perfine_preparations WHERE id=$1")
+        .bind(cloud_preparation)
+        .execute(&db)
+        .await
+        .unwrap();
     // The connection creator has GitHub actor 7; actor 99 can run this authorized org workflow.
     let claims = json!({"iss":"https://token.actions.githubusercontent.com","aud":"https://perfine.api.delino.io","sub":"repo:owner/repo:ref:refs/heads/main","iat":chrono::Utc::now().timestamp(),"nbf":chrono::Utc::now().timestamp()-1,"exp":chrono::Utc::now().timestamp()+300,"repository":"owner/repo","repository_id":"42","run_id":"7","run_attempt":"2","sha":"d".repeat(40),"workflow_sha":"c".repeat(40),"ref":"refs/heads/main","workflow_ref":"owner/repo/.github/workflows/perfine.yml@refs/heads/main","event_name":"workflow_dispatch","actor_id":"99"});
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
@@ -1423,31 +1567,39 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             )
             .await
             .unwrap();
-            assert!(
-                call(
-                    &server,
-                    &space,
-                    "CompleteUpload",
-                    json!({"uploadId":begin["upload"]["id"]})
-                )
-                .await
-                .is_err()
-            );
+            let fault = call(
+                &server,
+                &space,
+                "CompleteUpload",
+                json!({"uploadId":begin["upload"]["id"]}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(fault.reason, -(ErrorReason::ConsentRequired as i32));
+            assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
             // Restore the fixture's pre-run consent record only in the disposable test DB.
             sqlx::query("UPDATE perfine_connections SET data=jsonb_set(data,'{consent}', $1) WHERE id=$2").bind(json!({"revision":"3","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"],"effectiveAt":"2020-01-01T00:00:00Z"})).bind(uuid::Uuid::parse_str(cid).unwrap()).execute(&db).await.unwrap();
         }
         if matches!(source, "secret.go" | "structured.rs") {
             *fail_delete.lock().unwrap() = true;
-            assert!(
-                call(
-                    &server,
-                    &space,
-                    "CompleteUpload",
-                    json!({"uploadId":begin["upload"]["id"]})
-                )
-                .await
-                .is_err()
+            let fault = call(
+                &server,
+                &space,
+                "CompleteUpload",
+                json!({"uploadId":begin["upload"]["id"]}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                fault.reason,
+                -(if source == "secret.go" {
+                    ErrorReason::SecretDetected
+                } else {
+                    ErrorReason::ArtifactIneligible
+                } as i32)
             );
+            assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
+            assert!(!fault.message.contains("ghp_x"));
             let rejected: i64 = sqlx::query_scalar("SELECT count(*) FROM perfine_rejected_objects")
                 .fetch_one(&db)
                 .await
@@ -2236,16 +2388,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .await
     .unwrap();
     *grants.lock().unwrap() = vec!["read".into(), "experiment".into(), "manage".into()];
-    assert!(
-        call(
-            &server,
-            &space,
-            "GetExperiment",
-            json!({"experimentId":eid})
-        )
-        .await
-        .is_err()
-    );
+    let fault = call(
+        &server,
+        &space,
+        "GetExperiment",
+        json!({"experimentId":eid}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(fault.reason, -(ErrorReason::Deleted as i32));
+    assert_eq!(fault.code, connectrpc::ErrorCode::FailedPrecondition);
     assert!(call(&server, &space, "BeginUpload", q).await.is_err());
     sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
         .execute(&db)
