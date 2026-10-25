@@ -87,3 +87,49 @@ Change protocol/local-store/app/distribution contracts together for command, sch
 - [Repository defaults](repository-defaults.md)
 - [Protocol](protos-lane-v1-contract.md)
 - [Server](servers-lane-api-contract.md)
+
+## Desktop helper and approval arguments
+
+The executable entry point is `go build ./cmds/lane`. `lane --version` prints
+`lane 0.1.0`; release builds can set `main.version` with Go linker flags.
+`--help` lists command arguments without opening storage or requiring credentials.
+
+Desktop hosts use the following helper interfaces:
+
+- `lane --json --space <uuid> sync connect --redirect-uri <uri>` returns
+  `authorizationUrl` and `challengeId`. The host opens the URL in the browser.
+  `--endpoint <url>` selects the approval server explicitly; the default is the
+  production Lane API. The callback URI must be registered by that server.
+- `lane --json --space <original-space-uuid> sync callback <callback-uri>` checks
+  the stored approval state and PKCE verifier, stores credentials in OS credential
+  storage, and returns the selected `spaceId` and `deviceId`. It never prints tokens.
+  Approval binds the existing installation device ID. It must not replace the
+  registry device ID with a new server-generated value.
+- `lane --space <uuid> sync run` runs the supervised worker. `--once` runs one
+  bounded upload batch and drains available pull pages. SIGINT or SIGTERM stops
+  the worker and releases its lease. Window closure does not stop this process.
+- `lane --json --space <uuid> sync disconnect --retention keep-local|remove-local`
+  requires an explicit local-retention choice.
+- `lane --remote --expected-space <uuid> --json rpc <Method> --request-json -`
+  reads one typed ProtoJSON request from stdin. Literal JSON is also accepted.
+  The helper calls the generated Connect method. `--expected-space` verifies the
+  active registry selection before dispatch and pins that account for the request;
+  a mismatch returns FORBIDDEN. It does not select a different space. Public
+  `--space` remains invalid with `--remote`.
+
+Typed commands also accept `--request-json` for complete nested requests, including
+conflict resolutions and event-completion tasks. Ordinary task edits read the full
+snapshot and preserve unchanged fields, but still submit the caller's required
+`--expected-version`. The read cannot make a stale save unconditional.
+
+Account deletion is a two-step operation. `data delete-everywhere` or
+`data clear-server`, with `--remote --confirmed-account-id`, starts browser
+reauthentication and returns its authorization URL and challenge. After browser
+approval, repeat the command with `--challenge-id` and `--reauth-callback` to
+exchange the bound proof and perform deletion. A returned authorization URL is
+not a completed deletion. Direct typed deletion calls still require the server's
+valid, one-use proof.
+
+The CLI shares `logs/.rotation.lock` with native writers. POSIX participants take
+an exclusive `flock`; Windows participants take an exclusive `LockFileEx` lock
+on byte zero for length one. Append and retention pruning occur under this lock.

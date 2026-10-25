@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mattn/go-isatty"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -184,7 +186,7 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 		}
 	}
 	// Explicit flags override fields in the optional typed request object.
-	mapping := map[string]string{"id": "id", "url": "url", "display-name": "displayName", "title": "title", "description": "description", "prompt": "prompt", "repository-id": "repositoryId", "repository-url": "repositoryUrl", "expected-version": "expectedVersionId", "source-version": "sourceVersionId", "search": "search", "device-id": "deviceId", "connection-id": "connectionId", "name": "name", "lease-token": "leaseToken", "error-reason": "errorReason", "expected-revision": "expectedRevision", "confirmed-account-id": "confirmedAccountId", "reauth-proof": "reauthProof", "account-id": "accountId", "kind": "kind"}
+	mapping := map[string]string{"id": "id", "url": "url", "display-name": "displayName", "title": "title", "description": "description", "prompt": "prompt", "repository-id": "repositoryId", "repository-url": "repositoryUrl", "expected-version": "expectedVersionId", "source-version": "sourceVersionId", "search": "search", "device-id": "deviceId", "connection-id": "connectionId", "name": "name", "lease-token": "leaseToken", "error-reason": "errorReason", "expected-revision": "expectedRevision", "confirmed-account-id": "confirmedAccountId", "reauth-proof": "reauthProof", "account-id": "accountId", "kind": "kind", "reauth-callback": "reauthCallback", "challenge-id": "challengeId"}
 	for k, f := range mapping {
 		if v, ok := flags[k]; ok {
 			body[f] = v[len(v)-1]
@@ -343,6 +345,18 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 			body["task"] = task
 		}
 	}
+
+	required := map[string][]string{
+		"GetRepository": {"id"}, "CreateRepository": {"url"}, "SaveRepository": {"id", "expectedVersionId", "url"}, "DeleteRepository": {"id"},
+		"GetTask": {"id"}, "CreateTask": {"repository", "title"}, "SaveTask": {"id", "expectedVersionId", "task"}, "SetProgress": {"id", "expectedVersionId", "progress"}, "SetProposal": {"id", "expectedVersionId", "proposal"}, "RestorePrompt": {"id", "expectedVersionId", "sourceVersionId"}, "DeleteTask": {"id"}, "ListHistory": {"id"}, "ResolveConflict": {"id", "expectedHeadIds", "resolved"},
+		"DisconnectSync": {"retention"}, "SyncCallback": {"callbackUri"}, "SetNotificationPreferences": {"enabled"}, "DisconnectDevice": {"deviceId"}, "RevokeConnection": {"connectionId"},
+		"CreateReceiver": {"repositoryId", "name"}, "SaveReceiver": {"id", "expectedRevision", "repositoryId", "name"}, "RotateReceiverKey": {"id", "expectedRevision"}, "DeleteReceiver": {"id"}, "GetEvent": {"id"}, "DeleteEvent": {"id"}, "ClaimEvent": {"id"}, "RenewEventLease": {"id", "leaseToken"}, "ReleaseEventLease": {"id", "leaseToken"}, "CompleteEvent": {"id", "leaseToken"}, "ReopenEvent": {"id", "expectedRevision"}, "ConflictGet": {"id"},
+	}
+	for _, field := range required[method] {
+		if value, exists := body[field]; !exists || value == nil || value == "" {
+			return 2, fmt.Errorf("%s requires %s; use --help", key, field)
+		}
+	}
 	if d := api.Descriptor(method); d != nil {
 		b, _ := json.Marshal(body)
 		if _, e := api.Decode(method, b); e != nil {
@@ -371,6 +385,10 @@ func (a App) output(v any, opt Options) error {
 	var pretty any
 	if e = json.Unmarshal(b, &pretty); e != nil {
 		return e
+	}
+	if f, ok := a.Out.(*os.File); ok && opt.Color != "never" && os.Getenv("NO_COLOR") == "" && isatty.IsTerminal(f.Fd()) {
+		fmt.Fprint(a.Out, "\x1b[36m")
+		defer fmt.Fprint(a.Out, "\x1b[0m")
 	}
 	return human(a.Out, pretty, "")
 }
