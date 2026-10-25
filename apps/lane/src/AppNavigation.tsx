@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
-import handrailIcon from "../assets/handrail-icon.png?inline";
+import realqaIcon from "../assets/realqa-icon.png?inline";
 import laneIcon from "../assets/icon-source.png?inline";
 import paceIcon from "../assets/pace-icon.png?inline";
 
 export enum MiniApp {
   Lane = "Lane",
   Pace = "Pace",
-  Handrail = "Handrail",
+  RealQA = "RealQA",
 }
 
 // Inline the artwork so packaged native hosts do not need a separate image URL.
@@ -22,11 +22,7 @@ export function AppIcon({ app }: { app: MiniApp }) {
       ) : app === MiniApp.Pace ? (
         <image className="pace-artwork" src={paceIcon} mode="aspectFit" />
       ) : (
-        <image
-          className="handrail-artwork"
-          src={handrailIcon}
-          mode="aspectFit"
-        />
+        <image className="realqa-artwork" src={realqaIcon} mode="aspectFit" />
       )}
     </view>
   );
@@ -41,7 +37,7 @@ export function AppRail({
 }) {
   return (
     <view className="app-rail">
-      {[MiniApp.Lane, MiniApp.Pace, MiniApp.Handrail].map((app) => (
+      {[MiniApp.Lane, MiniApp.Pace, MiniApp.RealQA].map((app) => (
         <view
           key={app}
           className={`button app-switch ${selected === app ? "selected" : ""}`}
