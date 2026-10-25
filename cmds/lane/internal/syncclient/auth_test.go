@@ -235,3 +235,63 @@ func TestReauthenticationProofRequiresMatchingChallenge(t *testing.T) {
 		t.Fatalf("proof: %q %v %d", proof, e, calls)
 	}
 }
+
+func TestCompleteStoreRejectsContentChangeAndWrongAccount(t *testing.T) {
+	for _, scenario := range []string{"content", "account"} {
+		t.Run(scenario, func(t *testing.T) {
+			s := openTestStore(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(testCredential("")) }))
+			defer server.Close()
+			a := Auth{Credentials: &memoryCredentials{}, CredentialLockRoot: t.TempDir()}
+			expected := "account"
+			if scenario == "account" {
+				expected = "different"
+			}
+			approval, e := a.BeginStore(context.Background(), s, server.URL, "lane://auth/callback", expected, false)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if scenario == "content" {
+				enqueue(t, s, "changed", version("task", "v"))
+			}
+			if _, e = a.CompleteStore(context.Background(), s, "lane://auth/callback?code=x&state="+approval.ChallengeID); e == nil {
+				t.Fatal("changed approval context accepted")
+			}
+		})
+	}
+}
+
+func TestConcurrentRefreshUsesOneRotatingToken(t *testing.T) {
+	vault := &memoryCredentials{}
+	calls := 0
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		c := testCredential("")
+		c.AccessToken = "fresh"
+		json.NewEncoder(w).Encode(c)
+	}))
+	defer server.Close()
+	a := Auth{Credentials: vault, CredentialLockRoot: t.TempDir()}
+	c := testCredential(server.URL)
+	c.ExpiresAt = time.Now().Add(-time.Hour)
+	if e := a.Save(context.Background(), "space", "device", c); e != nil {
+		t.Fatal(e)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if token, e := a.Token(context.Background(), "space", "device", c.Issuer, c.AccountID, c.TenantID); e != nil || token != "fresh" {
+				t.Errorf("refresh=%s %v", token, e)
+			}
+		}()
+	}
+	wg.Wait()
+	if calls != 1 {
+		t.Fatalf("rotating token replayed %d times", calls)
+	}
+}

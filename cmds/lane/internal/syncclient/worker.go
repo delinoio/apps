@@ -110,7 +110,7 @@ func (w *Worker) lease(ctx context.Context) error {
 			return e
 		}
 		if removed == "1" {
-			return ErrDisconnected
+			return ErrAccountDeleted
 		}
 		owner, err := meta(ctx, c, "sync_owner")
 		if err != nil {
@@ -173,6 +173,9 @@ func (w *Worker) release() error {
 // Authentication and network errors never remove pending mutations.
 func (w *Worker) Run(ctx context.Context, once bool) (err error) {
 	if err = w.lease(ctx); err != nil {
+		if errors.Is(err, ErrAccountDeleted) && w.options.OnAccountDeleted != nil {
+			return errors.Join(err, w.options.OnAccountDeleted(ctx))
+		}
 		return err
 	}
 	defer func() {
@@ -194,6 +197,9 @@ func (w *Worker) Run(ctx context.Context, once bool) (err error) {
 	delay := w.options.PollInterval
 	for {
 		err = w.cycle(ctx)
+		if err != nil && ctx.Err() == nil && !errors.Is(err, ErrAccountDeleted) {
+			err = errors.Join(err, w.recordFailure(ctx, err))
+		}
 		if once || ctx.Err() != nil {
 			return err
 		}
@@ -291,6 +297,9 @@ func (w *Worker) cycle(ctx context.Context) error {
 	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
 		if err := w.guard(ctx, c); err != nil {
 			return err
+		}
+		if e := putMeta(ctx, c, "sync_error_reason", ""); e != nil {
+			return e
 		}
 		if err := putMeta(ctx, c, "last_sync_at_us", strconv.FormatInt(time.Now().UnixMicro(), 10)); err != nil {
 			return err
@@ -484,4 +493,37 @@ func (w *Worker) watch(ctx context.Context, updates chan<- struct{}) {
 		case <-timer.C:
 		}
 	}
+}
+
+func (w *Worker) recordFailure(ctx context.Context, cause error) error {
+	reason := lanev1.ErrorReason_ERROR_REASON_DEPENDENCY_UNAVAILABLE
+	switch {
+	case errors.Is(cause, ErrStaleEpoch) || errors.Is(cause, ErrReconnectRequired):
+		reason = lanev1.ErrorReason_ERROR_REASON_STALE_EPOCH
+	case errors.Is(cause, ErrUnsupportedFormat):
+		reason = lanev1.ErrorReason_ERROR_REASON_UNSUPPORTED_FORMAT
+	case errors.Is(cause, ErrAccountMismatch) || errors.Is(cause, ErrDisconnected):
+		reason = lanev1.ErrorReason_ERROR_REASON_FORBIDDEN
+	case connect.CodeOf(cause) == connect.CodeUnauthenticated:
+		reason = lanev1.ErrorReason_ERROR_REASON_UNAUTHENTICATED
+	case connect.CodeOf(cause) == connect.CodePermissionDenied:
+		reason = lanev1.ErrorReason_ERROR_REASON_FORBIDDEN
+	case errors.Is(cause, ErrLeaseLost) || errors.Is(cause, ErrLeaseHeld):
+		return nil
+	}
+	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		if e := w.guard(ctx, c); e != nil {
+			return e
+		}
+		if reason == lanev1.ErrorReason_ERROR_REASON_STALE_EPOCH {
+			if e := putMeta(ctx, c, "reconnect_required", "1"); e != nil {
+				return e
+			}
+		}
+		if e := putMeta(ctx, c, "sync_error_reason", reason.String()); e != nil {
+			return e
+		}
+		_, e := c.ExecContext(ctx, "INSERT INTO changes(change_kind) VALUES(4)")
+		return e
+	})
 }

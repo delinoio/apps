@@ -98,3 +98,22 @@ func TestRejectedProvisionalResolutionIsHistoryOnly(t *testing.T) {
 		t.Fatal("rejected history lost")
 	}
 }
+
+func TestAccountDeletionCleanupResumesAfterCrash(t *testing.T) {
+	s := openTestStore(t)
+	if _, e := s.db.Exec("INSERT INTO store_meta VALUES('account_deleted','1')"); e != nil {
+		t.Fatal(e)
+	}
+	w := worker(t, s, &service{})
+	called := false
+	w.options.OnAccountDeleted = func(ctx context.Context) error {
+		called = true
+		return s.WithWrite(ctx, func(c *sql.Conn) error { return putMeta(ctx, c, "cleanup", "done") })
+	}
+	if e := w.Run(context.Background(), true); !errors.Is(e, ErrAccountDeleted) {
+		t.Fatalf("deletion error: %v", e)
+	}
+	if !called {
+		t.Fatal("durable cleanup marker ignored")
+	}
+}
