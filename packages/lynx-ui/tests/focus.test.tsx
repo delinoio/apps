@@ -535,6 +535,41 @@ it("does not write back an accepted native edit but restores a rejected edit", a
   expect(setValueCalls()[1]?.[2]).toEqual({ value: "Alicia" });
 });
 
+it("restores a controlled value when an earlier host write is still pending", async () => {
+  let hostValue = "";
+  const writes: Array<{ value: string; settle: () => void }> = [];
+  rstest
+    .spyOn(theme, "invoke")
+    .mockImplementation((_node, method, params, _environment, onSuccess) => {
+      if (method !== "setValue") return;
+      const value = String(params.value);
+      writes.push({
+        value,
+        settle: () => {
+          hostValue = value;
+          onSuccess?.();
+        },
+      });
+    });
+  const props = {
+    accessibilityLabel: "Name",
+    onValueChange: () => {},
+  };
+  const { rerender } = render(<Input {...props} value="A" />);
+  await waitFor(() => expect(writes).toHaveLength(1));
+  writes[0].settle();
+
+  rerender(<Input {...props} value="B" />);
+  await waitFor(() => expect(writes).toHaveLength(2));
+  rerender(<Input {...props} value="A" />);
+  await waitFor(() => expect(writes).toHaveLength(3));
+
+  writes[1].settle();
+  expect(hostValue).toBe("B");
+  writes[2].settle();
+  expect(hostValue).toBe("A");
+});
+
 it("uses Enter and Space without activating repeated keys", () => {
   const action = rstest.fn();
   const { container } = render(<Button onPress={action}>Save</Button>);

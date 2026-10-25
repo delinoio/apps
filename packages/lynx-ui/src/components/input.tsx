@@ -76,6 +76,8 @@ export function Input({
   const focus = useControlFocus(disabled, FocusKind.Input, focusRef, autoFocus);
   const environment = useEnvironment();
   const nativeValue = useRef<string | null>(null);
+  const pendingWrite = useRef<{ id: number; value: string } | null>(null);
+  const nextWriteId = useRef(0);
   const inputVersion = useRef(0);
   const [edit, setEdit] = useState(0);
   // Lynx input is initialized by default-value. Later controlled updates require
@@ -83,17 +85,26 @@ export function Input({
   // Keep this bridge until Lynx exposes a controlled value attribute on all hosts.
   useEffect(() => {
     const node = focus.node.current;
-    if (!node || nativeValue.current === value) return;
+    const pending = pendingWrite.current;
+    const hasConflictingPendingWrite =
+      pending !== null && pending.value !== value;
+    if (!node || (nativeValue.current === value && !hasConflictingPendingWrite))
+      return;
     let active = true;
     const version = inputVersion.current;
+    const writeId = ++nextWriteId.current;
+    pendingWrite.current = { id: writeId, value };
     invoke(node, "setValue", { value }, environment, () => {
       // A failed or superseded request must not mark the current host as synced.
       if (
         active &&
         focus.node.current === node &&
-        inputVersion.current === version
-      )
+        inputVersion.current === version &&
+        pendingWrite.current?.id === writeId
+      ) {
         nativeValue.current = value;
+        pendingWrite.current = null;
+      }
     });
     return () => {
       active = false;
