@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
+import laneIcon from "../assets/icon-source.png?inline";
 
 export enum MiniApp {
   Lane = "Lane",
@@ -7,7 +8,7 @@ export enum MiniApp {
   Handrail = "Handrail",
 }
 
-// Use native views for the marks so the same icons work without an SVG host.
+// Inline the artwork so packaged native hosts do not need a separate image URL.
 export function AppIcon({ app }: { app: MiniApp }) {
   return (
     <view
@@ -15,7 +16,7 @@ export function AppIcon({ app }: { app: MiniApp }) {
       accessibility-elements-hidden
     >
       {app === MiniApp.Lane ? (
-        <text className="lane-ribbon">▰</text>
+        <image className="lane-icon" src={laneIcon} mode="aspectFit" />
       ) : app === MiniApp.Pace ? (
         <>
           <view className="pace-dial" />
