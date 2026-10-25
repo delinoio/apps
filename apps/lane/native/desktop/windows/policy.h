@@ -2,6 +2,7 @@
 #pragma once
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,6 +19,16 @@ inline bool UUID(std::string_view value) {
   }
   return true;
 }
+struct Reauthentication {
+  std::string space, account, mode, challenge;
+  uint64_t generation = 0;
+  bool ready = false;
+  bool Matches(const std::string& requested_space, const std::string& requested_account,
+               const std::string& requested_mode, uint64_t current_generation) const {
+    return ready && !challenge.empty() && generation == current_generation &&
+        space == requested_space && account == requested_account && mode == requested_mode;
+  }
+};
 enum class RouteKind { Open, Repository, Task, Callback };
 struct Route { RouteKind kind; std::string id; std::string uri; };
 inline bool ParseRoute(const std::string& uri, const std::string& scheme, Route& route) {
@@ -38,6 +49,12 @@ inline bool ParseRoute(const std::string& uri, const std::string& scheme, Route&
   // this allowlist is not authorization. Never forward callback data to JS.
   const std::string callback = "auth/callback?";
   if (path.compare(0, callback.size(), callback) != 0 || path.find('#') != std::string::npos) return false;
+  const std::string reauth = callback + "reauth_challenge=";
+  if (path.compare(0, reauth.size(), reauth) == 0) {
+    const auto challenge = path.substr(reauth.size());
+    if (!UUID(challenge)) return false;
+    route = {RouteKind::Callback, challenge, uri}; return true;
+  }
   bool state = false, code = false, error = false;
   auto query = path.substr(callback.size());
   while (!query.empty()) {

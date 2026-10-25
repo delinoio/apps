@@ -12,6 +12,16 @@ int main() {
   assert(!UUID("019a1700-1234-4abc-8def-0123456789ab"));
   assert(!UUID("019a1700-1234-7abc-7def-0123456789ab"));
   assert(!UUID("019A1700-1234-7abc-8def-0123456789ab"));
+  Reauthentication reauth{id, "account", "mode", id, 2, false};
+  assert(!reauth.Matches(id, "account", "mode", 2));
+  reauth.ready = true;
+  assert(reauth.Matches(id, "account", "mode", 2));
+  assert(!reauth.Matches(id, "account", "mode", 3));
+  assert(!reauth.Matches("other", "account", "mode", 2));
+  assert(!reauth.Matches(id, "other", "mode", 2));
+  assert(!reauth.Matches(id, "account", "other", 2));
+  reauth.challenge.clear();
+  assert(!reauth.Matches(id, "account", "mode", 2));
   Route route;
   assert(ParseRoute("lane://open", "lane", route) && route.kind == RouteKind::Open);
   assert(ParseRoute("lane-dev://", "lane-dev", route));
@@ -19,6 +29,10 @@ int main() {
   assert(ParseRoute("lane://repository/" + id, "lane", route) && route.kind == RouteKind::Repository);
   assert(ParseRoute("lane://auth/callback?state=abc&code=def%20ghi", "lane", route) && route.kind == RouteKind::Callback);
   assert(ParseRoute("lane://auth/callback?error=access_denied&state=abc", "lane", route));
+  assert(ParseRoute("lane://auth/callback?reauth_challenge=" + id, "lane", route) && route.id == id);
+  assert(!ParseRoute("lane://auth/callback?reauth_challenge=" + id + "&code=secret", "lane", route));
+  assert(!ParseRoute("lane://auth/callback?reauth_challenge=" + id + "&reauth_challenge=" + id, "lane", route));
+  assert(!ParseRoute("lane://auth/callback?reauth_challenge=invalid", "lane", route));
   for (const auto& invalid : {
       "https://open", "lane-dev://open", "lane://open#fragment", "lane://decision/x",
       "lane://task/../x", "lane://task/%30", "lane://user@open", "lane://open:90",

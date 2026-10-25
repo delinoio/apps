@@ -6,6 +6,7 @@
 #include "serial_worker.h"
 #include "../../store/lane_store.h"
 #include <set>
+#include <atomic>
 
 namespace lane::windows {
 inline constexpr wchar_t kSettings[] = L"Software\\Delino\\Lane";
@@ -44,8 +45,21 @@ class Service {
   ~Service() { worker_->Stop(); }
   std::string Call(const std::string& method, const std::vector<std::string>& args) {
     ApartmentScope apartment;
+    const bool invalidate = method == "open" || method == "close" || method == "cancelReauthentication" ||
+        (method == "invoke" && !args.empty() && args[0] == "BeginDataDeletion");
+    const auto generation = invalidate ? ++reauth_generation_ : reauth_generation_.load();
     try {
-      return worker_->Submit([this, method, args] {
+      return worker_->Submit([this, method, args, invalidate, generation] {
+        if (invalidate) {
+          const auto previous = reauth_.challenge;
+          auto canceled = CancelPending();
+          if (method == "cancelReauthentication") {
+            if (!previous.empty() && previous != args.at(0))
+              return Failure("ERROR_REASON_INVALID_INPUT", "The reauthentication challenge does not match.");
+            return canceled;
+          }
+        }
+        active_generation_ = generation;
         if (method == "open") {
           auto response = store_->open(args.at(0));
           auto envelope = Parse(response);
@@ -69,7 +83,21 @@ class Service {
         try { input = Parse(args.at(1)); }
         catch (...) { return Failure("ERROR_REASON_INVALID_INPUT", "The native request must be a JSON object."); }
         routed_space_ = Text(input, L"spaceId");
-        auto response = store_->invoke(operation, args.at(1));
+        if (operation == "DeleteAccountData") {
+          auto request = input.GetNamedObject(L"request");
+          if (request.HasKey(L"reauthProof") || request.HasKey(L"reauth_proof"))
+            return Failure("ERROR_REASON_INVALID_INPUT", "Reauthentication proof must remain in the native helper.");
+          auto status = Parse(store_->invoke("GetLocalStatus", Request(routed_space_)));
+          if (!status.GetNamedBoolean(L"ok", false)) return Dump(status);
+          if (!reauth_.ready || reauth_.generation != reauth_generation_.load() ||
+              reauth_.space != routed_space_ || reauth_.challenge != Text(request, L"challengeId") ||
+              reauth_.account != Text(request, L"confirmedAccountId") ||
+              reauth_.account != Text(status.GetNamedObject(L"response"), L"accountId"))
+            return Failure("ERROR_REASON_UNAUTHENTICATED", "Complete reauthentication for this account and deletion mode.");
+          request.Remove(L"challengeId");
+          input.Insert(L"request", request);
+        }
+        auto response = store_->invoke(operation, Dump(input));
         if (operation == "RemoveDeviceData" || operation == "DisconnectSync") {
           if (Parse(response).GetNamedBoolean(L"ok", false)) {
             supervisor_->Stop(routed_space_);
@@ -85,9 +113,35 @@ class Service {
   void Resume() {
     try { worker_->Submit([this] { Tick(); return std::string{}; }); } catch (...) {}
   }
+  void InvalidateReauthentication() {
+    ++reauth_generation_;
+    try { worker_->Submit([this] { return CancelPending(); }); } catch (...) {}
+  }
   void Callback(std::string uri) {
+    const auto generation = reauth_generation_.load();
     try {
-      worker_->Submit([this, uri = std::move(uri)] {
+      worker_->Submit([this, uri = std::move(uri), generation] {
+        Route route;
+        if (!ParseRoute(uri, scheme_, route) || route.kind != RouteKind::Callback) return std::string{};
+        if (!route.id.empty()) {
+          if (reauth_.challenge != route.id || reauth_.generation != generation ||
+              generation != reauth_generation_.load()) return std::string{};
+          auto status = Parse(store_->invoke("GetLocalStatus", Request(reauth_.space)));
+          if (!status.GetNamedBoolean(L"ok", false) ||
+              Text(status.GetNamedObject(L"response"), L"accountId") != reauth_.account) {
+            CancelPending(); return std::string{};
+          }
+          auto response = Parse(Helper({L"--json", L"--space", Wide(reauth_.space), L"sync", L"callback", Wide(uri)}));
+          if (response.GetNamedBoolean(L"ok", false) && generation == reauth_generation_.load() &&
+              Text(response.GetNamedObject(L"result"), L"challengeId") == reauth_.challenge) {
+            reauth_.ready = true;
+            Json event; Set(event, L"challengeId", reauth_.challenge);
+            actions_.event("lane.reauthenticated", Dump(event));
+          } else if (!response.GetNamedBoolean(L"ok", false)) {
+            actions_.event("lane.hostStatus", Dump(response));
+          }
+          return std::string{};
+        }
         const auto original = PendingAccountSpace();
         if (original.empty()) {
           actions_.event("lane.hostStatus", Failure("ERROR_REASON_UNAUTHENTICATED", "No pending browser connection matches this callback."));
@@ -119,6 +173,17 @@ class Service {
   }
   void Stop() { worker_->Stop(); }
  private:
+  std::string CancelPending() {
+    const auto space = reauth_.space, challenge = reauth_.challenge;
+    reauth_.space.clear(); reauth_.account.clear(); reauth_.mode.clear(); reauth_.challenge.clear();
+    reauth_.ready = false;
+    if (challenge.empty()) return R"({"ok":true})";
+    auto result = Parse(Helper({L"--json", L"--space", Wide(space), L"sync", L"cancel-reauth", L"--challenge-id", Wide(challenge)}));
+    if (!result.GetNamedBoolean(L"ok", false)) return Dump(result);
+    if (!result.GetNamedObject(L"result").GetNamedBoolean(L"completed", false))
+      return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "Could not cancel reauthentication.", true);
+    return R"({"ok":true})";
+  }
   static std::wstring Wide(const std::string& value) { return winrt::to_hstring(value).c_str(); }
   std::string Helper(const std::vector<std::wstring>& args, const std::string& input = {}) {
     if (!std::filesystem::is_regular_file(helper_)) return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "The packaged Lane helper is missing. Reinstall Lane.");
@@ -151,9 +216,35 @@ class Service {
     });
     lane::HostHooks hooks;
     hooks.remote = [this](std::string space, std::string method, std::string input) {
-      auto envelope = Parse(Helper({L"--remote", L"--json", L"--expected-space", Wide(space),
-          L"rpc", Wide(method), L"--request-json", L"-"}, input));
-      return envelope.GetNamedBoolean(L"ok", false) ? Dump(envelope.GetNamedObject(L"result")) : Dump(envelope);
+      std::vector<std::wstring> arguments{L"--remote", L"--json", L"--expected-space", Wide(space)};
+      if (method == "DeleteAccountData") {
+        // The store has normalized ProtoJSON enums before entering this hook.
+        const auto request = Parse(input);
+        if (!reauth_.Matches(space, Text(request, L"confirmedAccountId"), Text(request, L"mode"), reauth_generation_.load()))
+          return Failure("ERROR_REASON_UNAUTHENTICATED", "Reauthentication is no longer valid.");
+        arguments.insert(arguments.end(), {L"--reauth-challenge", Wide(reauth_.challenge)});
+        reauth_.ready = false;
+      }
+      arguments.insert(arguments.end(), {L"rpc", Wide(method), L"--request-json", L"-"});
+      auto envelope = Parse(Helper(arguments, input));
+      if (!envelope.GetNamedBoolean(L"ok", false)) return Dump(envelope);
+      auto result = envelope.GetNamedObject(L"result");
+      if (method == "BeginDataDeletion") {
+        auto request = Parse(input);
+        const auto challenge = Text(result, L"challengeId"), url = Text(result, L"authorizationUrl");
+        if (!UUID(challenge) || !HTTPS(url))
+          return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "Invalid reauthentication response.");
+        reauth_.space = space; reauth_.account = Text(request, L"confirmedAccountId");
+        reauth_.mode = Text(request, L"mode"); reauth_.challenge = challenge;
+        reauth_.generation = active_generation_; reauth_.ready = false;
+        if (reauth_.generation != reauth_generation_.load()) {
+          CancelPending();
+          return Failure("ERROR_REASON_UNAUTHENTICATED", "Reauthentication was canceled.");
+        }
+        // The UI opens this authorization URL after showing the deletion
+        // confirmation. Only ConnectSync opens its browser from native code.
+      }
+      return Dump(result);
     };
     hooks.authorize = [this](std::string account) {
       if (!UUID(routed_space_)) throw std::runtime_error("Connection space is missing");
@@ -245,6 +336,9 @@ class Service {
   }
   std::filesystem::path helper_;
   std::string scheme_, routed_space_, owner_;
+  std::atomic<uint64_t> reauth_generation_{0};
+  uint64_t active_generation_ = 0;
+  Reauthentication reauth_;
   HostActions actions_;
   bool apartment_ = false, observer_failed_ = false;
   std::set<std::string> watched_;

@@ -26,6 +26,12 @@ constexpr UINT kOpen = 1001, kQuit = 1002;
 constexpr ULONG_PTR kActivation = 0x4c414e45;
 constexpr ULONG_PTR kNotificationActivation = 0x4c414e46;
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
+napi_value WindowsHostModule(napi_env env, napi_value exports, const char* name, void* opaque) {
+  lane::desktop::HostModule(env, exports, name, opaque);
+  auto handler = *static_cast<std::shared_ptr<lane::desktop::Handler>*>(opaque);
+  lane::desktop::Export(env, exports, handler, "cancelReauthentication", 1);
+  return exports;
+}
 
 std::wstring UserSID() {
   HANDLE raw = nullptr;
@@ -116,6 +122,7 @@ class Application {
     // Lane.exe and lane.exe are the same filename on Windows.
     service_ = std::make_shared<Service>(executable_.parent_path() / "helpers" / "lane.exe", kScheme, std::move(actions));
     host_handler_ = std::make_shared<lane::desktop::Handler>([this, ui = ui_](const std::string& method, const auto& args) {
+      if (method == "cancelReauthentication") return service_->Call(method, args);
       return ui->Call([this, method, text = args.at(0)] {
         return method == "copyText" ? CopyText(controller_, text) : OpenURL(controller_, text);
       });
@@ -148,7 +155,7 @@ class Application {
     builder.SetScreenSize(bounds.right, bounds.bottom, GetDpiForWindow(window_) / 96.0f)
         .SetFrame(0, 0, bounds.right, bounds.bottom).SetParent(window_);
     builder.RegisterNativeModule("LaneStore", lane::desktop::StoreModule, &store_handler_);
-    builder.RegisterNativeModule("LaneHost", lane::desktop::HostModule, &host_handler_);
+    builder.RegisterNativeModule("LaneHost", WindowsHostModule, &host_handler_);
     view_ = builder.Build();
     if (!view_) throw std::runtime_error("Lynx view creation failed");
     view_->AddClient(client_);
@@ -218,6 +225,7 @@ class Application {
       }
       if (message == WM_POWERBROADCAST && wparam == PBT_APMRESUMEAUTOMATIC) service_->Resume();
       if (message == WM_DESTROY) {
+        service_->InvalidateReauthentication();
         ready_ = false; ++generation_; view_.reset(); window_ = nullptr;
         return 0; // The controller and worker continue until explicit Quit.
       }
