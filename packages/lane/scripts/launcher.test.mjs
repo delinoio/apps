@@ -180,3 +180,31 @@ test(
     assert.match(run.stdout, /--version/);
   },
 );
+
+test(
+  "preserves signal termination when the child does not handle SIGINT or SIGHUP",
+  { skip: process.platform === "win32", timeout: 10000 },
+  async (t) => {
+    const f = fixture(t);
+    for (const signal of ["SIGINT", "SIGHUP"]) {
+      const child = spawn(
+        process.execPath,
+        [resolve(f.root, "bin/lane.mjs"), "wait"],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      t.after(() => {
+        if (child.exitCode === null && child.signalCode === null)
+          child.kill("SIGKILL");
+      });
+      const exit = new Promise((done, reject) => {
+        child.once("error", reject);
+        child.once("exit", (code, received) =>
+          done({ code, signal: received }),
+        );
+      });
+      await new Promise((done) => child.stderr.once("data", done));
+      child.kill(signal);
+      assert.deepEqual(await exit, { code: null, signal });
+    }
+  },
+);
