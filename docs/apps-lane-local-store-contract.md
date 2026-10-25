@@ -183,3 +183,26 @@ history, task moves and deletion precedence. Native saves commit locally before
 optional image upload. Pending synchronization must not be reported as failed
 local saving. Unsupported schema/format versions must be refused before writes.
 These requirements do not establish implementation or release acceptance.
+
+### RealQA schema 2
+
+RealQA requires data-store schema and format version 2; the registry remains
+version 1. Schema 2 adds entity kind 3 for URL connections and an `attachments`
+table keyed by attachment UUID, with owning task, SHA-256, dimensions, byte size,
+optional final PNG bytes encoded as base64, and synchronization state. Empty
+image bytes mean synchronization is pending, not an empty image. Attachment
+content is immutable. Per-image browser metadata remains in the versioned task.
+
+Save the task, final images, receipt, outbox and change notification in one
+transaction. Retain images after removal from the current prompt while history
+can reference them; delete them with their owning task. A task move changes no
+attachment ownership. Repository deletion cascades its current tasks and URL
+connections. Retrieval requires a matching task and attachment in the pinned
+space. Unsupported schema writers must stop before any mutation.
+
+Provide an explicit schema-1 migration before enabling RealQA against an existing
+store. All native and Rust adapters must support schema 2 before distribution.
+Do not silently initialize or replace an existing version-1 store. Version-1
+historical envelopes remain readable without rewriting immutable versions;
+new RealQA envelopes use format 2. Synchronization negotiation must prevent
+format-1 clients from dropping capture references or URL connections.

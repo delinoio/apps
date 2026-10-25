@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE entities (
-  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2)),
+  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2,3)),
   repository_id TEXT, normalized_url TEXT,
   deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1))
 );
@@ -41,3 +41,15 @@ CREATE TABLE notification_receipts (
   proposal_id TEXT NOT NULL, device_id TEXT NOT NULL,
   state INTEGER NOT NULL, PRIMARY KEY(proposal_id,device_id)
 );
+
+CREATE TABLE attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES entities(id),
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL,
+  png_base64 TEXT,
+  synchronized INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX attachment_owner ON attachments(task_id);

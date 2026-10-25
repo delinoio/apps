@@ -210,3 +210,26 @@ history, task moves and deletion precedence. Native saves commit locally before
 optional image upload. Pending synchronization must not be reported as failed
 local saving. Unsupported schema/format versions must be refused before writes.
 These requirements do not establish implementation or release acceptance.
+
+### RealQA format 2 interfaces
+
+Format 2 adds ordered `CaptureReference captures=7` to Task. Each reference owns
+an immutable UUID v7 attachment ID, PNG dimensions, SHA-256 digest and byte count,
+plus optional page URL, page title and CSS selector. Metadata belongs to the
+whole-task version and can be removed without deleting history's image content.
+`CreateCaptureTask` accepts final PNG bytes and metadata together and atomically
+creates one regular To do task. Its stable request ID covers the complete input.
+`GetAttachment` requires both task and attachment identity; local callers receive
+PNG bytes and remote callers receive short-lived authorized download access.
+Signed URLs never enter persisted prompts or task versions.
+
+URL connections use `EntityKind.URL_CONNECTION=3` and the `url_connection=12`
+EntityVersion body. `ListURLConnections`, `CreateURLConnection`,
+`SaveURLConnection` and `DeleteURLConnection` share the existing version,
+request, conflict and deletion rules. `ResolveConflict` resolves these versions
+explicitly. A rule has a normalized HTTP(S) prefix and target repository ID.
+Conflicted rules cannot participate in automatic selection.
+
+Existing field numbers remain stable. Format 1 clients must refuse format 2
+stores and synchronization; they cannot round-trip these extended snapshots.
+Schema migration and synchronization upgrades require coordinated consumers.

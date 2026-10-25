@@ -74,7 +74,7 @@ impl Store {
                 "result":result(&heads)}
                 ))
             }
-            "ListTasks" | "ListRepositories" => {
+            "ListTasks" | "ListRepositories" | "ListURLConnections" => {
                 for (key, valid) in [
                     (
                         "progress",
@@ -117,10 +117,19 @@ impl Store {
                 for id in rows(
                     connection,
                     "SELECT id FROM entities WHERE kind=? AND deleted=0 AND id>? ORDER BY id",
-                    params![if method == "ListTasks" { 2 } else { 1 }, last],
+                    params![
+                        if method == "ListTasks" {
+                            2
+                        } else if method == "ListURLConnections" {
+                            3
+                        } else {
+                            1
+                        },
+                        last
+                    ],
                 )? {
                     let heads = heads(connection, &id)?;
-                    let mut matches = method == "ListRepositories";
+                    let mut matches = method != "ListTasks";
                     for v in &heads {
                         let task = &v["task"];
                         if !task.is_object() {

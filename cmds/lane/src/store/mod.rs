@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+mod capture;
 mod domain;
 pub mod normalize;
 mod query;
@@ -118,7 +119,12 @@ pub fn transaction<T>(
 fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
     let app: i64 = c.query_row("PRAGMA application_id", [], |r| r.get(0))?;
     let version: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if app == 1_279_348_293 && version == 1 {
+    let is_store: bool = c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='store_meta')",
+        [],
+        |r| r.get(0),
+    )?;
+    if app == 1_279_348_293 && version == if is_store { 2 } else { 1 } {
         return Ok(());
     }
     let count: i64 = c.query_row(
@@ -132,7 +138,11 @@ fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
         && let Some(schema) = schema
     {
         c.execute_batch(schema)?;
-        c.execute_batch("PRAGMA application_id=1279348293; PRAGMA user_version=1")?;
+        c.execute_batch(if schema.contains("CREATE TABLE store_meta") {
+            "PRAGMA application_id=1279348293; PRAGMA user_version=2"
+        } else {
+            "PRAGMA application_id=1279348293; PRAGMA user_version=1"
+        })?;
         return Ok(());
     }
     Err(Failure::new(
@@ -285,7 +295,7 @@ impl Store {
             for (k, v) in [
                 ("space_id", s.space.as_str()),
                 ("device_id", &s.device),
-                ("format_version", "1"),
+                ("format_version", "2"),
                 ("account_epoch", ""),
                 ("pull_cursor", ""),
                 ("notification_enabled", "0"),
@@ -334,7 +344,7 @@ impl Store {
             }
             if meta(c, "space_id")? != self.space
                 || meta(c, "device_id")? != self.device
-                || meta(c, "format_version")? != "1"
+                || meta(c, "format_version")? != "2"
             {
                 return Err(Failure::new(
                     "UNSUPPORTED_FORMAT",
@@ -411,7 +421,7 @@ issuer:r.get(0)?,account:r.get(1)?,tenant:r.get(2)?,enabled:r.get(3)?}
         })?;
         if let Some(db) = self.db.borrow_mut().take() {
             let result = transaction(&db, true, |c| {
-                c.execute_batch("DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM notification_receipts; DELETE FROM repository_mappings; DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version'); INSERT INTO changes(change_kind) VALUES(3); INSERT OR REPLACE INTO store_meta VALUES('removed','1');")?;
+                c.execute_batch("DELETE FROM attachments; DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM notification_receipts; DELETE FROM repository_mappings; DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version'); INSERT INTO changes(change_kind) VALUES(3); INSERT OR REPLACE INTO store_meta VALUES('removed','1');")?;
                 Ok(())
             });
             drop(db);
@@ -472,7 +482,8 @@ out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();
 }
 Ok(out)}
 ),
-            "CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
+            "CreateCaptureTask"|"CreateURLConnection"|"SaveURLConnection"|"DeleteURLConnection"|"CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
+            "GetAttachment"=>self.with(false, |c| self.get_attachment(c,q)),
             _=>self.with(false,|c|self.query(c,method,q)),
         }
     }
