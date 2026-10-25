@@ -29,8 +29,13 @@ jbyteArray encode(JNIEnv* env, const std::string& value) {
 struct Peer {
   std::unique_ptr<lane::Store> engine;
   std::string root;
-  JavaVM* vm;
-  jobject host;
+  JavaVM* vm = nullptr;
+  jobject host = nullptr;
+  ~Peer() {
+    JNIEnv* env = nullptr;
+    if (host && vm && vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK)
+      env->DeleteGlobalRef(host);
+  }
   jmethodID callback;
   std::string call(int operation, const std::string& space = "",
                    const std::string& method = "", const std::string& request = "") {
@@ -108,15 +113,17 @@ Java_io_delino_lane_NativeStore_call(JNIEnv* env, jobject, jlong handle,
       case 8: return encode(env, engine.claimNotifications(decode(env, method), decode(env, request)));
       case 9: return encode(env, engine.acknowledgeNotification(decode(env, method), decode(env, request)));
       case 10: return encode(env, engine.recordNotificationPermission(decode(env, method), decode(env, request)));
+      case 11: return encode(env, engine.recordSyncFailure(decode(env, method), decode(env, request)));
+      case 12: return encode(env, engine.spacesForAccount(decode(env, request)));
+      case 13: return encode(env, engine.confirmSyncEpoch(decode(env, method), decode(env, request)));
       default: throw std::invalid_argument("unknown JNI operation");
     }
   } catch (...) { fail(env); return nullptr; }
 }
 extern "C" JNIEXPORT void JNICALL
-Java_io_delino_lane_NativeStore_destroy(JNIEnv* env, jobject, jlong handle) {
+Java_io_delino_lane_NativeStore_destroy(JNIEnv*, jobject, jlong handle) {
   auto* peer = reinterpret_cast<Peer*>(handle);
   if (!peer) return;
-  env->DeleteGlobalRef(peer->host);
   delete peer;
 }
 

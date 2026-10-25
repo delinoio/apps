@@ -20,6 +20,12 @@ class BridgeContractTest {
         assertEquals(LaneLinks.Kind.AUTH, LaneLinks.parse("lane://auth/callback?code=x&state=y", "lane")?.kind)
         assertNull(LaneLinks.parse("lane://auth/other?code=x", "lane"))
     }
+    @Test fun externalUrlsAreHttpsOnlyAndCannotCarryEmbeddedCredentials() {
+        assertTrue(LaneHostModule.isHttps("https://example.com/path?value=1#section"))
+        assertTrue(LaneHostModule.isHttps("HTTPS://example.com/"))
+        for (value in listOf("http://example.com", "javascript:alert(1)", "file:///private/data", "lane://open",
+            "https://user:secret@example.com/", "https://", "https://example.com\\@other.test")) assertFalse(LaneHostModule.isHttps(value))
+    }
     @Test fun duplicateOAuthParametersAreRejected() {
         assertThrows(IllegalArgumentException::class.java) { LaneLinks.query("lane://auth/callback?state=a&state=b") }
         assertEquals("a+b", LaneLinks.query("lane://auth/callback?code=a%2Bb")["code"])

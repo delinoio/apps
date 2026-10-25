@@ -11,8 +11,8 @@ class LaneSyncWorker(context: Context, parameters: WorkerParameters) : Worker(co
         val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MINUTES.toNanos(8)
         return try {
             // Includes cold process starts; no Activity or JavaScript is needed.
-            runtime.submit { runtime.workerOpen(); runtime.pollSafely() }.get()
-            if (runtime.host.synchronize { isStopped || System.nanoTime() >= deadline }) Result.success() else Result.retry()
+            runtime.submit { BridgeJson.response(runtime.workerOpen()); runtime.pollSafely() }.get()
+            if (runtime.host.synchronize({ isStopped || System.nanoTime() >= deadline }, inputData.getString("spaceId"))) Result.success() else Result.retry()
         } catch (_: Exception) { Result.retry() }
     }
 }

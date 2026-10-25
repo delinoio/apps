@@ -101,7 +101,9 @@ internal class LaneRuntime(val application: LaneApplication) {
                 "NOT_FOUND", "Open this data space before using it")
             val request = wrapper.getJSONObject("request")
             LaneMethods.appRequest(method, request, device, Build.MODEL)
-            val result = engine(method, wrapper.toString())
+            if (method == "ConnectSync") host.captureConnectionIntent(space)
+            val result = try { engine(method, wrapper.toString()) }
+                finally { if (method == "ConnectSync") host.clearConnectionIntent() }
             if (JSONObject(result).optBoolean("ok")) {
                 when (method) {
                     "SetNotificationPreferences" -> {
@@ -166,6 +168,13 @@ internal class LaneRuntime(val application: LaneApplication) {
         } }
     }
     private val pendingLinks = java.util.ArrayDeque<LaneLinks.Route>() // UI thread only
+    fun selectApprovedSpace(space: String) {
+        require(LaneLinks.validId(space))
+        main.post {
+            pendingLinks.addLast(LaneLinks.Route(LaneLinks.Kind.OPEN, "lane://open?spaceId=$space"))
+            execute { sessions.firstOrNull { it.alive }?.let { session -> main.post { dispatchRoutes(session) } } }
+        }
+    }
     fun receiveLink(value: String) {
         val route = LaneLinks.parse(value, if (BuildConfig.DEBUG) "lane-dev" else "lane") ?: return
         if (route.kind == LaneLinks.Kind.AUTH) { host.authorizationCallback(value); return }

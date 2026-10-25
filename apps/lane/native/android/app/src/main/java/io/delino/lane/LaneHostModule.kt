@@ -34,7 +34,7 @@ class LaneHostModule(context: Context, param: Any) : LynxModule(context, param) 
     companion object {
         internal fun isHttps(value: String): Boolean = try {
             val uri = URI(value)
-            uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.rawUserInfo == null &&
+            uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrEmpty() && uri.rawUserInfo == null &&
                 uri.port in -1..65535 && !value.contains('\\')
         } catch (_: Exception) { false }
     }

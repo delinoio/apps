@@ -57,6 +57,11 @@ class LaneMessagingService : FirebaseMessagingService() {
     }
     override fun onMessageReceived(message: RemoteMessage) {
         // FCM payloads are wake-up hints, not trusted task state or OS notification content.
-        (application as LaneApplication).runtime.host.scheduleNow()
+        val data = message.data
+        if (data["type"] != "lane.proposal") return
+        val account = data["accountId"] ?: return
+        val proposal = data["proposalId"] ?: return
+        val runtime = (application as LaneApplication).runtime
+        runtime.execute { runtime.safe { runtime.host.pushHint(account, proposal); "{}" } }
     }
 }

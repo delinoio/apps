@@ -40,6 +40,23 @@ internal class LaneCredentials(context: Context) {
         cipher.updateAAD(name.toByteArray(Charsets.UTF_8))
         return JSONObject(cipher.doFinal(bytes.copyOfRange(12, bytes.size)).toString(Charsets.UTF_8))
     }
+    @Synchronized fun replaceCurrent(name: String, expectedRefreshToken: String, value: JSONObject) {
+        require(get(name)?.optString("refresh_token") == expectedRefreshToken)
+        put(name, value)
+    }
+    @Synchronized fun take(name: String): JSONObject? {
+        val value = get(name)
+        remove(name)
+        return value
+    }
+    @Synchronized fun consumeAuthorization(state: String, now: Long): JSONObject {
+        val pending = get("pending-authorization") ?: error("No authorization")
+        require(now - pending.getLong("createdAt") in 0..600000)
+        require(java.security.MessageDigest.isEqual(state.toByteArray(Charsets.UTF_8),
+            pending.getString("state").toByteArray(Charsets.UTF_8)))
+        remove("pending-authorization")
+        return pending
+    }
     @Synchronized fun remove(name: String) { check(preferences.edit().remove(name).commit()) }
     @Synchronized fun spaces(): Set<String> = preferences.all.keys.filter { LaneLinks.validId(it) }.toSet()
     companion object { private const val ALIAS = "io.delino.lane.credentials.v1" }
