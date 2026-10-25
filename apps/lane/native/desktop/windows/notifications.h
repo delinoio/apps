@@ -4,6 +4,7 @@
 #include <WindowsAppSDK-VersionInfo.h>
 #include <MddBootstrap.h>
 #include <winrt/Microsoft.Windows.AppNotifications.h>
+#include <winrt/Microsoft.Windows.AppLifecycle.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
 
 namespace lane::windows {
@@ -27,12 +28,19 @@ class Notifications {
     try {
       if (!Manager::IsSupported()) return;
       manager_ = Manager::Default();
-      token_ = manager_.NotificationInvoked([activate = std::move(activate)](const auto&, const auto& args) {
+      token_ = manager_.NotificationInvoked([activate](const auto&, const auto& args) {
         try { activate(winrt::to_string(args.Argument())); } catch (...) {}
       });
       subscribed_ = true;
       manager_.Register();
       registered_ = true;
+      // Register before reading activation. On cold COM launch the SDK retains
+      // the first notification for AppInstance rather than raising the event.
+      auto activation = winrt::Microsoft::Windows::AppLifecycle::AppInstance::GetCurrent().GetActivatedEventArgs();
+      if (activation.Kind() == winrt::Microsoft::Windows::AppLifecycle::ExtendedActivationKind::AppNotification) {
+        auto args = activation.Data().as<winrt::Microsoft::Windows::AppNotifications::AppNotificationActivatedEventArgs>();
+        activate(winrt::to_string(args.Argument()));
+      }
     } catch (...) { /* Permission() exposes unsupported; local work remains available. */ }
   }
   ~Notifications() { Stop(); }

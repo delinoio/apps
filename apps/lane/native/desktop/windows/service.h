@@ -42,6 +42,7 @@ class Service {
   }
   ~Service() { worker_->Stop(); }
   std::string Call(const std::string& method, const std::vector<std::string>& args) {
+    ApartmentScope apartment;
     try {
       return worker_->Submit([this, method, args] {
         if (method == "open") {
@@ -104,6 +105,8 @@ class Service {
             auto selected = opened.GetNamedObject(L"response");
             Json event; Set(event, L"spaceId", space); Set(event, L"sequence", Text(selected, L"sequence"));
             actions_.event("lane.storeChanged", Dump(event));
+            Json route; Set(route, L"kind", "open"); Set(route, L"spaceId", space);
+            actions_.event("lane.openRoute", Dump(route));
           }
           Tick();
         } else {
@@ -128,7 +131,17 @@ class Service {
     supervisor_ = std::make_unique<SyncSupervisor>(helper_, [this](const auto& space, auto state, DWORD code) {
       if (state == SyncState::MissingHelper || state == SyncState::LaunchFailed ||
           state == SyncState::Exited || state == SyncState::InvalidInvocation) {
-        store_->recordSyncFailure(space, "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+        std::string reason = "ERROR_REASON_DEPENDENCY_UNAVAILABLE";
+        if (state == SyncState::Exited) {
+          // The helper can persist a more specific authentication, epoch or
+          // format error before exit. Do not overwrite that evidence.
+          auto status = Parse(store_->invoke("GetLocalStatus", Request(space)));
+          if (status.GetNamedBoolean(L"ok", false)) {
+            auto recorded = Text(status.GetNamedObject(L"response"), L"syncErrorReason");
+            if (!recorded.empty()) reason = recorded;
+          }
+        }
+        store_->recordSyncFailure(space, reason);
       }
       Json event; Set(event, L"spaceId", space); Set(event, L"syncState", StateName(state));
       event.Insert(L"exitCode", Value::CreateNumberValue(code));
@@ -142,9 +155,18 @@ class Service {
     };
     hooks.authorize = [this](std::string account) {
       if (!UUID(routed_space_)) throw std::runtime_error("Connection space is missing");
+      auto status = Parse(store_->invoke("GetLocalStatus", Request(routed_space_)));
+      if (!status.GetNamedBoolean(L"ok", false)) return Dump(status);
+      auto local = status.GetNamedObject(L"response");
+      if (!account.empty() && account != Text(local, L"accountId"))
+        return Failure("ERROR_REASON_INVALID_INPUT", "Select the matching account space before reconnecting.");
+      std::vector<std::wstring> arguments{L"--json", L"--space", Wide(routed_space_), L"sync", L"connect",
+          L"--redirect-uri", Wide(scheme_ + "://auth/callback")};
+      // Only explicit ConnectSync after the UI confirmation can authorize an
+      // epoch change. The helper persists and revalidates this old-space intent.
+      if (local.GetNamedBoolean(L"reconnectRequired", false)) arguments.push_back(L"--confirm-epoch-change");
       PendingAccountSpace(routed_space_);
-      auto envelope = Parse(Helper({L"--json", L"--space", Wide(routed_space_), L"sync", L"connect",
-          L"--redirect-uri", Wide(scheme_ + "://auth/callback")}));
+      auto envelope = Parse(Helper(arguments));
       if (!envelope.GetNamedBoolean(L"ok", false)) return Dump(envelope);
       auto result = envelope.GetNamedObject(L"result");
       const auto url = Text(result, L"authorizationUrl"), challenge = Text(result, L"challengeId");

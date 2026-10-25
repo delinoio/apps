@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <sddl.h>
 #include <optional>
+#include <atomic>
 #include "lane.h"
 #include "windows/notifications.h"
 #include "windows/service.h"
@@ -23,6 +24,7 @@ constexpr char kScheme[] = "lane";
 constexpr UINT kTray = WM_APP + 2;
 constexpr UINT kOpen = 1001, kQuit = 1002;
 constexpr ULONG_PTR kActivation = 0x4c414e45;
+constexpr ULONG_PTR kNotificationActivation = 0x4c414e46;
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 
 std::wstring UserSID() {
@@ -53,12 +55,12 @@ void RegisterProtocol(const std::filesystem::path& executable) {
   set(base + L"\\shell\\open\\command", nullptr, QuoteArgument(executable.wstring()) + L" --uri \"%1\"");
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
-bool Forward(const std::wstring& user, const std::string& uri) {
+bool Forward(const std::wstring& user, const std::string& uri, ULONG_PTR kind = kActivation) {
   for (unsigned attempt = 0; attempt != 100; ++attempt) {
     HWND controller = FindWindowW(kControllerClass, user.c_str());
     if (controller) {
       auto wide = winrt::to_hstring(uri);
-      COPYDATASTRUCT data{kActivation, static_cast<DWORD>((wide.size() + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(wide.c_str())};
+      COPYDATASTRUCT data{kind, static_cast<DWORD>((wide.size() + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(wide.c_str())};
       DWORD_PTR accepted = 0;
       return SendMessageTimeoutW(controller, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&data),
           SMTO_ABORTIFHUNG | SMTO_BLOCK, 3000, &accepted) && accepted;
@@ -90,17 +92,14 @@ class Application {
     const auto icu = (executable_.parent_path() / "data" / "icudtl.dat").string();
     lynx::pub::LynxEnv::GetInstance().SetICUDataPath(icu.c_str());
     notifications_->Start(executable_.parent_path(), [this, ui = ui_](std::string payload) {
-      ui->Post([this, payload = std::move(payload)] {
-        auto value = Parse(payload);
-        const auto id = Text(value, L"id"), space = Text(value, L"spaceId");
-        if (Text(value, L"kind") != "task" || !UUID(id) || !UUID(space)) return;
-        pending_route_ = value;
-        Show(); SendRoute();
-      });
+      ui->Post([this, payload = std::move(payload)] { ActivateNotification(payload); });
     });
     HostActions actions;
     actions.event = [this, ui = ui_](std::string name, std::string argument) {
       ui->Post([this, name = std::move(name), argument = std::move(argument)] {
+        if (name == "lane.openRoute") {
+          pending_route_ = Parse(argument); Show(); SendRoute(); return;
+        }
         if (view_ && ready_) view_->SendGlobalEvent(name, "[" + argument + "]");
       });
     };
@@ -136,6 +135,7 @@ class Application {
     ready_ = false;
     const auto generation = ++generation_;
     store_handler_ = std::make_shared<lane::desktop::Handler>([service = service_, this, ui = ui_, generation](const auto& method, const auto& args) {
+      ApartmentScope apartment;
       auto result = service->Call(method, args);
       if (method == "open" && Parse(result).GetNamedBoolean(L"ok", false)) {
         ui->Post([this, generation] {
@@ -166,6 +166,12 @@ class Application {
     pending_route_ = value;
     Show(); SendRoute(); return true;
   }
+  bool ActivateNotification(const std::string& payload) {
+    auto value = Parse(payload);
+    const auto id = Text(value, L"id"), space = Text(value, L"spaceId");
+    if (Text(value, L"kind") != "task" || !UUID(id) || !UUID(space)) return false;
+    pending_route_ = value; Show(); SendRoute(); return true;
+  }
   void SendRoute() {
     if (!pending_route_ || !view_ || !ready_) return;
     view_->SendGlobalEvent("lane.openRoute", "[" + Dump(*pending_route_) + "]");
@@ -178,12 +184,12 @@ class Application {
       if (message == kDispatch) { ui_->Drain(); return 0; }
       if (message == WM_COPYDATA) {
         auto* data = reinterpret_cast<COPYDATASTRUCT*>(lparam);
-        if (!data || data->dwData != kActivation || !data->lpData || data->cbData < sizeof(wchar_t) ||
+        if (!data || (data->dwData != kActivation && data->dwData != kNotificationActivation) || !data->lpData || data->cbData < sizeof(wchar_t) ||
             data->cbData > 32770 || data->cbData % sizeof(wchar_t)) return FALSE;
         const auto* text = static_cast<const wchar_t*>(data->lpData);
         const auto length = data->cbData / sizeof(wchar_t);
         if (text[length - 1] != 0 || wcsnlen(text, length) != length - 1) return FALSE;
-        return Activate(winrt::to_string(text));
+        return data->dwData == kActivation ? Activate(winrt::to_string(text)) : ActivateNotification(winrt::to_string(text));
       }
       if (message == kTray) {
         if (LOWORD(lparam) == WM_LBUTTONUP || LOWORD(lparam) == NIN_SELECT) Show();
@@ -277,7 +283,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     std::string uri = std::string(kScheme) + "://open";
     bool toast_activation = false;
     if (arguments.size() == 3 && arguments[1] == L"--uri") uri = winrt::to_string(arguments[2]);
-    else if (arguments.size() == 2 && arguments[1] == L"-ToastActivated") toast_activation = true;
+    else if (arguments.size() == 2 && arguments[1] == L"----AppNotificationActivated:") toast_activation = true;
     else if (arguments.size() != 1) return 2;
     Route route;
     if (!ParseRoute(uri, kScheme, route)) return 2;
@@ -285,7 +291,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     const auto mutex_name = L"Local\\" + std::wstring(kControllerClass) + L"." + user;
     Handle instance_lock(CreateMutexW(nullptr, FALSE, mutex_name.c_str()));
     if (!instance_lock) return 1;
-    if (GetLastError() == ERROR_ALREADY_EXISTS) return Forward(user, uri) ? 0 : 1;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+      if (!toast_activation) return Forward(user, uri) ? 0 : 1;
+      // A cold notification can race a normal launch. Receive its COM payload
+      // before forwarding, instead of replacing its route with a generic open.
+      auto forwarded = std::make_shared<std::atomic<bool>>(false);
+      Notifications receiver;
+      receiver.Start(std::filesystem::path(executable).parent_path(), [user, forwarded](std::string payload) {
+        *forwarded = Forward(user, payload, kNotificationActivation);
+      });
+      return *forwarded ? 0 : 1;
+    }
     Application app(instance, executable, user);
     app.Start();
     if (!toast_activation) app.Activate(uri);

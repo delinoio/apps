@@ -4,6 +4,7 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <bcrypt.h>
+#include <roapi.h>
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Foundation.h>
 #include <chrono>
@@ -18,6 +19,15 @@
 #include "policy.h"
 
 namespace lane::windows {
+class ApartmentScope {
+ public:
+  ApartmentScope() : result_(RoInitialize(RO_INIT_MULTITHREADED)) {
+    if (result_ != RPC_E_CHANGED_MODE) winrt::check_hresult(result_);
+  }
+  ~ApartmentScope() { if (SUCCEEDED(result_)) RoUninitialize(); }
+ private:
+  HRESULT result_;
+};
 using Json = winrt::Windows::Data::Json::JsonObject;
 using Array = winrt::Windows::Data::Json::JsonArray;
 using Value = winrt::Windows::Data::Json::JsonValue;
