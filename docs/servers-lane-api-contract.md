@@ -227,3 +227,28 @@ and completed uploads. Failed provider work remains in the queue. Inspect queue
 counts without exporting PNG bytes, signed URLs or capture metadata. Restore
 provider connectivity and valid bucket credentials to drain pending work; do not
 purge pending rows as a recovery shortcut.
+
+### Disposable S3 integration fixture
+
+The affected Ubuntu Lane server integration step runs
+`python3 servers/lane-api/tests/integration_fixture.py` from the repository root.
+Set `TEST_DATABASE_URL` to a disposable loopback PostgreSQL database. The helper
+rejects non-loopback database hosts and connection parameters that can redirect
+the connection. The existing CI database step owns PostgreSQL startup and cleanup.
+
+The helper creates a temporary Python virtual environment, installs the pinned
+`moto[server]==5.1.22` test dependency, and verifies that version before serving. It
+requires Python 3 with venv/pip, package-index access, and the existing Rust and
+protocol build tools. It binds S3 to `127.0.0.1` on an OS-assigned port, creates and
+checks a private test bucket, and supplies synthetic R2 credentials. Inherited
+AWS, Moto and Lane R2 settings cannot select a live provider. Request logging is
+disabled so signed URLs do not enter fixture logs.
+
+After readiness, the helper runs all Lane ignored integration tests with the
+PostgreSQL aliases and S3 endpoint configured. It returns Cargo's status and
+stops its process groups and removes the temporary environment on success,
+failure, SIGINT or SIGTERM. The in-memory bucket disappears with the mock. It
+prints structured readiness and cleanup records without credentials or database
+URLs. No production credentials, cloud bucket or OCI release job is required.
+Other server matrix entries retain their existing PostgreSQL integration command.
+These mock tests do not establish live R2 or native/device acceptance.

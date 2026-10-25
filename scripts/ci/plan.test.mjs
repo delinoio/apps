@@ -595,6 +595,9 @@ test("Perfine API and server evaluator changes select server validation", () => 
 
 for (const path of [
   "apps/lane/src/App.tsx",
+  "apps/lane-chrome-extension/src/background.js",
+  "apps/lane-chrome-extension/manifest.json",
+  "apps/lane-chrome-extension/tests/capture.test.mjs",
   "apps/lane/native/desktop/main.mjs",
   "docs/apps-lane-foundation.md",
 ]) {
