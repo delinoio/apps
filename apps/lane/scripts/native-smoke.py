@@ -28,7 +28,7 @@ shutil.copyfile(args.bundle, app / "Contents/Resources/app/main.lynx.bundle")
 home = args.scratch / "home"
 root = home / "Library/Application Support/io.delino.lane"
 env = dict(os.environ, HOME=str(home), LANE_NATIVE_TEST_ROOT=str(root), NSUnbufferedIO="YES",
-           LANE_NATIVE_TEST_LIFECYCLE="1")
+           LANE_NATIVE_TEST_LIFECYCLE="1", LANE_NATIVE_TEST_AUTOQUIT="1")
 host_path = app / "Contents/MacOS/lynxtron"
 helper_path = app / "Contents/Resources/app/helpers/lane"
 assert host_path.resolve() != helper_path.resolve()
@@ -103,10 +103,17 @@ for iteration in range(2):
             assert closed_read["result"]["version"]["task"]["title"] == "external commit"
             await_log(log, "LANE_NATIVE_WINDOW_REOPENED", host, closed_offset)
             await_log(log, "LANE_NATIVE_READY", host, closed_offset)
+            await_log(log, '"event":"lane_stopped"', host)
+            assert host.wait(timeout=10) == 0, "Explicit Quit must exit successfully"
             results.append({"launch": iteration, "windowCloseReopen": True, "creation": expected,
                             "goReadNativeWrite": True, "nativeObservedGoWrite": True})
         finally:
-            host.terminate()
-            host.wait(timeout=10)
+            if host.poll() is None:
+                host.terminate()
+                try:
+                    host.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    host.kill()
+                    host.wait(timeout=5)
 (args.scratch / "result.json").write_text(json.dumps(results, indent=2) + "\n")
 print(json.dumps(results))

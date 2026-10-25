@@ -123,6 +123,7 @@ app.on("before-quit", (event) => {
       clearInterval(poller);
       tray?.destroy();
       quitting = true;
+      log("lane_stopped");
       app.quit();
     })
     .catch(() => {
@@ -145,6 +146,15 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
       started = true;
       if (notificationRoute)
         pendingRoutes.push([JSON.parse(notificationRoute)]);
+      if (native.testing)
+        lynxBridge.handle("lane.testLog", (_event, request) => {
+          if (
+            typeof request?.message === "string" &&
+            request.message.startsWith("LANE_NATIVE_")
+          )
+            console.log(request.message);
+          return true;
+        });
       lynxBridge.handle("lane.native", async (_event, request) => {
         if (stopping) return unavailable;
         const result = await invokeNative(native, request);
@@ -222,6 +232,8 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
           setTimeout(() => {
             showWindow();
             console.log("LANE_NATIVE_WINDOW_REOPENED");
+            if (process.env.LANE_NATIVE_TEST_AUTOQUIT === "1")
+              setTimeout(() => app.quit(), 2000);
           }, 2000);
         }, 2000);
       }

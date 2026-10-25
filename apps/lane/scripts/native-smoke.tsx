@@ -2,6 +2,13 @@
 import { desktopModules, type DesktopBridge } from "../src/desktop";
 import { root, useEffect } from "@lynx-js/react";
 
+// Lynxtron filters ordinary BTS console.log output. Test builds forward only
+// synthetic smoke markers through an explicit main-process test channel.
+function report(message: string) {
+  if (!NativeModules.LaneStore && NativeModules.bridge)
+    NativeModules.bridge.call("lane.testLog", { message }, () => {});
+  else console.log(message);
+}
 const taskId = "01900000-0000-7000-8000-000000000001";
 const requestId = "01900000-0000-7000-8000-000000000002";
 function Smoke() {
@@ -28,10 +35,10 @@ function Smoke() {
       if (!ready || closed) return;
       const response = await call("GetTask", { id: taskId });
       if (response.result.version.task.title === "external commit")
-        console.log("LANE_NATIVE_EXTERNAL_COMMIT_OBSERVED");
+        report("LANE_NATIVE_EXTERNAL_COMMIT_OBSERVED");
     };
     const changed = (event: { spaceId: string }) => {
-      console.log(`LANE_NATIVE_EVENT ${JSON.stringify(event)}`);
+      report(`LANE_NATIVE_EVENT ${JSON.stringify(event)}`);
       if (event.spaceId === spaceId) void read().catch(fail);
     };
     const fail = (error: Error) =>
@@ -44,6 +51,7 @@ function Smoke() {
         try {
           const result = JSON.parse(json);
           if (!result.ok) throw new Error(result.error.reason);
+          report("LANE_NATIVE_STORE_OPEN");
           spaceId = result.response.spaceId;
           const created = await call("CreateTask", {
             meta: { requestId },
@@ -65,6 +73,7 @@ function Smoke() {
             throw new Error("Prompt did not persist");
           const history = await call("ListHistory", { id: taskId });
           if (!history.versions.length) throw new Error("History missing");
+          report("LANE_NATIVE_STORE_READY");
           for (const id of ["smoke-input", "smoke-textarea"]) {
             // Use the same imperative value API as the product Field component.
             lynx
@@ -75,6 +84,8 @@ function Smoke() {
                 params: { value: "Native Unicode 한글 😀" },
               })
               .exec();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            report(`LANE_NATIVE_INPUT_READ ${id}`);
             const value = await new Promise<any>((resolve, reject) => {
               lynx
                 .createSelectorQuery()
@@ -95,9 +106,9 @@ function Smoke() {
                 `Native ${id} value mismatch: ${JSON.stringify(value)}`,
               );
           }
-          console.log("LANE_NATIVE_INPUT_COMPONENTS_READY");
+          report("LANE_NATIVE_INPUT_COMPONENTS_READY");
           ready = true;
-          console.log(
+          report(
             `LANE_NATIVE_READY ${JSON.stringify({ spaceId, taskId, result: created.result.result })}`,
           );
           void read().catch(fail);

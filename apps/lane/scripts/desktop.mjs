@@ -129,6 +129,9 @@ try {
     cpSync(join(root, "dist/licenses"), join(resources, "licenses/bundle"), {
       recursive: true,
     });
+    cpSync(join(root, "native/licenses"), join(resources, "licenses/runtime"), {
+      recursive: true,
+    });
     const vendor = join(root, "native/store/vendor");
     for (const notice of [
       "sqlite/LICENSE",
