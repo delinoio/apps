@@ -169,6 +169,44 @@ impl Auth {
         })
     }
 
+    fn registered_redirect(&self, client_id: &str, redirect: &str) -> Result<()> {
+        let allowed = if client_id == "__web" {
+            self.config.return_urls.iter().any(|u| u == redirect)
+        } else {
+            self.config
+                .clients
+                .get(client_id)
+                .is_some_and(|c| c.redirect_uris.iter().any(|u| u == redirect))
+        };
+        if !allowed {
+            return Err(Fault::denied());
+        }
+        Ok(())
+    }
+
+    fn validate_approval(&self, request: &Value) -> Result<()> {
+        match string(request, "kind") {
+            "web" => self.registered_redirect("__web", string(request, "return_to")),
+            "oauth" => {
+                let client_id = string(request, "client_id");
+                self.registered_redirect(client_id, string(request, "redirect_uri"))?;
+                let client = self
+                    .config
+                    .clients
+                    .get(client_id)
+                    .ok_or_else(Fault::denied)?;
+                // Persisted flows can outlive a rollout that changes a client registration.
+                if string(request, "resource") != client.resource
+                    || string(request, "origin_kind") != client.origin_kind
+                {
+                    return Err(Fault::denied());
+                }
+                Ok(())
+            }
+            _ => Err(Fault::denied()),
+        }
+    }
+
     pub fn public_url(&self) -> &str {
         &self.config.public_url
     }
@@ -751,7 +789,7 @@ async fn oauth_authorize(
     } else {
         get("device_name")
     };
-    a.start_flow(json!({"kind":"oauth","client_id":get("client_id"),"redirect_uri":get("redirect_uri"),"state":get("state"),"challenge":get("code_challenge"),"device_id":device_id,"device_name":name}),false).await
+    a.start_flow(json!({"kind":"oauth","client_id":get("client_id"),"redirect_uri":get("redirect_uri"),"state":get("state"),"challenge":get("code_challenge"),"device_id":device_id,"device_name":name,"resource":client.resource,"origin_kind":client.origin_kind}),false).await
 }
 async fn web_login(
     State(a): State<Arc<Auth>>,
@@ -882,6 +920,7 @@ impl Auth {
         tenant: &str,
         request: &Value,
     ) -> Result<Response> {
+        self.validate_approval(request)?;
         self.allow_account(account, tenant).await?;
         let p = self
             .issue_session(&mut *db, account, tenant, request)
@@ -965,10 +1004,14 @@ async fn callback(
     }
     let (account, tenant) = a.personal_account(string(&tokens, "access_token")).await?;
     let request: Value = flow.get("request");
+    if string(&request, "kind") != "reauth" {
+        a.validate_approval(&request)?;
+    }
     let mut db = a.pool.begin().await?;
     account_lock(&mut db, &account).await?;
     a.allow_account(&account, &tenant).await?;
     let response = if string(&request, "kind") == "reauth" {
+        a.registered_redirect(string(&request, "client_id"), string(&request, "return_to"))?;
         let challenge = string(&request, "challenge_id");
         let auth_time = claims["auth_time"]
             .as_i64()
@@ -1039,6 +1082,7 @@ async fn consent(
     let mut db = a.pool.begin().await?;
     let row=sqlx::query("UPDATE lane_auth_consents SET consumed_at=clock_timestamp() WHERE digest=$1 AND browser_hash=$2 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING *").bind(hash(token.as_bytes())).bind(hash(browser.as_bytes())).fetch_optional(&mut *db).await?.ok_or_else(Fault::unauthenticated)?;
     let request: Value = row.get("request");
+    a.validate_approval(&request)?;
     let account: String = row.get("account_id");
     account_lock(&mut db, &account).await?;
     let response = if q.get("decision").map(String::as_str) == Some("approve") {
@@ -1103,6 +1147,18 @@ async fn oauth_token(
         return Err(Fault::unauthenticated().into());
     }
     let session: String = row.get("session_id");
+    let binding =
+        sqlx::query("SELECT redirect_uri,resource,origin_kind FROM lane_sessions WHERE id=$1")
+            .bind(&session)
+            .fetch_one(&mut *db)
+            .await?;
+    a.registered_redirect(get("client_id"), &binding.get::<String, _>("redirect_uri"))?;
+    if binding.get::<String, _>("resource") != client.resource
+        || binding.get::<String, _>("origin_kind") != client.origin_kind
+    {
+        return Err(Fault::denied().into());
+    }
+
     if row.get::<Option<DateTime<Utc>>, _>("consumed_at").is_some() {
         // Refresh replay revokes the family, including the replacement credential.
         if refresh {
@@ -1246,10 +1302,11 @@ async fn reauth_start(
 ) -> HttpResult {
     a.rate().await?;
     let challenge = q.get("challenge_id").ok_or_else(Fault::unauthenticated)?;
-    let row=sqlx::query("SELECT s.redirect_uri FROM lane_reauth_challenges c JOIN lane_sessions s ON s.id=c.session_id WHERE c.id=$1 AND c.expires_at>clock_timestamp() AND c.consumed_at IS NULL AND c.authenticated_at IS NULL AND s.revoked_at IS NULL").bind(challenge).fetch_optional(&a.pool).await?.ok_or_else(Fault::unauthenticated)?;
+    let row=sqlx::query("SELECT s.redirect_uri,s.client_id FROM lane_reauth_challenges c JOIN lane_sessions s ON s.id=c.session_id WHERE c.id=$1 AND c.expires_at>clock_timestamp() AND c.consumed_at IS NULL AND c.authenticated_at IS NULL AND s.revoked_at IS NULL").bind(challenge).fetch_optional(&a.pool).await?.ok_or_else(Fault::unauthenticated)?;
     let return_to: String = row.get("redirect_uri");
+    a.registered_redirect(&row.get::<String, _>("client_id"), &return_to)?;
     a.start_flow(
-        json!({"kind":"reauth","challenge_id":challenge,"return_to":return_to}),
+        json!({"kind":"reauth","challenge_id":challenge,"return_to":return_to,"client_id":row.get::<String,_>("client_id")}),
         true,
     )
     .await
@@ -1510,6 +1567,33 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
     }
 
     #[tokio::test]
+    async fn pending_approval_rechecks_exact_registration() {
+        let (authority, _, url) = mock_authority().await;
+        let mut a = fixture_auth(
+            sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://localhost/unused")
+                .unwrap(),
+            authority,
+            &url,
+        );
+        let request = json!({"kind":"oauth","client_id":"lane-cli","redirect_uri":"http://127.0.0.1:46326/callback","resource":"https://lane.api.example.test","origin_kind":"ORIGIN_KIND_CLI"});
+        assert!(a.validate_approval(&request).is_ok());
+        let mut other = request.clone();
+        other["redirect_uri"] = json!("http://127.0.0.1:46326/callback/");
+        assert!(a.validate_approval(&other).is_err());
+        a.config.clients.get_mut("lane-cli").unwrap().origin_kind = "ORIGIN_KIND_MCP".into();
+        assert!(a.validate_approval(&request).is_err());
+        a.config.clients.remove("lane-cli");
+        assert!(a.validate_approval(&request).is_err());
+        assert!(
+            a.validate_approval(
+                &json!({"kind":"web","return_to":"https://lane.example.test/callback?next=evil"})
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn oidc_issuer_audience_expiry_and_signature_are_verified() {
         let (authority, _, url) = mock_authority().await;
         let a = fixture_auth(
@@ -1626,7 +1710,7 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         let tenant = id();
         let device_id = id();
         let verifier = random_token();
-        let request = json!({"kind":"oauth","client_id":"lane-cli","device_id":device_id,"device_name":"Fixture CLI","redirect_uri":"http://127.0.0.1:46326/callback","challenge":pkce(&verifier),"state":"client-state"});
+        let request = json!({"kind":"oauth","client_id":"lane-cli","device_id":device_id,"device_name":"Fixture CLI","redirect_uri":"http://127.0.0.1:46326/callback","challenge":pkce(&verifier),"state":"client-state","resource":"https://lane.api.example.test","origin_kind":"ORIGIN_KIND_CLI"});
         let start = a
             .start_flow(request.clone(), false)
             .await
