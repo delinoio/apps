@@ -87,3 +87,24 @@ func TestRemoteRPCPin(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestPrivateChallengeFlagsStayOutsideWire(t *testing.T) {
+	code, _, err := run(t, []string{"--remote", "--json", "--expected-space", "space", "--reauth-challenge", "challenge", "rpc", "DeleteAccountData", "--request-json", `{"confirmedAccountId":"account","mode":"DATA_DELETION_MODE_DELETE_EVERYWHERE"}`}, func(ctx context.Context, opt Options, method string, raw json.RawMessage) (any, error) {
+		if opt.ReauthChallenge != "challenge" || method != "DeleteAccountData" || strings.Contains(string(raw), "challenge") || strings.Contains(string(raw), "proof") {
+			t.Fatal(opt, method, string(raw))
+		}
+		return map[string]any{"completed": true}, nil
+	})
+	if code != 0 {
+		t.Fatal(code, err)
+	}
+	code, _, err = run(t, []string{"--json", "--space", "space", "sync", "cancel-reauth", "--challenge-id", "challenge"}, func(ctx context.Context, opt Options, method string, raw json.RawMessage) (any, error) {
+		if method != "CancelReauthentication" || !strings.Contains(string(raw), `"challengeId":"challenge"`) {
+			t.Fatal(method, string(raw))
+		}
+		return map[string]any{"completed": true}, nil
+	})
+	if code != 0 {
+		t.Fatal(code, err)
+	}
+}

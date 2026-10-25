@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var ErrCallbackPort = errors.New("browser callback port is unavailable")
+
 const LoopbackRedirectURI = "http://127.0.0.1:46327/auth/callback"
 
 // ApproveLoopback supports a standalone CLI without an installed custom-scheme
@@ -17,7 +19,7 @@ const LoopbackRedirectURI = "http://127.0.0.1:46327/auth/callback"
 func (a Auth) ApproveLoopback(ctx context.Context, s Store, endpoint, expectedAccountID string, confirmEpochChange bool, show func(Approval) error) (Credential, error) {
 	listener, e := net.Listen("tcp4", "127.0.0.1:46327")
 	if e != nil {
-		return Credential{}, errors.New("browser callback port 46327 is unavailable; close the other approval and retry")
+		return Credential{}, ErrCallbackPort
 	}
 	return a.approveListener(ctx, s, endpoint, expectedAccountID, confirmEpochChange, show, listener, LoopbackRedirectURI)
 }
@@ -90,7 +92,7 @@ func (a Auth) ApproveDeletionLoopback(ctx context.Context, s Store, c Credential
 	}
 	listener, e := net.Listen("tcp4", "127.0.0.1:46327")
 	if e != nil {
-		return "", errors.New("browser callback port 46327 is unavailable; close the other approval and retry")
+		return "", ErrCallbackPort
 	}
 	defer listener.Close()
 	ctx, cancel := context.WithTimeout(ctx, time.Until(pending.ExpiresAt))

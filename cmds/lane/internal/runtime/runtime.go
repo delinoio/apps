@@ -2,6 +2,7 @@
 package runtime
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -87,6 +89,9 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		return nil, e
 	}
 	defer func() {
+		if method == "SyncRun" || opt.Remote {
+			err = r.deletionAfterAuthFailure(ctx, s, err)
+		}
 		err = classify(err)
 		reason := "APPLIED"
 		correlation := store.NewID()
@@ -116,7 +121,7 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 	}
 	if opt.Remote {
 		switch method {
-		case "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences", "ConnectSync", "DisconnectSync", "RemoveDeviceData", "SyncRun", "SyncCallback":
+		case "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences", "ConnectSync", "DisconnectSync", "RemoveDeviceData", "SyncRun", "SyncCallback", "CancelReauthentication":
 			return nil, fail("INVALID_INPUT", "This command requires the local target.")
 		}
 	}
@@ -152,9 +157,7 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 			endpoint = DefaultEndpoint
 		}
 		redirect := opt.RedirectURI
-		if redirect == "" {
-			redirect = "lane://auth/callback"
-		}
+
 		expected, _ := local["accountId"].(string)
 		if identity.AccountID != "" {
 			if expected != "" && expected != identity.AccountID {
@@ -174,61 +177,49 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		if confirm && r.Diagnostics != nil {
 			fmt.Fprintln(r.Diagnostics, "Confirmed reconnect: retained local data will be uploaded to the new server dataset after browser approval.")
 		}
+		if redirect == "" {
+			cred, err := r.Auth.ApproveLoopback(ctx, s, endpoint, expected, confirm, func(a syncclient.Approval) error { return r.showApproval(a.AuthorizationURL) })
+			if err != nil {
+				return nil, err
+			}
+			return r.finalizeApproval(ctx, s, identity, cred)
+		}
 		return r.Auth.BeginStore(ctx, s, endpoint, redirect, expected, confirm)
 	case "SyncCallback":
 		callback, _ := local["callbackUri"].(string)
+		u, parseErr := url.Parse(callback)
+		if parseErr == nil && u.Query().Has("reauth_challenge") {
+			if e := r.requireActive(ctx, s); e != nil {
+				return nil, e
+			}
+			cred, e := r.Auth.Load(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID)
+			if e != nil {
+				return nil, e
+			}
+			challenge, e := r.Auth.CompleteDeletion(ctx, s, cred, callback)
+			if e != nil {
+				return nil, e
+			}
+			return map[string]any{"challengeId": challenge}, nil
+		}
 		cred, e := r.Auth.CompleteStore(ctx, s, callback)
 		if e != nil {
 			return nil, e
 		}
-		if cred.DeviceID != s.DeviceID() {
-			return nil, fail("FORBIDDEN", "Approved device does not match this installation.")
+		return r.finalizeApproval(ctx, s, identity, cred)
+	case "CancelReauthentication":
+		if e := r.requireActive(ctx, s); e != nil {
+			return nil, e
 		}
-		target, e := s.SelectAccount(ctx, cred.Issuer, cred.AccountID, cred.TenantID)
+		cred, e := r.Auth.Load(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID)
 		if e != nil {
 			return nil, e
 		}
-		defer target.Close()
-		if e = target.SetSyncEnabled(ctx, false); e != nil {
+		challenge, _ := local["challengeId"].(string)
+		if e = r.Auth.CancelDeletion(ctx, s, cred, challenge); e != nil {
 			return nil, e
 		}
-		if e = r.Auth.Save(ctx, target.SpaceID(), target.DeviceID(), cred); e != nil {
-			return nil, e
-		}
-		targetIdentity, e := target.Identity(ctx)
-		if e != nil {
-			return nil, e
-		}
-		client, endpoint, e := r.client(ctx, target, targetIdentity, "")
-		if e != nil {
-			return nil, e
-		}
-		e = syncclient.ApprovedReconnect(ctx, target, lanev1connect.NewSyncServiceClient(client, endpoint), cred.AccountID, cred.TenantID, cred)
-		if errors.Is(e, syncclient.ErrAccountDeleted) {
-			// SelectAccount opens a second lifetime lease for an existing account.
-			// Release the original lease before coordinated physical removal.
-			if target.SpaceID() == s.SpaceID() {
-				if closeErr := s.Close(); closeErr != nil {
-					return nil, closeErr
-				}
-			}
-			if cleanup := r.removeAccount(ctx, target, targetIdentity); cleanup != nil {
-				return nil, cleanup
-			}
-			return nil, e
-		}
-		if e != nil {
-			return nil, e
-		}
-		if identity.AccountID == "" && s.SpaceID() != target.SpaceID() {
-			if e = syncclient.ImportStandalone(ctx, s, target); e != nil {
-				return nil, e
-			}
-		}
-		if e = target.SetSyncEnabled(ctx, true); e != nil {
-			return nil, e
-		}
-		return map[string]any{"spaceId": target.SpaceID(), "deviceId": target.DeviceID(), "connected": true}, nil
+		return map[string]any{"completed": true}, nil
 	case "DisconnectSync":
 		retention, _ := local["retention"].(string)
 		if retention != "LOCAL_RETENTION_KEEP_LOCAL" && retention != "LOCAL_RETENTION_REMOVE_LOCAL" {
@@ -327,9 +318,50 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		if e != nil {
 			return nil, e
 		}
+		if q, ok := request.(*v1.BeginDataDeletionRequest); ok && q.ConfirmedAccountId != identity.AccountID {
+			return nil, fail("FORBIDDEN", "Deletion must target the pinned account.")
+		}
+		if q, ok := request.(*v1.DeleteAccountDataRequest); ok {
+			if q.ReauthProof != "" || opt.ReauthChallenge == "" || q.ConfirmedAccountId != identity.AccountID {
+				return nil, fail("FORBIDDEN", "Deletion requires the matching private browser challenge and pinned account.")
+			}
+			cred, e := r.Auth.Load(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID)
+			if e != nil {
+				return nil, e
+			}
+			q.ReauthProof, e = r.Auth.ConsumeDeletionProof(ctx, s, cred, q.Mode, opt.ReauthChallenge)
+			if e != nil {
+				return nil, e
+			}
+		}
 		response, e = api.Remote(client, endpoint)(ctx, method, request)
 		if e != nil {
 			return nil, e
+		}
+		if q, ok := request.(*v1.BeginDataDeletionRequest); ok {
+			if q.ConfirmedAccountId != identity.AccountID {
+				return nil, fail("FORBIDDEN", "Deletion must target the pinned account.")
+			}
+			cred, e := r.Auth.Load(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID)
+			if e != nil {
+				return nil, e
+			}
+			if e = r.Auth.StoreDeletionChallenge(ctx, s, cred, q.Mode, response.(*v1.BeginDataDeletionResponse).ChallengeId); e != nil {
+				return nil, e
+			}
+		}
+		if q, ok := request.(*v1.DeleteAccountDataRequest); ok {
+			if e = s.SetSyncEnabled(ctx, false); e != nil {
+				return nil, e
+			}
+			if e = r.Auth.Delete(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID); e != nil {
+				return nil, e
+			}
+			if q.Mode == v1.DataDeletionMode_DATA_DELETION_MODE_DELETE_EVERYWHERE {
+				if e = s.RemoveSpace(ctx); e != nil {
+					return nil, e
+				}
+			}
 		}
 	} else {
 		d := api.Descriptor(method)
@@ -437,12 +469,6 @@ func (r *Runtime) deleteAccount(ctx context.Context, opt cli.Options, method str
 	if method == "ClearServer" {
 		mode = v1.DataDeletionMode_DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL
 	}
-	callback, _ := b["reauthCallback"].(string)
-	challenge, _ := b["challengeId"].(string)
-	if callback == "" {
-		raw, _ := json.Marshal(map[string]any{"mode": mode.String(), "confirmedAccountId": account, "meta": b["meta"]})
-		return r.invoke(ctx, opt, "BeginDataDeletion", raw, origin)
-	}
 	s, e := r.open(opt)
 	if e != nil {
 		return nil, e
@@ -455,27 +481,36 @@ func (r *Runtime) deleteAccount(ctx context.Context, opt cli.Options, method str
 	if e != nil {
 		return nil, e
 	}
-	proof, e := r.Auth.ReauthenticationProof(ctx, cred, challenge, callback)
-	if e != nil {
-		return nil, e
-	}
-	raw, _ := json.Marshal(map[string]any{"mode": mode.String(), "confirmedAccountId": account, "reauthProof": proof, "meta": b["meta"]})
-	result, e := r.invoke(ctx, opt, "DeleteAccountData", raw, origin)
-	if e != nil {
-		return nil, e
-	}
-	if e = s.SetSyncEnabled(ctx, false); e != nil {
-		return nil, e
-	}
-	if e = r.Auth.Delete(ctx, s.SpaceID(), s.DeviceID(), id.Issuer, id.AccountID, id.TenantID); e != nil {
-		return nil, e
-	}
-	if mode == v1.DataDeletionMode_DATA_DELETION_MODE_DELETE_EVERYWHERE {
-		if e = s.RemoveSpace(ctx); e != nil {
+	callback, _ := b["reauthCallback"].(string)
+	challenge, _ := b["challengeId"].(string)
+	if challenge == "" {
+		raw, _ := json.Marshal(map[string]any{"mode": mode.String(), "confirmedAccountId": account, "meta": b["meta"]})
+		result, e := r.invoke(ctx, opt, "BeginDataDeletion", raw, origin)
+		if e != nil {
 			return nil, e
 		}
+		approval := result.(*v1.BeginDataDeletionResponse)
+		if cred.RedirectURI != syncclient.LoopbackRedirectURI {
+			return approval, nil
+		}
+		challenge, e = r.Auth.ApproveDeletionLoopback(ctx, s, cred, approval.ChallengeId, approval.AuthorizationUrl, r.showApproval)
+		if e != nil {
+			return nil, e
+		}
+		return map[string]any{"challengeId": challenge}, nil
 	}
-	return result, nil
+	if callback != "" {
+		completed, e := r.Auth.CompleteDeletion(ctx, s, cred, callback)
+		if e != nil {
+			return nil, e
+		}
+		if completed != challenge {
+			return nil, fail("FORBIDDEN", "Reauthentication challenge differs from the explicit selection.")
+		}
+	}
+	opt.ReauthChallenge = challenge
+	raw, _ := json.Marshal(map[string]any{"mode": mode.String(), "confirmedAccountId": account, "meta": b["meta"]})
+	return r.invoke(ctx, opt, "DeleteAccountData", raw, origin)
 }
 
 func classify(err error) error {
@@ -487,6 +522,8 @@ func classify(err error) error {
 		return failure
 	}
 	switch {
+	case errors.Is(err, syncclient.ErrCallbackPort):
+		return fail("STORAGE_BUSY", "Browser callback port 46327 is unavailable. Close the other approval and retry.")
 	case errors.Is(err, syncclient.ErrReconnectRequired):
 		return fail("STALE_EPOCH", "Reconnection requires confirmation: retained local data will be uploaded to the new server dataset. Run lane sync connect --confirm-epoch-change for a new browser approval.")
 	case errors.Is(err, syncclient.ErrAccountDeleted):
@@ -515,4 +552,102 @@ func (r *Runtime) removeAccount(ctx context.Context, s *store.Store, id store.Ac
 		return err
 	}
 	return s.RemoveSpace(ctx)
+}
+
+func (r *Runtime) finalizeApproval(ctx context.Context, s *store.Store, identity store.AccountIdentity, cred syncclient.Credential) (any, error) {
+	if cred.DeviceID != s.DeviceID() {
+		return nil, fail("FORBIDDEN", "Approved device does not match this installation.")
+	}
+	target, e := s.SelectAccount(ctx, cred.Issuer, cred.AccountID, cred.TenantID)
+	if e != nil {
+		return nil, e
+	}
+	defer target.Close()
+	if e = target.SetSyncEnabled(ctx, false); e != nil {
+		return nil, e
+	}
+	if e = r.Auth.Save(ctx, target.SpaceID(), target.DeviceID(), cred); e != nil {
+		return nil, e
+	}
+	targetIdentity, e := target.Identity(ctx)
+	if e != nil {
+		return nil, e
+	}
+	client, endpoint, e := r.client(ctx, target, targetIdentity, "")
+	if e != nil {
+		return nil, e
+	}
+	e = syncclient.ApprovedReconnect(ctx, target, lanev1connect.NewSyncServiceClient(client, endpoint), cred.AccountID, cred.TenantID, cred)
+	if errors.Is(e, syncclient.ErrAccountDeleted) {
+		// SelectAccount opens a second lifetime lease for an existing account.
+		// Release the original lease before coordinated physical removal.
+		if target.SpaceID() == s.SpaceID() {
+			if closeErr := s.Close(); closeErr != nil {
+				return nil, closeErr
+			}
+		}
+		if cleanup := r.removeAccount(ctx, target, targetIdentity); cleanup != nil {
+			return nil, cleanup
+		}
+		return nil, e
+	}
+	if e != nil {
+		return nil, e
+	}
+	if identity.AccountID == "" && s.SpaceID() != target.SpaceID() {
+		if e = syncclient.ImportStandalone(ctx, s, target); e != nil {
+			return nil, e
+		}
+	}
+	if e = target.SetSyncEnabled(ctx, true); e != nil {
+		return nil, e
+	}
+	return map[string]any{"spaceId": target.SpaceID(), "deviceId": target.DeviceID(), "connected": true}, nil
+}
+
+func (r *Runtime) showApproval(authorizationURL string) error {
+	if r.Diagnostics == nil {
+		return fail("INVALID_INPUT", "Browser approval requires a diagnostic output stream.")
+	}
+	_, err := fmt.Fprintln(r.Diagnostics, "Open this URL in your browser to approve:", authorizationURL)
+	return err
+}
+func (r *Runtime) requireActive(ctx context.Context, s *store.Store) error {
+	active, e := store.Open(s.Root(), "")
+	if e != nil {
+		return e
+	}
+	defer active.Close()
+	if active.SpaceID() != s.SpaceID() {
+		return fail("FORBIDDEN", "The active account changed. Begin a new browser approval.")
+	}
+	return nil
+}
+func (r *Runtime) deletionAfterAuthFailure(ctx context.Context, s *store.Store, original error) error {
+	if original == nil || (!errors.Is(original, syncclient.ErrCredentials) && connect.CodeOf(original) != connect.CodeUnauthenticated) {
+		return original
+	}
+	id, e := s.Identity(ctx)
+	if e != nil || id.AccountID == "" {
+		return original
+	}
+	cred, e := r.Auth.Load(ctx, s.SpaceID(), s.DeviceID(), id.Issuer, id.AccountID, id.TenantID)
+	if e != nil {
+		return original
+	}
+	epoch, e := syncclient.Epoch(ctx, s)
+	if e != nil {
+		return original
+	}
+	status, e := r.Auth.DeletionStatus(ctx, cred, epoch)
+	if e != nil {
+		return original
+	}
+	e = syncclient.ApplyDeletionStatus(ctx, s, status)
+	if errors.Is(e, syncclient.ErrAccountDeleted) {
+		if cleanup := r.removeAccount(ctx, s, id); cleanup != nil {
+			return cleanup
+		}
+	}
+	return e
 }

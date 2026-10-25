@@ -19,6 +19,7 @@ import (
 type Options struct {
 	Remote, JSON, Once, ConfirmEpochChange, RetryBlocked bool
 	Space, ExpectedSpace, Endpoint, RedirectURI, Color   string
+	ReauthChallenge                                      string
 }
 type Invoke func(context.Context, Options, string, json.RawMessage) (any, error)
 type App struct {
@@ -34,7 +35,8 @@ var commands = map[string]command{
 	"repository list": {"ListRepositories", "[--page-size N] [--cursor TOKEN]"}, "repository get": {"GetRepository", "ID"}, "repository create": {"CreateRepository", "--url URL [--display-name NAME]"}, "repository edit": {"SaveRepository", "ID --expected-version UUID --url URL [--display-name NAME]"}, "repository delete": {"DeleteRepository", "ID (permanent)"},
 	"task list": {"ListTasks", "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT]"}, "task get": {"GetTask", "ID"}, "task create": {"CreateTask", "--repository-id UUID | --repository-url URL; --title TEXT [--description TEXT] [--prompt TEXT | --prompt-stdin] [--progress STATE] [--proposal STATE]"}, "task edit": {"SaveTask", "ID --expected-version UUID [--title TEXT] [--description TEXT] [--prompt TEXT | --prompt-stdin | --clear-prompt]"}, "task move": {"SaveTask", "ID --expected-version UUID --repository-id UUID"}, "task progress": {"SetProgress", "ID --expected-version UUID --progress STATE"}, "task accept": {"SetProposal", "ID --expected-version UUID"}, "task reject": {"SetProposal", "ID --expected-version UUID"}, "task delete": {"DeleteTask", "ID (permanent)"}, "task history": {"ListHistory", "ID [--page-size N] [--cursor TOKEN]"}, "task prompt-history": {"ListHistory", "ID [--page-size N] [--cursor TOKEN]"}, "task restore-prompt": {"RestorePrompt", "ID --expected-version UUID --source-version UUID"},
 	"conflict list": {"ConflictList", "[--kind task|repository]"}, "conflict get": {"ConflictGet", "ID --kind task|repository"}, "conflict resolve": {"ResolveConflict", "ID --expected-head UUID (repeat for all heads) --resolved-json JSON"},
-	"sync status": {"GetLocalStatus", "(local)"}, "sync connect": {"ConnectSync", "[--redirect-uri URI] [--endpoint URL] [--account-id ID] [--confirm-epoch-change] (browser approval)"}, "sync callback": {"SyncCallback", "CALLBACK_URI (validates browser state)"}, "sync run": {"SyncRun", "[--once] [--retry-blocked] [--endpoint URL] (local durable worker)"}, "sync disconnect": {"DisconnectSync", "--retention keep-local|remove-local"},
+	"sync cancel-reauth": {"CancelReauthentication", "--challenge-id ID (cancel pending browser reauthentication)"},
+	"sync status":        {"GetLocalStatus", "(local)"}, "sync connect": {"ConnectSync", "[--redirect-uri URI] [--endpoint URL] [--account-id ID] [--confirm-epoch-change] (browser approval)"}, "sync callback": {"SyncCallback", "CALLBACK_URI (validates browser state)"}, "sync run": {"SyncRun", "[--once] [--retry-blocked] [--endpoint URL] (local durable worker)"}, "sync disconnect": {"DisconnectSync", "--retention keep-local|remove-local"},
 	"notification get": {"GetNotificationPreferences", "(per-device)"}, "notification set": {"SetNotificationPreferences", "--enabled true|false [--content detail|generic]"},
 	"device list": {"ListDevices", "--remote"}, "device disconnect": {"DisconnectDevice", "--remote --device-id UUID"}, "connection list": {"ListConnections", "--remote"}, "connection revoke": {"RevokeConnection", "--remote --connection-id UUID"},
 	"receiver list": {"ListReceivers", "--remote [--repository-id UUID]"}, "receiver create": {"CreateReceiver", "--remote --repository-id UUID --name NAME"}, "receiver edit": {"SaveReceiver", "--remote ID --expected-revision N --repository-id UUID --name NAME"}, "receiver rotate-key": {"RotateReceiverKey", "--remote ID --expected-revision N"}, "receiver delete": {"DeleteReceiver", "--remote ID (retains events)"},
@@ -108,6 +110,7 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 	opt.RetryBlocked = pop("retry-blocked") == "true"
 	opt.Space = pop("space")
 	opt.ExpectedSpace = pop("expected-space")
+	opt.ReauthChallenge = pop("reauth-challenge")
 	opt.Endpoint = pop("endpoint")
 	opt.RedirectURI = pop("redirect-uri")
 	opt.Color = pop("color")
@@ -182,6 +185,9 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 		if api.Descriptor(method) == nil {
 			return 2, errors.New("unknown typed method")
 		}
+	}
+	if opt.ReauthChallenge != "" && (!opt.Remote || method != "DeleteAccountData") {
+		return 2, errors.New("--reauth-challenge requires remote DeleteAccountData")
 	}
 	if len(pos) > 1 {
 		return 2, errors.New("too many positional arguments")
@@ -357,7 +363,7 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 	required := map[string][]string{
 		"GetRepository": {"id"}, "CreateRepository": {"url"}, "SaveRepository": {"id", "expectedVersionId", "url"}, "DeleteRepository": {"id"},
 		"GetTask": {"id"}, "CreateTask": {"repository", "title"}, "SaveTask": {"id", "expectedVersionId", "task"}, "SetProgress": {"id", "expectedVersionId", "progress"}, "SetProposal": {"id", "expectedVersionId", "proposal"}, "RestorePrompt": {"id", "expectedVersionId", "sourceVersionId"}, "DeleteTask": {"id"}, "ListHistory": {"id"}, "ResolveConflict": {"id", "expectedHeadIds", "resolved"},
-		"DisconnectSync": {"retention"}, "SyncCallback": {"callbackUri"}, "SetNotificationPreferences": {"enabled"}, "DisconnectDevice": {"deviceId"}, "RevokeConnection": {"connectionId"},
+		"CancelReauthentication": {"challengeId"}, "DisconnectSync": {"retention"}, "SyncCallback": {"callbackUri"}, "SetNotificationPreferences": {"enabled"}, "DisconnectDevice": {"deviceId"}, "RevokeConnection": {"connectionId"},
 		"CreateReceiver": {"repositoryId", "name"}, "SaveReceiver": {"id", "expectedRevision", "repositoryId", "name"}, "RotateReceiverKey": {"id", "expectedRevision"}, "DeleteReceiver": {"id"}, "GetEvent": {"id"}, "DeleteEvent": {"id"}, "ClaimEvent": {"id"}, "RenewEventLease": {"id", "leaseToken"}, "ReleaseEventLease": {"id", "leaseToken"}, "CompleteEvent": {"id", "leaseToken"}, "ReopenEvent": {"id", "expectedRevision"}, "ConflictGet": {"id"},
 	}
 	for _, field := range required[method] {

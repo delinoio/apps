@@ -122,13 +122,47 @@ conflict resolutions and event-completion tasks. Ordinary task edits read the fu
 snapshot and preserve unchanged fields, but still submit the caller's required
 `--expected-version`. The read cannot make a stale save unconditional.
 
-Account deletion is a two-step operation. `data delete-everywhere` or
-`data clear-server`, with `--remote --confirmed-account-id`, starts browser
-reauthentication and returns its authorization URL and challenge. After browser
-approval, repeat the command with `--challenge-id` and `--reauth-callback` to
-exchange the bound proof and perform deletion. A returned authorization URL is
-not a completed deletion. Direct typed deletion calls still require the server's
-valid, one-use proof.
+Without `--redirect-uri`, `login` and `sync connect` listen on the fixed
+`http://127.0.0.1:46327/auth/callback` address until browser approval completes.
+The CLI prints the authorization URL to stderr. A port conflict fails explicitly.
+The server must register `lane-cli` and this exact redirect; the CLI does not
+register an OS custom-scheme handler. Desktop hosts explicitly select the
+registered `lane://auth/callback` or `lane-dev://auth/callback` URI.
+
+Account deletion requires separate browser reauthentication and final confirmation.
+`data delete-everywhere` or `data clear-server`, with
+`--remote --confirmed-account-id`, starts reauthentication. With a loopback login,
+it waits for browser approval and returns only `challengeId`; repeat the command
+with `--challenge-id` to perform deletion. With a desktop redirect it returns the
+authorization URL and challenge; the callback helper below redeems the proof.
+`--reauth-callback` can also redeem the callback during the explicit final command.
+An authorization URL or successful callback is not a completed deletion.
+
+Desktop deletion uses these exact interfaces:
+
+- Remote `rpc BeginDataDeletion` stores the returned challenge in OS credential
+  storage, bound to the pinned space, account, tenant, device, session and mode.
+- `lane --json --space <uuid> sync callback <callback-uri>` with
+  `reauth_challenge` redeems and stores the proof privately. Its result contains
+  only `challengeId`. It never invokes deletion.
+- `lane --remote --json --expected-space <uuid> --reauth-challenge <id> rpc
+DeleteAccountData --request-json -` accepts a typed request without `reauthProof`.
+  The helper consumes the matching private proof before dispatch. The host strips
+  its UI-only `challengeId` property and passes it as the public flag.
+- `lane --json --space <uuid> sync cancel-reauth --challenge-id <id>` invalidates
+  exactly that pending challenge and returns `completed: true`.
+
+Proofs never enter argv, stdout, logs or UI events. Expired, cancelled, consumed,
+mismatched or switched-account challenges fail. A transport failure after proof
+consumption requires a new browser reauthentication; it does not report deletion
+success. Raw caller-supplied proofs are rejected by the helper.
+
+After an authentication failure, the worker can query `/auth/deletion-status`
+with its existing access token, without refreshing it. Only a directive matching
+the pinned account, device and stored old epoch can change local state.
+DELETE_EVERYWHERE triggers durable redaction and coordinated physical removal.
+CLEAR_SERVER_KEEP_LOCAL records the reconnect requirement. Missing, unknown or
+mismatched directives retain local data and report the authentication failure.
 
 The CLI shares `logs/.rotation.lock` with native writers. POSIX participants take
 an exclusive `flock`; Windows participants take an exclusive `LockFileEx` lock
