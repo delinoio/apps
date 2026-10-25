@@ -54,19 +54,19 @@ Package startup, minimum-OS execution, full Docker workflows and live-provider a
 
 ## Configuration fields
 
-| Field                   | Required input                                                                                                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `schema_version`        | `1`.                                                                                                                                                                     |
-| `experiment`            | Version 1, repository identity, `initial_base`, `incremental_base`, and a written `workload_confirmation`.                                                               |
-| `experiment.conditions` | Harness/workflow SHAs, workload input hashes, metric/unit, cases, correctness check names, and execution conditions.                                                     |
-| `experiment.policy`     | The Ir preset, a declared non-Ir policy, or measurements only. See [policies](/services/perfine/policies).                                                               |
-| `experiment.limits`     | Candidate count, simultaneous candidates, start duration, and per-candidate duration. All are required.                                                                  |
-| `adapter`               | Version 1 language recipe, discovery files, build/correctness/workload commands, profiles, source mappings, and tool probes. See [adapters](/services/perfine/adapters). |
-| `docker`                | Absolute Docker executable, immutable image, dependency names, numeric `uid:gid`, memory bytes, CPUs, process limit, and command timeout seconds.                        |
-| `execution_root`        | An absolute task directory outside your repository and `.perfine/`.                                                                                                      |
-| `toolchain_probe`       | A key in the adapter's tool probes that identifies the selected toolchain.                                                                                               |
-| `agent`                 | Optional for measurement; required for AI optimization. Local-only agent configuration.                                                                                  |
-| `action_commit`         | Optional verified distribution SHA for GitHub workflow generation.                                                                                                       |
+| Field                   | Required input                                                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`        | `1`.                                                                                                                                                                                   |
+| `experiment`            | Version 1, repository identity, `initial_base`, `incremental_base`, and a written `workload_confirmation`.                                                                             |
+| `experiment.conditions` | Harness/workflow SHAs, workload input hashes, metric/unit, cases, correctness check names, and execution conditions.                                                                   |
+| `experiment.policy`     | The Ir preset, a declared non-Ir policy, or measurements only. See [policies](/services/perfine/policies).                                                                             |
+| `experiment.limits`     | Candidate count, simultaneous candidates, start duration, and per-candidate duration. All are required.                                                                                |
+| `adapter`               | Version 1 language recipe, discovery files, build/correctness/workload commands, profiles, source mappings, and tool probes. See [adapters](/services/perfine/adapters).               |
+| `docker`                | Absolute Docker executable or bare tool name resolved from PATH, immutable image, dependency names, numeric `uid:gid`, memory bytes, CPUs, process limit, and command timeout seconds. |
+| `execution_root`        | An absolute task directory outside your repository and `.perfine/`.                                                                                                                    |
+| `toolchain_probe`       | A key in the adapter's tool probes that identifies the selected toolchain.                                                                                                             |
+| `agent`                 | Optional for measurement; required for AI optimization. Local-only agent configuration.                                                                                                |
+| `action_commit`         | Optional verified distribution SHA for GitHub workflow generation.                                                                                                                     |
 
 Tool and environment probes replace template observation fields before Perfine freezes the experiment. Workload hashes must match committed files. Do not treat optimized production source as an immutable workload input.
 

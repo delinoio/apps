@@ -39,7 +39,10 @@ function hostTarget(os = process.platform, cpu = process.arch) {
   const target = Object.keys(targets).find(
     (key) => targets[key].os === os && targets[key].cpu === cpu,
   );
-  if (!target) throw new Error(`Unsupported Perfine platform: ${os}/${cpu}`);
+  if (!target)
+    throw new Error(
+      `Unsupported Perfine platform: ${os}/${cpu}. Use Linux x64, macOS x64/arm64, or Windows x64 with the documented minimum OS version.`,
+    );
   return targetInfo(target);
 }
 function validateBinary(bytes, target) {
