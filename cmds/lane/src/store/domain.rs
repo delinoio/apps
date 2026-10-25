@@ -25,7 +25,7 @@ pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
             }
             if strv(&v, "entityId") != id
                 || !valid_id(strv(&v, "versionId"))
-                || v["createdAt"].is_null()
+                || (v["deleted"] != true && v["createdAt"].is_null())
                 || !matches!(
                     strv(&v, "kind"),
                     "ENTITY_KIND_REPOSITORY" | "ENTITY_KIND_TASK"

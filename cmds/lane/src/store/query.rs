@@ -193,14 +193,14 @@ impl Store {
                 })? {
                     let (raw, prompt) = row?;
                     let v: Value = serde_json::from_str(&raw)?;
+                    if v["deleted"] == true {
+                        continue;
+                    }
                     let time = chrono::DateTime::parse_from_rfc3339(strv(&v, "createdAt"))
                         .map_err(|_| invalid("Invalid history timestamp."))?
                         .to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
                     let key = format!("{time}:{}", strv(&v, "versionId"));
-                    if key <= last
-                        || v["deleted"] == true
-                        || (request["promptsOnly"] == true && !prompt)
-                    {
+                    if key <= last || (request["promptsOnly"] == true && !prompt) {
                         continue;
                     }
                     if versions.len() == size {

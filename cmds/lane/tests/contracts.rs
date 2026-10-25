@@ -413,3 +413,38 @@ fn ssh_hosts_share_https_repository_identity() {
         }
     }
 }
+
+#[test]
+fn synchronized_deletions_have_empty_history() {
+    for kind in [
+        "ENTITY_KIND_OR_REMOTE_KIND_TASK",
+        "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let s = Store::open(temp.path(), "", false).unwrap();
+        let v = call(&s, "CreateTask", json!({"title":"Deleted", "prompt":"private", "repository":{"url":"https://example.com/deleted"}})).unwrap()["result"]["version"].clone();
+        let target = if kind == "ENTITY_KIND_OR_REMOTE_KIND_TASK" {
+            &v["entityId"]
+        } else {
+            &v["task"]["repositoryId"]
+        };
+        s.with(true, |c| {
+            lane::store::sync::change(
+                c,
+                &json!({"deletion":{"id":target,"kind":kind,"deletionVersionId":id()}}),
+                "",
+            )
+        })
+        .unwrap();
+        for prompts in [false, true] {
+            let history = call(
+                &s,
+                "ListHistory",
+                json!({"id":v["entityId"], "promptsOnly":prompts}),
+            )
+            .unwrap();
+            assert_eq!(history["versions"], json!([]));
+            assert_eq!(history["nextCursor"], "");
+        }
+    }
+}
