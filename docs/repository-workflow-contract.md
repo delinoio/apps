@@ -10,7 +10,7 @@ Changes under `servers/scripts/` select all four API entries in both server vali
 
 ## Project-local agent skills
 
-Project-local third-party skills are committed under `.agents/skills/`. Root `skills-lock.json` records their upstream sources, skill paths and content hashes. The installed skills are `turborepo` from `vercel/turborepo`, `vercel-react-best-practices` from `vercel-labs/agent-skills`, `vercel-composition-patterns` from `vercel-labs/agent-skills`, and `postgres` from `planetscale/database-skills`.
+Project-local third-party skills are committed under `.agents/skills/`. Root `skills-lock.json` records their upstream sources, skill paths and content hashes. The installed skills are `turborepo` from `vercel/turborepo`, `vercel-react-best-practices` from `vercel-labs/agent-skills`, `vercel-composition-patterns` from `vercel-labs/agent-skills`, `postgres` from `planetscale/database-skills`, and the Lynx collection from `lynx-community/skills`, which is linked from the [official Lynx AI documentation](https://lynxjs.org/next/ai/). The Lynx collection includes `habitat-usage`, `lynx-a2ui`, `lynx-api-docs`, `lynx-check-css-support`, `lynx-debug-info-remapping`, `lynx-devtool`, `lynx-openui`, `lynx-trace-analysis`, `lynx-trace-record`, `lynx-typescript`, `lynx-ui`, `reactlynx-best-practices`, `rspeedy-bundle-size`, and `vanilla-lynx`.
 
 Install these skills from the repository root:
 
@@ -19,6 +19,7 @@ npx skills add vercel/turborepo --skill turborepo --agent codex --yes
 npx skills add vercel-labs/agent-skills --skill vercel-react-best-practices --agent codex --yes
 npx skills add vercel-labs/agent-skills --skill vercel-composition-patterns --agent codex --yes
 npx skills add planetscale/database-skills --skill postgres --agent codex --yes
+npx skills add lynx-community/skills --skill '*' --agent codex --yes
 ```
 
 The commands fetch the current upstream skills. Review content and lockfile changes before committing updates. Imported skills retain their upstream license metadata and available license files; see the [license contract](repository-license-contract.md). The shared formatter excludes `.agents/skills/` to preserve imported content.

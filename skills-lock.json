@@ -1,17 +1,101 @@
 {
   "version": 1,
   "skills": {
+    "habitat-usage": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/habitat-usage/SKILL.md",
+      "computedHash": "35d7376c32d00557670d90fa537b729da239b26391e9500a52ae2d4f9b55f9da"
+    },
+    "lynx-a2ui": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-a2ui/SKILL.md",
+      "computedHash": "8cacbeec326184bba820d07721a15c342c1955b6c16093b02a44b6f2ccbc9259"
+    },
+    "lynx-api-docs": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-api-docs/SKILL.md",
+      "computedHash": "df938e634248d9d6122e33aacc68a6330cc6fdd601910e50dbf93672cc4b21ef"
+    },
+    "lynx-check-css-support": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-check-css-support/SKILL.md",
+      "computedHash": "df35d8ca2e26677e179b90921aa192c3129d6ddb3ce87cf1ed209fc7d7f49b94"
+    },
+    "lynx-debug-info-remapping": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-debug-info-remapping/SKILL.md",
+      "computedHash": "318a1643ec21e2aa29c631d51de32326df296b6a419ace22afcfb50375a4e247"
+    },
+    "lynx-devtool": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-devtool/SKILL.md",
+      "computedHash": "33b355800eba74c5e10dd14b0ec6128c1ae8174c605820b281c2ee7b5f373015"
+    },
+    "lynx-openui": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-openui/SKILL.md",
+      "computedHash": "28ea3b9441972c0d800f847aa6e262c4fa89f66d5bbbd66568f61dbab9f7a819"
+    },
+    "lynx-trace-analysis": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-trace-analysis/SKILL.md",
+      "computedHash": "fbf9cd0ce5f2f33346bf78b90a665c321d30e8069cad099e110ebf890e727060"
+    },
+    "lynx-trace-record": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-trace-record/SKILL.md",
+      "computedHash": "6c0642baf468e8ba03a6b13dca583ab3bae9fbbbf8579e73d6208f0fd579cc1c"
+    },
+    "lynx-typescript": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-typescript/SKILL.md",
+      "computedHash": "15576a4f45dc2a117b54fd34e50649133ae5508a8d3544ca0d700d836ae5b3c8"
+    },
+    "lynx-ui": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/lynx-ui/SKILL.md",
+      "computedHash": "a887f6737de566792e67449870df5bd30b98c0652765879d832bd038dc98b4a0"
+    },
     "postgres": {
       "source": "planetscale/database-skills",
       "sourceType": "github",
       "skillPath": "skills/postgres/SKILL.md",
       "computedHash": "3d4b3c578b7fcbc61e89b2731a248175e2aa740dc228a106b1a8b29b05ab000f"
     },
+    "reactlynx-best-practices": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/reactlynx-best-practices/SKILL.md",
+      "computedHash": "8861f37a35cb4b5bb2fa5f819f82705ed2cd57e0448d5bee7989fe63ba6a8606"
+    },
+    "rspeedy-bundle-size": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rspeedy-bundle-size/SKILL.md",
+      "computedHash": "549daea935444aefb82d644bccee340a99bf6ceb51a595ca8f3aa5b3a5cb8d6f"
+    },
     "turborepo": {
       "source": "vercel/turborepo",
       "sourceType": "github",
       "skillPath": "skills/turborepo/SKILL.md",
       "computedHash": "9681d8dfeb5e6cdff767f1bcaba5d7ac55732a9d6c02ee120f44229f8ec25e7e"
+    },
+    "vanilla-lynx": {
+      "source": "lynx-community/skills",
+      "sourceType": "github",
+      "skillPath": "skills/vanilla-lynx/SKILL.md",
+      "computedHash": "a7d426d10836ac51ab2fdf24981c835beca2e7cb38e986ad1289b75bc0ade1d1"
     },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
