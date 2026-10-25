@@ -8,8 +8,10 @@
 #include "utf8proc.h"
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -18,6 +20,7 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 #ifndef _WIN32
 #include <fcntl.h>
@@ -344,6 +347,79 @@ void privateDir(const fs::path &p) {
   chmod(p.c_str(), 0700);
 #endif
 }
+// Stable OS lock inode lives outside the removable database directory.
+// The Go adapter uses this same flock/LockFileEx byte-range protocol.
+class LifetimeLock {
+#ifndef _WIN32
+  int fd_ = -1;
+#else
+  HANDLE fd_ = INVALID_HANDLE_VALUE;
+  OVERLAPPED overlapped_{};
+#endif
+public:
+  LifetimeLock(const fs::path &path, bool exclusive) {
+#ifndef _WIN32
+    fd_ = ::open(path.c_str(), O_CREAT | O_RDWR, 0600);
+    if (fd_ < 0)
+      fail("DEPENDENCY_UNAVAILABLE", "Cannot acquire storage ownership.");
+#else
+    fd_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+                      FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (fd_ == INVALID_HANDLE_VALUE)
+      fail("DEPENDENCY_UNAVAILABLE", "Cannot acquire storage ownership.");
+#endif
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;) {
+#ifndef _WIN32
+      if (flock(fd_, (exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB) == 0)
+        return;
+      if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR) {
+        ::close(fd_);
+        fd_ = -1;
+        fail("DEPENDENCY_UNAVAILABLE", "Cannot acquire storage ownership.");
+      }
+#else
+      if (LockFileEx(fd_,
+                     LOCKFILE_FAIL_IMMEDIATELY |
+                         (exclusive ? LOCKFILE_EXCLUSIVE_LOCK : 0),
+                     0, 1, 0, &overlapped_))
+        return;
+      if (GetLastError() != ERROR_LOCK_VIOLATION) {
+        CloseHandle(fd_);
+        fd_ = INVALID_HANDLE_VALUE;
+        fail("DEPENDENCY_UNAVAILABLE", "Cannot acquire storage ownership.");
+      }
+#endif
+      if (std::chrono::steady_clock::now() >= deadline) {
+#ifndef _WIN32
+        ::close(fd_);
+        fd_ = -1;
+#else
+        CloseHandle(fd_);
+        fd_ = INVALID_HANDLE_VALUE;
+#endif
+        fail("STORAGE_BUSY", "Another process is using this space. Retry "
+                             "removal after it drains.");
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+  ~LifetimeLock() {
+#ifndef _WIN32
+    if (fd_ >= 0) {
+      flock(fd_, LOCK_UN);
+      ::close(fd_);
+    }
+#else
+    if (fd_ != INVALID_HANDLE_VALUE) {
+      UnlockFileEx(fd_, 0, 1, 0, &overlapped_);
+      CloseHandle(fd_);
+    }
+#endif
+  }
+  LifetimeLock(const LifetimeLock &) = delete;
+};
 void compatibility(Db &d, bool registry = false) {
   if (d.one("PRAGMA application_id") != std::to_string(kApp) ||
       d.one("PRAGMA user_version") != "1")
@@ -602,34 +678,50 @@ struct Store::Impl {
   fs::path root;
   std::unique_ptr<Db> registry;
   HostHooks hooks;
+  std::exception_ptr initializationFailure;
   struct Space {
+    std::unique_ptr<LifetimeLock> lifetime;
     std::unique_ptr<Db> db, observer;
     int handles = 0;
     std::string seen;
   };
   std::map<std::string, Space> spaces;
   explicit Impl(std::string r) : root(fs::u8path(r)) {
-    require(!r.empty());
-    privateDir(root);
-    privateDir(root / "spaces");
-    registry = std::make_unique<Db>(root / "registry.sqlite");
-    initialize(*registry, true);
-    Tx tx(*registry);
-    compatibility(*registry, true);
-    if (registry->one("SELECT value FROM registry_meta WHERE key='device_id'")
-            .empty())
-      registry->run("INSERT INTO registry_meta VALUES('device_id',?)",
-                    {uuid()});
-    if (registry
-            ->one("SELECT value FROM registry_meta WHERE key='active_space_id'")
-            .empty()) {
-      auto sid = uuid();
-      registry->run("INSERT INTO spaces(id,account_key) VALUES(?,'local')",
-                    {sid});
-      registry->run("INSERT INTO registry_meta VALUES('active_space_id',?)",
-                    {sid});
+    try {
+      require(!r.empty());
+      privateDir(root);
+      privateDir(root / "spaces");
+      privateDir(root / "locks");
+      registry = std::make_unique<Db>(root / "registry.sqlite");
+      initialize(*registry, true);
+      Tx tx(*registry);
+      compatibility(*registry, true);
+      if (registry->one("SELECT value FROM registry_meta WHERE key='device_id'")
+              .empty())
+        registry->run("INSERT INTO registry_meta VALUES('device_id',?)",
+                      {uuid()});
+      if (registry
+              ->one(
+                  "SELECT value FROM registry_meta WHERE key='active_space_id'")
+              .empty()) {
+        auto sid = uuid();
+        registry->run("INSERT INTO spaces(id,account_key) VALUES(?,'local')",
+                      {sid});
+        registry->run("INSERT INTO registry_meta VALUES('active_space_id',?)",
+                      {sid});
+      }
+      tx.commit();
+    } catch (...) {
+      initializationFailure = std::current_exception();
     }
-    tx.commit();
+  }
+  void ready() {
+    if (initializationFailure)
+      std::rethrow_exception(initializationFailure);
+  }
+  bool unavailable(const std::string &s) {
+    return registry->one("SELECT value FROM registry_meta WHERE key=?",
+                         {"unavailable:" + s}) == "1";
   }
   std::string device() {
     return registry->one(
@@ -642,17 +734,28 @@ struct Store::Impl {
   void registered(const std::string &s) {
     id(s);
     compatibility(*registry, true);
-    if (registry
+    if (unavailable(s) ||
+        registry
             ->one("SELECT id FROM spaces WHERE id=? AND account_key NOT LIKE "
                   "'removed:%'",
                   {s})
-            .empty())
+            .empty()) {
+      auto it = spaces.find(s);
+      if (it != spaces.end() &&
+          (!it->second.db || sqlite3_get_autocommit(it->second.db->p)))
+        spaces.erase(it);
       fail("NOT_FOUND", "This local space is unavailable.");
+    }
   }
   Db &db(const std::string &s) {
     registered(s);
     auto &slot = spaces[s];
     if (!slot.db) {
+      auto lifetime = std::make_unique<LifetimeLock>(
+          root / "locks" / (s + ".handles.lock"), false);
+      if (unavailable(s))
+        fail("NOT_FOUND", "This local space is unavailable.");
+      slot.lifetime = std::move(lifetime);
       auto dir = root / "spaces" / s;
       privateDir(dir);
       slot.db = std::make_unique<Db>(dir / "lane.sqlite");
@@ -679,6 +782,50 @@ struct Store::Impl {
   bool enabled(const std::string &s) {
     return registry->one("SELECT sync_enabled FROM spaces WHERE id=?", {s}) ==
            "1";
+  }
+  J removeData(const std::string &s) {
+    id(s);
+    compatibility(*registry, true);
+    bool marked = unavailable(s);
+    if (!marked)
+      registered(s);
+    if (hooks.disconnect)
+      hooks.disconnect(s);
+    {
+      Tx t(*registry);
+      registry->run("INSERT INTO registry_meta(key,value) VALUES(?,'1') ON "
+                    "CONFLICT(key) DO UPDATE SET value='1'",
+                    {"unavailable:" + s});
+      registry->run("UPDATE spaces SET sync_enabled=0,account_key=? WHERE id=?",
+                    {"removed:" + s, s});
+      t.commit();
+    }
+    // Closing both physical connections releases the SH lifetime lock last.
+    spaces.erase(s);
+    LifetimeLock exclusive(root / "locks" / (s + ".handles.lock"), true);
+    std::error_code ec;
+    fs::remove_all(root / "spaces" / s, ec);
+    if (ec)
+      fail("DEPENDENCY_UNAVAILABLE",
+           "Could not remove this space. Retry cleanup.");
+    {
+      Tx t(*registry);
+      registry->run("DELETE FROM spaces WHERE id=?", {s});
+      if (active() == s) {
+        auto local =
+            registry->one("SELECT id FROM spaces WHERE account_key='local'");
+        if (local.empty()) {
+          local = uuid();
+          registry->run("INSERT INTO spaces(id,account_key) VALUES(?,'local')",
+                        {local});
+        }
+        registry->run(
+            "UPDATE registry_meta SET value=? WHERE key='active_space_id'",
+            {local});
+      }
+      t.commit();
+    }
+    return success({{"completed", true}});
   }
   J origin(const std::string &s) {
     return J{{"kind", "ORIGIN_KIND_APP"},
@@ -1650,6 +1797,7 @@ void Store::setHostHooks(HostHooks hooks) { impl_->hooks = std::move(hooks); }
 std::string Store::sqliteSourceId() { return sqlite3_sourceid(); }
 std::string Store::open(std::string text) {
   return protect([&] {
+    impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "spaceId"});
     if (q.value("formatVersion", 0) != 1)
@@ -1670,43 +1818,67 @@ std::string Store::open(std::string text) {
 }
 std::string Store::close(std::string s) {
   return protect([&] {
+    impl_->ready();
     impl_->registered(s);
     auto it = impl_->spaces.find(s);
     if (it != impl_->spaces.end() && it->second.handles > 0)
       --it->second.handles;
+    if (it != impl_->spaces.end() && it->second.handles == 0 &&
+        !impl_->enabled(s))
+      impl_->spaces.erase(it);
     return success({{"completed", true}});
   });
 }
 std::string Store::poll() {
   J events = J::array();
   try {
+    impl_->ready();
     for (auto &r :
-         impl_->registry->run("SELECT id FROM spaces WHERE sync_enabled=1 AND "
-                              "account_key NOT LIKE 'removed:%'"))
-      impl_->db(r[0]);
-    for (auto &[s, slot] : impl_->spaces) {
-      if (slot.handles == 0 && !impl_->enabled(s))
-        continue;
-      impl_->registered(s);
-      auto &d = *slot.observer;
-      compatibility(d);
-      auto seq = sequence(d);
-      if (seq != slot.seen) {
-        slot.seen = seq;
-        events.push_back({{"spaceId", s}, {"sequence", seq}});
+         impl_->registry->run("SELECT id FROM spaces WHERE sync_enabled=1")) {
+      try {
+        impl_->db(r[0]);
+      } catch (...) {
       }
     }
-  } catch (...) { /* Retry on the next host tick; never emit an uncommitted
-                     sequence. */
-  }
+    std::vector<std::string> ids;
+    for (auto &entry : impl_->spaces)
+      ids.push_back(entry.first);
+    for (auto &s : ids)
+      try {
+        impl_->registered(s);
+        auto &slot = impl_->spaces.at(s);
+        if (slot.handles == 0 && !impl_->enabled(s))
+          continue;
+        compatibility(*slot.observer);
+        auto seq = sequence(*slot.observer);
+        if (seq != slot.seen) {
+          slot.seen = seq;
+          events.push_back({{"spaceId", s}, {"sequence", seq}});
+        }
+      } catch (...) {
+      } // Marked handles drain; other spaces still receive invalidations.
+  } catch (...) {
+  } // Retry transient registry failures on the next host tick.
   return events.dump();
 }
 std::string Store::invoke(std::string m, std::string text) {
   auto started = now();
   auto response = protect([&] {
+    impl_->ready();
     auto outer = canonical(parse(text));
     fields(outer, {"spaceId", "request"});
     auto s = str(outer, "spaceId");
+    auto request = outer.value("request", J::object());
+    if (m == "RemoveDeviceData") {
+      fields(request, {});
+      return impl_->removeData(s);
+    }
+    if (m == "DisconnectSync" &&
+        enumValue(
+            request, "retention", "LOCAL_RETENTION_",
+            {"LOCAL_RETENTION_KEEP_LOCAL", "LOCAL_RETENTION_REMOVE_LOCAL"}) ==
+            "LOCAL_RETENTION_REMOVE_LOCAL")
+      return impl_->removeData(s);
     impl_->registered(s);
     auto it = impl_->spaces.find(s);
     if (it == impl_->spaces.end() || it->second.handles <= 0)
@@ -1833,40 +2005,8 @@ std::string Store::invoke(std::string m, std::string text) {
         changed(d, "", 3);
         t.commit();
       }
-      if (retention == "LOCAL_RETENTION_REMOVE_LOCAL") {
-        // Mark unavailable before clearing pages. Existing handles in other
-        // processes check registry routing before their next operation. Do not
-        // unlink a live DB.
-        Tx rt(*impl_->registry);
-        impl_->registry->run("UPDATE spaces SET "
-                             "account_key=?,account_id=NULL,tenant_id=NULL,"
-                             "issuer=NULL WHERE id=?",
-                             {"removed:" + s, s});
-        if (impl_->active() == s) {
-          auto local = impl_->registry->one(
-              "SELECT id FROM spaces WHERE account_key='local'");
-          if (local.empty()) {
-            local = uuid();
-            impl_->registry->run(
-                "INSERT INTO spaces(id,account_key) VALUES(?,'local')",
-                {local});
-          }
-          impl_->registry->run(
-              "UPDATE registry_meta SET value=? WHERE key='active_space_id'",
-              {local});
-        }
-        rt.commit();
-        Tx t(d);
-        d.exec("DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; "
-               "DELETE FROM receipts; DELETE FROM outbox; DELETE FROM "
-               "remote_objects; DELETE FROM repository_mappings; DELETE FROM "
-               "notification_receipts; DELETE FROM store_meta WHERE key NOT IN "
-               "('space_id','device_id','format_version');");
-        changed(d, "", 3);
-        t.commit();
-        d.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-        impl_->spaces.erase(s);
-      }
+      (void)retention; // REMOVE_LOCAL is handled before acquiring a space
+                       // connection.
       return success({{"completed", true}});
     }
     static const std::set<std::string> online = {
@@ -1948,6 +2088,7 @@ std::string Store::invoke(std::string m, std::string text) {
 }
 std::string Store::approveAccount(std::string text, bool merge) {
   return protect([&] {
+    impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"issuer", "accountId", "tenantId", "epoch", "deviceId"});
     auto issuer = str(q, "issuer"), account = str(q, "accountId"),
@@ -2045,6 +2186,7 @@ std::string Store::approveAccount(std::string text, bool merge) {
 }
 std::string Store::acquireSync(std::string s, std::string owner, int seconds) {
   return protect([&] {
+    impl_->ready();
     id(owner);
     require(seconds >= 0 && seconds <= 300);
     auto &d = impl_->db(s);
@@ -2068,6 +2210,7 @@ std::string Store::acquireSync(std::string s, std::string owner, int seconds) {
 }
 std::string Store::pendingSync(std::string s, std::string owner) {
   return protect([&] {
+    impl_->ready();
     auto &d = impl_->db(s);
     Tx t(d, false);
     impl_->lease(d, owner);
@@ -2092,6 +2235,7 @@ std::string Store::pendingSync(std::string s, std::string owner) {
 }
 std::string Store::applySync(std::string s, std::string text) {
   return protect([&] {
+    impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "epoch", "owner", "push", "pull"});
     if (q.value("formatVersion", 0) != 1)
@@ -2218,6 +2362,7 @@ template <class I> J notificationItems(I &impl, Db &d) {
 } // namespace
 std::string Store::pendingNotifications(std::string s) {
   return protect([&] {
+    impl_->ready();
     auto &d = impl_->db(s);
     Tx t(d, false);
     auto items = notificationItems(*impl_, d);
@@ -2227,6 +2372,7 @@ std::string Store::pendingNotifications(std::string s) {
 }
 std::string Store::claimNotifications(std::string s, std::string claimant) {
   return protect([&] {
+    impl_->ready();
     id(claimant);
     auto &d = impl_->db(s);
     Tx t(d);
@@ -2251,6 +2397,7 @@ std::string Store::claimNotifications(std::string s, std::string claimant) {
 std::string Store::acknowledgeNotification(std::string s,
                                            std::string proposal) {
   return protect([&] {
+    impl_->ready();
     id(proposal);
     auto &d = impl_->db(s);
     Tx t(d);
@@ -2267,6 +2414,7 @@ std::string Store::acknowledgeNotification(std::string s,
 std::string Store::recordNotificationPermission(std::string s,
                                                 std::string permission) {
   return protect([&] {
+    impl_->ready();
     permission = enumValue(
         J{{"v", permission}}, "v", "NOTIFICATION_PERMISSION_",
         {"NOTIFICATION_PERMISSION_NOT_REQUESTED",
@@ -2283,6 +2431,7 @@ std::string Store::recordNotificationPermission(std::string s,
 }
 std::string Store::recordSyncFailure(std::string s, std::string reason) {
   return protect([&] {
+    impl_->ready();
     require(reason.rfind("ERROR_REASON_", 0) == 0);
     auto &d = impl_->db(s);
     Tx t(d);
@@ -2298,6 +2447,7 @@ std::string Store::recordSyncFailure(std::string s, std::string reason) {
 }
 std::string Store::spacesForAccount(std::string account) {
   return protect([&] {
+    impl_->ready();
     require(!account.empty());
     J items = J::array();
     for (auto &r : impl_->registry->run(
@@ -2310,6 +2460,7 @@ std::string Store::spacesForAccount(std::string account) {
 }
 std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
   return protect([&] {
+    impl_->ready();
     id(epoch);
     auto &d = impl_->db(s);
     Tx t(d);

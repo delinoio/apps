@@ -27,7 +27,11 @@ int main(int argc, char **argv) {
                 {"spaceId", q.at("spaceId")},
                 {"request", q.value("request", nlohmann::json::object())}}
                 .dump());
-      else
+      else if (m == "exit") {
+        std::cout << R"({"ok":true,"response":{"completed":true}})"
+                  << std::endl;
+        return 0;
+      } else
         return 2;
       std::cout << out << std::endl;
     } catch (...) {
