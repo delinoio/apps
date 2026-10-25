@@ -5,7 +5,7 @@ import paceIcon from "../assets/pace-icon.png?inline";
 export enum MiniApp {
   Lane = "Lane",
   Pace = "Pace",
-  Handrail = "Handrail",
+  RealQA = "RealQA",
 }
 
 // Bundle the Pace bitmap inline so native hosts need no external asset URL.
@@ -21,9 +21,9 @@ export function AppIcon({ app }: { app: MiniApp }) {
         <image className="pace-artwork" src={paceIcon} mode="aspectFit" />
       ) : (
         <>
-          <view className="handrail-top" />
-          <view className="handrail-post post-left" />
-          <view className="handrail-post post-right" />
+          <view className="realqa-top" />
+          <view className="realqa-post post-left" />
+          <view className="realqa-post post-right" />
         </>
       )}
     </view>
@@ -39,7 +39,7 @@ export function AppRail({
 }) {
   return (
     <view className="app-rail">
-      {[MiniApp.Lane, MiniApp.Pace, MiniApp.Handrail].map((app) => (
+      {[MiniApp.Lane, MiniApp.Pace, MiniApp.RealQA].map((app) => (
         <view
           key={app}
           className={`button app-switch ${selected === app ? "selected" : ""}`}

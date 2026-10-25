@@ -54,4 +54,4 @@ Release with an error reason to permit immediate reclaim. Expired/released token
 
 Only newly proposed tasks created through MCP trigger OS notices. Progress changes and app/CLI proposals do not. Notification preferences and permission are per device; generic content is available. Preserve in-app proposal indications when push is unsupported. Windows has no remote WNS support; Android without required Play services may lack remote push. Do not promise delivery.
 
-There are no decision items, priorities, labels, due dates, teams, billing, import/export, or Lane-run agent automation. Perfine and RealQA remain disabled placeholders. Read [user workflows](guides/user-guide.md) and [troubleshooting](guides/troubleshooting.md) when those details affect the request.
+There are no decision items, priorities, labels, due dates, teams, billing, import/export, or Lane-run agent automation. Pace and RealQA are enabled app selectors with Coming soon pages; their features remain unimplemented. Read [user workflows](guides/user-guide.md) and [troubleshooting](guides/troubleshooting.md) when those details affect the request.
