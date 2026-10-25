@@ -118,10 +118,11 @@ view.setAttribute("url", "/gallery.web.bundle");
 The bridge supplies DOM roles, checked/disabled/selected states, keyboard
 activation, roving tab stops, modal background isolation and Clay-compatible
 focus methods. It handles shadow-DOM keyboard retargeting in the pinned runtime.
-Install once per view; dispose on permanent unmount. It does not patch global
-prototypes. This entry belongs in the browser host, never in a background-thread
-bundle. Native hosts use Lynx key events and focus methods directly, with
-accessibility-focus fallback when Clay `setFocus` is unavailable.
+Install once per view; retain the bridge through persisted `pagehide`/`pageshow`
+cycles, and dispose on permanent unmount or non-persisted `pagehide`. It does not
+patch global prototypes. This entry belongs in the browser host, never in a
+background-thread bundle. Native hosts use Lynx key events and focus methods
+directly, with accessibility-focus fallback when Clay `setFocus` is unavailable.
 
 Semantic CSS variables use the `--lui-` prefix. Override them on the provider's
 style (for example `--lui-primary`, `--lui-on-primary`, `--lui-focus`) while
