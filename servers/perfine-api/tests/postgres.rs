@@ -1039,6 +1039,13 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     );
     call(&server,&space,"SetRawArtifactConsent",json!({"connectionId":cid,"expectedRevision":"0","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"]})).await.unwrap();
     assert!(
+        sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    assert!(
         call(
             &server,
             &space,
@@ -1877,7 +1884,88 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         "CANCELLATION_STATE_CONFIRMED"
     );
     *state.lock().unwrap() = "TENANT_STATE_ACTIVE".into();
-    assert!(call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.is_err());
+    let consent = call(
+        &server,
+        &space,
+        "GetRawArtifactConsent",
+        json!({"connectionId":cid}),
+    )
+    .await
+    .unwrap()["consent"]
+        .clone();
+    call(
+        &server,
+        &space,
+        "SetRawArtifactConsent",
+        json!({"connectionId":cid,"expectedRevision":consent["revision"],"allowedKinds":[]}),
+    )
+    .await
+    .unwrap();
+    let (active, connection_data): (bool, Value) =
+        sqlx::query_as("SELECT active,data FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(active);
+    assert_eq!(connection_data["state"], "CONNECTION_STATE_AUTHORITY_LOST");
+    let other_space = uid();
+    let repository = json!({"githubRepositoryId":"42","owner":"owner","name":"repo"});
+    let connect_request = json!({"repository":repository,"githubInstallationId":"1"});
+    let err = call(
+        &server,
+        &other_space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.code, connectrpc::ErrorCode::AlreadyExists);
+    let reconnected = call(
+        &server,
+        &space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(reconnected["connection"]["id"], cid);
+    call(
+        &server,
+        &space,
+        "DisconnectRepository",
+        json!({"connectionId":cid}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    let other_connection = call(
+        &server,
+        &other_space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap();
+    let other_connection_id = other_connection["connection"]["id"].as_str().unwrap();
+    call(
+        &server,
+        &other_space,
+        "DisconnectRepository",
+        json!({"connectionId":other_connection_id}),
+    )
+    .await
+    .unwrap();
+    let reconnected = call(&server, &space, "ConnectRepository", connect_request)
+        .await
+        .unwrap();
+    assert_eq!(reconnected["connection"]["id"], cid);
     *state.lock().unwrap() = "TENANT_STATE_BLOCKED".into();
     sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
         .bind(blocked_run)

@@ -441,12 +441,21 @@ impl Server {
                 }
                 if mutation(op) {
                     c["updatedAt"] = json!(stamp());
-                    sqlx::query("UPDATE perfine_connections SET data=$2,active=$3 WHERE id=$1")
+                    if op == "DisconnectRepository" {
+                        sqlx::query(
+                            "UPDATE perfine_connections SET data=$2,active=false WHERE id=$1",
+                        )
                         .bind(id(string(&c, "id"))?)
                         .bind(&c)
-                        .bind(c["state"] == "CONNECTION_STATE_CONNECTED")
                         .execute(db)
                         .await?;
+                    } else {
+                        sqlx::query("UPDATE perfine_connections SET data=$2 WHERE id=$1")
+                            .bind(id(string(&c, "id"))?)
+                            .bind(&c)
+                            .execute(db)
+                            .await?;
+                    }
                 }
                 Ok(if op == "SetRawArtifactConsent" {
                     json!({"consent":c["consent"]})
