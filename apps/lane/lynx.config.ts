@@ -9,6 +9,17 @@ const runtime = dirname(require.resolve("@lynx-js/web-core/package.json"));
 export default defineConfig({
   source: { entry: { main: "./src/index.tsx" } },
   plugins: [pluginReactLynx()],
+  output: {
+    copy: [
+      {
+        from: resolve(
+          dirname(require.resolve("text-encoding-utf-8/package.json")),
+          "LICENSE.md",
+        ),
+        to: "licenses/text-encoding-utf-8.txt",
+      },
+    ],
+  },
   environments: {
     lynx: {},
     web: {
