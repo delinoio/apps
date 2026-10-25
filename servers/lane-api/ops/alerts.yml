@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Thresholds, windows and durations are operator-configurable. Initial values are operational triggers, not SLOs.
+groups:
+  - name: lane-alerts
+    interval: 30s
+    rules:
+      - alert: LaneHealthFailure
+        expr: |
+          (probe_success{job="lane-health"} == 0) or (up{job="lane-health"} == 0)
+          or (sum without (alertname, alertstate, severity) (ALERTS{alertname="LaneHealthFailure",alertstate="firing"})
+              unless ((probe_success{job="lane-health"} == 1) and (up{job="lane-health"} == 1)))
+        for: 5m
+        keep_firing_for: 5m
+        labels:
+          severity: critical
+      # The firing-state arm holds an existing alert when samples are insufficient or missing.
+      # It becomes absent only on positive, sufficiently sampled recovery evidence.
+      # keep_firing_for then requires ten continuous minutes of that evidence.
+      - alert: LaneApiErrors
+        expr: |
+          ((lane:api_errors:ratio5m > 0.05) and (lane:api_samples:5m >= 20))
+          or
+          (sum by (service) (ALERTS{alertname="LaneApiErrors",alertstate="firing"})
+           unless ((lane:api_errors:ratio5m <= 0.05) and (lane:api_samples:5m >= 20)))
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      - alert: LaneApiLatency
+        expr: |
+          ((lane:api_latency:p95_5m > 2) and (lane:api_samples:5m >= 20))
+          or
+          (sum by (service) (ALERTS{alertname="LaneApiLatency",alertstate="firing"})
+           unless ((lane:api_latency:p95_5m <= 2) and (lane:api_samples:5m >= 20)))
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      - alert: LanePushFailures
+        expr: |
+          ((lane:push_transient:ratio15m > 0.10) and (lane:push_samples:15m >= 20))
+          or
+          (sum by (service) (ALERTS{alertname="LanePushFailures",alertstate="firing"})
+           unless ((lane:push_transient:ratio15m <= 0.10) and (lane:push_samples:15m >= 20)))
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          severity: warning
+      - alert: LanePushQueueAge
+        expr: |
+          (max by (service) (lane_push_oldest_pending_age_seconds) > 600)
+          or
+          (sum by (service) (ALERTS{alertname="LanePushQueueAge",alertstate="firing"})
+           unless ((max by (service) (lane_push_oldest_pending_age_seconds) <= 600) or (max by (service) (lane_push_pending_count) == 0)))
+        keep_firing_for: 10m
+        labels:
+          severity: warning
