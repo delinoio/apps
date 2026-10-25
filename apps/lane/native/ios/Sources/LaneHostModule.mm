@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+#import "LaneHost.h"
+#import <UIKit/UIKit.h>
+
+static NSString *HostResult(BOOL ok, NSString *reason) {
+  NSDictionary *result = ok ? @{@"ok": @YES} : @{@"ok": @NO, @"error": @{
+    @"reason": reason, @"message": @"The requested host action could not be completed.",
+    @"correlationId": NSUUID.UUID.UUIDString.lowercaseString, @"retryable": @NO}};
+  return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:result options:0 error:nil]
+                              encoding:NSUTF8StringEncoding];
+}
+@implementation LaneHostModule
++ (NSString *)name { return @"LaneHost"; }
++ (NSDictionary *)methodLookup {
+  return @{@"copyText": NSStringFromSelector(@selector(copyText:callback:)),
+           @"openURL": NSStringFromSelector(@selector(openURL:callback:))};
+}
+- (void)copyText:(NSString *)text callback:(LynxCallbackBlock)callback {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (![text isKindOfClass:NSString.class]) { callback(HostResult(NO, @"INVALID_INPUT")); return; }
+    UIPasteboard.generalPasteboard.string = text;
+    callback(HostResult(YES, nil));
+  });
+}
+- (void)openURL:(NSString *)text callback:(LynxCallbackBlock)callback {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSURL *url = [text isKindOfClass:NSString.class] ? [NSURL URLWithString:text] : nil;
+    if (![url.scheme.lowercaseString isEqualToString:@"https"] || !url.host.length || url.user || url.password) {
+      callback(HostResult(NO, @"INVALID_INPUT")); return;
+    }
+    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL opened) {
+      callback(HostResult(opened, @"DEPENDENCY_UNAVAILABLE"));
+    }];
+  });
+}
+@end

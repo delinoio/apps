@@ -9,6 +9,19 @@ settings:
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CLANG_CXX_LANGUAGE_STANDARD: c++17
+    CLANG_ENABLE_OBJC_ARC: YES
+    HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../store"
+    LANE_STORE_OUTPUT: "$(DERIVED_FILE_DIR)/lane-store-libs"
+    LANE_API_URL: ""
+    LANE_OAUTH_CLIENT_ID: ""
+    LANE_APNS_ENVIRONMENT: development
+  configs:
+    Debug:
+      LANE_URL_SCHEME: lane-dev
+    Release:
+      LANE_URL_SCHEME: lane
+      LANE_APNS_ENVIRONMENT: production
 targets:
   Lane:
     type: application
@@ -23,9 +36,37 @@ targets:
         buildPhase: resources
       - path: ../licenses
         buildPhase: resources
+    dependencies:
+      - sdk: BackgroundTasks.framework
+      - sdk: UserNotifications.framework
+      - sdk: Security.framework
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: io.delino.lane
+            CFBundleURLSchemes: ["$(LANE_URL_SCHEME)"]
+        LaneURLScheme: "$(LANE_URL_SCHEME)"
+        LaneAPIURL: "$(LANE_API_URL)"
+        LaneOAuthClientID: "$(LANE_OAUTH_CLIENT_ID)"
+        BGTaskSchedulerPermittedIdentifiers: [io.delino.lane.refresh]
+        UIBackgroundModes: [fetch, remote-notification]
+    entitlements:
+      path: Generated/Lane.entitlements
+      properties:
+        aps-environment: "$(LANE_APNS_ENVIRONMENT)"
+    preBuildScripts:
+      - name: Build shared Lane store
+        script: sh "${SRCROOT}/Scripts/build-store.sh"
+        basedOnDependencyAnalysis: false
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "$(LANE_STORE_OUTPUT)/liblane_store.a"
+          - "$(LANE_STORE_OUTPUT)/liblane_sqlite.a"
+          - "$(LANE_STORE_OUTPUT)/liblane_unicode.a"
+          - "$(LANE_STORE_OUTPUT)/liblane_url.a"
         INFOPLIST_KEY_CFBundleDisplayName: Lane
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
