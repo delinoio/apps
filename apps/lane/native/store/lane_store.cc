@@ -576,7 +576,11 @@ J failure(const Error &e) {
            {"correlationId", uuid()},
            {"retryable", e.reason == "STORAGE_BUSY" ||
                              e.reason == "DEPENDENCY_UNAVAILABLE"}};
-  err.update(e.extra);
+  // Preserve typed metadata only. Remote transport errors can contain raw
+  // request/native details, which must not cross the JavaScript boundary.
+  for (auto key : {"entityId", "currentHeadIds", "retryable"})
+    if (e.extra.contains(key))
+      err[key] = e.extra[key];
   return J{{"ok", false}, {"error", err}};
 }
 template <class F> std::string protect(F f) {
@@ -793,6 +797,17 @@ struct Store::Impl {
       v[k == 1 ? "repository" : "task"] = body;
     return v;
   }
+  J comparableVersion(J v) {
+    v["deleted"] = v.value("deleted", false);
+    v["promptRestoration"] = v.value("promptRestoration", false);
+    v["parentVersionIds"] = v.value("parentVersionIds", J::array());
+    auto &o = v["origin"];
+    for (auto key : {"deviceId", "deviceName", "accountId"})
+      o[key] = str(o, key);
+    if (v.contains("task"))
+      v["task"]["description"] = str(v["task"], "description");
+    return v;
+  }
   void persist(Db &d, const J &v, bool prompt, bool replace,
                bool projection = true) {
     auto e = str(v, "entityId"), vid = str(v, "versionId");
@@ -807,7 +822,8 @@ struct Store::Impl {
     auto existing =
         d.one("SELECT envelope_json FROM versions WHERE version_id=?", {vid});
     if (!existing.empty()) {
-      require(parse(existing) == v, "Version identity was reused.");
+      require(comparableVersion(parse(existing)) == comparableVersion(v),
+              "Version identity was reused.");
       return;
     }
     d.run("INSERT INTO versions VALUES(?,?,?,?,?)",
@@ -841,6 +857,7 @@ struct Store::Impl {
           {e});
   }
   void tombstone(Db &d, J v, bool queue) {
+    v.erase("promptRestoration");
     auto e = str(v, "entityId");
     auto h = heads(d, e);
     if (!h.empty() && h[0].value("deleted", false))
@@ -917,6 +934,9 @@ struct Store::Impl {
     J r = {{"spaceId", s},
            {"deviceId", device()},
            {"syncEnabled", enabled(s)},
+           {"accountId",
+            registry->one("SELECT account_id FROM spaces WHERE id=?", {s})},
+           {"reconnectRequired", meta(d, "reconnect_required", "0") == "1"},
            {"connected", enabled(s) && meta(d, "connected") == "1"},
            {"pendingItemCount", d.one("SELECT count(*) FROM outbox")},
            {"itemErrors", errors},
@@ -1160,6 +1180,8 @@ struct Store::Impl {
         }
       }
       auto v = version(s, e, k, body, parents);
+      if (m == "RestorePrompt")
+        v["promptRestoration"] = true;
       persist(d, v, prompt, !stale, !stale);
       outbox(d, v,
              create    ? "MUTATION_KIND_CREATE"
@@ -1393,8 +1415,8 @@ struct Store::Impl {
     if (v.value("formatVersion", 0) != 1)
       fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
     fields(v, {"formatVersion", "entityId", "kind", "versionId",
-               "parentVersionIds", "createdAt", "origin", "deleted", "task",
-               "repository"});
+               "parentVersionIds", "createdAt", "origin", "deleted",
+               "promptRestoration", "task", "repository"});
     parseTimestamp(str(v, "createdAt"));
     auto o = v.value("origin", J::object());
     fields(o, {"kind", "deviceId", "deviceName", "accountId"});
@@ -1422,6 +1444,10 @@ struct Store::Impl {
                   mapped(d, parentEntity) == mapped(d, str(v, "entityId")),
               "Parent belongs to another entity.");
     }
+    if (v.value("promptRestoration", false))
+      require(v.value("kind", "") == "ENTITY_KIND_TASK" &&
+                  !v.value("deleted", false),
+              "Restoration marker requires a live task.");
     if (v.value("deleted", false)) {
       require(!v.contains("task") && !v.contains("repository"));
       return;
@@ -1470,6 +1496,21 @@ struct Store::Impl {
           }))
         incoming.push_back(v);
     for (auto v : incoming) {
+      if (v.contains("kind"))
+        v["kind"] = enumValue(v, "kind", "ENTITY_KIND_",
+                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK"});
+      if (v.contains("origin"))
+        v["origin"]["kind"] = enumValue(
+            v["origin"], "kind", "ORIGIN_KIND_",
+            {"ORIGIN_KIND_APP", "ORIGIN_KIND_CLI", "ORIGIN_KIND_MCP"});
+      if (v.contains("task")) {
+        v["task"]["progress"] =
+            enumValue(v["task"], "progress", "PROGRESS_", progresses);
+        v["task"]["proposal"] =
+            enumValue(v["task"], "proposal", "PROPOSAL_", proposals);
+      }
+      if (v.value("formatVersion", 0) != 1)
+        fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
       auto e = str(v, "entityId");
       auto old = heads(d, e);
       if (!old.empty() && old[0].value("deleted", false))
@@ -1485,6 +1526,7 @@ struct Store::Impl {
         if (!rh.empty() && rh[0].value("deleted", false)) {
           J dead = v;
           dead.erase("task");
+          dead.erase("promptRestoration");
           dead["deleted"] = true;
           dead["versionId"] = uuid();
           tombstone(d, dead, false);
@@ -1492,11 +1534,19 @@ struct Store::Impl {
         }
       }
       validateVersion(d, v);
+      for (auto &parent : v.value("parentVersionIds", J::array())) {
+        if (d.one("SELECT version_id FROM versions WHERE version_id=?",
+                  {parent.get<std::string>()})
+                .empty())
+          fail("DEPENDENCY_UNAVAILABLE",
+               "A parent version must be synchronized first.");
+      }
       auto exists =
           d.one("SELECT envelope_json FROM versions WHERE version_id=?",
                 {str(v, "versionId")});
       if (!exists.empty()) {
-        require(parse(exists) == v, "Version identity was reused.");
+        require(comparableVersion(parse(exists)) == comparableVersion(v),
+                "Version identity was reused.");
         continue;
       }
       bool prompt = v.contains("task") && v["task"].contains("prompt");
@@ -1512,6 +1562,7 @@ struct Store::Impl {
                      v["task"].value("prompt", J());
         }
       }
+      prompt = prompt || v.value("promptRestoration", false);
       if (v["kind"] == "ENTITY_KIND_REPOSITORY")
         uniqueURL(d, str(v["repository"], "normalizedUrl"), e);
       persist(d, v, prompt, false, old.empty());
@@ -1738,6 +1789,16 @@ std::string Store::invoke(std::string m, std::string text) {
       if (!impl_->hooks.authorize)
         fail("DEPENDENCY_UNAVAILABLE",
              "Account approval is unavailable on this host.");
+      {
+        Tx t(d);
+        compatibility(d);
+        setMeta(d, "reconnect_intent", meta(d, "reconnect_required", "0"));
+        setMeta(d, "reconnect_entity_sequence",
+                d.one("SELECT COALESCE(MAX(sequence),0) FROM changes WHERE "
+                      "change_kind IN (1,2)"));
+        setMeta(d, "reconnect_from_epoch", meta(d, "account_epoch"));
+        t.commit();
+      }
       auto r = parse(impl_->hooks.authorize(str(q, "accountId")));
       if (r.contains("ok")) {
         if (!r.value("ok", false))
@@ -1816,6 +1877,17 @@ std::string Store::invoke(std::string m, std::string text) {
         "DisconnectDevice",  "ListConnections",   "RevokeConnection",
         "RegisterPush",      "BeginDataDeletion", "DeleteAccountData"};
     if (online.count(m)) {
+      if (m == "BeginDataDeletion" || m == "DeleteAccountData") {
+        auto account = impl_->registry->one(
+            "SELECT account_id FROM spaces WHERE id=?", {s});
+        require(!account.empty() && str(q, "confirmedAccountId") == account,
+                "Confirm the pinned account before deleting data.");
+        q["mode"] = enumValue(q, "mode", "DATA_DELETION_MODE_",
+                              {"DATA_DELETION_MODE_DELETE_EVERYWHERE",
+                               "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL"});
+      }
+      if (m == "RegisterPush")
+        q["deviceId"] = impl_->device();
       auto r = impl_->remote(
           s, m, q); // Network happens with no SQL transaction held.
       Tx tx(d);
@@ -1835,12 +1907,38 @@ std::string Store::invoke(std::string m, std::string text) {
       }
       for (auto &v : r.value("tasks", J::array()))
         impl_->applyEntity(d, v);
-      if (m == "DeleteAccountData") {
+      bool disconnected =
+          m == "DeleteAccountData" ||
+          (m == "DisconnectDevice" && str(q, "deviceId") == impl_->device());
+      if (disconnected) {
         setMeta(d, "connected", "0");
-        setMeta(d, "account_epoch", str(r, "newEpoch"));
+        setMeta(d, "sync_owner", "");
+        setMeta(d, "sync_owner_expires_at_us", "0");
+        if (m == "DeleteAccountData") {
+          if (str(q, "mode") == "DATA_DELETION_MODE_DELETE_EVERYWHERE") {
+            d.exec("DELETE FROM heads;DELETE FROM versions;DELETE FROM "
+                   "entities;DELETE FROM receipts;DELETE FROM outbox;DELETE "
+                   "FROM remote_objects;DELETE FROM "
+                   "notification_receipts;DELETE FROM repository_mappings;");
+            d.run(
+                "DELETE FROM store_meta WHERE key LIKE 'notification_claim:%'");
+            setMeta(d, "account_deleted", "1");
+          } else {
+            setMeta(d, "reconnect_required", "1");
+            setMeta(d, "sync_error_reason", "ERROR_REASON_STALE_EPOCH");
+          }
+        }
         changed(d, "", 4);
       }
       tx.commit();
+      if (disconnected) {
+        Tx registryTx(*impl_->registry);
+        impl_->registry->run("UPDATE spaces SET sync_enabled=0 WHERE id=?",
+                             {s});
+        registryTx.commit();
+        if (impl_->hooks.disconnect)
+          impl_->hooks.disconnect(s);
+      }
       return success(r, sequence(d));
     }
     fail("INVALID_INPUT", "Unknown Lane method.");
@@ -1977,7 +2075,8 @@ std::string Store::pendingSync(std::string s, std::string owner) {
     // Returning no uploads during an epoch mismatch makes stale reupload
     // impossible even if a host forgets its GetSyncInfo comparison.
     bool epochReady = meta(d, "approved_epoch", meta(d, "account_epoch")) ==
-                      meta(d, "account_epoch");
+                          meta(d, "account_epoch") &&
+                      meta(d, "reconnect_required", "0") != "1";
     for (auto &r : d.run("SELECT request_json FROM outbox ORDER BY "
                          "created_at_us,request_id"))
       if (epochReady)
@@ -2190,6 +2289,8 @@ std::string Store::recordSyncFailure(std::string s, std::string reason) {
     compatibility(d);
     setMeta(d, "connected", "0");
     setMeta(d, "sync_error_reason", reason);
+    if (reason == "ERROR_REASON_STALE_EPOCH")
+      setMeta(d, "reconnect_required", "1");
     changed(d, "", 4);
     t.commit();
     return success(impl_->status(d, s), sequence(d));
@@ -2215,6 +2316,14 @@ std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
     compatibility(d);
     require(meta(d, "approved_epoch") == epoch,
             "Epoch must come from a validated account approval.");
+    require(meta(d, "reconnect_required", "0") == "1" &&
+                meta(d, "reconnect_intent", "0") == "1",
+            "Explicit reconnect approval is required.");
+    require(meta(d, "reconnect_from_epoch") == meta(d, "account_epoch") &&
+                meta(d, "reconnect_entity_sequence") ==
+                    d.one("SELECT COALESCE(MAX(sequence),0) FROM changes WHERE "
+                          "change_kind IN (1,2)"),
+            "Local data changed during approval. Confirm again.");
     if (meta(d, "account_epoch") != epoch) {
       d.exec("DELETE FROM outbox;");
       for (auto &r : d.run("SELECT envelope_json FROM versions ORDER BY "
@@ -2231,6 +2340,8 @@ std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
       setMeta(d, "pull_cursor", "");
     }
     setMeta(d, "account_deleted", "0");
+    setMeta(d, "reconnect_required", "0");
+    setMeta(d, "reconnect_intent", "0");
     setMeta(d, "sync_error_reason", "");
     setMeta(d, "connected", "0");
     changed(d, "", 4);
