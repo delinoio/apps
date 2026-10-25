@@ -316,7 +316,17 @@ impl Store {
                 "Valid request and local origin identities are required.",
             ));
         }
-        let fp = fingerprint(&q);
+        // Capture creation uses derived task fields below, but its receipt must
+        // fingerprint only the typed request shared with native and remote peers.
+        let fp = if method == "CreateCaptureTask" {
+            let mut wire = q.clone();
+            for field in ["repository", "progress", "proposal", "prompt"] {
+                wire.as_object_mut().unwrap().remove(field);
+            }
+            fingerprint(&wire)
+        } else {
+            fingerprint(&q)
+        };
         let mut committed_error = None;
         let out=self.with(true,|c|{
             if strv(&meta["origin"],"accountId")!=self.identity()?.account{
@@ -328,6 +338,9 @@ if old!=fp{
 return Err(Failure::new("REQUEST_ID_REUSED","Request ID was reused with different content."));
 }
 let mut r:Value=serde_json::from_str(&raw)?;
+// Native receipts retain the response wrapper; earlier Rust receipts retain
+// the inner EntityResult. Read both without rewriting durable replay records.
+if r["result"].is_object() { r = r["result"].clone(); }
                 if r["result"]=="RESULT_KIND_CONFLICT"{
 committed_error=Some(stale(&r,strv(&q,"id")));
 }

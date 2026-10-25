@@ -422,10 +422,10 @@ public:
 };
 void compatibility(Db &d, bool registry = false) {
   if (d.one("PRAGMA application_id") != std::to_string(kApp) ||
-      d.one("PRAGMA user_version") != "1")
+      d.one("PRAGMA user_version") != (registry ? "1" : "2"))
     fail("UNSUPPORTED_FORMAT", "Update Lane to open this data format.");
   if (!registry &&
-      d.one("SELECT value FROM store_meta WHERE key='format_version'") != "1")
+      d.one("SELECT value FROM store_meta WHERE key='format_version'") != "2")
     fail("UNSUPPORTED_FORMAT", "Update Lane to open this data format.");
 }
 void initialize(Db &d, bool registry) {
@@ -435,9 +435,10 @@ void initialize(Db &d, bool registry) {
             "'sqlite_%'") == "0") {
     Tx t(d);
     d.exec(registry ? kRegistry : kSchema);
-    d.exec("PRAGMA application_id=1279348293; PRAGMA user_version=1;");
+    d.exec(registry ? "PRAGMA application_id=1279348293; PRAGMA user_version=1;"
+                    : "PRAGMA application_id=1279348293; PRAGMA user_version=2;");
     if (!registry)
-      d.run("INSERT INTO store_meta VALUES('format_version','1')");
+      d.run("INSERT INTO store_meta VALUES('format_version','2')");
     t.commit();
   }
   compatibility(d, registry);
@@ -674,6 +675,8 @@ template <class F> std::string protect(F f) {
 }
 } // namespace
 
+#include "lane_capture_helpers.h"
+
 struct Store::Impl {
   fs::path root;
   std::unique_ptr<Db> registry;
@@ -890,7 +893,7 @@ struct Store::Impl {
       fail("DELETED", "Entity was permanently deleted.");
     if (kind)
       require(h[0]["kind"] ==
-              (kind == 1 ? "ENTITY_KIND_REPOSITORY" : "ENTITY_KIND_TASK"));
+              (kind == 1 ? "ENTITY_KIND_REPOSITORY" : kind == 3 ? "ENTITY_KIND_URL_CONNECTION" : "ENTITY_KIND_TASK"));
     if (h.size() > 1)
       fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
     return h[0];
@@ -914,9 +917,66 @@ struct Store::Impl {
         fail("INVALID_INPUT", "Repository URL is already registered.");
     }
   }
+  J connectionBody(Db &d, const std::string &e, J b, bool unique = true) {
+    fields(b, {"prefix", "repositoryId"});
+    require(normalizePrefix(str(b, "prefix")) == str(b, "prefix"), "URL prefix is not normalized.");
+    id(str(b, "repositoryId"));
+    repository(d, str(b, "repositoryId"));
+    if (unique) {
+      current(d, mapped(d, str(b, "repositoryId")), 1);
+      for (auto &r : d.run("SELECT v.envelope_json FROM heads h JOIN versions v ON v.version_id=h.version_id JOIN entities e ON e.id=h.entity_id WHERE e.kind=3 AND e.deleted=0 AND e.id<>?", {e}))
+        require(parse(r[0])["urlConnection"]["prefix"] != b["prefix"], "This URL prefix already has a connection.");
+    }
+    return b;
+  }
+  void captureIdentity(Db &d, const std::string &task, const J &capture) {
+    captureManifest(capture);
+    auto aid = str(capture, "attachmentId");
+    std::vector<std::string> identity{task, str(capture,"sha256"),
+        capture["width"].dump(), capture["height"].dump(), str(capture,"byteSize")};
+    auto existing = d.run("SELECT task_id,sha256,width,height,byte_size FROM attachment_identities WHERE id=?", {aid});
+    if (!existing.empty())
+      require(existing[0] == identity, "Attachment identity cannot change owner or content.");
+    else {
+      identity.insert(identity.begin(),aid);
+      d.run("INSERT INTO attachment_identities(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)", identity);
+    }
+  }
+  void captureReferences(Db &d, const std::string &task, const J &captures, bool pending = false) {
+    require(captures.is_array());
+    std::set<std::string> seen;
+    for (const auto &c : captures) {
+      captureManifest(c);
+      auto aid = str(c, "attachmentId");
+      require(seen.insert(aid).second, "Capture identities must be unique.");
+      captureIdentity(d, task, c);
+      auto rows = d.run("SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?", {aid});
+      if (rows.empty()) {
+        if (!pending) fail("NOT_FOUND", "Attachment does not belong to this task.");
+        d.run("INSERT INTO entities(id,kind) VALUES(?,2) ON CONFLICT DO NOTHING", {task});
+        d.run("INSERT INTO attachments(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)", {aid,task,str(c,"sha256"),c["width"].dump(),c["height"].dump(),str(c,"byteSize")});
+      } else {
+        require(rows[0] == std::vector<std::string>{task,str(c,"sha256"),c["width"].dump(),c["height"].dump(),str(c,"byteSize")}, "Immutable attachment ownership or content cannot change.");
+      }
+    }
+  }
+  J insertCaptures(Db &d, const std::string &task, const J &images) {
+    require(images.is_array() && !images.empty(), "At least one final image is required.");
+    J captures = J::array();
+    for (const auto &image : images) {
+      fields(image, {"capture", "png"});
+      const auto &c = image.at("capture");
+      validatePNG(c, decodeBase64(str(image,"png")));
+      require(d.one("SELECT id FROM attachment_identities WHERE id=?", {str(c,"attachmentId")}).empty(), "Attachment identity is already in use.");
+      captureReferences(d,task,J::array({c}),true);
+      d.run("UPDATE attachments SET png_base64=? WHERE id=?", {str(image,"png"),str(c,"attachmentId")});
+      captures.push_back(c);
+    }
+    return captures;
+  }
   J taskBody(Db &d, J t) {
     fields(t, {"repositoryId", "title", "description", "prompt", "progress",
-               "proposal"});
+               "proposal", "captures"});
     id(str(t, "repositoryId"));
     repository(d, str(t, "repositoryId"));
     require(hasText(str(t, "title")), "A title is required.");
@@ -927,24 +987,30 @@ struct Store::Impl {
            {"proposal", enumValue(t, "proposal", "PROPOSAL_", proposals)}};
     if (t.contains("prompt"))
       r["prompt"] = str(t, "prompt");
+    if (t.contains("captures")) {
+      require(t["captures"].is_array());
+      for (const auto &c : t["captures"]) captureManifest(c);
+      r["captures"] = t["captures"];
+    }
     return r;
   }
   J version(const std::string &s, const std::string &e, int k, J body,
             J parents = J::array(), bool deleted = false) {
     std::sort(parents.begin(), parents.end());
-    J v = {{"formatVersion", 1},
+    J v = {{"formatVersion", 2},
            {"entityId", e},
-           {"kind", k == 1 ? "ENTITY_KIND_REPOSITORY" : "ENTITY_KIND_TASK"},
+           {"kind", k == 1 ? "ENTITY_KIND_REPOSITORY" : k == 3 ? "ENTITY_KIND_URL_CONNECTION" : "ENTITY_KIND_TASK"},
            {"versionId", uuid()},
            {"parentVersionIds", parents},
            {"createdAt", timestamp()},
            {"origin", origin(s)},
            {"deleted", deleted}};
     if (!deleted)
-      v[k == 1 ? "repository" : "task"] = body;
+      v[k == 1 ? "repository" : k == 3 ? "urlConnection" : "task"] = body;
     return v;
   }
   J comparableVersion(J v) {
+    v = withoutEmptyCaptures(v);
     v["deleted"] = v.value("deleted", false);
     v["promptRestoration"] = v.value("promptRestoration", false);
     v["parentVersionIds"] = v.value("parentVersionIds", J::array());
@@ -958,7 +1024,7 @@ struct Store::Impl {
   void persist(Db &d, const J &v, bool prompt, bool replace,
                bool projection = true) {
     auto e = str(v, "entityId"), vid = str(v, "versionId");
-    int k = v["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : 2;
+    int k = v["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : v["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
     bool deleted = v.value("deleted", false);
     auto existingKind = d.one("SELECT kind FROM entities WHERE id=?", {e});
     require(existingKind.empty() || existingKind == std::to_string(k),
@@ -985,7 +1051,7 @@ struct Store::Impl {
       d.run(
           "UPDATE entities SET repository_id=?,normalized_url=?,deleted=? "
           "WHERE id=?",
-          {k == 2 && !deleted ? mapped(d, str(v["task"], "repositoryId")) : "",
+          {k != 1 && !deleted ? mapped(d, str(v[k == 3 ? "urlConnection" : "task"], "repositoryId")) : "",
            k == 1 && !deleted ? str(v["repository"], "normalizedUrl") : "",
            deleted ? "1" : "0", e});
   }
@@ -1011,14 +1077,14 @@ struct Store::Impl {
       return;
     bool repo = v["kind"] == "ENTITY_KIND_REPOSITORY";
     if (repo) {
-      for (auto &r : d.run("SELECT id FROM entities WHERE kind=2 AND deleted=0 "
+      for (auto &r : d.run("SELECT id FROM entities WHERE kind IN (2,3) AND deleted=0 "
                            "AND repository_id=?",
                            {e})) {
         auto old = heads(d, r[0]);
         J child = v;
         child["entityId"] = r[0];
         child["versionId"] = uuid();
-        child["kind"] = "ENTITY_KIND_TASK";
+        child["kind"] = old[0]["kind"];
         child["parentVersionIds"] = J::array();
         for (auto &a : old)
           child["parentVersionIds"].push_back(a["versionId"]);
@@ -1033,6 +1099,7 @@ struct Store::Impl {
     }
     auto related = aliases(d, e);
     for (auto &alias : related) {
+      d.run("DELETE FROM attachments WHERE task_id=?", {alias});
       d.run("DELETE FROM heads WHERE entity_id=?", {alias});
       d.run("DELETE FROM versions WHERE entity_id=?", {alias});
       d.run("DELETE FROM outbox WHERE entity_id=?", {alias});
@@ -1085,7 +1152,7 @@ struct Store::Impl {
             registry->one("SELECT account_id FROM spaces WHERE id=?", {s})},
            {"reconnectRequired", meta(d, "reconnect_required", "0") == "1"},
            {"connected", enabled(s) && meta(d, "connected") == "1"},
-           {"pendingItemCount", d.one("SELECT count(*) FROM outbox")},
+           {"pendingItemCount", d.one("SELECT (SELECT count(*) FROM outbox)+(SELECT count(*) FROM attachments WHERE synchronized=0)")},
            {"itemErrors", errors},
            {"notificationPreferences", prefs(d)}};
     auto syncError = meta(d, "sync_error_reason");
@@ -1127,6 +1194,19 @@ struct Store::Impl {
       if (q.contains("prompt"))
         q["prompt"] = str(q, "prompt");
     }
+    if (m == "CreateCaptureTask") {
+      fields(q, {"meta","id","repositoryId","title","description","images"});
+      id(str(q,"repositoryId"));
+      require(hasText(str(q,"title")), "A title is required.");
+      q["description"] = str(q,"description");
+    }
+    if (m == "CreateURLConnection" || m == "SaveURLConnection") {
+      fields(q, {"meta","id","connection","expectedVersionId"});
+      fields(q.at("connection"), {"prefix","repositoryId"});
+      q["connection"]["prefix"] = normalizePrefix(str(q["connection"],"prefix"));
+      id(str(q["connection"],"repositoryId"));
+    }
+    if (m == "DeleteURLConnection") fields(q, {"meta","id"});
     if (m == "SetProgress") {
       fields(q, {"meta", "id", "expectedVersionId", "progress"});
       q["progress"] = enumValue(q, "progress", "PROGRESS_", progresses);
@@ -1164,7 +1244,7 @@ struct Store::Impl {
     require(q.contains("meta"));
     auto rid = str(q["meta"], "requestId"), e = str(q, "id");
     id(e);
-    auto fingerprint = hash(q.dump());
+    auto fingerprint = hash(withoutEmptyCaptures(q).dump());
     auto receipt = d.run("SELECT fingerprint,result_json,entity_id FROM "
                          "receipts WHERE method=? AND request_id=?",
                          {m, rid});
@@ -1172,15 +1252,23 @@ struct Store::Impl {
       if (receipt[0][0] != fingerprint)
         fail("REQUEST_ID_REUSED", "Request ID was used for different content.");
       auto r = parse(receipt[0][1]);
-      if (r.contains("result") &&
-          r["result"].value("result", "") != "RESULT_KIND_DELETED")
+      // Rust receipts historically store EntityResult directly. Native receipts
+      // store the response wrapper; preserve both durable formats on replay.
+      if (r.contains("result") && r["result"].is_string())
+        r = J{{"result", r}};
+      auto kind = r["result"].value("result", "");
+      if (kind == "RESULT_KIND_CONFLICT") {
+        J ids = J::array();
+        for (const auto &head : heads(d, e)) ids.push_back(head["versionId"]);
+        r["_error"] = {{"reason", "ERROR_REASON_STALE_VERSION"}, {"currentHeadIds", ids}};
+      } else if (kind != "RESULT_KIND_DELETED")
         r["result"]["result"] = "RESULT_KIND_REPLAYED";
       return r;
     }
-    bool create = m == "CreateTask" || m == "CreateRepository",
-         del = m == "DeleteTask" || m == "DeleteRepository",
+    bool create = m == "CreateTask" || m == "CreateRepository" || m == "CreateCaptureTask" || m == "CreateURLConnection",
+         del = m == "DeleteTask" || m == "DeleteRepository" || m == "DeleteURLConnection",
          resolve = m == "ResolveConflict";
-    int k = (m.find("Repository") != std::string::npos) ? 1 : 2;
+    int k = (m.find("Repository") != std::string::npos) ? 1 : m.find("URLConnection") != std::string::npos ? 3 : 2;
     auto hs = heads(d, e);
     if (!hs.empty() && hs[0].value("deleted", false)) {
       J r = {{"result", result(d, e)}};
@@ -1193,7 +1281,7 @@ struct Store::Impl {
     else if (hs.empty())
       fail("NOT_FOUND", "Entity not found.");
     if (!create) {
-      int actualKind = hs[0]["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : 2;
+      int actualKind = hs[0]["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : hs[0]["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
       require(resolve || actualKind == k, "Method does not match entity kind.");
       k = actualKind;
     }
@@ -1206,7 +1294,13 @@ struct Store::Impl {
       tombstone(d, v, true);
     } else {
       if (create) {
-        if (k == 1) {
+        if (k == 3) {
+          body = connectionBody(d,e,q.at("connection"));
+        } else if (m == "CreateCaptureTask") {
+          body = taskBody(d, {{"repositoryId",q["repositoryId"]},{"title",q["title"]},{"description",""},{"prompt",q["description"]},{"progress","PROGRESS_TODO"},{"proposal","PROPOSAL_REGULAR"}});
+          body["captures"] = insertCaptures(d,e,q.at("images"));
+          prompt = true;
+        } else if (k == 1) {
           body = {{"normalizedUrl", q["url"]}};
           if (q.contains("displayName"))
             body["displayName"] = q["displayName"];
@@ -1255,7 +1349,9 @@ struct Store::Impl {
                 str(resolved, "entityId") == e);
         require(!resolved.contains("kind") ||
                 resolved["kind"] == hs[0]["kind"]);
-        if (k == 1) {
+        if (k == 3) {
+          body = connectionBody(d,e,resolved.at("urlConnection"));
+        } else if (k == 1) {
           body = resolved.at("repository");
           fields(body, {"normalizedUrl", "displayName"});
           require(str(body, "normalizedUrl") ==
@@ -1286,7 +1382,9 @@ struct Store::Impl {
         J old = parse(base);
         stale = expected != str(hs[0], "versionId");
         parents.push_back(expected);
-        if (k == 1) {
+        if (k == 3) {
+          body = connectionBody(d,e,q.at("connection"));
+        } else if (k == 1) {
           body = {{"normalizedUrl", q["url"]}};
           if (q.contains("displayName"))
             body["displayName"] = q["displayName"];
@@ -1314,18 +1412,21 @@ struct Store::Impl {
             if (saved.empty())
               fail("NOT_FOUND", "Prompt version not found.");
             auto src = parse(saved).at("task");
+            body.erase("captures");
+            if (src.contains("captures")) body["captures"] = src["captures"];
             body.erase("prompt");
             if (src.contains("prompt"))
               body["prompt"] = src["prompt"];
           } else
             fail("INVALID_INPUT", "Unknown mutation.");
           body = taskBody(d, body);
-          prompt = m == "RestorePrompt" ||
+          prompt = body.value("captures",J::array()) != old["task"].value("captures",J::array()) || m == "RestorePrompt" ||
                    body.contains("prompt") != old["task"].contains("prompt") ||
                    (body.contains("prompt") &&
                     body["prompt"] != old["task"].value("prompt", J()));
         }
       }
+      if (k == 2) captureReferences(d,e,body.value("captures",J::array()));
       auto v = version(s, e, k, body, parents);
       if (m == "RestorePrompt")
         v["promptRestoration"] = true;
@@ -1390,6 +1491,24 @@ struct Store::Impl {
     return J{{field, result}, {"nextCursor", cursor}};
   }
   J read(Db &d, const std::string &s, const std::string &m, const J &q) {
+    if (m == "GetAttachment") {
+      fields(q,{"taskId","attachmentId"});
+      auto task = str(q,"taskId"), aid = str(q,"attachmentId");
+      id(task); id(aid);
+      auto h = heads(d,task);
+      if (h.empty() || h[0]["kind"] != "ENTITY_KIND_TASK") fail("NOT_FOUND","Task does not exist.");
+      if (h[0].value("deleted",false)) return J{{"state","ATTACHMENT_STATE_DELETED"}};
+      auto rows = d.run("SELECT png_base64 FROM attachments WHERE task_id=? AND id=?", {task,aid});
+      if (rows.empty()) fail("NOT_FOUND","Attachment does not belong to this task.");
+      if (rows[0][0].empty()) return J{{"state","ATTACHMENT_STATE_WAITING_FOR_SYNC"}};
+      return J{{"state","ATTACHMENT_STATE_AVAILABLE"},{"png",rows[0][0]}};
+    }
+    if (m == "ListURLConnections") {
+      fields(q,{"page"});
+      J all = J::array();
+      for (auto &r : d.run("SELECT id FROM entities WHERE kind=3 AND deleted=0 ORDER BY id")) all.push_back(result(d,r[0]));
+      return paginated(all,q,s,m,"items");
+    }
     if (m == "GetLocalStatus")
       return status(d, s);
     if (m == "GetNotificationPreferences")
@@ -1559,11 +1678,11 @@ struct Store::Impl {
     changed(d, e, 2);
   }
   void validateVersion(Db &d, const J &v) {
-    if (v.value("formatVersion", 0) != 1)
+    if (v.value("formatVersion", 0) != 1 && v.value("formatVersion", 0) != 2)
       fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
     fields(v, {"formatVersion", "entityId", "kind", "versionId",
                "parentVersionIds", "createdAt", "origin", "deleted",
-               "promptRestoration", "task", "repository"});
+               "promptRestoration", "task", "repository", "urlConnection"});
     parseTimestamp(str(v, "createdAt"));
     auto o = v.value("origin", J::object());
     fields(o, {"kind", "deviceId", "deviceName", "accountId"});
@@ -1574,7 +1693,7 @@ struct Store::Impl {
     id(str(v, "entityId"));
     id(str(v, "versionId"));
     require(v.value("kind", "") == "ENTITY_KIND_REPOSITORY" ||
-            v.value("kind", "") == "ENTITY_KIND_TASK");
+            v.value("kind", "") == "ENTITY_KIND_TASK" || v.value("kind", "") == "ENTITY_KIND_URL_CONNECTION");
     auto ps = v.value("parentVersionIds", J::array());
     require(ps.is_array());
     std::string prev;
@@ -1595,15 +1714,19 @@ struct Store::Impl {
       require(v.value("kind", "") == "ENTITY_KIND_TASK" &&
                   !v.value("deleted", false),
               "Restoration marker requires a live task.");
+    require(v.value("formatVersion",0) == 2 || (v["kind"] != "ENTITY_KIND_URL_CONNECTION" && (!v.contains("task") || v["task"].value("captures",J::array()).empty())), "Capture entities require format 2.");
     if (v.value("deleted", false)) {
-      require(!v.contains("task") && !v.contains("repository"));
+      require(!v.contains("task") && !v.contains("repository") && !v.contains("urlConnection"));
       return;
     }
-    if (v["kind"] == "ENTITY_KIND_TASK") {
-      require(!v.contains("repository"));
+    if (v["kind"] == "ENTITY_KIND_URL_CONNECTION") {
+      require(!v.contains("task") && !v.contains("repository"));
+      connectionBody(d,str(v,"entityId"),v.at("urlConnection"),false);
+    } else if (v["kind"] == "ENTITY_KIND_TASK") {
+      require(!v.contains("repository") && !v.contains("urlConnection"));
       taskBody(d, v.at("task"));
     } else {
-      require(!v.contains("task"));
+      require(!v.contains("task") && !v.contains("urlConnection"));
       auto b = v.at("repository");
       fields(b, {"normalizedUrl", "displayName"});
       require(normalizeURL("https://" + str(b, "normalizedUrl")) ==
@@ -1645,7 +1768,7 @@ struct Store::Impl {
     for (auto v : incoming) {
       if (v.contains("kind"))
         v["kind"] = enumValue(v, "kind", "ENTITY_KIND_",
-                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK"});
+                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK", "ENTITY_KIND_URL_CONNECTION"});
       if (v.contains("origin"))
         v["origin"]["kind"] = enumValue(
             v["origin"], "kind", "ORIGIN_KIND_",
@@ -1656,7 +1779,7 @@ struct Store::Impl {
         v["task"]["proposal"] =
             enumValue(v["task"], "proposal", "PROPOSAL_", proposals);
       }
-      if (v.value("formatVersion", 0) != 1)
+      if (v.value("formatVersion", 0) != 1 && v.value("formatVersion", 0) != 2)
         fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
       auto e = str(v, "entityId");
       auto old = heads(d, e);
@@ -1667,12 +1790,19 @@ struct Store::Impl {
         tombstone(d, v, false);
         continue;
       }
-      if (v.value("kind", "") == "ENTITY_KIND_TASK") {
-        auto repo = mapped(d, str(v.at("task"), "repositoryId"));
+      if (v.contains("task") || v.contains("urlConnection")) {
+        auto repo = mapped(d, str(v.at(v.contains("task") ? "task" : "urlConnection"), "repositoryId"));
         auto rh = heads(d, repo);
         if (!rh.empty() && rh[0].value("deleted", false)) {
+          // A historical version can still reference the former repository.
+          // Its deletion must not erase an entity that has moved elsewhere.
+          auto currentRepository =
+              d.one("SELECT repository_id FROM entities WHERE id=?", {e});
+          if (!currentRepository.empty() && mapped(d, currentRepository) != repo)
+            continue;
           J dead = v;
           dead.erase("task");
+          dead.erase("urlConnection");
           dead.erase("promptRestoration");
           dead["deleted"] = true;
           dead["versionId"] = uuid();
@@ -1706,12 +1836,13 @@ struct Store::Impl {
           auto base = parse(raw);
           if (v.contains("task"))
             prompt = base["task"].value("prompt", J()) !=
-                     v["task"].value("prompt", J());
+                     v["task"].value("prompt", J()) || base["task"].value("captures",J::array()) != v["task"].value("captures",J::array());
         }
       }
       prompt = prompt || v.value("promptRestoration", false);
       if (v["kind"] == "ENTITY_KIND_REPOSITORY")
         uniqueURL(d, str(v["repository"], "normalizedUrl"), e);
+      if (v.contains("task")) captureReferences(d,e,v["task"].value("captures",J::array()),true);
       persist(d, v, prompt, false, old.empty());
       bool isAncestor = false;
       for (auto &h : old) {
@@ -1747,9 +1878,9 @@ struct Store::Impl {
       auto hs = heads(d, e);
       if (hs.size() == 1) {
         auto only = hs[0];
-        int k = only["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : 2;
+        int k = only["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : only["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
         d.run("UPDATE entities SET repository_id=?,normalized_url=? WHERE id=?",
-              {k == 2 ? mapped(d, str(only["task"], "repositoryId")) : "",
+              {k != 1 ? mapped(d, str(only[k == 3 ? "urlConnection" : "task"], "repositoryId")) : "",
                k == 1 ? str(only["repository"], "normalizedUrl") : "", e});
       }
       if (v.contains("task")) {
@@ -1781,7 +1912,7 @@ struct Store::Impl {
       d.run("INSERT INTO repository_mappings VALUES(?,?) ON CONFLICT(local_id) "
             "DO UPDATE SET canonical_id=excluded.canonical_id",
             {local, canonical});
-      d.run("UPDATE entities SET repository_id=? WHERE kind=2 AND "
+      d.run("UPDATE entities SET repository_id=? WHERE kind IN (2,3) AND "
             "repository_id=?",
             {canonical, local}); // Immutable envelopes and fingerprints keep
                                  // their original references.
@@ -1800,7 +1931,7 @@ std::string Store::open(std::string text) {
     impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "spaceId"});
-    if (q.value("formatVersion", 0) != 1)
+    if (q.value("formatVersion", 0) != 2)
       fail("UNSUPPORTED_FORMAT", "Update Lane to use this storage format.");
     auto s = str(q, "spaceId");
     if (s.empty())
@@ -1810,10 +1941,49 @@ std::string Store::open(std::string text) {
     auto seq = sequence(d);
     return success({{"spaceId", s},
                     {"deviceId", impl_->device()},
-                    {"schemaVersion", 1},
-                    {"formatVersion", 1},
+                    {"schemaVersion", 2},
+                    {"formatVersion", 2},
                     {"sequence", seq}},
                    seq);
+  });
+}
+std::string Store::migrate(std::string s) {
+  return protect([&] {
+    impl_->ready();
+    impl_->registered(s);
+    auto slot = impl_->spaces.find(s);
+    if (slot != impl_->spaces.end()) {
+      if (slot->second.handles > 0)
+        fail("STORAGE_BUSY", "Close this space before migrating it.");
+      impl_->spaces.erase(slot);
+    }
+    LifetimeLock lifetime(impl_->root / "locks" / (s + ".handles.lock"), true);
+    impl_->registered(s);
+    auto path = impl_->root / "spaces" / s / "lane.sqlite";
+    if (!fs::is_regular_file(path))
+      fail("NOT_FOUND", "Existing space database not found.");
+    Db d(path);
+    // Rebuild the referenced entity table without changing immutable history.
+    // SQLite requires foreign_keys=OFF outside the schema transaction.
+    d.exec("PRAGMA foreign_keys=OFF; PRAGMA synchronous=FULL;");
+    d.exec("BEGIN EXCLUSIVE");
+    try {
+      auto schema = d.one("PRAGMA user_version");
+      if (d.one("PRAGMA application_id") != std::to_string(kApp) ||
+          (schema != "1" && schema != "2") ||
+          meta(d, "format_version") != schema || meta(d, "space_id") != s)
+        fail("UNSUPPORTED_FORMAT", "No supported migration for this database.");
+      if (schema == "1")
+        d.exec(kMigration2);
+      require(d.run("PRAGMA foreign_key_check").empty(),
+              "Migration found invalid foreign keys.");
+      d.exec("COMMIT");
+      return success({{"spaceId", s}, {"schemaVersion", 2},
+                      {"formatVersion", 2}, {"migrated", schema == "1"}});
+    } catch (...) {
+      sqlite3_exec(d.p, "ROLLBACK", nullptr, nullptr, nullptr);
+      throw;
+    }
   });
 }
 std::string Store::close(std::string s) {
@@ -1890,8 +2060,8 @@ std::string Store::invoke(std::string m, std::string text) {
         "CreateRepository", "SaveRepository", "DeleteRepository",
         "CreateTask",       "SaveTask",       "SetProgress",
         "SetProposal",      "RestorePrompt",  "DeleteTask",
-        "ResolveConflict"};
-    static const std::set<std::string> reads = {"GetRepository",
+        "ResolveConflict", "CreateCaptureTask", "CreateURLConnection", "SaveURLConnection", "DeleteURLConnection"};
+    static const std::set<std::string> reads = {"GetAttachment", "ListURLConnections", "GetRepository",
                                                 "GetTask",
                                                 "ListRepositories",
                                                 "ListTasks",
@@ -2056,7 +2226,7 @@ std::string Store::invoke(std::string m, std::string text) {
         setMeta(d, "sync_owner_expires_at_us", "0");
         if (m == "DeleteAccountData") {
           if (str(q, "mode") == "DATA_DELETION_MODE_DELETE_EVERYWHERE") {
-            d.exec("DELETE FROM heads;DELETE FROM versions;DELETE FROM "
+            d.exec("DELETE FROM attachments;DELETE FROM heads;DELETE FROM versions;DELETE FROM "
                    "entities;DELETE FROM receipts;DELETE FROM outbox;DELETE "
                    "FROM remote_objects;DELETE FROM "
                    "notification_receipts;DELETE FROM repository_mappings;");
@@ -2123,23 +2293,49 @@ std::string Store::approveAccount(std::string text, bool merge) {
       auto &source = impl_->db(local);
       Tx sourceRead(source, false);
       Tx t(d);
-      compatibility(d); // Copy immutable standalone snapshots through the same
-                        // conflict/deletion rules.
-      for (auto &r : source.run("SELECT envelope_json FROM versions ORDER BY "
-                                "created_at_us,version_id")) {
-        auto v = parse(r[0]);
-        if (v["kind"] == "ENTITY_KIND_REPOSITORY" &&
-            !v.value("deleted", false)) {
-          auto url = str(v["repository"], "normalizedUrl");
-          auto other = d.one("SELECT id FROM entities WHERE kind=1 AND "
-                             "normalized_url=? AND deleted=0",
-                             {url});
-          if (!other.empty() && other != str(v, "entityId")) {
-            impl_->mappings(d, J::array({J{{"localId", str(v, "entityId")},
-                                           {"canonicalId", other}}}));
-          }
-        }
-        impl_->applyEntity(d, {{"version", v}});
+      compatibility(d);
+      // Import current ownership before tombstones. Replaying old task versions
+      // would incorrectly restore their former repository projection.
+      for (auto &r : source.run("SELECT id,kind,repository_id FROM entities")) {
+        auto kind = d.one("SELECT kind FROM entities WHERE id=?", {r[0]});
+        require(kind.empty() || kind == r[1], "Entity kind cannot change during import.");
+        d.run("INSERT INTO entities(id,kind,repository_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",
+              {r[0],r[1],impl_->mapped(d,impl_->mapped(source,r[2]))});
+      }
+      for (auto &r : source.run("SELECT local_id,canonical_id FROM repository_mappings"))
+        impl_->mappings(d,J::array({J{{"localId",r[0]},{"canonicalId",r[1]}}}));
+      for (auto &r : source.run("SELECT id,normalized_url FROM entities WHERE kind=1 AND deleted=0 AND normalized_url IS NOT NULL")) {
+        auto other = d.one("SELECT id FROM entities WHERE kind=1 AND normalized_url=? AND deleted=0",{r[1]});
+        if (!other.empty() && other != r[0])
+          impl_->mappings(d,J::array({J{{"localId",r[0]},{"canonicalId",other}}}));
+      }
+      // Copy immutable non-head history without validation against today's
+      // repositories or writes to heads/projections. Source is a compatible
+      // local store; current heads below still use normal merge/deletion rules.
+      for (auto &r : source.run("SELECT v.version_id,v.entity_id,v.envelope_json,v.created_at_us,v.prompt_version FROM versions v WHERE NOT EXISTS(SELECT 1 FROM heads h WHERE h.version_id=v.version_id) ORDER BY v.created_at_us,v.version_id")) {
+        auto h = impl_->heads(d,r[1]);
+        if (!h.empty() && h[0].value("deleted",false)) continue;
+        auto previous = d.one("SELECT envelope_json FROM versions WHERE version_id=?",{r[0]});
+        require(previous.empty() || impl_->comparableVersion(parse(previous)) == impl_->comparableVersion(parse(r[2])), "Version identity differs between datasets.");
+        d.run("INSERT INTO versions(version_id,entity_id,envelope_json,created_at_us,prompt_version) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",r);
+      }
+      // Retain identities even when their bytes and owner have been deleted.
+      for (auto &r : source.run("SELECT id,task_id,sha256,width,height,byte_size FROM attachment_identities"))
+        impl_->captureIdentity(d,r[1],{{"attachmentId",r[0]},{"sha256",r[2]},
+            {"width",std::stoll(r[3])},{"height",std::stoll(r[4])},{"byteSize",r[5]}});
+      for (auto &r : source.run("SELECT id,task_id,sha256,width,height,byte_size FROM attachments")) {
+        auto h = impl_->heads(d,r[1]);
+        if (!h.empty() && h[0].value("deleted",false)) continue;
+        impl_->captureReferences(d,r[1],J::array({J{{"attachmentId",r[0]},
+            {"sha256",r[2]},{"width",std::stoll(r[3])},{"height",std::stoll(r[4])},{"byteSize",r[5]}}}),true);
+      }
+      for (auto &r : source.run("SELECT v.envelope_json FROM heads h JOIN versions v ON v.version_id=h.version_id JOIN entities e ON e.id=h.entity_id ORDER BY CASE WHEN e.kind=1 AND e.deleted=0 THEN 0 WHEN e.deleted=0 THEN 1 ELSE 2 END,v.created_at_us,v.version_id"))
+        impl_->applyEntity(d,{{"version",parse(r[0])}});
+      for (auto &r : source.run("SELECT id,task_id,sha256,width,height,byte_size,png_base64 FROM attachments")) {
+        auto retained = d.run("SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?", {r[0]});
+        if (retained.empty()) continue; // A destination tombstone must not regain bytes.
+        require(retained[0] == std::vector<std::string>(r.begin()+1,r.begin()+6), "Attachment differs between datasets.");
+        if (!r[6].empty()) d.run("UPDATE attachments SET png_base64=? WHERE id=? AND png_base64 IS NULL", {r[6],r[0]});
       }
       for (auto &r : source.run(
                "SELECT method,request_id,fingerprint,entity_id,result_json "
@@ -2224,21 +2420,82 @@ std::string Store::pendingSync(std::string s, std::string owner) {
                          "created_at_us,request_id"))
       if (epochReady)
         mutations.push_back(parse(r[0]));
-    J r = {{"formatVersion", 1},
+    J attachments = J::array();
+    if (epochReady) {
+      for (auto &row : d.run("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE a.synchronized=0 AND a.png_base64 IS NOT NULL AND e.deleted=0 ORDER BY a.id")) {
+        attachments.push_back({{"taskId",row[1]},
+          {"capture",{{"attachmentId",row[0]},{"sha256",row[2]},
+                      {"width",std::stoll(row[3])},{"height",std::stoll(row[4])},{"byteSize",row[5]}}},
+          {"png",row[6]}});
+      }
+    }
+    J r = {{"formatVersion", 2},
            {"epoch", meta(d, "account_epoch")},
            {"deviceId", impl_->device()},
            {"mutations", mutations},
+           {"attachments", attachments},
            {"cursor", meta(d, "pull_cursor")}};
     t.commit();
     return success(r, sequence(d));
   });
+}
+std::string Store::acknowledgeAttachment(std::string s, std::string owner,
+    std::string epoch, std::string task, std::string attachment) {
+  return protect([&] {
+    impl_->ready();
+    id(task); id(attachment);
+    auto &d = impl_->db(s);
+    Tx tx(d);
+    compatibility(d);
+    impl_->lease(d,owner);
+    if (meta(d,"account_epoch") != epoch ||
+        meta(d,"approved_epoch",meta(d,"account_epoch")) != epoch ||
+        meta(d,"reconnect_required","0") == "1")
+      fail("STALE_EPOCH","Attachment upload belongs to an old synchronization epoch.");
+    require(!d.one("SELECT id FROM attachments WHERE id=? AND task_id=? AND png_base64 IS NOT NULL",{attachment,task}).empty(), "Attachment upload is no longer available.");
+    d.run("UPDATE attachments SET synchronized=1 WHERE id=? AND task_id=?",{attachment,task});
+    changed(d,task);
+    tx.commit();
+    return success({{"completed",true}},sequence(d));
+  });
+}
+std::string Store::cacheAttachment(std::string s, std::string task,
+                                    std::string attachment, std::string png) {
+  auto started = now();
+  auto response = protect([&] {
+    impl_->ready();
+    impl_->registered(s);
+    id(task); id(attachment);
+    auto &d = impl_->db(s);
+    Tx tx(d);
+    compatibility(d);
+    auto h = impl_->heads(d,task);
+    if (h.empty() || h[0]["kind"] != "ENTITY_KIND_TASK") fail("NOT_FOUND","Task does not exist.");
+    if (h[0].value("deleted",false)) {
+      tx.commit();
+      return success({{"state","ATTACHMENT_STATE_DELETED"}},sequence(d));
+    }
+    auto rows = d.run("SELECT sha256,width,height,byte_size FROM attachments WHERE id=? AND task_id=?",{attachment,task});
+    if (rows.empty()) fail("NOT_FOUND","Attachment does not belong to this task.");
+    auto &r = rows[0];
+    J manifest = {{"attachmentId",attachment},{"sha256",r[0]},
+                  {"width",std::stoll(r[1])},{"height",std::stoll(r[2])},{"byteSize",r[3]}};
+    validatePNG(manifest,decodeBase64(png));
+    d.run("UPDATE attachments SET png_base64=?,synchronized=1 WHERE id=? AND task_id=?",{png,attachment,task});
+    changed(d,task);
+    auto result = impl_->read(d,s,"GetAttachment",{{"taskId",task},{"attachmentId",attachment}});
+    tx.commit();
+    return success(result,sequence(d));
+  });
+  writeLog(impl_->root,"CacheAttachment",parse(response),now()-started);
+  return response;
 }
 std::string Store::applySync(std::string s, std::string text) {
   return protect([&] {
     impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "epoch", "owner", "push", "pull"});
-    if (q.value("formatVersion", 0) != 1)
+    if (q.value("formatVersion", 0) != 2)
       fail("UNSUPPORTED_FORMAT",
            "Update Lane before synchronization can continue.");
     auto &d = impl_->db(s);
@@ -2291,7 +2548,7 @@ std::string Store::applySync(std::string s, std::string text) {
             if (account.empty() || e != account)
               fail("FORBIDDEN",
                    "Account deletion does not belong to this space.");
-            d.exec("DELETE FROM heads;DELETE FROM versions;DELETE FROM "
+            d.exec("DELETE FROM attachments;DELETE FROM heads;DELETE FROM versions;DELETE FROM "
                    "entities;DELETE FROM receipts;DELETE FROM outbox;DELETE "
                    "FROM remote_objects;DELETE FROM "
                    "notification_receipts;DELETE FROM repository_mappings;");
@@ -2303,7 +2560,7 @@ std::string Store::applySync(std::string s, std::string text) {
           } else {
             auto h = impl_->heads(d, e);
             J v = impl_->version(
-                s, e, kind == "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY" ? 1 : 2,
+                s, e, kind == "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY" ? 1 : kind == "ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION" ? 3 : 2,
                 {}, J::array(), true);
             v["versionId"] = str(c["deletion"], "deletionVersionId");
             impl_->tombstone(d, v, false);
@@ -2476,7 +2733,7 @@ std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
                           "change_kind IN (1,2)"),
             "Local data changed during approval. Confirm again.");
     if (meta(d, "account_epoch") != epoch) {
-      d.exec("DELETE FROM outbox;");
+      d.exec("DELETE FROM outbox; UPDATE attachments SET synchronized=0;");
       for (auto &r : d.run("SELECT envelope_json FROM versions ORDER BY "
                            "created_at_us,version_id")) {
         auto v = parse(r[0]);

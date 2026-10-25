@@ -243,6 +243,11 @@ fn account_deletion_erases_image_bytes_and_rules() {
                     c.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?;
                 assert_eq!(count, 0);
             }
+            assert_eq!(
+                c.query_row::<i64, _, _>("SELECT count(*) FROM attachment_identities", [], |r| r
+                    .get(0))?,
+                1
+            );
             Ok(())
         })
         .unwrap();
@@ -268,4 +273,134 @@ fn pending_manifests_obey_png_and_sqlite_integer_bounds() {
     boundary["task"]["captures"][0]["height"] = json!(i32::MAX);
     boundary["task"]["captures"][0]["byteSize"] = json!(i64::MAX.to_string());
     lane::store::sync::validate(&boundary).unwrap();
+}
+
+#[test]
+fn deleted_attachment_identity_cannot_be_reassigned_locally_or_by_sync() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&store);
+    let capture = version["task"]["captures"][0].clone();
+    call(&store, "DeleteTask", json!({"id":version["entityId"]})).unwrap();
+    let next_task = id();
+    let counts = || {
+        store
+            .with(false, |db| {
+                [
+                    "entities",
+                    "versions",
+                    "receipts",
+                    "outbox",
+                    "attachments",
+                    "attachment_identities",
+                ]
+                .into_iter()
+                .map(|table| {
+                    Ok(db.query_row::<i64, _, _>(
+                        &format!("SELECT count(*) FROM {table}"),
+                        [],
+                        |r| r.get(0),
+                    )?)
+                })
+                .collect::<lane::error::Result<Vec<_>>>()
+            })
+            .unwrap()
+    };
+    let before = counts();
+    assert_eq!(*before.last().unwrap(), 1);
+    let mut fresh_capture = capture.clone();
+    fresh_capture["attachmentId"] = id().into();
+    let attempt = json!({"id":next_task,"repositoryId":version["task"]["repositoryId"],"title":"Must fail","images":[{"capture":fresh_capture,"png":STANDARD.encode(png())},{"capture":capture,"png":STANDARD.encode(png())}]});
+    assert!(call(&store, "CreateCaptureTask", attempt).is_err());
+    assert_eq!(counts(), before);
+    assert!(call(&store, "GetTask", json!({"id":next_task})).is_err());
+    let mut incoming = version;
+    incoming["entityId"] = next_task.into();
+    incoming["versionId"] = id().into();
+    assert!(
+        store
+            .with(true, |db| lane::store::sync::apply(
+                db,
+                &json!({"version":incoming})
+            ))
+            .is_err()
+    );
+    assert_eq!(counts(), before);
+}
+
+#[test]
+fn standalone_import_preserves_identity_without_owner_or_content() {
+    let root = tempfile::tempdir().unwrap();
+    let source = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&source);
+    let capture = version["task"]["captures"][0].clone();
+    call(&source, "DeleteTask", json!({"id":version["entityId"]})).unwrap();
+    source.with(true,|db| {
+        // Model a retained identity ledger after all content-bearing records
+        // have been removed. Identity import cannot depend on version scans.
+        db.execute_batch("DELETE FROM heads; DELETE FROM versions; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM entities;")?;
+        Ok(())
+    }).unwrap();
+    let dest = source.select_account("issuer", &id(), "tenant").unwrap();
+    lane::syncclient::import(&source, &dest).unwrap();
+    dest.with(false, |db| {
+        assert_eq!(
+            db.query_row::<i64, _, _>("SELECT count(*) FROM attachment_identities", [], |r| r
+                .get(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row::<i64, _, _>("SELECT count(*) FROM attachments", [], |r| r.get(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row::<i64, _, _>("SELECT count(*) FROM entities", [], |r| r.get(0))?,
+            0
+        );
+        Ok(())
+    })
+    .unwrap();
+    let repo = call(
+        &dest,
+        "CreateRepository",
+        json!({"url":"https://example.com/imported"}),
+    )
+    .unwrap()["result"]["version"]["entityId"]
+        .clone();
+    assert!(call(&dest,"CreateCaptureTask",json!({"repositoryId":repo,"title":"Must fail","images":[{"capture":capture,"png":STANDARD.encode(png())}]})).is_err());
+}
+
+#[test]
+fn import_rejects_conflicting_retained_attachment_identity_atomically() {
+    let root = tempfile::tempdir().unwrap();
+    let source = Store::open(root.path(), "", false).unwrap();
+    let original = saved_capture(&source);
+    call(&source, "DeleteTask", json!({"id":original["entityId"]})).unwrap();
+    let dest = source.select_account("issuer", &id(), "tenant").unwrap();
+    let repo = call(
+        &dest,
+        "CreateRepository",
+        json!({"url":"https://example.com/destination"}),
+    )
+    .unwrap()["result"]["version"]["entityId"]
+        .clone();
+    // Independent spaces can have the same UUID before an explicit import.
+    let existing = call(&dest,"CreateCaptureTask",json!({"repositoryId":repo,"title":"Existing","images":[{"capture":original["task"]["captures"][0],"png":STANDARD.encode(png())}]})).unwrap();
+    assert!(lane::syncclient::import(&source, &dest).is_err());
+    assert_eq!(
+        call(&dest, "ListRepositories", json!({})).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(call(&dest,"GetAttachment",json!({"taskId":existing["result"]["version"]["entityId"],"attachmentId":original["task"]["captures"][0]["attachmentId"]})).unwrap()["png"],STANDARD.encode(png()));
+    dest.with(false, |db| {
+        assert_eq!(
+            lane::store::meta(db, &format!("standalone_import_source_{}", source.space))?,
+            ""
+        );
+        Ok(())
+    })
+    .unwrap();
 }

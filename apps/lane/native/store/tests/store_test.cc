@@ -94,9 +94,9 @@ struct Fixture {
   lane::Store store{root.path.string()};
   std::string space, device;
   Fixture() {
-    const auto opened = success(store.open(R"({"formatVersion":1,"spaceId":""})"));
+    const auto opened = success(store.open(R"({"formatVersion":2,"spaceId":""})"));
     space = opened.at("spaceId"); device = opened.at("deviceId");
-    require(opened.at("schemaVersion") == 1 && opened.at("formatVersion") == 1,
+    require(opened.at("schemaVersion") == 2 && opened.at("formatVersion") == 2,
             "open version metadata");
   }
   fs::path database() const { return root.path / "spaces" / space / "lane.sqlite"; }
@@ -161,11 +161,11 @@ void crud_replay_persistence() {
   require(items(f.call("ListRepositories")).size() == 1, "atomic repository creation");
   success(f.store.close(f.space));
   lane::Store reopened(f.root.path.string());
-  auto opened = success(reopened.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  auto opened = success(reopened.open(J{{"formatVersion", 2}, {"spaceId", f.space}}.dump()));
   require(opened.at("deviceId") == f.device, "persistent device");
   auto result = success(reopened.invoke("GetTask", J{{"spaceId", f.space}, {"request", {{"id", v.at("entityId")}}}}.dump()));
   require(result.at("result").at("version") == same, "durable reopen");
-  error(J::parse(reopened.open(J{{"formatVersion", 1}, {"spaceId", uuid()}}.dump())), "NOT_FOUND");
+  error(J::parse(reopened.open(J{{"formatVersion", 2}, {"spaceId", uuid()}}.dump())), "NOT_FOUND");
 }
 void transitions_and_proposals() {
   Fixture f;
@@ -350,7 +350,7 @@ void observation_and_rollback() {
   require(events[0].at("sequence") == db.scalar("SELECT max(sequence) FROM changes"), "committed sequence");
   require(J::parse(f.store.poll()).empty(), "no repeated unchanged invalidation");
   lane::Store other(f.root.path.string());
-  success(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  success(other.open(J{{"formatVersion", 2}, {"spaceId", f.space}}.dump()));
   auto request = f.createRequest("Second writer");
   success(other.invoke("CreateTask", J{{"spaceId", f.space}, {"request", request}}.dump()));
   require(!J::parse(f.store.poll()).empty(), "second engine writer observed");
@@ -378,19 +378,19 @@ struct RemoteProposals {
   explicit RemoteProposals(Fixture& fixture) : f(fixture) {
     success(f.store.approveAccount(J{{"issuer", "https://identity.example.test"},
         {"accountId", uuid()}, {"tenantId", uuid()}, {"epoch", epoch}}.dump(), false));
-    f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+    f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
     success(f.store.acquireSync(f.space, owner));
     repository = f.call("CreateRepository", {{"meta", f.meta()}, {"id", uuid()},
         {"url", "https://example.test/remote/proposals"}}).at("result").at("version");
   }
   void apply(const J& version) {
-    success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+    success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner},
         {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {
             {"result", "RESULT_KIND_APPLIED"}, {"version", version}}}}})},
             {"nextCursor", "synthetic-proposal-cursor"}, {"hasMore", false}}}}.dump()));
   }
   J create() {
-    J version = {{"formatVersion", 1}, {"entityId", uuid()}, {"kind", "ENTITY_KIND_TASK"},
+    J version = {{"formatVersion", 2}, {"entityId", uuid()}, {"kind", "ENTITY_KIND_TASK"},
         {"versionId", uuid()}, {"parentVersionIds", J::array()}, {"createdAt", "2026-01-01T00:00:00Z"},
         {"origin", {{"kind", "ORIGIN_KIND_MCP"}, {"deviceId", remote_device},
             {"deviceName", "Synthetic remote MCP"}, {"accountId", ""}}}, {"deleted", false},
@@ -453,7 +453,7 @@ void concurrent_notification_claims() {
   f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
   auto proposal = remote.create();
   lane::Store other(f.root.path.string());
-  success(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  success(other.open(J{{"formatVersion", 2}, {"spaceId", f.space}}.dump()));
   std::atomic<int> ready{0};
   auto claim = [&](lane::Store& store) {
     const auto claimant = uuid();
@@ -504,7 +504,7 @@ void accounts_and_host_hooks() {
   require(authorizations == 1 && connection.at("challengeId") == "synthetic-challenge", "authorization hook");
   const auto account_a = identity(uuid(), uuid(), uuid());
   success(f.store.approveAccount(account_a.dump(), false));
-  auto opened = success(f.store.open(R"({"formatVersion":1,"spaceId":""})"));
+  auto opened = success(f.store.open(R"({"formatVersion":2,"spaceId":""})"));
   f.space = opened.at("spaceId"); const auto first = f.space;
   require(first != standalone && items(f.call("ListTasks")).empty(), "approval without merge isolates standalone");
   auto same_request = f.createRequest("Account-scoped ID"); auto a = f.task(same_request);
@@ -519,30 +519,30 @@ void accounts_and_host_hooks() {
   require(disconnects == 1 && f.get(a.at("entityId")) == a, "keep local disconnect");
   const auto account_b = identity(uuid(), uuid(), uuid());
   success(f.store.approveAccount(account_b.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
   require(f.space != first && items(f.call("ListTasks")).empty(), "account B isolated");
   error(f.raw("GetTask", {{"id", a.at("entityId")}}), "NOT_FOUND");
   same_request["meta"]["origin"]["accountId"] = account_b.at("accountId");
   auto b = f.task(same_request);
   require(b.at("entityId") == a.at("entityId"), "same identity permitted in separate account");
   success(f.store.approveAccount(account_a.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
   require(f.space == first && f.get(a.at("entityId")) == a, "account reselection preserves original data");
-  success(f.store.open(J{{"formatVersion", 1}, {"spaceId", standalone}}.dump()));
+  success(f.store.open(J{{"formatVersion", 2}, {"spaceId", standalone}}.dump()));
   f.space = standalone;
   require(f.get(local.at("entityId")) == local, "standalone retained");
 }
 void explicit_account_merge() {
   Fixture f; auto local = f.task();
   success(f.store.approveAccount(identity(uuid(), uuid(), uuid()).dump(), true));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
   require(f.get(local.at("entityId")).at("task") == local.at("task"), "explicit standalone merge preserves task");
   require(f.history(local).size() == 1, "merge preserves history");
 }
 void sync_and_remote_cache() {
   Fixture f; const auto epoch = uuid();
   success(f.store.approveAccount(identity(uuid(), uuid(), epoch).dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
   auto v = f.task(); Sql db(f.database());
   const auto owner = uuid(), rival = uuid();
   success(f.store.acquireSync(f.space, owner));
@@ -550,8 +550,8 @@ void sync_and_remote_cache() {
   require(db.scalar("SELECT value FROM store_meta WHERE key='sync_owner'") == owner, "single sync owner");
   f.store.pendingSync(f.space, owner);
   const auto before = counts(db);
-  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner}}.dump())), "UNSUPPORTED_FORMAT");
-  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", uuid()}, {"owner", owner}}.dump())), "STALE_EPOCH");
+  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 99}, {"epoch", epoch}, {"owner", owner}}.dump())), "UNSUPPORTED_FORMAT");
+  error(J::parse(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", uuid()}, {"owner", owner}}.dump())), "STALE_EPOCH");
   require(counts(db) == before, "invalid sync preserves pending mutations");
   const auto event_id = uuid(), receiver_id = uuid(), processing_id = uuid();
   auto repository_id = v.at("task").at("repositoryId");
@@ -564,7 +564,7 @@ void sync_and_remote_cache() {
       {"completedAt", "2026-01-01T00:01:00Z"}, {"origin", f.meta().at("origin")}};
   J changes = J::array({J{{"sequence", "1"}, {"receiver", receiver}},
       J{{"sequence", "2"}, {"event", event}}, J{{"sequence", "3"}, {"processing", processing}}});
-  J sync = {{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+  J sync = {{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner},
       {"pull", {{"changes", changes}, {"nextCursor", "synthetic-cursor-3"}, {"hasMore", false}}}};
   const auto cursor_before = db.scalar("SELECT value FROM store_meta WHERE key='pull_cursor'");
   db.exec("CREATE TRIGGER test_cache_failure BEFORE INSERT ON remote_objects BEGIN SELECT RAISE(ABORT,'synthetic cache failure'); END;");
@@ -594,12 +594,12 @@ void sync_and_remote_cache() {
   const auto request_id = mutation.at("meta").at("requestId").get<std::string>();
   J blocked = {{"results", J::array({J{{"requestId", request_id}, {"error", {
       {"reason", "ERROR_REASON_ITEM_TOO_LARGE"}, {"retryable", false}}}}})}};
-  success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner}, {"push", blocked}}.dump()));
+  success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner}, {"push", blocked}}.dump()));
   require(db.scalar("SELECT state FROM outbox WHERE request_id='" + request_id + "'") == "2", "oversized item remains blocked");
   require(db.scalar("SELECT count(*) FROM outbox") == pending, "one blocked item preserves other mutations");
   J push = {{"results", J::array({J{{"requestId", request_id}, {"result", {
       {"result", "RESULT_KIND_APPLIED"}, {"version", mutation.at("version")}}}}})}};
-  success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner}, {"push", push}}.dump()));
+  success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner}, {"push", push}}.dump()));
   require(db.scalar("SELECT count(*) FROM outbox WHERE request_id='" + request_id + "'") == "0", "ack removes only durable pending item");
 }
 void pagination_and_removal() {
@@ -627,7 +627,7 @@ void pagination_and_removal() {
   require(f.call("RemoveDeviceData").at("completed") == true, "remove selected device data");
   auto stale = f.raw("CreateTask", f.createRequest());
   require(!stale.value("ok", true), "removed space refuses new operations");
-  error(J::parse(f.store.open(J{{"formatVersion", 1}, {"spaceId", old_space}}.dump())), "NOT_FOUND");
+  error(J::parse(f.store.open(J{{"formatVersion", 2}, {"spaceId", old_space}}.dump())), "NOT_FOUND");
 }
 void repository_conflicts() {
   Fixture f;
@@ -660,20 +660,21 @@ void repository_conflicts() {
 void unsupported_schema() {
   Fixture f; auto v = f.task(); Sql db(f.database());
   const auto before = counts(db);
-  db.exec("PRAGMA user_version=2;");
+  db.exec("PRAGMA user_version=99;");
   error(f.raw("CreateTask", f.createRequest()), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "long-lived writer refuses upgraded schema");
   lane::Store second(f.root.path.string());
-  error(J::parse(second.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
-  require(db.scalar("PRAGMA user_version") == "2", "unsupported schema not replaced");
-  db.exec("PRAGMA user_version=1;");
-  db.exec("UPDATE store_meta SET value='2' WHERE key='format_version';");
+  error(J::parse(second.open(J{{"formatVersion", 2}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
+  require(db.scalar("PRAGMA user_version") == "99", "unsupported schema not replaced");
+  db.exec("PRAGMA user_version=2;");
+  db.exec("UPDATE store_meta SET value='99' WHERE key='format_version';");
   error(f.raw("DeleteTask", {{"meta", f.meta()}, {"id", v.at("entityId")}}), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "unsupported format cannot delete data");
-  db.exec("UPDATE store_meta SET value='1' WHERE key='format_version'; PRAGMA application_id=123;");
+  db.exec("UPDATE store_meta SET value='2' WHERE key='format_version'; PRAGMA application_id=123;");
   error(f.raw("CreateTask", f.createRequest()), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "foreign application database preserved");
 }
+#include "capture_cases.h"
 #include "shared_fixture_runner.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
@@ -686,6 +687,16 @@ int main(int argc, char** argv) {
   const std::vector<std::pair<const char*, std::function<void()>>> tests = {
     {"CRUD, replay and persistence", crud_replay_persistence},
     {"25 progress transitions and proposals", transitions_and_proposals},
+    {"legacy capture defaults",capture_legacy_empty_defaults},
+    {"capture lifecycle",capture_lifecycle},
+    {"capture upload handoff",capture_upload_handoff},
+    {"moved capture retained history import", moved_capture_and_rule_import_retained_history},
+    {"attachment identity deletion and import", attachment_identity_survives_deletion_and_import},
+    {"moved capture deleted repository replay", moved_capture_survives_deleted_repository_replay},
+    {"moved URL rule deleted repository replay", moved_url_rule_survives_deleted_repository_replay},
+    {"capture validation and cache",capture_validation_and_cache},
+    {"URL connection lifecycle",url_connections_lifecycle},
+    {"capture sync and import",capture_sync_and_import},
     {"prompt history and restore", prompt_history_restore},
     {"whole-task conflicts and resolution", conflicts_and_resolution},
     {"deletion, moves and replay", deletion_move_and_replay},

@@ -7,14 +7,14 @@ struct SyncVectors {
   unsigned sequence = 0;
   SyncVectors() {
     success(f.store.approveAccount(identity(uuid(), uuid(), epoch).dump(), false));
-    f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+    f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
     success(f.store.acquireSync(f.space, owner));
   }
   J packet(const J& versions) {
     J changes = J::array();
     for (const auto& v : versions) changes.push_back({{"sequence", std::to_string(++sequence)},
         {"entity", {{"result", "RESULT_KIND_APPLIED"}, {"version", v}}}});
-    return {{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+    return {{"formatVersion", 2}, {"epoch", epoch}, {"owner", owner},
         {"pull", {{"changes", changes}, {"nextCursor", "fixture-" + std::to_string(sequence)}}}};
   }
   void apply(const J& versions) { success(f.store.applySync(f.space, packet(versions).dump())); }
@@ -131,9 +131,11 @@ void local_sync_vector(const J& c, const J& cases) {
         db.scalar("SELECT count(*) FROM outbox") == std::to_string(expected.at("outboxCount").get<int>()), "fixture atomic counts");
   } else if (key == "unsupported-schema") {
     Fixture f; Sql db(f.database()); const auto before = durable_snapshot(db);
-    db.exec("PRAGMA user_version=" + std::to_string(input.at("schemaVersion").get<int>()));
+    // Older shared vectors used schema 2 as the unknown future schema.
+    // Keep that scenario unknown after adding the explicit schema 2 upgrade.
+    db.exec("PRAGMA user_version=" + std::to_string(std::max(99,input.at("schemaVersion").get<int>())));
     lane::Store other(f.root.path.string());
-    error(J::parse(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
+    error(J::parse(other.open(J{{"formatVersion", 2}, {"spaceId", f.space}}.dump())), "UNSUPPORTED_FORMAT");
     require(durable_snapshot(db) == before, "fixture unsupported schema untouched");
   } else if (key == "rename-releases-url") {
     SyncVectors s; auto v = s.repo(input.at("repositoryId"), input.at("oldUrl"));
@@ -146,7 +148,7 @@ void local_sync_vector(const J& c, const J& cases) {
     Fixture f; size_t index = 0;
     for (const auto& account : input.at("accounts")) {
       success(f.store.approveAccount(identity(account, uuid(), uuid()).dump(), false));
-      f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+      f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
       require(items(f.call("ListTasks")).empty(), "fixture account starts isolated");
       require(f.call("CreateTask", input.at("requests").at(index)).at("result").at("result") == "RESULT_KIND_APPLIED", "no cross-account dedupe");
       require(items(f.call("ListTasks")).size() == expected.at("tasksPerAccount").at(index++), "fixture account task count");
@@ -167,10 +169,10 @@ void local_sync_vector(const J& c, const J& cases) {
     const auto tenant = registry.scalar("SELECT tenant_id FROM spaces WHERE id='" + s.f.space + "'");
     // A new isolated fixture account can establish the requested initial epoch.
     success(s.f.store.approveAccount(identity(uuid(), tenant, input.at("currentEpoch")).dump(), false));
-    s.f.space = success(s.f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+    s.f.space = success(s.f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
     success(s.f.store.acquireSync(s.f.space, s.owner)); auto task = s.f.task();
     Sql db(s.f.database()); const auto before = durable_snapshot(db);
-    error(J::parse(s.f.store.applySync(s.f.space, J{{"formatVersion", 1}, {"epoch", input.at("pushEpoch")}, {"owner", s.owner}}.dump())), expected.at("reason"));
+    error(J::parse(s.f.store.applySync(s.f.space, J{{"formatVersion", 2}, {"epoch", input.at("pushEpoch")}, {"owner", s.owner}}.dump())), expected.at("reason"));
     require(durable_snapshot(db) == before && s.f.get(task.at("entityId")) == task, "fixture stale epoch retains local content");
     (void)account;
   } else if (key == "repository-display-conflict" || key == "repository-concurrent-edits" || key == "parent-set-order" || key == "resolution-url-collision") {

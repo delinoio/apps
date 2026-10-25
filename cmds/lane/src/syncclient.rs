@@ -482,6 +482,7 @@ sync::mappings(dst,&json!([{
 ]))?;
 }
 }
+    import_attachment_identities(src, dst)?;
     import_versions(src, dst)?;
     import_attachments(src, dst)?;
     let mut stmt=src.prepare("SELECT method,request_id,fingerprint,entity_id,result_json FROM receipts")?;
@@ -580,6 +581,31 @@ fn import_versions(src: &Connection, dst: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn import_attachment_identities(src: &Connection, dst: &Connection) -> Result<()> {
+    // Include deleted owners with no remaining bytes, heads or versions. The
+    // identity table deliberately has no FK to content-bearing entities.
+    let mut stmt =
+        src.prepare("SELECT id,task_id,sha256,width,height,byte_size FROM attachment_identities")?;
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+        ))
+    })? {
+        let (id, task, hash, width, height, size) = row?;
+        Store::remember_capture_identity(
+            dst,
+            &task,
+            &json!({"attachmentId":id,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()}),
+        )?;
+    }
+    Ok(())
+}
+
 fn import_attachments(src: &Connection, dst: &Connection) -> Result<()> {
     let mut stmt =
         src.prepare("SELECT id,task_id,sha256,width,height,byte_size,png_base64 FROM attachments")?;
@@ -595,6 +621,11 @@ fn import_attachments(src: &Connection, dst: &Connection) -> Result<()> {
         ))
     })? {
         let (id, task, hash, width, height, size, png) = row?;
+        Store::remember_capture_identity(
+            dst,
+            &task,
+            &json!({"attachmentId":id,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()}),
+        )?;
         let alive: bool = dst.query_row(
             "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? AND kind=2 AND deleted=0)",
             [&task],
@@ -623,6 +654,7 @@ fn import_attachments(src: &Connection, dst: &Connection) -> Result<()> {
 fn object_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|_| {
@@ -663,26 +695,48 @@ fn attachments(
     identity: &Identity,
     epoch: &str,
 ) -> Result<()> {
+    use crate::network::SendRequest;
+    let client = object_client()?;
+    let rpc = |method: &str, request: &Value| remote::call(auth, s, endpoint, method, request);
+    let object =
+        |request: reqwest::RequestBuilder, limit| request.send_cancellable_limit(auth, limit);
+    attachments_with_io(
+        s,
+        owner,
+        identity,
+        epoch,
+        &AttachmentIo {
+            client: &client,
+            rpc: &rpc,
+            object: &object,
+        },
+    )
+}
+
+// Private injection boundary: tests replace I/O, never URL validation or the
+// authenticated store/epoch guards. Production always uses the isolated client.
+struct AttachmentIo<'a> {
+    client: &'a reqwest::Client,
+    rpc: &'a dyn Fn(&str, &Value) -> Result<Value>,
+    object: &'a dyn Fn(reqwest::RequestBuilder, usize) -> Result<crate::network::Response>,
+}
+fn attachments_with_io(
+    s: &Store,
+    owner: &str,
+    identity: &Identity,
+    epoch: &str,
+    io: &AttachmentIo<'_>,
+) -> Result<()> {
     let pending = s.with(false, |c| {
         let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND (a.synchronized=0 OR a.png_base64 IS NULL) ORDER BY a.id")?;
         let items = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,i64>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
         Ok(items)
     })?;
-    let client = object_client()?;
     let mut failure = None;
     for (attachment, task, hash, width, height, size, png) in pending {
         lease(s, owner, Some(identity))?;
         let reference = json!({"attachmentId":attachment,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()});
-        let result = transfer_attachment(
-            auth,
-            s,
-            endpoint,
-            &client,
-            epoch,
-            &task,
-            &reference,
-            png.as_deref(),
-        );
+        let result = transfer_attachment(io, epoch, &task, &reference, png.as_deref());
         match result {
             Ok(bytes) => {
                 use base64::Engine;
@@ -713,21 +767,13 @@ fn attachments(
     }
     failure.map_or(Ok(()), Err)
 }
-#[expect(
-    clippy::too_many_arguments,
-    reason = "The transfer keeps account, epoch, object transport and immutable owner explicit."
-)]
 fn transfer_attachment(
-    auth: &Auth,
-    s: &Store,
-    endpoint: &str,
-    client: &reqwest::Client,
+    io: &AttachmentIo<'_>,
     epoch: &str,
     task: &str,
     reference: &Value,
     png: Option<&str>,
 ) -> Result<Vec<u8>> {
-    use crate::network::SendRequest;
     use base64::{Engine, engine::general_purpose::STANDARD};
     let request = json!({"taskId":task,"attachmentId":reference["attachmentId"],"epoch":epoch});
     let unavailable = || {
@@ -741,13 +787,14 @@ fn transfer_attachment(
             .decode(png)
             .map_err(|_| invalid("Invalid stored attachment encoding."))?;
         crate::capture::validate_png(reference, &bytes)?;
-        let begin = remote::call(auth, s, endpoint, "BeginAttachmentUpload", &request)?;
+        let begin = (io.rpc)("BeginAttachmentUpload", &request)?;
         if begin["state"] != "ATTACHMENT_STATE_AVAILABLE" {
             let url = signed_url(&begin, "uploadUrl")?;
-            let mut put = client.put(url).body(bytes.clone());
+            let mut put = io.client.put(url).body(bytes.clone());
             if let Some(headers) = begin["headers"].as_object() {
                 for (name, value) in headers {
                     if name.eq_ignore_ascii_case("authorization")
+                        || name.eq_ignore_ascii_case("proxy-authorization")
                         || name.eq_ignore_ascii_case("cookie")
                         || name.eq_ignore_ascii_case("host")
                     {
@@ -761,12 +808,12 @@ fn transfer_attachment(
                     );
                 }
             }
-            if !put.send_cancellable(auth)?.status().is_success() {
+            if !(io.object)(put, 16 << 20)?.status().is_success() {
                 return Err(unavailable());
             }
             let mut complete = request;
             complete["uploadId"] = begin["uploadId"].clone();
-            if remote::call(auth, s, endpoint, "CompleteAttachmentUpload", &complete)?["state"]
+            if (io.rpc)("CompleteAttachmentUpload", &complete)?["state"]
                 != "ATTACHMENT_STATE_AVAILABLE"
             {
                 return Err(unavailable());
@@ -774,10 +821,7 @@ fn transfer_attachment(
         }
         bytes
     } else {
-        let response = remote::call(
-            auth,
-            s,
-            endpoint,
+        let response = (io.rpc)(
             "GetAttachment",
             &json!({"taskId":task,"attachmentId":reference["attachmentId"]}),
         )?;
@@ -788,9 +832,7 @@ fn transfer_attachment(
             let size = strv(reference, "byteSize")
                 .parse::<usize>()
                 .map_err(|_| invalid("Invalid attachment byte count."))?;
-            let response = client
-                .get(signed_url(&response, "downloadUrl")?)
-                .send_cancellable_limit(auth, size)?;
+            let response = (io.object)(io.client.get(signed_url(&response, "downloadUrl")?), size)?;
             if !response.status().is_success() {
                 return Err(unavailable());
             }
@@ -829,3 +871,7 @@ mod attachment_tests {
         assert!(signed_url(&json!({"downloadUrl":"https://example.com/image","expiresAt":"2000-01-01T00:00:00Z"}),"downloadUrl").is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "syncclient_attachment_tests.rs"]
+mod object_transport_tests;

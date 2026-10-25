@@ -134,6 +134,17 @@ CREATE TABLE attachments (
   synchronized INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX attachment_owner ON attachments(task_id);
+
+-- Retain only immutable identities after owner deletion; never image content.
+CREATE TABLE attachment_identities (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL
+);
+
 ```
 
 `store_meta` contains `space_id`, `device_id`, `format_version=2`, `account_epoch`, `pull_cursor`, `notification_enabled` (0/1), `notification_content` (DETAIL/GENERIC), and `sync_owner`/`sync_owner_expires_at_us`. No token or webhook signing key belongs here. `outbox.state` is PENDING=1 or BLOCKED=2; successful acknowledgments remove the row after durable local apply. `change_kind` is ENTITY=1, REMOTE_OBJECT=2, SETTINGS=3, SYNC_STATUS=4. `remote_objects.kind` is RECEIVER=1, EVENT=2, PROCESSING=3; this table is a read cache, not an offline mutation queue. `notification_receipts.state` is PENDING=1, DELIVERED=2, CANCELED=3. Repository mappings resolve immutable original repository references without rewriting historical snapshots or fingerprints. Tombstones and receipts do not expire while they are needed to prevent replay.
@@ -217,3 +228,5 @@ Do not silently initialize or replace an existing version-1 store. Version-1
 historical envelopes remain readable without rewriting immutable versions;
 new RealQA envelopes use format 2. Synchronization negotiation must prevent
 format-1 clients from dropping capture references or URL connections.
+
+Attachment deletion retains `attachment_identities` rows containing only immutable IDs, owner IDs, dimensions, byte counts and SHA-256 digests. Reusing an attachment ID for another owner or content is rejected even after deletion and account-space imports. Local physical removal deletes these records with the space. No image bytes or browser metadata belong in the identity table.

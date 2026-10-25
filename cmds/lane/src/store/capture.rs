@@ -12,6 +12,43 @@ use std::collections::HashSet;
     reason = "Store operations use the same instance-method interface under the caller transaction."
 )]
 impl Store {
+    // These minimal identities survive owner deletion; image bytes and browser
+    // metadata do not. Replays must never reassign an attachment UUID.
+    pub(crate) fn remember_capture_identity(
+        c: &Connection,
+        task: &str,
+        capture: &Value,
+    ) -> Result<()> {
+        crate::capture::validate_reference(capture)?;
+        if !valid_id(task) {
+            return Err(invalid("Invalid attachment owner."));
+        }
+        let attachment = strv(capture, "attachmentId");
+        let expected = (
+            task.to_owned(),
+            strv(capture, "sha256").to_owned(),
+            capture["width"].as_i64().unwrap(),
+            capture["height"].as_i64().unwrap(),
+            strv(capture, "byteSize").parse::<i64>().unwrap(),
+        );
+        for table in ["attachment_identities", "attachments"] {
+            let old: Option<(String, String, i64, i64, i64)> = c
+                .query_row(
+                    &format!(
+                        "SELECT task_id,sha256,width,height,byte_size FROM {table} WHERE id=?"
+                    ),
+                    [attachment],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )
+                .optional()?;
+            if old.is_some_and(|old| old != expected) {
+                return Err(invalid("Immutable attachment owner or content changed."));
+            }
+        }
+        c.execute("INSERT OR IGNORE INTO attachment_identities(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)", params![attachment,expected.0,expected.1,expected.2,expected.3,expected.4])?;
+        Ok(())
+    }
+
     pub(super) fn insert_captures(
         &self,
         c: &Connection,
@@ -30,6 +67,7 @@ impl Store {
                 .decode(strv(image, "png"))
                 .map_err(|_| invalid("Invalid PNG encoding."))?;
             crate::capture::validate_png(capture, &png)?;
+            Self::remember_capture_identity(c, task, capture)?;
             let exists: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM attachments WHERE id=?)",
                 [strv(capture, "attachmentId")],
@@ -75,6 +113,7 @@ impl Store {
             {
                 return Err(invalid("Immutable attachment content cannot change."));
             }
+            Self::remember_capture_identity(c, task, capture)?;
         }
         Ok(())
     }

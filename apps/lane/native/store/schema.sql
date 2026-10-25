@@ -53,3 +53,13 @@ CREATE TABLE attachments (
   synchronized INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX attachment_owner ON attachments(task_id);
+
+-- Retain only immutable identities after owner deletion; never image content.
+CREATE TABLE attachment_identities (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL
+);

@@ -152,7 +152,7 @@ pub fn insert_version(c: &Connection, v: &Value) -> Result<()> {
         return Ok(());
     }
     for capture in array(&v["task"]["captures"]) {
-        crate::capture::validate_reference(capture)?;
+        super::Store::remember_capture_identity(c, entity, capture)?;
         let attachment = strv(capture, "attachmentId");
         let expected = (
             entity.to_owned(),

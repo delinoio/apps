@@ -423,7 +423,7 @@ issuer:r.get(0)?,account:r.get(1)?,tenant:r.get(2)?,enabled:r.get(3)?}
         })?;
         if let Some(db) = self.db.borrow_mut().take() {
             let result = transaction(&db, true, |c| {
-                c.execute_batch("DELETE FROM attachments; DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM notification_receipts; DELETE FROM repository_mappings; DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version'); INSERT INTO changes(change_kind) VALUES(3); INSERT OR REPLACE INTO store_meta VALUES('removed','1');")?;
+                c.execute_batch("DELETE FROM attachments; DELETE FROM attachment_identities; DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM notification_receipts; DELETE FROM repository_mappings; DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version'); INSERT INTO changes(change_kind) VALUES(3); INSERT OR REPLACE INTO store_meta VALUES('removed','1');")?;
                 Ok(())
             });
             drop(db);
