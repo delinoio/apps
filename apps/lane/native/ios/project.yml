@@ -28,6 +28,7 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Assets.xcassets
       - path: ../../dist/main.lynx.bundle
         buildPhase: resources
       - path: ../../dist/LICENSE
@@ -69,6 +70,7 @@ targets:
           - "$(LANE_STORE_OUTPUT)/liblane_unicode.a"
           - "$(LANE_STORE_OUTPUT)/liblane_url.a"
         INFOPLIST_KEY_CFBundleDisplayName: Lane
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         TARGETED_DEVICE_FAMILY: "1,2"

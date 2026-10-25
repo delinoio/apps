@@ -51,6 +51,26 @@ release workflow, signing identity or store registration.
 
 Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Perfine and RealQA remain disabled, with icons and `Coming soon`. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
 
+### Application icon
+
+Use the folded-lanes icon for macOS, Windows, iOS, Android and the web favicon.
+The mark consists of a white L-shaped ribbon and a pale-blue parallel ribbon,
+with restrained fold shading over a cobalt-blue background centered on `#075AFF`.
+Keep the application name `Lane` and existing in-app branding and behavior.
+
+`apps/lane/assets/icon-source.png` owns the approved square artwork. iOS uses an
+opaque 1024-pixel asset catalog image. macOS uses an ICNS with a rounded tile and
+transparent outer margins; Windows embeds a multi-resolution ICO for the
+executable, window and tray. Android supplies density-specific legacy icons,
+adaptive icons and a flat monochrome silhouette for themed icons. Keep the
+adaptive mark inside the central safe zone. The web host ships an SVG favicon
+with flat ribbons for small sizes and a 180-pixel Apple touch icon.
+
+Preserve the unmasked square artwork when deriving platform assets. Apply masks
+only to platform variants, and keep both lanes distinct at small sizes. Check
+16-, 32- and 64-pixel rendering, platform masking and packaged icon references.
+Asset compilation does not establish launcher, Dock, taskbar or device acceptance.
+
 ### Product contract ownership
 
 The following behavior is authoritative for all Lane entry points. The linked domain contracts specify implementation interfaces and conformance, without narrowing these requirements.

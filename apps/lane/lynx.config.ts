@@ -97,6 +97,7 @@ export default defineConfig({
           { from: "web/online-module.js", to: "online-module.js" },
           { from: "web/host-module.js", to: "host-module.js" },
           { from: "web/push-worker.js", to: "push-worker.js" },
+          { from: "web/icons", to: "icons" },
           { from: "../../LICENSE", to: "." },
           { from: "../../NOTICE", to: "." },
         ],
