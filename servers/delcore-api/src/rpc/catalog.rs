@@ -2,7 +2,6 @@
 use super::{Call, forbidden, id, invalid, nonempty, page, precondition, string, uuid as db_uuid};
 use crate::{Op, Result, events, postgres::catalog as postgres};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::collections::HashSet;
 
@@ -20,33 +19,6 @@ fn valid_key(key: &str) -> bool {
         && key
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-fn derived_key(name: &str) -> String {
-    let name = name.trim();
-    let key = name.to_lowercase().replace([' ', '_'], "-");
-    if valid_key(&key) {
-        return key;
-    }
-    let mut base = String::new();
-    for c in name.to_lowercase().chars() {
-        if c.is_ascii_lowercase() || c.is_ascii_digit() {
-            base.push(c);
-        } else if !base.is_empty() && !base.ends_with('-') {
-            base.push('-');
-        }
-    }
-    base = base.trim_matches('-').to_owned();
-    if base.is_empty() {
-        base = "key".into();
-    } else if !base.as_bytes()[0].is_ascii_lowercase() {
-        base = format!("key-{base}");
-    }
-    base.truncate(base.len().min(83));
-    format!(
-        "{}-{}",
-        base.trim_end_matches('-'),
-        hex::encode(&Sha256::digest(name.as_bytes())[..8])
-    )
 }
 fn array(v: &Value, key: &str) -> Vec<Value> {
     v[key].as_array().cloned().unwrap_or_default()
@@ -219,13 +191,7 @@ fn configuration(v: &Value, kind: i32) -> Result<Value> {
 }
 fn stored_configuration(mut value: Value) -> Value {
     if let Some(list) = value.get("string_list") {
-        // Legacy Go grants can store a nil slice as null. Preserve the selected
-        // string-list oneof by returning a message with an empty values array.
-        let values = if list.is_null() {
-            json!([])
-        } else {
-            list.clone()
-        };
+        let values = list.clone();
         value["string_list"] = json!({"values":values});
     }
     if let Some(integer) = value["integer"].as_i64() {
@@ -235,12 +201,7 @@ fn stored_configuration(mut value: Value) -> Value {
 }
 
 impl Call<'_> {
-    async fn catalog_key(
-        &mut self,
-        entity: &str,
-        supplied: &str,
-        fallback: &str,
-    ) -> Result<String> {
+    async fn catalog_key(&mut self, entity: &str, supplied: &str) -> Result<String> {
         if !supplied.is_empty() {
             if !valid_key(supplied) {
                 return Err(invalid("invalid catalog key"));
@@ -253,7 +214,7 @@ impl Call<'_> {
                 return Ok(key);
             }
         }
-        Ok(derived_key(fallback))
+        Err(invalid("catalog key is required"))
     }
     async fn replace_product_features(
         &mut self,
@@ -393,7 +354,7 @@ impl Call<'_> {
                 }
                 k.to_owned()
             } else {
-                self.catalog_key(string(&v, "id"), string(&v, "key"), string(&v, "name"))
+                self.catalog_key(string(&v, "id"), string(&v, "key"))
                     .await?
             };
             let scope = if matches!(kind, "addon" | "feature" | "meter") {
@@ -435,15 +396,6 @@ impl Call<'_> {
                     if free && postpaid {
                         return Err(invalid("free plans cannot enable postpaid continuation"));
                     }
-                    let existing: bool =
-                        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)")
-                            .bind(uuid(&entity)?)
-                            .fetch_one(&mut *self.tx)
-                            .await?;
-                    if existing {
-                        postgres::snapshot_legacy_plan_selections(self.tx, &entity, self.now)
-                            .await?;
-                    }
                     if !default {
                         let current: bool = sqlx::query_scalar(
                             "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1 AND is_default)",
@@ -465,17 +417,6 @@ impl Call<'_> {
                     sqlx::query("INSERT INTO plans VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,rank=EXCLUDED.rank,free=EXCLUDED.free,is_default=EXCLUDED.is_default,postpaid=EXCLUDED.postpaid").bind(uuid(&entity)?).bind(string(&v,"name")).bind(number(&v,"rank")).bind(free).bind(default).bind(postpaid).execute(&mut *self.tx).await?;
                 }
                 "addon" => {
-                    let existing: bool = sqlx::query_scalar(
-                        "SELECT EXISTS(SELECT 1 FROM addons WHERE id=$1 AND service_id=$2)",
-                    )
-                    .bind(uuid(&entity)?)
-                    .bind(uuid(&service)?)
-                    .fetch_one(&mut *self.tx)
-                    .await?;
-                    if existing {
-                        postgres::snapshot_legacy_add_on_selections(self.tx, &entity, self.now)
-                            .await?;
-                    }
                     let tag=sqlx::query("INSERT INTO addons VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name WHERE addons.service_id=EXCLUDED.service_id").bind(uuid(&entity)?).bind(uuid(&service)?).bind(string(&v,"name")).execute(&mut *self.tx).await?;
                     if tag.rows_affected() != 1 {
                         return Err(invalid("add-on service cannot change"));
@@ -534,7 +475,7 @@ impl Call<'_> {
         }
         Ok(())
     }
-    async fn put_catalog_meter(&mut self, mut v: Value) -> Result<Value> {
+    async fn put_catalog_meter(&mut self, v: Value) -> Result<Value> {
         let entity = string(&v, "id").to_owned();
         let service = string(&v, "service_id").to_owned();
         if string(&v, "name") != string(&v, "key") {
@@ -542,14 +483,6 @@ impl Call<'_> {
         }
         let filters = array(&v, "filters");
         let mut groups = strings(&v, "group_by");
-        let legacy = string(&v, "event_type").is_empty()
-            && number(&v, "aggregation") == 0
-            && string(&v, "value_attribute").is_empty()
-            && filters.is_empty()
-            && groups.is_empty();
-        if number(&v, "aggregation") == 0 {
-            v["aggregation"] = json!(2);
-        }
         if !(1..=6).contains(&number(&v, "aggregation")) {
             return Err(invalid("unknown meter aggregation"));
         }
@@ -560,20 +493,18 @@ impl Call<'_> {
         {
             return Err(invalid("meter definition exceeds catalog limits"));
         }
-        if !legacy {
-            events::catalog_definition(
-                string(&v, "name"),
-                string(&v, "event_type"),
-                number(&v, "aggregation"),
-                string(&v, "value_attribute"),
-                &filters,
-                &groups,
-            )?;
-        }
+        events::catalog_definition(
+            string(&v, "name"),
+            string(&v, "event_type"),
+            number(&v, "aggregation"),
+            string(&v, "value_attribute"),
+            &filters,
+            &groups,
+        )?;
         for f in &filters {
             if string(f, "attribute").is_empty()
                 || !(1..=8).contains(&number(f, "operator"))
-                || array(f, "values").len() + array(f, "typed_values").len() > 100
+                || array(f, "typed_values").len() > 100
             {
                 return Err(invalid("invalid meter filter"));
             }
@@ -586,42 +517,11 @@ impl Call<'_> {
                 return Err(invalid("repeated meter group attribute"));
             }
         }
-        let definition = json!({"name":string(&v,"name"),"event_type":string(&v,"event_type"),"aggregation":number(&v,"aggregation"),"value_attribute":string(&v,"value_attribute"),"filters":filters,"group_by":if groups.is_empty(){Value::Null}else{json!(groups)}});
+        let definition = json!({"name":string(&v,"name"),"event_type":string(&v,"event_type"),"aggregation":number(&v,"aggregation"),"value_attribute":string(&v,"value_attribute"),"filters":filters,"group_by":json!(groups)});
         let previous = postgres::active_catalog_version(self.tx, "meter", &entity).await?;
-        let stored: Value = if previous.is_empty() {
-            json!({})
-        } else {
-            sqlx::query_scalar("SELECT definition FROM catalog_versions WHERE id=$1")
-                .bind(uuid(&previous)?)
-                .fetch_one(&mut *self.tx)
-                .await?
-        };
-        let untyped = string(&stored, "event_type").is_empty();
-        if legacy && !previous.is_empty() {
-            for (k, value) in stored.as_object().into_iter().flatten() {
-                v[k] = value.clone();
-            }
-        } else {
-            if !legacy && untyped {
-                let typed = events::catalog_definition(
-                    string(&v, "name"),
-                    string(&v, "event_type"),
-                    number(&v, "aggregation"),
-                    string(&v, "value_attribute"),
-                    &filters,
-                    &groups,
-                )?;
-                if events::untyped_meter_in_use(self.tx, &entity).await?
-                    && !events::is_compatibility_definition(&typed)
-                {
-                    return Err(invalid("meter definition is immutable for its key"));
-                }
-            }
-            let (version, _) =
-                postgres::select_catalog_version(self.tx, &entity, &definition).await?;
-            if !previous.is_empty() && previous != version && !untyped {
-                return Err(invalid("meter definition is immutable for its key"));
-            }
+        let (version, _) = postgres::select_catalog_version(self.tx, &entity, &definition).await?;
+        if !previous.is_empty() && previous != version {
+            return Err(invalid("meter definition is immutable for its key"));
         }
         let count: i64 =
             sqlx::query_scalar("SELECT count(*) FROM meters WHERE service_id=$1 AND name<>$2")
@@ -688,18 +588,7 @@ impl Call<'_> {
                 return Err(invalid("add-on belongs to another service"));
             }
         }
-        let key = if string(&v, "key").is_empty() {
-            format!(
-                "price-{}",
-                hex::encode(
-                    &Sha256::digest(
-                        format!("{}:{}:{}", service, string(&v, "meter"), price_kind).as_bytes()
-                    )[..8]
-                )
-            )
-        } else {
-            string(&v, "key").to_owned()
-        };
+        let key = string(&v, "key").to_owned();
         if !valid_key(&key) {
             return Err(invalid("invalid price key"));
         }
@@ -733,19 +622,19 @@ impl Call<'_> {
         let queries = [
             (
                 "services",
-                "SELECT jsonb_build_object('id',s.id,'name',s.name,'client_id',s.client_id,'capabilities',s.capabilities,'scopes',s.scopes,'key',COALESCE(ce.key,'')) FROM services s LEFT JOIN catalog_entities ce ON ce.id=s.id WHERE s.id>$1 ORDER BY s.id LIMIT $2",
+                "SELECT jsonb_build_object('id',s.id,'name',s.name,'client_id',s.client_id,'capabilities',s.capabilities,'scopes',s.scopes,'key',COALESCE(ce.key,'')) FROM services s JOIN catalog_entities ce ON ce.id=s.id WHERE s.id>$1 ORDER BY s.id LIMIT $2",
             ),
             (
                 "plans",
-                "SELECT jsonb_build_object('id',p.id,'name',p.name,'rank',p.rank,'free',p.free,'default_free',p.is_default,'postpaid',p.postpaid,'key',COALESCE(ce.key,''),'active_version_id',COALESCE(ce.active_version_id::text,'')) FROM plans p LEFT JOIN catalog_entities ce ON ce.id=p.id WHERE p.id>$1 ORDER BY p.id LIMIT $2",
+                "SELECT jsonb_build_object('id',p.id,'name',p.name,'rank',p.rank,'free',p.free,'default_free',p.is_default,'postpaid',p.postpaid,'key',COALESCE(ce.key,''),'active_version_id',COALESCE(ce.active_version_id::text,'')) FROM plans p JOIN catalog_entities ce ON ce.id=p.id WHERE p.id>$1 ORDER BY p.id LIMIT $2",
             ),
             (
                 "prices",
-                "SELECT jsonb_build_object('id',p.id,'plan_id',COALESCE(p.plan_id::text,''),'service_id',p.service_id,'meter',p.meter,'unit_price',p.unit_price::text,'included',p.included::text,'currency',p.currency,'external_price_id',p.external_price_id,'add_on_id',COALESCE(p.addon_id::text,''),'kind',p.kind,'key',COALESCE(ce.key,''),'stable_id',COALESCE(ce.id::text,''),'active',CASE WHEN ce.id IS NOT NULL THEN COALESCE(ce.active_version_id=p.id,false) ELSE NOT EXISTS (SELECT 1 FROM prices newer WHERE newer.plan_id IS NOT DISTINCT FROM p.plan_id AND newer.addon_id IS NOT DISTINCT FROM p.addon_id AND newer.service_id=p.service_id AND newer.meter=p.meter AND newer.kind=p.kind AND (newer.created_at,newer.id)>(p.created_at,p.id)) END) FROM prices p LEFT JOIN catalog_versions cv ON cv.id=p.id LEFT JOIN catalog_entities ce ON ce.id=cv.entity_id WHERE p.id>$1 ORDER BY p.id LIMIT $2",
+                "SELECT jsonb_build_object('id',p.id,'plan_id',COALESCE(p.plan_id::text,''),'service_id',p.service_id,'meter',p.meter,'unit_price',p.unit_price::text,'included',p.included::text,'currency',p.currency,'external_price_id',p.external_price_id,'add_on_id',COALESCE(p.addon_id::text,''),'kind',p.kind,'key',COALESCE(ce.key,''),'stable_id',COALESCE(ce.id::text,''),'active',ce.active_version_id=p.id) FROM prices p JOIN catalog_versions cv ON cv.id=p.id JOIN catalog_entities ce ON ce.id=cv.entity_id WHERE p.id>$1 ORDER BY p.id LIMIT $2",
             ),
             (
                 "add_ons",
-                "SELECT jsonb_build_object('id',a.id,'service_id',a.service_id,'name',a.name,'key',COALESCE(ce.key,''),'active_version_id',COALESCE(ce.active_version_id::text,'')) FROM addons a LEFT JOIN catalog_entities ce ON ce.id=a.id WHERE a.id>$1 ORDER BY a.id LIMIT $2",
+                "SELECT jsonb_build_object('id',a.id,'service_id',a.service_id,'name',a.name,'key',COALESCE(ce.key,''),'active_version_id',COALESCE(ce.active_version_id::text,'')) FROM addons a JOIN catalog_entities ce ON ce.id=a.id WHERE a.id>$1 ORDER BY a.id LIMIT $2",
             ),
             (
                 "features",
@@ -785,7 +674,7 @@ impl Call<'_> {
         }
         let mut meters = Vec::new();
         for service in array(&out, "services") {
-            let rows=sqlx::query("SELECT m.service_id::text,m.name,COALESCE(ce.id::text,'') AS id,COALESCE(ce.key,'') AS key,COALESCE(cv.definition,'{}'::jsonb) AS definition FROM meters m LEFT JOIN catalog_entities ce ON ce.kind='meter' AND ce.scope=m.service_id::text AND EXISTS (SELECT 1 FROM catalog_versions cv WHERE cv.id=ce.active_version_id AND cv.definition->>'name'=m.name) LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id WHERE m.service_id=$1 ORDER BY m.name").bind(uuid(string(&service,"id"))?).fetch_all(&mut *self.tx).await?;
+            let rows=sqlx::query("SELECT m.service_id::text,m.name,COALESCE(ce.id::text,'') AS id,COALESCE(ce.key,'') AS key,COALESCE(cv.definition,'{}'::jsonb) AS definition FROM meters m JOIN catalog_entities ce ON ce.kind='meter' AND ce.scope=m.service_id::text AND EXISTS (SELECT 1 FROM catalog_versions cv WHERE cv.id=ce.active_version_id AND cv.definition->>'name'=m.name) JOIN catalog_versions cv ON cv.id=ce.active_version_id WHERE m.service_id=$1 ORDER BY m.name").bind(uuid(string(&service,"id"))?).fetch_all(&mut *self.tx).await?;
             for row in rows {
                 let mut v = json!({"service_id":row.get::<String,_>("service_id"),"name":row.get::<String,_>("name"),"id":row.get::<String,_>("id"),"key":row.get::<String,_>("key")});
                 let definition: Value = row.get("definition");
@@ -954,13 +843,6 @@ impl Call<'_> {
 mod tests {
     use super::*;
     #[test]
-    fn legacy_keys_preserve_names_and_disambiguate_unicode() {
-        assert_eq!(derived_key("Basic Plan"), "basic-plan");
-        assert!(valid_key(&derived_key("기본 요금제")));
-        assert_ne!(derived_key("기본 요금제"), derived_key("다른 요금제"));
-        assert!(valid_key(&derived_key(&"x".repeat(200))));
-    }
-    #[test]
     fn feature_configuration_is_strict() {
         assert!(configuration(&json!({"boolean":false}), 1).is_ok());
         assert!(configuration(&json!({"boolean":false,"text":"x"}), 1).is_err());
@@ -1007,10 +889,10 @@ mod tests {
         assert!(configuration(&json!({"string_list":{"values":false}}), 5).is_err());
     }
     #[test]
-    fn legacy_null_string_list_keeps_configuration_oneof() {
+    fn empty_string_list_keeps_configuration_oneof() {
         use delino_protocol::delcore::v1::ConfigurationValue;
-        for stored in [json!({"string_list":null}), json!({"string_list":[]})] {
-            let configuration = stored_configuration(stored);
+        {
+            let configuration = stored_configuration(json!({"string_list":[]}));
             assert_eq!(configuration, json!({"string_list":{"values":[]}}));
             let decoded: ConfigurationValue =
                 serde_json::from_value(field_names(&configuration, true)).unwrap();

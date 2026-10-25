@@ -215,16 +215,16 @@ fn frozen_row_baselines_exclude_forks_and_survive_deletion() {
     assert!(s.complete(&target, at).is_err());
 }
 #[test]
-fn go_storage_rows_round_trip() {
-    let raw = serde_json::json!({"next":1,"records":{"run":{"execution":{"context":{"repository_id":"r","execution_id":"run","commit":"a","branch":"main","pull_request":3},"state":1,"registered_at":"2026-01-01T00:00:00Z","registration_order":"00000000000000000001","measurements":[{"dataset":{"id":"d","name":"D","columns":[{"id":"size","unit":"B","direction":1}]},"rows":[{"id":"r","values":{"CamelKey":"1"}}]}]},"lastData":"2026-01-01T00:00:00Z","cutoff":"2026-01-01T00:00:00Z","ancestors":null,"base":{"execution":"","commit":""},"push":false,"baselines":{}}}});
+fn current_storage_rows_round_trip() {
+    let raw = serde_json::json!({"next":1,"records":{"run":{"execution":{"context":{"repositoryId":"r","executionId":"run","commit":"a","branch":"main","pullRequest":"3"},"state":"EXECUTION_STATE_MEASURING","registeredAt":"2026-01-01T00:00:00Z","registrationOrder":"00000000000000000001","measurements":[{"dataset":{"id":"d","name":"D","columns":[{"id":"size","unit":"B","direction":"DIRECTION_LOWER"}]},"rows":[{"id":"r","values":{"CamelKey":"1"}}]}]},"last_data":"2026-01-01T00:00:00Z","cutoff":"2026-01-01T00:00:00Z","ancestors":[],"removed":{},"base":{"execution":"","commit":""},"push":false,"baselines":{}}}});
     let s: State = serde_json::from_value(raw).unwrap();
     let saved = serde_json::to_value(&s).unwrap();
     let e = &saved["records"]["run"]["execution"];
-    assert_eq!(e["context"]["pull_request"], 3);
-    assert_eq!(e["state"], 1);
+    assert_eq!(e["context"]["pullRequest"], "3");
+    assert_eq!(e["state"], "EXECUTION_STATE_MEASURING");
     assert_eq!(
         e["measurements"][0]["dataset"]["columns"][0]["direction"],
-        1
+        "DIRECTION_LOWER"
     );
     assert_eq!(e["measurements"][0]["rows"][0]["values"]["CamelKey"], "1");
     let restored: State = serde_json::from_value(saved).unwrap();

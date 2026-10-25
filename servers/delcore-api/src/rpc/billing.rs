@@ -374,30 +374,13 @@ impl Call<'_> {
             )
             .await?;
             if version.is_empty() {
-                continue;
+                return Err(precondition("product has no active catalog version"));
             }
             let active = postgres::product_version_prices(&mut *self.tx, product, &version).await?;
-            // Legacy prices have no catalog version. Compare catalog prices only.
-            let requested_ids = requested
-                .iter()
-                .map(|v| uuid(v))
-                .collect::<crate::Result<Vec<_>>>()?;
-            let active_ids = active
-                .iter()
-                .map(|v| uuid(v))
-                .collect::<crate::Result<Vec<_>>>()?;
-            let wanted: Vec<String> = sqlx::query_scalar(
-                "SELECT id::text FROM catalog_versions WHERE id=ANY($1) ORDER BY id::text",
-            )
-            .bind(requested_ids)
-            .fetch_all(&mut *self.tx)
-            .await?;
-            let available: Vec<String> = sqlx::query_scalar(
-                "SELECT id::text FROM catalog_versions WHERE id=ANY($1) ORDER BY id::text",
-            )
-            .bind(active_ids)
-            .fetch_all(&mut *self.tx)
-            .await?;
+            let mut wanted = requested.clone();
+            let mut available = active;
+            wanted.sort();
+            available.sort();
             if wanted != available {
                 return Err(invalid(
                     "selected prices must match the active product version",

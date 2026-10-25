@@ -290,7 +290,7 @@ fn matches_filters(filters: &[Filter], attrs: &BTreeMap<String, Value>) -> bool 
         }
     })
 }
-/// Preserve Go encoding/json's HTML and line-separator escaping: these keys are persisted.
+/// Encode canonical group values in stable name order.
 pub fn group_key(values: &BTreeMap<String, Value>) -> Result<String> {
     #[derive(Serialize)]
     struct Part<'a> {
@@ -312,13 +312,7 @@ pub fn group_key(values: &BTreeMap<String, Value>) -> Result<String> {
             value: v.text,
         });
     }
-    let encoded = serde_json::to_string(&parts).map_err(|e| MeteringError::Event(e.to_string()))?;
-    Ok(encoded
-        .replace('&', "\\u0026")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029"))
+    serde_json::to_string(&parts).map_err(|e| MeteringError::Event(e.to_string()))
 }
 
 macro_rules! string_enum {

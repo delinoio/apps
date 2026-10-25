@@ -34,7 +34,7 @@ The API directory contains Rust source and tests plus canonical SQL migrations. 
 
 Shared UI primitives are owned by [the UI package](project-ui.md) at `packages/ui`.
 
-DevBase API services run as separate servers; the console does not host them. Delcore owns tenants, memberships, billing and tenant lifecycle. The end-user directory is free: it reads only billing-independent tenant state from Delcore and never charges, meters or gates by plan or balance. End users in a directory are developer-owned data without Delino accounts; their developer's application owns their login. Server files use FSL-1.1-ALv2; protocol and example files use Apache-2.0. Individual API services define their server paths and protocols in their own contracts before implementation.
+DevBase API services run as separate servers; the console does not host them. Delcore owns tenants, memberships, billing and tenant lifecycle. Replay storage accepts only canonical fingerprints; reset pre-release databases from retired implementations. The end-user directory is free: it reads only billing-independent tenant state from Delcore and never charges, meters or gates by plan or balance. End users in a directory are developer-owned data without Delino accounts; their developer's application owns their login. Server files use FSL-1.1-ALv2; protocol and example files use Apache-2.0. Individual API services define their server paths and protocols in their own contracts before implementation.
 
 The frontend uses TypeScript, React and Rsbuild instead of the default new-project Go language. Static hosting targets Cloudflare Pages.
 

@@ -118,7 +118,7 @@ External individuals and organizations, CI jobs and service operators.
 
 ## Storage
 
-PostgreSQL is authoritative for server state. Clients do not persist credentials or measurement history. Configuration and measurements retain stable IDs independently of display names.
+PostgreSQL is authoritative for server state. Stored executions use the generated Rust protobuf JSON serializer directly. There is no Go-format encoder or null-slice adapter; reset development state written by retired implementations. Clients do not persist credentials or measurement history. Configuration and measurements retain stable IDs independently of display names.
 
 ## Security
 

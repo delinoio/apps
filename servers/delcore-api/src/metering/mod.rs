@@ -51,14 +51,17 @@ mod tests {
         }
     }
     #[test]
-    fn canonical_groups_preserve_persisted_go_encoding() {
+    fn canonical_groups_preserve_names_and_scalar_types() {
         let values = BTreeMap::from([
             ("z".into(), number("1.00")),
             ("a".into(), Value::string("<&>\u{2028}\u{2029}")),
         ]);
         assert_eq!(
             group_key(&values).unwrap(),
-            r#"[{"name":"a","kind":"string","value":"\u003c\u0026\u003e\u2028\u2029"},{"name":"z","kind":"number","value":"1"}]"#
+            format!(
+                r#"[{{"name":"a","kind":"string","value":"<&>{}{}"}},{{"name":"z","kind":"number","value":"1"}}]"#,
+                '\u{2028}', '\u{2029}'
+            )
         );
         let mut changed = values.clone();
         changed.insert("z".into(), Value::string("1"));

@@ -97,12 +97,7 @@ impl Call<'_> {
         let meter_id: uuid::Uuid = meter.try_get("id")?;
         let definition: Option<Value> = meter.try_get("definition")?;
         let definition = crate::features::decode_meter(definition.as_ref())?;
-        // Legacy untyped meters use the compatibility SUM definition at ingestion.
-        let aggregation = if definition.event_type.is_empty() {
-            2
-        } else {
-            definition.aggregation
-        };
+        let aggregation = definition.aggregation;
         let (start, end) = crate::postgres::period::billing_period(&mut *self.tx, tenant, at)
             .await
             .map_err(|e| {

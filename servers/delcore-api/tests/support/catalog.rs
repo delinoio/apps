@@ -4,65 +4,6 @@ use serde_json::json;
 
 #[tokio::test]
 #[ignore = "requires disposable TEST_DATABASE_URL"]
-async fn legacy_plan_mutation_preserves_policy_and_backdates_selection() {
-    let f = Fixture::setup().await;
-    f.bootstrap().await;
-    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
-    let tenant = me["tenants"][0]["id"].as_str().unwrap();
-    let plan = key();
-    sqlx::query("INSERT INTO plans(id,name,rank,free,is_default,postpaid) VALUES($1::text::uuid,'Legacy Plan',100,true,false,false)")
-        .bind(&plan).execute(&f.db).await.unwrap();
-    sqlx::query("UPDATE tenants SET plan_id=$2::text::uuid WHERE id=$1::text::uuid")
-        .bind(tenant)
-        .bind(&plan)
-        .execute(&f.db)
-        .await
-        .unwrap();
-    let updated = f.rpc("owner", "PutPlan", json!({"requestKey":key(),"reason":"mutate legacy plan","plan":{"id":plan,"name":"Updated Legacy Plan","rank":101,"free":false}})).await;
-    let (selected, free, backdated): (String, String, bool) = sqlx::query_as(
-        "SELECT cs.version_id::text,cv.definition->>'free',cs.starts_at=t.period_start FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id JOIN tenants t ON t.id=cs.tenant_id WHERE cs.tenant_id=$1::text::uuid AND cs.product_id=$2::text::uuid AND cs.ends_at IS NULL")
-        .bind(tenant).bind(&plan).fetch_one(&f.db).await.unwrap();
-    assert_ne!(selected, updated["plan"]["activeVersionId"]);
-    assert_eq!(free, "true");
-    assert!(
-        backdated,
-        "late usage must retain the previous policy for the entire period"
-    );
-}
-
-#[tokio::test]
-#[ignore = "requires disposable TEST_DATABASE_URL"]
-async fn legacy_addon_mutation_backdates_selection_and_preserves_old_prices() {
-    let f = Fixture::setup().await;
-    f.bootstrap().await;
-    let service = f.service().await;
-    let feature = f.rpc("owner", "PutFeature", json!({"requestKey":key(),"reason":"declare access","feature":{"serviceId":service,"key":"priority","name":"Priority","kind":"FEATURE_KIND_ACCESS"}})).await;
-    let me = f.rpc("owner", "GetCurrentUser", json!({})).await;
-    let tenant = me["tenants"][0]["id"].as_str().unwrap();
-    let addon = key();
-    let price = key();
-    sqlx::query("INSERT INTO addons(id,service_id,name) VALUES($1::text::uuid,$2::text::uuid,'Legacy Add-on')")
-        .bind(&addon).bind(&service).execute(&f.db).await.unwrap();
-    sqlx::query("INSERT INTO catalog_entities(id,kind,scope,key) VALUES($1::text::uuid,'addon',$2,'legacy-addon')")
-        .bind(&addon).bind(&service).execute(&f.db).await.unwrap();
-    sqlx::query("INSERT INTO prices(id,addon_id,service_id,meter,unit_price,included,currency,external_price_id,created_at,kind) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,'base',5,0,'USD','pri_legacy',now(),2)")
-        .bind(&price).bind(&addon).bind(&service).execute(&f.db).await.unwrap();
-    sqlx::query("INSERT INTO entitlements(id,tenant_id,price_id,starts_at,ends_at) VALUES($1::text::uuid,$2::text::uuid,$3::text::uuid,now()-interval '1 day',now()+interval '1 day')")
-        .bind(key()).bind(tenant).bind(&price).execute(&f.db).await.unwrap();
-    let updated = f.rpc("owner", "PutAddOn", json!({"requestKey":key(),"reason":"mutate legacy addon","replaceFeatureValues":true,"addOn":{"id":addon,"serviceId":service,"name":"Legacy Add-on","featureValues":[{"featureId":feature["feature"]["id"],"enabled":true}]}})).await;
-    let (version, features, prices, covered): (String, i32, i32, bool) = sqlx::query_as(
-        "SELECT cs.version_id::text,jsonb_array_length(cv.definition->'features'),jsonb_array_length(cv.definition->'prices'),cs.starts_at=e.starts_at AND cs.ends_at=e.ends_at FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id JOIN entitlements e ON e.tenant_id=cs.tenant_id AND e.price_id=$3::text::uuid WHERE cs.tenant_id=$1::text::uuid AND cs.product_id=$2::text::uuid")
-        .bind(tenant).bind(&addon).bind(&price).fetch_one(&f.db).await.unwrap();
-    assert_ne!(version, updated["addOn"]["activeVersionId"]);
-    assert_eq!((features, prices), (0, 1));
-    assert!(
-        covered,
-        "a future-ending entitlement remains held and retains its full historical interval"
-    );
-}
-
-#[tokio::test]
-#[ignore = "requires disposable TEST_DATABASE_URL"]
 async fn price_versions_reuse_content_without_moving_existing_subscriptions() {
     let f = Fixture::setup().await;
     f.bootstrap().await;

@@ -99,11 +99,9 @@ pub async fn recover_free_period(
     if selections > 1 {
         return Err(HistoryInvalid("several plan selections overlap the month start").into());
     }
-    // The plan's policy is the one pinned for the tenant at the boundary (the selection of that
-    // plan whose validity window contains `start`), then the plan's current flag for a plan the
-    // tenant had no pinned selection of. `plans.free` is mutable catalog state, so a plan that
-    // was free at the boundary and was later republished as paid still counts as free here.
-    let paid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=$1 AND pr.kind=2 AND COALESCE((SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=en.tenant_id AND cs.product_id=pl.id AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1),pl.free) IS FALSE AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2))")
+    // Only the pinned policy is historical evidence. A recurring entitlement without a
+    // matching free selection is contradictory and cannot receive a free allowance.
+    let paid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entitlements en JOIN prices pr ON pr.id=en.price_id JOIN plans pl ON pl.id=pr.plan_id WHERE en.tenant_id=$1 AND pr.kind=2 AND (SELECT (cv.definition->>'free')::boolean FROM tenant_catalog_selections cs JOIN catalog_versions cv ON cv.id=cs.version_id WHERE cs.tenant_id=en.tenant_id AND cs.product_id=pl.id AND cs.starts_at<=$2 AND (cs.ends_at IS NULL OR cs.ends_at>$2) ORDER BY cs.starts_at DESC LIMIT 1) IS NOT TRUE AND en.starts_at<=$2 AND (en.ends_at IS NULL OR en.ends_at>$2))")
         .bind(tenant_id)
         .bind(start)
         .fetch_one(&mut *db)

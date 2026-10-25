@@ -20,8 +20,6 @@ pub const MAX_ATTRIBUTE_VALUE_BYTES: usize = 1024;
 pub const MAX_NUMBER_BYTES: usize = 64;
 pub const MAX_GROUP_ATTRIBUTES: usize = 20;
 pub const JOB_KIND: &str = "metering";
-pub const COMPATIBILITY_ATTRIBUTE: &str = "quantity";
-pub const COMPATIBILITY_AGGREGATION: i32 = 2;
 #[derive(Clone, Copy, Debug)]
 pub enum Reason {
     InvalidInput,
@@ -189,18 +187,12 @@ fn canonical_attributes(values: &BTreeMap<String, metering::Value>) -> Vec<Json>
         .map(|(k, v)| json!([k, v.kind, v.text]))
         .collect()
 }
-// Match Go encoding/json escaping so persisted replay hashes survive the port.
-pub(super) fn go_json(parts: &Json) -> String {
-    serde_json::to_string(parts)
-        .expect("JSON values serialize")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029")
-}
 fn fingerprint(parts: Json) -> String {
-    hex::encode(Sha256::digest(go_json(&parts).as_bytes()))
+    hex::encode(Sha256::digest(
+        serde_json::to_string(&parts)
+            .expect("JSON values serialize")
+            .as_bytes(),
+    ))
 }
 pub fn event_fingerprint(input: &Input) -> String {
     let timestamp = input
@@ -232,36 +224,8 @@ pub fn correction_fingerprint(event_id: &str, c: &Correction) -> String {
         canonical_attributes(&c.attributes)
     ]))
 }
-pub fn compatibility_definition(key: &str) -> metering::Definition {
-    metering::Definition {
-        key: key.into(),
-        event_type: key.into(),
-        aggregation: metering::Aggregation::Sum,
-        value_attribute: COMPATIBILITY_ATTRIBUTE.into(),
-        filters: vec![],
-        group_by: vec![],
-    }
-}
-pub fn is_compatibility_definition(d: &metering::Definition) -> bool {
-    d.event_type == d.key
-        && d.aggregation == metering::Aggregation::Sum
-        && d.value_attribute == COMPATIBILITY_ATTRIBUTE
-        && d.filters.is_empty()
-        && d.group_by.is_empty()
-}
-pub async fn untyped_meter_in_use(tx: &mut sqlx::PgConnection, meter_id: &str) -> Result<bool> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM metering_events WHERE $1::text::uuid=ANY(meter_ids))",
-    )
-    .bind(meter_id)
-    .fetch_one(tx)
-    .await?)
-}
-pub fn decode_meter(key: &str, raw: &Json) -> Result<metering::Definition> {
+pub fn decode_meter(_key: &str, raw: &Json) -> Result<metering::Definition> {
     let text = |name| raw[name].as_str().unwrap_or("");
-    if text("event_type").is_empty() {
-        return Ok(compatibility_definition(key));
-    }
     catalog_definition(
         text("name"),
         text("event_type"),
@@ -329,7 +293,7 @@ mod tests {
         }
     }
     #[test]
-    fn persisted_fingerprint_matches_go_rfc3339_and_json() {
+    fn fingerprint_uses_canonical_timestamp_and_json() {
         let input = Input {
             tenant_id: "t".into(),
             service_id: "s".into(),
@@ -341,10 +305,19 @@ mod tests {
                 ("b".into(), metering::Value::string("<&>\u{2028}")),
             ]),
         };
-        let go_json = r#"["event","t","s","k","use","2026-01-02T03:04:05.000006Z",[["a","number","1.5"],["b","string","\u003c\u0026\u003e\u2028"]]]"#;
+        let expected = serde_json::to_string(&json!([
+            "event",
+            "t",
+            "s",
+            "k",
+            "use",
+            "2026-01-02T03:04:05.000006Z",
+            [["a", "number", "1.5"], ["b", "string", "<&>\u{2028}"]]
+        ]))
+        .unwrap();
         assert_eq!(
             event_fingerprint(&input),
-            hex::encode(Sha256::digest(go_json.as_bytes()))
+            hex::encode(Sha256::digest(expected.as_bytes()))
         );
         let mut changed = input.clone();
         changed
@@ -353,17 +326,7 @@ mod tests {
         assert_ne!(event_fingerprint(&input), event_fingerprint(&changed));
     }
     #[test]
-    fn untyped_compatibility_is_immutable() {
-        let d = decode_meter("units", &Json::Null).unwrap();
-        assert!(is_compatibility_definition(&d));
-        let event = metering::Event {
-            event_type: "units".into(),
-            attributes: BTreeMap::from([(
-                "quantity".into(),
-                metering::Value::number("4").unwrap(),
-            )]),
-        };
-        let matches = metering::match_event(&[d], &event).unwrap();
-        assert_eq!(matches[0].group_key, "[]");
+    fn missing_meter_definition_is_rejected() {
+        assert!(decode_meter("units", &Json::Null).is_err());
     }
 }

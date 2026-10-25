@@ -196,10 +196,10 @@ impl Fixture {
         self.worker.process_metering(1000).await.unwrap();
     }
     pub async fn bootstrap(&self) {
-        self.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"bootstrap fixture","plan":{"name":"free","free":true,"defaultFree":true}})).await;
+        self.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"bootstrap fixture","plan":{"key":"free","name":"free","free":true,"defaultFree":true}})).await;
     }
     pub async fn service(&self) -> String {
-        self.rpc("owner","PutService",json!({"requestKey":key(),"reason":"register fixture","service":{"name":"test","clientId":"service","capabilities":["execute"],"scopes":["authorize","usage:write","usage:read"]}})).await["service"]["id"].as_str().unwrap().into()
+        self.rpc("owner","PutService",json!({"requestKey":key(),"reason":"register fixture","service":{"key":"test","name":"test","clientId":"service","capabilities":["execute"],"scopes":["authorize","usage:write","usage:read"]}})).await["service"]["id"].as_str().unwrap().into()
     }
 }
 impl Drop for Fixture {

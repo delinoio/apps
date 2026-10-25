@@ -63,7 +63,7 @@ async fn scenario() -> Scenario {
     let catalog = f.rpc("owner", "GetCatalog", json!({})).await;
     let free = catalog["plans"][0]["id"].as_str().unwrap().to_owned();
     f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"free usage allowance","price":{"key":"requests-free","planId":free,"serviceId":service,"meter":"requests","unitPrice":"1","included":"100","currency":"USD"}})).await;
-    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"name":"pro","rank":10,"free":false}})).await;
+    let paid = f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"paid plan","plan":{"key":"pro","name":"pro","rank":10,"free":false}})).await;
     let plan = paid["plan"]["id"].as_str().unwrap().to_owned();
     let price = f.rpc("owner","CreatePrice",json!({"requestKey":key(),"reason":"paid usage","price":{"key":"requests-pro","planId":plan,"serviceId":service,"meter":"requests","unitPrice":"1","included":"1000","currency":"USD"}})).await["price"]["id"].as_str().unwrap().to_owned();
     let version: String = sqlx::query_scalar(

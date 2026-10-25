@@ -9,11 +9,6 @@ CREATE TABLE catalog_price_activations (
  PRIMARY KEY(price_id,effective_at),
  FOREIGN KEY(version_id,price_id) REFERENCES catalog_versions(id,entity_id)
 );
--- Start the new policy at migration time; do not invent earlier activations.
-INSERT INTO catalog_price_activations(price_id,version_id,effective_at)
- SELECT id,active_version_id,clock_timestamp() FROM catalog_entities
- WHERE kind='price' AND active_version_id IS NOT NULL;
-
 CREATE FUNCTION record_price_activation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  IF NEW.kind='price' AND NEW.active_version_id IS NOT NULL

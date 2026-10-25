@@ -54,9 +54,7 @@ impl Worker {
             .execute(&mut *conn)
             .await?;
         for sql in [
-            "INSERT INTO usage_replay SELECT service_id,event_key,id,fingerprint FROM usage_events WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1) ON CONFLICT DO NOTHING",
             "DELETE FROM ledger WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)",
-            "DELETE FROM usage_events WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)",
             "UPDATE provider_transactions SET amount=0 WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)",
             "DELETE FROM settlements WHERE tenant_id IN (SELECT id FROM tenants WHERE deleted_at<$1)",
         ] {

@@ -159,7 +159,7 @@ async fn free_postpaid_plans_are_rejected_without_catalog_or_audit_changes() {
     }
     let before = snapshot(&f).await;
     for default_free in [false, true] {
-        let error = f.error("owner","PutPlan",json!({"requestKey":key(),"reason":"reject free postpaid","plan":{"name":"free postpaid","rank":1,"free":true,"defaultFree":default_free,"postpaid":true}}),"invalid_argument").await;
+        let error = f.error("owner","PutPlan",json!({"requestKey":key(),"reason":"reject free postpaid","plan":{"key":"free-postpaid","name":"free postpaid","rank":1,"free":true,"defaultFree":default_free,"postpaid":true}}),"invalid_argument").await;
         assert!(error["message"].as_str().unwrap().contains("postpaid"));
         assert_eq!(snapshot(&f).await, before);
     }
@@ -168,7 +168,7 @@ async fn free_postpaid_plans_are_rejected_without_catalog_or_audit_changes() {
         ("paid postpaid", 2, false, true),
         ("paid prepaid", 3, false, false),
     ] {
-        f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"accept valid billing policy","plan":{"name":name,"rank":rank,"free":free,"postpaid":postpaid}})).await;
+        f.rpc("owner","PutPlan",json!({"requestKey":key(),"reason":"accept valid billing policy","plan":{"key":name.replace(' ', "-"),"name":name,"rank":rank,"free":free,"postpaid":postpaid}})).await;
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM plans WHERE postpaid AND NOT free")
         .fetch_one(&f.db)

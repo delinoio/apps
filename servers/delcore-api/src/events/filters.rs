@@ -40,21 +40,12 @@ pub fn domain_filter(filter: &Json) -> Result<Filter> {
         8 => Op::Exists,
         _ => return Err(Fault::invalid("unknown meter filter operator")),
     };
-    let untyped = filter["values"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
     let typed = filter
         .get("typed_values")
         .or_else(|| filter.get("typedValues"))
         .and_then(Json::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[]);
-    if !untyped.is_empty() && !typed.is_empty() {
-        return Err(Fault::invalid(
-            "a meter filter uses values or typed_values, not both",
-        ));
-    }
     let mut operands = Vec::new();
     for v in typed {
         let text = v["value"].as_str().unwrap_or("");
@@ -69,22 +60,6 @@ pub fn domain_filter(filter: &Json) -> Result<Filter> {
                 .map_err(|_| Fault::invalid("number filter values must be decimal strings"))?,
             3 if text == "true" || text == "false" => Value::boolean(text == "true"),
             _ => return Err(Fault::invalid("invalid typed meter filter value")),
-        });
-    }
-    for v in untyped {
-        let text = v
-            .as_str()
-            .ok_or_else(|| Fault::invalid("invalid meter filter value"))?;
-        operands.push(match operator {
-            Op::Equal | Op::NotEqual | Op::In => Value::string(text),
-            Op::Exists if text == "true" || text == "false" => Value::boolean(text == "true"),
-            Op::Exists => {
-                return Err(Fault::invalid(
-                    "exists meter filters take no value or one boolean value",
-                ));
-            }
-            _ => Value::number(text)
-                .map_err(|_| Fault::invalid("numeric meter filter requires a decimal value"))?,
         });
     }
     let mut item = Filter {
@@ -124,41 +99,28 @@ pub fn canonical_filters(filters: &[Json]) -> Result<Vec<Json>> {
             Op::Exists => 8,
         };
         let mut stored = json!({"attribute":item.attribute,"operator":op});
-        if matches!(item.operator, Op::Equal | Op::NotEqual | Op::In) {
-            let mut operands = if item.operator == Op::In {
-                item.values
-            } else {
-                vec![item.value.expect("validated operand")]
-            };
-            if operands.iter().all(|v| v.kind == ValueKind::String) {
-                let mut values: Vec<_> = operands.into_iter().map(|v| v.text).collect();
-                if item.operator == Op::In {
-                    values.sort();
-                }
-                stored["values"] = json!(values);
-            } else {
-                let number = |k| match k {
-                    ValueKind::String => 1,
-                    ValueKind::Number => 2,
-                    ValueKind::Boolean => 3,
-                };
-                if item.operator == Op::In {
-                    operands
-                        .sort_by(|a, b| (number(a.kind), &a.text).cmp(&(number(b.kind), &b.text)));
-                }
-                stored["typed_values"] = json!(
-                    operands
-                        .into_iter()
-                        .map(|v| json!({"kind":number(v.kind),"value":v.text}))
-                        .collect::<Vec<_>>()
-                );
-            }
+        let mut operands = if item.operator == Op::In {
+            item.values
         } else {
-            stored["values"] = json!([item.value.expect("validated operand").text]);
+            vec![item.value.expect("validated operand")]
+        };
+        let number = |k| match k {
+            ValueKind::String => 1,
+            ValueKind::Number => 2,
+            ValueKind::Boolean => 3,
+        };
+        if item.operator == Op::In {
+            operands.sort_by(|a, b| (number(a.kind), &a.text).cmp(&(number(b.kind), &b.text)));
         }
+        stored["typed_values"] = json!(
+            operands
+                .into_iter()
+                .map(|v| json!({"kind":number(v.kind),"value":v.text}))
+                .collect::<Vec<_>>()
+        );
         out.push(stored);
     }
-    out.sort_by_key(go_json);
+    out.sort_by_key(|value| serde_json::to_string(value).expect("JSON value serializes"));
     Ok(out)
 }
 pub fn catalog_definition(
@@ -203,29 +165,36 @@ mod tests {
             json!({"attribute":"x","operator":1,"typed_values":[{"kind":1,"value":"1"}]}),
         ])
         .unwrap();
-        assert_eq!(string[0]["values"], json!(["1"]));
+        assert_eq!(string[0]["typed_values"], json!([{"kind":1,"value":"1"}]));
         assert_ne!(number, string);
     }
     #[test]
-    fn filter_order_matches_persisted_go_encoding() {
+    fn filter_order_uses_canonical_json() {
         let sorted = canonical_filters(&[
             json!({"attribute":"<","operator":8}),
             json!({"attribute":"A","operator":8}),
         ])
         .unwrap();
-        assert_eq!(sorted[0]["attribute"], "A");
+        assert_eq!(sorted[0]["attribute"], "<");
     }
     #[test]
     fn default_exists_and_numeric_canonicalization() {
         assert_eq!(
-            canonical_filters(&[json!({"attribute":"x","operator":8})]).unwrap()[0]["values"],
-            json!(["true"])
+            canonical_filters(&[json!({"attribute":"x","operator":8})]).unwrap()[0]["typed_values"],
+            json!([{"kind":3,"value":"true"}])
         );
         assert_eq!(
-            canonical_filters(&[json!({"attribute":"x","operator":4,"values":["1.00"]})]).unwrap()
-                [0]["values"],
-            json!(["1"])
+            canonical_filters(&[
+                json!({"attribute":"x","operator":4,"typed_values":[{"kind":2,"value":"1.00"}]})
+            ])
+            .unwrap()[0]["typed_values"],
+            json!([{"kind":2,"value":"1"}])
         );
-        assert!(domain_filter(&json!({"attribute":"x","operator":1,"values":["1"],"typed_values":[{"kind":2,"value":"1"}]})).is_err());
+        assert!(
+            domain_filter(
+                &json!({"attribute":"x","operator":4,"typed_values":[{"kind":1,"value":"1"}]})
+            )
+            .is_err()
+        );
     }
 }

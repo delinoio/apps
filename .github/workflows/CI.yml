@@ -1016,7 +1016,6 @@ jobs:
           pnpm exec buf lint
           pnpm proto:generate
           test -z "$(git status --porcelain --untracked-files=all -- protos)"
-          node protos/scripts/check-breaking.mjs "$TURBO_SCM_BASE"
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25

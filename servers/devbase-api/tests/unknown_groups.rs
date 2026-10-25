@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Unknown protobuf fields in binary mutations. The generated decoder keeps a balanced group, so the
 //! replay fingerprint must hash it, and the fingerprint must not preempt the documented replay
-//! precedence. The same harness covers the persisted fingerprint formats: legacy 32-byte rows and
-//! new `0x01`-prefixed rows. These tests drive the real router with a disposable PostgreSQL schema
+//! precedence. The harness covers canonical `0x01`-prefixed replay fingerprints.
+//! These tests drive the real router with a disposable PostgreSQL schema
 //! and a mocked Delcore.
 use axum::{
     Json, Router,
@@ -470,7 +470,7 @@ fn user_with_metadata(project: &str, key: &str, external: &str, metadata: &[u8])
     ]
     .concat()
 }
-/// The hashed bytes of the same request: no key and the given (Go or legacy) metadata order.
+/// The hashed bytes of the same request: no key and the given canonical metadata order.
 fn user_hash_input(project: &str, external: &str, metadata: &[u8]) -> Vec<u8> {
     [
         user(project, "", external).encode_to_vec(),
@@ -546,12 +546,10 @@ impl Harness {
 
 #[tokio::test]
 #[ignore = "requires a disposable TEST_DATABASE_URL"]
-async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() {
+async fn replay_fingerprints_require_canonical_v1() {
     let h = Harness::start().await;
     let pid = h.project.clone();
     let go_metadata = [&ENTRY_A[..], &UNKNOWN_VARINT[..]].concat();
-    // The earlier Rust canonicalizer sorted the opaque unknown field before the known key.
-    let legacy_metadata = [&UNKNOWN_VARINT[..], &ENTRY_A[..]].concat();
 
     // A new record stores 0x01 followed by the Go-compatible digest.
     let created = h
@@ -598,57 +596,7 @@ async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() 
     assert_eq!(h.state().await, before);
     assert_eq!(h.replay("format-new").await, new_row);
 
-    // Legacy rows hold either the Go digest or the earlier Rust digest. Both replay the same
-    // request unchanged: no rewrite, promotion, expiry extension or new mutation.
-    for (key, external, digest) in [
-        (
-            "format-legacy-go",
-            "ext-legacy-go",
-            sha(
-                "CreateEndUser",
-                &user_hash_input(&pid, "ext-legacy-go", &go_metadata),
-            ),
-        ),
-        (
-            "format-legacy-rust",
-            "ext-legacy-rust",
-            sha(
-                "CreateEndUser",
-                &user_hash_input(&pid, "ext-legacy-rust", &legacy_metadata),
-            ),
-        ),
-    ] {
-        let request = user_with_metadata(&pid, key, external, &go_metadata);
-        assert_eq!(
-            h.proto("CreateEndUser", request.clone()).await.status,
-            StatusCode::OK
-        );
-        h.set_fingerprint(key, &digest).await;
-        let seeded = h.replay(key).await;
-        assert_eq!(seeded.fingerprint.len(), 32);
-        let before = h.state().await;
-        let reply = h.proto("CreateEndUser", request).await;
-        assert_eq!(reply.status, StatusCode::OK, "{key}");
-        assert_eq!(h.state().await, before, "{key}");
-        assert_eq!(h.replay(key).await, seeded, "{key}");
-        // Different known input and different unknown content still conflict.
-        let other = user_with_metadata(&pid, key, "ext-different", &go_metadata);
-        assert_eq!(
-            error_code(&h.proto("CreateEndUser", other).await),
-            "already_exists",
-            "{key} known input"
-        );
-        let other = user_with_metadata(&pid, key, external, &changed);
-        assert_eq!(
-            error_code(&h.proto("CreateEndUser", other).await),
-            "already_exists",
-            "{key} unknown content"
-        );
-        assert_eq!(h.replay(key).await, seeded, "{key}");
-    }
-
-    // Opaque unknown-field order: a new BC record rejects CB. A legacy BC record still accepts CB,
-    // which is the original ambiguity that ends with that record's expiry.
+    // Opaque unknown-field order remains significant.
     let bc = [&ENTRY_A[..], &OPAQUE_B, &OPAQUE_C].concat();
     let cb = [&ENTRY_A[..], &OPAQUE_C, &OPAQUE_B].concat();
     let first = h
@@ -676,24 +624,12 @@ async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() 
         .await;
     assert_eq!(reply.status, StatusCode::OK, "BC against new BC");
     assert_eq!(h.replay("format-bc").await, bc_row);
-    h.set_fingerprint("format-bc", &bc_digest).await;
-    let legacy_bc = h.replay("format-bc").await;
-    let before = h.state().await;
-    let reply = h
-        .proto(
-            "CreateEndUser",
-            user_with_metadata(&pid, "format-bc", "ext-bc", &cb),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK, "CB against legacy BC");
-    assert_eq!(h.state().await, before);
-    assert_eq!(h.replay("format-bc").await, legacy_bc);
-
     // Unsupported stored formats fail safely as unavailable, with nothing changed.
     let request = user_with_metadata(&pid, "format-new", "ext-new", &go_metadata);
     let supported = h.replay("format-new").await.fingerprint;
     for (what, stored) in [
         ("short", supported[..31].to_vec()),
+        ("unversioned", supported[1..].to_vec()),
         ("long", [&supported[..], &[0][..]].concat()),
         ("empty", Vec::new()),
         ("marker", [&[2u8][..], &supported[1..]].concat()),
@@ -765,7 +701,7 @@ async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() 
         .await;
     assert_eq!(error_code(&reply), "not_found");
 
-    // A delete record replays from a new row and from a legacy 32-byte row.
+    // A delete record replays without changing its stored fingerprint.
     let delete =
         json!({"projectId":pid,"endUserId":uid,"version":"1","idempotencyKey":"format-delete"});
     let delete_row = h.replay("format-delete").await;
@@ -775,15 +711,11 @@ async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() 
         h.call("DeleteEndUser", delete.clone()).await.status,
         StatusCode::OK
     );
-    h.set_fingerprint("format-delete", &delete_row.fingerprint[1..])
-        .await;
-    let legacy_delete = h.replay("format-delete").await;
-    assert_eq!(h.call("DeleteEndUser", delete).await.status, StatusCode::OK);
     assert_eq!(h.state().await, before);
-    assert_eq!(h.replay("format-delete").await, legacy_delete);
+    assert_eq!(h.replay("format-delete").await, delete_row);
 
-    // Update with masked metadata holding an unknown field: both legacy digests replay it.
-    for (n, external) in ["ext-upd-go", "ext-upd-rust"].into_iter().enumerate() {
+    // Updates with masked metadata use the same canonical fingerprint.
+    for (n, external) in ["ext-upd"].into_iter().enumerate() {
         let created = h
             .call(
                 "CreateEndUser",
@@ -802,22 +734,12 @@ async fn replay_fingerprint_formats_accept_legacy_rows_and_write_canonical_v1() 
         );
         let stored = h.replay(&key).await;
         assert_eq!(stored.fingerprint.len(), 33);
-        let digest = if n == 0 {
-            let digest = sha("UpdateEndUser", &update_bytes(&pid, &uid, "", &go_metadata));
-            assert_eq!(stored.fingerprint[1..], digest[..]);
-            digest
-        } else {
-            sha(
-                "UpdateEndUser",
-                &update_bytes(&pid, &uid, "", &legacy_metadata),
-            )
-        };
-        h.set_fingerprint(&key, &digest).await;
-        let seeded = h.replay(&key).await;
+        let digest = sha("UpdateEndUser", &update_bytes(&pid, &uid, "", &go_metadata));
+        assert_eq!(stored.fingerprint[1..], digest[..]);
         let before = h.state().await;
         assert_eq!(h.proto("UpdateEndUser", bytes).await.status, StatusCode::OK);
         assert_eq!(h.state().await, before);
-        assert_eq!(h.replay(&key).await, seeded);
+        assert_eq!(h.replay(&key).await, stored);
     }
 
     h.finish().await;

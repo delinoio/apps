@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 struct Meter {
     id: String,
     definition: metering::Definition,
-    untyped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -312,7 +311,7 @@ async fn load_meters(
     service: Option<&str>,
     ids: Option<&[String]>,
 ) -> Result<Vec<Meter>> {
-    let rows = sqlx::query("SELECT ce.id::text,ce.key,cv.definition,COALESCE(cv.definition->>'event_type','')='' FROM catalog_entities ce LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id WHERE (($1::text IS NOT NULL AND ce.scope=$1) OR ($2::text[] IS NOT NULL AND ce.id=ANY($2::text[]::uuid[]))) AND ce.kind='meter' ORDER BY ce.key,ce.id")
+    let rows = sqlx::query("SELECT ce.id::text,ce.key,cv.definition FROM catalog_entities ce LEFT JOIN catalog_versions cv ON cv.id=ce.active_version_id WHERE (($1::text IS NOT NULL AND ce.scope=$1) OR ($2::text[] IS NOT NULL AND ce.id=ANY($2::text[]::uuid[]))) AND ce.kind='meter' ORDER BY ce.key,ce.id")
         .bind(service).bind(ids).fetch_all(&mut *tx).await?;
     rows.into_iter()
         .map(|row| {
@@ -323,29 +322,13 @@ async fn load_meters(
                     &row.get::<String, _>(1),
                     &raw.unwrap_or(serde_json::Value::Null),
                 )?,
-                untyped: row.get(3),
             })
         })
         .collect()
 }
 
 async fn service_meters(tx: &mut PgConnection, service: &str) -> Result<Vec<Meter>> {
-    let mut locked = BTreeSet::new();
-    loop {
-        let meters = load_meters(tx, Some(service), None).await?;
-        let pending: Vec<String> = meters
-            .iter()
-            .filter(|m| m.untyped && !locked.contains(&m.id))
-            .map(|m| m.id.clone())
-            .collect();
-        if pending.is_empty() {
-            return Ok(meters);
-        }
-        // Typing an unused compatibility meter must serialize with acceptance.
-        // Re-read after locking so a prior typing transaction becomes visible.
-        sqlx::query("SELECT id FROM catalog_entities WHERE id=ANY($1::text[]::uuid[]) ORDER BY id FOR SHARE").bind(&pending).fetch_all(&mut *tx).await?;
-        locked.extend(pending);
-    }
+    load_meters(tx, Some(service), None).await
 }
 
 async fn attribute_prices(
@@ -358,37 +341,34 @@ async fn attribute_prices(
 ) -> Result<()> {
     // Product ownership is historical, but its usage prices are selected at
     // execution start. New price keys must also apply to existing subscribers.
-    sqlx::query(r#"WITH products AS (
+    sqlx::query(
+        r#"WITH products AS (
  SELECT cs.product_id FROM tenant_catalog_selections cs
  WHERE cs.tenant_id=$2::text::uuid AND cs.starts_at<=$4 AND (cs.ends_at IS NULL OR cs.ends_at>$4)
- UNION
- SELECT t.plan_id FROM tenants t WHERE t.id=$2::text::uuid AND NOT EXISTS(
-  SELECT 1 FROM tenant_catalog_selections cs JOIN catalog_entities ce ON ce.id=cs.product_id
-  WHERE cs.tenant_id=t.id AND ce.kind='plan' AND cs.starts_at<=$4 AND (cs.ends_at IS NULL OR cs.ends_at>$4))
- UNION
- SELECT p.addon_id FROM entitlements en JOIN prices p ON p.id=en.price_id
- WHERE en.tenant_id=$2::text::uuid AND p.addon_id IS NOT NULL
- AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4)
+
 ), applicable AS (
- SELECT p.id,p.service_id,p.meter,p.kind,a.effective_at,1 AS versioned
+ SELECT p.id,p.service_id,p.meter,p.kind,a.effective_at
  FROM products held JOIN catalog_entities product ON product.id=held.product_id
  JOIN catalog_entities pk ON pk.kind='price' AND pk.scope=product.kind||':'||product.id::text
  CROSS JOIN LATERAL (SELECT version_id,effective_at FROM catalog_price_activations
   WHERE price_id=pk.id AND effective_at<=$4 ORDER BY effective_at DESC LIMIT 1) a
  JOIN prices p ON p.id=a.version_id
- UNION ALL
- SELECT p.id,p.service_id,p.meter,p.kind,en.starts_at,0 FROM entitlements en JOIN prices p ON p.id=en.price_id
- LEFT JOIN catalog_versions cv ON cv.id=p.id
- WHERE en.tenant_id=$2::text::uuid AND en.starts_at<=$4 AND (en.ends_at IS NULL OR en.ends_at>$4)
- AND NOT EXISTS(SELECT 1 FROM catalog_price_activations a WHERE a.price_id=cv.entity_id AND a.effective_at<=$4)
+
 )
 INSERT INTO metering_event_prices(event_id,tenant_id,meter_id,price_id)
  SELECT $1::text::uuid,$2::text::uuid,ce.id,pr.id FROM catalog_entities ce
  CROSS JOIN LATERAL (SELECT p.id FROM applicable p
   WHERE p.service_id=$3::text::uuid AND p.meter=ce.key AND p.kind=1
-  ORDER BY p.versioned DESC,p.effective_at DESC,p.id DESC LIMIT 1) pr
- WHERE ce.id=ANY($5::text[]::uuid[]) AND ce.kind='meter' AND ce.scope=$3::text"#)
-        .bind(event).bind(tenant).bind(service).bind(occurred).bind(ids).execute(&mut *tx).await?;
+  ORDER BY p.effective_at DESC,p.id DESC LIMIT 1) pr
+ WHERE ce.id=ANY($5::text[]::uuid[]) AND ce.kind='meter' AND ce.scope=$3::text"#,
+    )
+    .bind(event)
+    .bind(tenant)
+    .bind(service)
+    .bind(occurred)
+    .bind(ids)
+    .execute(&mut *tx)
+    .await?;
     Ok(())
 }
 
@@ -736,7 +716,14 @@ mod tests {
 
     #[test]
     fn matching_preserves_meter_identity_and_rejects_partial_matches() {
-        let first = compatibility_definition("requests");
+        let first = metering::Definition {
+            key: "requests".into(),
+            event_type: "requests".into(),
+            aggregation: metering::Aggregation::Sum,
+            value_attribute: "quantity".into(),
+            filters: vec![],
+            group_by: vec![],
+        };
         let mut second = first.clone();
         second.key = "grouped".into();
         second.group_by = vec!["region".into()];
@@ -744,12 +731,10 @@ mod tests {
             Meter {
                 id: "first".into(),
                 definition: first,
-                untyped: true,
             },
             Meter {
                 id: "second".into(),
                 definition: second,
-                untyped: false,
             },
         ];
         let mut event = metering::Event {

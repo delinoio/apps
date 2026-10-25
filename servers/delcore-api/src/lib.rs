@@ -180,9 +180,6 @@ pub enum Op {
     GetMeteringStatus,
     CheckTenantLifecycle,
     GetTenantStates,
-    ReportUsage,
-    CorrectUsage,
-    ListUsage,
     IngestEvent,
     CorrectEvent,
     GetEvent,
@@ -232,9 +229,6 @@ impl Op {
             Self::GetMeteringStatus => "GetMeteringStatus",
             Self::CheckTenantLifecycle => "CheckTenantLifecycle",
             Self::GetTenantStates => "GetTenantStates",
-            Self::ReportUsage => "ReportUsage",
-            Self::CorrectUsage => "CorrectUsage",
-            Self::ListUsage => "ListUsage",
             Self::IngestEvent => "IngestEvent",
             Self::CorrectEvent => "CorrectEvent",
             Self::GetEvent => "GetEvent",
@@ -272,8 +266,6 @@ impl Op {
                 | Self::CreatePrice
                 | Self::CreateApiKey
                 | Self::RevokeApiKey
-                | Self::ReportUsage
-                | Self::CorrectUsage
                 | Self::IngestEvent
                 | Self::CorrectEvent
                 | Self::RequestTopUp
@@ -496,7 +488,6 @@ impl Server {
                     op,
                     Op::GetTenant
                         | Op::ListLedger
-                        | Op::ListUsage
                         | Op::ListBillingHistory
                         | Op::RequestTopUp
                         | Op::CancelSubscription
@@ -804,29 +795,6 @@ impl DelcoreService for Server {
     ) -> ServiceResult<GetTenantStatesResponse> {
         self.handle(ctx, Op::GetTenantStates, q.to_owned_message())
             .await
-    }
-    async fn report_usage(
-        &self,
-        ctx: RequestContext,
-        q: ServiceRequest<'_, ReportUsageRequest>,
-    ) -> ServiceResult<ReportUsageResponse> {
-        self.handle(ctx, Op::ReportUsage, q.to_owned_message())
-            .await
-    }
-    async fn correct_usage(
-        &self,
-        ctx: RequestContext,
-        q: ServiceRequest<'_, CorrectUsageRequest>,
-    ) -> ServiceResult<CorrectUsageResponse> {
-        self.handle(ctx, Op::CorrectUsage, q.to_owned_message())
-            .await
-    }
-    async fn list_usage(
-        &self,
-        ctx: RequestContext,
-        q: ServiceRequest<'_, ListUsageRequest>,
-    ) -> ServiceResult<ListUsageResponse> {
-        self.handle(ctx, Op::ListUsage, q.to_owned_message()).await
     }
     async fn ingest_event(
         &self,

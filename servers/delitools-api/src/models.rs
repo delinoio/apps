@@ -11,7 +11,7 @@
 //! ```
 //!
 //! Delcore stays generic: a meter key is the event type of an event with a numeric `quantity`
-//! attribute, per the compatibility meter definition. DeliTools never sets or reads prices
+//! attribute, as declared in the catalog. DeliTools never sets or reads prices
 //! except to confirm that the input and output meters of a model have an active usage price.
 
 use anyhow::{Context, Result, bail, ensure};

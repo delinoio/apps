@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-use super::{Call, canonical, invalid, page, precondition, string, uuid};
+use super::{Call, canonical, invalid, page, string, uuid};
 use crate::{Op, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -108,47 +108,14 @@ impl Call<'_> {
                 )
                 .await
             }
-            Op::ReportUsage | Op::CorrectUsage => {
-                self.service_scope("usage:write").await?;
-                tracing::warn!(category="usage_reporting",correlation_id=%self.correlation,service_id=%self.service,"retired usage call rejected");
-                Err(precondition(if matches!(op, Op::ReportUsage) {
-                    "ReportUsage is retired; report measured events with IngestEvent"
-                } else {
-                    "CorrectUsage is retired; correct accepted events with CorrectEvent"
-                }))
-            }
-            Op::ListUsage => {
-                if !self.service.is_empty() {
-                    self.service_scope("usage:read").await?;
-                    if !canonical(tenant) {
-                        return Err(invalid("invalid tenant ID"));
-                    }
-                } else {
-                    self.require(tenant, &[3]).await?;
-                }
-                let (n, after) = page(&q["page"])?;
-                let rows = sqlx::query("SELECT id::text,tenant_id::text,service_id::text,event_key,meter,quantity::text,occurred_at,COALESCE(correction_of::text,'') FROM usage_events WHERE tenant_id=$1 AND id>$2 AND ($4='' OR service_id::text=$4) ORDER BY id LIMIT $3")
-                    .bind(uuid(tenant)?).bind(uuid(&after)?).bind(n+1).bind(&self.service).fetch_all(&mut *self.tx).await?;
-                let mut events = Vec::new();
-                for r in rows {
-                    events.push(json!({"id":r.try_get::<String,_>(0)?,"tenantId":r.try_get::<String,_>(1)?,"serviceId":r.try_get::<String,_>(2)?,"eventKey":r.try_get::<String,_>(3)?,"meter":r.try_get::<String,_>(4)?,"quantity":r.try_get::<String,_>(5)?,"occurredAt":r.try_get::<DateTime<Utc>,_>(6)?.to_rfc3339(),"correctionOf":r.try_get::<String,_>(7)?}));
-                }
-                let next = if events.len() > n as usize {
-                    events.truncate(n as usize);
-                    string(&events[n as usize - 1], "id").to_owned()
-                } else {
-                    String::new()
-                };
-                Ok(json!({"events":events,"nextAfterId":next}))
-            }
             Op::ListLedger => {
                 self.require(tenant, &[3]).await?;
                 let (n, after) = page(&q["page"])?;
-                let rows = sqlx::query("SELECT id::text,kind,amount::text,meter,created_at,COALESCE(usage_id::text,'') FROM ledger WHERE tenant_id=$1 AND id>$2 ORDER BY id LIMIT $3")
+                let rows = sqlx::query("SELECT id::text,kind,amount::text,meter,created_at FROM ledger WHERE tenant_id=$1 AND id>$2 ORDER BY id LIMIT $3")
                     .bind(uuid(tenant)?).bind(uuid(&after)?).bind(n+1).fetch_all(&mut *self.tx).await?;
                 let mut entries = Vec::new();
                 for r in rows {
-                    entries.push(json!({"id":r.try_get::<String,_>(0)?,"kind":r.try_get::<String,_>(1)?,"amount":r.try_get::<String,_>(2)?,"meter":r.try_get::<String,_>(3)?,"createdAt":r.try_get::<DateTime<Utc>,_>(4)?.to_rfc3339(),"usageId":r.try_get::<String,_>(5)?}));
+                    entries.push(json!({"id":r.try_get::<String,_>(0)?,"kind":r.try_get::<String,_>(1)?,"amount":r.try_get::<String,_>(2)?,"meter":r.try_get::<String,_>(3)?,"createdAt":r.try_get::<DateTime<Utc>,_>(4)?.to_rfc3339()}));
                 }
                 let next = if entries.len() > n as usize {
                     entries.truncate(n as usize);
