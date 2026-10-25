@@ -4,7 +4,7 @@ Perfine helps you investigate performance with profiles, isolated code candidate
 
 Run the CLI locally without a Perfine account, hosted space, or GitHub App. Local AI optimization uses your own Codex CLI or Claude Code authentication. Measurement does not need AI authentication. Hosting is optional; hosted results are private. Perfine hosting is free in the first release; your AI subscription and GitHub Actions costs remain yours.
 
-The first execution target is Linux x86_64. Rust, C, C++, Zig, Go, and JavaScript have configured measurement and profile adapters. Adapter availability, automated fixtures, and a successful package build do not establish a performance improvement in your application or native acceptance on your machine.
+The CLI host policy covers Linux x86_64, macOS x86_64 and ARM64, and Windows x86_64; see the [minimum versions and prerequisites](/services/perfine/setup). Measurement and optimization run in Linux x86_64 Docker containers on every host. ARM Macs use explicitly identified x86_64 emulation. Rust, C, C++, Zig, Go, and JavaScript have configured measurement and profile adapters. Adapter availability, automated fixtures, and a successful package build do not establish a performance improvement in your application or native acceptance on your machine.
 
 ## Choose a workflow
 

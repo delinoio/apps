@@ -39,9 +39,34 @@ jobs:
         run: node "packages/perfine/scripts/release.mjs" source
   build:
     needs: source
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            executable: perfine
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            executable: perfine
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            executable: perfine
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            executable: perfine.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      PERFINE_TARGET: ${{ matrix.target }}
+      PERFINE_BINARY: target/${{ matrix.target }}/release/${{ matrix.executable }}
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
+      - name: Preserve identical package source bytes on every host
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.source.outputs.revision }}
@@ -52,7 +77,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
+          targets: ${{ matrix.target }}
       - name: Install and verify protocol compiler prerequisites
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -60,32 +87,106 @@ jobs:
           test -r "/usr/include/google/protobuf/descriptor.proto"
           test -r "/usr/include/google/protobuf/empty.proto"
           test -r "/usr/include/google/protobuf/timestamp.proto"
-      - run: cargo build --locked --release -p perfine
-      - run: |
+      - name: Install macOS protocol compiler prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          brew install protobuf
+          protoc --version
+          PROTOBUF_INCLUDE="$(brew --prefix protobuf)/include"
+          for name in descriptor empty timestamp; do
+            test -r "$PROTOBUF_INCLUDE/google/protobuf/$name.proto"
+          done
+          echo "PROTOC_INCLUDE=$PROTOBUF_INCLUDE" >> "$GITHUB_ENV"
+      - name: Install Windows protocol compiler prerequisites
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install protoc --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install protoc" }
+          $compiler = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter protoc.exe | Select-Object -First 1
+          $descriptor = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter descriptor.proto | Select-Object -First 1
+          if (!$compiler -or !$descriptor) { throw "protoc or well-known includes missing" }
+          $include = Split-Path (Split-Path $descriptor.DirectoryName -Parent) -Parent
+          foreach ($name in @("descriptor", "empty", "timestamp")) {
+            if (!(Test-Path "$include/google/protobuf/$name.proto")) { throw "Missing $name.proto" }
+          }
+          "PROTOC=$($compiler.FullName)" >> $env:GITHUB_ENV
+          "PROTOC_INCLUDE=$include" >> $env:GITHUB_ENV
+          & $compiler.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw "protoc is not executable" }
+      - run: cargo build --locked --release -p perfine --target "$PERFINE_TARGET"
+      - name: Verify native host paths, private state and child cancellation
+        run: |
+          cargo test --locked -p perfine-core --lib --target "$PERFINE_TARGET" adapters::host
+          cargo test --locked -p perfine-core --lib --target "$PERFINE_TARGET" adapters::process::portable_tests
+      - name: Linux Action and packaging regression checks
+        if: runner.os == 'Linux'
+        run: |
           pnpm --dir "actions/perfine" test
           pnpm --dir "actions/perfine" build
           git diff --exit-code -- "actions/perfine/ACTION_NOTICES"
           pnpm --dir "packages/perfine" test
-          pnpm --dir "packages/perfine" build
+      - name: Package and execute the actual native release archives
+        run: |
+          node "packages/perfine/scripts/build.mjs"
           node "packages/perfine/scripts/smoke.mjs"
+          node "packages/perfine/scripts/release-set.mjs" record-host "packages/perfine/dist/release"
       - name: Preserve reviewable release candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: perfine-release-${{ needs.source.outputs.revision }}
+          name: perfine-${{ matrix.target }}
           path: packages/perfine/dist/release/
           if-no-files-found: error
           retention-days: 7
       - name: Record scope of verification
         env:
           SOURCE_REVISION: ${{ needs.source.outputs.revision }}
+          TARGET: ${{ matrix.target }}
         run: |
-          echo "Source: $SOURCE_REVISION" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Built Linux x86_64 CLI; ran Action/npm fixture tests, packaging and disposable local-archive npm/standalone version and doctor diagnostic smoke checks. Native profiler, provider, OIDC, live registry and account acceptance are separate and unperformed by this job.' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "Source: $SOURCE_REVISION"
+            echo "Target: $TARGET; actual npm and standalone installation/executable smoke passed."
+            cat "packages/perfine/dist/release/validation.json"
+            echo 'Minimum-OS evidence is separate: Windows Server is not Windows 11 validation. Docker, native profiler, live registry, provider, OIDC and account acceptance remain unperformed.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         run: rm -rf "packages/perfine/dist" "actions/perfine/dist"
+  prepare-set:
+    needs: [source, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: perfine-*
+          path: packages/perfine/dist/targets
+      - name: Require all target archives and matching native smoke evidence
+        env:
+          PERFINE_SOURCE_COMMIT: ${{ needs.source.outputs.revision }}
+          PERFINE_RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          for target in x86_64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            mv "packages/perfine/dist/targets/perfine-$target" "packages/perfine/dist/targets/$target"
+          done
+          node "packages/perfine/scripts/release-set.mjs" assemble "packages/perfine/dist/targets" "packages/perfine/dist/release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: perfine-release-${{ needs.source.outputs.revision }}
+          path: packages/perfine/dist/release/
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: rm -rf "packages/perfine/dist"
   publish:
     if: inputs.publish
-    needs: [source, build]
+    needs: [source, build, prepare-set]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: perfine-production
@@ -106,9 +207,12 @@ jobs:
         with:
           name: perfine-release-${{ needs.source.outputs.revision }}
           path: packages/perfine/dist/release/
-      - name: Verify preserved archive checksums
-        working-directory: packages/perfine/dist/release
-        run: sha256sum -c SHA256SUMS
+      - name: Verify complete release set and namespace authority before any publication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PERFINE_NPM_TOKEN }}
+        run: |
+          node "packages/perfine/scripts/release-set.mjs" verify "packages/perfine/dist/release"
+          node "packages/perfine/scripts/release-set.mjs" preflight "packages/perfine/dist/release"
       - name: Publish immutable Action tag and verify its commit
         id: action
         env:
@@ -121,25 +225,18 @@ jobs:
           gh auth setup-git
           chmod +x "packages/perfine/dist/release/action/runtime/perfine"
           node "packages/perfine/scripts/release.mjs" publish-action
-      - name: Publish exact npm archive
+      - name: Publish exact platform packages, then the entry package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PERFINE_NPM_TOKEN }}
-          RELEASE_VERSION: ${{ needs.source.outputs.version }}
-        # This single-target workflow cannot publish the platform dependencies.
-        # Keep the entry blocked until all exact versions exist; the complete
-        # native release pipeline replaces this step with platform-first publication.
-        run: |
-          for platform in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
-            test "$(npm view "@delinoio/perfine-$platform@$RELEASE_VERSION" version)" = "$RELEASE_VERSION"
-          done
-          npm publish "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" --access public --provenance --ignore-scripts
+          PERFINE_APPROVE_RELEASE: "true"
+        run: node "packages/perfine/scripts/release-set.mjs" publish-npm "packages/perfine/dist/release"
       - name: Publish standalone release and verified Action record
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.source.outputs.version }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          gh release create "perfine@$RELEASE_TAG" --repo delinoio/apps --verify-tag --title "Perfine $RELEASE_TAG" --notes-file "packages/perfine/dist/release/action-release.json" "packages/perfine/dist/release/perfine-v$RELEASE_VERSION-linux-x86_64.tar.gz" "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" "packages/perfine/dist/release/SHA256SUMS" "packages/perfine/dist/release/action-release.json"
+          gh release create "perfine@$RELEASE_TAG" --repo delinoio/apps --verify-tag --title "Perfine $RELEASE_TAG" --notes-file "packages/perfine/dist/release/action-release.json" "packages/perfine/dist/release/"*.tar.gz "packages/perfine/dist/release/"*.tgz "packages/perfine/dist/release/SHA256SUMS" "packages/perfine/dist/release/release-set.json" "packages/perfine/dist/release/action-release.json"
       - name: Record verified Action SHA
         env:
           ACTION_COMMIT: ${{ steps.action.outputs.action-commit }}
