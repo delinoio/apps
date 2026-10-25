@@ -471,7 +471,7 @@ self.preferences(c)}
 ),
             "GetLocalStatus"=>self.with(false,|c|{
 let identity=self.identity()?;
-let count:i64=c.query_row("SELECT count(*) FROM outbox",[],|r|r.get(0))?;
+let count:i64=c.query_row("SELECT (SELECT count(*) FROM outbox) + (SELECT count(*) FROM attachments WHERE synchronized=0 OR png_base64 IS NULL)",[],|r|r.get(0))?;
 let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;
 let items=stmt.query_map([],|r|Ok(json!({
 "requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?}

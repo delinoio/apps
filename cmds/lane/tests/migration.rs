@@ -27,8 +27,11 @@ fn legacy(root: &std::path::Path) -> (String, String) {
         ("device_id", device.as_str()),
         ("format_version", "1"),
     ] {
-        db.execute("INSERT INTO store_meta VALUES(?,?)", [key, value])
-            .unwrap();
+        db.execute(
+            "INSERT INTO store_meta VALUES(?,?)",
+            rusqlite::params![key, value],
+        )
+        .unwrap();
     }
     let entity = id();
     let version = id();

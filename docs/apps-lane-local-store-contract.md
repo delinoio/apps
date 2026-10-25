@@ -22,7 +22,7 @@ Register the `LaneStore` bridge before constructing the Lynx view. Calls origina
 
 The module exports:
 
-- `open(requestJson, callback)`: input `{"formatVersion":1,"spaceId":""}`; empty space ID selects the registry's active space. Output includes `spaceId`, `deviceId`, `schemaVersion:1`, `formatVersion:1`, and `sequence` as a decimal string. The callback uses the same success/error envelope as `invoke`, with these fields inside `response` and `sequence` also at envelope level. Opening an explicit space requires it to exist; do not create a new empty store because lookup failed.
+- `open(requestJson, callback)`: input `{"formatVersion":2,"spaceId":""}`; empty space ID selects the registry's active space. Output includes `spaceId`, `deviceId`, `schemaVersion:2`, `formatVersion:2`, and `sequence` as a decimal string. The callback uses the same success/error envelope as `invoke`, with these fields inside `response` and `sequence` also at envelope level. Opening an explicit space requires it to exist; do not create a new empty store because lookup failed.
 - `invoke(method, requestJson, callback)`: method is the exact LaneService method name or local operation below. The request is ProtoJSON for that method plus an outer `{"spaceId":"…","request":{…}}` routing wrapper. Responses are `{"ok":true,"response":{…},"sequence":"…"}` or `{"ok":false,"error":{"reason":"…","message":"…","correlationId":"…","retryable":false}}`. Never expose SQL, file paths, arbitrary method evaluation or raw OS errors to JavaScript.
 - `close(spaceId, callback)`: releases that view's subscription/handle, not another process's database or a background worker. It does not log out or delete data.
 
@@ -76,14 +76,14 @@ Every physical store and observer connection holds a shared lifetime lease on `r
 
 ## Storage
 
-### Schema version 1
+### Schema version 2
 
-Each `lane.sqlite` has `application_id=1279348293`, `user_version=1`. UUIDs are lowercase text; times are UTC Unix microseconds in signed 64-bit INTEGER; ProtoJSON is UTF-8 TEXT. `envelope_json` stores EntityVersion; `request_json` stores SyncMutation. Every language reads the same columns:
+Each `lane.sqlite` has `application_id=1279348293`, `user_version=2`. UUIDs are lowercase text; times are UTC Unix microseconds in signed 64-bit INTEGER; ProtoJSON is UTF-8 TEXT. `envelope_json` stores EntityVersion; `request_json` stores SyncMutation. Every language reads the same columns:
 
 ```sql
 CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE entities (
-  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2)),
+  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2,3)),
   repository_id TEXT, normalized_url TEXT,
   deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1))
 );
@@ -123,9 +123,20 @@ CREATE TABLE notification_receipts (
   proposal_id TEXT NOT NULL, device_id TEXT NOT NULL,
   state INTEGER NOT NULL, PRIMARY KEY(proposal_id,device_id)
 );
+CREATE TABLE attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES entities(id),
+  sha256 TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  byte_size INTEGER NOT NULL,
+  png_base64 TEXT,
+  synchronized INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX attachment_owner ON attachments(task_id);
 ```
 
-`store_meta` contains `space_id`, `device_id`, `format_version=1`, `account_epoch`, `pull_cursor`, `notification_enabled` (0/1), `notification_content` (DETAIL/GENERIC), and `sync_owner`/`sync_owner_expires_at_us`. No token or webhook signing key belongs here. `outbox.state` is PENDING=1 or BLOCKED=2; successful acknowledgments remove the row after durable local apply. `change_kind` is ENTITY=1, REMOTE_OBJECT=2, SETTINGS=3, SYNC_STATUS=4. `remote_objects.kind` is RECEIVER=1, EVENT=2, PROCESSING=3; this table is a read cache, not an offline mutation queue. `notification_receipts.state` is PENDING=1, DELIVERED=2, CANCELED=3. Repository mappings resolve immutable original repository references without rewriting historical snapshots or fingerprints. Tombstones and receipts do not expire while they are needed to prevent replay.
+`store_meta` contains `space_id`, `device_id`, `format_version=2`, `account_epoch`, `pull_cursor`, `notification_enabled` (0/1), `notification_content` (DETAIL/GENERIC), and `sync_owner`/`sync_owner_expires_at_us`. No token or webhook signing key belongs here. `outbox.state` is PENDING=1 or BLOCKED=2; successful acknowledgments remove the row after durable local apply. `change_kind` is ENTITY=1, REMOTE_OBJECT=2, SETTINGS=3, SYNC_STATUS=4. `remote_objects.kind` is RECEIVER=1, EVENT=2, PROCESSING=3; this table is a read cache, not an offline mutation queue. `notification_receipts.state` is PENDING=1, DELIVERED=2, CANCELED=3. Repository mappings resolve immutable original repository references without rewriting historical snapshots or fingerprints. Tombstones and receipts do not expire while they are needed to prevent replay.
 
 `entities` is a query projection, not the authoritative version body. Repository URL lookup uses the current accepted head; conflict alternatives reserve their candidate URLs through domain validation, not extra duplicate entity rows. A conflict is multiple rows in `heads`. Before changing a URL, check current and conflict-candidate URLs under the write lock. Task repository projection follows the accepted head until resolution; reads return all alternatives so the UI never treats the projection as resolution. Validate head/entity linkage in every write; a version for another entity cannot be a head. Deletion clears URL/body projections, removes previous versions/heads, installs only its bodyless deletion version and removes associated event caches, histories and unsent notification content.
 
@@ -133,13 +144,13 @@ CREATE TABLE notification_receipts (
 
 Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL` and `busy_timeout=5000` on every physical connection as applicable. Use local disks, not network shares or file-sync services. Use parameterized SQL. Native and Rust writers use `BEGIN IMMEDIATE`; re-read expected heads, deleted state, receipt and URL uniqueness **inside** that transaction. Commit entity projection, immutable snapshot/history, head set, request receipt, durable outbox mutation, notification receipt and one `changes` row atomically. Local-only work retains sufficient versions for later initial synchronization; no server is required for commit. Roll back everything on disk-full, I/O, constraint or validation failure. Surface STORAGE_BUSY after the bounded busy wait; the user can retry with the same request ID. Do not retry partial statements outside their original transaction.
 
-Read in short consistent transactions. Close cursors promptly. Poll `MAX(changes.sequence)` on a dedicated observer at 500 ms while the view is active, then immediately on foreground/resume; coalesce invalidations. The query works across Android pools because it reads committed table state. A dedicated persistent connection may use `PRAGMA data_version` as an optimization, but only compare values from that same physical connection. SQLite update hooks alone do not observe other processes. A rollback emits no invalidation; own commits can trigger immediate sequence reads. Keep the sequence monotonic and do not prune/reset it in version 1.
+Read in short consistent transactions. Close cursors promptly. Poll `MAX(changes.sequence)` on a dedicated observer at 500 ms while the view is active, then immediately on foreground/resume; coalesce invalidations. The query works across Android pools because it reads committed table state. A dedicated persistent connection may use `PRAGMA data_version` as an optimization, but only compare values from that same physical connection. SQLite update hooks alone do not observe other processes. A rollback emits no invalidation; own commits can trigger immediate sequence reads. Keep the sequence monotonic and do not prune/reset it during migration.
 
 Only one background sync owner per space may drain the outbox at a time. Acquire/renew an expiring owner record in a short write transaction; never hold a SQLite lock across network calls. Requests remain idempotent if an owner crashes or a lease expires. Desktop embeds the matching distribution CLI artifact as `helpers/lane` or `helpers/lane.exe` under the packaged Lynxtron application resource directory (`Contents/Resources/app` on macOS, `resources/app` on Windows) (avoiding the case-insensitive host/helper name collision on either platform) and supervises `lane --space <uuid> sync run`. It sends termination only on explicit exit/disconnection, not window closure, and retries failed starts with a bounded delay. Missing helper binaries leave local operations available and report the dependency failure; no global npm executable is assumed. Desktop uses the Rust CLI `sync run` worker supervised by the host; CLI users may run the same worker without the app. Mobile host scheduling runs the same wire protocol at platform-permitted opportunities. Closing the desktop window releases rendering, not an enabled worker. App/CLI writes remain possible when the worker is unavailable.
 
 ### Compatibility and migrations
 
-Before any write, check application ID, schema version and format version. Unknown nonempty databases fail with UNSUPPORTED_FORMAT and an update instruction; never replace them or treat them as empty. Creation is allowed only for a missing/empty file selected by the registry. Version 1 has no automatic migration from unrelated data. Future local migrations require an exclusive schema transaction, all writers checking compatibility at transaction entry, and a reviewed forward-migration path. Do not let an old long-lived process write after another process upgrades the schema.
+Before any write, check application ID, schema version and format version. Unknown nonempty databases fail with UNSUPPORTED_FORMAT and an update instruction; never replace them or treat them as empty. Creation is allowed only for a missing/empty file selected by the registry. Opening a schema-1 space refuses writes until an explicit local migration. `lane --space <uuid> data migrate` and the native `Store::migrate(spaceId)` operation upgrade only that existing space to schema 2. Close all clients for the space first. Migration takes its exclusive lifetime lease, validates registry routing and both version markers, and runs `migrate-1-to-2.sql` in an exclusive schema transaction. It rebuilds the entity kind constraint and adds attachments without rewriting immutable envelopes, fingerprints, receipts, outbox records or sequence values. Foreign keys are disabled only on the migration connection before the transaction; a foreign-key check must pass before commit. Failure rolls back the complete migration. Repeating the operation on schema 2 succeeds without changes. Unknown formats and unrelated databases remain refused. All writers check compatibility at transaction entry. Do not let an old long-lived process write after another process upgrades the schema.
 
 Logical deletion removes content immediately in connected stores and redacts retained receipt/outbox responses; retain only required identities/fingerprints. Use secure deletion and coordinated checkpointing to reduce residual SQLite content without claiming forensic erasure of storage media. A failure must not report success. No user-facing backup/export/trash feature is introduced.
 
@@ -200,7 +211,7 @@ attachment ownership. Repository deletion cascades its current tasks and URL
 connections. Retrieval requires a matching task and attachment in the pinned
 space. Unsupported schema writers must stop before any mutation.
 
-Provide an explicit schema-1 migration before enabling RealQA against an existing
+Use the explicit schema-1 migration described above before enabling RealQA against an existing
 store. All native and Rust adapters must support schema 2 before distribution.
 Do not silently initialize or replace an existing version-1 store. Version-1
 historical envelopes remain readable without rewriting immutable versions;
