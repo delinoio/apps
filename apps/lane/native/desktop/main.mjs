@@ -11,16 +11,15 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { control, invokeNative, unavailable } from "./bridge.mjs";
+import { control, WindowSession, unavailable } from "./bridge.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { scheme } = require("./package.json");
 const native = require("./lane_host.node");
-let window, tray, poller;
+let window, windowSession, tray, poller;
 let started = false;
-let ready = false,
-  quitting = false,
+let quitting = false,
   stopping = false;
 const pendingURLs = [];
 const pendingRoutes = [];
@@ -37,7 +36,8 @@ function showWindow() {
     window.focus();
     return;
   }
-  ready = false;
+  const session = new WindowSession();
+  windowSession = session;
   window = new LynxWindow({
     width: 1280,
     height: 820,
@@ -47,11 +47,25 @@ function showWindow() {
       ? { icon: join(resources, "Lane.ico") }
       : {}),
   });
+  const owner = window;
+  owner.on("-lynx-invoke", (event, channel, request) => {
+    if (channel !== "lane.native") return;
+    const response = stopping
+      ? Promise.resolve(unavailable)
+      : session.invoke(native, request);
+    void response.then(
+      (result) => event.sendReply(result),
+      () => event.sendReply(unavailable),
+    );
+  });
   window.on("focus", () => runControl("resume"));
   window.on("closed", () => {
-    ready = false;
-    window = undefined;
-    runControl("viewClosed");
+    session.retire();
+    if (window === owner) {
+      window = undefined;
+      windowSession = undefined;
+      runControl("viewClosed");
+    }
   });
   window.on("--lynx-error", () => log("lane_template_failed"));
   window.once("ready-to-show", () => log("lane_template_loaded"));
@@ -79,7 +93,7 @@ function flushEvents() {
     else if (window && !window.isDestroyed())
       window.sendGlobalEvent(event.name, ...event.arguments);
   }
-  if (ready && window && !window.isDestroyed())
+  if (windowSession?.ready && window && !window.isDestroyed())
     for (const args of pendingRoutes.splice(0))
       window.sendGlobalEvent("lane.openRoute", ...args);
 }
@@ -158,17 +172,6 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
             console.log(request.message);
           return true;
         });
-      lynxBridge.handle("lane.native", async (_event, request) => {
-        if (stopping) return unavailable;
-        const result = await invokeNative(native, request);
-        if (
-          request?.module === "LaneStore" &&
-          request.method === "open" &&
-          JSON.parse(result).ok
-        )
-          ready = true;
-        return result;
-      });
       if (!app.setAsDefaultProtocolClient(scheme))
         log("lane_protocol_registration_unavailable");
       Menu.setApplicationMenu(

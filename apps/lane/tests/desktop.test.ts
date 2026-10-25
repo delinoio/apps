@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { desktopModules } from "../src/desktop.ts";
-import { invokeNative } from "../native/desktop/bridge.mjs";
+import { invokeNative, WindowSession } from "../native/desktop/bridge.mjs";
 
 test("Lynxtron preserves native requests and response envelopes", async () => {
   const received: unknown[] = [];
@@ -70,4 +70,53 @@ test("Lynxtron transport failure returns a retryable safe error", async () => {
   );
   assert.equal(JSON.parse(raw).error.retryable, true);
   assert.equal(raw.includes("private native details"), false);
+});
+
+test("a delayed storage open cannot ready a replacement Lynxtron window", async () => {
+  const callbacks: ((raw: string) => void)[] = [];
+  const native = {
+    store: {
+      open: (_request: string, callback: (raw: string) => void) =>
+        callbacks.push(callback),
+    },
+  };
+  const request = {
+    module: "LaneStore",
+    method: "open",
+    args: ['{"formatVersion":1,"spaceId":""}'],
+  };
+  const previous = new WindowSession();
+  const oldOpen = previous.invoke(native, request);
+  previous.retire();
+  const replacement = new WindowSession();
+  const newOpen = replacement.invoke(native, request);
+  callbacks[0]('{"ok":true,"response":{}}');
+  await oldOpen;
+  assert.equal(previous.ready, false);
+  assert.equal(replacement.ready, false);
+  callbacks[1]('{"ok":true,"response":{}}');
+  await newOpen;
+  assert.equal(replacement.ready, true);
+  replacement.retire();
+  assert.equal(replacement.ready, false);
+});
+
+test("retired Lynxtron windows cannot dispatch new native requests", async () => {
+  const session = new WindowSession();
+  session.retire();
+  const native = new Proxy(
+    {},
+    {
+      get: () => {
+        throw new Error("Retired renderer must not dispatch");
+      },
+    },
+  );
+  const result = await session.invoke(native, {
+    module: "LaneStore",
+    method: "open",
+    args: [""],
+  });
+  assert.equal(JSON.parse(result).ok, false);
+  assert.equal(session.ready, false);
 });

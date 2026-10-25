@@ -56,3 +56,28 @@ export function control(native, method, value = "") {
     }),
   );
 }
+
+export class WindowSession {
+  ready = false;
+  #active = true;
+
+  retire() {
+    this.#active = false;
+    this.ready = false;
+  }
+
+  async invoke(native, request) {
+    if (!this.#active) return unavailable;
+    const result = await invokeNative(native, request);
+    // A closed renderer's completion must never release routes queued for a
+    // replacement renderer. Each window owns its session and native callbacks.
+    if (
+      this.#active &&
+      request?.module === "LaneStore" &&
+      request.method === "open" &&
+      JSON.parse(result).ok
+    )
+      this.ready = true;
+    return result;
+  }
+}
