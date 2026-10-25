@@ -269,7 +269,9 @@
         "OTEL_*",
         "NO_COLOR",
         "DEV_COMPOSE_DATABASE_URLS",
-        "CARGO_TARGET_DIR"
+        "CARGO_TARGET_DIR",
+        "AUTH_REQUESTS_PER_MINUTE",
+        "LOGTO_ISSUER"
       ],
       "inputs": [
         "package.json",

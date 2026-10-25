@@ -30,7 +30,9 @@ The documentation app serves multiple services. Each service owns a section unde
 
 DeliTools' `delitools` section covers the translation and extraction API reference, API key management through Delcore, billing, and client configuration and troubleshooting. Product behavior remains owned by the [DeliTools contracts](project-delitools.md) and the [Delcore contracts](project-delcore.md).
 
-English routes have no language prefix. Perfine public pages are English-only; their exact coverage declarations and language-menu fallback follow the localization contract. For translated content, every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
+Lane’s `lane` section covers installation, local tasks and prompts, optional synchronization, MCP connections and troubleshooting. Product behavior remains owned by the [Lane contracts](project-lane.md).
+
+English routes have no language prefix. Perfine and Lane public pages are English-only; their exact coverage declarations and language-menu fallback follow the localization contract. For translated content, every registered non-English language uses `/<language>/services/<service-id>/`. Shared local generation in `scripts/localization/` also serves the marketing app. Keep cross-site language links aligned with its registered languages.
 
 Repository-root `docs/` remains the internal source of truth. Public pages describe user-facing behavior, supported workflows and stable public interfaces. Do not publish internal contracts automatically.
 

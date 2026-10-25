@@ -11,4 +11,10 @@
 
 <!-- i18n:end -->
 
+<!-- i18n:source-only lane -->
+
+- [Lane](/services/lane/): manage tasks and prompts locally with optional account synchronization and MCP connections.
+
+<!-- i18n:end -->
+
 See [Getting started](/guide/getting-started) for an introduction to the documentation site.
