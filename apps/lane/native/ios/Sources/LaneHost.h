@@ -15,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)open:(NSString *)json completion:(LynxCallbackBlock)completion;
 - (void)invoke:(NSString *)method json:(NSString *)json completion:(LynxCallbackBlock)completion;
 - (void)close:(NSString *)space completion:(LynxCallbackBlock)completion;
+- (void)cancelReauthentication:(NSString *)challenge completion:(LynxCallbackBlock)completion;
 - (BOOL)handleURL:(NSURL *)url;
 - (void)registeredPushToken:(NSData *)token;
 - (void)pushRegistrationFailed;

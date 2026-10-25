@@ -3,6 +3,8 @@
 #import "LaneLog.h"
 #import "LaneCredentials.h"
 #import "LaneWatch.h"
+#import "LaneReauthentication.h"
+#import "LaneDeletion.h"
 #import <BackgroundTasks/BackgroundTasks.h>
 #import <UIKit/UIKit.h>
 #include "lane_store.h"
@@ -44,6 +46,10 @@ static BOOL UUID7(NSString *value) {
   NSString *_pushState;
   NSDictionary *_pendingRoute;
   NSMutableDictionary *_authorizationContext;
+  LaneReauthentication *_reauthentication;
+  NSString *_selectedSpace;
+  NSUInteger _selectionGeneration;
+  NSUInteger _reauthGeneration;
   BOOL _bridgeReady;
   BOOL _active;
   BOOL _networkAllowed;
@@ -62,6 +68,7 @@ static BOOL UUID7(NSString *value) {
     _storage = dispatch_queue_create("io.delino.lane.storage", DISPATCH_QUEUE_SERIAL);
     _network = dispatch_queue_create("io.delino.lane.network", DISPATCH_QUEUE_SERIAL);
     _transport = [LaneTransport new]; _credentials = [[LaneCredentials alloc] initWithTransport:_transport];
+    _reauthentication = [LaneReauthentication new];
     _syncCompletions = [NSMutableArray new];
     _watches = [NSMutableDictionary new];
     _knownSpaces = [NSMutableSet new]; _handles = [NSMutableDictionary new];
@@ -102,6 +109,7 @@ static BOOL UUID7(NSString *value) {
       NSDictionary *status = Response(host->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": String(space), @"request": @{}}))));
       if ([status[@"syncEnabled"] boolValue]) [host->_credentials disconnect:String(space)];
       else [host->_credentials forget:String(space)];
+      if ([host->_selectedSpace isEqual:String(space)]) { [host->_reauthentication cancel:nil]; ++host->_selectionGeneration; }
       [host->_knownSpaces removeObject:String(space)];
       [host->_watches[String(space)] cancel]; [host->_watches removeObjectForKey:String(space)];
     };
@@ -200,6 +208,7 @@ static BOOL UUID7(NSString *value) {
   } catch (...) { LaneLog(@"lane_store_poll_failed"); }
 }
 - (void)open:(NSString *)json completion:(LynxCallbackBlock)completion {
+  if (![json isKindOfClass:NSString.class]) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
   dispatch_async(_storage, ^{
     if (![self ensureStore]) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; return; }
     try {
@@ -207,6 +216,9 @@ static BOOL UUID7(NSString *value) {
       NSString *space = LaneJSON(result)[@"response"][@"spaceId"];
       self->_deviceID = LaneJSON(result)[@"response"][@"deviceId"] ?: self->_deviceID;
       if (UUID7(space)) {
+        if (![self->_selectedSpace isEqual:space]) {
+          [self->_reauthentication cancel:nil]; ++self->_selectionGeneration; self->_selectedSpace = space;
+        }
         [self->_knownSpaces addObject:space];
         self->_handles[space] = @([self->_handles[space] integerValue] + 1);
         NSDictionary *preferences = Response(self->_store->invoke("GetNotificationPreferences", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
@@ -225,6 +237,7 @@ static BOOL UUID7(NSString *value) {
   });
 }
 - (void)invoke:(NSString *)method json:(NSString *)json completion:(LynxCallbackBlock)completion {
+  if (![method isKindOfClass:NSString.class] || ![json isKindOfClass:NSString.class]) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
   NSDictionary *request = LaneJSON(json);
   if ([method isEqualToString:@"SetNotificationPreferences"] && [request[@"request"] isKindOfClass:NSDictionary.class] && [request[@"request"][@"enabled"] isKindOfClass:NSNumber.class] && [request[@"request"][@"enabled"] boolValue]) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -261,9 +274,41 @@ static BOOL UUID7(NSString *value) {
           [self->_watches[space] cancel]; [self->_watches removeObjectForKey:space];
         }
       }
+      NSString *invokeJSON = json;
+      if ([method isEqual:@"BeginDataDeletion"]) {
+        [self->_reauthentication cancel:nil]; ++self->_selectionGeneration;
+        if (![space isEqual:self->_selectedSpace]) { [self reply:completion value:LaneFailure(@"FORBIDDEN", NO)]; return; }
+      }
+      if ([method isEqual:@"DeleteAccountData"]) {
+        NSMutableDictionary *body = [request[@"request"] mutableCopy];
+        NSString *challenge = body[@"challengeId"];
+        NSDictionary *status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
+        if (body[@"reauthProof"] || body[@"reauth_proof"] || ![challenge isKindOfClass:NSString.class] ||
+            ![space isEqual:self->_selectedSpace] || self->_reauthGeneration != self->_selectionGeneration ||
+            ![body[@"confirmedAccountId"] isEqual:status[@"accountId"]]) {
+          [self reply:completion value:LaneFailure(@"FORBIDDEN", NO)]; return;
+        }
+        NSString *proof = [self->_reauthentication consumeForSpace:space account:status[@"accountId"] mode:body[@"mode"] challenge:challenge];
+        if (!proof) { [self reply:completion value:LaneFailure(@"UNAUTHENTICATED", NO)]; return; }
+        [body removeObjectForKey:@"challengeId"]; body[@"reauthProof"] = proof;
+        invokeJSON = LaneEncode(@{@"spaceId": space, @"request": body});
+      }
       // Store assigns APP and the pinned account/device. UI attribution is never trusted.
-      NSString *result = String(self->_store->invoke(UTF8(method), UTF8(json)));
+      NSString *result = String(self->_store->invoke(UTF8(method), UTF8(invokeJSON)));
+      if ([method isEqual:@"BeginDataDeletion"] && [LaneJSON(result)[@"ok"] boolValue]) {
+        NSString *challenge = LaneJSON(result)[@"response"][@"challengeId"];
+        NSDictionary *status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
+        if ([challenge isKindOfClass:NSString.class] && [request[@"request"][@"mode"] isKindOfClass:NSString.class]) {
+          [self->_reauthentication beginSpace:space account:status[@"accountId"] mode:request[@"request"][@"mode"] challenge:challenge];
+          self->_reauthGeneration = self->_selectionGeneration;
+        }
+      }
       if ([method isEqual:@"ConnectSync"] && ![LaneJSON(result)[@"ok"] boolValue]) self->_authorizationContext = nil;
+      if ([method isEqual:@"ConnectSync"] && [LaneJSON(result)[@"ok"] boolValue]) {
+        NSURL *url = [NSURL URLWithString:LaneJSON(result)[@"response"][@"authorizationUrl"] ?: @""];
+        if ([url.scheme.lowercaseString isEqual:@"https"] && url.host.length && !url.user && !url.password)
+          dispatch_async(dispatch_get_main_queue(), ^{ [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil]; });
+      }
       [self reply:completion value:result]; [self poll];
       if ([method isEqualToString:@"SetNotificationPreferences"] && [LaneJSON(result)[@"ok"] boolValue]) {
         [self updatePushRegistration:space];
@@ -277,11 +322,21 @@ static BOOL UUID7(NSString *value) {
 - (void)close:(NSString *)space completion:(LynxCallbackBlock)completion {
   dispatch_async(_storage, ^{
     if (![self ensureStore] || !UUID7(space)) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
+    if ([space isEqual:self->_selectedSpace]) {
+      [self->_reauthentication cancel:nil]; ++self->_selectionGeneration; self->_selectedSpace = nil;
+    }
     NSInteger count = [self->_handles[space] integerValue];
     if (count > 1) self->_handles[space] = @(count - 1);
     else [self->_handles removeObjectForKey:space];
     try { [self reply:completion value:String(self->_store->close(UTF8(space)))]; }
     catch (...) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; }
+  });
+}
+- (void)cancelReauthentication:(NSString *)challenge completion:(LynxCallbackBlock)completion {
+  if (![challenge isKindOfClass:NSString.class] || !challenge.length) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
+  dispatch_async(_storage, ^{
+    [self->_reauthentication cancel:challenge];
+    [self reply:completion value:LaneEncode(@{@"ok": @YES})];
   });
 }
 - (void)refreshPermission:(dispatch_block_t)completion {
@@ -305,6 +360,42 @@ static BOOL UUID7(NSString *value) {
     try { self->_store->recordSyncFailure(UTF8(space), UTF8(reason ?: @"ERROR_REASON_DEPENDENCY_UNAVAILABLE")); [self poll]; } catch (...) {}
   });
 }
+// Runs on the network worker. Revoked credentials are used only on this minimal
+// recovery endpoint, never to retrieve account content or authorize a new epoch.
+- (BOOL)recoverDeletion:(NSString *)space {
+  NSString *token = [self->_credentials lastAccessTokenForSpace:space];
+  if (!token.length) return NO;
+  __block NSDictionary *pending; __block NSDictionary *status;
+  dispatch_sync(_storage, ^{
+    try {
+      if (![Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) return;
+      pending = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)));
+      status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
+    } catch (...) {}
+  });
+  if (!pending) return NO;
+  NSDictionary *directive = [_transport getPath:@"/auth/deletion-status" query:@{} token:token];
+  LaneDeletionDisposition disposition = LaneValidateDeletion(directive, status[@"accountId"], pending[@"deviceId"], pending[@"epoch"]);
+  if (![[self->_credentials deviceForSpace:space] isEqual:pending[@"deviceId"]]) disposition = LaneDeletionInvalid;
+  __block BOOL handled = NO;
+  dispatch_sync(_storage, ^{
+    try {
+      NSDictionary *current = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)));
+      if ([current[@"epoch"] isEqual:pending[@"epoch"]] && [Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) {
+        if (disposition == LaneDeletionErase) {
+          NSDictionary *pull = @{@"changes": @[@{@"deletion": @{@"kind": @"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT", @"id": status[@"accountId"], @"deletionVersionId": directive[@"new_epoch"]}}], @"nextCursor": @"", @"hasMore": @NO};
+          handled = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @1, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"pull": pull})))))[@"ok"] boolValue];
+        } else if (disposition == LaneDeletionRetain) {
+          handled = [LaneJSON(String(self->_store->recordSyncFailure(UTF8(space), "ERROR_REASON_STALE_EPOCH")))[@"ok"] boolValue];
+          [self->_watches[space] cancel]; [self->_watches removeObjectForKey:space];
+        }
+      }
+      self->_store->acquireSync(UTF8(space), UTF8(self->_owner), 0);
+      [self poll];
+    } catch (...) {}
+  });
+  return handled;
+}
 - (void)syncWithCompletion:(void (^)(BOOL))completion { [self syncOnlySpaces:nil completion:completion]; }
 - (void)syncOnlySpaces:(NSArray<NSString *> *)requested completion:(void (^)(BOOL))completion {
   dispatch_async(_storage, ^{
@@ -324,7 +415,7 @@ static BOOL UUID7(NSString *value) {
       if ([self->_authorizationContext[@"reconnect"] boolValue] && [self->_authorizationContext[@"spaceId"] isEqual:space]) continue;
       try {
         NSDictionary *status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
-        if ([status[@"syncEnabled"] boolValue]) { [spaces addObject:space]; devices[space] = status[@"deviceId"] ?: @""; }
+        if ([status[@"syncEnabled"] boolValue] && ![status[@"reconnectRequired"] boolValue]) { [spaces addObject:space]; devices[space] = status[@"deviceId"] ?: @""; }
       } catch (...) {}
     }
     dispatch_async(self->_network, ^{
@@ -336,7 +427,7 @@ static BOOL UUID7(NSString *value) {
         }
         NSString *token = [self->_credentials tokenForSpace:space];
         if (!token.length) {
-          [self syncFailure:@"ERROR_REASON_UNAUTHENTICATED" space:space]; success = NO; continue;
+          if (![self recoverDeletion:space]) [self syncFailure:@"ERROR_REASON_UNAUTHENTICATED" space:space]; success = NO; continue;
         }
         __block BOOL acquired = NO;
         dispatch_sync(self->_storage, ^{
@@ -355,8 +446,8 @@ static BOOL UUID7(NSString *value) {
           });
           if (!pending || [pending[@"formatVersion"] integerValue] != 1) { [self syncFailure:@"ERROR_REASON_UNSUPPORTED_FORMAT" space:space]; success = NO; break; }
           NSDictionary *info = [self->_transport callService:@"lane.v1.SyncService" method:@"GetSyncInfo" request:@{} token:token];
-          if (info[@"error"]) { [self syncFailure:info[@"error"][@"reason"] space:space]; success = NO; break; }
-          if ([info[@"formatVersion"] integerValue] != 1) {
+          if (info[@"error"]) { if (![info[@"error"][@"reason"] isEqual:@"ERROR_REASON_UNAUTHENTICATED"] || ![self recoverDeletion:space]) [self syncFailure:info[@"error"][@"reason"] space:space]; success = NO; break; }
+          if (![info[@"formatVersion"] respondsToSelector:@selector(integerValue)] || [info[@"formatVersion"] integerValue] != 1) {
             [self syncFailure:@"ERROR_REASON_UNSUPPORTED_FORMAT" space:space]; success = NO; break;
           }
           BOOL epochChanged = ![info[@"epoch"] isEqual:pending[@"epoch"]];
@@ -390,7 +481,8 @@ static BOOL UUID7(NSString *value) {
         dispatch_sync(self->_storage, ^{
           try {
             NSDictionary *pending = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)));
-            if (self->_active && !self->_watches[space] && pending[@"epoch"]) {
+            NSDictionary *status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
+            if (self->_active && [status[@"syncEnabled"] boolValue] && ![status[@"reconnectRequired"] boolValue] && !self->_watches[space] && pending[@"epoch"]) {
               __weak LaneHost *weakSelf = self;
               LaneWatch *watch = [[LaneWatch alloc] initWithToken:token epoch:pending[@"epoch"] cursor:pending[@"cursor"] ?: @""
                 changed:^{ [weakSelf syncWithCompletion:^(BOOL ignored) {}]; }
@@ -531,8 +623,9 @@ static BOOL UUID7(NSString *value) {
           // A matching ACCOUNT deletion wins, including over edits made during
           // approval. The engine checks the pinned registry account atomically.
           BOOL accountDeletion = NO;
-          for (NSDictionary *change in pull[@"changes"])
-            if ([change[@"deletion"][@"kind"] isEqual:@"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT"]) accountDeletion = YES;
+          if ([pull[@"changes"] isKindOfClass:NSArray.class]) for (id change in pull[@"changes"])
+            if ([change isKindOfClass:NSDictionary.class] && [change[@"deletion"] isKindOfClass:NSDictionary.class] &&
+                [change[@"deletion"][@"kind"] isEqual:@"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT"]) accountDeletion = YES;
           if (accountDeletion) result = String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{
             @"formatVersion": @1, @"epoch": context[@"epoch"], @"owner": self->_owner, @"pull": pull}))));
         } else if ([pull[@"error"][@"reason"] isEqual:@"ERROR_REASON_STALE_EPOCH"]) {
@@ -549,8 +642,8 @@ static BOOL UUID7(NSString *value) {
             }
           }
         }
-        self->_store->acquireSync(UTF8(space), UTF8(self->_owner), 0);
       }
+      self->_store->acquireSync(UTF8(space), UTF8(self->_owner), 0);
     } catch (...) { result = LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES); }
     if ([self->_authorizationContext[@"challengeId"] isEqual:credential[@"approvalState"]]) self->_authorizationContext = nil;
     if ([LaneJSON(result)[@"ok"] boolValue]) {
@@ -566,6 +659,35 @@ static BOOL UUID7(NSString *value) {
   NSString *scheme = [NSBundle.mainBundle objectForInfoDictionaryKey:@"LaneURLScheme"];
   if (![url.scheme isEqualToString:scheme] || url.user || url.password || url.port || url.fragment) return NO;
   if ([url.host isEqualToString:@"auth"] && [url.path isEqualToString:@"/callback"]) {
+    NSArray<NSURLQueryItem *> *items = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO].queryItems;
+    NSMutableArray *challenges = [NSMutableArray new];
+    for (NSURLQueryItem *item in items) if ([item.name isEqual:@"reauth_challenge"]) [challenges addObject:item.value ?: @""];
+    if (challenges.count) {
+      if (items.count != 1 || challenges.count != 1 || ![challenges[0] length]) return NO;
+      NSString *challenge = challenges[0];
+      dispatch_async(_storage, ^{
+        NSDictionary *binding = [self->_reauthentication bindingForChallenge:challenge selectedSpace:self->_selectedSpace];
+        NSUInteger generation = self->_selectionGeneration;
+        if (!binding || self->_reauthGeneration != generation) return;
+        NSString *space = binding[@"spaceId"];
+        dispatch_async(self->_network, ^{
+          NSString *token = [self->_credentials tokenForSpace:space];
+          if (!token.length) return;
+          NSDictionary *response = [self->_transport postJSON:@{@"challenge_id": challenge} path:@"/auth/reauth/proof" token:token];
+          dispatch_async(self->_storage, ^{
+            if (generation != self->_selectionGeneration || ![space isEqual:self->_selectedSpace]) return;
+            NSDictionary *status = Response(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}}))));
+            if (![status[@"accountId"] isEqual:binding[@"accountId"]] || ![status[@"syncEnabled"] boolValue]) return;
+            if (![self->_reauthentication acceptProof:response[@"reauth_proof"] challenge:challenge selectedSpace:space]) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+              // No proof or account credential ever crosses the JS bridge.
+              [self.view sendGlobalEvent:@"lane.reauthenticated" withParams:@[@{@"challengeId": challenge}]];
+            });
+          });
+        });
+      });
+      return YES;
+    }
     dispatch_async(_network, ^{
       NSDictionary *credential = [self->_credentials complete:url];
       if (!credential) {

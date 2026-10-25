@@ -10,7 +10,11 @@ static NSString *HostResult(BOOL ok, NSString *reason) {
 + (NSString *)name { return @"LaneHost"; }
 + (NSDictionary *)methodLookup {
   return @{@"copyText": NSStringFromSelector(@selector(copyText:callback:)),
+           @"cancelReauthentication": NSStringFromSelector(@selector(cancelReauthentication:callback:)),
            @"openURL": NSStringFromSelector(@selector(openURL:callback:))};
+}
+- (void)cancelReauthentication:(NSString *)challenge callback:(LynxCallbackBlock)callback {
+  [[LaneHost shared] cancelReauthentication:challenge completion:callback];
 }
 - (void)copyText:(NSString *)text callback:(LynxCallbackBlock)callback {
   dispatch_async(dispatch_get_main_queue(), ^{

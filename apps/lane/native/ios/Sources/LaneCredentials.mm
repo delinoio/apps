@@ -114,6 +114,9 @@ NSString *LaneUUID7(void) {
   return status == errSecSuccess;
 }
 }
+- (NSString *)lastAccessTokenForSpace:(NSString *)space {
+  @synchronized (self) { return [self read:space][@"access_token"]; }
+}
 - (NSString *)deviceForSpace:(NSString *)space {
   @synchronized (self) { return [self read:space][@"device_id"]; }
 }

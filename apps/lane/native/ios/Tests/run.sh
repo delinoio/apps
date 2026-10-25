@@ -9,5 +9,7 @@ xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -Wall -Wextra -Wno-unused-param
   "${test_root}/credentials-test.mm" \
   "${test_root}/../Sources/LaneCredentials.mm" \
   "${test_root}/../Sources/LaneTransport.mm" \
+  "${test_root}/../Sources/LaneReauthentication.mm" \
+  "${test_root}/../Sources/LaneDeletion.mm" \
   -framework Foundation -framework Security -o "${test_output}/credentials-test"
 "${test_output}/credentials-test"

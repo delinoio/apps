@@ -7,6 +7,8 @@ NS_ASSUME_NONNULL_BEGIN
                      request:(NSDictionary *)request token:(NSString *)token;
 - (NSDictionary *)postForm:(NSDictionary *)form url:(NSURL *)url;
 - (NSDictionary *)getJSON:(NSURL *)url;
+- (NSDictionary *)postJSON:(NSDictionary *)json path:(NSString *)path token:(NSString *)token;
+- (NSDictionary *)getPath:(NSString *)path query:(NSDictionary *)query token:(NSString *)token;
 - (void)cancel;
 - (void)resume;
 @end

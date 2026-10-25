@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Runs on macOS against the real Foundation/Security code, with a mocked server.
 #import "LaneCredentials.h"
+#import "LaneReauthentication.h"
+#import "LaneDeletion.h"
 #include <cassert>
 
 @interface MockTransport : LaneTransport
@@ -76,6 +78,34 @@ int main(void) {
     assert([failure[@"error"][@"correlationId"] isEqualToString:@"req"]);
     assert([failure[@"error"][@"retryable"] boolValue]);
     assert([LaneConnectFailure([@"not-json" dataUsingEncoding:NSUTF8StringEncoding], 401)[@"error"][@"reason"] isEqualToString:@"ERROR_REASON_UNAUTHENTICATED"]);
+    NSMutableDictionary *directive = [@{@"mode": @"DATA_DELETION_MODE_DELETE_EVERYWHERE", @"account_id": @"account", @"device_id": @"device", @"old_epoch": @"old", @"new_epoch": @"new", @"disconnected": @YES} mutableCopy];
+    assert(LaneValidateDeletion(directive, @"account", @"device", @"old") == LaneDeletionErase);
+    assert(LaneValidateDeletion(directive, @"other", @"device", @"old") == LaneDeletionInvalid);
+    assert(LaneValidateDeletion(directive, @"account", @"other", @"old") == LaneDeletionInvalid);
+    assert(LaneValidateDeletion(directive, @"account", @"device", @"other") == LaneDeletionInvalid);
+    directive[@"mode"] = @"DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL";
+    assert(LaneValidateDeletion(directive, @"account", @"device", @"old") == LaneDeletionRetain);
+    directive[@"mode"] = @"unknown";
+    assert(LaneValidateDeletion(directive, @"account", @"device", @"old") == LaneDeletionInvalid);
+    assert(LaneValidateDeletion(@{}, @"account", @"device", @"old") == LaneDeletionInvalid);
+    puts("PASS: deletion recovery explicit/retain/unknown/account/device/epoch binding");
+    LaneReauthentication *reauth = [LaneReauthentication new];
+    [reauth beginSpace:@"space-a" account:@"account-a" mode:@"DATA_DELETION_MODE_DELETE_EVERYWHERE" challenge:@"challenge-a"];
+    assert(![reauth bindingForChallenge:@"challenge-b" selectedSpace:@"space-a"]);
+    assert(![reauth bindingForChallenge:@"challenge-a" selectedSpace:@"space-b"]);
+    assert(![reauth acceptProof:@"synthetic-proof" challenge:@"challenge-b" selectedSpace:@"space-a"]);
+    assert([reauth acceptProof:@"synthetic-proof" challenge:@"challenge-a" selectedSpace:@"space-a"]);
+    assert(![reauth consumeForSpace:@"space-a" account:@"account-b" mode:@"DATA_DELETION_MODE_DELETE_EVERYWHERE" challenge:@"challenge-a"]);
+    assert(![reauth consumeForSpace:@"space-a" account:@"account-a" mode:@"DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL" challenge:@"challenge-a"]);
+    assert([reauth consumeForSpace:@"space-a" account:@"account-a" mode:@"DATA_DELETION_MODE_DELETE_EVERYWHERE" challenge:@"challenge-a"]);
+    assert(![reauth consumeForSpace:@"space-a" account:@"account-a" mode:@"DATA_DELETION_MODE_DELETE_EVERYWHERE" challenge:@"challenge-a"]);
+    [reauth beginSpace:@"space-a" account:@"account-a" mode:@"mode" challenge:@"canceled"];
+    [reauth cancel:@"canceled"];
+    assert(![reauth acceptProof:@"synthetic-proof" challenge:@"canceled" selectedSpace:@"space-a"]);
+    [reauth beginSpace:@"space-a" account:@"account-a" mode:@"mode" challenge:@"expired"];
+    [reauth setValue:[NSDate dateWithTimeIntervalSinceNow:-1] forKey:@"expires"];
+    assert(![reauth acceptProof:@"synthetic-proof" challenge:@"expired" selectedSpace:@"space-a"]);
+    puts("PASS: native reauthentication account/mode/challenge/space binding, cancellation, expiry, one-use proof");
     puts("PASS: native OAuth state, PKCE, callback replay, account/device isolation, configuration, UUID v7, typed errors (mock server)");
   }
 }

@@ -141,6 +141,30 @@ NSDictionary *LaneConnectFailure(NSData *body, NSInteger status) {
   http.HTTPBody = [[parts componentsJoinedByString:@"&"] dataUsingEncoding:NSUTF8StringEncoding];
   return [self perform:http];
 }
+- (NSDictionary *)authenticatedPath:(NSString *)path query:(NSDictionary *)query json:(NSDictionary *)json token:(NSString *)token {
+  NSString *base = [NSBundle.mainBundle objectForInfoDictionaryKey:@"LaneAPIURL"];
+  if (!base.length || !token.length) return LaneJSON(LaneFailure(@"UNAUTHENTICATED", NO));
+  NSURLComponents *url = [NSURLComponents componentsWithString:[[base stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]] stringByAppendingString:path]];
+  if (!url) return LaneJSON(LaneFailure(@"DEPENDENCY_UNAVAILABLE", NO));
+  NSMutableArray *items = [NSMutableArray new];
+  for (NSString *key in query) [items addObject:[NSURLQueryItem queryItemWithName:key value:query[key]]];
+  if (items.count) url.queryItems = items;
+  if (!url.URL) return LaneJSON(LaneFailure(@"DEPENDENCY_UNAVAILABLE", NO));
+  NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url.URL];
+  request.HTTPMethod = json ? @"POST" : @"GET";
+  [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+  if (json) {
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    request.HTTPBody = [LaneEncode(json) dataUsingEncoding:NSUTF8StringEncoding];
+  }
+  return [self perform:request];
+}
+- (NSDictionary *)postJSON:(NSDictionary *)json path:(NSString *)path token:(NSString *)token {
+  return [self authenticatedPath:path query:@{} json:json token:token];
+}
+- (NSDictionary *)getPath:(NSString *)path query:(NSDictionary *)query token:(NSString *)token {
+  return [self authenticatedPath:path query:query json:nil token:token];
+}
 - (void)cancel { @synchronized (self) { _cancelled = YES; for (NSURLSessionTask *task in _tasks) [task cancel]; } }
 - (void)resume { @synchronized (self) { _cancelled = NO; } }
 @end
