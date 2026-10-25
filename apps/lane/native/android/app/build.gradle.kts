@@ -85,6 +85,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250107")
     implementation("org.lynxsdk.lynx:lynx:4.1.0")
+    implementation("org.lynxsdk.lynx:xelement-input:4.1.0")
     implementation("org.lynxsdk.lynx:lynx-jssdk:4.1.0")
     implementation("org.lynxsdk.lynx:lynx-trace:4.1.0")
     implementation("org.lynxsdk.lynx:primjs:4.1.1")
