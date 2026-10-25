@@ -11,7 +11,7 @@
 | Go (`go`)                     | An exact Go benchmark row and unit, plus gzip pprof.                                        |
 | JavaScript (`java_script`)    | A declared numeric field from benchmark JSON, plus a Node CPU profile.                      |
 
-These routes provide configured execution and profile interpretation. They do not imply that every profiler version, workload, or optimization has been verified. Record the actual tool versions and test your declared environment. Linux x86_64 is the first execution target.
+These routes provide configured execution and profile interpretation. They do not imply that every profiler version, workload, or optimization has been verified. Record the actual tool versions and test your declared environment. Measurement runs in Linux x86_64 Docker containers on all supported CLI hosts. Windows uses Docker Desktop with its WSL 2 Linux-container backend; ARM Macs use explicitly identified x86_64 emulation. Native macOS/Windows and Linux ARM64 measurement are not provided.
 
 ## Recipe contract
 
