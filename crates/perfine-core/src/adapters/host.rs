@@ -226,6 +226,35 @@ pub(crate) mod windows {
     }
 }
 
+pub(crate) fn architecture() -> Result<&'static str> {
+    // An x64 CLI can itself run under Rosetta on an ARM Mac. Probe the host
+    // rather than labeling that container run as non-emulated x86_64.
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        let mut command = command(Path::new("/usr/sbin/sysctl"))?;
+        command.args(["-n", "hw.optional.arm64"]);
+        let output = super::process::run(
+            &mut command,
+            &[],
+            None,
+            std::time::Duration::from_secs(5),
+            || {},
+        )?;
+        if output.interrupted || output.code != 0 {
+            return Err(Error::Incomplete(
+                "cannot identify Mac host CPU for emulation evidence",
+            ));
+        }
+        match output.stdout.trim_ascii() {
+            b"1" => return Ok("aarch64"),
+            b"0" => return Ok("x86_64"),
+            _ => return Err(Error::Incomplete("unknown Mac host CPU")),
+        }
+    }
+    #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+    Ok(std::env::consts::ARCH)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,33 +314,4 @@ mod tests {
             ));
         }
     }
-}
-
-pub(crate) fn architecture() -> Result<&'static str> {
-    // An x64 CLI can itself run under Rosetta on an ARM Mac. Probe the host
-    // rather than labeling that container run as non-emulated x86_64.
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        let mut command = command(Path::new("/usr/sbin/sysctl"))?;
-        command.args(["-n", "hw.optional.arm64"]);
-        let output = super::process::run(
-            &mut command,
-            &[],
-            None,
-            std::time::Duration::from_secs(5),
-            || {},
-        )?;
-        if output.interrupted || output.code != 0 {
-            return Err(Error::Incomplete(
-                "cannot identify Mac host CPU for emulation evidence",
-            ));
-        }
-        match output.stdout.trim_ascii() {
-            b"1" => return Ok("aarch64"),
-            b"0" => return Ok("x86_64"),
-            _ => return Err(Error::Incomplete("unknown Mac host CPU")),
-        }
-    }
-    #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
-    Ok(std::env::consts::ARCH)
 }
