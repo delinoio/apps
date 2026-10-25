@@ -1296,6 +1296,17 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(*creates.lock().unwrap(), 1);
+    let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
+        .await
+        .unwrap();
+    assert_eq!(
+        status["publication"]["state"],
+        "PUBLICATION_STATE_RECONCILING"
+    );
+    assert_eq!(
+        status["publication"]["failureReason"],
+        "Creation outcome remains uncertain; inspect GitHub before operator recovery"
+    );
     *pulls.lock().unwrap() = delayed;
     sqlx::query(
         "UPDATE perfine_approvals SET publication=publication-'_nextAttemptAt' WHERE id=$1",
@@ -1312,6 +1323,12 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         status["publication"]["state"],
         "PUBLICATION_STATE_PUBLISHED"
     );
+    assert_eq!(status["publication"]["githubPullRequestNumber"], "1");
+    assert_eq!(
+        status["publication"]["githubPullRequestUrl"],
+        "https://github.com/owner/repo/pull/1"
+    );
+    assert_eq!(status["publication"]["failureReason"], "");
     assert_eq!(*creates.lock().unwrap(), 1);
     let again = call(
         &server,
@@ -1378,6 +1395,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             },
             "{changed}"
         );
+        if changed == "none" {
+            assert_eq!(result["publication"]["failureReason"], "");
+        } else {
+            assert!(
+                result["publication"]["failureReason"]
+                    .as_str()
+                    .is_some_and(|reason| !reason.is_empty()),
+                "{changed}"
+            );
+        }
         let before = *creates.lock().unwrap();
         server.maintain().await.unwrap();
         assert_eq!(

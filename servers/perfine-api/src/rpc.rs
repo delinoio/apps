@@ -1682,6 +1682,7 @@ impl Server {
         let found = prs.iter().find(|v| matches_approval(v));
         if let Some(pr) = found {
             p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+            p["failureReason"] = json!("");
             p["githubPullRequestNumber"] = json!(integer(pr, "number").to_string());
             p["githubPullRequestUrl"] = pr["html_url"].clone();
         } else if prs.iter().any(|v| v["head"]["sha"] == d["headSha"]) {
@@ -1711,6 +1712,7 @@ impl Server {
                 p["githubPullRequestUrl"] = pr["html_url"].clone();
                 if matches_approval(&pr) {
                     p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+                    p["failureReason"] = json!("");
                 } else {
                     // GitHub creates from mutable branch names, so the response must
                     // match the approved snapshot even after preflight SHA checks pass.
