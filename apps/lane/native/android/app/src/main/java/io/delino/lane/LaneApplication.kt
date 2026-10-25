@@ -6,6 +6,7 @@ import android.util.Log
 import com.lynx.tasm.LynxEnv
 
 class LaneApplication : Application() {
+    internal val runtime by lazy { LaneRuntime(this) }
     override fun onCreate() {
         super.onCreate()
         LynxEnv.inst().init(this, null, null, null)
