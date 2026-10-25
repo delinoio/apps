@@ -25,6 +25,7 @@ val laneAssets = tasks.register<Sync>("prepareLaneAssets") {
     from("../../../dist/main.lynx.bundle")
     from("../../../dist/LICENSE")
     from("../../../dist/NOTICE")
+    from("../../licenses") { into("licenses") }
     into("../../../dist/native-assets")
     doFirst {
         check(file("../../../dist/main.lynx.bundle").isFile) {

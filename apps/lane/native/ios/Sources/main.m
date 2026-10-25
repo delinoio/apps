@@ -70,6 +70,14 @@
   NSLog(@"{\"event\":\"lane_started\",\"platform\":\"ios\"}");
   return YES;
 }
+- (void)applicationDidEnterBackground:(UIApplication *)application {
+  LaneController *controller = (LaneController *)self.window.rootViewController;
+  [controller.lynxView onEnterBackground];
+}
+- (void)applicationWillEnterForeground:(UIApplication *)application {
+  LaneController *controller = (LaneController *)self.window.rootViewController;
+  [controller.lynxView onEnterForeground];
+}
 @end
 int main(int argc, char *argv[]) {
   @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(LaneDelegate.class)); }

@@ -21,6 +21,8 @@ targets:
         buildPhase: resources
       - path: ../../dist/NOTICE
         buildPhase: resources
+      - path: ../licenses
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -28,3 +30,12 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+    postBuildScripts:
+      - name: Include dependency notices
+        script: |
+          set -eu
+          cp "${PODS_ROOT}/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdPartyNotices.plist"
+        inputFiles:
+          - "$(PODS_ROOT)/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdPartyNotices.plist"

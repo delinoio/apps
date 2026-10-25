@@ -17,6 +17,7 @@
     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
               NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
     backing:NSBackingStoreBuffered defer:NO];
+  self.window.releasedWhenClosed = NO;
   self.window.title = @"Lane";
   self.window.delegate = self;
   [self.window center];
