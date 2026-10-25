@@ -20,6 +20,7 @@ export function prepareApiEnvironment(api, source = process.env) {
       [Api.DevBase]: "127.0.0.1:46317",
       [Api.GitTracker]: "127.0.0.1:46321",
       [Api.Perfine]: "127.0.0.1:46323",
+      [Api.Lane]: "127.0.0.1:46326",
     }[api],
   };
   delete env[databaseHandoff];
@@ -41,6 +42,7 @@ export function apiCommand(api, source = process.env) {
     [Api.DevBase]: "devbase-api",
     [Api.GitTracker]: "git-tracker-api",
     [Api.Perfine]: "perfine-api",
+    [Api.Lane]: "lane-api",
   }[api];
   if (!binary) throw new Error("Unknown development API");
   return [

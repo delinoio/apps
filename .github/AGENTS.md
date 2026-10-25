@@ -16,3 +16,5 @@
 - [Repository workflow](../docs/repository-workflow-contract.md)
 - [DeliTools application](../docs/apps-delitools-foundation.md)
 - [Environment ownership](../docs/repository-environment-contract.md)
+
+- Lane CLI/distribution validation runs on Ubuntu in its affected job. Keep Lane API in the existing independent server Clippy/test matrices and require all selected Lane jobs in result aggregation; native acceptance remains separate.

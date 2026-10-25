@@ -240,6 +240,43 @@
         "$TURBO_ROOT$/scripts/dev.mjs",
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
+    },
+    "@delinoio/lane-api#dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["//#server-build"],
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "LISTEN",
+        "WEB_ORIGIN",
+        "DELCORE_URL",
+        "DELCORE_RESOURCE",
+        "LOGTO_TOKEN_URL",
+        "CLIENT_ID",
+        "CLIENT_SECRET",
+        "MAX_ITEM_BYTES",
+        "MAX_WEBHOOK_BYTES",
+        "REQUESTS_PER_MINUTE",
+        "WEBHOOK_REQUESTS_PER_MINUTE",
+        "LANE_*",
+        "APNS_*",
+        "FCM_*",
+        "WEB_PUSH_*",
+        "ALERT_*",
+        "DEPENDENCY_TIMEOUT",
+        "LOG_FORMAT",
+        "RUST_LOG",
+        "OTEL_*",
+        "NO_COLOR",
+        "DEV_COMPOSE_DATABASE_URLS",
+        "CARGO_TARGET_DIR"
+      ],
+      "inputs": [
+        "package.json",
+        "$TURBO_ROOT$/servers/scripts/dev-api.mjs",
+        "$TURBO_ROOT$/scripts/dev.mjs",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
+      ]
     }
   },
   "globalEnv": ["NODE_ENV", "PUBLIC_*", "RUNNER_OS", "RUNNER_ARCH"],

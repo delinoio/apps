@@ -50,7 +50,7 @@ function classifyShared(paths) {
   const repositoryShared = paths.some(
     (path) =>
       !Object.values(sharedPatterns).some((pattern) => pattern.test(path)) &&
-      !/^(crates\/perfine-core\/|cmds\/perfine\/|packages\/perfine\/)/u.test(
+      !/^(crates\/perfine-core\/|cmds\/(?:perfine|lane)\/|packages\/(?:perfine|lane)\/)/u.test(
         path,
       ) &&
       !/^(apps|actions|protos|examples|docs|servers)\//u.test(path),
@@ -187,10 +187,34 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    lane_api:
+      serverRust ||
+      shared.rust ||
+      repositoryShared ||
+      shared.protocol ||
+      serverShared ||
+      paths.some((path) =>
+        /^(servers\/lane-api\/|protos\/|docs\/(?:project-lane|servers-lane|protos-lane))/u.test(
+          path,
+        ),
+      ),
+    lane_cli:
+      repositoryShared ||
+      shared.go ||
+      shared.protocol ||
+      paths.some((path) =>
+        /^(cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
+          path,
+        ),
+      ),
     lane:
       repositoryShared ||
+      shared.lynxUi ||
+      shared.protocol ||
       paths.some((path) =>
-        /^(apps\/lane\/|docs\/(?:project-lane|apps-lane))/.test(path),
+        /^(apps\/lane\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
+          path,
+        ),
       ),
     perfine_fixtures:
       repositoryShared ||
@@ -205,7 +229,7 @@ export function select(paths, lockfiles) {
       shared.protocol ||
       shared.go ||
       paths.some((path) =>
-        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1|protos-perfine|project-perfine))/u.test(
+        /^(protos\/|examples\/|docs\/.*(?:delcore|devbase-v1|delitools-v1|protos-perfine|project-perfine|protos-lane|project-lane))/u.test(
           path,
         ),
       ),
@@ -241,6 +265,13 @@ export function selectRustServers(selected) {
       port: 55432,
       user: "delcore",
       database: "delcore_api_test",
+    },
+    {
+      service: "lane-api",
+      owner: "lane_api",
+      port: 55437,
+      user: "lane",
+      database: "lane_api_test",
     },
     {
       service: "perfine-api",
