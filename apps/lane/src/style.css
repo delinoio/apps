@@ -403,6 +403,8 @@ text {
   position: absolute;
   left: 48px;
   top: 4px;
+  /* The tooltip sits outside its 44px trigger; size it independently of that box. */
+  width: max-content;
   padding: 8px 12px;
   border-radius: 6px;
   background-color: #172033;
