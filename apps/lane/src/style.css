@@ -465,37 +465,17 @@ text {
   border-radius: 3px;
   background-color: #526079;
 }
-.handrail-top {
-  position: absolute;
-  left: 1px;
-  top: 4px;
-  width: 22px;
-  height: 5px;
-  border: 2px solid #526079;
-  border-radius: 2px;
-}
-.handrail-post {
-  position: absolute;
-  top: 9px;
-  width: 2px;
-  height: 12px;
-  background-color: #526079;
-}
-.post-left {
-  left: 5px;
-}
-.post-right {
-  right: 5px;
+.handrail-artwork {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
 }
 .selected .lane-ribbon {
   color: #075aff;
 }
 .selected .pace-dial,
-.selected .handrail-top,
 .miniapp-brand .pace-dial,
-.miniapp-brand .handrail-top,
-.coming-soon-icon .pace-dial,
-.coming-soon-icon .handrail-top {
+.coming-soon-icon .pace-dial {
   border-color: #075aff;
 }
 .selected .pace-dial,
@@ -506,15 +486,12 @@ text {
 .selected .pace-needle,
 .selected .pace-tick,
 .selected .pace-center,
-.selected .handrail-post,
 .miniapp-brand .pace-needle,
 .miniapp-brand .pace-tick,
 .miniapp-brand .pace-center,
-.miniapp-brand .handrail-post,
 .coming-soon-icon .pace-needle,
 .coming-soon-icon .pace-tick,
-.coming-soon-icon .pace-center,
-.coming-soon-icon .handrail-post {
+.coming-soon-icon .pace-center {
   background-color: #075aff;
 }
 .miniapp-brand {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
+import handrailIcon from "../assets/handrail-icon.png?inline";
 
 export enum MiniApp {
   Lane = "Lane",
@@ -7,7 +8,7 @@ export enum MiniApp {
   Handrail = "Handrail",
 }
 
-// Use native views for the marks so the same icons work without an SVG host.
+// Keep marks compatible with native hosts without requiring an SVG renderer.
 export function AppIcon({ app }: { app: MiniApp }) {
   return (
     <view
@@ -24,11 +25,11 @@ export function AppIcon({ app }: { app: MiniApp }) {
           <view className="pace-center" />
         </>
       ) : (
-        <>
-          <view className="handrail-top" />
-          <view className="handrail-post post-left" />
-          <view className="handrail-post post-right" />
-        </>
+        <image
+          className="handrail-artwork"
+          src={handrailIcon}
+          mode="aspectFit"
+        />
       )}
     </view>
   );
