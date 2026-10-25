@@ -19,6 +19,52 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
     private val scheme = if (BuildConfig.DEBUG) "lane-dev" else "lane"
     private val redirect = "$scheme://auth/callback"
     private var connectionIntent: JSONObject? = null // serial storage worker only
+    private data class Reauthentication(val session: LaneSession, val space: String, val binding: JSONObject)
+    private val reauth = java.util.concurrent.ConcurrentHashMap<String, Reauthentication>()
+    private var uiSession: LaneSession? = null
+    private var uiChallenge: String? = null
+    fun beginUiCall(session: LaneSession, space: String, method: String, request: JSONObject) {
+        uiSession = session
+        uiChallenge = if (method == "DeleteAccountData") ReauthenticationBinding.stripChallenge(request) else null
+        if (method == "BeginDataDeletion" || method == "ConnectSync") {
+            cancelSession(session)
+            reauth.entries.filter { it.value.space == space }.forEach { cancelReauthentication(it.value.session, it.key) }
+        }
+    }
+    fun endUiCall() { uiSession = null; uiChallenge = null }
+    fun isReauthenticationActive(session: LaneSession, challenge: String): Boolean =
+        reauth[challenge]?.session === session
+    fun cancelReauthentication(session: LaneSession, challenge: String) {
+        if (reauth[challenge]?.session === session) {
+            reauth.remove(challenge)
+            credentials.remove("reauth-$challenge")
+        }
+    }
+    fun cancelSession(session: LaneSession) {
+        reauth.entries.filter { it.value.session === session }.forEach { cancelReauthentication(session, it.key) }
+    }
+    private fun reauthenticationCallback(challenge: String) {
+        // All binding and proof changes run on the same worker as close, cancel and deletion.
+        runtime.execute {
+            try {
+                val pending = reauth[challenge] ?: error("No pending challenge")
+                val token = credentials.get(pending.space) ?: error("No credential")
+                ReauthenticationBinding.validate(pending.binding, pending.session.generation, pending.space,
+                    token, pending.binding.getString("mode"), challenge, System.currentTimeMillis())
+                require(pending.session.alive && pending.session.spaces.containsKey(pending.space))
+                require(credentials.get("reauth-$challenge") == null)
+                val result = transport.json("/auth/reauth/proof", JSONObject().put("challenge_id", challenge), accessToken(pending.space))
+                val proof = result.getString("reauth_proof")
+                require(proof.isNotEmpty())
+                // A destroyed view can invalidate the flow while network I/O is in progress.
+                require(pending.session.alive)
+                credentials.put("reauth-$challenge", JSONObject().put("proof", proof).put("createdAt", System.currentTimeMillis()))
+                runtime.reauthenticated(pending.session, pending.space, challenge)
+            } catch (_: Exception) {
+                runtime.publishHostError("UNAUTHENTICATED", "Deletion verification expired or was canceled; start again")
+            }
+        }
+    }
     private val clientId = BuildConfig.LANE_OAUTH_CLIENT_ID
 
     fun call(operation: Int, space: String, method: String, request: String): String = when (operation) {
@@ -69,6 +115,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
     }
     fun onDisconnect(space: String) {
+        reauth.entries.filter { it.value.space == space }.forEach { cancelReauthentication(it.value.session, it.key) }
         val token = credentials.take(space)
         // Erase locally even when offline; no subsequent worker may read this credential.
         WorkManager.getInstance(runtime.application).cancelUniqueWork("lane-sync-$space")
@@ -115,6 +162,11 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             val route = LaneLinks.parse(url, scheme)
             require(route?.kind == LaneLinks.Kind.AUTH)
             val parameters = LaneLinks.query(url)
+            if (parameters.containsKey("reauth_challenge")) {
+                require(parameters.keys == setOf("reauth_challenge"))
+                reauthenticationCallback(parameters.getValue("reauth_challenge"))
+                return@execute
+            }
             // Compare and consume under one lock; two callbacks cannot reuse an approval.
             val pending = credentials.consumeAuthorization(parameters.getValue("state"), System.currentTimeMillis())
             val token = transport.form("/oauth/token", mapOf("grant_type" to "authorization_code",
@@ -203,7 +255,34 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             "DeleteEvent", "ClaimEvent", "RenewEventLease", "ReleaseEventLease", "CompleteEvent", "ReopenEvent" -> "WebhookService"
             else -> "LaneService"
         }
-        return try { transport.rpc("lane.v1.$service", method, request, accessToken(space)) }
+        return try {
+            val body = JSONObject(request)
+            val session = uiSession
+            val identity = credentials.get(space) ?: error("No credential")
+            if (method == "DeleteAccountData") {
+                val challenge = uiChallenge ?: error("No challenge")
+                val pending = reauth[challenge] ?: error("No pending challenge")
+                require(session === pending.session && session.alive && session.spaces.containsKey(space))
+                require(!body.has("reauthProof") && !body.has("reauth_proof") && !body.has("challengeId"))
+                ReauthenticationBinding.validate(pending.binding, session.generation, space, identity,
+                    body.getString("mode"), challenge, System.currentTimeMillis())
+                require(body.getString("confirmedAccountId") == identity.getString("account_id"))
+                val secret = credentials.get("reauth-$challenge") ?: error("Verification required")
+                require(System.currentTimeMillis() - secret.getLong("createdAt") in 0..300000)
+                body.put("reauthProof", secret.getString("proof"))
+            }
+            val result = transport.rpc("lane.v1.$service", method, body.toString(), accessToken(space))
+            if (method == "BeginDataDeletion") {
+                require(session != null && session.alive && session.spaces.containsKey(space))
+                require(body.getString("confirmedAccountId") == identity.getString("account_id"))
+                val challenge = JSONObject(result).getString("challengeId")
+                require(challenge.isNotEmpty())
+                reauth[challenge] = Reauthentication(session, space, ReauthenticationBinding.create(
+                    session.generation, space, identity, body.getString("mode"), challenge, System.currentTimeMillis()))
+            }
+            if (method == "DeleteAccountData") cancelReauthentication(session!!, uiChallenge!!)
+            result
+        }
         catch (failure: LaneTransport.Failure) {
             val detail = ConnectErrors.detail(failure.body)
             if (detail != null) JSONObject().put("ok", false).put("error", detail
@@ -213,7 +292,9 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                 403 -> BridgeJson.error("FORBIDDEN", "This device cannot access the account")
                 else -> BridgeJson.error("DEPENDENCY_UNAVAILABLE", "Lane server request failed", true)
             }
-        } catch (_: Exception) { BridgeJson.error("ONLINE_REQUIRED", "Lane server is unavailable", true) }
+        } catch (_: IllegalArgumentException) { BridgeJson.error("FORBIDDEN", "Deletion verification does not match this request") }
+        catch (_: IllegalStateException) { BridgeJson.error("UNAUTHENTICATED", "Verify deletion again") }
+        catch (_: Exception) { BridgeJson.error("ONLINE_REQUIRED", "Lane server is unavailable", true) }
     }
     fun synchronize(stopped: () -> Boolean, selectedSpace: String? = null): Boolean {
         var success = true
@@ -286,6 +367,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                     }
                 } finally { runtime.submit { runtime.store().acquire(space, owner, 0) }.get() }
             } catch (failure: Exception) {
+                if (failure is LaneTransport.Failure && failure.status == 401 && recoverDeletion(space)) continue
                 success = false
                 val reason = when {
                     failure is LaneTransport.Failure && ConnectErrors.reason(failure.body) != null -> ConnectErrors.reason(failure.body)!!.removePrefix("ERROR_REASON_")
@@ -298,6 +380,30 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             }
         }
         return success
+    }
+    private fun recoverDeletion(space: String): Boolean {
+        val identity = credentials.get(space) ?: return false
+        val owner = uuid7()
+        var acquired = false
+        return try {
+            acquired = runtime.submit { BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired") }.get()
+            if (!acquired) return false
+            val pending = runtime.submit { BridgeJson.response(runtime.store().pending(space, owner)) }.get()
+            val epoch = pending.getString("epoch")
+            // This endpoint alone accepts an expired/revoked token bound to a recorded deletion.
+            val status = transport.deletionStatus(epoch, identity.getString("access_token"))
+            val pull = SyncBoundary.deletionStatus(status, identity, epoch)
+            runtime.submit {
+                require(credentials.get(space)?.optString("account_id") == identity.getString("account_id"))
+                if (pull != null) BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 1)
+                    .put("epoch", epoch).put("owner", owner).put("pull", pull).toString()))
+                else BridgeJson.response(runtime.store().syncFailure(space, "ERROR_REASON_STALE_EPOCH"))
+                runtime.pollSafely()
+            }.get()
+            if (pull != null) onDisconnect(space)
+            true
+        } catch (_: Exception) { false }
+        finally { if (acquired) runtime.submit { runtime.store().acquire(space, owner, 0) }.get() }
     }
     private fun startWatch(space: String) {
         if (!visible || !watching.add(space)) return

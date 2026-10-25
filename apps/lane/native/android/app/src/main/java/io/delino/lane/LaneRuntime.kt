@@ -18,6 +18,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 internal class LaneSession(val runtime: LaneRuntime, activity: MainActivity) {
+    val generation = LaneHostServices.uuid7()
     val activity = WeakReference(activity)
     var view: LynxView? = null // UI thread only
     @Volatile var alive = true
@@ -64,6 +65,7 @@ internal class LaneRuntime(val application: LaneApplication) {
         session.view = null
         background(session)
         execute {
+            host.cancelSession(session)
             allSessions.remove(session)
             session.spaces.keys.forEach { space ->
                 if (allSessions.none { it.spaces.containsKey(space) }) safe { store().release(space) }
@@ -86,6 +88,7 @@ internal class LaneRuntime(val application: LaneApplication) {
         result
     }
     fun close(session: LaneSession, space: String, callback: Callback) = operation(session, callback) {
+        host.cancelSession(session)
         session.spaces.remove(space)
         if (allSessions.none { it !== session && it.spaces.containsKey(space) }) store().release(space)
         else BridgeJson.success(sequence = sequences[space] ?: "0")
@@ -102,10 +105,21 @@ internal class LaneRuntime(val application: LaneApplication) {
             val request = wrapper.getJSONObject("request")
             LaneMethods.appRequest(method, request, device, Build.MODEL)
             if (method == "ConnectSync") host.captureConnectionIntent(space)
+            try { host.beginUiCall(session, space, method, request) }
+            catch (_: Exception) { host.endUiCall(); return@operation BridgeJson.error("INVALID_INPUT", "A native deletion challenge is required; proof fields are forbidden") }
             val result = try { engine(method, wrapper.toString()) }
-                finally { if (method == "ConnectSync") host.clearConnectionIntent() }
+                finally { host.endUiCall(); if (method == "ConnectSync") host.clearConnectionIntent() }
             if (JSONObject(result).optBoolean("ok")) {
                 when (method) {
+                    "ConnectSync" -> {
+                        val url = JSONObject(result).getJSONObject("response").getString("authorizationUrl")
+                        main.post {
+                            if (session.alive && LaneHostModule.isHttps(url)) try {
+                                session.activity.get()?.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(url)).addCategory(android.content.Intent.CATEGORY_BROWSABLE))
+                            } catch (_: Exception) { publishHostError("DEPENDENCY_UNAVAILABLE", "Open the connection URL to continue") }
+                        }
+                    }
                     "SetNotificationPreferences" -> {
                         safe { host.refreshPush(space); "{}" }
                     }
@@ -170,6 +184,7 @@ internal class LaneRuntime(val application: LaneApplication) {
     private val pendingLinks = java.util.ArrayDeque<LaneLinks.Route>() // UI thread only
     fun selectApprovedSpace(space: String) {
         require(LaneLinks.validId(space))
+        execute { allSessions.forEach { host.cancelSession(it) } }
         main.post {
             pendingLinks.addLast(LaneLinks.Route(LaneLinks.Kind.OPEN, "lane://open?spaceId=$space"))
             execute { sessions.firstOrNull { it.alive }?.let { session -> main.post { dispatchRoutes(session) } } }
@@ -192,6 +207,13 @@ internal class LaneRuntime(val application: LaneApplication) {
             if (route.kind != LaneLinks.Kind.OPEN) argument.putString("id", java.net.URI(route.url).path.removePrefix("/"))
             java.net.URI(route.url).rawQuery?.removePrefix("spaceId=")?.let { argument.putString("spaceId", it) }
             view.sendGlobalEvent("lane.openRoute", JavaOnlyArray.of(argument))
+        }
+    }
+    fun reauthenticated(session: LaneSession, space: String, challenge: String) {
+        main.post {
+            if (session.alive && session.spaces.containsKey(space) && host.isReauthenticationActive(session, challenge))
+                session.view?.sendGlobalEvent("lane.reauthenticated", JavaOnlyArray.of(
+                    JavaOnlyMap().apply { putString("challengeId", challenge) }))
         }
     }
     fun publishHostError(reason: String, message: String) = execute {

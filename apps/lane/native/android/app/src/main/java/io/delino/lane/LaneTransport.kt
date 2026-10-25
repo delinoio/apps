@@ -13,6 +13,20 @@ internal class LaneTransport(private val base: String = "https://lane.api.delino
     fun form(path: String, fields: Map<String, String>): JSONObject = JSONObject(exchange(path,
         fields.entries.joinToString("&") { "${encode(it.key)}=${encode(it.value)}" },
         "application/x-www-form-urlencoded", null))
+    fun deletionStatus(epoch: String, token: String): JSONObject {
+        val connection = connection("/auth/deletion-status?old_epoch=${encode(epoch)}", "application/json", token)
+        connection.requestMethod = "GET"
+        connection.doOutput = false
+        try {
+            val status = connection.responseCode
+            val response = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "{}"
+            if (status !in 200..299) throw Failure(status, response)
+            return JSONObject(response)
+        } finally { connection.disconnect() }
+    }
+    fun json(path: String, request: JSONObject, token: String): JSONObject =
+        JSONObject(exchange(path, request.toString(), "application/json", token))
     fun rpc(service: String, method: String, request: String, token: String): String =
         exchange("/$service/$method", request, "application/json", token)
     private fun connection(path: String, type: String, token: String?): HttpURLConnection {

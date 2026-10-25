@@ -13,6 +13,12 @@ import java.net.URI
 
 class LaneHostModule(context: Context, param: Any) : LynxModule(context, param) {
     private val session = param as LaneSession
+    @LynxMethod fun cancelReauthentication(challengeId: String, callback: Callback) {
+        session.runtime.execute {
+            session.runtime.host.cancelReauthentication(session, challengeId)
+            session.runtime.deliver(session, callback, "{\"ok\":true}")
+        }
+    }
     @LynxMethod fun copyText(text: String, callback: Callback) = run(callback) {
         val clipboard = session.runtime.application.getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("Lane", text))

@@ -34,6 +34,19 @@ class LaneTransportTest {
         assertFalse(connection.instanceFollowRedirects)
         assertTrue(connection.closed)
     }
+    @Test fun proofExchangeAndDeletionStatusKeepBearerNative() {
+        lateinit var connection: Connection
+        val transport = LaneTransport("https://unit.test") { Connection(it).also { connection = it } }
+        transport.json("/auth/reauth/proof", JSONObject().put("challenge_id", "challenge"), "private")
+        assertEquals("POST", connection.requestMethod)
+        assertEquals("challenge", JSONObject(connection.sent.toString("UTF-8")).getString("challenge_id"))
+        transport.deletionStatus("old", "expired")
+        assertEquals("GET", connection.requestMethod)
+        assertEquals("old_epoch=old", connection.url.query)
+        assertEquals("Bearer expired", connection.getRequestProperty("Authorization"))
+        assertEquals(0, connection.sent.size())
+        assertFalse(connection.instanceFollowRedirects)
+    }
     @Test fun transportFailureCannotBecomeASuccessfulEmptyResponse() {
         lateinit var connection: Connection
         val transport = LaneTransport("https://unit.test") { Connection(it, 401).also { connection = it } }

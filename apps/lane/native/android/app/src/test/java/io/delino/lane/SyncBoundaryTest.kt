@@ -24,6 +24,17 @@ class SyncBoundaryTest {
             }.reason)
         }
     }
+    @Test fun deletionStatusRequiresEveryPinnedFieldAndKnownMode() {
+        val identity = JSONObject().put("account_id", "account").put("device_id", "device")
+        fun status() = JSONObject().put("account_id", "account").put("device_id", "device")
+            .put("old_epoch", "old").put("new_epoch", "019bf000-0000-7000-8000-000000000001")
+            .put("mode", "DATA_DELETION_MODE_DELETE_EVERYWHERE").put("disconnected", true)
+        assertTrue(SyncBoundary.validatePull(SyncBoundary.deletionStatus(status(), identity, "old")!!, "account", true))
+        assertNull(SyncBoundary.deletionStatus(status().put("mode", "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL"), identity, "old"))
+        for (field in listOf("account_id", "device_id", "old_epoch", "mode", "new_epoch"))
+            assertThrows(SyncBoundary.Failure::class.java) { SyncBoundary.deletionStatus(status().put(field, "other"), identity, "old") }
+        assertThrows(SyncBoundary.Failure::class.java) { SyncBoundary.deletionStatus(status().put("disconnected", false), identity, "old") }
+    }
     @Test fun ordinaryPullIsNotAnAccountDeletion() {
         assertFalse(SyncBoundary.validatePull(JSONObject().put("changes", JSONArray()), "account-a", false))
     }

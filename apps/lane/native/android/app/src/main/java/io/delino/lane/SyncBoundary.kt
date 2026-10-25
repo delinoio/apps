@@ -6,6 +6,21 @@ import org.json.JSONObject
 /** Transport/account binding checks. Deletion and merge rules remain in the C++ engine. */
 internal object SyncBoundary {
     class Failure(val reason: String) : Exception("Lane synchronization requires attention")
+    fun deletionStatus(status: JSONObject, identity: JSONObject, oldEpoch: String): JSONObject? {
+        if (status.optString("account_id") != identity.getString("account_id") ||
+            status.optString("device_id") != identity.getString("device_id") ||
+            status.optString("old_epoch") != oldEpoch || !status.optBoolean("disconnected")) throw Failure("FORBIDDEN")
+        val epoch = status.getString("new_epoch")
+        if (!LaneLinks.validId(epoch) || epoch == oldEpoch) throw Failure("STALE_EPOCH")
+        return when (status.getString("mode")) {
+            "DATA_DELETION_MODE_DELETE_EVERYWHERE" -> JSONObject().put("nextCursor", "").put("hasMore", false)
+                .put("changes", org.json.JSONArray().put(JSONObject().put("deletion", JSONObject()
+                    .put("kind", "ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT").put("id", identity.getString("account_id"))
+                    .put("deletionVersionId", epoch))))
+            "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL" -> null
+            else -> throw Failure("STALE_EPOCH")
+        }
+    }
     fun validatePull(response: JSONObject, authenticatedAccount: String, changedEpoch: Boolean): Boolean {
         var accountDeletion = false
         val changes = response.optJSONArray("changes")
