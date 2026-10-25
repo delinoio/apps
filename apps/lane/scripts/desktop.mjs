@@ -234,6 +234,12 @@ try {
     console.info(JSON.stringify({ event: "lane_desktop_built" }));
   } else if (action === "install" || action === "uninstall") {
     const testRoot = process.env.LANE_NATIVE_INSTALL_TEST_ROOT;
+    // Relocating a manifest cannot isolate HKCU. Refuse Windows probes until
+    // registration has a separate test backend; never alter the user's key.
+    if (testRoot && process.platform === "win32")
+      throw new Error(
+        "Windows scratch installation is unavailable: Chrome registration cannot be isolated from HKCU.",
+      );
     if (
       testRoot &&
       (process.env.LANE_NATIVE_TESTING !== "1" || !isAbsolute(testRoot))

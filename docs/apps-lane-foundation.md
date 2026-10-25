@@ -334,9 +334,11 @@ permission-dialog, accessibility, Chrome or publication acceptance. CTest also
 provides the synthetic memory renderer and reauthentication tests; desktop
 controller tests run with `node --test native/desktop/realqa.test.mjs`.
 
-For isolated install/removal checks, set `LANE_NATIVE_TESTING=1` and an absolute
+For isolated macOS install/removal checks, set `LANE_NATIVE_TESTING=1` and an absolute
 `LANE_NATIVE_INSTALL_TEST_ROOT`. Only a native-testing package can enter this
-scratch installation path. Its application and Native Messaging registration
+scratch installation path. Windows rejects this test-root option for both install
+and uninstall before filesystem or registry changes, because relocating a
+manifest does not isolate HKCU. Its macOS application and Native Messaging registration
 remain under the scratch root. Use an explicitly identified test extension ID
 for these fixtures and record them separately from actual Chrome installation
 and published-extension acceptance. Production builds disable native test-root
