@@ -141,6 +141,7 @@ export type FixtureOptions = {
   prepareError?: boolean;
   connectGate?: Promise<void>;
   connectError?: boolean;
+  connectionsDenied?: boolean;
   cancelFailure?: "confirmed" | "uncertain";
   pollFailure?: "getExperiment" | "getCandidate";
 };
@@ -179,7 +180,12 @@ export function fixture(options: FixtureOptions = {}) {
             "Fixture: authority denied",
             Code.PermissionDenied,
           );
-        return { authorization: { spaceId, permissions } };
+        return {
+          authorization: {
+            spaceId,
+            permissions: options.permissions ?? permissions,
+          },
+        };
       },
     });
     router.service(P.ConnectionService, {
@@ -189,6 +195,11 @@ export function fixture(options: FixtureOptions = {}) {
           input: req,
           githubToken: ctx.requestHeader.get("x-github-token"),
         });
+        if (options.connectionsDenied)
+          throw new ConnectError(
+            "Fixture: connections denied",
+            Code.PermissionDenied,
+          );
         return { connections: options.empty ? [] : [connection] };
       },
       getConnection: () => ({ connection }),

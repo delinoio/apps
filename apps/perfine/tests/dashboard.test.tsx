@@ -1006,3 +1006,29 @@ it.each(["confirmed", "uncertain"] as const)(
     );
   },
 );
+
+it.each(["denied", "revoked"] as const)(
+  "hides cached repository metadata when access is %s",
+  async (reason) => {
+    const options: FixtureOptions = {};
+    const f = mount(
+      (f) => <App delcore={f.transport} signOut={() => {}} />,
+      options,
+    );
+    await selectSpace();
+    await selectRepository();
+    fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+    await screen.findByRole("button", { name: "View experiments" });
+    if (reason === "denied") options.connectionsDenied = true;
+    else options.permissions = [P.Permission.EXPERIMENT];
+    await f.client.invalidateQueries();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("option", { name: "example/parser" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "View experiments" }),
+    ).toBeNull();
+  },
+);

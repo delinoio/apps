@@ -171,7 +171,13 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
       refetchInterval: 30_000,
     },
   );
-  const connection = selected.error ? undefined : selected.data?.connection;
+  const mayReadConnections = may(Permission.READ) || may(Permission.MANAGE);
+  const visibleConnections =
+    mayReadConnections && connections.isSuccess ? connections.data : undefined;
+  const connection =
+    mayReadConnections && selected.isSuccess
+      ? selected.data?.connection
+      : undefined;
   function navigate(v: View) {
     setView(v);
     setExperiment("");
@@ -233,22 +239,23 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
             }}
           >
             <option value="">Select a repository</option>
-            {connection &&
-              !connections.data?.connections.some(
+            {visibleConnections &&
+              connection &&
+              !visibleConnections?.connections.some(
                 (c) => c.id === connection.id,
               ) && (
                 <option value={connection.id}>
                   {connection.repository?.owner}/{connection.repository?.name}
                 </option>
               )}
-            {connections.data?.connections.map((c) => (
+            {visibleConnections?.connections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.repository?.owner}/{c.repository?.name}
               </option>
             ))}
           </NativeSelect>
         </label>
-        {connections.data?.page?.nextCursor || cursors.length > 1 ? (
+        {visibleConnections?.page?.nextCursor || cursors.length > 1 ? (
           <Pager
             previous={
               cursors.length > 1
@@ -256,11 +263,11 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
                 : undefined
             }
             next={
-              connections.data?.page?.nextCursor
+              visibleConnections?.page?.nextCursor
                 ? () =>
                     setCursors((c) => [
                       ...c,
-                      connections.data!.page!.nextCursor,
+                      visibleConnections!.page!.nextCursor,
                     ])
                 : undefined
             }
@@ -282,7 +289,7 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
         <Repositories
           spaceId={spaceId}
           manage={may(Permission.MANAGE)}
-          connections={connections.data?.connections || []}
+          connections={visibleConnections?.connections || []}
           onSelect={(c) => {
             setConnection(c.id);
             navigate(View.Experiments);
