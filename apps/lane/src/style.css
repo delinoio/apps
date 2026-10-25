@@ -1,0 +1,322 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+page {
+  background-color: #fff;
+  font-size: 16px;
+}
+view,
+text,
+input,
+textarea,
+scroll-view {
+  box-sizing: border-box;
+}
+text {
+  color: #172033;
+  font-size: 0.9rem;
+}
+.app {
+  width: 100%;
+  height: 100%;
+  background-color: #fff;
+}
+.shell {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+}
+.navigation {
+  display: flex;
+  flex-direction: column;
+  width: 230px;
+  flex-shrink: 0;
+  padding: 24px 16px;
+  gap: 16px;
+  background-color: #f7f9fc;
+  border-right: 1px solid #e4e8ef;
+}
+.brand {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #075aff;
+  margin-bottom: 16px;
+}
+.nav-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.repo-nav {
+  flex: 1;
+  min-height: 0;
+}
+.workspace {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.task-workspace {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+}
+.task-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding: 24px;
+  gap: 12px;
+}
+.heading {
+  font-size: 1.25rem;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.muted {
+  color: #68758b;
+  font-size: 0.85rem;
+}
+.label {
+  font-weight: 550;
+  margin-bottom: 8px;
+}
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.between {
+  justify-content: space-between;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+  background-color: #fff;
+  flex-shrink: 0;
+}
+.button text {
+  font-size: 0.85rem;
+}
+.button.primary {
+  background-color: #075aff;
+  border-color: #075aff;
+}
+.button.primary text {
+  color: #fff;
+}
+.button.disabled {
+  background-color: #eef1f6;
+  opacity: 0.55;
+}
+.button:focus,
+.input:focus {
+  border: 2px solid #075aff;
+}
+.button:active {
+  background-color: #e7efff;
+}
+.field {
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+.input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #dce2ec;
+  border-radius: 7px;
+  padding: 10px;
+  font-size: 1rem;
+  color: #172033;
+  background-color: #fff;
+}
+.input.multiline {
+  height: 220px;
+}
+.rows {
+  flex: 1;
+  min-height: 0;
+}
+.task-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 64px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #e7ebf1;
+}
+.task-row .button {
+  flex: 1;
+  border-color: transparent;
+  align-items: flex-start;
+  background-color: transparent;
+}
+.task-row.selected {
+  background-color: #edf4ff;
+}
+.badge {
+  font-size: 0.75rem;
+  background-color: #e8f1ff;
+  color: #174e9b;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  width: 42%;
+  min-width: 340px;
+  border-left: 1px solid #e4e8ef;
+  padding: 24px;
+}
+.editor-body {
+  flex: 1;
+  min-height: 0;
+}
+.toolbar {
+  border-top: 1px solid #e7ebf1;
+  padding-top: 16px;
+}
+.notice {
+  padding: 12px;
+  background-color: #fff6df;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.empty {
+  padding: 32px 12px;
+}
+.page-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.section {
+  padding: 24px;
+}
+.card {
+  padding: 16px;
+  border: 1px solid #e4e8ef;
+  border-radius: 10px;
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #17203388;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.dialog {
+  width: 680px;
+  max-width: 100%;
+  height: 85%;
+  background-color: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+.dialog-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.paragraph {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+.code {
+  font-family: monospace;
+  background-color: #f0f3f8;
+}
+.link {
+  color: #075aff;
+}
+.markdown-image {
+  width: 100%;
+  height: 240px;
+}
+.mobile .shell {
+  flex-direction: column-reverse;
+}
+.mobile .navigation {
+  width: 100%;
+  padding: 8px;
+  border-top: 1px solid #e4e8ef;
+}
+.mobile .brand {
+  display: none;
+}
+.mobile .nav-items {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  gap: 4px;
+}
+.mobile .nav-items .button {
+  padding: 8px 6px;
+  border-color: transparent;
+  min-height: 44px;
+}
+.mobile .workspace {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.mobile .task-list {
+  padding: 16px;
+}
+.mobile .editor {
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border-left: 0;
+}
+.mobile .dialog {
+  padding: 16px;
+}
+.bold {
+  font-weight: 700;
+}
+.italic {
+  font-style: italic;
+}
+.navigation .button {
+  align-items: flex-start;
+  justify-content: flex-start;
+  border-color: transparent;
+  background-color: transparent;
+}
+.navigation .button.primary {
+  background-color: #e8f0fe;
+}
+.navigation .button.primary text {
+  color: #075aff;
+}
+.task-row .button {
+  justify-content: flex-start;
+}
+.task-list .field {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}

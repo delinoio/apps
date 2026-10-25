@@ -10,7 +10,7 @@
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm typecheck && pnpm build",
+    "test": "pnpm typecheck && node --experimental-transform-types --test tests/*.test.ts && pnpm build",
     "build:desktop": "pnpm build && node scripts/native.mjs desktop build",
     "build:android": "pnpm build && node scripts/native.mjs android build",
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
@@ -18,7 +18,12 @@
   },
   "dependencies": {
     "@lynx-js/react": "0.129.0",
-    "@lynx-js/web-core": "0.26.5"
+    "@lynx-js/web-core": "0.26.5",
+    "@delino/protos": "workspace:*",
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0",
+    "markdown-it": "14.1.0"
   },
   "devDependencies": {
     "@lynx-js/types": "4.3.0",
@@ -26,6 +31,8 @@
     "@lynx-js/rspeedy": "0.18.3",
     "@types/node": "24.19.2",
     "@types/react": "19.2.14",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/markdown-it": "14.1.2",
+    "esbuild": "0.28.2"
   }
 }

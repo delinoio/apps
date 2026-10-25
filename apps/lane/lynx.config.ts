@@ -8,7 +8,25 @@ const require = createRequire(import.meta.url);
 const runtime = dirname(require.resolve("@lynx-js/web-core/package.json"));
 export default defineConfig({
   source: { entry: { main: "./src/index.tsx" } },
-  plugins: [pluginReactLynx()],
+  plugins: [
+    pluginReactLynx(),
+    {
+      name: "lane-online-host",
+      setup(api) {
+        api.onAfterBuild(async () => {
+          const { build } = await import("esbuild");
+          await build({
+            entryPoints: ["web/online.ts"],
+            bundle: true,
+            format: "esm",
+            platform: "browser",
+            target: "es2022",
+            outfile: "dist/online.js",
+          });
+        });
+      },
+    },
+  ],
   environments: {
     lynx: {},
     web: {
@@ -19,6 +37,10 @@ export default defineConfig({
           { from: resolve(runtime, "Notice.txt"), to: "runtime/Notice.txt" },
           { from: "web/index.html", to: "index.html" },
           { from: "web/host.js", to: "host.js" },
+          { from: "web/accessibility.js", to: "accessibility.js" },
+          { from: "web/online-module.js", to: "online-module.js" },
+          { from: "web/host-module.js", to: "host-module.js" },
+          { from: "web/push-worker.js", to: "push-worker.js" },
           { from: "../../LICENSE", to: "." },
           { from: "../../NOTICE", to: "." },
         ],

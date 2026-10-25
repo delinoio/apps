@@ -8,7 +8,8 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["@lynx-js/types", "@lynx-js/react", "node"]
+    "types": ["@lynx-js/types", "@lynx-js/react", "node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "*.config.ts"]
 }
