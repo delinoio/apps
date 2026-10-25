@@ -152,3 +152,22 @@ fn captured_native_profiles_are_eligible_without_rewriting() {
         assert!(content_allowed(bytes, RAW).is_ok());
     }
 }
+
+#[test]
+fn structured_artifacts_reject_duplicate_keys_at_every_depth() {
+    for bytes in [
+        br#"{"case":["fn private_implementation() {}"],"case":["src/hot.rs"]}"#.as_slice(),
+        br#"{"outer":[{"case":1,"ca\u0073e":2}]}"#,
+    ] {
+        for kind in [
+            "ARTIFACT_KIND_PROFILE_SUMMARY",
+            "ARTIFACT_KIND_MEASUREMENTS",
+            "ARTIFACT_KIND_CORRECTNESS_RESULTS",
+            "ARTIFACT_KIND_ENGINE_BUNDLE",
+        ] {
+            assert!(content_allowed(bytes, kind).is_err());
+        }
+        assert!(content_allowed(bytes, RAW).is_ok());
+    }
+    assert!(content_allowed(br#"[{"case":1},{"case":2}]"#, "ARTIFACT_KIND_MEASUREMENTS").is_ok());
+}

@@ -63,7 +63,13 @@ impl<'de> Visitor<'de> for Inspect {
         Ok(())
     }
     fn visit_map<A: MapAccess<'de>>(self, mut a: A) -> std::result::Result<(), A::Error> {
+        let mut keys = std::collections::BTreeSet::new();
         while let Some(k) = a.next_key::<String>()? {
+            // Structured observations must describe every original byte; decoding
+            // duplicate keys into Value would silently discard earlier content.
+            if !self.raw && !keys.insert(k.clone()) {
+                return Err(de::Error::custom("duplicate structured artifact key"));
+            }
             self.visit_str::<A::Error>(&k)?;
             if !self.raw
                 && matches!(

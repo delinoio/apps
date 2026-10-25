@@ -134,7 +134,7 @@ The versioned uncertainty and frozen configuration mapping is defined in the [pr
 
 Confirmed deleted spaces release active repository bindings even when they contain no experiments or preparations. Connection records remain available for cancellation and object-cleanup retries. Blocked spaces retain their bindings, including while execution maintenance cancels queued or running Actions. Authority loss alone does not release the repository reservation; explicit disconnection or confirmed deletion owns that transition.
 
-Structured uploads accept only the exact engine bundle and normalized artifacts inspected through its verified run references. Unreferenced structured files are rejected, including for baseline-only uploads; declaring that a file contains no source snippets does not bypass this check.
+Structured uploads reject duplicate object keys at every depth before decoding observations. Structured uploads accept only the exact engine bundle and normalized artifacts inspected through its verified run references. Unreferenced structured files are rejected, including for baseline-only uploads; declaring that a file contains no source snippets does not bypass this check.
 
 Execution maintenance selects at most 100 connections by their persisted last-check time, oldest first. Connections with unavailable GitHub access retain their run identities but yield later batches to other connections so authority checks and cancellation are not starved.
 
