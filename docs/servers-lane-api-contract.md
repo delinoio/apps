@@ -180,3 +180,50 @@ history, task moves and deletion precedence. Native saves commit locally before
 optional image upload. Pending synchronization must not be reported as failed
 local saving. Unsupported schema/format versions must be refused before writes.
 These requirements do not establish implementation or release acceptance.
+
+### Private image persistence and operations
+
+Apply the forward capture migration explicitly. It adds URL-connection entities,
+account-scoped immutable attachment manifests, temporary uploads and a durable
+object-deletion queue. Existing immutable envelopes and replay fingerprints are
+not rewritten. A server binary that predates this migration fails schema checks.
+Format 2 synchronization refuses format 1 transport clients.
+
+Configure `LANE_R2_ENDPOINT`, `LANE_R2_BUCKET`, `LANE_R2_ACCESS_KEY_ID` and
+`LANE_R2_SECRET_ACCESS_KEY` with a private R2 bucket and a bucket-scoped S3 token.
+Startup requires this configuration. Disable bucket public access. Browser CORS
+must allow the supported Lane origin, PUT/GET and the returned request headers;
+never use credentialed wildcard origins. The endpoint uses the R2 S3 API and
+Signature V4 with region `auto`, as specified in the
+[R2 signed URL documentation](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+
+Begin-upload authorizes the account, task, immutable manifest and epoch under the
+account lock. It signs a five-minute PUT to a temporary object, including the
+expected Content-Length and image/png Content-Type. Completion downloads at most
+the manifest byte count, validates the final PNG, and publishes a separate
+immutable object. The client never receives PUT access to the immutable object.
+An old PUT therefore cannot change an already published image. Download access
+expires after one minute. Previously issued download capabilities remain usable
+until expiry or provider deletion; no new access is issued after owning deletion.
+
+Inline CreateCaptureTask writes the task, manifests, replay receipt and pending
+PNG bytes in one PostgreSQL transaction. The worker publishes pending images to
+R2 and clears the database byte copy after success. Failed transfers remain
+pending and retry without a second task. MAX_ITEM_BYTES applies to each new image
+and task metadata. It also bounds decoder working allocations and the expanded
+pixel byte count. Decoder-limit failures return ITEM_TOO_LARGE for that item;
+unrelated sync items continue. Already validated pending bytes remain eligible
+for publication after a limit reduction. The limit does not restrict existing
+downloads or deletion. No new
+image-count, retention or local-storage quota is introduced.
+
+History retains image bytes until task deletion. Repository deletion selects the
+current task owner, so moving a task protects its images from deletion of its
+former repository. Repository deletion also removes URL rules. Account clearing
+queues all provider objects before erasing manifests. Garbage work survives
+account clearing and provider outages. Temporary keys are queued when allocated;
+the worker deletes them after the PUT capability expires, including abandoned
+and completed uploads. Failed provider work remains in the queue. Inspect queue
+counts without exporting PNG bytes, signed URLs or capture metadata. Restore
+provider connectivity and valid bucket credentials to drain pending work; do not
+purge pending rows as a recovery shortcut.

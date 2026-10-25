@@ -63,7 +63,7 @@ impl Server {
         account_lock(&mut tx, &principal.account_id).await?;
         self.auth.authorize(&mut tx, &principal).await?;
         if service == "SyncService" && method == "PullChanges" {
-            if q["formatVersion"].as_u64() != Some(1) {
+            if q["formatVersion"].as_u64() != Some(2) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::InvalidArgument,
                     8,
@@ -76,6 +76,16 @@ impl Server {
             }
         }
         let output = match service {
+            "CaptureService" => {
+                crate::capture::dispatch(
+                    &mut tx,
+                    &principal,
+                    method,
+                    &q,
+                    self.config.max_item_bytes,
+                )
+                .await?
+            }
             "LaneService" => {
                 crate::entities::dispatch(
                     &mut tx,
@@ -141,7 +151,7 @@ impl Server {
                 self.config.max_item_bytes,
             )
             .await?;
-            if q["formatVersion"].as_u64() != Some(1) {
+            if q["formatVersion"].as_u64() != Some(2) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::FailedPrecondition,
                     8,
@@ -217,7 +227,7 @@ impl Server {
             .await
         {
             Ok(output) => {
-                if service == "LaneService"
+                if matches!(service, "LaneService" | "CaptureService")
                     && output["result"]["result"] == "RESULT_KIND_CONFLICT"
                     && !method.starts_with("Get")
                     && !method.starts_with("List")
@@ -833,5 +843,121 @@ impl SyncService for Server {
             }
         };
         Ok(Response::stream(stream).with_header("cache-control", "no-store"))
+    }
+}
+
+#[allow(refining_impl_trait)]
+impl CaptureService for Server {
+    async fn create_capture_task(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreateCaptureTaskRequest>,
+    ) -> ServiceResult<CreateCaptureTaskResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CreateCaptureTask",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn get_attachment(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, GetAttachmentRequest>,
+    ) -> ServiceResult<GetAttachmentResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "GetAttachment",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn list_url_connections(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, ListURLConnectionsRequest>,
+    ) -> ServiceResult<ListURLConnectionsResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "ListURLConnections",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn create_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreateURLConnectionRequest>,
+    ) -> ServiceResult<CreateURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CreateURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn save_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, SaveURLConnectionRequest>,
+    ) -> ServiceResult<SaveURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "SaveURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn delete_url_connection(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, DeleteURLConnectionRequest>,
+    ) -> ServiceResult<DeleteURLConnectionResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "DeleteURLConnection",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn begin_attachment_upload(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, BeginAttachmentUploadRequest>,
+    ) -> ServiceResult<BeginAttachmentUploadResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "BeginAttachmentUpload",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn complete_attachment_upload(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CompleteAttachmentUploadRequest>,
+    ) -> ServiceResult<CompleteAttachmentUploadResponse> {
+        self.handle(
+            ctx,
+            "CaptureService",
+            "CompleteAttachmentUpload",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
     }
 }

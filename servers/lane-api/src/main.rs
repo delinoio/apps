@@ -38,6 +38,7 @@ async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
     let config = Config::from_env()?;
+    let attachments = lane_api::capture::ObjectStore::from_env()?;
     let auth = Arc::new(Auth::from_env(db.clone()).await?);
     let push = Arc::new(Push::from_env(db.clone())?);
     let webhooks = Arc::new(WebhookConfig::from_env()?);
@@ -54,6 +55,12 @@ async fn run() -> anyhow::Result<()> {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         loop {
             tick.tick().await;
+            if lane_api::capture::tick(&server.db, &attachments)
+                .await
+                .is_err()
+            {
+                tracing::warn!(category = "attachments", "attachment work remains pending");
+            }
             if server.push.tick().await.is_err() {
                 tracing::warn!(category = "push", "push work remains pending");
             }

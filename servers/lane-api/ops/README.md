@@ -9,6 +9,7 @@ Build the owning server OCI artifact and retain its source revision. Provision P
 Use the server's `.env.example` as the authoritative configuration-name inventory. Inject secrets through the deployment secret manager; never commit a real environment file. Required settings include:
 
 - `LISTEN` (development `127.0.0.1:46326`; use the private container interface for a container), `LANE_PUBLIC_URL`, `WEB_ORIGIN`, and `DATABASE_URL`.
+- Private image storage: `LANE_R2_ENDPOINT`, `LANE_R2_BUCKET`, `LANE_R2_ACCESS_KEY_ID`, and `LANE_R2_SECRET_ACCESS_KEY`. Use a bucket-scoped R2 token and disable public bucket access. See the [server attachment contract](../../../docs/servers-lane-api-contract.md#private-image-persistence-and-operations) for CORS, transfer expiry, decoder limits, deletion queues and recovery.
 - `LANE_METRICS_TOKEN`, at least 32 characters. The metrics endpoint requires Bearer authentication. Put the same value in the separate Prometheus secret file; never place it in a scrape URL or dashboard.
 - Positive `MAX_ITEM_BYTES`, `MAX_WEBHOOK_BYTES`, `REQUESTS_PER_MINUTE`, `WEBHOOK_REQUESTS_PER_MINUTE`, and `AUTH_REQUESTS_PER_MINUTE`. There are no defaults. Select values before startup; missing/invalid limits must fail startup. These limits do not apply to standalone local input.
 - `LOGTO_ISSUER`, `LANE_LOGTO_CLIENT_ID`, `LANE_LOGTO_CLIENT_SECRET`, `DELCORE_RESOURCE`, `DELCORE_URL`, `LOGTO_TOKEN_URL`, and M2M `CLIENT_ID`/`CLIENT_SECRET`. The confidential Lane client's callback is the exact public URL plus `/auth/callback`.

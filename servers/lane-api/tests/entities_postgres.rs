@@ -33,6 +33,7 @@ impl Fixture {
         for (env, name) in [
             ("LANE_WEBHOOK_MIGRATION", "00003_webhooks.sql"),
             ("LANE_PUSH_MIGRATION", "00004_push.sql"),
+            ("LANE_CAPTURE_MIGRATION", "00006_captures.sql"),
         ] {
             let path = std::env::var(env)
                 .map(std::path::PathBuf::from)
@@ -87,7 +88,7 @@ impl Fixture {
     }
     async fn sync(&mut self, method: &str, mut q: Value, max: usize) -> Result<Value> {
         if q.get("formatVersion").is_none() {
-            q["formatVersion"] = json!(1);
+            q["formatVersion"] = json!(2);
         }
         if q.get("epoch").is_none() {
             q["epoch"] = json!(self.epoch);
@@ -510,7 +511,7 @@ async fn limits_epochs_cursors_identity_reservation_and_atomic_rollback() {
         17
     );
     assert_eq!(
-        f.sync("PullChanges", json!({"formatVersion":2}), 1)
+        f.sync("PullChanges", json!({"formatVersion":99}), 1)
             .await
             .unwrap_err()
             .reason,
@@ -596,5 +597,346 @@ async fn repository_conflicts_reserve_urls_and_mapping_preserves_immutable_versi
     .await
     .unwrap();
     assert_eq!(stored, local);
+    f.close().await;
+}
+
+impl Fixture {
+    async fn capture(&mut self, method: &str, q: Value) -> Result<Value> {
+        let mut tx = self.db.begin().await?;
+        account_lock(&mut tx, &self.p.account_id).await?;
+        let result = lane_api::capture::dispatch(&mut tx, &self.p, method, &q, usize::MAX).await;
+        if result.is_ok() {
+            tx.commit().await?;
+        } else {
+            tx.rollback().await?;
+        }
+        result
+    }
+}
+fn image() -> Value {
+    use base64::Engine;
+    let mut png = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&[0, 0, 0, 255])
+            .unwrap();
+    }
+    json!({"capture":{"attachmentId":id(),"width":1,"height":1,"byteSize":png.len().to_string(),"sha256":lane_api::hash(&png),"pageUrl":"https://example.com/private?data","cssSelector":"<data>"},"png":base64::engine::general_purpose::STANDARD.encode(png)})
+}
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn realqa_atomic_capture_history_move_ownership_and_deletion() {
+    let mut f = Fixture::new().await;
+    let source = id();
+    let destination = id();
+    let task = id();
+    f.repo(&source, "https://example.com/old").await;
+    f.repo(&destination, "https://example.com/new").await;
+    let image = image();
+    let q = json!({"id":task,"meta":{"requestId":id()},"repositoryId":source,"title":"Capture","description":"Problem","images":[image]});
+    let mut invalid = q.clone();
+    invalid["images"][0]["capture"]["sha256"] = json!("0".repeat(64));
+    assert_eq!(
+        f.capture("CreateCaptureTask", invalid)
+            .await
+            .unwrap_err()
+            .reason,
+        1
+    );
+    assert_eq!(f.count("lane_attachments").await, 0);
+    assert_eq!(f.count("lane_entities").await, 2);
+    let created = f.capture("CreateCaptureTask", q.clone()).await.unwrap();
+    assert_eq!(created["result"]["version"]["formatVersion"], 2);
+    assert_eq!(created["result"]["version"]["task"]["prompt"], "Problem");
+    assert_eq!(
+        f.capture("CreateCaptureTask", q.clone()).await.unwrap()["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(f.count("lane_attachments").await, 1);
+    let attachment = image["capture"]["attachmentId"].clone();
+    let get = json!({"taskId":task,"attachmentId":attachment});
+    assert_eq!(
+        f.capture("GetAttachment", get.clone()).await.unwrap()["state"],
+        "ATTACHMENT_STATE_WAITING_FOR_SYNC"
+    );
+    let other = id();
+    f.task(&other, &source).await;
+    assert_eq!(
+        f.capture(
+            "GetAttachment",
+            json!({"taskId":other,"attachmentId":attachment})
+        )
+        .await
+        .unwrap_err()
+        .reason,
+        2
+    );
+    let mut body = created["result"]["version"]["task"].clone();
+    body["captures"] = json!([]);
+    body["repositoryId"] = json!(destination);
+    let saved=f.call("SaveTask",json!({"id":task,"meta":{"requestId":id()},"expectedVersionId":created["result"]["version"]["versionId"],"task":body})).await.unwrap();
+    assert_eq!(f.count("lane_attachments").await, 1);
+    let history = f
+        .call("ListHistory", json!({"id":task,"promptsOnly":true}))
+        .await
+        .unwrap();
+    assert_eq!(history["versions"].as_array().unwrap().len(), 2);
+    let restored=f.call("RestorePrompt",json!({"id":task,"meta":{"requestId":id()},"expectedVersionId":saved["result"]["version"]["versionId"],"sourceVersionId":created["result"]["version"]["versionId"]})).await.unwrap();
+    assert_eq!(
+        restored["result"]["version"]["task"]["captures"][0],
+        image["capture"]
+    );
+    assert_eq!(
+        restored["result"]["version"]["task"]["repositoryId"],
+        destination
+    );
+    f.call(
+        "DeleteRepository",
+        json!({"id":source,"meta":{"requestId":id()}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.count("lane_attachments").await, 1);
+    f.call(
+        "DeleteRepository",
+        json!({"id":destination,"meta":{"requestId":id()}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.count("lane_attachments").await, 0);
+    assert_eq!(
+        f.capture("GetAttachment", get).await.unwrap()["state"],
+        "ATTACHMENT_STATE_DELETED"
+    );
+    assert_eq!(
+        f.capture("CreateCaptureTask", q).await.unwrap()["result"]["result"],
+        "RESULT_KIND_DELETED"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_attachment_garbage")
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    f.close().await;
+}
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn realqa_rule_conflicts_duplicates_cascade_and_sync_negotiation() {
+    let mut f = Fixture::new().await;
+    let repo = id();
+    f.repo(&repo, "https://example.com/repo").await;
+    let rule = id();
+    let connection =
+        json!({"prefix":"HTTPS://EXAMPLE.COM:443/app/?private#anchor","repositoryId":repo});
+    let created = f
+        .capture(
+            "CreateURLConnection",
+            json!({"id":rule,"meta":{"requestId":id()},"connection":connection}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        created["result"]["version"]["urlConnection"]["prefix"],
+        "https://example.com/app"
+    );
+    assert_eq!(
+        f.capture(
+            "CreateURLConnection",
+            json!({"id":id(),"meta":{"requestId":id()},"connection":connection})
+        )
+        .await
+        .unwrap_err()
+        .reason,
+        6
+    );
+    for prefix in ["https://example.com/a", "https://example.com/b"] {
+        f.capture("SaveURLConnection",json!({"id":rule,"meta":{"requestId":id()},"expectedVersionId":created["result"]["version"]["versionId"],"connection":{"prefix":prefix,"repositoryId":repo}})).await.unwrap();
+    }
+    let listed = f.capture("ListURLConnections", json!({})).await.unwrap();
+    assert_eq!(listed["items"][0]["result"], "RESULT_KIND_CONFLICT");
+    let hs = f.heads(&rule).await;
+    f.call("ResolveConflict",json!({"id":rule,"meta":{"requestId":id()},"expectedHeadIds":hs,"resolved":{"urlConnection":{"prefix":"https://example.com/c","repositoryId":repo}}})).await.unwrap();
+    assert_eq!(
+        f.sync("GetSyncInfo", json!({}), 1).await.unwrap()["formatVersion"],
+        2
+    );
+    assert_eq!(
+        f.sync("PullChanges", json!({"formatVersion":1}), 1)
+            .await
+            .unwrap_err()
+            .reason,
+        8
+    );
+    f.call(
+        "DeleteRepository",
+        json!({"id":repo,"meta":{"requestId":id()}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        f.capture("ListURLConnections", json!({})).await.unwrap()["items"],
+        json!([])
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn format1_save_receipt_and_outbox_replay_survive_current_proto_defaults() {
+    use delino_protocol::lane::v1::{SaveTaskRequest, SyncMutation};
+    let mut f = Fixture::new().await;
+    let repo = id();
+    let task = id();
+    f.repo(&repo, "https://example.com/legacy").await;
+    let mut initial = f.task(&task, &repo).await;
+    initial["formatVersion"] = json!(1);
+    // These are the exact schema-1 envelope and RFC 8785 fingerprint, without a captures field.
+    sqlx::query("UPDATE lane_versions SET envelope=$3 WHERE account_id=$1 AND version_id=$2")
+        .bind(&f.p.account_id)
+        .bind(string(&initial, "versionId"))
+        .bind(&initial)
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE lane_version_identities SET fingerprint=$3 WHERE account_id=$1 AND version_id=$2",
+    )
+    .bind(&f.p.account_id)
+    .bind(string(&initial, "versionId"))
+    .bind(lane_api::hash(
+        serde_jcs::to_string(&initial).unwrap().as_bytes(),
+    ))
+    .execute(&mut f.db)
+    .await
+    .unwrap();
+    let request = id();
+    let mut old_q = json!({"id":task,"meta":{"requestId":request,"origin":f.p.origin()},"expectedVersionId":initial["versionId"],"task":initial["task"]});
+    old_q["task"]["title"] = json!("Legacy saved title");
+    let mut saved = initial.clone();
+    saved["versionId"] = json!(id());
+    saved["parentVersionIds"] = json!([initial["versionId"]]);
+    saved["task"] = old_q["task"].clone();
+    let old_response = json!({"result":{"result":"RESULT_KIND_APPLIED","version":saved,"alternatives":[],"correlationId":""}});
+    let fingerprint = lane_api::hash(serde_jcs::to_string(&old_q).unwrap().as_bytes());
+    sqlx::query("INSERT INTO lane_entity_receipts(account_id,method,request_id,fingerprint,entity_id,response) VALUES($1,'SaveTask',$2,$3,$4,$5)").bind(&f.p.account_id).bind(&request).bind(&fingerprint).bind(&task).bind(&old_response).execute(&mut f.db).await.unwrap();
+    let current: SaveTaskRequest = serde_json::from_value(old_q).unwrap();
+    let mut current = serde_json::to_value(current).unwrap();
+    // Prost's defaults=true adapter emits repeated captures even when absent in the old bytes.
+    current["task"]["captures"] = json!([]);
+    let replay = f.call("SaveTask", current).await.unwrap();
+    assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+    assert_eq!(replay["result"]["version"], saved);
+    let retained: String = sqlx::query_scalar(
+        "SELECT fingerprint FROM lane_entity_receipts WHERE account_id=$1 AND request_id=$2",
+    )
+    .bind(&f.p.account_id)
+    .bind(&request)
+    .fetch_one(&mut f.db)
+    .await
+    .unwrap();
+    assert_eq!(retained, fingerprint);
+    let mutation = mutation(initial.clone());
+    let typed: SyncMutation = serde_json::from_value(mutation).unwrap();
+    let mut normalized = serde_json::to_value(typed).unwrap();
+    normalized["version"]["task"]["captures"] = json!([]);
+    let imported = f.push(normalized).await.unwrap();
+    assert_eq!(
+        imported["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    let retained: Value = sqlx::query_scalar(
+        "SELECT envelope FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+    )
+    .bind(&f.p.account_id)
+    .bind(string(&initial, "versionId"))
+    .fetch_one(&mut f.db)
+    .await
+    .unwrap();
+    assert_eq!(retained, initial);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn fresh_request_historical_replay_cannot_delete_moved_capture_or_url_rule() {
+    let mut f = Fixture::new().await;
+    let source = id();
+    let destination = id();
+    let task = id();
+    let rule = id();
+    f.repo(&source, "https://example.com/source").await;
+    f.repo(&destination, "https://example.com/destination")
+        .await;
+    let image = image();
+    let created=f.capture("CreateCaptureTask",json!({"id":task,"meta":{"requestId":id()},"repositoryId":source,"title":"Capture","description":"Original","images":[image]})).await.unwrap();
+    let task_old = created["result"]["version"].clone();
+    let rule_old=f.capture("CreateURLConnection",json!({"id":rule,"meta":{"requestId":id()},"connection":{"prefix":"https://example.com/app","repositoryId":source}})).await.unwrap()["result"]["version"].clone();
+    let mut moved = task_old["task"].clone();
+    moved["repositoryId"] = json!(destination);
+    f.call("SaveTask",json!({"id":task,"meta":{"requestId":id()},"expectedVersionId":task_old["versionId"],"task":moved})).await.unwrap();
+    f.capture("SaveURLConnection",json!({"id":rule,"meta":{"requestId":id()},"expectedVersionId":rule_old["versionId"],"connection":{"prefix":"https://example.com/app","repositoryId":destination}})).await.unwrap();
+    f.call(
+        "DeleteRepository",
+        json!({"id":source,"meta":{"requestId":id()}}),
+    )
+    .await
+    .unwrap();
+    let before: Vec<u8> = sqlx::query_scalar(
+        "SELECT pending_png FROM lane_attachments WHERE account_id=$1 AND id=$2",
+    )
+    .bind(&f.p.account_id)
+    .bind(string(&image["capture"], "attachmentId"))
+    .fetch_one(&mut f.db)
+    .await
+    .unwrap();
+    // Use new request IDs, so the immutable-version replay branch must handle both.
+    for old in [task_old.clone(), rule_old.clone()] {
+        let replay = f.push(mutation(old)).await.unwrap();
+        assert_eq!(
+            replay["results"][0]["result"]["result"],
+            "RESULT_KIND_REPLAYED"
+        );
+    }
+    let task_now = f.call("GetTask", json!({"id":task})).await.unwrap();
+    assert_eq!(task_now["result"]["result"], "RESULT_KIND_APPLIED");
+    assert_eq!(
+        task_now["result"]["version"]["task"]["repositoryId"],
+        destination
+    );
+    assert_eq!(
+        task_now["result"]["version"]["task"]["captures"][0],
+        image["capture"]
+    );
+    let rules = f.capture("ListURLConnections", json!({})).await.unwrap();
+    assert_eq!(rules["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        rules["items"][0]["version"]["urlConnection"]["repositoryId"],
+        destination
+    );
+    for (entity, old) in [(&task, &task_old), (&rule, &rule_old)] {
+        let history = f.call("ListHistory", json!({"id":entity})).await.unwrap();
+        assert_eq!(history["versions"].as_array().unwrap().len(), 2);
+        assert!(history["versions"].as_array().unwrap().contains(old));
+    }
+    let after: Vec<u8> = sqlx::query_scalar(
+        "SELECT pending_png FROM lane_attachments WHERE account_id=$1 AND id=$2",
+    )
+    .bind(&f.p.account_id)
+    .bind(string(&image["capture"], "attachmentId"))
+    .fetch_one(&mut f.db)
+    .await
+    .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(f.count("lane_attachment_identities").await, 1);
+    let garbage: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_attachment_garbage")
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+    assert_eq!(garbage, 0);
     f.close().await;
 }

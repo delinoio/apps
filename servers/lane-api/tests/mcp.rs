@@ -270,7 +270,7 @@ async fn catalog_matches_all_canonical_management_methods_and_dispatches_typed_r
         }
     }
     assert_eq!(tools.len(), expected.len());
-    assert_eq!(tools.len(), 35);
+    assert_eq!(tools.len(), 43);
     for (service, method) in expected {
         let snake = method
             .chars()
@@ -284,7 +284,7 @@ async fn catalog_matches_all_canonical_management_methods_and_dispatches_typed_r
                 s.chars().collect::<Vec<_>>()
             })
             .collect::<String>();
-        let name = format!("lane_{snake}");
+        let name = format!("lane_{snake}").replace("_u_r_l_", "_url_");
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
         assert!(

@@ -233,3 +233,27 @@ Conflicted rules cannot participate in automatic selection.
 Existing field numbers remain stable. Format 1 clients must refuse format 2
 stores and synchronization; they cannot round-trip these extended snapshots.
 Schema migration and synchronization upgrades require coordinated consumers.
+
+### Private attachment transfer
+
+Synchronize task versions before transferring their PNG bytes. The format 2
+transport accepts historical immutable format 1 envelopes but rejects format 1
+transport requests. Historical format 1 envelopes cannot contain captures or URL
+connections. New server versions use format 2.
+
+`BeginAttachmentUpload(task_id, attachment_id, epoch)` returns `upload_id`,
+`upload_url`, `expires_at`, required `headers` and `state`. PUT the exact final PNG
+with those headers, then call
+`CompleteAttachmentUpload(task_id, attachment_id, upload_id, epoch)`. Completion
+validates byte count, digest, PNG structure and decoded image data before marking
+the attachment available. An available response makes retries safe without a
+second PUT. Expired uploads require a new begin call. Both calls require the
+current account epoch and the attachment's owning task. Signed transfer URLs are
+short-lived capabilities; do not forward Lane authorization headers to R2.
+
+The immutable manifest binds attachment ID, owner task, dimensions, digest and
+byte count. Browser metadata remains part of each task version. Removing a
+reference from the current version preserves bytes required by history. Moving
+a task preserves its attachment ownership. Task deletion and account deletion
+remove access and queue provider deletion. Retrieval of a pending manifest
+returns `WAITING_FOR_SYNC`; it must not be displayed as a failed local save.
