@@ -119,7 +119,6 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Cli contract](cmds-perfine-cli-contract.md)
 - [Api contract](servers-perfine-api-contract.md)
 - [Protocol contract](protos-perfine-v1-contract.md)
-- [Web contract](apps-perfine-web-contract.md)
 - [Distribution contract](packages-perfine-distribution-contract.md)
 
 ### lane

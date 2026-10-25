@@ -361,7 +361,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
-    perfine: "true",
     perfine_fixtures: "true",
     protocol: "true",
   };
@@ -398,7 +397,6 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     protocol: "true",
   };
   for (const id of [
-    "perfine-frontend",
     "perfine-profiles",
     "perfine-adapters",
     "git-tracker-clients",
@@ -646,7 +644,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
       "lane-frontend": "lane",
-      "perfine-frontend": "perfine",
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
@@ -686,7 +683,6 @@ test("shared checks allocate independent jobs from planner outputs", () => {
 
 test("Perfine jobs use owned package contracts and real fixture interfaces", () => {
   for (const [id, owner] of [
-    ["perfine-frontend", "perfine"],
     ["perfine-profiles", "perfine_fixtures"],
     ["perfine-adapters", "perfine_fixtures"],
   ]) {

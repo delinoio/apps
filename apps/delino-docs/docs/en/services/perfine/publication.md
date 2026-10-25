@@ -24,7 +24,7 @@ If policy requires explicit human judgment, supply the reason through `--human-j
 
 ## Exact approval
 
-Approval binds the target repository, base, exact candidate SHA, evidence, production diff, title, and body. The dashboard review shows the binding before **Approve and create draft PR**. Diffs open externally; there is no hosted source editor.
+Approval binds the target repository, base, exact candidate SHA, evidence, production diff, title, and body. The CLI shows the approval fingerprint before publication. Review the production diff externally; there is no hosted source editor.
 
 If the target, base, SHA, or material PR content changes, review and approve again. Prose-only edits require new approval but not new measurements. If a rebase or conflict resolution changes production content, remeasure the actual submission source.
 

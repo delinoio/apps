@@ -15,7 +15,6 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: true,
     perfine_api: false,
-    perfine: false,
     lane: false,
     perfine_fixtures: false,
     protocol: false,
@@ -32,7 +31,6 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: false,
     perfine_api: true,
-    perfine: true,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -49,7 +47,6 @@ test("isolated projects select only their validation", () => {
     delidev: true,
     delitools: true,
     perfine_api: true,
-    perfine: true,
     lane: true,
     perfine_fixtures: true,
     protocol: true,
@@ -80,7 +77,6 @@ for (const [project, key] of [
         delidev: false,
         delitools: false,
         perfine_api: false,
-        perfine: false,
         lane: false,
         perfine_fixtures: false,
         protocol: false,
@@ -102,7 +98,6 @@ test("consumer examples select protocol validation without native runners", () =
     delidev: false,
     delitools: false,
     perfine_api: false,
-    perfine: false,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -206,7 +201,6 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delidev: true,
       delitools: true,
       perfine_api: false,
-      perfine: false,
       lane: false,
       perfine_fixtures: path === "Cargo.lock",
       protocol: false,
@@ -227,7 +221,6 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delidev: false,
     delitools: false,
     perfine_api: false,
-    perfine: false,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -336,7 +329,6 @@ const frontends = [
   "delino_docs",
   "delidev",
   "delitools",
-  "perfine",
 ];
 
 for (const [paths, expected] of [
@@ -382,7 +374,6 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
-      "perfine",
       "protocol",
     ],
   ],
@@ -395,7 +386,6 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
-      "perfine",
       "protocol",
     ],
   ],
@@ -529,21 +519,17 @@ test("Perfine ownership selects explicit consumers without unknown-path fallback
     ["cmds/perfine/src/main.rs", ["perfine_fixtures"]],
     ["packages/perfine/package.json", []],
     ["actions/perfine/src/main.ts", []],
-    ["apps/perfine/src/main.tsx", ["perfine"]],
     ["servers/perfine-api/src/main.rs", ["perfine_api"]],
     ["docs/crates-perfine-adapters-contract.md", ["perfine_fixtures"]],
-    [
-      "docs/protos-perfine-v1-contract.md",
-      ["perfine_api", "perfine", "protocol"],
-    ],
+    ["docs/protos-perfine-v1-contract.md", ["perfine_api", "protocol"]],
     [
       "docs/project-perfine.md",
-      ["perfine_api", "perfine", "perfine_fixtures", "protocol"],
+      ["perfine_api", "perfine_fixtures", "protocol"],
     ],
   ])
     assert.deepEqual(selectedJobs([path]), expected, path);
   for (const path of ["protos/perfine/v1/perfine.proto", "buf.gen.yaml"])
-    for (const key of ["perfine_api", "perfine", "protocol"])
+    for (const key of ["perfine_api", "protocol"])
       assert.equal(select([path])[key], true, `${path}: ${key}`);
   assert.deepEqual(
     selectRustServers(select(["crates/perfine-core/src/lib.rs"])),
