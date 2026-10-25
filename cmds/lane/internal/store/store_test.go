@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var ctx = context.Background()
@@ -348,14 +349,17 @@ func TestRegistryIsolationRemoval(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer other.Close()
-	if e = a.RemoveSpace(ctx); e != nil {
-		t.Fatal(e)
-	}
+	done := make(chan error, 1)
+	go func() { done <- a.RemoveSpace(ctx) }()
+	waitUnavailable(t, other)
 	if e = other.WithWrite(ctx, func(c *sql.Conn) error {
 		_, e := c.ExecContext(ctx, "INSERT INTO changes(change_kind) VALUES(1)")
 		return e
 	}); reason(e) != 7 {
 		t.Fatal("removed handle wrote", e)
+	}
+	if e = <-done; e != nil {
+		t.Fatal(e)
 	}
 	if _, e = Open(a.Root(), a.SpaceID()); e == nil {
 		t.Fatal("explicit absent space recreated")
@@ -620,40 +624,120 @@ func TestConcurrentInitialOpen(t *testing.T) {
 		}
 	}
 }
-func TestRemovalCheckpointBusyAndRetry(t *testing.T) {
+func waitUnavailable(t *testing.T, s *Store) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second * 5)
+	for time.Now().Before(deadline) {
+		v, e := s.registryUnavailable(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if v {
+			return
+		}
+		time.Sleep(time.Millisecond * 5)
+	}
+	t.Fatal("removal did not mark registry")
+}
+func TestRemovalHeldHandleTimeoutAndRestart(t *testing.T) {
 	s := testStore(t)
 	create(t, s)
-	reader, e := s.db.Conn(ctx)
+	reader, e := Open(s.Root(), s.SpaceID())
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer reader.Close()
-	if _, e = reader.ExecContext(ctx, "BEGIN"); e != nil {
+	before, e := os.Stat(s.lockPath())
+	if e != nil {
 		t.Fatal(e)
 	}
-	var n int
-	if e = reader.QueryRowContext(ctx, "SELECT count(*) FROM entities").Scan(&n); e != nil {
-		t.Fatal(e)
-	}
+	started := time.Now()
 	if e = s.RemoveSpace(ctx); reason(e) != 9 {
-		t.Fatal("blocked checkpoint falsely succeeded", e)
+		t.Fatal("held handle removal falsely succeeded", e)
+	}
+	if time.Since(started) < 5*time.Second {
+		t.Fatal("exclusive wait did not use bounded timeout")
+	}
+	dir := filepath.Join(s.Root(), "spaces", s.SpaceID())
+	if _, e = os.Stat(filepath.Join(dir, "lane.sqlite")); e != nil {
+		t.Fatal("live database removed", e)
 	}
 	if _, e = Open(s.Root(), s.SpaceID()); reason(e) != 7 {
-		t.Fatal("removed space accepted normal operations", e)
+		t.Fatal("late open accepted unavailable space", e)
 	}
-	if _, e = reader.ExecContext(ctx, "ROLLBACK"); e != nil {
-		t.Fatal(e)
+	if _, e = reader.Sequence(ctx); reason(e) != 7 {
+		t.Fatal("old handle did not observe removal", e)
 	}
+	s.Close()
 	retry, e := OpenForRemoval(s.Root(), s.SpaceID())
 	if e != nil {
-		t.Fatal("cannot reopen incomplete removal", e)
+		t.Fatal(e)
 	}
 	defer retry.Close()
 	if e = retry.RemoveSpace(ctx); e != nil {
-		t.Fatal("checkpoint retry failed", e)
+		t.Fatal(e)
 	}
-	if _, e = OpenForRemoval(s.Root(), s.SpaceID()); reason(e) != 2 {
-		t.Fatal("completed removal remains registered", e)
+	if _, e = os.Stat(dir); !os.IsNotExist(e) {
+		t.Fatal("space directory remains", e)
+	}
+	after, e := os.Stat(retry.lockPath())
+	if e != nil || !os.SameFile(before, after) {
+		t.Fatal("stable lock inode changed", e)
+	}
+	// Simulate a crash after unlink and before registry cleanup. The permanent
+	// marker authorizes cleanup retry without ever creating another database.
+	if _, e = retry.registry.Exec("INSERT INTO spaces(id,account_key) VALUES(?,'local')", retry.SpaceID()); e != nil {
+		t.Fatal(e)
+	}
+	again, e := OpenForRemoval(retry.Root(), retry.SpaceID())
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer again.Close()
+	if e = again.RemoveSpace(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = os.Stat(dir); !os.IsNotExist(e) {
+		t.Fatal("retry recreated removed files", e)
+	}
+}
+func TestRemovalDrainsActiveRead(t *testing.T) {
+	s := testStore(t)
+	create(t, s)
+	reader, e := Open(s.Root(), s.SpaceID())
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer reader.Close()
+	entered, release := make(chan struct{}), make(chan struct{})
+	readDone := make(chan error, 1)
+	go func() {
+		readDone <- reader.WithRead(ctx, func(c *sql.Conn) error {
+			var n int
+			if e := c.QueryRowContext(ctx, "SELECT count(*) FROM entities").Scan(&n); e != nil {
+				return e
+			}
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+	removed := make(chan error, 1)
+	go func() { removed <- s.RemoveSpace(ctx) }()
+	waitUnavailable(t, reader)
+	if _, e = os.Stat(filepath.Join(s.Root(), "spaces", s.SpaceID(), "lane.sqlite")); e != nil {
+		t.Fatal("active read lost file", e)
+	}
+	close(release)
+	if e = <-readDone; e != nil {
+		t.Fatal(e)
+	}
+	if _, e = reader.Sequence(ctx); reason(e) != 7 {
+		t.Fatal("marked read allowed", e)
+	}
+	if e = <-removed; e != nil {
+		t.Fatal(e)
 	}
 }
 func TestPromptRestorationWireRoundTrip(t *testing.T) {
@@ -689,5 +773,43 @@ func TestPromptRestorationWireRoundTrip(t *testing.T) {
 	saved, e := s.SaveTask(ctx, connect.NewRequest(&lane.SaveTaskRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, Task: v.GetTask()}))
 	if e != nil || saved.Msg.Result.Version.PromptRestoration {
 		t.Fatal("ordinary save inherited restoration marker", e)
+	}
+}
+
+func TestStaleSaveIncludesPreservedConflictDetail(t *testing.T) {
+	s := testStore(t)
+	_, v := create(t, s)
+	if _, e := s.SetProgress(ctx, connect.NewRequest(&lane.SetProgressRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, Progress: 4})); e != nil {
+		t.Fatal(e)
+	}
+	task := proto.Clone(v.GetTask()).(*lane.Task)
+	task.Title = "Submitted alternative"
+	req := &lane.SaveTaskRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, Task: task}
+	for i := 0; i < 2; i++ {
+		_, e := s.SaveTask(ctx, connect.NewRequest(req))
+		var ce *connect.Error
+		if !errors.As(e, &ce) || reason(e) != 3 {
+			t.Fatal("stale save did not abort", e)
+		}
+		found := false
+		for _, detail := range ce.Details() {
+			m, e := detail.Value()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if r, ok := m.(*lane.EntityResult); ok {
+				if r.Result != 4 || len(r.Alternatives) != 2 {
+					t.Fatal("incomplete conflict detail")
+				}
+				for _, alternative := range r.Alternatives {
+					if alternative.GetTask().GetTitle() == task.Title {
+						found = true
+					}
+				}
+			}
+		}
+		if !found {
+			t.Fatal("submitted alternative missing from Connect error details")
+		}
 	}
 }

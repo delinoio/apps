@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -26,13 +27,20 @@ const applicationID = 1279348293
 type Store struct {
 	db, registry        *sql.DB
 	root, space, device string
+	lifeMu              sync.RWMutex
+	handles             *os.File
+	physicalClosed      bool
 }
 
 func (s *Store) SpaceID() string  { return s.space }
 func (s *Store) DeviceID() string { return s.device }
 func (s *Store) Root() string     { return s.root }
-func (s *Store) Close() error     { return errors.Join(s.db.Close(), s.registry.Close()) }
-func NewID() string               { return uuid.Must(uuid.NewV7()).String() }
+func (s *Store) Close() error {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	return errors.Join(s.closePhysical(), s.registry.Close())
+}
+func NewID() string { return uuid.Must(uuid.NewV7()).String() }
 func validID(s string) bool {
 	u, e := uuid.Parse(s)
 	return e == nil && u.Version() == 7 && u.String() == s
@@ -195,9 +203,7 @@ func openStore(root, space string, removal bool) (s *Store, err error) {
 	defer func() {
 		if err != nil {
 			r.Close()
-			if opened.db != nil {
-				opened.db.Close()
-			}
+			opened.closePhysical()
 		}
 	}()
 	ctx := context.Background()
@@ -228,15 +234,44 @@ func openStore(root, space string, removal bool) (s *Store, err error) {
 			}
 		}
 
+		s.space = space
+		var unavailable int
+		if e := c.QueryRowContext(ctx, "SELECT count(*) FROM registry_meta WHERE key=? AND value='1'", "unavailable:"+space).Scan(&unavailable); e != nil {
+			return e
+		}
+		if unavailable > 0 && !removal {
+			return domainError(7, "Space is unavailable", space)
+		}
 		var id string
-		if e := c.QueryRowContext(ctx, "SELECT id FROM spaces WHERE id=?", space).Scan(&id); e != nil {
+		if e := c.QueryRowContext(ctx, "SELECT id FROM spaces WHERE id=?", space).Scan(&id); e != nil && !(removal && unavailable > 0) {
 			return domainError(2, "Space does not exist", space)
 		}
-		s.space = space
+
 		return c.QueryRowContext(ctx, "SELECT value FROM registry_meta WHERE key='device_id'").Scan(&s.device)
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	unavailable, e := s.registryUnavailable(ctx)
+	if e != nil {
+		return nil, e
+	}
+	if removal && unavailable {
+		s.physicalClosed = true
+		return s, nil
+	}
+	s.handles, err = s.acquireHandles(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	// A remover can mark the registry while this opener waits for the shared lock.
+	unavailable, err = s.registryUnavailable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if unavailable {
+		return nil, domainError(7, "Space is unavailable", space)
 	}
 	dir := filepath.Join(root, "spaces", space)
 	if err = os.MkdirAll(dir, 0700); err != nil {
@@ -277,6 +312,13 @@ func openStore(root, space string, removal bool) (s *Store, err error) {
 }
 func (s *Store) check(ctx context.Context, c *sql.Conn) error { return s.checkState(ctx, c, false) }
 func (s *Store) checkState(ctx context.Context, c *sql.Conn, allowRemoved bool) error {
+	unavailable, e := s.registryUnavailable(ctx)
+	if e != nil {
+		return e
+	}
+	if unavailable && !allowRemoved {
+		return domainError(7, "Space is unavailable", s.space)
+	}
 	if e := compatible(ctx, c, ""); e != nil {
 		return e
 	}
@@ -335,20 +377,33 @@ func (s *Store) checkState(ctx context.Context, c *sql.Conn, allowRemoved bool) 
 
 // WithWrite holds a short immediate transaction. Callbacks must not perform network I/O.
 func (s *Store) WithWrite(ctx context.Context, fn func(*sql.Conn) error) error {
-	return transaction(ctx, s.db, true, func(c *sql.Conn) error {
-		if e := s.check(ctx, c); e != nil {
-			return e
-		}
-		return fn(c)
-	})
+	return s.withTransaction(ctx, true, fn)
 }
 func (s *Store) WithRead(ctx context.Context, fn func(*sql.Conn) error) error {
-	return transaction(ctx, s.db, false, func(c *sql.Conn) error {
+	return s.withTransaction(ctx, false, fn)
+}
+func (s *Store) withTransaction(ctx context.Context, write bool, fn func(*sql.Conn) error) error {
+	s.lifeMu.RLock()
+	if s.physicalClosed {
+		s.lifeMu.RUnlock()
+		return domainError(7, "Space is unavailable", s.space)
+	}
+	e := transaction(ctx, s.db, write, func(c *sql.Conn) error {
 		if e := s.check(ctx, c); e != nil {
 			return e
 		}
 		return fn(c)
 	})
+	s.lifeMu.RUnlock()
+	if unavailableError(e) {
+		s.lifeMu.Lock()
+		closeErr := s.closePhysical()
+		s.lifeMu.Unlock()
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return e
 }
 func (s *Store) Sequence(ctx context.Context) (n uint64, e error) {
 	e = s.WithRead(ctx, func(c *sql.Conn) error {

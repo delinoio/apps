@@ -2,6 +2,7 @@
 package store
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"database/sql"
 	"errors"
@@ -632,8 +633,18 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 		}
 		return saveReceipt(ctx, c, method, meta.RequestId, fp, id, r)
 	})
+
 	if err == nil {
 		err = committedError
+	}
+	if committedError != nil && err == committedError && r != nil {
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			detail, e := connect.NewErrorDetail(r)
+			if e == nil {
+				ce.AddDetail(detail)
+			}
+		}
 	}
 	return
 }
