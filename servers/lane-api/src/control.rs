@@ -51,18 +51,18 @@ pub async fn deletion_pull(
     if epoch == supplied {
         return Ok(None);
     }
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT mode,new_epoch FROM lane_account_deletions WHERE account_id=$1 AND old_epoch=$2",
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT mode FROM lane_account_deletions WHERE account_id=$1 AND old_epoch=$2",
     )
     .bind(&p.account_id)
     .bind(supplied)
     .fetch_optional(db)
     .await?;
-    if let Some((mode, new_epoch)) = row
+    if let Some((mode,)) = row
         && mode == "DATA_DELETION_MODE_DELETE_EVERYWHERE"
     {
         return Ok(Some(
-            json!({"changes":[{"sequence":"0","deletion":{"kind":"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT","id":p.account_id,"deletionVersionId":new_epoch}}],"nextCursor":"","hasMore":false}),
+            json!({"changes":[{"sequence":"0","deletion":{"kind":"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT","id":p.account_id,"deletionVersionId":epoch}}],"nextCursor":"","hasMore":false}),
         ));
     }
     Err(Fault::new(

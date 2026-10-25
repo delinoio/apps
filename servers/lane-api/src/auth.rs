@@ -1345,9 +1345,9 @@ async fn deletion_status(State(a): State<Arc<Auth>>, headers: HeaderMap) -> Http
     let (token, kind) = credential(&headers)?;
     // This route deliberately permits revoked, expired credentials only for a minimal deletion
     // directive. It cannot authenticate a principal or return any retained account content.
-    let row=sqlx::query("SELECT d.mode,d.new_epoch,s.account_id,s.device_id FROM lane_credentials c JOIN lane_sessions s ON s.id=c.session_id JOIN lane_account_deletions d ON d.account_id=s.account_id AND d.old_epoch=s.epoch WHERE c.digest=$1 AND c.kind=$2 AND s.issuer=$3").bind(hash(token.as_bytes())).bind(kind).bind(&a.config.public_url).fetch_optional(&a.pool).await?.ok_or_else(Fault::unauthenticated)?;
+    let row=sqlx::query("SELECT d.mode,d.old_epoch,d.new_epoch,s.account_id,s.device_id FROM lane_credentials c JOIN lane_sessions s ON s.id=c.session_id JOIN lane_account_deletions d ON d.account_id=s.account_id AND d.old_epoch=s.epoch WHERE c.digest=$1 AND c.kind=$2 AND s.issuer=$3").bind(hash(token.as_bytes())).bind(kind).bind(&a.config.public_url).fetch_optional(&a.pool).await?.ok_or_else(Fault::unauthenticated)?;
     Ok(json_response(
-        json!({"mode":row.get::<String,_>("mode"),"new_epoch":row.get::<String,_>("new_epoch"),"account_id":row.get::<String,_>("account_id"),"device_id":row.get::<String,_>("device_id"),"disconnected":true}),
+        json!({"mode":row.get::<String,_>("mode"),"old_epoch":row.get::<String,_>("old_epoch"),"new_epoch":row.get::<String,_>("new_epoch"),"account_id":row.get::<String,_>("account_id"),"device_id":row.get::<String,_>("device_id"),"disconnected":true}),
     ))
 }
 
@@ -1979,6 +1979,31 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         account_lock(&mut db, &account).await.unwrap();
         assert!(a.authorize(&mut db, &p).await.is_err());
         db.rollback().await.unwrap();
+        assert!(
+            deletion_status(State(a.clone()), headers.clone())
+                .await
+                .is_err()
+        );
+        let old_epoch: String = sqlx::query_scalar("SELECT epoch FROM lane_sessions WHERE id=$1")
+            .bind(&p.session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new_epoch = id();
+        sqlx::query("INSERT INTO lane_account_deletions(account_id,old_epoch,new_epoch,mode) VALUES($1,$2,$3,'DATA_DELETION_MODE_DELETE_EVERYWHERE')")
+            .bind(&account).bind(&old_epoch).bind(&new_epoch).execute(&pool).await.unwrap();
+        let response = deletion_status(State(a.clone()), headers.clone())
+            .await
+            .unwrap_or_else(|_| panic!("expected deletion directive"));
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let directive: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            directive,
+            json!({"mode":"DATA_DELETION_MODE_DELETE_EVERYWHERE","old_epoch":old_epoch,"new_epoch":new_epoch,"account_id":account,"device_id":device_id,"disconnected":true})
+        );
+        assert!(a.authenticate(&headers).await.is_err());
         assert!(!m.calls.lock().unwrap().is_empty());
         pool.close().await;
         sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))

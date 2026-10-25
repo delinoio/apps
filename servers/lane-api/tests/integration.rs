@@ -51,7 +51,7 @@ async fn complete_schema_deletion_directives_redaction_and_rollback() {
         (&deleted, "DATA_DELETION_MODE_DELETE_EVERYWHERE"),
         (&kept, "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL"),
     ] {
-        sqlx::query("INSERT INTO lane_account_deletions(account_id,old_epoch,new_epoch,mode) VALUES($1,$2,$3,$4)").bind(&p.account_id).bind(old).bind(&epoch).bind(mode).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO lane_account_deletions(account_id,old_epoch,new_epoch,mode) VALUES($1,$2,$3,$4)").bind(&p.account_id).bind(old).bind(id()).bind(mode).execute(&pool).await.unwrap();
     }
     let mut tx = pool.begin().await.unwrap();
     account_lock(&mut tx, &p.account_id).await.unwrap();
@@ -65,7 +65,10 @@ async fn complete_schema_deletion_directives_redaction_and_rollback() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(directive["changes"][0]["deletion"]["id"], p.account_id);
+    assert_eq!(
+        directive,
+        json!({"changes":[{"sequence":"0","deletion":{"kind":"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT","id":p.account_id,"deletionVersionId":epoch}}],"nextCursor":"","hasMore":false})
+    );
     assert_eq!(
         directive["changes"][0]["deletion"]["kind"],
         "ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT"
