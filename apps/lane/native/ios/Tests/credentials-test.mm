@@ -7,6 +7,7 @@
 
 @interface MockTransport : LaneTransport
 @property(nonatomic) NSUInteger exchanges;
+@property(nonatomic) NSUInteger formatVersion;
 @property(nonatomic, copy) NSString *device;
 @property(nonatomic, copy) NSString *account;
 @property(nonatomic, strong) NSDictionary *lastForm;
@@ -25,7 +26,7 @@
   assert([token isEqualToString:@"synthetic-access"]);
   assert([service isEqualToString:@"lane.v1.SyncService"]);
   assert([method isEqualToString:@"GetSyncInfo"]);
-  return @{@"formatVersion": @1, @"accountId": self.account, @"tenantId": @"tenant", @"epoch": @"epoch"};
+  return @{@"formatVersion": @(self.formatVersion ?: 2), @"accountId": self.account, @"tenantId": @"tenant", @"epoch": @"epoch"};
 }
 @end
 static NSURL *Callback(NSDictionary *challenge, NSString *suffix) {
@@ -61,6 +62,24 @@ int main(void) {
     challenge = [auth begin:@"account" device:server.device];
     assert(![auth complete:Callback(challenge, @"&error=access_denied")]);
     assert(![auth complete:Callback(challenge, @"")]);
+    server.formatVersion = 1;
+    challenge = [auth begin:@"account" device:server.device];
+    assert(![auth complete:Callback(challenge, @"")]);
+    server.formatVersion = 99;
+    challenge = [auth begin:@"account" device:server.device];
+    assert(![auth complete:Callback(challenge, @"")]);
+    server.formatVersion = 2;
+    LaneTransport *objects = [LaneTransport new];
+    for (NSString *unsafe in @[@"http://objects.invalid/image", @"https://user:secret@objects.invalid/image", @"file:///private/image", @"https://objects.invalid/image#fragment"])
+      assert([[objects attachment:[NSURL URLWithString:unsafe]][@"error"][@"reason"] isEqual:@"ERROR_REASON_INVALID_INPUT"]);
+    __block BOOL redirectRefused = NO;
+    NSURL *redirectURL = [NSURL URLWithString:@"https://other.invalid"];
+    NSURLSessionTask *redirectTask = [NSURLSession.sharedSession dataTaskWithURL:redirectURL];
+    NSHTTPURLResponse *redirectResponse = [[NSHTTPURLResponse alloc] initWithURL:redirectURL statusCode:302 HTTPVersion:@"HTTP/1.1" headerFields:@{}];
+    [objects URLSession:NSURLSession.sharedSession task:redirectTask willPerformHTTPRedirection:redirectResponse newRequest:[NSURLRequest requestWithURL:redirectURL] completionHandler:^(NSURLRequest *redirect) { redirectRefused = redirect == nil; }];
+    [redirectTask cancel];
+    assert(redirectRefused);
+    puts("PASS: format 1/unknown account negotiation refusal, signed attachment URL and redirect rejection");
     LaneCredentials *unconfigured = [[LaneCredentials alloc] initWithTransport:server configuration:@{}];
     assert([unconfigured begin:@"" device:server.device][@"error"]);
     LaneCredentials *insecure = [[LaneCredentials alloc] initWithTransport:server configuration:@{@"LaneAPIURL": @"http://lane.invalid", @"LaneOAuthClientID": @"test", @"LaneURLScheme": @"lane-dev"}];

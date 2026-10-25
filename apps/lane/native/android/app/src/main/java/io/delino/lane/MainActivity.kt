@@ -16,6 +16,7 @@ import com.lynx.tasm.provider.AbsTemplateProvider
 class MainActivity : Activity() {
     private lateinit var lynxView: LynxView
     private lateinit var session: LaneSession
+    private val images = LaneImageFetcher()
     private var permissionInFlight = false
 
     override fun onCreate(state: Bundle?) {
@@ -35,7 +36,7 @@ class MainActivity : Activity() {
                 }
             }
         }
-        val builder = LynxView.builder().setTemplateProvider(provider)
+        val builder = LynxView.builder().setTemplateProvider(provider).setImageFetcher(images)
         builder.registerModule("LaneStore", LaneStoreModule::class.java, session)
         builder.registerModule("LaneHost", LaneHostModule::class.java, session)
         lynxView = builder.build(this)
@@ -77,6 +78,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         session.runtime.destroy(session)
         lynxView.destroy()
+        images.close()
         super.onDestroy()
     }
 }

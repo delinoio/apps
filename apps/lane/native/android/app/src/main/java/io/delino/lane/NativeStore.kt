@@ -4,6 +4,8 @@ package io.delino.lane
 /** Access only on LaneRuntime's serial worker. No domain rules live in this adapter. */
 internal class NativeStore(root: String, private val host: LaneHostServices) : AutoCloseable {
     private var handle = create(root.toByteArray(Charsets.UTF_8))
+    fun migrate(space: String) = execute(14, "", space)
+    fun cacheAttachment(space: String, request: String) = execute(15, space, request)
     fun open(request: String) = execute(0, "", request)
     fun invoke(method: String, request: String) = execute(1, method, request)
     fun release(space: String) = execute(2, "", space)

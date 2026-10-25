@@ -8,6 +8,7 @@
 #import <Lynx/LynxEnv.h>
 #import <Lynx/LynxTemplateProvider.h>
 #import <Lynx/LynxView.h>
+#import <Lynx/LynxImageFetcher.h>
 
 @interface LaneProvider : NSObject <LynxTemplateProvider>
 @end
@@ -28,8 +29,31 @@
 }
 @end
 
+// The host resolves and validates attachment ownership before returning inline
+// PNGs. Render those bytes without a filesystem path or a shared image cache.
+@interface LaneImageFetcher : NSObject <LynxImageFetcher>
+@end
+@implementation LaneImageFetcher
+- (dispatch_block_t)loadImageWithURL:(NSURL *)url size:(CGSize)size contextInfo:(NSDictionary *)context
+    completion:(LynxImageLoadCompletionBlock)completion {
+  NSProgress *progress = [NSProgress progressWithTotalUnitCount:1];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    if (progress.cancelled) return;
+    NSString *prefix = @"data:image/png;base64,";
+    NSString *source = url.absoluteString;
+    NSData *data = [source hasPrefix:prefix] ? [[NSData alloc] initWithBase64EncodedString:[source substringFromIndex:prefix.length] options:0] : nil;
+    UIImage *image = data ? [UIImage imageWithData:data] : nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (!progress.cancelled) completion(image, image ? nil : [NSError errorWithDomain:@"io.delino.lane.image" code:1 userInfo:nil], url);
+    });
+  });
+  return ^{ [progress cancel]; };
+}
+@end
+
 @interface LaneController : UIViewController
 @property(nonatomic, strong) LynxView *lynxView;
+@property(nonatomic, strong) LaneImageFetcher *images;
 @property(nonatomic) CGRect keyboardFrame;
 @end
 @implementation LaneController
@@ -51,6 +75,8 @@
     builder.screenSize = self.view.safeAreaLayoutGuide.layoutFrame.size;
     builder.fontScale = [UIFontMetrics.defaultMetrics scaledValueForValue:1.0];
   }];
+  self.images = [LaneImageFetcher new];
+  self.lynxView.imageFetcher = self.images;
   self.lynxView.layoutWidthMode = LynxViewSizeModeExact;
   self.lynxView.layoutHeightMode = LynxViewSizeModeExact;
   [self.view addSubview:self.lynxView];
