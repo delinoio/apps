@@ -1,0 +1,239 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  app,
+  LynxWindow,
+  Menu,
+  Tray,
+  nativeImage,
+  powerMonitor,
+  lynxBridge,
+} from "@lynx-js/lynxtron";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { control, WindowSession, unavailable } from "./bridge.mjs";
+
+const resources = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { scheme } = require("./package.json");
+const native = require("./lane_host.node");
+let window, windowSession, tray, poller;
+let started = false;
+let quitting = false,
+  stopping = false;
+const pendingURLs = [];
+const pendingRoutes = [];
+const log = (event) =>
+  console.info(JSON.stringify({ event, platform: process.platform }));
+const failed = () => log("lane_host_operation_failed");
+const runControl = (method, value) =>
+  control(native, method, value).catch(failed);
+
+function showWindow() {
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+    return;
+  }
+  const session = new WindowSession();
+  windowSession = session;
+  window = new LynxWindow({
+    width: 1280,
+    height: 820,
+    title: "Lane",
+    resizable: true,
+    ...(process.platform === "win32"
+      ? { icon: join(resources, "Lane.ico") }
+      : {}),
+  });
+  const owner = window;
+  owner.on("-lynx-invoke", (event, channel, request) => {
+    if (channel !== "lane.native") return;
+    const response = stopping
+      ? Promise.resolve(unavailable)
+      : session.invoke(native, request);
+    void response.then(
+      (result) => event.sendReply(result),
+      () => event.sendReply(unavailable),
+    );
+  });
+  window.on("focus", () => runControl("resume"));
+  window.on("closed", () => {
+    session.retire();
+    if (window === owner) {
+      window = undefined;
+      windowSession = undefined;
+      runControl("viewClosed");
+    }
+  });
+  window.on("--lynx-error", () => log("lane_template_failed"));
+  window.once("ready-to-show", () => log("lane_template_loaded"));
+  if (!window.loadFile(join(resources, "main.lynx.bundle")))
+    throw new Error("The embedded Lane template could not be loaded.");
+  window.show();
+}
+function activateURL(url) {
+  // The native host owns complete URI, state and PKCE validation. Do not log it.
+  if (typeof url !== "string" || !url.startsWith(`${scheme}://`)) return;
+  if (!started) {
+    pendingURLs.push(url);
+    return;
+  }
+  showWindow();
+  runControl("url", url);
+}
+function flushEvents() {
+  for (const event of JSON.parse(native.poll())) {
+    if (event.name === "lane.activate") {
+      showWindow();
+      continue;
+    }
+    if (event.name === "lane.openRoute") pendingRoutes.push(event.arguments);
+    else if (window && !window.isDestroyed())
+      window.sendGlobalEvent(event.name, ...event.arguments);
+  }
+  if (windowSession?.ready && window && !window.isDestroyed())
+    for (const args of pendingRoutes.splice(0))
+      window.sendGlobalEvent("lane.openRoute", ...args);
+}
+
+app.setName("Lane");
+// Keep the Lynxtron singleton lock in a Lane-owned directory, separate from
+// registry.sqlite and the shared CLI data. No renderer gets filesystem access.
+app.setPath(
+  "userData",
+  native.testing && process.env.LANE_NATIVE_TEST_ROOT
+    ? join(process.env.LANE_NATIVE_TEST_ROOT, "host")
+    : join(app.getPath("appData"), "io.delino.lane", "host"),
+);
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  activateURL(url);
+});
+app.on("second-instance", (_event, args, _directory, data) => {
+  if (started) showWindow();
+  if (typeof data?.notificationRoute === "string" && data.notificationRoute) {
+    try {
+      pendingRoutes.push([JSON.parse(data.notificationRoute)]);
+    } catch {
+      failed();
+    }
+  }
+  for (const value of args) activateURL(value);
+});
+app.on("activate", () => {
+  if (started) {
+    showWindow();
+    runControl("resume");
+  }
+});
+app.on("window-all-closed", () => {}); // The native synchronization service outlives views.
+app.on("before-quit", (event) => {
+  if (!started || quitting) return;
+  event.preventDefault();
+  if (stopping) return;
+  stopping = true;
+  // Keep event pumping active while native workers finish their UI callbacks.
+  control(native, "stop")
+    .then(() => {
+      clearInterval(poller);
+      tray?.destroy();
+      quitting = true;
+      log("lane_stopped");
+      app.quit();
+    })
+    .catch(() => {
+      stopping = false;
+      failed();
+    });
+});
+const notificationRoute =
+  process.platform === "win32" &&
+  process.argv.includes("----AppNotificationActivated:")
+    ? native.activation(resources)
+    : "";
+if (!app.requestSingleInstanceLock({ notificationRoute })) {
+  app.quit();
+} else {
+  app
+    .whenReady()
+    .then(() => {
+      native.configure(resources, scheme);
+      started = true;
+      if (notificationRoute)
+        pendingRoutes.push([JSON.parse(notificationRoute)]);
+      if (native.testing)
+        lynxBridge.handle("lane.testLog", (_event, request) => {
+          if (
+            typeof request?.message === "string" &&
+            request.message.startsWith("LANE_NATIVE_")
+          )
+            console.log(request.message);
+          return true;
+        });
+      if (!app.setAsDefaultProtocolClient(scheme))
+        log("lane_protocol_registration_unavailable");
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([
+          {
+            label: "Lane",
+            submenu: [
+              {
+                label: "Open Lane",
+                accelerator: "CmdOrCtrl+O",
+                click: showWindow,
+              },
+              {
+                label: "Quit Lane",
+                accelerator: "CmdOrCtrl+Q",
+                click: () => app.quit(),
+              },
+            ],
+          },
+          { role: "editMenu" },
+        ]),
+      );
+      if (process.platform === "win32") {
+        tray = new Tray(
+          nativeImage.createFromPath(join(resources, "Lane.ico")),
+        );
+        tray.setToolTip("Lane");
+        tray.setContextMenu(
+          Menu.buildFromTemplate([
+            { label: "Open Lane", click: showWindow },
+            { label: "Quit Lane", click: () => app.quit() },
+          ]),
+        );
+        tray.on("click", showWindow);
+      }
+      poller = setInterval(() => {
+        try {
+          flushEvents();
+        } catch {
+          failed();
+        }
+      }, 100);
+      powerMonitor.on("resume", () => runControl("resume"));
+      showWindow();
+      for (const url of [...pendingURLs.splice(0), ...process.argv])
+        activateURL(url);
+      log("lane_started");
+      if (native.testing && process.env.LANE_NATIVE_TEST_LIFECYCLE === "1") {
+        setTimeout(() => {
+          window?.close();
+          console.log("LANE_NATIVE_WINDOW_CLOSED");
+          setTimeout(() => {
+            showWindow();
+            console.log("LANE_NATIVE_WINDOW_REOPENED");
+            if (process.env.LANE_NATIVE_TEST_AUTOQUIT === "1")
+              setTimeout(() => app.quit(), 2000);
+          }, 2000);
+        }, 2000);
+      }
+    })
+    .catch(() => {
+      log("lane_start_failed");
+      app.quit();
+    });
+}

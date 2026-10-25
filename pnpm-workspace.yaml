@@ -15,6 +15,7 @@ minimumReleaseAgeExclude:
   - "@rstest/core@0.12.4"
 
 allowBuilds:
+  "@lynx-js/lynxtron": true
   "@bufbuild/buf": true
   esbuild: true
   lefthook: true

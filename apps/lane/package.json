@@ -6,16 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name lane --app-port 46325 rspeedy dev",
-    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- node scripts/native.mjs desktop run",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- pnpm desktop:start",
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "pnpm typecheck && node --experimental-transform-types --test tests/*.test.ts && pnpm build",
-    "build:desktop": "pnpm build && node scripts/native.mjs desktop build",
+    "build:desktop": "pnpm build && node scripts/desktop.mjs build",
     "build:android": "pnpm build && node scripts/native.mjs android build",
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
     "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
-    "test:browser": "pnpm build && node tests/browser.mjs"
+    "test:browser": "pnpm build && node tests/browser.mjs",
+    "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0",
@@ -24,10 +25,11 @@
     "@delino/protos": "workspace:*",
     "@lynx-js/react": "0.129.0",
     "@lynx-js/web-core": "0.26.5",
-    "markdown-it": "14.1.0",
+    "markdown-it": "14.3.3",
     "text-encoding-utf-8": "1.0.2"
   },
   "devDependencies": {
+    "@lynx-js/lynxtron": "0.0.30",
     "@lynx-js/react-rsbuild-plugin": "0.22.0",
     "@lynx-js/rspeedy": "0.18.3",
     "@lynx-js/types": "4.3.0",
@@ -35,6 +37,7 @@
     "@types/node": "24.19.2",
     "@types/react": "19.2.14",
     "esbuild": "0.28.2",
+    "node-api-headers": "1.9.0",
     "playwright": "1.62.0",
     "typescript": "5.9.3"
   }

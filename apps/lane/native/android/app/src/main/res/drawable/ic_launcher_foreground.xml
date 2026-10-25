@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Keep the approved mark inside the adaptive icon's central 66dp safe zone. -->
+    <item android:drawable="@drawable/lane_icon" android:width="76dp" android:height="76dp" android:gravity="center" />
+</layer-list>

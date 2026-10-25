@@ -124,7 +124,7 @@ Historical DeliDev validation describes the retired implementation and does not 
 ### lane
 
 - [Project index](project-lane.md)
-- [Application foundation](apps-lane-foundation.md)
+- [Application foundation and Lynxtron desktop build](apps-lane-foundation.md)
 
 - [Local store and native bridge](apps-lane-local-store-contract.md)
 - [Connect protocol and conformance](protos-lane-v1-contract.md)

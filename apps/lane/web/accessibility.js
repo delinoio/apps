@@ -3,6 +3,7 @@
 // browser semantics. Remove this adapter when that mapping exists upstream.
 export function installAccessibility(view) {
   let previousDialog;
+  let previousApp;
   let restoreFocus;
   const wired = new WeakSet();
   const focusables = (root) =>
@@ -14,12 +15,26 @@ export function installAccessibility(view) {
         !e.hasAttribute("disabled"),
     );
   const focus = (node) => {
-    const target = node?.shadowRoot?.querySelector("input,textarea") || node;
+    // x-text delegates rendering to an inner box; its host cannot take focus.
+    const target =
+      node?.shadowRoot?.querySelector("input,textarea,#inner-box") || node;
+    if (target?.id === "inner-box") target.tabIndex = -1;
     target?.focus();
   };
   const update = () => {
     const root = view.shadowRoot;
     if (!root) return;
+    for (const icon of root.querySelectorAll(
+      '[accessibility-elements-hidden="true"]',
+    )) {
+      icon.setAttribute("aria-hidden", "true");
+    }
+    for (const heading of root.querySelectorAll(
+      '[accessibility-heading="true"]',
+    )) {
+      heading.setAttribute("role", "heading");
+      heading.setAttribute("aria-level", "2");
+    }
     for (const element of root.querySelectorAll("[accessibility-label]")) {
       const target =
         element.shadowRoot?.querySelector("input,textarea") || element;
@@ -32,6 +47,12 @@ export function installAccessibility(view) {
       button.setAttribute("role", "button");
       const disabled = button.classList.contains("disabled");
       button.setAttribute("aria-disabled", String(disabled));
+      if (button.classList.contains("app-switch")) {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.classList.contains("selected")),
+        );
+      }
       button.tabIndex = disabled ? -1 : 0;
       if (!wired.has(button)) {
         wired.add(button);
@@ -89,6 +110,24 @@ export function installAccessibility(view) {
       } else if (previousDialog) focus(restoreFocus);
       previousDialog = dialog;
     }
+    const app = root.querySelector("#lane-root")?.getAttribute("data-app");
+    if (app && app !== previousApp) {
+      if (previousApp) {
+        // Select after the runtime finishes replacing the previous app's nodes.
+        requestAnimationFrame(() => {
+          if (app !== previousApp || previousDialog) return;
+          const heading =
+            root.querySelector(
+              ".workspace .coming-soon-title, .workspace .heading",
+            ) || root.querySelector("#lane-workspace");
+          if (heading) {
+            heading.setAttribute("tabindex", "-1");
+            focus(heading);
+          }
+        });
+      }
+      previousApp = app;
+    }
   };
   const attach = () => {
     if (!view.shadowRoot) {
@@ -104,7 +143,13 @@ export function installAccessibility(view) {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["class", "accessibility-label", "disabled"],
+      attributeFilter: [
+        "class",
+        "accessibility-label",
+        "accessibility-value",
+        "data-app",
+        "disabled",
+      ],
     });
     root.addEventListener("keydown", (event) => {
       if (!previousDialog) return;

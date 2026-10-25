@@ -53,9 +53,15 @@ std::string Failure(NSString* reason, NSString* message) {
   NSDictionary* _reauthentication;
   std::string _claimant;
   BOOL _stopped;
+  NSURL* _helperURL;
+  NSString* _scheme;
 }
 - (instancetype)init {
+  return [self initWithHelperURL:nil scheme:Scheme()];
+}
+- (instancetype)initWithHelperURL:(NSURL*)helperURL scheme:(NSString*)scheme {
   if ((self = [super init])) {
+    _helperURL = helperURL; _scheme = [scheme copy];
     _queue = dispatch_queue_create("io.delino.lane.storage", DISPATCH_QUEUE_SERIAL);
     _workers = [NSMutableDictionary new]; _retryAfter = [NSMutableDictionary new]; _workerStates = [NSMutableDictionary new];
     _spaces = [NSMutableSet new]; _routes = [NSMutableArray new]; _claimant = UUID();
@@ -90,7 +96,7 @@ std::string Failure(NSString* reason, NSString* message) {
     // The helper owns OAuth state, PKCE and Keychain credentials. The callback
     // URI never supplies account identity to the database or JavaScript.
     NSMutableArray* args = [@[@"--json", @"--space", host->_currentSpace, @"sync", @"connect",
-      @"--redirect-uri", [NSString stringWithFormat:@"%@://auth/callback", Scheme()]] mutableCopy];
+      @"--redirect-uri", [NSString stringWithFormat:@"%@://auth/callback", host->_scheme]] mutableCopy];
     if (!account.empty()) [args addObjectsFromArray:@[@"--account-id", Text(account)]];
     NSDictionary* status = Parse(host->_store->invoke("GetLocalStatus", JSON(@{@"spaceId":host->_currentSpace,@"request":@{}})))[@"response"];
     if ([status[@"reconnectRequired"] boolValue]) {
@@ -160,7 +166,7 @@ std::string Failure(NSString* reason, NSString* message) {
   }
 }
 - (NSURL*)helperURL {
-  NSURL* url = [[[NSBundle mainBundle].executableURL URLByDeletingLastPathComponent] URLByAppendingPathComponent:@"helpers/lane"];
+  NSURL* url = _helperURL ?: [[[NSBundle mainBundle].executableURL URLByDeletingLastPathComponent] URLByAppendingPathComponent:@"helpers/lane"];
   if (!url || ![[NSFileManager defaultManager] isExecutableFileAtPath:url.path])
     throw std::runtime_error("Bundled synchronization helper unavailable");
   return url;
@@ -360,7 +366,7 @@ std::string Failure(NSString* reason, NSString* message) {
   dispatch_async(_queue, ^{ [self cancelReauthentication:nil]; });
 }
 - (void)handleURL:(NSURL*)url {
-  if (![url.scheme isEqualToString:Scheme()] || url.user || url.password || url.fragment) return;
+  if (![url.scheme isEqualToString:_scheme] || url.user || url.password || url.fragment) return;
   dispatch_async(_queue, ^{
     try {
       [self ensureStore];

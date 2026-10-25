@@ -11,4 +11,4 @@ The native application targets macOS, Windows, iOS, and Android. Linux uses the 
 - [Connect an agent](./mcp) explains local and remote MCP.
 - [Troubleshooting](./troubleshooting) explains failures and recovery.
 
-The intended web address is `https://lane.delino.io`; the online API and remote MCP use `https://lane.api.delino.io`. Availability depends on deployment. Perfine and RealQA appear as disabled **Coming soon** entries; they do not run inside Lane.
+The intended web address is `https://lane.delino.io`; the online API and remote MCP use `https://lane.api.delino.io`. Availability depends on deployment. The left icon rail switches between Lane, Pace, and Handrail. Each app has its own sidebar. Pace and Handrail currently show a **Coming soon** page; select **Back to Lane** or the Lane icon to return to your Lane screen.

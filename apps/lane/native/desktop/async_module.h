@@ -4,13 +4,12 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "lynx_native_module.h"
-#include "third_party/weak-node-api/headers/weak_napi_defines.h"
+#include <node_api.h>
+#include "handler.h"
 
 namespace lane::desktop {
-// Execute runs on the SDK worker pool. Complete runs on the originating BTS
-// runtime. Never retain a napi_value or invoke a callback from a host DB thread.
-using Handler = std::function<std::string(const std::string&, const std::vector<std::string>&)>;
+// Execute runs on the Node worker pool. Complete runs on the Node main thread.
+// Never invoke a JavaScript callback from a host database thread.
 struct Binding { std::shared_ptr<Handler> handler; std::string method; size_t arguments; };
 struct Work {
   std::shared_ptr<Handler> handler;

@@ -6,10 +6,9 @@
 
 ## Runtime and Language
 
-Use Node.js 24, TypeScript, ReactLynx 0.129 and Rspeedy 0.18.3. Native hosts use
+Use Node.js 24, TypeScript, ReactLynx 0.129 and Rspeedy 0.18.3. Mobile hosts use
 Lynx 4.1.0; Android PrimJS uses 4.1.1. Web uses web-core 0.26.5. Kotlin/Gradle,
-Objective-C/CocoaPods and C++17/CMake own native integration. Desktop uses Clay
-on macOS and Windows; Linux can use the browser build.
+Objective-C/CocoaPods and C++17/CMake own native integration. Desktop uses pinned `@lynx-js/lynxtron` 0.0.30 on macOS and Windows. Its npm runtime supplies Lynx; developers do not install a separate desktop Lynx SDK. C++17/CMake builds the Node-API storage and OS adapter using pinned `node-api-headers` 1.9.0. Linux can use the browser build.
 
 ## Users and Operators
 
@@ -26,14 +25,29 @@ Portless route at `https://lane.localhost`, with fixed loopback port 46325 and
 conflict rejection. It serves the browser host and shared bundles through Rspeedy.
 Native builds embed the local production bundle and do not fetch remote templates.
 
-- Desktop: supply an extracted official Lynx 4.1.0 SDK with `LANE_LYNX_SDK`.
-  Run `pnpm build:desktop`, then `pnpm dev:desktop` to launch the built host.
-  macOS requires Xcode command-line tools and CMake; Windows requires Visual
-  Studio C++ tools and CMake. Desktop opens a resizable window. The scaffold exits after
-  the last window closes; product synchronization adds a separate background
-  process so closing the window does not stop enabled desktop synchronization.
-  Preserve the native build interface while adding that lifecycle. Each desktop build synchronizes the current template
-  and application notices, even when the native executable does not relink.
+- Desktop: run `pnpm dev:desktop` from `apps/lane`. After Infisical injection,
+  this builds the shared bundle, compiles the Node-API host, packages the pinned
+  Lynxtron runtime and starts Lane. `pnpm build:desktop` prepares the application
+  without starting it. macOS requires Xcode command-line tools and CMake 3.24 or
+  later; Windows requires Visual Studio C++ tools, CMake and the existing Windows
+  App SDK headers/projections/bootstrap/license configuration for OS notifications.
+  `LANE_LYNX_SDK` is not used. Root `pnpm install` installs the matching runtime
+  through the lockfile; optional dependencies and the approved Lynxtron install
+  script must remain enabled. The helper does not download a separate Lynx SDK.
+  Generated packages are `native/desktop/build/Lane.app` on macOS and
+  `native/desktop/build/application` on Windows. Both embed the shared production
+  bundle and the bundled native module. The main process owns windows, menus,
+  protocol activation and the background native service. Closing a window releases
+  rendering and invalidates pending reauthentication without stopping enabled
+  synchronization; explicit Quit awaits native shutdown. Each build refreshes
+  application resources even when the native module does not relink.
+  Local macOS packages use ad-hoc signing; release signing remains separate.
+  `LANE_URL_SCHEME=lane` selects distribution links; the default is `lane-dev`.
+  The optional `LANE_SYNC_HELPER` is a matching packaged CLI executable with
+  adjacent `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES`. Otherwise the build uses
+  an existing matching `packages/lane/dist/artifacts` executable when available.
+  Missing helpers leave standalone storage available and report synchronization
+  dependency failures. No globally installed CLI is assumed.
 - Android: install JDK 17 or 21 and Android SDK 35. The committed Gradle
   wrapper selects 8.11.1. Run
   `pnpm build:android` for an unsigned release APK. Import `native/android` in
@@ -49,7 +63,27 @@ release workflow, signing identity or store registration.
 
 ### Approved UI composition
 
-Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Perfine and RealQA remain disabled, with icons and `Coming soon`. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
+Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and Handrail are equal app selectors in that order; Pace and Handrail show their own sidebars and `Coming soon` pages until implemented. Remove the former Perfine and RealQA entries. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
+
+### Application icon
+
+Use the folded-lanes icon for macOS, Windows, iOS, Android and the web favicon.
+The mark consists of a white L-shaped ribbon and a pale-blue parallel ribbon,
+with restrained fold shading over a cobalt-blue background centered on `#075AFF`.
+Keep the application name `Lane` and existing in-app branding and behavior.
+
+`apps/lane/assets/icon-source.png` owns the approved square artwork. iOS uses an
+opaque 1024-pixel asset catalog image. macOS uses an ICNS with a rounded tile and
+transparent outer margins; Windows embeds a multi-resolution ICO for the
+executable, window and tray. Android supplies density-specific legacy icons,
+adaptive icons and a flat monochrome silhouette for themed icons. Keep the
+adaptive mark inside the central safe zone. The web host ships an SVG favicon
+with flat ribbons for small sizes and a 180-pixel Apple touch icon.
+
+Preserve the unmasked square artwork when deriving platform assets. Apply masks
+only to platform variants, and keep both lanes distinct at small sizes. Check
+16-, 32- and 64-pixel rendering, platform masking and packaged icon references.
+Asset compilation does not establish launcher, Dock, taskbar or device acceptance.
 
 ### Product contract ownership
 
@@ -64,7 +98,10 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free.
 - Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
-- Show Perfine and RealQA as disabled menu entries with icons and `Coming soon`. Their mini-app functionality is future work.
+- Keep Lane, Pace and Handrail as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the existing ribbon for Lane, a speedometer for Pace, and a two-post handrail for Handrail. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
+- At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and Handrail each show their own name, icon, selected `Overview` item and `Coming soon` status, without Lane navigation. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
+- Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine and RealQA navigation entries are removed.
+- Apply the existing unsaved-edit confirmation before switching apps. Cancel retains the current screen and draft; confirming discards the unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. Mini-app features remain future work.
 - User-facing app and CLI text is English only. Validate keyboard operation, screen readers, visible focus, state distinctions that do not rely on color, and text enlargement on every released GUI platform. Follow repository form-focus and Escape-to-close rules where applicable.
 
 ### Repositories
@@ -209,9 +246,8 @@ Use the shared protocol vectors for sync, deletion, replay and conflict behavior
 ## Dependencies and Integrations
 
 The ReactLynx toolchain versions match the existing Lynx UI workspace. Use shared UI primitives where they meet the approved design and platform accessibility requirements. Native SDKs are platform dependencies, not
-vendored source. Desktop uses an operator-supplied SDK; Android resolves Maven
-artifacts; iOS resolves CocoaPods. Preserve original third-party licenses. `native/licenses` retains the Lynx 4.1.0
-license and notice for desktop distributions. Mobile dependency managers retain
+vendored source. Desktop resolves its pinned Lynxtron runtime through npm and retains the runtime license files in the packaged application. Android resolves Maven artifacts; iOS resolves CocoaPods. Preserve original third-party licenses. `native/licenses` retains the Lynx 4.1.0
+license and notice for the earlier Lynx SDK; Lynxtron desktop packages retain their own upstream notices without replacing them with those earlier files. Mobile dependency managers retain
 their dependency notices; include them in signed release packaging.
 
 ## Change Triggers
@@ -226,4 +262,5 @@ change. Record validation limits in PR and CI evidence.
 - [Repository defaults](repository-defaults.md)
 - [Environment ownership](repository-environment-contract.md)
 - [Official Lynx integration](https://lynxjs.org/guide/start/integrate-with-existing-apps.html)
-- [Official desktop SDK release](https://github.com/lynx-family/lynx/releases/tag/4.1.0)
+- [Lynxtron](https://lynxjs.org/lynxtron/)
+- [Lynxtron communication](https://lynxjs.org/lynxtron/learn/communication-between-node-and-lynx)
