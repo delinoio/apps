@@ -75,7 +75,6 @@ All addresses below use the loopback host `127.0.0.1`. Frontend servers fail on 
 | Git Tracker frontend | `46320` | `apps/git-tracker/rsbuild.config.ts`                                            | [Web application](apps-git-tracker-web-contract.md)    |
 | Git Tracker API      | `46321` | `LISTEN` in `servers/git-tracker-api/.env.example`; runtime default matches     | [Server](servers-git-tracker-api-contract.md)          |
 | Perfine API          | `46323` | Owning API development launcher                                                 | [Server](servers-perfine-api-contract.md)              |
-| Perfine frontend     | `46324` | `apps/perfine/rsbuild.config.ts`                                                | [Web application](apps-perfine-web-contract.md)        |
 | Delcore API          | `8080`  | `LISTEN` in `servers/delcore-api/.env.example`; explicit configuration required | [Server](servers-delcore-api-contract.md)              |
 
 Git Tracker's frontend API URL and API web-origin example point to `http://127.0.0.1:46321` and `http://127.0.0.1:46320`, respectively. Delcore's consumer example defaults to `http://127.0.0.1:8080`. Database and telemetry endpoints retain their service-specific configuration.

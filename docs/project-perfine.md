@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build Perfine, a local-first performance optimization tool with an optional hosted dashboard and GitHub Actions execution. Support individuals and organizations, public and private repositories, and Rust, C, C++, Zig, Go, and JavaScript in the first release. The CLI host policy covers Linux x86_64, macOS x86_64 and ARM64, and Windows x86_64. Measurement remains Linux x86_64 Docker execution.
+Build Perfine, a local-first performance optimization tool with an optional hosted API and GitHub Actions execution. Support individuals and organizations, public and private repositories, and Rust, C, C++, Zig, Go, and JavaScript in the first release. The CLI host policy covers Linux x86_64, macOS x86_64 and ARM64, and Windows x86_64. Measurement remains Linux x86_64 Docker execution.
 
 The product turns profile-backed hypotheses into isolated code candidates and reproducible comparisons. AI proposes changes; Perfine validates evidence, correctness, and the declared performance policy. A valid outcome can be no improvement or no candidate. Do not promise an optimization for every project.
 
@@ -10,13 +10,12 @@ All optimization work must be possible locally without a Perfine server account 
 
 ## Project ID
 
-`perfine`. Dashboard: `https://perfine.delino.io`. API: `https://perfine.api.delino.io`. npm package: `perfine`.
+`perfine`. API: `https://perfine.api.delino.io`. npm package: `perfine`.
 
 ## Domain Ownership Map
 
 - `crates/perfine-core`: Local Apache-2.0 engine and adapters.
 - `cmds/perfine`: Rust CLI and MCP.
-- `apps/perfine`: Rsbuild web dashboard / Cloudflare Pages deployable.
 - `servers/perfine-api`: FSL API/background work, migrations and OCI deployable.
 - `protos/perfine/v1`: Canonical schemas and generated Go/TypeScript bindings.
 - `actions/perfine`: Official Action source; separate distribution repository.
@@ -31,14 +30,13 @@ Directory skeletons reserve these canonical paths before runtime implementation.
 - [Cli contract](cmds-perfine-cli-contract.md)
 - [Api contract](servers-perfine-api-contract.md)
 - [Protocol contract](protos-perfine-v1-contract.md)
-- [Web contract](apps-perfine-web-contract.md)
 - [Distribution contract](packages-perfine-distribution-contract.md)
 
-Repository CI ownership, six-language fixture profiling gates and Compose/Turbo development integration follow the [workflow contract](repository-workflow-contract.md#perfine-repository-validation). The frontend and API own fixed loopback ports `46324` and `46323`, respectively; configuration injection follows the [environment contract](repository-environment-contract.md).
+Repository CI ownership, six-language fixture profiling gates and Compose/Turbo development integration follow the [workflow contract](repository-workflow-contract.md#perfine-repository-validation). The API owns fixed loopback port `46323`; configuration injection follows the [environment contract](repository-environment-contract.md).
 
 ## Cross-Domain Invariants
 
-Rust is the explicit CLI/shared-engine language choice instead of the non-server Go default. TypeScript/React serves the browser UI; hosted Rust, PostgreSQL, Connect, R2 signed URLs, and Cloudflare Pages follow repository defaults. Local filesystem evidence is required for account-free offline operation rather than mandatory R2 storage. Repository-owned server files/distributions use FSL-1.1-ALv2; other owned files/distributions use Apache-2.0, with original third-party notices retained.
+Rust is the explicit CLI/shared-engine language choice instead of the non-server Go default. Hosted Rust, PostgreSQL, Connect, and R2 signed URLs follow repository defaults. Perfine provides CLI/MCP and API interfaces without a GUI. Local filesystem evidence is required for account-free offline operation rather than mandatory R2 storage. Repository-owned server files/distributions use FSL-1.1-ALv2; other owned files/distributions use Apache-2.0, with original third-party notices retained.
 
 The shared crate exposes configured local language, measurement, profile, headless-agent and Docker environment implementations through the [adapter API contract](crates-perfine-adapters-contract.md#concrete-local-adapter-api). CLI workers and server-side evidence evaluators reuse the same evidence and parser boundary; local authentication configuration is not a hosted API input.
 
@@ -68,7 +66,6 @@ Measurement and optimization run in isolated Linux x86_64 (`linux/amd64`) Docker
 - Hosting supports authorized personal/organization workflows for public/private repositories with independent permissions, private results, single-space connections, safe reconnection, and no cross-space history leakage.
 - Cloud AI credentials never traverse the Perfine server. Candidate code does not inherit agent/publication credentials. Unsupported cloud integrations are explicitly unavailable, not represented as tested.
 - Hosted artifact eligibility, source-snippet consent, secret exclusion, retention, 15-minute signed URLs, tombstones, and persistent deletion recovery follow the defined rules.
-- Dashboard flow, responsive behavior, accessibility, empty/error/permission states, and approval behavior match the approved text specification.
 - Publication supports same-repository and fork/upstream drafts, exact approval binding, source correspondence, and uncertain-outcome reconciliation without automatic merge.
 - `init --github` produces a manual workflow containing its required configuration and pins the distributed Action SHA. Action source lives in `actions/perfine`; built output is released to `delinoio/perfine-action` with exact version tags.
 - All four targets must pass actual npm archive installation with the matching platform dependency and standalone extraction/executable smoke checks before publication. Verify checksums, notices, provenance, `--version`, and the structured missing-configuration `doctor` diagnostic. Verify approved npm names and publishing authority before publication. Automated packaging checks also cover Action distribution structure. Provide all operator configuration, telemetry, documentation, and runbooks.
@@ -85,7 +82,6 @@ Measurement and optimization run in isolated Linux x86_64 (`linux/amd64`) Docker
 - Privacy: server AI credential rejection/noncollection, isolated candidate credential environment, source exclusion, repository-specific raw consent and revocation, secret removal/rejection, no raw evidence in telemetry, and no public result access.
 - Storage: quotas, deletion read/link issuance denial, existing signed URLs' 15-minute validity, deleted-ID late upload rejection, 30-day deduplication boundary, and old history not transferred on connection changes.
 - GitHub integration fixtures: manual workflow, App removal/cancellation failure, same-repo and fork draft PRs, self-approval, changed SHA/base/content invalidating approval, remeasurement on changed production sources, and repeated publication avoiding duplicate PRs.
-- UI tests: keyboard navigation/focus/Escape, accessible names/status, narrow and wide layouts, loading/empty/inconclusive/error/permission/cloud-unavailable recovery, external diff navigation, and no credentials/billing/source-edit controls.
 - Host tests: spaces and non-ASCII paths, Windows paths, executable discovery, permissions, inaccessible mounts, subprocess exits, graceful/immediate cancellation and child cleanup, retained partial evidence, and incompatible resume conditions. Keep minimum-OS, Docker per-host, emulation, mock-agent and live-provider records separate. A newer OS or Windows Server runner does not verify the Windows 11 minimum.
 - Distribution tests: immutable Action release SHA, version tags without moving major tags, standalone binaries and checksums, npm package contents, notices, and absence of tracked generated `dist` directories.
 - Record source revision, commands, results, and unperformed checks in PR/CI evidence. Use disposable databases and mocked external providers for automated integration; keep actual native/provider acceptance separate.
@@ -95,9 +91,9 @@ Measurement and optimization run in isolated Linux x86_64 (`linux/amd64`) Docker
 - CLI hosts outside the four-target policy, native macOS/Windows measurement, Linux ARM64 measurement, cross-host resume guarantees, additional package managers, automatic updates, and runtime binary downloads.
 - macOS distribution signing/notarization and Windows Authenticode.
 - Verified support for every existing profiler; non-core tools use the extension contract.
-- Payments, paid plans, fixed numerical SLA, dedicated support, and separate administrator UI.
+- GUI, payments, paid plans, fixed numerical SLA, dedicated support, and separate administrator UI.
 - Feature flags or staged flag rollout, automatic reverse DB migrations, automatic PR merge, or a mandatory second human reviewer.
-- Server receipt/proxy/storage of AI credentials, CLI browser login, server storage of whole repositories or candidate diffs, anonymous hosted sharing, and other UI/documentation languages.
+- Server receipt/proxy/storage of AI credentials, CLI browser login, server storage of whole repositories or candidate diffs, anonymous hosted sharing, and other CLI/documentation languages.
 - Automatic inclusion or modification of uncommitted changes, automatic default push/PR triggers, automatic alteration of cases/policies to pass, or guarantees that every project improves.
 - Mandatory full Docker workflow or live-account acceptance as a first-release gate. Required native package/executable smoke checks remain release gates; minimum-OS verification is separate and remains incomplete until performed.
 

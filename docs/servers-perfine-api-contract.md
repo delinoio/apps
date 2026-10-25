@@ -66,7 +66,7 @@ Automated verification is the first-release gate. Follow the acceptance criteria
 
 ## Dependencies and Integrations
 
-[Engine contract](crates-perfine-core-contract.md), [Protocol contract](protos-perfine-v1-contract.md), [Web contract](apps-perfine-web-contract.md), [Distribution contract](packages-perfine-distribution-contract.md), [Delcore](project-delcore.md), and [server workspace](servers-rust-workspace-contract.md). GitHub App/Actions execute in user repositories; the server does not host candidate source or diffs.
+[Engine contract](crates-perfine-core-contract.md), [Protocol contract](protos-perfine-v1-contract.md), [Distribution contract](packages-perfine-distribution-contract.md), [Delcore](project-delcore.md), and [server workspace](servers-rust-workspace-contract.md). GitHub App/Actions execute in user repositories; the server does not host candidate source or diffs.
 
 ## Change Triggers
 
@@ -132,7 +132,7 @@ The current deployment declares both cloud tools unavailable. Start/resume fail 
 
 Configuration preparation uses `ExperimentService.PrepareExperiment` with the independent experiment grant. The typed input contains the complete public configuration and no calculated fingerprints. The API validates and freezes it through its server-owned evaluator, returns the immutable specification and canonical core configuration JSON, and retains the prepared specification for 30 days. Preparation does not create an experiment or change a started experiment. Start accepts only an exact, unexpired prepared specification and still requires an eligible cloud tool. Local/Actions uploads may use a CLI-frozen specification; registration independently reconstructs the complete configuration and verifies all three engine fingerprints before creating an experiment.
 
-The versioned uncertainty and frozen configuration mapping is defined in the [protocol contract](protos-perfine-v1-contract.md#configuration-preparation-and-engine-v1-mapping). Confidence intervals are not calculated or inferred from sample ranges. The dashboard edits typed configuration values and obtains fingerprints from preparation; callers never need to calculate a hash to prepare a configuration.
+The versioned uncertainty and frozen configuration mapping is defined in the [protocol contract](protos-perfine-v1-contract.md#configuration-preparation-and-engine-v1-mapping). Confidence intervals are not calculated or inferred from sample ranges. API clients submit typed configuration values and obtain fingerprints from preparation; callers never need to calculate a hash to prepare a configuration.
 
 Confirmed deleted spaces release active repository bindings even when they contain no experiments or preparations. Connection records remain available for cancellation and object-cleanup retries. Blocked spaces retain their bindings, including while execution maintenance cancels queued or running Actions. Authority loss alone does not release the repository reservation; explicit disconnection or confirmed deletion owns that transition.
 

@@ -187,15 +187,6 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
-    perfine:
-      repositoryShared ||
-      shared.frontend ||
-      shared.protocol ||
-      paths.some((path) =>
-        /^(apps\/perfine\/|protos\/|docs\/(?:project-perfine|apps-perfine|protos-perfine))/u.test(
-          path,
-        ),
-      ),
     lane:
       repositoryShared ||
       paths.some((path) =>

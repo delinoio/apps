@@ -21,4 +21,4 @@ The CLI host policy covers Linux x86_64, macOS x86_64 and ARM64, and Windows x86
 
 These pages describe the v1 interfaces. Confirm that the exact package or release asset exists before installing it. Packaging checks do not prove that npm or GitHub release publication has occurred. Cloud AI optimization is currently unavailable; use the local CLI. The CLI prepares upload evidence automatically; unknown artifact formats and evidence that fails privacy checks remain ineligible for hosting. See the upload guide before relying on hosted evaluation.
 
-The dashboard address is [perfine.delino.io](https://perfine.delino.io). These instructions do not certify a live deployment, GitHub account integration, AI account integration, or native profiler run. UI, CLI, and Perfine documentation are English; source code and user input can use other languages.
+Perfine provides CLI, MCP, and API interfaces without a GUI. These instructions do not certify a live deployment, GitHub account integration, AI account integration, or native profiler run. CLI and Perfine documentation are English; source code and user input can use other languages.
