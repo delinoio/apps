@@ -47,8 +47,11 @@ else()
   message(FATAL_ERROR "Native Lane desktop supports macOS and Windows; use web on Linux")
 endif()
 target_include_directories(Lane PRIVATE "${LYNX_SDK}/include")
-add_custom_command(TARGET Lane POST_BUILD
+# The template changes independently of the native executable. Run resource
+# synchronization in every default build, including when resources are missing.
+add_custom_target(LaneResources ALL
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
     "${LANE_DIST}/main.lynx.bundle" "${LANE_DIST}/LICENSE" "${LANE_DIST}/NOTICE" "${LANE_RESOURCES}"
   COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../licenses" "${LANE_RESOURCES}/licenses"
   VERBATIM)
+add_dependencies(LaneResources Lane)

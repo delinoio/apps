@@ -33,7 +33,8 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:desktop`, then `pnpm dev:desktop` to launch the built host.
   macOS requires Xcode command-line tools and CMake; Windows requires Visual
   Studio C++ tools and CMake. Desktop opens a resizable window and exits after
-  the last window closes.
+  the last window closes. Each desktop build synchronizes the current template
+  and application notices, even when the native executable does not relink.
 - Android: install JDK 17 or 21 and Android SDK 35. The committed Gradle
   wrapper selects 8.11.1. Run
   `pnpm build:android` for an unsigned release APK. Import `native/android` in
