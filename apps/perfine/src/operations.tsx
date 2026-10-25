@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
 import {
   CancellationMode,
+  CancellationState,
   ExperimentService,
 } from "@delino/protos/perfine/v1/perfine_pb";
 import { Button, Card, Confirm, External, Failure, Field, Notice } from "./ui";
@@ -20,7 +21,23 @@ export function Operations({ spaceId }: { spaceId: string }) {
     immediate: uuid7(),
     resume: uuid7(),
   }));
-  const cancel = useMutation(ExperimentService.method.cancelExperiment),
+  const cancel = useMutation(ExperimentService.method.cancelExperiment, {
+      onSuccess: (response, request) => {
+        if (
+          response.experiment?.cancellation?.state !== CancellationState.FAILED
+        )
+          return;
+        const mode =
+          request.mode === CancellationMode.IMMEDIATE
+            ? "immediate"
+            : "graceful";
+        setIds((current) =>
+          current[mode] === request.requestId
+            ? { ...current, [mode]: uuid7() }
+            : current,
+        );
+      },
+    }),
     resume = useMutation(ExperimentService.method.resumeExperiment);
   const result = cancel.data?.experiment || resume.data?.experiment;
   if (setup)

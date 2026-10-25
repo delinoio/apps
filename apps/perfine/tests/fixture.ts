@@ -141,6 +141,7 @@ export type FixtureOptions = {
   prepareError?: boolean;
   connectGate?: Promise<void>;
   connectError?: boolean;
+  cancelFailure?: "confirmed" | "uncertain";
   pollFailure?: "getExperiment" | "getCandidate";
 };
 export function fixture(options: FixtureOptions = {}) {
@@ -298,6 +299,22 @@ export function fixture(options: FixtureOptions = {}) {
       },
       cancelExperiment: (req) => {
         calls.push({ method: "cancelExperiment", input: req });
+        if (options.cancelFailure === "uncertain")
+          throw new ConnectError(
+            "Fixture: cancellation outcome unknown",
+            Code.Unavailable,
+          );
+        if (options.cancelFailure === "confirmed")
+          return {
+            experiment: {
+              ...e,
+              cancellation: create(P.CancellationSchema, {
+                state: P.CancellationState.FAILED,
+                reason: "Fixture: cancellation failed",
+              }),
+            },
+          };
+
         return { experiment: e };
       },
       resumeExperiment: (req) => {

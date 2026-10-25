@@ -970,3 +970,39 @@ describe("input and URL boundaries", () => {
     expect(safeURL("https://github.com/example/parser", true)).toBeTruthy();
   });
 });
+
+it.each(["confirmed", "uncertain"] as const)(
+  "retries %s cancellation with the correct request identity",
+  async (failure) => {
+    const f = mount(() => <Operations spaceId={spaceId} />, {
+      cancelFailure: failure,
+    });
+    fireEvent.change(screen.getByLabelText("Experiment ID"), {
+      target: { value: experiment.id },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Cancel immediately" }),
+      );
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Cancel immediately" }).at(-1)!,
+      );
+      await waitFor(() =>
+        expect(
+          f.calls.filter((x) => x.method === "cancelExperiment").length,
+        ).toBe(attempt + 1),
+      );
+      await screen.findByText(
+        failure === "confirmed"
+          ? "Fixture: cancellation failed"
+          : /Fixture: cancellation outcome unknown/,
+      );
+    }
+    const requests = f.calls
+      .filter((x) => x.method === "cancelExperiment")
+      .map((x) => x.input as P.CancelExperimentRequest);
+    expect(requests[0].requestId === requests[1].requestId).toBe(
+      failure === "uncertain",
+    );
+  },
+);
