@@ -755,11 +755,13 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let pulls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let creates = Arc::new(Mutex::new(0u32));
     let creation_override = Arc::new(Mutex::new(None::<Value>));
+    let create_failure = Arc::new(Mutex::new(None::<&'static str>));
     let response = creation_override.clone();
+    let failure = create_failure.clone();
     let (p, posts) = (pulls.clone(), creates.clone());
     let cancel_posts = Arc::new(Mutex::new(Vec::<String>::new()));
     let cancels = cancel_posts.clone();
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),cancels.clone());async move{
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,failure,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),failure.clone(),cancels.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -771,7 +773,20 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    "/delcore.v1.DelcoreService/Authorize"=>{assert_eq!(q["paid"],false);json!({"allowed":g.lock().unwrap().iter().any(|v|q["capability"]==*v) && denied.lock().unwrap().as_ref().is_none_or(|subject| q["userId"] != *subject)})},
    "/repos/owner/repo/pulls" if method=="POST"=>{
     assert_eq!(q["draft"],true);*posts.lock().unwrap()+=1;
-    if let Some(pr)=response.lock().unwrap().clone(){p.lock().unwrap().push(pr.clone());return Json(pr).into_response();}
+    let failure_mode = *failure.lock().unwrap();
+    if failure_mode == Some("timeout") {tokio::time::sleep(Duration::from_millis(150)).await;return StatusCode::OK.into_response();}
+    if let Some(status) = failure_mode {
+     return match status {
+      "403"=>StatusCode::FORBIDDEN.into_response(),
+      "422"=>StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+      "408"=>StatusCode::REQUEST_TIMEOUT.into_response(),
+      "429"=>StatusCode::TOO_MANY_REQUESTS.into_response(),
+      "502"=>StatusCode::BAD_GATEWAY.into_response(),
+      "rate-limited-403"=>(StatusCode::FORBIDDEN,[("x-ratelimit-remaining","0")]).into_response(),
+      _=>panic!("unknown create failure mode"),
+     };
+    }
+    if let Some(pr)=response.lock().unwrap().clone(){p.lock().unwrap().push(pr.clone());return (StatusCode::CREATED,Json(pr)).into_response();}
     p.lock().unwrap().push(json!({"number":1,"html_url":"https://github.com/owner/repo/pull/1","title":q["title"],"body":q["body"],"draft":true,"head":{"sha":"d".repeat(40)},"base":{"sha":"a".repeat(40)}}));
     return StatusCode::SERVICE_UNAVAILABLE.into_response();
    },
@@ -2041,6 +2056,150 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             before,
             "must not repeat a delivered POST"
         );
+    }
+    server.github.http = reqwest::Client::builder()
+        .timeout(Duration::from_millis(75))
+        .build()
+        .unwrap();
+    for mode in [
+        "403",
+        "422",
+        "408",
+        "429",
+        "502",
+        "rate-limited-403",
+        "timeout",
+    ] {
+        let candidate_id = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO perfine_candidates(id,experiment,data) SELECT $1,experiment,jsonb_set(data,'{id}',to_jsonb($1::text)) FROM perfine_candidates WHERE id=$2")
+            .bind(candidate_id)
+            .bind(uuid::Uuid::parse_str(draft["candidateId"].as_str().unwrap()).unwrap())
+            .execute(&db)
+            .await
+            .unwrap();
+        let mut case_draft = draft.clone();
+        case_draft["candidateId"] = json!(candidate_id.to_string());
+        pulls.lock().unwrap().clear();
+        *creation_override.lock().unwrap() = None;
+        *create_failure.lock().unwrap() = Some(mode);
+        let approval = call(
+            &server,
+            &space,
+            "ApproveDraft",
+            json!({"experimentId":eid,"draft":case_draft}),
+        )
+        .await
+        .unwrap();
+        let approval_id = approval["approval"]["id"].as_str().unwrap();
+        call(
+            &server,
+            &space,
+            "PublishDraft",
+            json!({"approvalId":approval_id,"expectedDraft":case_draft}),
+        )
+        .await
+        .unwrap();
+        let before = *creates.lock().unwrap();
+        server.maintain().await.unwrap();
+        let publication = call(
+            &server,
+            &space,
+            "GetPublication",
+            json!({"approvalId":approval_id}),
+        )
+        .await
+        .unwrap()["publication"]
+            .clone();
+        let rejected = mode == "403" || mode == "422";
+        assert_eq!(
+            publication["state"],
+            if rejected {
+                "PUBLICATION_STATE_FAILED"
+            } else {
+                "PUBLICATION_STATE_RECONCILING"
+            },
+            "{mode}"
+        );
+        assert_eq!(*creates.lock().unwrap(), before + 1, "{mode}");
+        let (attempts, stored): (i32, Value) =
+            sqlx::query_as("SELECT attempts,publication FROM perfine_approvals WHERE id=$1")
+                .bind(uuid::Uuid::parse_str(approval_id).unwrap())
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(attempts, 1, "durable dispatch attempt for {mode}");
+        assert_eq!(stored["_createRejected"] == true, rejected, "{mode}");
+        if rejected {
+            let reason = publication["failureReason"].as_str().unwrap();
+            assert!(
+                reason.contains(mode) && reason.len() < 120,
+                "{mode}: {reason}"
+            );
+        }
+        sqlx::query(
+            "UPDATE perfine_approvals SET publication=publication-'_nextAttemptAt' WHERE id=$1",
+        )
+        .bind(uuid::Uuid::parse_str(approval_id).unwrap())
+        .execute(&db)
+        .await
+        .unwrap();
+        server.maintain().await.unwrap();
+        assert_eq!(
+            *creates.lock().unwrap(),
+            before + 1,
+            "no repeat POST for {mode}"
+        );
+        let reconciling: i64 = sqlx::query_scalar("SELECT count(*) FROM perfine_approvals WHERE data->'draft'->>'candidateId'=$1 AND publication->>'state'='PUBLICATION_STATE_RECONCILING'")
+            .bind(candidate_id.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            reconciling,
+            if rejected { 0 } else { 1 },
+            "gauge scope for {mode}"
+        );
+        if rejected {
+            *create_failure.lock().unwrap() = None;
+            *creation_override.lock().unwrap() = Some(
+                json!({"number":99,"html_url":"https://github.com/owner/repo/pull/99","title":case_draft["title"],"body":case_draft["body"],"draft":true,"head":{"sha":case_draft["headSha"]},"base":{"sha":case_draft["baseSha"]}}),
+            );
+            let next = call(
+                &server,
+                &space,
+                "ApproveDraft",
+                json!({"experimentId":eid,"draft":case_draft}),
+            )
+            .await
+            .unwrap();
+            let next_id = next["approval"]["id"].as_str().unwrap();
+            call(
+                &server,
+                &space,
+                "PublishDraft",
+                json!({"approvalId":next_id,"expectedDraft":case_draft}),
+            )
+            .await
+            .unwrap();
+            server.maintain().await.unwrap();
+            let published = call(
+                &server,
+                &space,
+                "GetPublication",
+                json!({"approvalId":next_id}),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                published["publication"]["state"], "PUBLICATION_STATE_PUBLISHED",
+                "{mode}"
+            );
+            assert_eq!(
+                *creates.lock().unwrap(),
+                before + 2,
+                "new approval dispatches for {mode}"
+            );
+        }
     }
     // A still-valid staging PUT must not change accepted bytes.
     http.put(begin["targets"][0]["signedPutUrl"].as_str().unwrap())
