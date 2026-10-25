@@ -148,6 +148,12 @@ const (
 	// SyncServiceWatchChangesProcedure is the fully-qualified name of the SyncService's WatchChanges
 	// RPC.
 	SyncServiceWatchChangesProcedure = "/lane.v1.SyncService/WatchChanges"
+	// CaptureServiceBeginAttachmentUploadProcedure is the fully-qualified name of the CaptureService's
+	// BeginAttachmentUpload RPC.
+	CaptureServiceBeginAttachmentUploadProcedure = "/lane.v1.CaptureService/BeginAttachmentUpload"
+	// CaptureServiceCompleteAttachmentUploadProcedure is the fully-qualified name of the
+	// CaptureService's CompleteAttachmentUpload RPC.
+	CaptureServiceCompleteAttachmentUploadProcedure = "/lane.v1.CaptureService/CompleteAttachmentUpload"
 	// CaptureServiceCreateCaptureTaskProcedure is the fully-qualified name of the CaptureService's
 	// CreateCaptureTask RPC.
 	CaptureServiceCreateCaptureTaskProcedure = "/lane.v1.CaptureService/CreateCaptureTask"
@@ -1360,6 +1366,8 @@ func (UnimplementedSyncServiceHandler) WatchChanges(context.Context, *connect.Re
 
 // CaptureServiceClient is a client for the lane.v1.CaptureService service.
 type CaptureServiceClient interface {
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error)
 	CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error)
 	GetAttachment(context.Context, *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error)
 	ListURLConnections(context.Context, *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error)
@@ -1379,6 +1387,18 @@ func NewCaptureServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	captureServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("CaptureService").Methods()
 	return &captureServiceClient{
+		beginAttachmentUpload: connect.NewClient[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse](
+			httpClient,
+			baseURL+CaptureServiceBeginAttachmentUploadProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("BeginAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
+		completeAttachmentUpload: connect.NewClient[v1.CompleteAttachmentUploadRequest, v1.CompleteAttachmentUploadResponse](
+			httpClient,
+			baseURL+CaptureServiceCompleteAttachmentUploadProcedure,
+			connect.WithSchema(captureServiceMethods.ByName("CompleteAttachmentUpload")),
+			connect.WithClientOptions(opts...),
+		),
 		createCaptureTask: connect.NewClient[v1.CreateCaptureTaskRequest, v1.CreateCaptureTaskResponse](
 			httpClient,
 			baseURL+CaptureServiceCreateCaptureTaskProcedure,
@@ -1420,12 +1440,24 @@ func NewCaptureServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // captureServiceClient implements CaptureServiceClient.
 type captureServiceClient struct {
-	createCaptureTask   *connect.Client[v1.CreateCaptureTaskRequest, v1.CreateCaptureTaskResponse]
-	getAttachment       *connect.Client[v1.GetAttachmentRequest, v1.GetAttachmentResponse]
-	listURLConnections  *connect.Client[v1.ListURLConnectionsRequest, v1.ListURLConnectionsResponse]
-	createURLConnection *connect.Client[v1.CreateURLConnectionRequest, v1.CreateURLConnectionResponse]
-	saveURLConnection   *connect.Client[v1.SaveURLConnectionRequest, v1.SaveURLConnectionResponse]
-	deleteURLConnection *connect.Client[v1.DeleteURLConnectionRequest, v1.DeleteURLConnectionResponse]
+	beginAttachmentUpload    *connect.Client[v1.BeginAttachmentUploadRequest, v1.BeginAttachmentUploadResponse]
+	completeAttachmentUpload *connect.Client[v1.CompleteAttachmentUploadRequest, v1.CompleteAttachmentUploadResponse]
+	createCaptureTask        *connect.Client[v1.CreateCaptureTaskRequest, v1.CreateCaptureTaskResponse]
+	getAttachment            *connect.Client[v1.GetAttachmentRequest, v1.GetAttachmentResponse]
+	listURLConnections       *connect.Client[v1.ListURLConnectionsRequest, v1.ListURLConnectionsResponse]
+	createURLConnection      *connect.Client[v1.CreateURLConnectionRequest, v1.CreateURLConnectionResponse]
+	saveURLConnection        *connect.Client[v1.SaveURLConnectionRequest, v1.SaveURLConnectionResponse]
+	deleteURLConnection      *connect.Client[v1.DeleteURLConnectionRequest, v1.DeleteURLConnectionResponse]
+}
+
+// BeginAttachmentUpload calls lane.v1.CaptureService.BeginAttachmentUpload.
+func (c *captureServiceClient) BeginAttachmentUpload(ctx context.Context, req *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return c.beginAttachmentUpload.CallUnary(ctx, req)
+}
+
+// CompleteAttachmentUpload calls lane.v1.CaptureService.CompleteAttachmentUpload.
+func (c *captureServiceClient) CompleteAttachmentUpload(ctx context.Context, req *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error) {
+	return c.completeAttachmentUpload.CallUnary(ctx, req)
 }
 
 // CreateCaptureTask calls lane.v1.CaptureService.CreateCaptureTask.
@@ -1460,6 +1492,8 @@ func (c *captureServiceClient) DeleteURLConnection(ctx context.Context, req *con
 
 // CaptureServiceHandler is an implementation of the lane.v1.CaptureService service.
 type CaptureServiceHandler interface {
+	BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error)
+	CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error)
 	CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error)
 	GetAttachment(context.Context, *connect.Request[v1.GetAttachmentRequest]) (*connect.Response[v1.GetAttachmentResponse], error)
 	ListURLConnections(context.Context, *connect.Request[v1.ListURLConnectionsRequest]) (*connect.Response[v1.ListURLConnectionsResponse], error)
@@ -1475,6 +1509,18 @@ type CaptureServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewCaptureServiceHandler(svc CaptureServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	captureServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("CaptureService").Methods()
+	captureServiceBeginAttachmentUploadHandler := connect.NewUnaryHandler(
+		CaptureServiceBeginAttachmentUploadProcedure,
+		svc.BeginAttachmentUpload,
+		connect.WithSchema(captureServiceMethods.ByName("BeginAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
+	captureServiceCompleteAttachmentUploadHandler := connect.NewUnaryHandler(
+		CaptureServiceCompleteAttachmentUploadProcedure,
+		svc.CompleteAttachmentUpload,
+		connect.WithSchema(captureServiceMethods.ByName("CompleteAttachmentUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
 	captureServiceCreateCaptureTaskHandler := connect.NewUnaryHandler(
 		CaptureServiceCreateCaptureTaskProcedure,
 		svc.CreateCaptureTask,
@@ -1513,6 +1559,10 @@ func NewCaptureServiceHandler(svc CaptureServiceHandler, opts ...connect.Handler
 	)
 	return "/lane.v1.CaptureService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case CaptureServiceBeginAttachmentUploadProcedure:
+			captureServiceBeginAttachmentUploadHandler.ServeHTTP(w, r)
+		case CaptureServiceCompleteAttachmentUploadProcedure:
+			captureServiceCompleteAttachmentUploadHandler.ServeHTTP(w, r)
 		case CaptureServiceCreateCaptureTaskProcedure:
 			captureServiceCreateCaptureTaskHandler.ServeHTTP(w, r)
 		case CaptureServiceGetAttachmentProcedure:
@@ -1533,6 +1583,14 @@ func NewCaptureServiceHandler(svc CaptureServiceHandler, opts ...connect.Handler
 
 // UnimplementedCaptureServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedCaptureServiceHandler struct{}
+
+func (UnimplementedCaptureServiceHandler) BeginAttachmentUpload(context.Context, *connect.Request[v1.BeginAttachmentUploadRequest]) (*connect.Response[v1.BeginAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.BeginAttachmentUpload is not implemented"))
+}
+
+func (UnimplementedCaptureServiceHandler) CompleteAttachmentUpload(context.Context, *connect.Request[v1.CompleteAttachmentUploadRequest]) (*connect.Response[v1.CompleteAttachmentUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.CompleteAttachmentUpload is not implemented"))
+}
 
 func (UnimplementedCaptureServiceHandler) CreateCaptureTask(context.Context, *connect.Request[v1.CreateCaptureTaskRequest]) (*connect.Response[v1.CreateCaptureTaskResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.CreateCaptureTask is not implemented"))

@@ -10,7 +10,7 @@ fn call(s: &Store, method: &str, mut q: Value) -> lane::error::Result<Value> {
     protocol::attribute(
         protocol::method(method).unwrap().input(),
         &mut q,
-        &json!({"kind":"ORIGIN_KIND_APP","deviceId":s.device,"deviceName":"Lane","accountId":""}),
+        &json!({"kind":"ORIGIN_KIND_APP","deviceId":s.device,"deviceName":"Lane","accountId":s.identity()?.account}),
         &mut vec![],
     )?;
     s.invoke(method, &q)
@@ -117,10 +117,155 @@ fn rules_normalize_deduplicate_and_cascade() {
         1
     );
     call(&s, "DeleteRepository", json!({"id":repository})).unwrap();
-    assert!(
-        call(&s, "ListURLConnections", json!({})).unwrap()["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        call(&s, "ListURLConnections", json!({})).unwrap()["items"],
+        json!([])
     );
+}
+
+fn saved_capture(s: &Store) -> Value {
+    let repository = call(
+        s,
+        "CreateRepository",
+        json!({"url":format!("https://example.com/{}",id())}),
+    )
+    .unwrap()["result"]["version"]["entityId"]
+        .clone();
+    let image = png();
+    call(s,"CreateCaptureTask",json!({"repositoryId":repository,"title":"Capture","images":[{"capture":{"attachmentId":id(),"width":1,"height":1,"sha256":protocol::hash(&image),"byteSize":image.len().to_string()},"png":STANDARD.encode(image)}]})).unwrap()["result"]["version"].clone()
+}
+
+#[test]
+fn import_copies_history_attachments_and_rules_without_account_relabeling() {
+    let root = tempfile::tempdir().unwrap();
+    let source = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&source);
+    let task = version["entityId"].clone();
+    let attachment = version["task"]["captures"][0]["attachmentId"].clone();
+    let rule = call(&source,"CreateURLConnection",json!({"connection":{"prefix":"https://example.com/app","repositoryId":version["task"]["repositoryId"]}})).unwrap();
+    let mut edited = version["task"].clone();
+    edited["captures"] = json!([]);
+    call(
+        &source,
+        "SaveTask",
+        json!({"id":task,"expectedVersionId":version["versionId"],"task":edited}),
+    )
+    .unwrap();
+    let destination = source.select_account("issuer", &id(), "tenant").unwrap();
+    for _ in 0..2 {
+        lane::syncclient::import(&source, &destination).unwrap();
+        assert_eq!(
+            call(
+                &destination,
+                "GetAttachment",
+                json!({"taskId":task,"attachmentId":attachment})
+            )
+            .unwrap()["png"],
+            STANDARD.encode(png())
+        );
+        assert_eq!(
+            call(&destination, "ListURLConnections", json!({})).unwrap()["items"][0]["version"],
+            rule["result"]["version"]
+        );
+    }
+    let other = source.select_account("issuer", &id(), "tenant").unwrap();
+    assert!(lane::syncclient::import(&destination, &other).is_err());
+    assert!(
+        call(
+            &other,
+            "GetAttachment",
+            json!({"taskId":task,"attachmentId":attachment})
+        )
+        .is_err()
+    );
+    call(&destination, "DeleteTask", json!({"id":task})).unwrap();
+    assert_eq!(
+        call(
+            &source,
+            "GetAttachment",
+            json!({"taskId":task,"attachmentId":attachment})
+        )
+        .unwrap()["state"],
+        "ATTACHMENT_STATE_AVAILABLE"
+    );
+}
+
+#[test]
+fn synchronized_manifests_reject_content_changes_and_cross_task_ownership() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&store);
+    for field in ["sha256", "width", "byteSize", "entityId"] {
+        let mut next = version.clone();
+        next["versionId"] = id().into();
+        next["parentVersionIds"] = json!([version["versionId"]]);
+        if field == "entityId" {
+            next[field] = id().into();
+            next["parentVersionIds"] = json!([]);
+        } else {
+            next["task"]["captures"][0][field] = match field {
+                "sha256" => "0".repeat(64).into(),
+                "width" => 2.into(),
+                _ => "999".into(),
+            };
+        }
+        assert!(
+            store
+                .with(true, |c| lane::store::sync::apply(
+                    c,
+                    &json!({"version":next})
+                ))
+                .is_err()
+        );
+    }
+    let mut legacy = version.clone();
+    legacy["formatVersion"] = 1.into();
+    assert!(lane::store::sync::validate(&legacy).is_err());
+    let request = json!({"taskId":version["entityId"],"attachmentId":version["task"]["captures"][0]["attachmentId"]});
+    assert_eq!(
+        call(&store, "GetAttachment", request).unwrap()["png"],
+        STANDARD.encode(png())
+    );
+}
+
+#[test]
+fn account_deletion_erases_image_bytes_and_rules() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&store);
+    call(&store,"CreateURLConnection",json!({"connection":{"prefix":"https://example.com/","repositoryId":version["task"]["repositoryId"]}})).unwrap();
+    let account = id();
+    store.with(true,|c| lane::store::sync::change(c,&json!({"deletion":{"kind":"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT","id":account,"deletionVersionId":id()}}),&account)).unwrap();
+    store
+        .with(false, |c| {
+            for table in ["attachments", "entities", "versions", "outbox", "receipts"] {
+                let count: i64 =
+                    c.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?;
+                assert_eq!(count, 0);
+            }
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn pending_manifests_obey_png_and_sqlite_integer_bounds() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Store::open(root.path(), "", false).unwrap();
+    let version = saved_capture(&store);
+    for (field, value) in [
+        ("width", json!(2_147_483_648_u64)),
+        ("height", json!(u32::MAX)),
+        ("byteSize", json!("9223372036854775808")),
+        ("width", json!(0)),
+    ] {
+        let mut invalid = version.clone();
+        invalid["task"]["captures"][0][field] = value;
+        assert!(lane::store::sync::validate(&invalid).is_err());
+    }
+    let mut boundary = version;
+    boundary["task"]["captures"][0]["width"] = json!(i32::MAX);
+    boundary["task"]["captures"][0]["height"] = json!(i32::MAX);
+    boundary["task"]["captures"][0]["byteSize"] = json!(i64::MAX.to_string());
+    lane::store::sync::validate(&boundary).unwrap();
 }

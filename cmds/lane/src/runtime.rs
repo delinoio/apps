@@ -62,6 +62,18 @@ impl Runtime {
         {
             return Err(Failure::new("DEPENDENCY_UNAVAILABLE", "Request cancelled."));
         }
+        if method == "MigrateLocalData" {
+            if opt.remote || !protocol::valid_id(&opt.space) || q != json!({}) {
+                return Err(invalid(
+                    "data migrate requires explicit --space UUID, local target, and no payload.",
+                ));
+            }
+            self.store.take();
+            return store::migrate(
+                &self.root.clone().map_or_else(store::default_root, Ok)?,
+                &opt.space,
+            );
+        }
         self.open(opt, method == "RemoveDeviceData")?;
         let s = self.store.as_mut().unwrap();
         if !opt.expected_space.is_empty()
@@ -200,8 +212,29 @@ impl Runtime {
             }
             "ConflictList" | "ConflictGet" => {
                 let kind = strv(&q, "kind");
-                if !matches!(kind, "" | "task" | "repository") {
-                    return Err(invalid("--kind must be task or repository."));
+                if !matches!(kind, "" | "task" | "repository" | "url-rule") {
+                    return Err(invalid("--kind must be task, repository, or url-rule."));
+                }
+                if method == "ConflictGet" && kind == "url-rule" {
+                    let mut cursor = String::new();
+                    loop {
+                        let page = self.invoke_inner(
+                            opt,
+                            "ListURLConnections",
+                            json!({"page":{"size":100,"cursor":cursor}}),
+                        )?;
+                        if let Some(item) = page["items"].as_array().and_then(|items| {
+                            items
+                                .iter()
+                                .find(|item| item["version"]["entityId"] == q["id"])
+                        }) {
+                            return Ok(json!({"result":item}));
+                        }
+                        cursor = strv(&page, "nextCursor").into();
+                        if cursor.is_empty() {
+                            return Err(Failure::new("NOT_FOUND", "URL rule does not exist."));
+                        }
+                    }
                 }
                 if method == "ConflictGet" {
                     return self.invoke_inner(
@@ -218,8 +251,10 @@ impl Runtime {
                     vec!["ListTasks"]
                 } else if kind == "repository" {
                     vec!["ListRepositories"]
+                } else if kind == "url-rule" {
+                    vec!["ListURLConnections"]
                 } else {
-                    vec!["ListTasks", "ListRepositories"]
+                    vec!["ListTasks", "ListRepositories", "ListURLConnections"]
                 };
                 let mut items = vec![];
                 for m in methods {
@@ -309,8 +344,11 @@ impl Runtime {
             }
             Ok(response)
         } else {
-            if descriptor.parent_service().name() != "LaneService"
-                && !matches!(method, "GetEvent" | "ListEvents")
+            if matches!(method, "BeginAttachmentUpload" | "CompleteAttachmentUpload")
+                || !matches!(
+                    descriptor.parent_service().name(),
+                    "LaneService" | "CaptureService"
+                ) && !matches!(method, "GetEvent" | "ListEvents")
             {
                 return Err(Failure::new(
                     "ONLINE_REQUIRED",

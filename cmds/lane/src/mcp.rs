@@ -81,12 +81,17 @@ pub fn tools() -> Vec<(String, Value)> {
     for service in protocol::pool().services().filter(|s| {
         matches!(
             s.name(),
-            "LaneService" | "AccountService" | "WebhookService"
+            "LaneService" | "CaptureService" | "AccountService" | "WebhookService"
         )
     }) {
         for m in service.methods() {
             let mut desc = format!("{} using the selected Lane target.", m.name());
-            if service.name() != "LaneService" {
+            if !matches!(service.name(), "LaneService" | "CaptureService")
+                || matches!(
+                    m.name(),
+                    "BeginAttachmentUpload" | "CompleteAttachmentUpload"
+                )
+            {
                 desc.push_str(" Online-only; requires explicit remote selection and approval.");
             }
             if matches!(m.name(), "GetEvent" | "ListEvents") {

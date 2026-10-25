@@ -33,6 +33,11 @@ pub fn validate(v: &Value) -> Result<()> {
         }
         prev = p;
     }
+    if v["formatVersion"] == 1
+        && (v["kind"] == "ENTITY_KIND_URL_CONNECTION" || !array(&v["task"]["captures"]).is_empty())
+    {
+        return Err(invalid("RealQA data requires entity format 2."));
+    }
     if v["promptRestoration"] == true && (v["deleted"] == true || v["kind"] != "ENTITY_KIND_TASK") {
         return Err(invalid("Invalid prompt restoration marker."));
     }
@@ -60,6 +65,13 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     if v["kind"] == "ENTITY_KIND_TASK" {
         let t = &v["task"];
+        let mut seen = HashSet::new();
+        for capture in array(&t["captures"]) {
+            crate::capture::validate_reference(capture)?;
+            if !seen.insert(strv(capture, "attachmentId")) {
+                return Err(invalid("Duplicate attachment reference."));
+            }
+        }
         if !valid_id(strv(t, "repositoryId"))
             || strv(t, "title").trim().is_empty()
             || !matches!(
@@ -139,6 +151,28 @@ pub fn insert_version(c: &Connection, v: &Value) -> Result<()> {
         }
         return Ok(());
     }
+    for capture in array(&v["task"]["captures"]) {
+        crate::capture::validate_reference(capture)?;
+        let attachment = strv(capture, "attachmentId");
+        let expected = (
+            entity.to_owned(),
+            strv(capture, "sha256").to_owned(),
+            capture["width"].as_i64().unwrap(),
+            capture["height"].as_i64().unwrap(),
+            strv(capture, "byteSize").parse::<i64>().unwrap(),
+        );
+        let old: Option<(String, String, i64, i64, i64)> = c
+            .query_row(
+                "SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?",
+                [attachment],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        if old.is_some_and(|old| old != expected) {
+            return Err(invalid("Immutable attachment owner or content changed."));
+        }
+        c.execute("INSERT OR IGNORE INTO attachments(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)", params![attachment,expected.0,expected.1,expected.2,expected.3,expected.4])?;
+    }
     let mut prompt = v["promptRestoration"] == true
         || (array(&v["parentVersionIds"]).is_empty() && v["task"].get("prompt").is_some());
     for parent in array(&v["parentVersionIds"]) {
@@ -211,7 +245,7 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
             }
             return delete_entity(
                 c,
-                &json!({"formatVersion":1,"entityId":entity,"versionId":id(),"kind":v["kind"],"deleted":true}),
+                &json!({"formatVersion":2,"entityId":entity,"versionId":id(),"kind":v["kind"],"deleted":true}),
             );
         }
     }
@@ -245,23 +279,6 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
             || version["deleted"] == true
         {
             return Err(invalid("Invalid alternative."));
-        }
-        for capture in array(&version["task"]["captures"]) {
-            let attachment = strv(capture, "attachmentId");
-            if !valid_id(attachment) {
-                return Err(invalid("Invalid attachment identity."));
-            }
-            let owner: Option<String> = c
-                .query_row(
-                    "SELECT task_id FROM attachments WHERE id=?",
-                    [attachment],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if owner.as_deref().is_some_and(|owner| owner != entity) {
-                return Err(invalid("Attachment belongs to another task."));
-            }
-            c.execute("INSERT OR IGNORE INTO attachments(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)",params![attachment,entity,strv(capture,"sha256"),capture["width"].as_i64(),capture["height"].as_i64(),strv(capture,"byteSize").parse::<i64>().map_err(|_|invalid("Invalid attachment size."))?])?;
         }
         insert_version(c, version)?;
         c.execute(
@@ -401,12 +418,12 @@ pub fn change(c: &Connection, v: &Value, account: &str) -> Result<()> {
     let d = &v["deletion"];
     let id = strv(d, "id");
     match strv(d, "kind") {
-        "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY" | "ENTITY_KIND_OR_REMOTE_KIND_TASK" => {
-            delete_entity(
-                c,
-                &json!({"formatVersion":1,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
-            )
-        }
+        "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY"
+        | "ENTITY_KIND_OR_REMOTE_KIND_TASK"
+        | "ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION" => delete_entity(
+            c,
+            &json!({"formatVersion":2,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION"{"ENTITY_KIND_URL_CONNECTION"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
+        ),
         "ENTITY_KIND_OR_REMOTE_KIND_RECEIVER" => delete_remote(c, 1, id),
         "ENTITY_KIND_OR_REMOTE_KIND_EVENT" => delete_remote(c, 2, id),
         "ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT" => {
@@ -416,7 +433,7 @@ pub fn change(c: &Connection, v: &Value, account: &str) -> Result<()> {
                     "Account deletion target mismatch.",
                 ));
             }
-            c.execute_batch("DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM receipts; DELETE FROM repository_mappings; DELETE FROM notification_receipts;")?;
+            c.execute_batch("DELETE FROM attachments; DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM receipts; DELETE FROM repository_mappings; DELETE FROM notification_receipts;")?;
             put_meta(c, "account_deleted", "1")
         }
         _ => Err(invalid("Invalid synchronization change.")),

@@ -29,5 +29,10 @@
   "ReleaseEventLease": ["id", "leaseToken"],
   "CompleteEvent": ["id", "leaseToken"],
   "ReopenEvent": ["id", "expectedRevision"],
-  "ConflictGet": ["id"]
+  "ConflictGet": ["id"],
+  "CreateCaptureTask": ["repositoryId", "title", "images"],
+  "GetAttachment": ["taskId", "attachmentId"],
+  "CreateURLConnection": ["connection"],
+  "SaveURLConnection": ["id", "expectedVersionId", "connection"],
+  "DeleteURLConnection": ["id"]
 }

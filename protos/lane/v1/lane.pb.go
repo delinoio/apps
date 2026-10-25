@@ -7043,6 +7043,255 @@ func (x *GetAttachmentResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Uploads target temporary private objects. Completion validates and publishes immutable bytes.
+type BeginAttachmentUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	AttachmentId  string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	Epoch         string                 `protobuf:"bytes,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginAttachmentUploadRequest) Reset() {
+	*x = BeginAttachmentUploadRequest{}
+	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *BeginAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *BeginAttachmentUploadRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadRequest) GetEpoch() string {
+	if x != nil {
+		return x.Epoch
+	}
+	return ""
+}
+
+type BeginAttachmentUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	UploadUrl     string                 `protobuf:"bytes,2,opt,name=upload_url,json=uploadUrl,proto3" json:"upload_url,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Headers       map[string]string      `protobuf:"bytes,4,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	State         AttachmentState        `protobuf:"varint,5,opt,name=state,proto3,enum=lane.v1.AttachmentState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginAttachmentUploadResponse) Reset() {
+	*x = BeginAttachmentUploadResponse{}
+	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *BeginAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *BeginAttachmentUploadResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadResponse) GetUploadUrl() string {
+	if x != nil {
+		return x.UploadUrl
+	}
+	return ""
+}
+
+func (x *BeginAttachmentUploadResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *BeginAttachmentUploadResponse) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *BeginAttachmentUploadResponse) GetState() AttachmentState {
+	if x != nil {
+		return x.State
+	}
+	return AttachmentState_ATTACHMENT_STATE_UNSPECIFIED
+}
+
+type CompleteAttachmentUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	AttachmentId  string                 `protobuf:"bytes,2,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	UploadId      string                 `protobuf:"bytes,3,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Epoch         string                 `protobuf:"bytes,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteAttachmentUploadRequest) Reset() {
+	*x = CompleteAttachmentUploadRequest{}
+	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteAttachmentUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteAttachmentUploadRequest) ProtoMessage() {}
+
+func (x *CompleteAttachmentUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteAttachmentUploadRequest.ProtoReflect.Descriptor instead.
+func (*CompleteAttachmentUploadRequest) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *CompleteAttachmentUploadRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *CompleteAttachmentUploadRequest) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *CompleteAttachmentUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *CompleteAttachmentUploadRequest) GetEpoch() string {
+	if x != nil {
+		return x.Epoch
+	}
+	return ""
+}
+
+type CompleteAttachmentUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         AttachmentState        `protobuf:"varint,1,opt,name=state,proto3,enum=lane.v1.AttachmentState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteAttachmentUploadResponse) Reset() {
+	*x = CompleteAttachmentUploadResponse{}
+	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteAttachmentUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteAttachmentUploadResponse) ProtoMessage() {}
+
+func (x *CompleteAttachmentUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteAttachmentUploadResponse.ProtoReflect.Descriptor instead.
+func (*CompleteAttachmentUploadResponse) Descriptor() ([]byte, []int) {
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *CompleteAttachmentUploadResponse) GetState() AttachmentState {
+	if x != nil {
+		return x.State
+	}
+	return AttachmentState_ATTACHMENT_STATE_UNSPECIFIED
+}
+
 type URLConnection struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
@@ -7053,7 +7302,7 @@ type URLConnection struct {
 
 func (x *URLConnection) Reset() {
 	*x = URLConnection{}
-	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	mi := &file_lane_v1_lane_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7065,7 +7314,7 @@ func (x *URLConnection) String() string {
 func (*URLConnection) ProtoMessage() {}
 
 func (x *URLConnection) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[103]
+	mi := &file_lane_v1_lane_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7078,7 +7327,7 @@ func (x *URLConnection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use URLConnection.ProtoReflect.Descriptor instead.
 func (*URLConnection) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{103}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *URLConnection) GetPrefix() string {
@@ -7104,7 +7353,7 @@ type ListURLConnectionsRequest struct {
 
 func (x *ListURLConnectionsRequest) Reset() {
 	*x = ListURLConnectionsRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	mi := &file_lane_v1_lane_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7116,7 +7365,7 @@ func (x *ListURLConnectionsRequest) String() string {
 func (*ListURLConnectionsRequest) ProtoMessage() {}
 
 func (x *ListURLConnectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[104]
+	mi := &file_lane_v1_lane_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7129,7 +7378,7 @@ func (x *ListURLConnectionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListURLConnectionsRequest.ProtoReflect.Descriptor instead.
 func (*ListURLConnectionsRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{104}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *ListURLConnectionsRequest) GetPage() *Page {
@@ -7149,7 +7398,7 @@ type ListURLConnectionsResponse struct {
 
 func (x *ListURLConnectionsResponse) Reset() {
 	*x = ListURLConnectionsResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	mi := &file_lane_v1_lane_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7161,7 +7410,7 @@ func (x *ListURLConnectionsResponse) String() string {
 func (*ListURLConnectionsResponse) ProtoMessage() {}
 
 func (x *ListURLConnectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[105]
+	mi := &file_lane_v1_lane_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7174,7 +7423,7 @@ func (x *ListURLConnectionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListURLConnectionsResponse.ProtoReflect.Descriptor instead.
 func (*ListURLConnectionsResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{105}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *ListURLConnectionsResponse) GetItems() []*EntityResult {
@@ -7202,7 +7451,7 @@ type CreateURLConnectionRequest struct {
 
 func (x *CreateURLConnectionRequest) Reset() {
 	*x = CreateURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	mi := &file_lane_v1_lane_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7214,7 +7463,7 @@ func (x *CreateURLConnectionRequest) String() string {
 func (*CreateURLConnectionRequest) ProtoMessage() {}
 
 func (x *CreateURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[106]
+	mi := &file_lane_v1_lane_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7227,7 +7476,7 @@ func (x *CreateURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*CreateURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{106}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *CreateURLConnectionRequest) GetMeta() *MutationMeta {
@@ -7260,7 +7509,7 @@ type CreateURLConnectionResponse struct {
 
 func (x *CreateURLConnectionResponse) Reset() {
 	*x = CreateURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[107]
+	mi := &file_lane_v1_lane_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7272,7 +7521,7 @@ func (x *CreateURLConnectionResponse) String() string {
 func (*CreateURLConnectionResponse) ProtoMessage() {}
 
 func (x *CreateURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[107]
+	mi := &file_lane_v1_lane_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7285,7 +7534,7 @@ func (x *CreateURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*CreateURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{107}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *CreateURLConnectionResponse) GetResult() *EntityResult {
@@ -7307,7 +7556,7 @@ type SaveURLConnectionRequest struct {
 
 func (x *SaveURLConnectionRequest) Reset() {
 	*x = SaveURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[108]
+	mi := &file_lane_v1_lane_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7319,7 +7568,7 @@ func (x *SaveURLConnectionRequest) String() string {
 func (*SaveURLConnectionRequest) ProtoMessage() {}
 
 func (x *SaveURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[108]
+	mi := &file_lane_v1_lane_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7332,7 +7581,7 @@ func (x *SaveURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*SaveURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{108}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *SaveURLConnectionRequest) GetMeta() *MutationMeta {
@@ -7372,7 +7621,7 @@ type SaveURLConnectionResponse struct {
 
 func (x *SaveURLConnectionResponse) Reset() {
 	*x = SaveURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[109]
+	mi := &file_lane_v1_lane_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7384,7 +7633,7 @@ func (x *SaveURLConnectionResponse) String() string {
 func (*SaveURLConnectionResponse) ProtoMessage() {}
 
 func (x *SaveURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[109]
+	mi := &file_lane_v1_lane_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7397,7 +7646,7 @@ func (x *SaveURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*SaveURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{109}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *SaveURLConnectionResponse) GetResult() *EntityResult {
@@ -7417,7 +7666,7 @@ type DeleteURLConnectionRequest struct {
 
 func (x *DeleteURLConnectionRequest) Reset() {
 	*x = DeleteURLConnectionRequest{}
-	mi := &file_lane_v1_lane_proto_msgTypes[110]
+	mi := &file_lane_v1_lane_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7429,7 +7678,7 @@ func (x *DeleteURLConnectionRequest) String() string {
 func (*DeleteURLConnectionRequest) ProtoMessage() {}
 
 func (x *DeleteURLConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[110]
+	mi := &file_lane_v1_lane_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7442,7 +7691,7 @@ func (x *DeleteURLConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteURLConnectionRequest.ProtoReflect.Descriptor instead.
 func (*DeleteURLConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{110}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *DeleteURLConnectionRequest) GetMeta() *MutationMeta {
@@ -7468,7 +7717,7 @@ type DeleteURLConnectionResponse struct {
 
 func (x *DeleteURLConnectionResponse) Reset() {
 	*x = DeleteURLConnectionResponse{}
-	mi := &file_lane_v1_lane_proto_msgTypes[111]
+	mi := &file_lane_v1_lane_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7480,7 +7729,7 @@ func (x *DeleteURLConnectionResponse) String() string {
 func (*DeleteURLConnectionResponse) ProtoMessage() {}
 
 func (x *DeleteURLConnectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lane_v1_lane_proto_msgTypes[111]
+	mi := &file_lane_v1_lane_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7493,7 +7742,7 @@ func (x *DeleteURLConnectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteURLConnectionResponse.ProtoReflect.Descriptor instead.
 func (*DeleteURLConnectionResponse) Descriptor() ([]byte, []int) {
-	return file_lane_v1_lane_proto_rawDescGZIP(), []int{111}
+	return file_lane_v1_lane_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *DeleteURLConnectionResponse) GetResult() *EntityResult {
@@ -7966,7 +8215,29 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\x03png\x18\x02 \x01(\fR\x03png\x12!\n" +
 	"\fdownload_url\x18\x03 \x01(\tR\vdownloadUrl\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"L\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"r\n" +
+	"\x1cBeginAttachmentUploadRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\x12\x14\n" +
+	"\x05epoch\x18\x03 \x01(\tR\x05epoch\"\xd1\x02\n" +
+	"\x1dBeginAttachmentUploadResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1d\n" +
+	"\n" +
+	"upload_url\x18\x02 \x01(\tR\tuploadUrl\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12M\n" +
+	"\aheaders\x18\x04 \x03(\v23.lane.v1.BeginAttachmentUploadResponse.HeadersEntryR\aheaders\x12.\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x18.lane.v1.AttachmentStateR\x05state\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x92\x01\n" +
+	"\x1fCompleteAttachmentUploadRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12#\n" +
+	"\rattachment_id\x18\x02 \x01(\tR\fattachmentId\x12\x1b\n" +
+	"\tupload_id\x18\x03 \x01(\tR\buploadId\x12\x14\n" +
+	"\x05epoch\x18\x04 \x01(\tR\x05epoch\"R\n" +
+	" CompleteAttachmentUploadResponse\x12.\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x18.lane.v1.AttachmentStateR\x05state\"L\n" +
 	"\rURLConnection\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12#\n" +
 	"\rrepository_id\x18\x02 \x01(\tR\frepositoryId\">\n" +
@@ -8145,8 +8416,10 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\vGetSyncInfo\x12\x1b.lane.v1.GetSyncInfoRequest\x1a\x1c.lane.v1.GetSyncInfoResponse\x12H\n" +
 	"\vPushChanges\x12\x1b.lane.v1.PushChangesRequest\x1a\x1c.lane.v1.PushChangesResponse\x12H\n" +
 	"\vPullChanges\x12\x1b.lane.v1.PullChangesRequest\x1a\x1c.lane.v1.PullChangesResponse\x12M\n" +
-	"\fWatchChanges\x12\x1c.lane.v1.WatchChangesRequest\x1a\x1d.lane.v1.WatchChangesResponse0\x012\xbb\x04\n" +
-	"\x0eCaptureService\x12Z\n" +
+	"\fWatchChanges\x12\x1c.lane.v1.WatchChangesRequest\x1a\x1d.lane.v1.WatchChangesResponse0\x012\x94\x06\n" +
+	"\x0eCaptureService\x12f\n" +
+	"\x15BeginAttachmentUpload\x12%.lane.v1.BeginAttachmentUploadRequest\x1a&.lane.v1.BeginAttachmentUploadResponse\x12o\n" +
+	"\x18CompleteAttachmentUpload\x12(.lane.v1.CompleteAttachmentUploadRequest\x1a).lane.v1.CompleteAttachmentUploadResponse\x12Z\n" +
 	"\x11CreateCaptureTask\x12!.lane.v1.CreateCaptureTaskRequest\x1a\".lane.v1.CreateCaptureTaskResponse\x12N\n" +
 	"\rGetAttachment\x12\x1d.lane.v1.GetAttachmentRequest\x1a\x1e.lane.v1.GetAttachmentResponse\x12]\n" +
 	"\x12ListURLConnections\x12\".lane.v1.ListURLConnectionsRequest\x1a#.lane.v1.ListURLConnectionsResponse\x12`\n" +
@@ -8167,137 +8440,142 @@ func file_lane_v1_lane_proto_rawDescGZIP() []byte {
 }
 
 var file_lane_v1_lane_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
-var file_lane_v1_lane_proto_msgTypes = make([]protoimpl.MessageInfo, 112)
+var file_lane_v1_lane_proto_msgTypes = make([]protoimpl.MessageInfo, 117)
 var file_lane_v1_lane_proto_goTypes = []any{
-	(OriginKind)(0),                     // 0: lane.v1.OriginKind
-	(EntityKind)(0),                     // 1: lane.v1.EntityKind
-	(Progress)(0),                       // 2: lane.v1.Progress
-	(Proposal)(0),                       // 3: lane.v1.Proposal
-	(ResultKind)(0),                     // 4: lane.v1.ResultKind
-	(MutationKind)(0),                   // 5: lane.v1.MutationKind
-	(ErrorReason)(0),                    // 6: lane.v1.ErrorReason
-	(PushProvider)(0),                   // 7: lane.v1.PushProvider
-	(NotificationContent)(0),            // 8: lane.v1.NotificationContent
-	(DataDeletionMode)(0),               // 9: lane.v1.DataDeletionMode
-	(EventState)(0),                     // 10: lane.v1.EventState
-	(NotificationPermission)(0),         // 11: lane.v1.NotificationPermission
-	(LocalRetention)(0),                 // 12: lane.v1.LocalRetention
-	(EntityKindOrRemoteKind)(0),         // 13: lane.v1.EntityKindOrRemoteKind
-	(AttachmentState)(0),                // 14: lane.v1.AttachmentState
-	(*Origin)(nil),                      // 15: lane.v1.Origin
-	(*Repository)(nil),                  // 16: lane.v1.Repository
-	(*Task)(nil),                        // 17: lane.v1.Task
-	(*EntityVersion)(nil),               // 18: lane.v1.EntityVersion
-	(*MutationMeta)(nil),                // 19: lane.v1.MutationMeta
-	(*EntityResult)(nil),                // 20: lane.v1.EntityResult
-	(*Page)(nil),                        // 21: lane.v1.Page
-	(*RepositoryTarget)(nil),            // 22: lane.v1.RepositoryTarget
-	(*SyncMutation)(nil),                // 23: lane.v1.SyncMutation
-	(*SyncResult)(nil),                  // 24: lane.v1.SyncResult
-	(*RepositoryMapping)(nil),           // 25: lane.v1.RepositoryMapping
-	(*ErrorDetail)(nil),                 // 26: lane.v1.ErrorDetail
-	(*Device)(nil),                      // 27: lane.v1.Device
-	(*Connection)(nil),                  // 28: lane.v1.Connection
-	(*WebhookReceiver)(nil),             // 29: lane.v1.WebhookReceiver
-	(*WebhookEvent)(nil),                // 30: lane.v1.WebhookEvent
-	(*ProcessingRecord)(nil),            // 31: lane.v1.ProcessingRecord
-	(*DeletionRecord)(nil),              // 32: lane.v1.DeletionRecord
-	(*Change)(nil),                      // 33: lane.v1.Change
-	(*GetRepositoryRequest)(nil),        // 34: lane.v1.GetRepositoryRequest
-	(*GetRepositoryResponse)(nil),       // 35: lane.v1.GetRepositoryResponse
-	(*ListRepositoriesRequest)(nil),     // 36: lane.v1.ListRepositoriesRequest
-	(*ListRepositoriesResponse)(nil),    // 37: lane.v1.ListRepositoriesResponse
-	(*CreateRepositoryRequest)(nil),     // 38: lane.v1.CreateRepositoryRequest
-	(*CreateRepositoryResponse)(nil),    // 39: lane.v1.CreateRepositoryResponse
-	(*SaveRepositoryRequest)(nil),       // 40: lane.v1.SaveRepositoryRequest
-	(*SaveRepositoryResponse)(nil),      // 41: lane.v1.SaveRepositoryResponse
-	(*DeleteRepositoryRequest)(nil),     // 42: lane.v1.DeleteRepositoryRequest
-	(*DeleteRepositoryResponse)(nil),    // 43: lane.v1.DeleteRepositoryResponse
-	(*GetTaskRequest)(nil),              // 44: lane.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),             // 45: lane.v1.GetTaskResponse
-	(*ListTasksRequest)(nil),            // 46: lane.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),           // 47: lane.v1.ListTasksResponse
-	(*CreateTaskRequest)(nil),           // 48: lane.v1.CreateTaskRequest
-	(*CreateTaskResponse)(nil),          // 49: lane.v1.CreateTaskResponse
-	(*SaveTaskRequest)(nil),             // 50: lane.v1.SaveTaskRequest
-	(*SaveTaskResponse)(nil),            // 51: lane.v1.SaveTaskResponse
-	(*SetProgressRequest)(nil),          // 52: lane.v1.SetProgressRequest
-	(*SetProgressResponse)(nil),         // 53: lane.v1.SetProgressResponse
-	(*SetProposalRequest)(nil),          // 54: lane.v1.SetProposalRequest
-	(*SetProposalResponse)(nil),         // 55: lane.v1.SetProposalResponse
-	(*RestorePromptRequest)(nil),        // 56: lane.v1.RestorePromptRequest
-	(*RestorePromptResponse)(nil),       // 57: lane.v1.RestorePromptResponse
-	(*DeleteTaskRequest)(nil),           // 58: lane.v1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),          // 59: lane.v1.DeleteTaskResponse
-	(*ListHistoryRequest)(nil),          // 60: lane.v1.ListHistoryRequest
-	(*ListHistoryResponse)(nil),         // 61: lane.v1.ListHistoryResponse
-	(*ResolveConflictRequest)(nil),      // 62: lane.v1.ResolveConflictRequest
-	(*ResolveConflictResponse)(nil),     // 63: lane.v1.ResolveConflictResponse
-	(*ListDevicesRequest)(nil),          // 64: lane.v1.ListDevicesRequest
-	(*ListDevicesResponse)(nil),         // 65: lane.v1.ListDevicesResponse
-	(*DisconnectDeviceRequest)(nil),     // 66: lane.v1.DisconnectDeviceRequest
-	(*DisconnectDeviceResponse)(nil),    // 67: lane.v1.DisconnectDeviceResponse
-	(*ListConnectionsRequest)(nil),      // 68: lane.v1.ListConnectionsRequest
-	(*ListConnectionsResponse)(nil),     // 69: lane.v1.ListConnectionsResponse
-	(*RevokeConnectionRequest)(nil),     // 70: lane.v1.RevokeConnectionRequest
-	(*RevokeConnectionResponse)(nil),    // 71: lane.v1.RevokeConnectionResponse
-	(*RegisterPushRequest)(nil),         // 72: lane.v1.RegisterPushRequest
-	(*RegisterPushResponse)(nil),        // 73: lane.v1.RegisterPushResponse
-	(*BeginDataDeletionRequest)(nil),    // 74: lane.v1.BeginDataDeletionRequest
-	(*BeginDataDeletionResponse)(nil),   // 75: lane.v1.BeginDataDeletionResponse
-	(*DeleteAccountDataRequest)(nil),    // 76: lane.v1.DeleteAccountDataRequest
-	(*DeleteAccountDataResponse)(nil),   // 77: lane.v1.DeleteAccountDataResponse
-	(*ListReceiversRequest)(nil),        // 78: lane.v1.ListReceiversRequest
-	(*ListReceiversResponse)(nil),       // 79: lane.v1.ListReceiversResponse
-	(*CreateReceiverRequest)(nil),       // 80: lane.v1.CreateReceiverRequest
-	(*CreateReceiverResponse)(nil),      // 81: lane.v1.CreateReceiverResponse
-	(*SaveReceiverRequest)(nil),         // 82: lane.v1.SaveReceiverRequest
-	(*SaveReceiverResponse)(nil),        // 83: lane.v1.SaveReceiverResponse
-	(*RotateReceiverKeyRequest)(nil),    // 84: lane.v1.RotateReceiverKeyRequest
-	(*RotateReceiverKeyResponse)(nil),   // 85: lane.v1.RotateReceiverKeyResponse
-	(*DeleteReceiverRequest)(nil),       // 86: lane.v1.DeleteReceiverRequest
-	(*DeleteReceiverResponse)(nil),      // 87: lane.v1.DeleteReceiverResponse
-	(*ListEventsRequest)(nil),           // 88: lane.v1.ListEventsRequest
-	(*ListEventsResponse)(nil),          // 89: lane.v1.ListEventsResponse
-	(*GetEventRequest)(nil),             // 90: lane.v1.GetEventRequest
-	(*GetEventResponse)(nil),            // 91: lane.v1.GetEventResponse
-	(*DeleteEventRequest)(nil),          // 92: lane.v1.DeleteEventRequest
-	(*DeleteEventResponse)(nil),         // 93: lane.v1.DeleteEventResponse
-	(*ClaimEventRequest)(nil),           // 94: lane.v1.ClaimEventRequest
-	(*ClaimEventResponse)(nil),          // 95: lane.v1.ClaimEventResponse
-	(*RenewEventLeaseRequest)(nil),      // 96: lane.v1.RenewEventLeaseRequest
-	(*RenewEventLeaseResponse)(nil),     // 97: lane.v1.RenewEventLeaseResponse
-	(*ReleaseEventLeaseRequest)(nil),    // 98: lane.v1.ReleaseEventLeaseRequest
-	(*ReleaseEventLeaseResponse)(nil),   // 99: lane.v1.ReleaseEventLeaseResponse
-	(*CompleteEventRequest)(nil),        // 100: lane.v1.CompleteEventRequest
-	(*CompleteEventResponse)(nil),       // 101: lane.v1.CompleteEventResponse
-	(*ReopenEventRequest)(nil),          // 102: lane.v1.ReopenEventRequest
-	(*ReopenEventResponse)(nil),         // 103: lane.v1.ReopenEventResponse
-	(*GetSyncInfoRequest)(nil),          // 104: lane.v1.GetSyncInfoRequest
-	(*GetSyncInfoResponse)(nil),         // 105: lane.v1.GetSyncInfoResponse
-	(*PushChangesRequest)(nil),          // 106: lane.v1.PushChangesRequest
-	(*PushChangesResponse)(nil),         // 107: lane.v1.PushChangesResponse
-	(*PullChangesRequest)(nil),          // 108: lane.v1.PullChangesRequest
-	(*PullChangesResponse)(nil),         // 109: lane.v1.PullChangesResponse
-	(*WatchChangesRequest)(nil),         // 110: lane.v1.WatchChangesRequest
-	(*WatchChangesResponse)(nil),        // 111: lane.v1.WatchChangesResponse
-	(*CaptureReference)(nil),            // 112: lane.v1.CaptureReference
-	(*CapturedImage)(nil),               // 113: lane.v1.CapturedImage
-	(*CreateCaptureTaskRequest)(nil),    // 114: lane.v1.CreateCaptureTaskRequest
-	(*CreateCaptureTaskResponse)(nil),   // 115: lane.v1.CreateCaptureTaskResponse
-	(*GetAttachmentRequest)(nil),        // 116: lane.v1.GetAttachmentRequest
-	(*GetAttachmentResponse)(nil),       // 117: lane.v1.GetAttachmentResponse
-	(*URLConnection)(nil),               // 118: lane.v1.URLConnection
-	(*ListURLConnectionsRequest)(nil),   // 119: lane.v1.ListURLConnectionsRequest
-	(*ListURLConnectionsResponse)(nil),  // 120: lane.v1.ListURLConnectionsResponse
-	(*CreateURLConnectionRequest)(nil),  // 121: lane.v1.CreateURLConnectionRequest
-	(*CreateURLConnectionResponse)(nil), // 122: lane.v1.CreateURLConnectionResponse
-	(*SaveURLConnectionRequest)(nil),    // 123: lane.v1.SaveURLConnectionRequest
-	(*SaveURLConnectionResponse)(nil),   // 124: lane.v1.SaveURLConnectionResponse
-	(*DeleteURLConnectionRequest)(nil),  // 125: lane.v1.DeleteURLConnectionRequest
-	(*DeleteURLConnectionResponse)(nil), // 126: lane.v1.DeleteURLConnectionResponse
-	(*timestamppb.Timestamp)(nil),       // 127: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),             // 128: google.protobuf.Struct
+	(OriginKind)(0),                          // 0: lane.v1.OriginKind
+	(EntityKind)(0),                          // 1: lane.v1.EntityKind
+	(Progress)(0),                            // 2: lane.v1.Progress
+	(Proposal)(0),                            // 3: lane.v1.Proposal
+	(ResultKind)(0),                          // 4: lane.v1.ResultKind
+	(MutationKind)(0),                        // 5: lane.v1.MutationKind
+	(ErrorReason)(0),                         // 6: lane.v1.ErrorReason
+	(PushProvider)(0),                        // 7: lane.v1.PushProvider
+	(NotificationContent)(0),                 // 8: lane.v1.NotificationContent
+	(DataDeletionMode)(0),                    // 9: lane.v1.DataDeletionMode
+	(EventState)(0),                          // 10: lane.v1.EventState
+	(NotificationPermission)(0),              // 11: lane.v1.NotificationPermission
+	(LocalRetention)(0),                      // 12: lane.v1.LocalRetention
+	(EntityKindOrRemoteKind)(0),              // 13: lane.v1.EntityKindOrRemoteKind
+	(AttachmentState)(0),                     // 14: lane.v1.AttachmentState
+	(*Origin)(nil),                           // 15: lane.v1.Origin
+	(*Repository)(nil),                       // 16: lane.v1.Repository
+	(*Task)(nil),                             // 17: lane.v1.Task
+	(*EntityVersion)(nil),                    // 18: lane.v1.EntityVersion
+	(*MutationMeta)(nil),                     // 19: lane.v1.MutationMeta
+	(*EntityResult)(nil),                     // 20: lane.v1.EntityResult
+	(*Page)(nil),                             // 21: lane.v1.Page
+	(*RepositoryTarget)(nil),                 // 22: lane.v1.RepositoryTarget
+	(*SyncMutation)(nil),                     // 23: lane.v1.SyncMutation
+	(*SyncResult)(nil),                       // 24: lane.v1.SyncResult
+	(*RepositoryMapping)(nil),                // 25: lane.v1.RepositoryMapping
+	(*ErrorDetail)(nil),                      // 26: lane.v1.ErrorDetail
+	(*Device)(nil),                           // 27: lane.v1.Device
+	(*Connection)(nil),                       // 28: lane.v1.Connection
+	(*WebhookReceiver)(nil),                  // 29: lane.v1.WebhookReceiver
+	(*WebhookEvent)(nil),                     // 30: lane.v1.WebhookEvent
+	(*ProcessingRecord)(nil),                 // 31: lane.v1.ProcessingRecord
+	(*DeletionRecord)(nil),                   // 32: lane.v1.DeletionRecord
+	(*Change)(nil),                           // 33: lane.v1.Change
+	(*GetRepositoryRequest)(nil),             // 34: lane.v1.GetRepositoryRequest
+	(*GetRepositoryResponse)(nil),            // 35: lane.v1.GetRepositoryResponse
+	(*ListRepositoriesRequest)(nil),          // 36: lane.v1.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil),         // 37: lane.v1.ListRepositoriesResponse
+	(*CreateRepositoryRequest)(nil),          // 38: lane.v1.CreateRepositoryRequest
+	(*CreateRepositoryResponse)(nil),         // 39: lane.v1.CreateRepositoryResponse
+	(*SaveRepositoryRequest)(nil),            // 40: lane.v1.SaveRepositoryRequest
+	(*SaveRepositoryResponse)(nil),           // 41: lane.v1.SaveRepositoryResponse
+	(*DeleteRepositoryRequest)(nil),          // 42: lane.v1.DeleteRepositoryRequest
+	(*DeleteRepositoryResponse)(nil),         // 43: lane.v1.DeleteRepositoryResponse
+	(*GetTaskRequest)(nil),                   // 44: lane.v1.GetTaskRequest
+	(*GetTaskResponse)(nil),                  // 45: lane.v1.GetTaskResponse
+	(*ListTasksRequest)(nil),                 // 46: lane.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),                // 47: lane.v1.ListTasksResponse
+	(*CreateTaskRequest)(nil),                // 48: lane.v1.CreateTaskRequest
+	(*CreateTaskResponse)(nil),               // 49: lane.v1.CreateTaskResponse
+	(*SaveTaskRequest)(nil),                  // 50: lane.v1.SaveTaskRequest
+	(*SaveTaskResponse)(nil),                 // 51: lane.v1.SaveTaskResponse
+	(*SetProgressRequest)(nil),               // 52: lane.v1.SetProgressRequest
+	(*SetProgressResponse)(nil),              // 53: lane.v1.SetProgressResponse
+	(*SetProposalRequest)(nil),               // 54: lane.v1.SetProposalRequest
+	(*SetProposalResponse)(nil),              // 55: lane.v1.SetProposalResponse
+	(*RestorePromptRequest)(nil),             // 56: lane.v1.RestorePromptRequest
+	(*RestorePromptResponse)(nil),            // 57: lane.v1.RestorePromptResponse
+	(*DeleteTaskRequest)(nil),                // 58: lane.v1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),               // 59: lane.v1.DeleteTaskResponse
+	(*ListHistoryRequest)(nil),               // 60: lane.v1.ListHistoryRequest
+	(*ListHistoryResponse)(nil),              // 61: lane.v1.ListHistoryResponse
+	(*ResolveConflictRequest)(nil),           // 62: lane.v1.ResolveConflictRequest
+	(*ResolveConflictResponse)(nil),          // 63: lane.v1.ResolveConflictResponse
+	(*ListDevicesRequest)(nil),               // 64: lane.v1.ListDevicesRequest
+	(*ListDevicesResponse)(nil),              // 65: lane.v1.ListDevicesResponse
+	(*DisconnectDeviceRequest)(nil),          // 66: lane.v1.DisconnectDeviceRequest
+	(*DisconnectDeviceResponse)(nil),         // 67: lane.v1.DisconnectDeviceResponse
+	(*ListConnectionsRequest)(nil),           // 68: lane.v1.ListConnectionsRequest
+	(*ListConnectionsResponse)(nil),          // 69: lane.v1.ListConnectionsResponse
+	(*RevokeConnectionRequest)(nil),          // 70: lane.v1.RevokeConnectionRequest
+	(*RevokeConnectionResponse)(nil),         // 71: lane.v1.RevokeConnectionResponse
+	(*RegisterPushRequest)(nil),              // 72: lane.v1.RegisterPushRequest
+	(*RegisterPushResponse)(nil),             // 73: lane.v1.RegisterPushResponse
+	(*BeginDataDeletionRequest)(nil),         // 74: lane.v1.BeginDataDeletionRequest
+	(*BeginDataDeletionResponse)(nil),        // 75: lane.v1.BeginDataDeletionResponse
+	(*DeleteAccountDataRequest)(nil),         // 76: lane.v1.DeleteAccountDataRequest
+	(*DeleteAccountDataResponse)(nil),        // 77: lane.v1.DeleteAccountDataResponse
+	(*ListReceiversRequest)(nil),             // 78: lane.v1.ListReceiversRequest
+	(*ListReceiversResponse)(nil),            // 79: lane.v1.ListReceiversResponse
+	(*CreateReceiverRequest)(nil),            // 80: lane.v1.CreateReceiverRequest
+	(*CreateReceiverResponse)(nil),           // 81: lane.v1.CreateReceiverResponse
+	(*SaveReceiverRequest)(nil),              // 82: lane.v1.SaveReceiverRequest
+	(*SaveReceiverResponse)(nil),             // 83: lane.v1.SaveReceiverResponse
+	(*RotateReceiverKeyRequest)(nil),         // 84: lane.v1.RotateReceiverKeyRequest
+	(*RotateReceiverKeyResponse)(nil),        // 85: lane.v1.RotateReceiverKeyResponse
+	(*DeleteReceiverRequest)(nil),            // 86: lane.v1.DeleteReceiverRequest
+	(*DeleteReceiverResponse)(nil),           // 87: lane.v1.DeleteReceiverResponse
+	(*ListEventsRequest)(nil),                // 88: lane.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),               // 89: lane.v1.ListEventsResponse
+	(*GetEventRequest)(nil),                  // 90: lane.v1.GetEventRequest
+	(*GetEventResponse)(nil),                 // 91: lane.v1.GetEventResponse
+	(*DeleteEventRequest)(nil),               // 92: lane.v1.DeleteEventRequest
+	(*DeleteEventResponse)(nil),              // 93: lane.v1.DeleteEventResponse
+	(*ClaimEventRequest)(nil),                // 94: lane.v1.ClaimEventRequest
+	(*ClaimEventResponse)(nil),               // 95: lane.v1.ClaimEventResponse
+	(*RenewEventLeaseRequest)(nil),           // 96: lane.v1.RenewEventLeaseRequest
+	(*RenewEventLeaseResponse)(nil),          // 97: lane.v1.RenewEventLeaseResponse
+	(*ReleaseEventLeaseRequest)(nil),         // 98: lane.v1.ReleaseEventLeaseRequest
+	(*ReleaseEventLeaseResponse)(nil),        // 99: lane.v1.ReleaseEventLeaseResponse
+	(*CompleteEventRequest)(nil),             // 100: lane.v1.CompleteEventRequest
+	(*CompleteEventResponse)(nil),            // 101: lane.v1.CompleteEventResponse
+	(*ReopenEventRequest)(nil),               // 102: lane.v1.ReopenEventRequest
+	(*ReopenEventResponse)(nil),              // 103: lane.v1.ReopenEventResponse
+	(*GetSyncInfoRequest)(nil),               // 104: lane.v1.GetSyncInfoRequest
+	(*GetSyncInfoResponse)(nil),              // 105: lane.v1.GetSyncInfoResponse
+	(*PushChangesRequest)(nil),               // 106: lane.v1.PushChangesRequest
+	(*PushChangesResponse)(nil),              // 107: lane.v1.PushChangesResponse
+	(*PullChangesRequest)(nil),               // 108: lane.v1.PullChangesRequest
+	(*PullChangesResponse)(nil),              // 109: lane.v1.PullChangesResponse
+	(*WatchChangesRequest)(nil),              // 110: lane.v1.WatchChangesRequest
+	(*WatchChangesResponse)(nil),             // 111: lane.v1.WatchChangesResponse
+	(*CaptureReference)(nil),                 // 112: lane.v1.CaptureReference
+	(*CapturedImage)(nil),                    // 113: lane.v1.CapturedImage
+	(*CreateCaptureTaskRequest)(nil),         // 114: lane.v1.CreateCaptureTaskRequest
+	(*CreateCaptureTaskResponse)(nil),        // 115: lane.v1.CreateCaptureTaskResponse
+	(*GetAttachmentRequest)(nil),             // 116: lane.v1.GetAttachmentRequest
+	(*GetAttachmentResponse)(nil),            // 117: lane.v1.GetAttachmentResponse
+	(*BeginAttachmentUploadRequest)(nil),     // 118: lane.v1.BeginAttachmentUploadRequest
+	(*BeginAttachmentUploadResponse)(nil),    // 119: lane.v1.BeginAttachmentUploadResponse
+	(*CompleteAttachmentUploadRequest)(nil),  // 120: lane.v1.CompleteAttachmentUploadRequest
+	(*CompleteAttachmentUploadResponse)(nil), // 121: lane.v1.CompleteAttachmentUploadResponse
+	(*URLConnection)(nil),                    // 122: lane.v1.URLConnection
+	(*ListURLConnectionsRequest)(nil),        // 123: lane.v1.ListURLConnectionsRequest
+	(*ListURLConnectionsResponse)(nil),       // 124: lane.v1.ListURLConnectionsResponse
+	(*CreateURLConnectionRequest)(nil),       // 125: lane.v1.CreateURLConnectionRequest
+	(*CreateURLConnectionResponse)(nil),      // 126: lane.v1.CreateURLConnectionResponse
+	(*SaveURLConnectionRequest)(nil),         // 127: lane.v1.SaveURLConnectionRequest
+	(*SaveURLConnectionResponse)(nil),        // 128: lane.v1.SaveURLConnectionResponse
+	(*DeleteURLConnectionRequest)(nil),       // 129: lane.v1.DeleteURLConnectionRequest
+	(*DeleteURLConnectionResponse)(nil),      // 130: lane.v1.DeleteURLConnectionResponse
+	nil,                                      // 131: lane.v1.BeginAttachmentUploadResponse.HeadersEntry
+	(*timestamppb.Timestamp)(nil),            // 132: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),                  // 133: google.protobuf.Struct
 }
 var file_lane_v1_lane_proto_depIdxs = []int32{
 	0,   // 0: lane.v1.Origin.kind:type_name -> lane.v1.OriginKind
@@ -8305,11 +8583,11 @@ var file_lane_v1_lane_proto_depIdxs = []int32{
 	3,   // 2: lane.v1.Task.proposal:type_name -> lane.v1.Proposal
 	112, // 3: lane.v1.Task.captures:type_name -> lane.v1.CaptureReference
 	1,   // 4: lane.v1.EntityVersion.kind:type_name -> lane.v1.EntityKind
-	127, // 5: lane.v1.EntityVersion.created_at:type_name -> google.protobuf.Timestamp
+	132, // 5: lane.v1.EntityVersion.created_at:type_name -> google.protobuf.Timestamp
 	15,  // 6: lane.v1.EntityVersion.origin:type_name -> lane.v1.Origin
 	16,  // 7: lane.v1.EntityVersion.repository:type_name -> lane.v1.Repository
 	17,  // 8: lane.v1.EntityVersion.task:type_name -> lane.v1.Task
-	118, // 9: lane.v1.EntityVersion.url_connection:type_name -> lane.v1.URLConnection
+	122, // 9: lane.v1.EntityVersion.url_connection:type_name -> lane.v1.URLConnection
 	15,  // 10: lane.v1.MutationMeta.origin:type_name -> lane.v1.Origin
 	4,   // 11: lane.v1.EntityResult.result:type_name -> lane.v1.ResultKind
 	18,  // 12: lane.v1.EntityResult.version:type_name -> lane.v1.EntityVersion
@@ -8320,14 +8598,14 @@ var file_lane_v1_lane_proto_depIdxs = []int32{
 	20,  // 17: lane.v1.SyncResult.result:type_name -> lane.v1.EntityResult
 	26,  // 18: lane.v1.SyncResult.error:type_name -> lane.v1.ErrorDetail
 	6,   // 19: lane.v1.ErrorDetail.reason:type_name -> lane.v1.ErrorReason
-	127, // 20: lane.v1.Device.last_sync_at:type_name -> google.protobuf.Timestamp
-	127, // 21: lane.v1.Device.disconnected_at:type_name -> google.protobuf.Timestamp
-	127, // 22: lane.v1.Connection.approved_at:type_name -> google.protobuf.Timestamp
-	127, // 23: lane.v1.Connection.revoked_at:type_name -> google.protobuf.Timestamp
-	127, // 24: lane.v1.WebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	128, // 25: lane.v1.WebhookEvent.payload:type_name -> google.protobuf.Struct
+	132, // 20: lane.v1.Device.last_sync_at:type_name -> google.protobuf.Timestamp
+	132, // 21: lane.v1.Device.disconnected_at:type_name -> google.protobuf.Timestamp
+	132, // 22: lane.v1.Connection.approved_at:type_name -> google.protobuf.Timestamp
+	132, // 23: lane.v1.Connection.revoked_at:type_name -> google.protobuf.Timestamp
+	132, // 24: lane.v1.WebhookEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	133, // 25: lane.v1.WebhookEvent.payload:type_name -> google.protobuf.Struct
 	10,  // 26: lane.v1.WebhookEvent.state:type_name -> lane.v1.EventState
-	127, // 27: lane.v1.ProcessingRecord.completed_at:type_name -> google.protobuf.Timestamp
+	132, // 27: lane.v1.ProcessingRecord.completed_at:type_name -> google.protobuf.Timestamp
 	15,  // 28: lane.v1.ProcessingRecord.origin:type_name -> lane.v1.Origin
 	13,  // 29: lane.v1.DeletionRecord.kind:type_name -> lane.v1.EntityKindOrRemoteKind
 	20,  // 30: lane.v1.Change.entity:type_name -> lane.v1.EntityResult
@@ -8408,9 +8686,9 @@ var file_lane_v1_lane_proto_depIdxs = []int32{
 	32,  // 105: lane.v1.DeleteEventResponse.deletion:type_name -> lane.v1.DeletionRecord
 	19,  // 106: lane.v1.ClaimEventRequest.meta:type_name -> lane.v1.MutationMeta
 	30,  // 107: lane.v1.ClaimEventResponse.event:type_name -> lane.v1.WebhookEvent
-	127, // 108: lane.v1.ClaimEventResponse.expires_at:type_name -> google.protobuf.Timestamp
+	132, // 108: lane.v1.ClaimEventResponse.expires_at:type_name -> google.protobuf.Timestamp
 	19,  // 109: lane.v1.RenewEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
-	127, // 110: lane.v1.RenewEventLeaseResponse.expires_at:type_name -> google.protobuf.Timestamp
+	132, // 110: lane.v1.RenewEventLeaseResponse.expires_at:type_name -> google.protobuf.Timestamp
 	19,  // 111: lane.v1.ReleaseEventLeaseRequest.meta:type_name -> lane.v1.MutationMeta
 	30,  // 112: lane.v1.ReleaseEventLeaseResponse.event:type_name -> lane.v1.WebhookEvent
 	19,  // 113: lane.v1.CompleteEventRequest.meta:type_name -> lane.v1.MutationMeta
@@ -8429,112 +8707,120 @@ var file_lane_v1_lane_proto_depIdxs = []int32{
 	113, // 126: lane.v1.CreateCaptureTaskRequest.images:type_name -> lane.v1.CapturedImage
 	20,  // 127: lane.v1.CreateCaptureTaskResponse.result:type_name -> lane.v1.EntityResult
 	14,  // 128: lane.v1.GetAttachmentResponse.state:type_name -> lane.v1.AttachmentState
-	127, // 129: lane.v1.GetAttachmentResponse.expires_at:type_name -> google.protobuf.Timestamp
-	21,  // 130: lane.v1.ListURLConnectionsRequest.page:type_name -> lane.v1.Page
-	20,  // 131: lane.v1.ListURLConnectionsResponse.items:type_name -> lane.v1.EntityResult
-	19,  // 132: lane.v1.CreateURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	118, // 133: lane.v1.CreateURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
-	20,  // 134: lane.v1.CreateURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	19,  // 135: lane.v1.SaveURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	118, // 136: lane.v1.SaveURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
-	20,  // 137: lane.v1.SaveURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	19,  // 138: lane.v1.DeleteURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
-	20,  // 139: lane.v1.DeleteURLConnectionResponse.result:type_name -> lane.v1.EntityResult
-	34,  // 140: lane.v1.LaneService.GetRepository:input_type -> lane.v1.GetRepositoryRequest
-	36,  // 141: lane.v1.LaneService.ListRepositories:input_type -> lane.v1.ListRepositoriesRequest
-	38,  // 142: lane.v1.LaneService.CreateRepository:input_type -> lane.v1.CreateRepositoryRequest
-	40,  // 143: lane.v1.LaneService.SaveRepository:input_type -> lane.v1.SaveRepositoryRequest
-	42,  // 144: lane.v1.LaneService.DeleteRepository:input_type -> lane.v1.DeleteRepositoryRequest
-	44,  // 145: lane.v1.LaneService.GetTask:input_type -> lane.v1.GetTaskRequest
-	46,  // 146: lane.v1.LaneService.ListTasks:input_type -> lane.v1.ListTasksRequest
-	48,  // 147: lane.v1.LaneService.CreateTask:input_type -> lane.v1.CreateTaskRequest
-	50,  // 148: lane.v1.LaneService.SaveTask:input_type -> lane.v1.SaveTaskRequest
-	52,  // 149: lane.v1.LaneService.SetProgress:input_type -> lane.v1.SetProgressRequest
-	54,  // 150: lane.v1.LaneService.SetProposal:input_type -> lane.v1.SetProposalRequest
-	56,  // 151: lane.v1.LaneService.RestorePrompt:input_type -> lane.v1.RestorePromptRequest
-	58,  // 152: lane.v1.LaneService.DeleteTask:input_type -> lane.v1.DeleteTaskRequest
-	60,  // 153: lane.v1.LaneService.ListHistory:input_type -> lane.v1.ListHistoryRequest
-	62,  // 154: lane.v1.LaneService.ResolveConflict:input_type -> lane.v1.ResolveConflictRequest
-	64,  // 155: lane.v1.AccountService.ListDevices:input_type -> lane.v1.ListDevicesRequest
-	66,  // 156: lane.v1.AccountService.DisconnectDevice:input_type -> lane.v1.DisconnectDeviceRequest
-	68,  // 157: lane.v1.AccountService.ListConnections:input_type -> lane.v1.ListConnectionsRequest
-	70,  // 158: lane.v1.AccountService.RevokeConnection:input_type -> lane.v1.RevokeConnectionRequest
-	72,  // 159: lane.v1.AccountService.RegisterPush:input_type -> lane.v1.RegisterPushRequest
-	74,  // 160: lane.v1.AccountService.BeginDataDeletion:input_type -> lane.v1.BeginDataDeletionRequest
-	76,  // 161: lane.v1.AccountService.DeleteAccountData:input_type -> lane.v1.DeleteAccountDataRequest
-	78,  // 162: lane.v1.WebhookService.ListReceivers:input_type -> lane.v1.ListReceiversRequest
-	80,  // 163: lane.v1.WebhookService.CreateReceiver:input_type -> lane.v1.CreateReceiverRequest
-	82,  // 164: lane.v1.WebhookService.SaveReceiver:input_type -> lane.v1.SaveReceiverRequest
-	84,  // 165: lane.v1.WebhookService.RotateReceiverKey:input_type -> lane.v1.RotateReceiverKeyRequest
-	86,  // 166: lane.v1.WebhookService.DeleteReceiver:input_type -> lane.v1.DeleteReceiverRequest
-	88,  // 167: lane.v1.WebhookService.ListEvents:input_type -> lane.v1.ListEventsRequest
-	90,  // 168: lane.v1.WebhookService.GetEvent:input_type -> lane.v1.GetEventRequest
-	92,  // 169: lane.v1.WebhookService.DeleteEvent:input_type -> lane.v1.DeleteEventRequest
-	94,  // 170: lane.v1.WebhookService.ClaimEvent:input_type -> lane.v1.ClaimEventRequest
-	96,  // 171: lane.v1.WebhookService.RenewEventLease:input_type -> lane.v1.RenewEventLeaseRequest
-	98,  // 172: lane.v1.WebhookService.ReleaseEventLease:input_type -> lane.v1.ReleaseEventLeaseRequest
-	100, // 173: lane.v1.WebhookService.CompleteEvent:input_type -> lane.v1.CompleteEventRequest
-	102, // 174: lane.v1.WebhookService.ReopenEvent:input_type -> lane.v1.ReopenEventRequest
-	104, // 175: lane.v1.SyncService.GetSyncInfo:input_type -> lane.v1.GetSyncInfoRequest
-	106, // 176: lane.v1.SyncService.PushChanges:input_type -> lane.v1.PushChangesRequest
-	108, // 177: lane.v1.SyncService.PullChanges:input_type -> lane.v1.PullChangesRequest
-	110, // 178: lane.v1.SyncService.WatchChanges:input_type -> lane.v1.WatchChangesRequest
-	114, // 179: lane.v1.CaptureService.CreateCaptureTask:input_type -> lane.v1.CreateCaptureTaskRequest
-	116, // 180: lane.v1.CaptureService.GetAttachment:input_type -> lane.v1.GetAttachmentRequest
-	119, // 181: lane.v1.CaptureService.ListURLConnections:input_type -> lane.v1.ListURLConnectionsRequest
-	121, // 182: lane.v1.CaptureService.CreateURLConnection:input_type -> lane.v1.CreateURLConnectionRequest
-	123, // 183: lane.v1.CaptureService.SaveURLConnection:input_type -> lane.v1.SaveURLConnectionRequest
-	125, // 184: lane.v1.CaptureService.DeleteURLConnection:input_type -> lane.v1.DeleteURLConnectionRequest
-	35,  // 185: lane.v1.LaneService.GetRepository:output_type -> lane.v1.GetRepositoryResponse
-	37,  // 186: lane.v1.LaneService.ListRepositories:output_type -> lane.v1.ListRepositoriesResponse
-	39,  // 187: lane.v1.LaneService.CreateRepository:output_type -> lane.v1.CreateRepositoryResponse
-	41,  // 188: lane.v1.LaneService.SaveRepository:output_type -> lane.v1.SaveRepositoryResponse
-	43,  // 189: lane.v1.LaneService.DeleteRepository:output_type -> lane.v1.DeleteRepositoryResponse
-	45,  // 190: lane.v1.LaneService.GetTask:output_type -> lane.v1.GetTaskResponse
-	47,  // 191: lane.v1.LaneService.ListTasks:output_type -> lane.v1.ListTasksResponse
-	49,  // 192: lane.v1.LaneService.CreateTask:output_type -> lane.v1.CreateTaskResponse
-	51,  // 193: lane.v1.LaneService.SaveTask:output_type -> lane.v1.SaveTaskResponse
-	53,  // 194: lane.v1.LaneService.SetProgress:output_type -> lane.v1.SetProgressResponse
-	55,  // 195: lane.v1.LaneService.SetProposal:output_type -> lane.v1.SetProposalResponse
-	57,  // 196: lane.v1.LaneService.RestorePrompt:output_type -> lane.v1.RestorePromptResponse
-	59,  // 197: lane.v1.LaneService.DeleteTask:output_type -> lane.v1.DeleteTaskResponse
-	61,  // 198: lane.v1.LaneService.ListHistory:output_type -> lane.v1.ListHistoryResponse
-	63,  // 199: lane.v1.LaneService.ResolveConflict:output_type -> lane.v1.ResolveConflictResponse
-	65,  // 200: lane.v1.AccountService.ListDevices:output_type -> lane.v1.ListDevicesResponse
-	67,  // 201: lane.v1.AccountService.DisconnectDevice:output_type -> lane.v1.DisconnectDeviceResponse
-	69,  // 202: lane.v1.AccountService.ListConnections:output_type -> lane.v1.ListConnectionsResponse
-	71,  // 203: lane.v1.AccountService.RevokeConnection:output_type -> lane.v1.RevokeConnectionResponse
-	73,  // 204: lane.v1.AccountService.RegisterPush:output_type -> lane.v1.RegisterPushResponse
-	75,  // 205: lane.v1.AccountService.BeginDataDeletion:output_type -> lane.v1.BeginDataDeletionResponse
-	77,  // 206: lane.v1.AccountService.DeleteAccountData:output_type -> lane.v1.DeleteAccountDataResponse
-	79,  // 207: lane.v1.WebhookService.ListReceivers:output_type -> lane.v1.ListReceiversResponse
-	81,  // 208: lane.v1.WebhookService.CreateReceiver:output_type -> lane.v1.CreateReceiverResponse
-	83,  // 209: lane.v1.WebhookService.SaveReceiver:output_type -> lane.v1.SaveReceiverResponse
-	85,  // 210: lane.v1.WebhookService.RotateReceiverKey:output_type -> lane.v1.RotateReceiverKeyResponse
-	87,  // 211: lane.v1.WebhookService.DeleteReceiver:output_type -> lane.v1.DeleteReceiverResponse
-	89,  // 212: lane.v1.WebhookService.ListEvents:output_type -> lane.v1.ListEventsResponse
-	91,  // 213: lane.v1.WebhookService.GetEvent:output_type -> lane.v1.GetEventResponse
-	93,  // 214: lane.v1.WebhookService.DeleteEvent:output_type -> lane.v1.DeleteEventResponse
-	95,  // 215: lane.v1.WebhookService.ClaimEvent:output_type -> lane.v1.ClaimEventResponse
-	97,  // 216: lane.v1.WebhookService.RenewEventLease:output_type -> lane.v1.RenewEventLeaseResponse
-	99,  // 217: lane.v1.WebhookService.ReleaseEventLease:output_type -> lane.v1.ReleaseEventLeaseResponse
-	101, // 218: lane.v1.WebhookService.CompleteEvent:output_type -> lane.v1.CompleteEventResponse
-	103, // 219: lane.v1.WebhookService.ReopenEvent:output_type -> lane.v1.ReopenEventResponse
-	105, // 220: lane.v1.SyncService.GetSyncInfo:output_type -> lane.v1.GetSyncInfoResponse
-	107, // 221: lane.v1.SyncService.PushChanges:output_type -> lane.v1.PushChangesResponse
-	109, // 222: lane.v1.SyncService.PullChanges:output_type -> lane.v1.PullChangesResponse
-	111, // 223: lane.v1.SyncService.WatchChanges:output_type -> lane.v1.WatchChangesResponse
-	115, // 224: lane.v1.CaptureService.CreateCaptureTask:output_type -> lane.v1.CreateCaptureTaskResponse
-	117, // 225: lane.v1.CaptureService.GetAttachment:output_type -> lane.v1.GetAttachmentResponse
-	120, // 226: lane.v1.CaptureService.ListURLConnections:output_type -> lane.v1.ListURLConnectionsResponse
-	122, // 227: lane.v1.CaptureService.CreateURLConnection:output_type -> lane.v1.CreateURLConnectionResponse
-	124, // 228: lane.v1.CaptureService.SaveURLConnection:output_type -> lane.v1.SaveURLConnectionResponse
-	126, // 229: lane.v1.CaptureService.DeleteURLConnection:output_type -> lane.v1.DeleteURLConnectionResponse
-	185, // [185:230] is the sub-list for method output_type
-	140, // [140:185] is the sub-list for method input_type
-	140, // [140:140] is the sub-list for extension type_name
-	140, // [140:140] is the sub-list for extension extendee
-	0,   // [0:140] is the sub-list for field type_name
+	132, // 129: lane.v1.GetAttachmentResponse.expires_at:type_name -> google.protobuf.Timestamp
+	132, // 130: lane.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	131, // 131: lane.v1.BeginAttachmentUploadResponse.headers:type_name -> lane.v1.BeginAttachmentUploadResponse.HeadersEntry
+	14,  // 132: lane.v1.BeginAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
+	14,  // 133: lane.v1.CompleteAttachmentUploadResponse.state:type_name -> lane.v1.AttachmentState
+	21,  // 134: lane.v1.ListURLConnectionsRequest.page:type_name -> lane.v1.Page
+	20,  // 135: lane.v1.ListURLConnectionsResponse.items:type_name -> lane.v1.EntityResult
+	19,  // 136: lane.v1.CreateURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	122, // 137: lane.v1.CreateURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
+	20,  // 138: lane.v1.CreateURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	19,  // 139: lane.v1.SaveURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	122, // 140: lane.v1.SaveURLConnectionRequest.connection:type_name -> lane.v1.URLConnection
+	20,  // 141: lane.v1.SaveURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	19,  // 142: lane.v1.DeleteURLConnectionRequest.meta:type_name -> lane.v1.MutationMeta
+	20,  // 143: lane.v1.DeleteURLConnectionResponse.result:type_name -> lane.v1.EntityResult
+	34,  // 144: lane.v1.LaneService.GetRepository:input_type -> lane.v1.GetRepositoryRequest
+	36,  // 145: lane.v1.LaneService.ListRepositories:input_type -> lane.v1.ListRepositoriesRequest
+	38,  // 146: lane.v1.LaneService.CreateRepository:input_type -> lane.v1.CreateRepositoryRequest
+	40,  // 147: lane.v1.LaneService.SaveRepository:input_type -> lane.v1.SaveRepositoryRequest
+	42,  // 148: lane.v1.LaneService.DeleteRepository:input_type -> lane.v1.DeleteRepositoryRequest
+	44,  // 149: lane.v1.LaneService.GetTask:input_type -> lane.v1.GetTaskRequest
+	46,  // 150: lane.v1.LaneService.ListTasks:input_type -> lane.v1.ListTasksRequest
+	48,  // 151: lane.v1.LaneService.CreateTask:input_type -> lane.v1.CreateTaskRequest
+	50,  // 152: lane.v1.LaneService.SaveTask:input_type -> lane.v1.SaveTaskRequest
+	52,  // 153: lane.v1.LaneService.SetProgress:input_type -> lane.v1.SetProgressRequest
+	54,  // 154: lane.v1.LaneService.SetProposal:input_type -> lane.v1.SetProposalRequest
+	56,  // 155: lane.v1.LaneService.RestorePrompt:input_type -> lane.v1.RestorePromptRequest
+	58,  // 156: lane.v1.LaneService.DeleteTask:input_type -> lane.v1.DeleteTaskRequest
+	60,  // 157: lane.v1.LaneService.ListHistory:input_type -> lane.v1.ListHistoryRequest
+	62,  // 158: lane.v1.LaneService.ResolveConflict:input_type -> lane.v1.ResolveConflictRequest
+	64,  // 159: lane.v1.AccountService.ListDevices:input_type -> lane.v1.ListDevicesRequest
+	66,  // 160: lane.v1.AccountService.DisconnectDevice:input_type -> lane.v1.DisconnectDeviceRequest
+	68,  // 161: lane.v1.AccountService.ListConnections:input_type -> lane.v1.ListConnectionsRequest
+	70,  // 162: lane.v1.AccountService.RevokeConnection:input_type -> lane.v1.RevokeConnectionRequest
+	72,  // 163: lane.v1.AccountService.RegisterPush:input_type -> lane.v1.RegisterPushRequest
+	74,  // 164: lane.v1.AccountService.BeginDataDeletion:input_type -> lane.v1.BeginDataDeletionRequest
+	76,  // 165: lane.v1.AccountService.DeleteAccountData:input_type -> lane.v1.DeleteAccountDataRequest
+	78,  // 166: lane.v1.WebhookService.ListReceivers:input_type -> lane.v1.ListReceiversRequest
+	80,  // 167: lane.v1.WebhookService.CreateReceiver:input_type -> lane.v1.CreateReceiverRequest
+	82,  // 168: lane.v1.WebhookService.SaveReceiver:input_type -> lane.v1.SaveReceiverRequest
+	84,  // 169: lane.v1.WebhookService.RotateReceiverKey:input_type -> lane.v1.RotateReceiverKeyRequest
+	86,  // 170: lane.v1.WebhookService.DeleteReceiver:input_type -> lane.v1.DeleteReceiverRequest
+	88,  // 171: lane.v1.WebhookService.ListEvents:input_type -> lane.v1.ListEventsRequest
+	90,  // 172: lane.v1.WebhookService.GetEvent:input_type -> lane.v1.GetEventRequest
+	92,  // 173: lane.v1.WebhookService.DeleteEvent:input_type -> lane.v1.DeleteEventRequest
+	94,  // 174: lane.v1.WebhookService.ClaimEvent:input_type -> lane.v1.ClaimEventRequest
+	96,  // 175: lane.v1.WebhookService.RenewEventLease:input_type -> lane.v1.RenewEventLeaseRequest
+	98,  // 176: lane.v1.WebhookService.ReleaseEventLease:input_type -> lane.v1.ReleaseEventLeaseRequest
+	100, // 177: lane.v1.WebhookService.CompleteEvent:input_type -> lane.v1.CompleteEventRequest
+	102, // 178: lane.v1.WebhookService.ReopenEvent:input_type -> lane.v1.ReopenEventRequest
+	104, // 179: lane.v1.SyncService.GetSyncInfo:input_type -> lane.v1.GetSyncInfoRequest
+	106, // 180: lane.v1.SyncService.PushChanges:input_type -> lane.v1.PushChangesRequest
+	108, // 181: lane.v1.SyncService.PullChanges:input_type -> lane.v1.PullChangesRequest
+	110, // 182: lane.v1.SyncService.WatchChanges:input_type -> lane.v1.WatchChangesRequest
+	118, // 183: lane.v1.CaptureService.BeginAttachmentUpload:input_type -> lane.v1.BeginAttachmentUploadRequest
+	120, // 184: lane.v1.CaptureService.CompleteAttachmentUpload:input_type -> lane.v1.CompleteAttachmentUploadRequest
+	114, // 185: lane.v1.CaptureService.CreateCaptureTask:input_type -> lane.v1.CreateCaptureTaskRequest
+	116, // 186: lane.v1.CaptureService.GetAttachment:input_type -> lane.v1.GetAttachmentRequest
+	123, // 187: lane.v1.CaptureService.ListURLConnections:input_type -> lane.v1.ListURLConnectionsRequest
+	125, // 188: lane.v1.CaptureService.CreateURLConnection:input_type -> lane.v1.CreateURLConnectionRequest
+	127, // 189: lane.v1.CaptureService.SaveURLConnection:input_type -> lane.v1.SaveURLConnectionRequest
+	129, // 190: lane.v1.CaptureService.DeleteURLConnection:input_type -> lane.v1.DeleteURLConnectionRequest
+	35,  // 191: lane.v1.LaneService.GetRepository:output_type -> lane.v1.GetRepositoryResponse
+	37,  // 192: lane.v1.LaneService.ListRepositories:output_type -> lane.v1.ListRepositoriesResponse
+	39,  // 193: lane.v1.LaneService.CreateRepository:output_type -> lane.v1.CreateRepositoryResponse
+	41,  // 194: lane.v1.LaneService.SaveRepository:output_type -> lane.v1.SaveRepositoryResponse
+	43,  // 195: lane.v1.LaneService.DeleteRepository:output_type -> lane.v1.DeleteRepositoryResponse
+	45,  // 196: lane.v1.LaneService.GetTask:output_type -> lane.v1.GetTaskResponse
+	47,  // 197: lane.v1.LaneService.ListTasks:output_type -> lane.v1.ListTasksResponse
+	49,  // 198: lane.v1.LaneService.CreateTask:output_type -> lane.v1.CreateTaskResponse
+	51,  // 199: lane.v1.LaneService.SaveTask:output_type -> lane.v1.SaveTaskResponse
+	53,  // 200: lane.v1.LaneService.SetProgress:output_type -> lane.v1.SetProgressResponse
+	55,  // 201: lane.v1.LaneService.SetProposal:output_type -> lane.v1.SetProposalResponse
+	57,  // 202: lane.v1.LaneService.RestorePrompt:output_type -> lane.v1.RestorePromptResponse
+	59,  // 203: lane.v1.LaneService.DeleteTask:output_type -> lane.v1.DeleteTaskResponse
+	61,  // 204: lane.v1.LaneService.ListHistory:output_type -> lane.v1.ListHistoryResponse
+	63,  // 205: lane.v1.LaneService.ResolveConflict:output_type -> lane.v1.ResolveConflictResponse
+	65,  // 206: lane.v1.AccountService.ListDevices:output_type -> lane.v1.ListDevicesResponse
+	67,  // 207: lane.v1.AccountService.DisconnectDevice:output_type -> lane.v1.DisconnectDeviceResponse
+	69,  // 208: lane.v1.AccountService.ListConnections:output_type -> lane.v1.ListConnectionsResponse
+	71,  // 209: lane.v1.AccountService.RevokeConnection:output_type -> lane.v1.RevokeConnectionResponse
+	73,  // 210: lane.v1.AccountService.RegisterPush:output_type -> lane.v1.RegisterPushResponse
+	75,  // 211: lane.v1.AccountService.BeginDataDeletion:output_type -> lane.v1.BeginDataDeletionResponse
+	77,  // 212: lane.v1.AccountService.DeleteAccountData:output_type -> lane.v1.DeleteAccountDataResponse
+	79,  // 213: lane.v1.WebhookService.ListReceivers:output_type -> lane.v1.ListReceiversResponse
+	81,  // 214: lane.v1.WebhookService.CreateReceiver:output_type -> lane.v1.CreateReceiverResponse
+	83,  // 215: lane.v1.WebhookService.SaveReceiver:output_type -> lane.v1.SaveReceiverResponse
+	85,  // 216: lane.v1.WebhookService.RotateReceiverKey:output_type -> lane.v1.RotateReceiverKeyResponse
+	87,  // 217: lane.v1.WebhookService.DeleteReceiver:output_type -> lane.v1.DeleteReceiverResponse
+	89,  // 218: lane.v1.WebhookService.ListEvents:output_type -> lane.v1.ListEventsResponse
+	91,  // 219: lane.v1.WebhookService.GetEvent:output_type -> lane.v1.GetEventResponse
+	93,  // 220: lane.v1.WebhookService.DeleteEvent:output_type -> lane.v1.DeleteEventResponse
+	95,  // 221: lane.v1.WebhookService.ClaimEvent:output_type -> lane.v1.ClaimEventResponse
+	97,  // 222: lane.v1.WebhookService.RenewEventLease:output_type -> lane.v1.RenewEventLeaseResponse
+	99,  // 223: lane.v1.WebhookService.ReleaseEventLease:output_type -> lane.v1.ReleaseEventLeaseResponse
+	101, // 224: lane.v1.WebhookService.CompleteEvent:output_type -> lane.v1.CompleteEventResponse
+	103, // 225: lane.v1.WebhookService.ReopenEvent:output_type -> lane.v1.ReopenEventResponse
+	105, // 226: lane.v1.SyncService.GetSyncInfo:output_type -> lane.v1.GetSyncInfoResponse
+	107, // 227: lane.v1.SyncService.PushChanges:output_type -> lane.v1.PushChangesResponse
+	109, // 228: lane.v1.SyncService.PullChanges:output_type -> lane.v1.PullChangesResponse
+	111, // 229: lane.v1.SyncService.WatchChanges:output_type -> lane.v1.WatchChangesResponse
+	119, // 230: lane.v1.CaptureService.BeginAttachmentUpload:output_type -> lane.v1.BeginAttachmentUploadResponse
+	121, // 231: lane.v1.CaptureService.CompleteAttachmentUpload:output_type -> lane.v1.CompleteAttachmentUploadResponse
+	115, // 232: lane.v1.CaptureService.CreateCaptureTask:output_type -> lane.v1.CreateCaptureTaskResponse
+	117, // 233: lane.v1.CaptureService.GetAttachment:output_type -> lane.v1.GetAttachmentResponse
+	124, // 234: lane.v1.CaptureService.ListURLConnections:output_type -> lane.v1.ListURLConnectionsResponse
+	126, // 235: lane.v1.CaptureService.CreateURLConnection:output_type -> lane.v1.CreateURLConnectionResponse
+	128, // 236: lane.v1.CaptureService.SaveURLConnection:output_type -> lane.v1.SaveURLConnectionResponse
+	130, // 237: lane.v1.CaptureService.DeleteURLConnection:output_type -> lane.v1.DeleteURLConnectionResponse
+	191, // [191:238] is the sub-list for method output_type
+	144, // [144:191] is the sub-list for method input_type
+	144, // [144:144] is the sub-list for extension type_name
+	144, // [144:144] is the sub-list for extension extendee
+	0,   // [0:144] is the sub-list for field type_name
 }
 
 func init() { file_lane_v1_lane_proto_init() }
@@ -8573,7 +8859,7 @@ func file_lane_v1_lane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lane_v1_lane_proto_rawDesc), len(file_lane_v1_lane_proto_rawDesc)),
 			NumEnums:      15,
-			NumMessages:   112,
+			NumMessages:   117,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

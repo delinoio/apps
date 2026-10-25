@@ -36,6 +36,8 @@ pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
             if v["deleted"] != true {
                 if (v["kind"] == "ENTITY_KIND_TASK" && !v["task"].is_object())
                     || (v["kind"] == "ENTITY_KIND_REPOSITORY" && !v["repository"].is_object())
+                    || (v["kind"] == "ENTITY_KIND_URL_CONNECTION"
+                        && !v["urlConnection"].is_object())
                 {
                     return Err(invalid("Invalid stored body."));
                 }

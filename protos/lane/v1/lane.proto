@@ -782,6 +782,28 @@ message GetAttachmentResponse {
   string download_url = 3;
   google.protobuf.Timestamp expires_at = 4;
 }
+// Uploads target temporary private objects. Completion validates and publishes immutable bytes.
+message BeginAttachmentUploadRequest {
+  string task_id = 1;
+  string attachment_id = 2;
+  string epoch = 3;
+}
+message BeginAttachmentUploadResponse {
+  string upload_id = 1;
+  string upload_url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  map<string, string> headers = 4;
+  AttachmentState state = 5;
+}
+message CompleteAttachmentUploadRequest {
+  string task_id = 1;
+  string attachment_id = 2;
+  string upload_id = 3;
+  string epoch = 4;
+}
+message CompleteAttachmentUploadResponse {
+  AttachmentState state = 1;
+}
 message URLConnection {
   string prefix = 1;
   string repository_id = 2;
@@ -818,6 +840,8 @@ message DeleteURLConnectionResponse {
   EntityResult result = 1;
 }
 service CaptureService {
+  rpc BeginAttachmentUpload(BeginAttachmentUploadRequest) returns (BeginAttachmentUploadResponse);
+  rpc CompleteAttachmentUpload(CompleteAttachmentUploadRequest) returns (CompleteAttachmentUploadResponse);
   rpc CreateCaptureTask(CreateCaptureTaskRequest) returns (CreateCaptureTaskResponse);
   rpc GetAttachment(GetAttachmentRequest) returns (GetAttachmentResponse);
   rpc ListURLConnections(ListURLConnectionsRequest) returns (ListURLConnectionsResponse);

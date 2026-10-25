@@ -21,5 +21,8 @@
   "account-id": "accountId",
   "kind": "kind",
   "reauth-callback": "reauthCallback",
-  "challenge-id": "challengeId"
+  "challenge-id": "challengeId",
+  "task-id": "taskId",
+  "attachment-id": "attachmentId",
+  "prefix": "prefix"
 }

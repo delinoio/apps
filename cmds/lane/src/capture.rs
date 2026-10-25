@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! RealQA validation shared by local capture persistence and synchronization.
+//! `RealQA` validation shared by local capture persistence and synchronization.
 use crate::error::{Result, invalid};
 use crate::protocol::{hash, strv, valid_id};
 use serde_json::Value;
@@ -64,8 +64,33 @@ pub fn select_repository<'a>(page: &str, rules: &'a [Value]) -> Result<Option<&'
     Ok(best.map(|(_, repository)| repository))
 }
 
+/// Validate metadata without needing image bytes (for pending synchronized images).
+/// PNG IHDR dimensions are limited to 2^31 - 1; SQLite byte counts use signed i64.
+pub fn validate_reference(capture: &Value) -> Result<()> {
+    let hash = strv(capture, "sha256");
+    if !valid_id(strv(capture, "attachmentId"))
+        || !capture["width"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && i32::try_from(n).is_ok())
+        || !capture["height"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && i32::try_from(n).is_ok())
+        || !strv(capture, "byteSize")
+            .parse::<i64>()
+            .is_ok_and(|n| n > 0)
+        || hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(invalid("Invalid immutable attachment reference."));
+    }
+    Ok(())
+}
+
 /// Validate immutable image identity before accepting a final PNG into storage.
 pub fn validate_png(capture: &Value, png: &[u8]) -> Result<()> {
+    validate_reference(capture)?;
     if !valid_id(strv(capture, "attachmentId"))
         || png.len() < 33
         || png.get(..8) != Some(b"\x89PNG\r\n\x1a\n".as_slice())
@@ -109,7 +134,7 @@ pub fn validate_png(capture: &Value, png: &[u8]) -> Result<()> {
         for byte in &chunk[4..8 + size] {
             crc ^= u32::from(*byte);
             for _ in 0..8 {
-                crc = (crc >> 1) ^ (0xedb88320u32 & (0u32.wrapping_sub(crc & 1)));
+                crc = (crc >> 1) ^ (0xedb8_8320_u32 & (0u32.wrapping_sub(crc & 1)));
             }
         }
         if !crc != expected {

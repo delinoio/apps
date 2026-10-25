@@ -7,6 +7,10 @@ use super::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::collections::HashSet;
 
+#[expect(
+    clippy::unused_self,
+    reason = "Store operations use the same instance-method interface under the caller transaction."
+)]
 impl Store {
     pub(super) fn insert_captures(
         &self,

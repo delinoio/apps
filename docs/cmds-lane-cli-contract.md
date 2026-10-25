@@ -49,7 +49,7 @@ Names are public command groups; help must spell out required arguments and loca
 
 ### MCP surface
 
-`lane mcp serve` implements stdio MCP. Do not print banners or logs on stdout. Use explicit JSON schemas derived from typed messages. Tool names are `lane_<snake_case_method>` for LaneService, AccountService and WebhookService methods, for example `lane_create_task`, `lane_resolve_conflict`, `lane_claim_event` and `lane_complete_event`. Also expose `lane_get_local_status`, `lane_connect_sync`, `lane_disconnect_sync`, `lane_remove_device_data`, `lane_get_notification_preferences` and `lane_set_notification_preferences` for local device management. Local conflict listing can use the typed list response's alternatives; a separate untyped mutation is not allowed.
+`lane mcp serve` implements stdio MCP. Do not print banners or logs on stdout. Use explicit JSON schemas derived from typed messages. Tool names are `lane_<snake_case_method>` for LaneService, CaptureService, AccountService and WebhookService methods, for example `lane_create_task`, `lane_resolve_conflict`, `lane_claim_event` and `lane_complete_event`. Also expose `lane_get_local_status`, `lane_connect_sync`, `lane_disconnect_sync`, `lane_remove_device_data`, `lane_get_notification_preferences` and `lane_set_notification_preferences` for local device management. Local conflict listing can use the typed list response's alternatives; a separate untyped mutation is not allowed.
 
 MCP arguments omit Origin; the adapter sets MCP and its real device/account connection identity. A new proposed task through MCP can notify; the same operation through CLI uses CLI origin and cannot notify. Tool descriptions identify online-only functions and explicit irreversible deletion semantics. Task/repository deletion invocation is confirmation. Remote account deletion still requires a human browser reauthentication flow and account confirmation; an agent cannot supply a fabricated proof.
 
@@ -197,3 +197,30 @@ history, task moves and deletion precedence. Native saves commit locally before
 optional image upload. Pending synchronization must not be reported as failed
 local saving. Unsupported schema/format versions must be refused before writes.
 These requirements do not establish implementation or release acceptance.
+
+### RealQA CLI and MCP operations
+
+- `capture create --repository-id UUID --title TEXT --images-json JSON_ARRAY`
+  accepts final PNGs as typed `CapturedImage` values (base64 `png` and a `capture`
+  manifest). `--description` is optional. `--request-json -` accepts the complete
+  request without placing image bytes in shell arguments. Local saving is atomic.
+- `attachment get --task-id UUID --attachment-id UUID` reads an authorized image.
+  Local results include base64 PNG bytes or `WAITING_FOR_SYNC`; remote results
+  include a short-lived signed download URL. Deleted owners return `DELETED`.
+  Do not persist signed URLs or send Lane authorization headers to object storage.
+- `url-rule list/create/edit/delete` manages URL-to-repository rules. Creation and
+  editing take `--prefix URL --repository-id UUID`; edits also require the rule ID
+  and `--expected-version UUID`. `conflict list/get --kind url-rule` reads rule
+  conflicts; `conflict resolve` submits the complete expected head set.
+- `data migrate --space UUID` explicitly upgrades the selected local schema.
+  It rejects remote targets, omitted spaces and request payloads. Close other
+  clients before migration; ordinary opens never silently migrate an old store.
+
+MCP discovery includes the CaptureService request schemas and attachment/rule
+operations. Upload preparation/completion are online-only. The local sync worker
+negotiates format 2, publishes manifests before signed uploads, and validates
+image digests, sizes and dimensions before storing downloads. A failed image
+transfer preserves local bytes and does not stop unrelated transfers. Account
+epoch changes require renewed explicit approval and re-upload retained images;
+standalone import copies required historical images and rules into the approved
+account space without relabeling data already assigned to another account.

@@ -165,7 +165,7 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
 fn info(auth: &Auth, s: &Store, endpoint: &str) -> Result<Value> {
     let info = remote::call(auth, s, endpoint, "GetSyncInfo", &json!({}))?;
     let identity = s.identity()?;
-    if info["formatVersion"] != 1 {
+    if info["formatVersion"] != 2 {
         return Err(Failure::new(
             "UNSUPPORTED_FORMAT",
             "Update Lane before synchronizing this format.",
@@ -220,7 +220,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PushChanges",
             &json!({
-            "formatVersion":1,"epoch":epoch,"deviceId":s.device,"mutations":items}
+            "formatVersion":2,"epoch":epoch,"deviceId":s.device,"mutations":items}
             ),
         )?;
         let results = response["results"]
@@ -295,7 +295,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PullChanges",
             &json!({
-            "formatVersion":1,"epoch":epoch,"cursor":cursor,"pageSize":100}
+            "formatVersion":2,"epoch":epoch,"cursor":cursor,"pageSize":100}
             ),
         )?;
         if response["hasMore"] == true && response["nextCursor"] == cursor {
@@ -321,6 +321,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             break;
         }
     }
+    attachments(auth, s, endpoint, owner, identity, epoch)?;
     s.with(true, |c| {
         guard(s, c, owner)?;
         put_meta(c, "sync_error_reason", "")?;
@@ -355,7 +356,7 @@ pub fn reconnect(auth: &Auth, s: &Store, consent: &Value) -> Result<()> {
                 "",
                 "PullChanges",
                 &json!({
-                "formatVersion":1,"epoch":epoch,"pageSize":1}
+                "formatVersion":2,"epoch":epoch,"pageSize":1}
                 ),
             );
             match probe {
@@ -404,6 +405,7 @@ if current!=sequence||meta(c,"reconnect_required")?!="1"{
 return Err(auth::reconnect_error());
 }
 let versions=sync::ordered(c)?;
+c.execute("UPDATE attachments SET synchronized=0", [])?;
 c.execute("DELETE FROM outbox",[])?;
 for(i,v)in versions.into_iter().enumerate(){
 let rid=id();
@@ -481,6 +483,7 @@ sync::mappings(dst,&json!([{
 }
 }
     import_versions(src, dst)?;
+    import_attachments(src, dst)?;
     let mut stmt=src.prepare("SELECT method,request_id,fingerprint,entity_id,result_json FROM receipts")?;
 for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?)))?{
 let(method,id,fp,entity,mut result)=row?;
@@ -505,8 +508,11 @@ if deleted&&mutation["version"]["deleted"]!=true{
 continue;
 }
 let old:Option<String>=dst.query_row("SELECT request_json FROM outbox WHERE request_id=?",[&id],|r|r.get(0)).optional()?;
-if old.is_some_and(|old|old!=raw){
+if let Some(old)=old {
+let previous:Value=serde_json::from_str(&old)?;
+if crate::protocol::fingerprint(&crate::protocol::message("SyncMutation",&previous)?) != crate::protocol::fingerprint(&crate::protocol::message("SyncMutation",&mutation)?) {
 return Err(invalid("Outbox identity reused during import."));
+}
 }
 dst.execute("INSERT OR IGNORE INTO outbox VALUES(?,?,?,?,?,?)",params![id,entity,raw,state,reason,created])?;
 }
@@ -572,4 +578,254 @@ fn import_versions(src: &Connection, dst: &Connection) -> Result<()> {
         sync::apply(dst, &json!({"version":version}))?;
     }
     Ok(())
+}
+
+fn import_attachments(src: &Connection, dst: &Connection) -> Result<()> {
+    let mut stmt =
+        src.prepare("SELECT id,task_id,sha256,width,height,byte_size,png_base64 FROM attachments")?;
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+            r.get::<_, Option<String>>(6)?,
+        ))
+    })? {
+        let (id, task, hash, width, height, size, png) = row?;
+        let alive: bool = dst.query_row(
+            "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? AND kind=2 AND deleted=0)",
+            [&task],
+            |r| r.get(0),
+        )?;
+        if !alive {
+            continue;
+        }
+        let old: Option<(String, String, i64, i64, i64)> = dst
+            .query_row(
+                "SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        if old.is_some_and(|old| old != (task.clone(), hash.clone(), width, height, size)) {
+            return Err(invalid("Immutable attachment changed during import."));
+        }
+        dst.execute("INSERT INTO attachments(id,task_id,sha256,width,height,byte_size,png_base64,synchronized) VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET png_base64=coalesce(attachments.png_base64,excluded.png_base64)", params![id,task,hash,width,height,size,png])?;
+    }
+    Ok(())
+}
+
+// Transfer URLs are transient capabilities. Use a separate client with no Lane
+// bearer token, cookies, or redirects, and never store or log these URLs.
+fn object_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(45))
+        .build()
+        .map_err(|_| {
+            Failure::new(
+                "DEPENDENCY_UNAVAILABLE",
+                "Attachment transport is unavailable.",
+            )
+        })
+}
+fn signed_url(value: &Value, field: &str) -> Result<url::Url> {
+    let url = url::Url::parse(strv(value, field))
+        .map_err(|_| invalid("Invalid signed attachment access."))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid(
+            "Signed attachment access requires HTTPS without credentials.",
+        ));
+    }
+    if !chrono::DateTime::parse_from_rfc3339(strv(value, "expiresAt"))
+        .is_ok_and(|t| t > chrono::Utc::now())
+    {
+        return Err(Failure::new(
+            "DEPENDENCY_UNAVAILABLE",
+            "Attachment access expired; retry synchronization.",
+        ));
+    }
+    Ok(url)
+}
+fn attachments(
+    auth: &Auth,
+    s: &Store,
+    endpoint: &str,
+    owner: &str,
+    identity: &Identity,
+    epoch: &str,
+) -> Result<()> {
+    let pending = s.with(false, |c| {
+        let mut stmt = c.prepare("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE e.deleted=0 AND (a.synchronized=0 OR a.png_base64 IS NULL) ORDER BY a.id")?;
+        let items = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,i64>(5)?,r.get::<_,Option<String>>(6)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        Ok(items)
+    })?;
+    let client = object_client()?;
+    let mut failure = None;
+    for (attachment, task, hash, width, height, size, png) in pending {
+        lease(s, owner, Some(identity))?;
+        let reference = json!({"attachmentId":attachment,"sha256":hash,"width":width,"height":height,"byteSize":size.to_string()});
+        let result = transfer_attachment(
+            auth,
+            s,
+            endpoint,
+            &client,
+            epoch,
+            &task,
+            &reference,
+            png.as_deref(),
+        );
+        match result {
+            Ok(bytes) => {
+                use base64::Engine;
+                lease(s, owner, Some(identity))?;
+                s.with(true, |c| {
+                    guard(s,c,owner)?;
+                    if meta(c,"account_epoch")? != epoch || meta(c,"reconnect_required")? == "1" { return Err(auth::reconnect_error()); }
+                    // Owner deletion or replacement during I/O must never recreate content.
+                    c.execute("UPDATE attachments SET png_base64=?,synchronized=1 WHERE id=? AND task_id=? AND sha256=? AND width=? AND height=? AND byte_size=? AND EXISTS(SELECT 1 FROM entities WHERE id=? AND deleted=0)", params![base64::engine::general_purpose::STANDARD.encode(bytes),attachment,task,hash,width,height,size,task])?;
+                    c.execute("INSERT INTO changes(entity_id,change_kind) VALUES(?,1)", [&task])?;
+                    Ok(())
+                })?;
+            }
+            Err(e) => {
+                if matches!(
+                    e.reason.as_str(),
+                    "ERROR_REASON_FORBIDDEN"
+                        | "ERROR_REASON_UNAUTHENTICATED"
+                        | "ERROR_REASON_STALE_EPOCH"
+                        | "ERROR_REASON_UNSUPPORTED_FORMAT"
+                ) {
+                    return Err(e);
+                }
+                tracing::warn!(reason=%e.reason, "Lane attachment synchronization failed");
+                failure = Some(e);
+            }
+        }
+    }
+    failure.map_or(Ok(()), Err)
+}
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The transfer keeps account, epoch, object transport and immutable owner explicit."
+)]
+fn transfer_attachment(
+    auth: &Auth,
+    s: &Store,
+    endpoint: &str,
+    client: &reqwest::Client,
+    epoch: &str,
+    task: &str,
+    reference: &Value,
+    png: Option<&str>,
+) -> Result<Vec<u8>> {
+    use crate::network::SendRequest;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let request = json!({"taskId":task,"attachmentId":reference["attachmentId"],"epoch":epoch});
+    let unavailable = || {
+        Failure::new(
+            "DEPENDENCY_UNAVAILABLE",
+            "Attachment is waiting for synchronization; retry.",
+        )
+    };
+    let bytes = if let Some(png) = png {
+        let bytes = STANDARD
+            .decode(png)
+            .map_err(|_| invalid("Invalid stored attachment encoding."))?;
+        crate::capture::validate_png(reference, &bytes)?;
+        let begin = remote::call(auth, s, endpoint, "BeginAttachmentUpload", &request)?;
+        if begin["state"] != "ATTACHMENT_STATE_AVAILABLE" {
+            let url = signed_url(&begin, "uploadUrl")?;
+            let mut put = client.put(url).body(bytes.clone());
+            if let Some(headers) = begin["headers"].as_object() {
+                for (name, value) in headers {
+                    if name.eq_ignore_ascii_case("authorization")
+                        || name.eq_ignore_ascii_case("cookie")
+                        || name.eq_ignore_ascii_case("host")
+                    {
+                        return Err(invalid("Invalid attachment upload header."));
+                    }
+                    put = put.header(
+                        name,
+                        value
+                            .as_str()
+                            .ok_or_else(|| invalid("Invalid attachment upload header."))?,
+                    );
+                }
+            }
+            if !put.send_cancellable(auth)?.status().is_success() {
+                return Err(unavailable());
+            }
+            let mut complete = request;
+            complete["uploadId"] = begin["uploadId"].clone();
+            if remote::call(auth, s, endpoint, "CompleteAttachmentUpload", &complete)?["state"]
+                != "ATTACHMENT_STATE_AVAILABLE"
+            {
+                return Err(unavailable());
+            }
+        }
+        bytes
+    } else {
+        let response = remote::call(
+            auth,
+            s,
+            endpoint,
+            "GetAttachment",
+            &json!({"taskId":task,"attachmentId":reference["attachmentId"]}),
+        )?;
+        if response["state"] != "ATTACHMENT_STATE_AVAILABLE" {
+            return Err(unavailable());
+        }
+        if strv(&response, "png").is_empty() {
+            let size = strv(reference, "byteSize")
+                .parse::<usize>()
+                .map_err(|_| invalid("Invalid attachment byte count."))?;
+            let response = client
+                .get(signed_url(&response, "downloadUrl")?)
+                .send_cancellable_limit(auth, size)?;
+            if !response.status().is_success() {
+                return Err(unavailable());
+            }
+            response.body
+        } else {
+            STANDARD
+                .decode(strv(&response, "png"))
+                .map_err(|_| invalid("Invalid attachment encoding."))?
+        }
+    };
+    crate::capture::validate_png(reference, &bytes)?;
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    #[test]
+    fn signed_access_rejects_credentials_insecure_transport_and_expiry() {
+        let expires = (chrono::Utc::now() + chrono::Duration::minutes(1)).to_rfc3339();
+        for url in [
+            "http://example.com/image",
+            "https://user:secret@example.com/image",
+            "https://example.com/image#fragment",
+            "file:///image",
+        ] {
+            assert!(
+                signed_url(
+                    &json!({"downloadUrl":url,"expiresAt":expires}),
+                    "downloadUrl"
+                )
+                .is_err()
+            );
+        }
+        assert!(signed_url(&json!({"downloadUrl":"https://example.com/image?signature=transient","expiresAt":expires}),"downloadUrl").is_ok());
+        assert!(signed_url(&json!({"downloadUrl":"https://example.com/image","expiresAt":"2000-01-01T00:00:00Z"}),"downloadUrl").is_err());
+    }
 }

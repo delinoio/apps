@@ -124,5 +124,21 @@ pub fn canonical(v: &Value) -> String {
 }
 #[must_use]
 pub fn fingerprint(v: &Value) -> String {
-    hash(canonical(v))
+    // ProtoJSON now emits this repeated field by default. Omit only its empty
+    // value for compatibility with immutable pre-RealQA request receipts.
+    fn compatible(v: &Value) -> Value {
+        match v {
+            Value::Object(m) => Value::Object(
+                m.iter()
+                    .filter(|(k, v)| {
+                        !(k.as_str() == "captures" && v.as_array().is_some_and(Vec::is_empty))
+                    })
+                    .map(|(k, v)| (k.clone(), compatible(v)))
+                    .collect(),
+            ),
+            Value::Array(a) => Value::Array(a.iter().map(compatible).collect()),
+            _ => v.clone(),
+        }
+    }
+    hash(canonical(&compatible(v)))
 }
