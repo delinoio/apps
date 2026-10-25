@@ -141,6 +141,7 @@ export type FixtureOptions = {
   prepareError?: boolean;
   connectGate?: Promise<void>;
   connectError?: boolean;
+  evidencePending?: boolean;
   connectionsDenied?: boolean;
   cancelFailure?: "confirmed" | "uncertain";
   pollFailure?: "getExperiment" | "getCandidate";
@@ -350,28 +351,30 @@ export function fixture(options: FixtureOptions = {}) {
     });
     router.service(P.EvidenceService, {
       listEvidence: () => ({
-        manifests: [
-          {
-            schemaVersion: 1,
-            experimentId: e.id,
-            candidateId: candidate.id,
-            manifestSha256: candidate.evidenceManifestSha256,
-            sourceBaseSha: candidate.baseSha,
-            sourceHeadSha: candidate.headSha,
-            harnessSha: specification.harnessSha,
-            completion: P.CompletionState.COMPLETE,
-            artifacts: [
+        manifests: options.evidencePending
+          ? []
+          : [
               {
-                name: "engine.json",
-                kind: P.ArtifactKind.ENGINE_EVIDENCE,
-                sha256: "4".repeat(64),
-                sizeBytes: 1200n,
+                schemaVersion: 1,
+                experimentId: e.id,
+                candidateId: candidate.id,
+                manifestSha256: candidate.evidenceManifestSha256,
+                sourceBaseSha: candidate.baseSha,
+                sourceHeadSha: candidate.headSha,
+                harnessSha: specification.harnessSha,
                 completion: P.CompletionState.COMPLETE,
-                requiredForEvaluation: true,
+                artifacts: [
+                  {
+                    name: "engine.json",
+                    kind: P.ArtifactKind.ENGINE_EVIDENCE,
+                    sha256: "4".repeat(64),
+                    sizeBytes: 1200n,
+                    completion: P.CompletionState.COMPLETE,
+                    requiredForEvaluation: true,
+                  },
+                ],
               },
             ],
-          },
-        ],
       }),
       getEvidenceDownload: (req) => {
         calls.push({ method: "getEvidenceDownload", input: req });

@@ -1032,3 +1032,28 @@ it.each(["denied", "revoked"] as const)(
     ).toBeNull();
   },
 );
+
+it("refreshes evidence arriving after an empty response without navigation", async () => {
+  const options: FixtureOptions = { evidencePending: true };
+  mount(
+    () => (
+      <Detail
+        spaceId={spaceId}
+        connection={connection}
+        experimentId={experiment.id}
+        permissions={[P.Permission.READ]}
+        back={() => {}}
+      />
+    ),
+    options,
+  );
+  await screen.findByText("No hosted evidence");
+  options.evidencePending = false;
+  await waitFor(
+    () =>
+      expect(
+        screen.getByRole("button", { name: "Get download link" }),
+      ).toBeTruthy(),
+    { timeout: 8000 },
+  );
+}, 10000);

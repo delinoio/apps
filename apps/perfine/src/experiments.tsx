@@ -701,13 +701,17 @@ function Evidence({
 }) {
   const requestId = useRequestId(),
     [cursors, setCursors] = useState([""]);
-  const list = useQuery(EvidenceService.method.listEvidence, {
-    spaceId,
-    experimentId,
-    candidateId,
-    requestId,
-    page: { pageSize: 20, cursor: cursors.at(-1) },
-  });
+  const list = useQuery(
+    EvidenceService.method.listEvidence,
+    {
+      spaceId,
+      experimentId,
+      candidateId,
+      requestId,
+      page: { pageSize: 20, cursor: cursors.at(-1) },
+    },
+    { refetchInterval: 5000 },
+  );
   const download = useMutation(EvidenceService.method.getEvidenceDownload);
   const [link, setLink] = useState<{
     url: string;
