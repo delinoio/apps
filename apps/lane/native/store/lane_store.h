@@ -45,6 +45,11 @@ class Store {
   // with proposalId/deviceId as the OS dedupe identity, then acknowledges.
   std::string pendingNotifications(std::string spaceId);
   std::string acknowledgeNotification(std::string spaceId, std::string proposalId);
+  // Atomically claims a batch for 60 seconds. claimant is a host UUID v7.
+  // Returns {items:[{proposalId,deviceId,title,repositoryName,content}]};
+  // retry after crash uses the same OS notification identifier.
+  std::string claimNotifications(std::string spaceId, std::string claimant);
+  std::string recordNotificationPermission(std::string spaceId, std::string permission);
   static std::string sqliteSourceId();
  private:
   struct Impl;
