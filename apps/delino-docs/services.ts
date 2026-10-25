@@ -7,12 +7,16 @@ export enum ServiceId {
   GitTracker = "git-tracker",
   DeliTools = "delitools",
   Perfine = "perfine",
+  Lane = "lane",
 }
 
 // Pages after a service overview. `slug` is the route segment below
 // `/services/<service-id>/` and `message` is the navigation text key in the
 // language catalogs under `i18n/messages`.
 export enum ServicePage {
+  Installation = "installation",
+  Mcp = "mcp",
+  UserGuide = "user-guide",
   Setup = "setup",
   Cli = "cli",
   Adapters = "adapters",
@@ -38,6 +42,16 @@ export interface Service {
 }
 
 export const services: readonly Service[] = [
+  {
+    id: ServiceId.Lane,
+    name: "Lane",
+    pages: [
+      { slug: ServicePage.Installation, message: "laneInstallation" },
+      { slug: ServicePage.Mcp, message: "laneMcp" },
+      { slug: ServicePage.UserGuide, message: "laneUserGuide" },
+      { slug: ServicePage.Troubleshooting, message: "troubleshooting" },
+    ],
+  },
   {
     id: ServiceId.Perfine,
     name: "Perfine",

@@ -15,6 +15,8 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: true,
     perfine_api: false,
+    lane_api: false,
+    lane_cli: false,
     lane: false,
     perfine_fixtures: false,
     protocol: false,
@@ -31,6 +33,8 @@ test("isolated projects select only their validation", () => {
     delidev: false,
     delitools: false,
     perfine_api: true,
+    lane_api: true,
+    lane_cli: false,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -47,6 +51,8 @@ test("isolated projects select only their validation", () => {
     delidev: true,
     delitools: true,
     perfine_api: true,
+    lane_api: true,
+    lane_cli: true,
     lane: true,
     perfine_fixtures: true,
     protocol: true,
@@ -77,6 +83,8 @@ for (const [project, key] of [
         delidev: false,
         delitools: false,
         perfine_api: false,
+        lane_api: false,
+        lane_cli: false,
         lane: false,
         perfine_fixtures: false,
         protocol: false,
@@ -98,6 +106,8 @@ test("consumer examples select protocol validation without native runners", () =
     delidev: false,
     delitools: false,
     perfine_api: false,
+    lane_api: false,
+    lane_cli: false,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -201,6 +211,8 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delidev: true,
       delitools: true,
       perfine_api: false,
+      lane_api: false,
+      lane_cli: false,
       lane: false,
       perfine_fixtures: path === "Cargo.lock",
       protocol: false,
@@ -221,6 +233,8 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delidev: false,
     delitools: false,
     perfine_api: false,
+    lane_api: false,
+    lane_cli: true,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -287,6 +301,7 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
+        "lane-api",
         "perfine-api",
       ],
     ],
@@ -297,6 +312,7 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
+        "lane-api",
         "perfine-api",
       ],
     ],
@@ -307,6 +323,7 @@ test("Rust server matrix selects only affected services", () => {
         "delitools-api",
         "devbase-api",
         "git-tracker-api",
+        "lane-api",
         "perfine-api",
       ],
     ],
@@ -360,11 +377,12 @@ for (const [paths, expected] of [
         "delidev",
         "delitools",
         "perfine_api",
+        "lane_api",
         "perfine_fixtures",
       ],
     ],
   ),
-  [["go.mod"], ["protocol"]],
+  [["go.mod"], ["lane_cli", "protocol"]],
   [
     ["buf.yaml"],
     [
@@ -374,6 +392,9 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
+      "lane_api",
+      "lane_cli",
+      "lane",
       "protocol",
     ],
   ],
@@ -386,6 +407,9 @@ for (const [paths, expected] of [
       "git_tracker_api",
       "git_tracker",
       "perfine_api",
+      "lane_api",
+      "lane_cli",
+      "lane",
       "protocol",
     ],
   ],
@@ -396,7 +420,7 @@ for (const [paths, expected] of [
       "go.mod",
       "servers/devbase-api/src/main.rs",
     ],
-    ["devbase_api", ...frontends, "protocol"],
+    ["devbase_api", ...frontends, "lane_cli", "protocol"],
   ],
 ]) {
   test(`shared categories select their consumers: ${paths.join(", ")}`, () => {
@@ -571,10 +595,42 @@ test("Perfine API and server evaluator changes select server validation", () => 
 for (const path of [
   "apps/lane/src/App.tsx",
   "apps/lane/native/desktop/macos.mm",
-  "docs/project-lane.md",
   "docs/apps-lane-foundation.md",
 ]) {
   test(`Lane paths select only Lane: ${path}`, () => {
     assert.deepEqual(selectedJobs([path]), ["lane"]);
   });
 }
+
+test("Lane project and protocol contracts select all Lane consumers", () => {
+  for (const path of [
+    "docs/project-lane.md",
+    "docs/protos-lane-v1-contract.md",
+  ]) {
+    assert.deepEqual(selectedJobs([path]), [
+      "lane_api",
+      "lane_cli",
+      "lane",
+      "protocol",
+    ]);
+  }
+});
+
+test("Lane domain paths select owning validators and shared store consumers", () => {
+  for (const [path, expected] of [
+    ["servers/lane-api/src/lib.rs", ["lane_api"]],
+    ["cmds/lane/main.go", ["lane_cli"]],
+    ["packages/lane/package.json", ["lane_cli"]],
+    ["apps/lane/native/store/schema.sql", ["lane_cli", "lane"]],
+    ["packages/lynx-ui/src/components/input.tsx", ["lane"]],
+  ])
+    assert.deepEqual(selectedJobs([path]), expected, path);
+  assert.deepEqual(selectRustServers(select(["servers/lane-api/src/lib.rs"])), [
+    {
+      service: "lane-api",
+      port: 55437,
+      user: "lane",
+      database: "lane_api_test",
+    },
+  ]);
+});

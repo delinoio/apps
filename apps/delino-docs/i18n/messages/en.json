@@ -44,5 +44,8 @@
   "perfinePolicies": "Policies and evidence",
   "perfineHosting": "Private hosting and uploads",
   "perfinePublication": "Draft PR approval",
-  "perfineGithubActions": "GitHub Actions"
+  "perfineGithubActions": "GitHub Actions",
+  "laneInstallation": "Installation",
+  "laneMcp": "MCP connections",
+  "laneUserGuide": "User guide"
 }

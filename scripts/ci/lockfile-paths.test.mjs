@@ -118,15 +118,16 @@ test("shared importer edits preserve shared consumers", () => {
   );
 });
 
-test("Lynx UI importer edits select shared checks without application jobs", () => {
+test("Lynx UI importer edits select shared checks and the Lane consumer", () => {
   const lockfiles = {
     baseLockfile: lockfile("packages/lynx-ui"),
     headLockfile: lockfile("packages/lynx-ui", "19.2.9"),
   };
-  assert.ok(
-    Object.values(select(["pnpm-lock.yaml"], lockfiles)).every(
-      (value) => !value,
-    ),
+  assert.deepEqual(
+    Object.entries(select(["pnpm-lock.yaml"], lockfiles))
+      .filter(([, selected]) => selected)
+      .map(([owner]) => owner),
+    ["lane"],
   );
   assert.deepEqual(selectChecks(["pnpm-lock.yaml"], lockfiles), {
     tooling: false,

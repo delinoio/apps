@@ -1,0 +1,265 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "lane-operations",
+  "title": "Lane operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "tags": ["lane"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Service and database probes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"lane-health\"}",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API request rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service, outcome) (rate(lane_api_requests_total[5m]))",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "API error fraction",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "lane:api_errors:ratio5m",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "API p95 seconds",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "lane:api_latency:p95_5m",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "API samples in five minutes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "lane:api_samples:5m",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Push transient fraction",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "lane:push_transient:ratio15m",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Push attempts in fifteen minutes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "lane:push_samples:15m",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Pending pushes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (service) (lane_push_pending_count)",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Oldest pending push seconds",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (service) (lane_push_oldest_pending_age_seconds)",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Pending synchronization failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (service) (lane_sync_pending_failures)",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Firing alerts",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{component}} {{outcome}} {{alertname}}"
+        }
+      ]
+    }
+  ]
+}

@@ -12,3 +12,5 @@
 - [Perfine fixture and adapter validation](../../docs/repository-workflow-contract.md#perfine-repository-validation)
 
 - Perfine CLI acceptance uses `perfine-acceptance.mjs <language>` and the six-language Linux matrix. Preserve raw failure evidence and label local emulation explicitly; do not enable the emulation override in CI.
+
+- Lane CI ownership includes frontend, Go CLI/distribution and Rust server validators. Shared local-store changes select both local consumers; Lane protocol changes select all Lane consumers and protocol validation. Follow [Lane validation](../../docs/repository-workflow-contract.md#lane-development-and-validation).

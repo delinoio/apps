@@ -44,7 +44,12 @@
       "services/perfine/policies.md",
       "services/perfine/publication.md",
       "services/perfine/setup.md",
-      "services/perfine/troubleshooting.md"
+      "services/perfine/troubleshooting.md",
+      "services/lane/index.md",
+      "services/lane/installation.md",
+      "services/lane/mcp.md",
+      "services/lane/user-guide.md",
+      "services/lane/troubleshooting.md"
     ],
     "messages": [
       "perfineSetup",
@@ -53,10 +58,13 @@
       "perfinePolicies",
       "perfineHosting",
       "perfinePublication",
-      "perfineGithubActions"
+      "perfineGithubActions",
+      "laneInstallation",
+      "laneMcp",
+      "laneUserGuide"
     ],
     "sections": {
-      "services/index.md": ["perfine"]
+      "services/index.md": ["perfine", "lane"]
     }
   }
 }
