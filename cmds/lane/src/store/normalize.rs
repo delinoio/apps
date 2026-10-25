@@ -26,6 +26,10 @@ pub fn url(raw: &str) -> Result<String> {
         return Err(bad());
     }
     let host = u.host_str().filter(|h| !h.is_empty()).ok_or_else(bad)?;
+    // SSH uses an opaque host parser. Canonicalize it with the same IDNA and
+    // case rules as HTTPS so both transports share a repository identity.
+    let canonical = url::Url::parse(&format!("https://{host}/")).map_err(|_| bad())?;
+    let host = canonical.host_str().ok_or_else(bad)?;
     let host = match u.port() {
         Some(0) => return Err(bad()),
         Some(22) if u.scheme() == "ssh" => host.to_owned(),

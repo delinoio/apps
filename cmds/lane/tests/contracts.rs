@@ -392,3 +392,24 @@ fn invalid_stored_enums_and_body_kinds_fail_closed() {
         );
     }
 }
+
+#[test]
+fn ssh_hosts_share_https_repository_identity() {
+    for host in ["GitHub.com", "BÜCHER.example"] {
+        let expected =
+            lane::store::normalize::url(&format!("https://{host}/Acme/Repo.git")).unwrap();
+        for input in [
+            format!("git@{host}:Acme/Repo.git"),
+            format!("ssh://git@{host}:22/Acme/Repo.git"),
+        ] {
+            assert_eq!(lane::store::normalize::url(&input).unwrap(), expected);
+            let temp = tempfile::tempdir().unwrap();
+            let store = Store::open(temp.path(), "", false).unwrap();
+            let repository = call(&store, "CreateRepository", json!({"url": input})).unwrap();
+            assert_eq!(
+                repository["result"]["version"]["repository"]["normalizedUrl"],
+                expected
+            );
+        }
+    }
+}
