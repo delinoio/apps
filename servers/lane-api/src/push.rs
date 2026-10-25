@@ -210,8 +210,11 @@ impl Clock for WallClock {
     }
 }
 
+type ProviderTokenCache = Arc<tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>>;
+
 #[derive(Clone)]
 struct Apns {
+    token: ProviderTokenCache,
     key: Arc<EncodingKey>,
     key_id: String,
     team_id: String,
@@ -313,6 +316,7 @@ impl Push {
         let mut providers = Providers::default();
         if enabled("LANE_APNS_ENABLED")? {
             providers.apns = Some(Apns {
+                token: Arc::default(),
                 key: Arc::new(
                     EncodingKey::from_ec_pem(env("LANE_APNS_PRIVATE_KEY")?.as_bytes())
                         .map_err(|_| Fault::precondition("invalid APNs key"))?,
@@ -427,14 +431,29 @@ impl Push {
                     .apns
                     .as_ref()
                     .ok_or_else(Fault::unavailable)?;
-                let mut header = Header::new(Algorithm::ES256);
-                header.kid = Some(c.key_id.clone());
-                let jwt = jsonwebtoken::encode(
-                    &header,
-                    &json!({"iss":c.team_id,"iat":now.timestamp()}),
-                    &c.key,
-                )
-                .map_err(|_| Fault::unavailable())?;
+                // APNs rejects excessive provider-token rotation. Reuse for 50
+                // minutes, then refresh before Apple's one-hour expiration.
+                let mut cache = c.token.lock().await;
+                let jwt = match cache.as_ref() {
+                    Some((issued, token))
+                        if now >= *issued && now < *issued + Duration::minutes(50) =>
+                    {
+                        token.clone()
+                    }
+                    _ => {
+                        let mut header = Header::new(Algorithm::ES256);
+                        header.kid = Some(c.key_id.clone());
+                        let jwt = jsonwebtoken::encode(
+                            &header,
+                            &json!({"iss":c.team_id,"iat":now.timestamp()}),
+                            &c.key,
+                        )
+                        .map_err(|_| Fault::unavailable())?;
+                        *cache = Some((now, jwt.clone()));
+                        jwt
+                    }
+                };
+                drop(cache);
                 self.http.post(format!("{}/3/device/{}",c.endpoint,d.endpoint))
                     .version(reqwest::Version::HTTP_2).bearer_auth(jwt)
                     .header("apns-topic",&c.topic).header("apns-push-type","background").header("apns-priority","5")
@@ -825,6 +844,7 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
             clock,
             providers: Providers {
                 apns: Some(Apns {
+                    token: Arc::default(),
                     key: Arc::new(EncodingKey::from_ec_pem(EC.as_bytes()).unwrap()),
                     key_id: "key-id".into(),
                     team_id: "team-id".into(),
@@ -958,12 +978,13 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
         assert!(!is_mcp(&principal("ORIGIN_KIND_APP", "origin")));
         assert!(!is_mcp(&principal("ORIGIN_KIND_CLI", "origin")));
     }
+    type CapturedRequests = Arc<std::sync::Mutex<Vec<(String, axum::http::HeaderMap, Vec<u8>)>>>;
     struct Mock {
         base: String,
         status: Arc<AtomicU16>,
         after: Arc<std::sync::Mutex<Option<String>>>,
         sends: Arc<AtomicUsize>,
-        requests: Arc<std::sync::Mutex<Vec<(String, axum::http::HeaderMap, Vec<u8>)>>>,
+        requests: CapturedRequests,
         task: tokio::task::JoinHandle<()>,
     }
     impl Drop for Mock {
@@ -1054,6 +1075,17 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
         let apns: Value =
             serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
         assert_eq!(apns["aps"]["content-available"], 1);
+        assert_eq!(apns["accountId"], "account");
+        let cached = worker
+            .prepare(&d, clock.now() + Duration::seconds(60))
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request.headers()["authorization"],
+            cached.headers()["authorization"]
+        );
         assert!(apns["aps"].get("alert").is_none());
         assert_eq!(request.headers()["apns-push-type"], "background");
         assert_eq!(request.headers()["apns-priority"], "5");
@@ -1068,18 +1100,20 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
             server.status.store(status, Ordering::SeqCst);
             assert_eq!(worker.dispatch(&d).await.0, expected);
         }
-        let requests = server.requests.lock().unwrap();
-        let (path, headers, body) = requests
-            .iter()
-            .find(|r| r.0.contains("messages:send"))
-            .unwrap();
-        assert_eq!(path, "/v1/projects/test-project/messages:send");
-        assert_eq!(headers["authorization"], "Bearer synthetic-token");
-        let body: Value = serde_json::from_slice(body).unwrap();
-        assert_eq!(body["message"]["android"]["ttl"], "7200s");
-        assert!(body["message"].get("notification").is_none());
-        assert_eq!(body["message"]["data"]["proposalId"], "proposal");
-        drop(requests);
+        {
+            let requests = server.requests.lock().unwrap();
+            let (path, headers, body) = requests
+                .iter()
+                .find(|r| r.0.contains("messages:send"))
+                .unwrap();
+            assert_eq!(path, "/v1/projects/test-project/messages:send");
+            assert_eq!(headers["authorization"], "Bearer synthetic-token");
+            let body: Value = serde_json::from_slice(body).unwrap();
+            assert_eq!(body["message"]["android"]["ttl"], "7200s");
+            assert!(body["message"].get("notification").is_none());
+            assert_eq!(body["message"]["data"]["proposalId"], "proposal");
+            assert_eq!(body["message"]["data"]["accountId"], "account");
+        }
         let before = server.sends.load(Ordering::SeqCst);
         clock.advance(7200);
         assert_eq!(worker.dispatch(&d).await.0, Outcome::PermanentFailure);
@@ -1345,11 +1379,12 @@ WKgZtSNaVvVIh0CUGOnHJip/8DwH7dR6SS1rtc/UT0nkE4YvhMu4j4S8
         seed(&db, "success", clock.now()).await;
         assert_eq!(worker.tick().await.unwrap(), 1);
         assert_eq!(state(&db, "success").await, "success");
-        let captured = server.requests.lock().unwrap();
-        let body: Value = serde_json::from_slice(&captured.last().unwrap().2).unwrap();
-        assert!(body["message"].get("notification").is_none());
-        assert_eq!(body["message"]["data"]["proposalId"], "success");
-        drop(captured);
+        {
+            let captured = server.requests.lock().unwrap();
+            let body: Value = serde_json::from_slice(&captured.last().unwrap().2).unwrap();
+            assert!(body["message"].get("notification").is_none());
+            assert_eq!(body["message"]["data"]["proposalId"], "success");
+        }
         // A committed successful attempt with an interrupted queue update is recovered without another send.
         sqlx::query("UPDATE lane_push_deliveries SET state='pending' WHERE proposal_id='success'")
             .execute(&db)
