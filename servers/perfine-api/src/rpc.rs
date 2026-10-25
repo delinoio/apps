@@ -2,6 +2,7 @@
 use crate::{
     Fault, Result, Server,
     auth::{self, Permission},
+    error::domain,
     hash, id, integer, stamp, string,
 };
 use buffa::Message;
@@ -103,7 +104,10 @@ async fn tombstone(db: &mut PgConnection, eid: &str) -> Result<()> {
         .fetch_one(db)
         .await?
     {
-        return Err(Fault::precondition("experiment deleted"));
+        return Err(domain(
+            Fault::precondition("experiment deleted"),
+            ErrorReason::Deleted,
+        ));
     }
     Ok(())
 }
@@ -117,10 +121,24 @@ async fn save_experiment(db: &mut PgConnection, e: &Value) -> Result<()> {
 }
 fn inactive(c: &Value) -> Result<()> {
     if c["state"] != "CONNECTION_STATE_CONNECTED" {
-        Err(Fault::precondition("connection inactive"))
+        Err(domain(
+            Fault::precondition("connection inactive"),
+            ErrorReason::ConnectionInactive,
+        ))
     } else {
         Ok(())
     }
+}
+fn eligibility_failure(decisions: &[Value], message: &'static str) -> Fault {
+    let reason = if decisions
+        .iter()
+        .any(|decision| decision["eligibility"] == 2)
+    {
+        ErrorReason::ConsentRequired
+    } else {
+        ErrorReason::ArtifactIneligible
+    };
+    domain(Fault::precondition(message), reason)
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AuthorityProbe {
@@ -404,7 +422,10 @@ impl Server {
                 lock(db, &format!("repository:{rid}")).await?;
                 let prior:Option<Value>=sqlx::query_scalar("SELECT data FROM perfine_connections WHERE repository=$1 AND (space=$2 OR active) ORDER BY active DESC LIMIT 1 FOR UPDATE").bind(rid as i64).bind(id(space)?).fetch_optional(&mut *db).await?;
                 if prior.as_ref().is_some_and(|v| v["spaceId"] != space) {
-                    return Err(Fault::exists());
+                    return Err(domain(
+                        Fault::exists(),
+                        ErrorReason::RepositoryAlreadyConnected,
+                    ));
                 }
                 let mut c=prior.unwrap_or_else(||json!({"id":uuid::Uuid::now_v7().to_string(),"spaceId":space,"createdAt":stamp(),"consent":{"revision":"0","allowedKinds":[],"effectiveAt":stamp()}}));
                 c["repository"] = repository.clone();
@@ -504,8 +525,9 @@ impl Server {
                 let cid = if op == "ResumeExperiment" {
                     let e = experiment(db, space, string(q, "experimentId")).await?;
                     if e["specification"]["fingerprintSha256"] != q["expectedFingerprintSha256"] {
-                        return Err(Fault::precondition(
-                            "fingerprint mismatch; create a new experiment",
+                        return Err(domain(
+                            Fault::precondition("fingerprint mismatch; create a new experiment"),
+                            ErrorReason::FingerprintMismatch,
                         ));
                     }
                     string(&e, "connectionId").to_owned()
@@ -523,8 +545,11 @@ impl Server {
                     }
                 }
                 if op != "ListCloudTools" {
-                    return Err(Fault::precondition(
-                        "cloud unavailable: use the local CLI; no isolated unattended adapter has been verified",
+                    return Err(domain(
+                        Fault::precondition(
+                            "cloud unavailable: use the local CLI; no isolated unattended adapter has been verified",
+                        ),
+                        ErrorReason::CloudUnavailable,
                     ));
                 }
                 self.cloud_page(db, q).await
@@ -746,7 +771,12 @@ impl Server {
     }
     fn eligibility(&self, c: &Value, m: &Value) -> Result<Vec<Value>> {
         if integer(m, "schemaVersion") != 1 {
-            return Err(Fault::invalid("unsupported schema version"));
+            let fault = Fault::invalid("unsupported schema version");
+            return Err(if crate::error::unsupported_major(m, "schemaVersion") {
+                domain(fault, ErrorReason::UnsupportedVersion)
+            } else {
+                fault
+            });
         }
         id(string(m, "experimentId"))?;
         if !string(m, "candidateId").is_empty() {
@@ -836,7 +866,8 @@ impl Server {
             return Ok(json!({"decisions":decisions,"eligibleForCompleteEvaluation":eligible}));
         }
         if !eligible {
-            return Err(Fault::precondition(
+            return Err(eligibility_failure(
+                &decisions,
                 "artifact ineligible; retain local evidence",
             ));
         }
@@ -847,8 +878,13 @@ impl Server {
         let spec = required(q, "specification")?;
         validate_spec(spec)?;
         crate::preparation::verify_spec(spec, &c["repository"])?;
-        if spec["fingerprintSha256"] != m["experimentFingerprintSha256"]
-            || spec["baseSha"] != m["sourceBaseSha"]
+        if spec["fingerprintSha256"] != m["experimentFingerprintSha256"] {
+            return Err(domain(
+                Fault::precondition("immutable evidence mismatch"),
+                ErrorReason::FingerprintMismatch,
+            ));
+        }
+        if spec["baseSha"] != m["sourceBaseSha"]
             || spec["harnessSha"] != m["harnessSha"]
             || spec["environment"] != m["environment"]
             || spec["policy"] != m["policy"]
@@ -939,12 +975,10 @@ impl Server {
         if op == "GetUpload" {
             return Ok(json!({"upload":u}));
         }
-        if !self
-            .eligibility(&c, &u["manifest"])?
-            .iter()
-            .all(|d| d["eligibility"] == 1)
-        {
-            return Err(Fault::precondition(
+        let decisions = self.eligibility(&c, &u["manifest"])?;
+        if !decisions.iter().all(|d| d["eligibility"] == 1) {
+            return Err(eligibility_failure(
+                &decisions,
                 "consent revoked or artifact ineligible",
             ));
         }
@@ -1736,8 +1770,9 @@ impl Server {
             .await?;
         let prs = prs.as_array().ok_or_else(Fault::unavailable)?;
         if prs.len() == 100 {
-            return Err(Fault::precondition(
-                "publication reconciliation requires operator inspection",
+            return Err(domain(
+                Fault::precondition("publication reconciliation requires operator inspection"),
+                ErrorReason::PublicationUncertain,
             ));
         }
         let matches_approval = |v: &Value| {
@@ -1821,6 +1856,12 @@ impl Server {
     }
 }
 fn validate_spec(s: &Value) -> Result<()> {
+    if crate::error::unsupported_major(s, "schemaVersion") {
+        return Err(domain(
+            Fault::invalid("v1 and workload confirmation required"),
+            ErrorReason::UnsupportedVersion,
+        ));
+    }
     if integer(s, "schemaVersion") != 1 || s["workloadRepresentativenessConfirmed"] != true {
         return Err(Fault::invalid("v1 and workload confirmation required"));
     }
@@ -1859,6 +1900,12 @@ fn validate_spec(s: &Value) -> Result<()> {
             | "LANGUAGE_JAVASCRIPT"
     ) {
         return Err(Fault::invalid("language required"));
+    }
+    if crate::error::unsupported_major(policy, "schemaVersion") {
+        return Err(domain(
+            Fault::invalid("versioned policy required"),
+            ErrorReason::UnsupportedVersion,
+        ));
     }
     if integer(policy, "schemaVersion") != 1
         || !matches!(

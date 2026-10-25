@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 use crate::storage::escape;
 use crate::{Fault, Result, integer, string};
+use delino_protocol::perfine::v1::ErrorReason;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
 use server_common::authority::bounded_json;
+use server_common::error::FaultSource;
 pub struct PublicationTokens {
     pub head: String,
     pub target: String,
@@ -38,7 +40,7 @@ impl GitHubCallError {
     }
 
     pub fn into_fault(self) -> Fault {
-        match self {
+        let mut fault = match self {
             Self::Response {
                 status,
                 rate_limited,
@@ -51,7 +53,11 @@ impl GitHubCallError {
             Self::Response { .. } => Fault::unavailable(),
             Self::Fault(fault) => fault,
             Self::RepositoryMismatch => Fault::denied(),
+        };
+        if fault.code == connectrpc::ErrorCode::Unavailable {
+            fault.source = FaultSource::GitHub;
         }
+        fault
     }
 }
 pub struct GitHub {
@@ -220,7 +226,10 @@ impl GitHub {
     }
     pub async fn admin(&self, c: &Value, user_token: &str) -> Result<()> {
         if user_token.is_empty() {
-            return Err(Fault::denied());
+            return Err(crate::error::domain(
+                Fault::denied(),
+                ErrorReason::RepositoryAdminRequired,
+            ));
         }
         let v = self
             .call(
@@ -234,7 +243,10 @@ impl GitHub {
             )
             .await?;
         if v["permissions"]["admin"] != true {
-            return Err(Fault::denied());
+            return Err(crate::error::domain(
+                Fault::denied(),
+                ErrorReason::RepositoryAdminRequired,
+            ));
         }
         self.current(c).await?;
         Ok(())
