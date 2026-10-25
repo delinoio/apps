@@ -1659,7 +1659,7 @@ impl Server {
         let a: Value = row.get("data");
         let e: Value = row.get("experiment");
         let mut p: Value = row.get("publication");
-        let attempts:i64=sqlx::query_scalar("SELECT COALESCE(sum(attempts),0)::bigint FROM perfine_approvals WHERE data->'draft'->>'candidateId'=$1").bind(string(&a["draft"],"candidateId")).fetch_one(&mut *db).await?;
+        let attempts:i64=sqlx::query_scalar("SELECT COALESCE(sum(attempts),0)::bigint FROM perfine_approvals WHERE data->'draft'->>'candidateId'=$1 AND publication->>'_createRejected' IS DISTINCT FROM 'true'").bind(string(&a["draft"],"candidateId")).fetch_one(&mut *db).await?;
         tombstone(db, string(&e, "id")).await?;
         let space = string(&e, "spaceId");
         if self.authority.states(&[space.into()]).await?
@@ -1755,19 +1755,40 @@ impl Server {
             .execute(&mut *db)
             .await?;
             // Persist intent before dispatch. Lost replies are reconciled on the next maintenance cycle.
-            let result=self.github.call("POST",&format!("{path}/pulls"),&token.target,Some(json!({"title":d["title"],"body":d["body"],"base":d["baseRef"],"head":head,"head_repo":d["headRepository"]["name"],"draft":true}))).await;
-            if let Ok(pr) = result {
-                p["githubPullRequestNumber"] = json!(integer(&pr, "number").to_string());
-                p["githubPullRequestUrl"] = pr["html_url"].clone();
-                if matches_approval(&pr) {
-                    p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
-                } else {
-                    // GitHub creates from mutable branch names, so the response must
-                    // match the approved snapshot even after preflight SHA checks pass.
+            let result=self.github.call_classified("POST",&format!("{path}/pulls"),&token.target,Some(json!({"title":d["title"],"body":d["body"],"base":d["baseRef"],"head":head,"head_repo":d["headRepository"]["name"],"draft":true}))).await;
+            match result {
+                Ok(pr) => {
+                    p["githubPullRequestNumber"] = json!(integer(&pr, "number").to_string());
+                    p["githubPullRequestUrl"] = pr["html_url"].clone();
+                    if matches_approval(&pr) {
+                        p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+                    } else {
+                        // GitHub creates from mutable branch names, so the response must
+                        // match the approved snapshot even after preflight SHA checks pass.
+                        p["state"] = json!("PUBLICATION_STATE_FAILED");
+                        p["failureReason"] = json!(
+                            "Created PR differs from the approved binding; inspect GitHub and obtain new approval"
+                        );
+                    }
+                }
+                Err(crate::github::GitHubCallError::Response {
+                    status,
+                    rate_limited,
+                }) if status.is_client_error()
+                    && status != reqwest::StatusCode::REQUEST_TIMEOUT
+                    && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+                    && !rate_limited =>
+                {
                     p["state"] = json!("PUBLICATION_STATE_FAILED");
-                    p["failureReason"] = json!(
-                        "Created PR differs from the approved binding; inspect GitHub and obtain new approval"
-                    );
+                    p["_createRejected"] = json!(true);
+                    p["failureReason"] = json!(format!(
+                        "GitHub rejected draft creation (HTTP {}); correct the request and obtain new approval",
+                        status.as_u16()
+                    ));
+                }
+                Err(_) => {
+                    // No definitive non-delivery response: keep the persisted intent
+                    // for reconciliation without sending a duplicate create request.
                 }
             }
         }
