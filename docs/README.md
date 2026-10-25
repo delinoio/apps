@@ -125,6 +125,7 @@ Historical DeliDev validation describes the retired implementation and does not 
 
 - [Project index](project-lane.md)
 - [Application foundation and Lynxtron desktop build](apps-lane-foundation.md)
+- [RealQA capture, editor, attachments and Chrome integration](apps-lane-realqa-contract.md)
 
 - [Local store and native bridge](apps-lane-local-store-contract.md)
 - [Connect protocol and conformance](protos-lane-v1-contract.md)

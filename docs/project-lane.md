@@ -21,6 +21,8 @@ Existing paths retain their build ownership:
 
 Additional component ownership:
 
+- `apps/lane-chrome-extension`: RealQA Chrome companion source, build and store submission materials.
+
 - `apps/lane/native/store`: shared SQLite schema, native store support and bridge domain operations; platform adapters remain in the existing hosts.
 - `cmds/lane`: Rust CLI entry point and local stdio MCP.
 - `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
@@ -31,6 +33,7 @@ Additional component ownership:
 ## Domain Contract Documents
 
 - [Application and full product behavior](apps-lane-foundation.md)
+- [RealQA capture, editor, attachments and Chrome integration](apps-lane-realqa-contract.md)
 - [Protocol, domain rules and conformance vectors](protos-lane-v1-contract.md)
 - [Shared local store and native bridge](apps-lane-local-store-contract.md)
 - [Rust CLI and local MCP](cmds-lane-cli-contract.md)

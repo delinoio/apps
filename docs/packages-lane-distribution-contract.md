@@ -64,3 +64,13 @@ Change CLI/app/server/project contracts and public user guides together when ins
 - [Application](apps-lane-foundation.md)
 - [Local store](apps-lane-local-store-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.

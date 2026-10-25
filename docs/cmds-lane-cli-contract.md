@@ -187,3 +187,13 @@ reconnecting an existing account space also pins its current account identity.
 `sync run --retry-blocked` explicitly retries items previously rejected by the
 server. Their original request IDs and immutable versions remain unchanged. It
 does not confirm an epoch change or clear account-deletion state.
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.

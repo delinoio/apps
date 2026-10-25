@@ -291,3 +291,12 @@ change. Record validation limits in PR and CI evidence.
 - [Official Lynx integration](https://lynxjs.org/guide/start/integrate-with-existing-apps.html)
 - [Lynxtron](https://lynxjs.org/lynxtron/)
 - [Lynxtron communication](https://lynxjs.org/lynxtron/learn/communication-between-node-and-lynx)
+
+## RealQA extension to the foundation
+
+The [RealQA contract](apps-lane-realqa-contract.md) replaces the RealQA placeholder
+and earlier exclusion of its mini-app implementation. It owns the approved
+start/settings, floating composer/editor and read-only attachment views. Keep
+Pace's placeholder, approved artwork and existing Lane navigation behavior.
+The RealQA contract also defines the Chrome Web Store publication requirement
+and the explicit Windows installation/runtime deferral.
