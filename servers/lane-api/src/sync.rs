@@ -89,7 +89,13 @@ fn normalize_version(v: &Value) -> Result<Value> {
     if !string(&origin, "deviceId").is_empty() {
         e::uuid(string(&origin, "deviceId"))?;
     }
-    let mut out = json!({"formatVersion":1,"entityId":v["entityId"],"kind":if kind==REPOSITORY{"ENTITY_KIND_REPOSITORY"}else{"ENTITY_KIND_TASK"},"versionId":v["versionId"],"parentVersionIds":parents,"createdAt":timestamp.to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":origin,"deleted":deleted});
+    let mut out = json!({"formatVersion":1,"entityId":v["entityId"],"kind":if kind==REPOSITORY{"ENTITY_KIND_REPOSITORY"}else{"ENTITY_KIND_TASK"},"versionId":v["versionId"],"parentVersionIds":parents,"createdAt":timestamp.to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":origin,"deleted":deleted,"promptRestoration":v["promptRestoration"].as_bool().unwrap_or(false)});
+    if out["promptRestoration"] == true && (deleted || kind != TASK || parents.len() != 1) {
+        return Err(fault(
+            1,
+            "prompt restoration requires a live task with one parent",
+        ));
+    }
     if deleted {
         if v.get("repository").is_some() || v.get("task").is_some() {
             return Err(fault(1, "deleted versions cannot contain a body"));
@@ -149,12 +155,31 @@ pub async fn push_item(
     {
         return Err(fault(13, "version belongs to another account"));
     }
+    let origin_device = string(&v["origin"], "deviceId");
+    if !origin_device.is_empty() && origin_device != p.device_id {
+        let associated: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM lane_devices WHERE account_id=$1 AND id=$2)",
+        )
+        .bind(&p.account_id)
+        .bind(origin_device)
+        .fetch_one(&mut *db)
+        .await?;
+        if !associated {
+            return Err(fault(
+                13,
+                "version origin device does not belong to this account",
+            ));
+        }
+    }
     let kind = if v["kind"] == "ENTITY_KIND_REPOSITORY" {
         REPOSITORY
     } else {
         TASK
     };
     let action = mutation_kind(&m["kind"])?;
+    if v["promptRestoration"] == true && action != "SAVE" {
+        return Err(fault(1, "prompt restoration must be a SAVE mutation"));
+    }
     let parents = e::set_ids(&v["parentVersionIds"])?;
     let expected = e::set_ids(m.get("expectedHeadIds").unwrap_or(&json!([])))?;
     let normalized = json!({"meta":{"requestId":request,"origin":v["origin"]},"version":v,"expectedHeadIds":expected,"kind":format!("MUTATION_KIND_{action}")});
@@ -228,90 +253,97 @@ pub async fn push_item(
                 "resolution requires all expected heads as parents",
             ));
         }
-        if kind == REPOSITORY && action == "CREATE" && existing.is_none() {
-            if let Some(canonical) = e::url_owner(
+        if kind == REPOSITORY
+            && action == "CREATE"
+            && existing.is_none()
+            && let Some(canonical) = e::url_owner(
                 db,
                 &p.account_id,
                 string(&v["repository"], "normalizedUrl"),
                 &entity_id,
             )
             .await?
-            {
-                sqlx::query("INSERT INTO lane_repository_mappings(account_id,local_id,canonical_id) VALUES($1,$2,$3)").bind(&p.account_id).bind(original).bind(&canonical).execute(&mut *db).await?;
-                entity_id = canonical;
-                existing = e::entity(db, &p.account_id, &entity_id).await?;
-            }
+        {
+            sqlx::query("INSERT INTO lane_repository_mappings(account_id,local_id,canonical_id) VALUES($1,$2,$3)").bind(&p.account_id).bind(original).bind(&canonical).execute(&mut *db).await?;
+            entity_id = canonical;
+            existing = e::entity(db, &p.account_id, &entity_id).await?;
         }
-        if existing.is_none() {
-            if action != "CREATE" {
-                return Err(fault(
-                    9,
-                    "parent entity is missing; retry after uploading parents",
-                ));
-            }
-            if kind == TASK {
-                e::task_body(&v["task"], true)?;
-            }
-            e::new_entity(db, p, &entity_id, kind, &v).await?;
-            response = e::emit(db, &p.account_id, &entity_id).await?;
-        } else {
-            let current = existing.unwrap();
-            let hs = e::heads(db, &p.account_id, &entity_id).await?;
-            let accepted =
-                e::stored_version(db, &p.account_id, &entity_id, &current.accepted).await?;
-            if action == "RESOLVE" && expected != hs {
-                return Err(fault(5, "resolution is stale; read current heads"));
-            }
-            if action != "RESOLVE" && hs.len() > 1 {
-                return Err(fault(4, "conflicted entity is read-only"));
-            }
-            let mut parent_versions = Vec::new();
-            for parent in &parents {
-                match e::stored_version(db, &p.account_id, &entity_id, parent).await {
-                    Ok(v) => parent_versions.push(v),
-                    Err(f) if f.reason == 2 => {
-                        return Err(fault(9, "parent version is missing; upload parents first"));
-                    }
-                    Err(f) => return Err(f),
+        match existing {
+            None => {
+                if action != "CREATE" {
+                    return Err(fault(
+                        9,
+                        "parent entity is missing; retry after uploading parents",
+                    ));
                 }
-            }
-            if kind == TASK && action == "SAVE" {
-                let base = &parent_versions[0]["task"];
-                if base["proposal"] != v["task"]["proposal"]
-                    && (base["proposal"] == "PROPOSAL_REGULAR"
-                        || !matches!(
-                            string(&v["task"], "proposal"),
-                            "PROPOSAL_ACCEPTED" | "PROPOSAL_REJECTED"
-                        ))
-                {
-                    return Err(fault(1, "invalid proposal transition"));
+                if kind == TASK {
+                    e::task_body(&v["task"], true)?;
                 }
+                e::new_entity(db, p, &entity_id, kind, &v).await?;
+                response = e::emit(db, &p.account_id, &entity_id).await?;
             }
-            e::validate_body(db, &p.account_id, &entity_id, kind, &v).await?;
-            let prompt = kind == TASK
-                && (parents.len() > 1
-                    || parent_versions
-                        .first()
-                        .is_none_or(|old| old["task"].get("prompt") != v["task"].get("prompt")));
-            e::insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
-            let same_repository = kind == REPOSITORY
-                && action == "CREATE"
-                && v["repository"] == accepted["repository"];
-            if !same_repository {
-                if action == "RESOLVE" || parents == hs {
-                    sqlx::query("DELETE FROM lane_heads WHERE account_id=$1 AND entity_id=$2")
-                        .bind(&p.account_id)
-                        .bind(&entity_id)
-                        .execute(&mut *db)
-                        .await?;
-                    e::project(db, &p.account_id, &entity_id, kind, &v).await?;
-                    if kind == TASK && v["task"]["proposal"] != "PROPOSAL_PENDING" {
-                        crate::push::cancel(db, &p.account_id, &entity_id).await?;
+            Some(current) => {
+                let hs = e::heads(db, &p.account_id, &entity_id).await?;
+                let accepted =
+                    e::stored_version(db, &p.account_id, &entity_id, &current.accepted).await?;
+                if action == "RESOLVE" && expected != hs {
+                    return Err(fault(5, "resolution is stale; read current heads"));
+                }
+                if action != "RESOLVE" && hs.len() > 1 {
+                    return Err(fault(4, "conflicted entity is read-only"));
+                }
+                let mut parent_versions = Vec::new();
+                for parent in &parents {
+                    match e::stored_version(db, &p.account_id, &entity_id, parent).await {
+                        Ok(v) => parent_versions.push(v),
+                        Err(f) if f.reason == 2 => {
+                            return Err(fault(
+                                9,
+                                "parent version is missing; upload parents first",
+                            ));
+                        }
+                        Err(f) => return Err(f),
                     }
                 }
-                e::add_head(db, &p.account_id, &entity_id, string(&v, "versionId")).await?;
+                if kind == TASK && action == "SAVE" {
+                    let base = &parent_versions[0]["task"];
+                    if base["proposal"] != v["task"]["proposal"]
+                        && (base["proposal"] == "PROPOSAL_REGULAR"
+                            || !matches!(
+                                string(&v["task"], "proposal"),
+                                "PROPOSAL_ACCEPTED" | "PROPOSAL_REJECTED"
+                            ))
+                    {
+                        return Err(fault(1, "invalid proposal transition"));
+                    }
+                }
+                e::validate_body(db, &p.account_id, &entity_id, kind, &v).await?;
+                let prompt = kind == TASK
+                    && (v["promptRestoration"] == true
+                        || parent_versions.is_empty() && v["task"].get("prompt").is_some()
+                        || parent_versions
+                            .iter()
+                            .any(|old| old["task"].get("prompt") != v["task"].get("prompt")));
+                e::insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
+                let same_repository = kind == REPOSITORY
+                    && action == "CREATE"
+                    && v["repository"] == accepted["repository"];
+                if !same_repository {
+                    if action == "RESOLVE" || parents == hs {
+                        sqlx::query("DELETE FROM lane_heads WHERE account_id=$1 AND entity_id=$2")
+                            .bind(&p.account_id)
+                            .bind(&entity_id)
+                            .execute(&mut *db)
+                            .await?;
+                        e::project(db, &p.account_id, &entity_id, kind, &v).await?;
+                        if kind == TASK && v["task"]["proposal"] != "PROPOSAL_PENDING" {
+                            crate::push::cancel(db, &p.account_id, &entity_id).await?;
+                        }
+                    }
+                    e::add_head(db, &p.account_id, &entity_id, string(&v, "versionId")).await?;
+                }
+                response = e::emit(db, &p.account_id, &entity_id).await?;
             }
-            response = e::emit(db, &p.account_id, &entity_id).await?;
         }
     }
     finish(db, p, request, &digest, &entity_id, &response).await

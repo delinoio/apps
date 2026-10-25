@@ -244,7 +244,7 @@ pub(crate) fn version(
     body: Option<Value>,
     p: &Principal,
 ) -> Value {
-    let mut v = json!({"formatVersion":1,"entityId":entity,"kind":if kind==REPOSITORY {"ENTITY_KIND_REPOSITORY"} else {"ENTITY_KIND_TASK"},"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none()});
+    let mut v = json!({"formatVersion":1,"entityId":entity,"kind":if kind==REPOSITORY {"ENTITY_KIND_REPOSITORY"} else {"ENTITY_KIND_TASK"},"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none(),"promptRestoration":false});
     if let Some(body) = body {
         v[if kind == REPOSITORY {
             "repository"
@@ -333,8 +333,9 @@ pub(crate) async fn result(db: &mut PgConnection, account: &str, entity_id: &str
         .ok_or_else(|| fault(2, "entity not found"))?;
     let v = stored_version(db, account, entity_id, &e.accepted).await?;
     let mut alternatives = Vec::new();
-    for h in heads(db, account, entity_id).await? {
-        if h != e.accepted {
+    let current_heads = heads(db, account, entity_id).await?;
+    if current_heads.len() > 1 {
+        for h in current_heads {
             alternatives.push(stored_version(db, account, entity_id, &h).await?);
         }
     }
@@ -382,7 +383,7 @@ pub(crate) async fn validate_body(
         .await?
         .is_some()
         {
-            return Err(fault(6, "repository URL is already registered"));
+            return Err(fault(1, "repository URL is already registered"));
         }
     } else {
         require_repository(db, account, string(&v["task"], "repositoryId")).await?;
@@ -396,6 +397,16 @@ pub(crate) async fn insert_version(
     v: &Value,
     prompt: bool,
 ) -> Result<()> {
+    let digest = fingerprint(v)?;
+    if let Some(row) = sqlx::query("SELECT entity_id,fingerprint FROM lane_version_identities WHERE account_id=$1 AND version_id=$2")
+        .bind(account).bind(string(v,"versionId")).fetch_optional(&mut *db).await? {
+        if row.get::<String,_>("entity_id") != entity_id || row.get::<String,_>("fingerprint") != digest {
+            return Err(fault(6,"version ID identifies different immutable content"));
+        }
+    } else {
+        sqlx::query("INSERT INTO lane_version_identities(account_id,version_id,entity_id,fingerprint) VALUES($1,$2,$3,$4)")
+            .bind(account).bind(string(v,"versionId")).bind(entity_id).bind(&digest).execute(&mut *db).await?;
+    }
     sqlx::query("INSERT INTO lane_versions(account_id,version_id,entity_id,envelope,prompt_version) VALUES($1,$2,$3,$4,$5)").bind(account).bind(string(v,"versionId")).bind(entity_id).bind(v).bind(prompt).execute(db).await?;
     Ok(())
 }
@@ -473,7 +484,10 @@ pub(crate) async fn notify_creation(
         let name = body["displayName"]
             .as_str()
             .unwrap_or(string(body, "normalizedUrl"));
-        crate::push::enqueue(db, p, entity_id, name, string(&v["task"], "title")).await?;
+        let mut source = p.clone();
+        source.origin_kind = string(&v["origin"], "kind").to_owned();
+        source.device_id = string(&v["origin"], "deviceId").to_owned();
+        crate::push::enqueue(db, &source, entity_id, name, string(&v["task"], "title")).await?;
     }
     Ok(())
 }
@@ -511,6 +525,7 @@ pub(crate) async fn delete_entity(
     tombstone["parentVersionIds"] = json!([]);
     tombstone["origin"] = json!({});
     tombstone["deleted"] = json!(true);
+    tombstone["promptRestoration"] = json!(false);
     sqlx::query("INSERT INTO lane_entities(account_id,id,kind,deleted,accepted_version_id) VALUES($1,$2,$3,true,$4) ON CONFLICT(account_id,id) DO UPDATE SET deleted=true,repository_id=NULL,normalized_url=NULL,accepted_version_id=$4").bind(&p.account_id).bind(entity_id).bind(kind).bind(string(&tombstone,"versionId")).execute(&mut *db).await?;
     sqlx::query("DELETE FROM lane_versions WHERE account_id=$1 AND entity_id=$2")
         .bind(&p.account_id)
@@ -712,12 +727,11 @@ async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> 
         let r = result(db, &p.account_id, &entity_id).await?;
         if kind == TASK {
             let task = &r["version"]["task"];
-            if let Some(repo) = &repository {
-                if canonical_repository(db, &p.account_id, string(task, "repositoryId")).await?
+            if let Some(repo) = &repository
+                && canonical_repository(db, &p.account_id, string(task, "repositoryId")).await?
                     != *repo
-                {
-                    continue;
-                }
+            {
+                continue;
             }
             let mut matches = true;
             for (field, names) in [("progress", PROGRESS), ("proposal", PROPOSAL)] {
@@ -969,7 +983,8 @@ pub async fn dispatch(
                 }
                 b
             };
-            let v = version(&entity_id, e.kind, &parents, Some(body), p);
+            let mut v = version(&entity_id, e.kind, &parents, Some(body), p);
+            v["promptRestoration"] = json!(method == "RestorePrompt");
             validate_body(db, &p.account_id, &entity_id, e.kind, &v).await?;
             let prompt = method == "RestorePrompt"
                 || (e.kind == TASK && current["task"].get("prompt") != v["task"].get("prompt"));
@@ -1000,4 +1015,52 @@ pub async fn dispatch(
     )
     .await?;
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fixtures(name: &str) -> Value {
+        let root = std::env::var("LANE_CONFORMANCE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../protos/lane/v1/fixtures")
+            });
+        serde_json::from_str(&std::fs::read_to_string(root.join(format!("{name}.json"))).unwrap())
+            .unwrap()
+    }
+    #[test]
+    fn shared_normalization_vectors() {
+        let fixtures = fixtures("normalization");
+        assert_eq!(fixtures["formatVersion"], 1);
+        for case in fixtures["cases"].as_array().unwrap() {
+            let got = normalize_url(string(&case["input"], "url"));
+            if case["expected"].get("reason").is_some() {
+                assert_eq!(got.unwrap_err().reason, 1, "{}", case["id"]);
+            } else {
+                assert_eq!(
+                    got.unwrap(),
+                    case["expected"]["normalizedUrl"],
+                    "{}",
+                    case["id"]
+                );
+            }
+        }
+    }
+    #[test]
+    fn shared_fingerprint_vectors() {
+        let fixtures = fixtures("fingerprints");
+        assert_eq!(fixtures["formatVersion"], 1);
+        for case in fixtures["cases"].as_array().unwrap() {
+            let q = &case["input"]["normalizedRequest"];
+            assert_eq!(canonical(q).unwrap(), case["expected"]["canonicalJson"]);
+            assert_eq!(fingerprint(q).unwrap(), case["expected"]["sha256"]);
+        }
+    }
+    #[test]
+    fn normalized_repository_body_does_not_strip_another_suffix() {
+        let v = json!({"normalizedUrl":"example.com/a.git"});
+        assert_eq!(repository_body(&v).unwrap(), v);
+    }
 }

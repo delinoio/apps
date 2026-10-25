@@ -38,3 +38,9 @@ CREATE INDEX lane_changes_account_sequence ON lane_changes(account_id,sequence);
 CREATE TABLE lane_entity_cursors (
  token text PRIMARY KEY, account_id text NOT NULL, scope text NOT NULL, position jsonb NOT NULL
 );
+
+-- Retain content-free immutable version identities after their snapshots are erased.
+CREATE TABLE lane_version_identities (
+ account_id text NOT NULL, version_id text NOT NULL, entity_id text NOT NULL,
+ fingerprint text NOT NULL, PRIMARY KEY(account_id,version_id)
+);
