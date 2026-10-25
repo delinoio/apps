@@ -463,24 +463,52 @@ it("keeps failed input values pending and ignores superseded success", async () 
   const firstError = rstest.fn();
   const secondError = rstest.fn();
   const thirdError = rstest.fn();
-  const view = (onHostError: typeof firstError) => (
+  const view = (value: string, onHostError: typeof firstError) => (
     <UIProvider onHostError={onHostError}>
-      <Input value="Alice" onValueChange={() => {}} accessibilityLabel="Name" />
+      <Input value={value} onValueChange={() => {}} accessibilityLabel="Name" />
     </UIProvider>
   );
-  const { rerender } = render(view(firstError));
+  const { rerender } = render(view("Alice", firstError));
   await waitFor(() => expect(successes).toHaveLength(1));
-  rerender(view(firstError));
+  rerender(view("Bob", firstError));
   await waitFor(() => expect(successes).toHaveLength(2));
-  rerender(view(secondError));
+  rerender(view("Carol", secondError));
   await waitFor(() => expect(successes).toHaveLength(3));
 
   successes[0]();
-  rerender(view(thirdError));
+  rerender(view("Dave", thirdError));
   await waitFor(() => expect(successes).toHaveLength(4));
   successes[3]();
-  rerender(view(firstError));
+  rerender(view("Dave", firstError));
   expect(successes).toHaveLength(4);
+});
+
+it("does not retry a failed write when only the error handler changes", async () => {
+  const firstError = rstest.fn();
+  const latestError = rstest.fn();
+  const environments: Array<Parameters<typeof theme.invoke>[3]> = [];
+  rstest
+    .mocked(theme.invoke)
+    .mockImplementation((_, method, __, environment) => {
+      if (method !== "setValue") return;
+      environments.push(environment);
+      environment.onHostError({ method, code: 3 });
+    });
+  const view = (onHostError: typeof firstError, value = "Alice") => (
+    <UIProvider onHostError={onHostError}>
+      <Input value={value} onValueChange={() => {}} accessibilityLabel="Name" />
+    </UIProvider>
+  );
+  const { rerender } = render(view(firstError));
+  await waitFor(() => expect(environments).toHaveLength(1));
+
+  rerender(view(latestError));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(environments).toHaveLength(1);
+
+  rerender(view(latestError, "Bob"));
+  await waitFor(() => expect(environments).toHaveLength(2));
+  expect(environments[1]?.onHostError).toBe(latestError);
 });
 
 it("does not write back an accepted native edit but restores a rejected edit", async () => {

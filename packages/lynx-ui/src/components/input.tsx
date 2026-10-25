@@ -75,6 +75,8 @@ export function Input({
 }: InputProps) {
   const focus = useControlFocus(disabled, FocusKind.Input, focusRef, autoFocus);
   const environment = useEnvironment();
+  const environmentRef = useRef(environment);
+  environmentRef.current = environment;
   const nativeValue = useRef<string | null>(null);
   const pendingWrite = useRef<{ id: number; value: string } | null>(null);
   const nextWriteId = useRef(0);
@@ -94,7 +96,7 @@ export function Input({
     const version = inputVersion.current;
     const writeId = ++nextWriteId.current;
     pendingWrite.current = { id: writeId, value };
-    invoke(node, "setValue", { value }, environment, () => {
+    invoke(node, "setValue", { value }, environmentRef.current, () => {
       // A failed or superseded request must not mark the current host as synced.
       if (
         active &&
@@ -109,7 +111,7 @@ export function Input({
     return () => {
       active = false;
     };
-  }, [value, edit, environment]);
+  }, [value, edit]);
   const onInput: NativeInputProps["bindinput"] = (event) => {
     inputVersion.current += 1;
     nativeValue.current = event.detail.value;
