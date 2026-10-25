@@ -44,7 +44,7 @@ export function supplementNotices(p, directory = supplementDirectory) {
     .join("\n");
 }
 
-export function collectNotices(root) {
+export function collectNotices(root, target = "x86_64-unknown-linux-gnu") {
   const metadata = JSON.parse(
     execFileSync(
       "cargo",
@@ -54,7 +54,7 @@ export function collectNotices(root) {
         "--format-version",
         "1",
         "--filter-platform",
-        "x86_64-unknown-linux-gnu",
+        target,
       ],
       { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     ),

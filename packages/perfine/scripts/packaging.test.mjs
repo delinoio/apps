@@ -8,29 +8,63 @@ import {
   mkdirSync,
   rmSync,
   readdirSync,
+  cpSync,
+  realpathSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { stage, sha256, root, linuxBinary } from "./build.mjs";
+import {
+  stage,
+  sha256,
+  root,
+  linuxBinary,
+  targetInfo,
+  targets,
+  nativeBinary,
+} from "./build.mjs";
 import { exactTag, verifyTree, inventory } from "./release.mjs";
 const require = createRequire(import.meta.url);
 const sourceCommit = "a".repeat(40);
-function fixture(t) {
-  const temp = mkdtempSync(join(tmpdir(), "perfine-pack-test-"));
+function fixture(t, target = "x86_64-unknown-linux-gnu") {
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), "perfine-pack-test-")));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const bytes = Buffer.alloc(128);
   bytes.write("\x7fELF");
   bytes[4] = 2;
   bytes[5] = 1;
   bytes.writeUInt16LE(62, 18);
+  if (target.includes("apple")) {
+    bytes.fill(0);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(
+      target.startsWith("aarch64") ? 0x0100000c : 0x01000007,
+      4,
+    );
+    bytes.writeUInt32LE(2, 12);
+  } else if (target.includes("windows")) {
+    bytes.fill(0);
+    bytes.write("MZ");
+    bytes.writeUInt32LE(64, 60);
+    bytes.writeUInt32LE(0x4550, 64);
+    bytes.writeUInt16LE(0x8664, 68);
+    bytes.writeUInt16LE(2, 86);
+    bytes.writeUInt16LE(0x20b, 88);
+  }
   const binary = join(temp, "binary");
   writeFileSync(binary, bytes);
   const notices = join(temp, "notices");
   writeFileSync(notices, "Fixture only. No native or provider acceptance.\n");
   const output = join(temp, "release");
-  stage({ binary, notices, output, sourceCommit, releaseVersion: "0.1.0" });
+  stage({
+    binary,
+    notices,
+    output,
+    sourceCommit,
+    releaseVersion: "0.1.0",
+    target,
+  });
   return { temp, output, binary };
 }
 test("actual npm tarball and standalone archive contain exact binary, checksums, notices and provenance", (t) => {
@@ -57,9 +91,14 @@ test("actual npm tarball and standalone archive contain exact binary, checksums,
   ])
     assert.ok(readFileSync(join(pkg, file)).length);
   const { verifiedBinary } = require(join(pkg, "bin/perfine.cjs"));
-  assert.equal(verifiedBinary(pkg), join(pkg, "runtime/perfine"));
-  writeFileSync(join(pkg, "runtime/perfine"), "tampered");
-  assert.throws(() => verifiedBinary(pkg), /checksum/);
+  const platform = join(pkg, "node_modules/@delinoio/perfine-linux-x64");
+  cpSync(join(output, "platform"), platform, { recursive: true });
+  assert.equal(
+    verifiedBinary(pkg, "linux", "x64"),
+    join(platform, "runtime/perfine"),
+  );
+  writeFileSync(join(platform, "runtime/perfine"), "tampered");
+  assert.throws(() => verifiedBinary(pkg, "linux", "x64"), /checksum/);
   const standalone = join(temp, "standalone");
   mkdirSync(standalone);
   execFileSync("tar", [
@@ -165,7 +204,7 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
   assert.match(text, /default: false/);
   assert.match(text, /environment: perfine-production/);
   assert.match(text, /if: inputs.publish/);
-  assert.doesNotMatch(text, /macos|--force|--clobber/);
+  assert.doesNotMatch(text, /--force|--clobber/);
   for (const path of [".github/workflows/release-perfine.yml"]) {
     const workflow = readFileSync(join(root, path), "utf8");
     assert.match(workflow, /node "packages\/perfine\/scripts\/smoke.mjs"/);
@@ -197,5 +236,74 @@ test("Ubuntu distribution jobs provision protoc and well-known includes before C
           `test -r "/usr/include/google/protobuf/${file}.proto"`,
         ),
       );
+  }
+});
+
+// Synthetic headers establish packaging validation only, never native execution.
+test("all platform archives use matching metadata and identical npm entry bytes", (t) => {
+  let entry;
+  for (const target of Object.keys(targets)) {
+    const { output, binary } = fixture(t, target);
+    const info = targetInfo(target);
+    const bytes = readFileSync(join(output, "perfine-0.1.0.tgz"));
+    if (entry) assert.deepEqual(bytes, entry);
+    else entry = bytes;
+    const manifest = JSON.parse(
+      readFileSync(join(output, "platform/package.json")),
+    );
+    assert.equal(manifest.name, info.packageName);
+    assert.deepEqual(manifest.os, [info.os]);
+    assert.deepEqual(manifest.cpu, [info.cpu]);
+    assert.equal(readdirSync(output).includes("action"), info.os === "linux");
+    for (const wrong of Object.keys(targets).filter((key) => key !== target))
+      assert.throws(() => nativeBinary(binary, wrong), /executable/);
+    const entryRoot = join(output, "npm");
+    const { verifiedBinary } = require(join(entryRoot, "bin/perfine.cjs"));
+    assert.throws(
+      () => verifiedBinary(entryRoot, info.os, info.cpu),
+      /Reinstall perfine/,
+    );
+    const installed = join(entryRoot, "node_modules", info.packageName);
+    cpSync(join(output, "platform"), installed, { recursive: true });
+    assert.equal(
+      verifiedBinary(entryRoot, info.os, info.cpu),
+      join(installed, "runtime", info.executable),
+    );
+    for (const [field, value] of [
+      ["version", "0.2.0"],
+      ["name", "other"],
+      ["os", ["other"]],
+      ["cpu", ["other"]],
+    ]) {
+      writeFileSync(
+        join(installed, "package.json"),
+        JSON.stringify({ ...manifest, [field]: value }),
+      );
+      assert.throws(
+        () => verifiedBinary(entryRoot, info.os, info.cpu),
+        /mismatch/,
+      );
+    }
+    writeFileSync(join(installed, "package.json"), JSON.stringify(manifest));
+    const provenanceFile = join(installed, "provenance.json");
+    const provenance = JSON.parse(readFileSync(provenanceFile));
+    writeFileSync(
+      provenanceFile,
+      JSON.stringify({ ...provenance, target: "wrong" }),
+    );
+    assert.throws(
+      () => verifiedBinary(entryRoot, info.os, info.cpu),
+      /provenance mismatch/,
+    );
+    writeFileSync(provenanceFile, JSON.stringify(provenance));
+    writeFileSync(join(installed, "runtime/SHA256SUMS"), "corrupt");
+    assert.throws(
+      () => verifiedBinary(entryRoot, info.os, info.cpu),
+      /checksum mismatch/,
+    );
+    assert.throws(
+      () => verifiedBinary(entryRoot, "linux", "arm64"),
+      /Unsupported/,
+    );
   }
 });

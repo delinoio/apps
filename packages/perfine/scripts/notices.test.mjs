@@ -133,9 +133,13 @@ test("default build regenerates stale notices and rejects a changed graph on the
   mkdirSync(bin);
   const graph = join(dir, "metadata.json");
   writeFileSync(graph, JSON.stringify(metadata));
-  writeFileSync(join(bin, "cargo"), '#!/bin/sh\ncat "$FIXTURE_METADATA"\n', {
-    mode: 0o755,
-  });
+  writeFileSync(
+    join(bin, "cargo"),
+    '#!/bin/sh\nprintf "%s\\n" "$@" > "$FIXTURE_ARGUMENTS"\ncat "$FIXTURE_METADATA"\n',
+    {
+      mode: 0o755,
+    },
+  );
   const binary = join(dir, "binary");
   const bytes = Buffer.alloc(128);
   bytes.write("\x7fELF");
@@ -150,6 +154,7 @@ test("default build regenerates stale notices and rejects a changed graph on the
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
     FIXTURE_METADATA: graph,
+    FIXTURE_ARGUMENTS: join(dir, "arguments"),
     PERFINE_BINARY: binary,
     PERFINE_OUTPUT: join(dir, "release"),
   };
@@ -163,6 +168,22 @@ test("default build regenerates stale notices and rejects a changed graph on the
   build();
   assert.doesNotMatch(readFileSync(notices, "utf8"), /STALE/);
   assert.match(readFileSync(notices, "utf8"), /Upstream license:/);
+  assert.match(
+    readFileSync(env.FIXTURE_ARGUMENTS, "utf8"),
+    /--filter-platform\nx86_64-unknown-linux-gnu/,
+  );
+  bytes.fill(0);
+  bytes.writeUInt32LE(0xfeedfacf, 0);
+  bytes.writeUInt32LE(0x0100000c, 4);
+  bytes.writeUInt32LE(2, 12);
+  writeFileSync(binary, bytes);
+  env.PERFINE_TARGET = "aarch64-apple-darwin";
+  env.PERFINE_OUTPUT = join(dir, "darwin-release");
+  build();
+  assert.match(
+    readFileSync(env.FIXTURE_ARGUMENTS, "utf8"),
+    /--filter-platform\naarch64-apple-darwin/,
+  );
   pkg.version = "99.0.0";
   writeFileSync(graph, JSON.stringify(metadata));
   env.PERFINE_OUTPUT = join(dir, "second-release");
