@@ -140,7 +140,7 @@ async fn every_http_operation_authenticates_before_body_handling() {
 async fn initialization_negotiates_supported_version_without_session() {
     let (app, backend) = setup();
     for (requested, expected) in [
-        ("2025-03-26", "2025-03-26"),
+        ("2025-03-26", "2025-06-18"),
         ("2025-06-18", "2025-06-18"),
         ("future", "2025-06-18"),
     ] {

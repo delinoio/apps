@@ -15,7 +15,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::{future::Future, sync::Arc};
 
-const VERSIONS: &[&str] = &["2025-03-26", "2025-06-18"];
+// The March revision requires JSON-RPC batches. Negotiate June instead,
+// whose Streamable HTTP contract uses exactly one message per POST.
+const VERSIONS: &[&str] = &["2025-06-18"];
 
 /// The seam permits transport tests without substituting a server implementation.
 pub trait Backend: Send + Sync + 'static {
