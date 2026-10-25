@@ -8,5 +8,12 @@ document.body.append(view);
 const dispose = installWebSupport(
   view.shadowRoot ?? view.attachShadow({ mode: "open" }),
 );
-window.addEventListener("pagehide", dispose, { once: true });
+const onPageHide = (event) => {
+  // A persisted pagehide suspends this same document for BFCache restoration.
+  // Keep its bridge alive until the document is leaving permanently.
+  if (event.persisted) return;
+  window.removeEventListener("pagehide", onPageHide);
+  dispose();
+};
+window.addEventListener("pagehide", onPageHide);
 view.setAttribute("url", "./gallery.web.bundle");

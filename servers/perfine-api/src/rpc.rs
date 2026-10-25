@@ -441,12 +441,21 @@ impl Server {
                 }
                 if mutation(op) {
                     c["updatedAt"] = json!(stamp());
-                    sqlx::query("UPDATE perfine_connections SET data=$2,active=$3 WHERE id=$1")
+                    if op == "DisconnectRepository" {
+                        sqlx::query(
+                            "UPDATE perfine_connections SET data=$2,active=false WHERE id=$1",
+                        )
                         .bind(id(string(&c, "id"))?)
                         .bind(&c)
-                        .bind(c["state"] == "CONNECTION_STATE_CONNECTED")
                         .execute(db)
                         .await?;
+                    } else {
+                        sqlx::query("UPDATE perfine_connections SET data=$2 WHERE id=$1")
+                            .bind(id(string(&c, "id"))?)
+                            .bind(&c)
+                            .execute(db)
+                            .await?;
+                    }
                 }
                 Ok(if op == "SetRawArtifactConsent" {
                     json!({"consent":c["consent"]})
@@ -531,6 +540,15 @@ impl Server {
                     return Err(Fault::precondition(
                         "graceful workflow control is unavailable; use local cancellation or request immediate GitHub cancellation",
                     ));
+                }
+                if matches!(
+                    string(&e, "executionState"),
+                    "EXECUTION_STATE_COMPLETED"
+                        | "EXECUTION_STATE_FAILED"
+                        | "EXECUTION_STATE_CANCELLED"
+                ) || e["cancellation"]["state"] == "CANCELLATION_STATE_CONFIRMED"
+                {
+                    return Ok(json!({"experiment":e}));
                 }
                 let token = self.github.current(&c).await?;
                 let path = crate::github::path(&c["repository"]);
@@ -1682,6 +1700,7 @@ impl Server {
         let found = prs.iter().find(|v| matches_approval(v));
         if let Some(pr) = found {
             p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+            p["failureReason"] = json!("");
             p["githubPullRequestNumber"] = json!(integer(pr, "number").to_string());
             p["githubPullRequestUrl"] = pr["html_url"].clone();
         } else if prs.iter().any(|v| v["head"]["sha"] == d["headSha"]) {
@@ -1711,6 +1730,7 @@ impl Server {
                 p["githubPullRequestUrl"] = pr["html_url"].clone();
                 if matches_approval(&pr) {
                     p["state"] = json!("PUBLICATION_STATE_PUBLISHED");
+                    p["failureReason"] = json!("");
                 } else {
                     // GitHub creates from mutable branch names, so the response must
                     // match the approved snapshot even after preflight SHA checks pass.
@@ -1795,8 +1815,8 @@ fn validate_spec(s: &Value) -> Result<()> {
         }
     }
     for key in ["minimumImprovement", "maximumCaseRegression"] {
-        let ratio = policy[key].as_f64().unwrap_or(0.0);
-        if !ratio.is_finite() || !(0.0..1.0).contains(&ratio) {
+        let ratio = crate::preparation::optional_finite_number(policy, key)?;
+        if !(0.0..1.0).contains(&ratio) {
             return Err(Fault::invalid("policy ratio invalid"));
         }
     }

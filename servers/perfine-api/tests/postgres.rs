@@ -207,6 +207,131 @@ fn preparation_freezes_exact_policy_and_rejects_statistical_aliases() {
     assert!(perfine_api::preparation::verify_spec(&altered, &repo).is_err());
 }
 #[test]
+fn policy_ratios_reject_non_numbers_without_changing_valid_fingerprints() {
+    let (spec, _, _) = fixture(&uid());
+    let repo = json!({"owner":"owner","name":"repo"});
+    let now = chrono::Utc::now();
+    let baseline = configuration(&spec);
+    let prepared = perfine_api::preparation::prepare(&baseline, &repo, now).unwrap();
+    assert_eq!(
+        prepared["specification"]["fingerprintSha256"],
+        spec["fingerprintSha256"]
+    );
+    let mut protobuf_json = baseline.clone();
+    protobuf_json["policy"]["minimumImprovement"] = json!("NaN");
+    let typed: delino_protocol::perfine::v1::ExperimentConfiguration =
+        serde_json::from_value(protobuf_json).unwrap();
+    let converted = serde_json::to_value(typed).unwrap();
+    assert_eq!(converted["policy"]["minimumImprovement"], "NaN");
+    assert_eq!(
+        perfine_api::preparation::prepare(&converted, &repo, now)
+            .unwrap_err()
+            .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
+
+    for key in ["minimumImprovement", "maximumCaseRegression"] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+            json!([]),
+        ] {
+            let mut config = baseline.clone();
+            config["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::prepare(&config, &repo, now)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "prepare {key}={value}"
+            );
+            let mut altered = spec.clone();
+            altered["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::verify_spec(&altered, &repo)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "verify {key}={value}"
+            );
+        }
+        let mut omitted = baseline.clone();
+        omitted["policy"].as_object_mut().unwrap().remove(key);
+        assert!(perfine_api::preparation::prepare(&omitted, &repo, now).is_ok());
+        omitted["policy"][key] = Value::Null;
+        assert!(perfine_api::preparation::prepare(&omitted, &repo, now).is_ok());
+    }
+
+    for key in [
+        "confidenceLevel",
+        "maximumRelativeIntervalWidth",
+        "nearThresholdMargin",
+    ] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+            json!(0.5),
+        ] {
+            let mut config = baseline.clone();
+            config["policy"]["uncertainty"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::prepare(&config, &repo, now)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "prepare {key}={value}"
+            );
+            let mut altered = spec.clone();
+            altered["policy"]["uncertainty"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::verify_spec(&altered, &repo)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "verify {key}={value}"
+            );
+        }
+        let mut accepted = baseline.clone();
+        accepted["policy"]["uncertainty"][key] = json!(0);
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+        accepted["policy"]["uncertainty"][key] = Value::Null;
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+        accepted["policy"]["uncertainty"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+    }
+}
+#[test]
+fn malformed_manifest_policy_fails_before_evaluation() {
+    let eid = uid();
+    let (spec, manifest, bytes) = fixture(&eid);
+    let experiment = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    for key in ["minimumImprovement", "maximumCaseRegression"] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+        ] {
+            let mut altered = manifest.clone();
+            altered["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::evidence::evaluate(&experiment, &altered, &bytes)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::FailedPrecondition,
+                "evaluate {key}={value}"
+            );
+        }
+    }
+}
+#[test]
 fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
     let eid = uid();
     let (spec, m, mut bytes) = fixture(&eid);
@@ -228,6 +353,45 @@ fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
         )
         .is_err()
     );
+}
+#[test]
+fn manifest_metrics_match_the_frozen_engine_metric() {
+    let eid = uid();
+    let (spec, manifest, bytes) = fixture(&eid);
+    let experiment = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    let policy_metric = manifest["policy"]["metric"].clone();
+    assert_eq!(manifest["metrics"], json!([policy_metric]));
+    assert!(perfine_api::evidence::evaluate(&experiment, &manifest, &bytes).is_ok());
+
+    let mut cases = vec![
+        ("empty", json!([])),
+        ("two", json!([policy_metric, policy_metric])),
+    ];
+    for (label, field, value) in [
+        ("name", "name", json!("wall_time")),
+        ("unit", "unit", json!("seconds")),
+        ("objective", "objective", json!("METRIC_OBJECTIVE_MAXIMIZE")),
+        (
+            "engine kind",
+            "engineKind",
+            json!("ENGINE_METRIC_KIND_THROUGHPUT"),
+        ),
+    ] {
+        let mut metric = policy_metric.clone();
+        metric[field] = value;
+        cases.push((label, json!([metric])));
+    }
+    for (label, metrics) in cases {
+        let mut changed = manifest.clone();
+        changed["metrics"] = metrics;
+        let failure = perfine_api::evidence::evaluate(&experiment, &changed, &bytes).unwrap_err();
+        assert_eq!(
+            failure.code,
+            connectrpc::ErrorCode::FailedPrecondition,
+            "{label}"
+        );
+        assert_eq!(failure.message, "metric mapping mismatch", "{label}");
+    }
 }
 #[test]
 fn unreferenced_structured_artifacts_are_rejected_with_or_without_candidates() {
@@ -345,7 +509,9 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let creation_override = Arc::new(Mutex::new(None::<Value>));
     let response = creation_override.clone();
     let (p, posts) = (pulls.clone(), creates.clone());
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone());async move{
+    let cancel_posts = Arc::new(Mutex::new(Vec::<String>::new()));
+    let cancels = cancel_posts.clone();
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),cancels.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -363,6 +529,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    },
    "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
    "/repos/owner/repo/actions/runs/7/attempts/2"=>json!({"id":7,"run_attempt":2,"repository":{"id":42},"head_repository":{"id":42},"actor":{"id":99},"head_sha":"d".repeat(40),"path":".github/workflows/perfine.yml","event":"workflow_dispatch"}),
+   "/repos/owner/repo/actions/runs/9/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::CONFLICT.into_response()},
+   "/repos/owner/repo/actions/runs/10/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::BAD_GATEWAY.into_response()},
+   "/repos/owner/repo/actions/runs/11/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::NO_CONTENT.into_response()},
+   "/repos/owner/repo/actions/runs/11/attempts/1"=>json!({"id":11,"run_attempt":1,"status":"completed","conclusion":"cancelled"}),
    "/repos/owner/repo/actions/runs/1/cancel"=>json!({}),
    "/repos/owner/repo/actions/runs/1"=>json!({"id":1,"run_attempt":2,"status":"completed","conclusion":"success"}),
    "/repos/owner/repo/actions/runs/1/attempts/1"=>json!({"id":1,"run_attempt":1,"status":"completed","conclusion":"cancelled"}),
@@ -426,6 +596,121 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     }
     let c=call(&server,&space,"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap()["connection"].clone();
     let cid = c["id"].as_str().unwrap();
+    *grants.lock().unwrap() = vec!["manage".into(), "experiment".into()];
+    let terminal = uuid::Uuid::now_v7();
+    let confirmed = json!({"id":terminal,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_CANCELLED","githubExecution":{"githubRunId":"9","runAttempt":1},"cancellation":{"mode":"CANCELLATION_MODE_IMMEDIATE","state":"CANCELLATION_STATE_CONFIRMED","reason":"GitHub confirmed cancellation","directCancelUrl":"https://github.com/owner/repo/actions/runs/9"}});
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(terminal)
+        .bind(uuid::Uuid::parse_str(&space).unwrap())
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&confirmed)
+        .execute(&db)
+        .await
+        .unwrap();
+    let response = call(
+        &server,
+        &space,
+        "CancelExperiment",
+        json!({"experimentId":terminal,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response["experiment"], confirmed);
+    let stored: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+        .bind(terminal)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(stored, confirmed);
+    assert!(cancel_posts.lock().unwrap().is_empty());
+
+    let running_confirmed = uuid::Uuid::now_v7();
+    let mut preserved = confirmed.clone();
+    preserved["id"] = json!(running_confirmed);
+    preserved["executionState"] = json!("EXECUTION_STATE_RUNNING");
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(running_confirmed)
+        .bind(uuid::Uuid::parse_str(&space).unwrap())
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&preserved)
+        .execute(&db)
+        .await
+        .unwrap();
+    let response = call(
+        &server,
+        &space,
+        "CancelExperiment",
+        json!({"experimentId":running_confirmed,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response["experiment"], preserved);
+    assert!(cancel_posts.lock().unwrap().is_empty());
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(running_confirmed)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    for (run, expected_state) in [
+        ("9", "CANCELLATION_STATE_FAILED"),
+        ("10", "CANCELLATION_STATE_FAILED"),
+        ("11", "CANCELLATION_STATE_REQUESTED"),
+    ] {
+        let experiment_id = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+            .bind(experiment_id).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+            .bind(json!({"id":experiment_id,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":if run == "10" {"EXECUTION_STATE_QUEUED"} else {"EXECUTION_STATE_RUNNING"},"githubExecution":{"githubRunId":run,"runAttempt":1}})).execute(&db).await.unwrap();
+        let response = call(
+            &server,
+            &space,
+            "CancelExperiment",
+            json!({"experimentId":experiment_id,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response["experiment"]["cancellation"]["state"],
+            expected_state
+        );
+        assert_eq!(
+            response["experiment"]["cancellation"]["directCancelUrl"],
+            format!("https://github.com/owner/repo/actions/runs/{run}")
+        );
+        assert_eq!(
+            cancel_posts
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|path| path.ends_with(&format!("/{run}/cancel")))
+                .count(),
+            1
+        );
+        if run == "11" {
+            server.maintain().await.unwrap();
+            let reconciled: Value =
+                sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+                    .bind(experiment_id)
+                    .fetch_one(&db)
+                    .await
+                    .unwrap();
+            assert_eq!(reconciled["executionState"], "EXECUTION_STATE_CANCELLED");
+            assert_eq!(
+                reconciled["cancellation"]["state"],
+                "CANCELLATION_STATE_CONFIRMED"
+            );
+        }
+        sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+            .bind(experiment_id)
+            .execute(&db)
+            .await
+            .unwrap();
+    }
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(terminal)
+        .execute(&db)
+        .await
+        .unwrap();
     // Block reconciliation after its candidate query, then commit a reconnect.
     // It must inspect the replacement state after acquiring the space lock.
     let race_run = uuid::Uuid::now_v7();
@@ -686,6 +971,20 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         prepared["specification"]["fingerprintSha256"],
         spec["fingerprintSha256"]
     );
+    let mut invalid_configuration = configuration(&spec);
+    invalid_configuration["policy"]["minimumImprovement"] = json!("NaN");
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "PrepareExperiment",
+            json!({"connectionId":cid,"configuration":invalid_configuration})
+        )
+        .await
+        .unwrap_err()
+        .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments WHERE space=$1")
             .bind(uuid::Uuid::parse_str(&space).unwrap())
@@ -697,6 +996,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let mut fabricated = spec.clone();
     fabricated["fingerprintSha256"] = json!("f".repeat(64));
     assert!(call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":eid,"specification":fabricated,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.is_err());
+
+    let mut invalid_spec = spec.clone();
+    invalid_spec["policy"]["maximumCaseRegression"] = json!("Infinity");
+    assert_eq!(
+        call(&server, &space, "BeginUpload", json!({"connectionId":cid,"experimentId":eid,"specification":invalid_spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"}))
+            .await
+            .unwrap_err()
+            .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
 
     let q = json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"});
     let original_quota = server.quota;
@@ -729,6 +1038,13 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         false
     );
     call(&server,&space,"SetRawArtifactConsent",json!({"connectionId":cid,"expectedRevision":"0","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE"]})).await.unwrap();
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
     assert!(
         call(
             &server,
@@ -1109,6 +1425,63 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .await
     .unwrap();
     assert_ne!(page["tools"][0]["toolId"], second["tools"][0]["toolId"]);
+    let invalid_id = uid();
+    let (invalid_spec, mut invalid_manifest, invalid_bytes) = fixture(&invalid_id);
+    invalid_manifest["metrics"] = json!([]);
+    checksum(&mut invalid_manifest);
+    let invalid_begin = call(
+        &server,
+        &space,
+        "BeginUpload",
+        json!({"connectionId":cid,"experimentId":invalid_id,"specification":invalid_spec,"manifest":invalid_manifest,"origin":"EXECUTION_ORIGIN_LOCAL"}),
+    )
+    .await
+    .unwrap();
+    for target in invalid_begin["targets"].as_array().unwrap() {
+        let name = target["artifactName"].as_str().unwrap();
+        http.put(target["signedPutUrl"].as_str().unwrap())
+            .body(invalid_bytes[name].clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let invalid_upload = invalid_begin["upload"]["id"].clone();
+    let failure = call(
+        &server,
+        &space,
+        "CompleteUpload",
+        json!({"uploadId":invalid_upload}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(failure.code, connectrpc::ErrorCode::FailedPrecondition);
+    assert_eq!(failure.message, "metric mapping mismatch");
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "GetUpload",
+            json!({"uploadId":invalid_upload})
+        )
+        .await
+        .unwrap()["upload"]["state"],
+        "UPLOAD_STATE_FAILED"
+    );
+    call(
+        &server,
+        &space,
+        "DeleteExperiment",
+        json!({"experimentId":invalid_id}),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+        .execute(&db)
+        .await
+        .unwrap();
+    server.maintain().await.unwrap();
     let begin = call(&server, &space, "BeginUpload", q.clone())
         .await
         .unwrap();
@@ -1141,6 +1514,51 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .await
     .unwrap();
     assert_eq!(e["experiment"]["verdict"], "PERFORMANCE_VERDICT_PASS");
+    let mut invalid_upload_manifest = m.clone();
+    invalid_upload_manifest["runStartedAt"] =
+        json!((chrono::Utc::now() + chrono::Duration::seconds(1)).to_rfc3339());
+    checksum(&mut invalid_upload_manifest);
+    let second_begin = call(
+        &server,
+        &space,
+        "BeginUpload",
+        json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":invalid_upload_manifest,"origin":"EXECUTION_ORIGIN_LOCAL"}),
+    )
+    .await
+    .unwrap();
+    let second_upload = second_begin["upload"]["id"].as_str().unwrap();
+    for target in second_begin["targets"].as_array().unwrap() {
+        let name = target["artifactName"].as_str().unwrap();
+        http.put(target["signedPutUrl"].as_str().unwrap())
+            .body(bytes[name].clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    invalid_upload_manifest["policy"]["minimumImprovement"] = json!("NaN");
+    checksum(&mut invalid_upload_manifest);
+    sqlx::query(
+        "UPDATE perfine_uploads SET data=jsonb_set(data,'{manifest}',$2::jsonb) WHERE id=$1",
+    )
+    .bind(uuid::Uuid::parse_str(second_upload).unwrap())
+    .bind(&invalid_upload_manifest)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "CompleteUpload",
+            json!({"uploadId":second_upload})
+        )
+        .await
+        .unwrap_err()
+        .code,
+        connectrpc::ErrorCode::FailedPrecondition
+    );
     let download = call(
         &server,
         &space,
@@ -1259,6 +1677,17 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .unwrap();
     server.maintain().await.unwrap();
     assert_eq!(*creates.lock().unwrap(), 1);
+    let status = call(&server, &space, "GetPublication", json!({"approvalId":aid}))
+        .await
+        .unwrap();
+    assert_eq!(
+        status["publication"]["state"],
+        "PUBLICATION_STATE_RECONCILING"
+    );
+    assert_eq!(
+        status["publication"]["failureReason"],
+        "Creation outcome remains uncertain; inspect GitHub before operator recovery"
+    );
     *pulls.lock().unwrap() = delayed;
     sqlx::query(
         "UPDATE perfine_approvals SET publication=publication-'_nextAttemptAt' WHERE id=$1",
@@ -1275,6 +1704,12 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         status["publication"]["state"],
         "PUBLICATION_STATE_PUBLISHED"
     );
+    assert_eq!(status["publication"]["githubPullRequestNumber"], "1");
+    assert_eq!(
+        status["publication"]["githubPullRequestUrl"],
+        "https://github.com/owner/repo/pull/1"
+    );
+    assert_eq!(status["publication"]["failureReason"], "");
     assert_eq!(*creates.lock().unwrap(), 1);
     let again = call(
         &server,
@@ -1341,6 +1776,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             },
             "{changed}"
         );
+        if changed == "none" {
+            assert_eq!(result["publication"]["failureReason"], "");
+        } else {
+            assert!(
+                result["publication"]["failureReason"]
+                    .as_str()
+                    .is_some_and(|reason| !reason.is_empty()),
+                "{changed}"
+            );
+        }
         let before = *creates.lock().unwrap();
         server.maintain().await.unwrap();
         assert_eq!(
@@ -1417,7 +1862,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap(),
-        11
+        12
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
@@ -1498,7 +1943,88 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         "CANCELLATION_STATE_CONFIRMED"
     );
     *state.lock().unwrap() = "TENANT_STATE_ACTIVE".into();
-    assert!(call(&server,&uid(),"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.is_err());
+    let consent = call(
+        &server,
+        &space,
+        "GetRawArtifactConsent",
+        json!({"connectionId":cid}),
+    )
+    .await
+    .unwrap()["consent"]
+        .clone();
+    call(
+        &server,
+        &space,
+        "SetRawArtifactConsent",
+        json!({"connectionId":cid,"expectedRevision":consent["revision"],"allowedKinds":[]}),
+    )
+    .await
+    .unwrap();
+    let (active, connection_data): (bool, Value) =
+        sqlx::query_as("SELECT active,data FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(active);
+    assert_eq!(connection_data["state"], "CONNECTION_STATE_AUTHORITY_LOST");
+    let other_space = uid();
+    let repository = json!({"githubRepositoryId":"42","owner":"owner","name":"repo"});
+    let connect_request = json!({"repository":repository,"githubInstallationId":"1"});
+    let err = call(
+        &server,
+        &other_space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.code, connectrpc::ErrorCode::AlreadyExists);
+    let reconnected = call(
+        &server,
+        &space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(reconnected["connection"]["id"], cid);
+    call(
+        &server,
+        &space,
+        "DisconnectRepository",
+        json!({"connectionId":cid}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT active FROM perfine_connections WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(cid).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap()
+    );
+    let other_connection = call(
+        &server,
+        &other_space,
+        "ConnectRepository",
+        connect_request.clone(),
+    )
+    .await
+    .unwrap();
+    let other_connection_id = other_connection["connection"]["id"].as_str().unwrap();
+    call(
+        &server,
+        &other_space,
+        "DisconnectRepository",
+        json!({"connectionId":other_connection_id}),
+    )
+    .await
+    .unwrap();
+    let reconnected = call(&server, &space, "ConnectRepository", connect_request)
+        .await
+        .unwrap();
+    assert_eq!(reconnected["connection"]["id"], cid);
     *state.lock().unwrap() = "TENANT_STATE_BLOCKED".into();
     sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
         .bind(blocked_run)

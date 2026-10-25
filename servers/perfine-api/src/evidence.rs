@@ -69,7 +69,11 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
         .split_once('/')
         .ok_or_else(|| Fault::invalid("repository identity required"))?;
     let expected = crate::preparation::verify_spec(spec, &json!({"owner":owner,"name":name}))?;
-    if expected != *cfg || crate::preparation::policy(&m["policy"])? != cfg.policy {
+    if expected != *cfg
+        || crate::preparation::policy(&m["policy"])
+            .map_err(|_| Fault::precondition("policy mapping mismatch"))?
+            != cfg.policy
+    {
         return Err(Fault::precondition(
             "complete engine configuration mapping mismatch",
         ));
@@ -134,9 +138,19 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
             .find(|(n, _)| n.as_str() == string(case, "id"))
             .map(|(_, c)| c)
             .ok_or_else(|| Fault::precondition("case mismatch"))?;
+        let frequency = case["frequency"]
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| Fault::precondition("case mapping mismatch"))?;
+        let protected = match case.get("protectedCase") {
+            None | Some(Value::Null) => false,
+            Some(value) => value
+                .as_bool()
+                .ok_or_else(|| Fault::precondition("case mapping mismatch"))?,
+        };
         if c.family.as_str() != string(case, "family")
-            || c.weight() != case["frequency"].as_f64().unwrap_or(0.0)
-            || c.protected != case["protectedCase"].as_bool().unwrap_or(false)
+            || c.weight() != frequency
+            || c.protected != protected
             || ((c.frequency.is_none())
                 != (case["frequencySource"] == "FREQUENCY_SOURCE_ASSUMED_ONE"))
         {
@@ -178,11 +192,24 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
         policy::Policy::MeasurementsOnly => ("POLICY_KIND_MEASUREMENTS_ONLY", 0.0, 0.0),
     };
     if string(policy, "kind") != kind
-        || policy["minimumImprovement"].as_f64().unwrap_or(0.0) != min
-        || policy["maximumCaseRegression"].as_f64().unwrap_or(0.0) != max
+        || crate::preparation::optional_finite_number(policy, "minimumImprovement")
+            .map_err(|_| Fault::precondition("policy mapping mismatch"))?
+            != min
+        || crate::preparation::optional_finite_number(policy, "maximumCaseRegression")
+            .map_err(|_| Fault::precondition("policy mapping mismatch"))?
+            != max
         || string(&policy["metric"], "unit") != cfg.conditions.metric.unit.as_str()
     {
         return Err(Fault::precondition("policy mapping mismatch"));
+    }
+    let metrics = m["metrics"].as_array();
+    if metrics.is_none_or(|metrics| {
+        metrics.len() != 1
+            || metrics[0] != policy["metric"]
+            || crate::preparation::metric(&json!({ "metric": metrics[0] })).ok()
+                != Some(cfg.conditions.metric.metric)
+    }) {
+        return Err(Fault::precondition("metric mapping mismatch"));
     }
     let mut runs = BTreeMap::new();
     let mut inspected = BTreeSet::from([string(m, "engineArtifactName").to_owned()]);

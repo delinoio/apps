@@ -33,7 +33,7 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
       element.inert = true;
     }
     for (const element of root.querySelectorAll<HTMLElement>(
-      ".lui-button, .lui-toggle, .lui-tab, .lui-input, .lui-progress, .lui-dialog, .lui-tabs, .lui-alert",
+      ".lui-button, .lui-toggle, .lui-tab, .lui-tab-panel, .lui-input, .lui-progress, .lui-dialog, .lui-tabs, .lui-alert",
     )) {
       const disabled = element.classList.contains("lui-disabled");
       const isInput = element.classList.contains("lui-input");
@@ -74,15 +74,17 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
             : "checkbox"
           : element.classList.contains("lui-tab")
             ? "tab"
-            : element.classList.contains("lui-tabs")
-              ? "tablist"
-              : element.classList.contains("lui-progress")
-                ? "progressbar"
-                : element.classList.contains("lui-dialog")
-                  ? "dialog"
-                  : element.classList.contains("lui-alert")
-                    ? "alert"
-                    : "textbox";
+            : element.classList.contains("lui-tab-panel")
+              ? "tabpanel"
+              : element.classList.contains("lui-tabs")
+                ? "tablist"
+                : element.classList.contains("lui-progress")
+                  ? "progressbar"
+                  : element.classList.contains("lui-dialog")
+                    ? "dialog"
+                    : element.classList.contains("lui-alert")
+                      ? "alert"
+                      : "textbox";
       // XInput owns the actual focusable HTML input inside its shadow tree.
       const target = isInput
         ? (element.shadowRoot?.querySelector("input") ?? element)
