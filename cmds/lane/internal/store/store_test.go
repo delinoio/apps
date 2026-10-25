@@ -519,3 +519,22 @@ func TestPaginationScopeAndExternalSequence(t *testing.T) {
 		t.Fatal("external commit invisible", e)
 	}
 }
+
+func TestRegistryUpgradeAndDeviceMismatchRefused(t *testing.T) {
+	s := testStore(t)
+	if _, e := s.registry.Exec("PRAGMA user_version=2"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Sequence(ctx); reason(e) != 8 {
+		t.Fatal("long-lived reader ignored registry upgrade", e)
+	}
+	if _, e := s.registry.Exec("PRAGMA user_version=1"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.db.Exec("UPDATE store_meta SET value=? WHERE key='device_id'", NewID()); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.WithWrite(ctx, func(*sql.Conn) error { t.Fatal("mismatched device entered transaction callback"); return nil }); reason(e) != 8 {
+		t.Fatal("device mismatch accepted", e)
+	}
+}

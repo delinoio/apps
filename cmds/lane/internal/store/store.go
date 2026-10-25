@@ -149,11 +149,12 @@ func Open(root, space string) (s *Store, err error) {
 		return nil, err
 	}
 	s = &Store{registry: r, root: root}
+	opened := s
 	defer func() {
 		if err != nil {
 			r.Close()
-			if s != nil && s.db != nil {
-				s.db.Close()
+			if opened.db != nil {
+				opened.db.Close()
 			}
 		}
 	}()
@@ -233,6 +234,24 @@ func (s *Store) check(ctx context.Context, c *sql.Conn) error {
 	}
 	if invalidHeads > 0 {
 		return domainError(1, "Invalid head linkage", s.space)
+	}
+
+	var registryApp, registryVersion int
+	if e := s.registry.QueryRowContext(ctx, "PRAGMA application_id").Scan(&registryApp); e != nil {
+		return e
+	}
+	if e := s.registry.QueryRowContext(ctx, "PRAGMA user_version").Scan(&registryVersion); e != nil {
+		return e
+	}
+	if registryApp != applicationID || registryVersion != 1 {
+		return domainError(8, "Update Lane to open this registry", s.space)
+	}
+	var device string
+	if e := c.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='device_id'").Scan(&device); e != nil {
+		return e
+	}
+	if device != s.device {
+		return domainError(8, "Store device does not match registry", s.space)
 	}
 	var space, format string
 	if e := c.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='space_id'").Scan(&space); e != nil {
