@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
+import laneIcon from "../assets/icon-source.png?inline";
 import paceIcon from "../assets/pace-icon.png?inline";
 
 export enum MiniApp {
@@ -8,7 +9,7 @@ export enum MiniApp {
   Handrail = "Handrail",
 }
 
-// Bundle the Pace bitmap inline so native hosts need no external asset URL.
+// Inline the artwork so packaged native hosts do not need a separate image URL.
 export function AppIcon({ app }: { app: MiniApp }) {
   return (
     <view
@@ -16,7 +17,7 @@ export function AppIcon({ app }: { app: MiniApp }) {
       accessibility-elements-hidden
     >
       {app === MiniApp.Lane ? (
-        <text className="lane-ribbon">▰</text>
+        <image className="lane-icon" src={laneIcon} mode="aspectFit" />
       ) : app === MiniApp.Pace ? (
         <image className="pace-artwork" src={paceIcon} mode="aspectFit" />
       ) : (

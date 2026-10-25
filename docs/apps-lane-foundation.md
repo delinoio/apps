@@ -67,10 +67,11 @@ Use desktop navigation/list/detail and mobile list/detail pages. Use English, a 
 
 ### Application icon
 
-Use the folded-lanes icon for macOS, Windows, iOS, Android and the web favicon.
+Use the folded-lanes icon for macOS, Windows, iOS, Android, the web favicon,
+the in-app Lane selector and the Lane sidebar heading.
 The mark consists of a white L-shaped ribbon and a pale-blue parallel ribbon,
 with restrained fold shading over a cobalt-blue background centered on `#075AFF`.
-Keep the application name `Lane` and existing in-app branding and behavior.
+Keep the application name `Lane` and existing navigation behavior.
 
 `apps/lane/assets/icon-source.png` owns the approved square artwork. iOS uses an
 opaque 1024-pixel asset catalog image. macOS uses an ICNS with a rounded tile and
@@ -108,7 +109,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free.
 - Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
-- Keep Lane, Pace and Handrail as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the existing ribbon for Lane, the folded-ribbon speedometer artwork for Pace, and a two-post handrail for Handrail. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
+- Keep Lane, Pace and Handrail as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and a two-post handrail for Handrail. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
   Tooltips must fit the complete app name outside the trigger's bounds.
 - At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and Handrail each show their own name, icon, selected `Overview` item and `Coming soon` status, without Lane navigation. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine and RealQA navigation entries are removed.
