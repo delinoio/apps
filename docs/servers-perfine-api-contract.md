@@ -22,6 +22,7 @@ Authorized readers, experiment operators, publishers, space managers, and servic
 - A repository can connect to one space at a time. Connection requires both Perfine management authority and GitHub repository administrator authority.
 - Reconnection in the same space reuses history. A connection in another space starts new history; previous private data stays with its original space and does not transfer.
 - Local upload uses existing Delcore personal/tenant service API keys with explicit space and Perfine grants. No CLI browser-login feature is included. CI evidence upload uses GitHub Actions OIDC with repository and execution scope validation.
+- Actions OIDC verification uses a key in the fresh cache without waiting for an unrelated JWKS refresh. Serialize refreshes with a separate lock, recheck the cache after acquiring it, fetch and parse without holding the cache lock, and publish only a complete successful key set. A failed or cancelled refresh keeps the previous keys. Unknown key IDs have no negative cache or refresh cooldown.
 - On App removal, disconnection, or loss of execution authority: block new jobs, uploads, and publication, and request cancellation of running Actions. If cancellation is no longer permitted, display failure and instructions to cancel directly. Previously retained results stay private in the original space.
 - Fail closed when current authorization cannot be established. Feature availability, resource limits, and UI controls do not replace authorization checks.
 
