@@ -87,3 +87,103 @@ Change protocol/local-store/app/distribution contracts together for command, sch
 - [Repository defaults](repository-defaults.md)
 - [Protocol](protos-lane-v1-contract.md)
 - [Server](servers-lane-api-contract.md)
+
+## Desktop helper and approval arguments
+
+The executable entry point is `go build ./cmds/lane`. `lane --version` prints
+`lane 0.1.0`; release builds can set `main.version` with Go linker flags.
+`--help` lists command arguments without opening storage or requiring credentials.
+
+Desktop hosts use the following helper interfaces:
+
+- `lane --json --space <uuid> sync connect --redirect-uri <uri>` returns
+  `authorizationUrl` and `challengeId`. The host opens the URL in the browser.
+  `--endpoint <url>` selects the approval server explicitly; the default is the
+  production Lane API. The callback URI must be registered by that server.
+- `lane --json --space <original-space-uuid> sync callback <callback-uri>` checks
+  the stored approval state and PKCE verifier, stores credentials in OS credential
+  storage, and returns the selected `spaceId` and `deviceId`. It never prints tokens.
+  Approval binds the existing installation device ID. It must not replace the
+  registry device ID with a new server-generated value.
+- `lane --space <uuid> sync run` runs the supervised worker. `--once` runs one
+  bounded upload batch and drains available pull pages. SIGINT or SIGTERM stops
+  the worker and releases its lease. Window closure does not stop this process.
+- `lane --json --space <uuid> sync disconnect --retention keep-local|remove-local`
+  requires an explicit local-retention choice.
+- `lane --remote --expected-space <uuid> --json rpc <Method> --request-json -`
+  reads one typed ProtoJSON request from stdin. Literal JSON is also accepted.
+  The helper calls the generated Connect method. `--expected-space` verifies the
+  active registry selection before dispatch and pins that account for the request;
+  a mismatch returns FORBIDDEN. It does not select a different space. Public
+  `--space` remains invalid with `--remote`.
+
+Typed commands also accept `--request-json` for complete nested requests, including
+conflict resolutions and event-completion tasks. Ordinary task edits read the full
+snapshot and preserve unchanged fields, but still submit the caller's required
+`--expected-version`. The read cannot make a stale save unconditional.
+
+Without `--redirect-uri`, `login` and `sync connect` listen on the fixed
+`http://127.0.0.1:46327/auth/callback` address until browser approval completes.
+The CLI prints the authorization URL to stderr. A port conflict fails explicitly.
+The server must register `lane-cli` and this exact redirect; the CLI does not
+register an OS custom-scheme handler. Desktop hosts explicitly select the
+registered `lane://auth/callback` or `lane-dev://auth/callback` URI.
+
+Account deletion requires separate browser reauthentication and final confirmation.
+`data delete-everywhere` or `data clear-server`, with
+`--remote --confirmed-account-id`, starts reauthentication. With a loopback login,
+it waits for browser approval and returns only `challengeId`; repeat the command
+with `--challenge-id` to perform deletion. With a desktop redirect it returns the
+authorization URL and challenge; the callback helper below redeems the proof.
+`--reauth-callback` can also redeem the callback during the explicit final command.
+An authorization URL or successful callback is not a completed deletion.
+
+Desktop deletion uses these exact interfaces:
+
+- Remote `rpc BeginDataDeletion` stores the returned challenge in OS credential
+  storage, bound to the pinned space, account, tenant, device, session and mode.
+- `lane --json --space <uuid> sync callback <callback-uri>` with
+  `reauth_challenge` redeems and stores the proof privately. Its result contains
+  only `challengeId`. It never invokes deletion.
+- `lane --remote --json --expected-space <uuid> --reauth-challenge <id> rpc
+DeleteAccountData --request-json -` accepts a typed request without `reauthProof`.
+  The helper consumes the matching private proof before dispatch. The host strips
+  its UI-only `challengeId` property and passes it as the public flag.
+- `lane --json --space <uuid> sync cancel-reauth --challenge-id <id>` invalidates
+  exactly that pending challenge and returns `completed: true`.
+
+Proofs never enter argv, stdout, logs or UI events. Expired, cancelled, consumed,
+mismatched or switched-account challenges fail. A transport failure after proof
+consumption requires a new browser reauthentication; it does not report deletion
+success. Raw caller-supplied proofs are rejected by the helper.
+
+After an authentication failure, the worker can query `/auth/deletion-status`
+with its existing access token, without refreshing it. Only a directive matching
+the pinned account, device and stored old epoch can change local state.
+DELETE_EVERYWHERE triggers durable redaction and coordinated physical removal.
+CLEAR_SERVER_KEEP_LOCAL records the reconnect requirement. Missing, unknown or
+mismatched directives retain local data and report the authentication failure.
+
+The CLI shares `logs/.rotation.lock` with native writers. POSIX participants take
+an exclusive `flock`; Windows participants take an exclusive `LockFileEx` lock
+on byte zero for length one. Append and retention pruning occur under this lock.
+
+A stale account epoch sets `GetLocalStatus.reconnectRequired` and stops uploads.
+Status also includes the pinned `accountId` and typed `syncErrorReason`. Login or
+an automatic retry does not authorize uploading retained data into a new server
+dataset. A new `sync connect --confirm-epoch-change` invocation explicitly
+confirms that consequence and starts a new browser approval. Without the flag,
+the CLI explains the pending confirmation and does not begin approval. Native
+hosts pass the flag only after the user's reconnect confirmation.
+
+The approval binds the space, account, prior epoch and reconnect intent before
+opening the browser. Callback processing refuses changed local state. It probes
+the prior epoch again: a matching account-deletion directive takes precedence;
+only a typed STALE_EPOCH response permits a confirmed rebuild for the newly
+approved epoch. A first connection that discovers a stale epoch stops and requires
+a new explicit approval. `--account-id` constrains approval to that exact account;
+reconnecting an existing account space also pins its current account identity.
+
+`sync run --retry-blocked` explicitly retries items previously rejected by the
+server. Their original request IDs and immutable versions remain unchanged. It
+does not confirm an epoch change or clear account-deletion state.
