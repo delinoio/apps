@@ -198,4 +198,5 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 ## Lane ownership
 
 - `apps/lane` owns the shared ReactLynx client and native/browser hosts.
+- Planned Lane protocol, Go CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
 - Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.

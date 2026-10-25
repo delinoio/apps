@@ -7,3 +7,5 @@
 - Run `pnpm test` from the changed package and affected frontend directories.
 
 - Perfine ownership: [project](../docs/project-perfine.md); [distribution contract](../docs/packages-perfine-distribution-contract.md).
+
+- Planned `packages/lane` owns the Lane npm installer and common agent skill/guides. Read the [Lane project](../docs/project-lane.md) and [distribution contract](../docs/packages-lane-distribution-contract.md); CLI source remains in `cmds/lane`.

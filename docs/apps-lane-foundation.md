@@ -2,9 +2,7 @@
 
 ## Scope
 
-`apps/lane` owns the Lane client scaffold for Android, iOS, macOS, Windows and
-web. It contains an empty ReactLynx root and platform hosts. Product UI, account
-integration, backend services and signed store publication are outside this scaffold.
+`apps/lane` owns the shared ReactLynx client and hosts for Android, iOS, macOS, Windows and web. This contract specifies the complete product behavior and preserves the existing platform build interfaces. New product capabilities and paths in the project index are planned requirements, not claims of runtime completion. Formal/store publication remains separate.
 
 ## Runtime and Language
 
@@ -15,8 +13,7 @@ on macOS and Windows; Linux can use the browser build.
 
 ## Users and Operators
 
-Developers build and run the empty client. Maintainers configure signing and
-platform distribution separately.
+Individuals manage tasks and prompts; existing agents use MCP. Native and default CLI use are account-free. Operators provide optional synchronization and online web facilities. Maintainers configure signing and platform distribution separately.
 
 ## Interfaces and Contracts
 
@@ -32,8 +29,10 @@ Native builds embed the local production bundle and do not fetch remote template
 - Desktop: supply an extracted official Lynx 4.1.0 SDK with `LANE_LYNX_SDK`.
   Run `pnpm build:desktop`, then `pnpm dev:desktop` to launch the built host.
   macOS requires Xcode command-line tools and CMake; Windows requires Visual
-  Studio C++ tools and CMake. Desktop opens a resizable window and exits after
-  the last window closes. Each desktop build synchronizes the current template
+  Studio C++ tools and CMake. Desktop opens a resizable window. The scaffold exits after
+  the last window closes; product synchronization adds a separate background
+  process so closing the window does not stop enabled desktop synchronization.
+  Preserve the native build interface while adding that lifecycle. Each desktop build synchronizes the current template
   and application notices, even when the native executable does not relink.
 - Android: install JDK 17 or 21 and Android SDK 35. The committed Gradle
   wrapper selects 8.11.1. Run
@@ -45,19 +44,145 @@ Native builds embed the local production bundle and do not fetch remote template
   workspace for device development and signing.
 
 Web output is a static Cloudflare Pages candidate. Upload `apps/lane/dist` after
-building from the root with `pnpm --filter lane build`. No domain, account,
-release workflow, signing identity or store registration is provisioned.
+building from the root with `pnpm --filter lane build`. The product domain is `lane.delino.io`. This contract does not provision an account,
+release workflow, signing identity or store registration.
+
+### Approved UI composition
+
+Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Perfine and RealQA remain disabled, with icons and `Coming soon`. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
+
+### Product contract ownership
+
+The following behavior is authoritative for all Lane entry points. The linked domain contracts specify implementation interfaces and conformance, without narrowing these requirements.
+
+### Product boundaries and platforms
+
+- Keep the existing shared ReactLynx application and platform hosts. Native apps target macOS, Windows, iOS, and Android. Linux has the CLI/local MCP and the online web app, not a native GUI.
+- Native apps and the default CLI use local data without login. Optional synchronization and server webhook facilities require the existing Logto identity system. **The `lane-api` server must depend on `delcore-api`.** Integrate through Delcore's Connect API and follow the identity, tenant, and authorization ownership defined in `docs/project-delcore.md`, `docs/servers-delcore-api-contract.md`, and `docs/protos-delcore-v1-contract.md`.
+- The web app requires login and server connectivity and reads/writes server data. Do not implement independent browser persistence, offline editing, offline relaunch guarantees, or an offline mutation queue for web.
+- Isolate each user's server data. Identical repository URLs in different accounts do not share tasks. No team workspace or collaboration model is included.
+- Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free.
+- Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
+- Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
+- Show Perfine and RealQA as disabled menu entries with icons and `Coming soon`. Their mini-app functionality is future work.
+- User-facing app and CLI text is English only. Validate keyboard operation, screen readers, visible focus, state distinctions that do not rely on color, and text enlargement on every released GUI platform. Follow repository form-focus and Escape-to-close rules where applicable.
+
+### Repositories
+
+- Identify repositories by normalized URL host and repository path. Treat HTTPS/SSH URL forms and a terminal `.git` difference as equivalent. The URL is an organizational identifier: do not fetch repository contents or verify Git-host access.
+- When task creation names an unregistered repository URL, register it and create the task.
+- Default the displayed name to URL host/path; allow a separate user-defined display name.
+- Allow URL changes while retaining tasks, history, and webhook connections. Reject a change to an already registered URL. Do not retain the old URL as an alias: a later creation request using it registers a new repository.
+- Treat concurrent repository name/URL edits as a repository-level conflict. Preserve both versions for resolution through app, CLI, or MCP.
+- Provide repository-specific task lists, progress/proposal filters, title/description search, and an all-repository task list.
+
+### Tasks, proposals, prompts, and history
+
+- A task has a required title, optional human-readable description, one optional prompt, progress state, and a separate proposal disposition. A title alone is sufficient for creation. Do not add priority, labels, or due dates.
+- Progress states are To do, In progress, Blocked, Done, and Canceled. All transitions are allowed, including reopening Done/Canceled tasks. A creation request can set progress; omission means To do.
+- Agents can create regular tasks directly, create proposed tasks, and modify existing tasks. Accepting a proposal makes it a regular task. Preserve rejected proposals and allow later acceptance. Accepting or rejecting does not reset progress.
+- Apps, CLI, and MCP provide full management, including task creation/editing, progress changes, proposal acceptance/rejection, deletion, prompt editing/restoration, repository management, and conflict resolution.
+- Keep prompt versions indefinitely until their owning task/repository is deleted. Users can inspect a past version and restore it; restoration creates a new version. A diff-view feature is not required.
+- Preserve user-visible changes to title, description, progress, proposal acceptance/rejection, and repository moves. Show before/after values, time, and change origin: app/CLI/MCP, device name, and account identity when logged in. Do not introduce agent-supplied display identities. Only prompts have a past-version restoration action.
+- Allow moving a task between repositories while preserving its ID, prompt, and history. A linked webhook event stays in its original repository and continues to reference the moved task ID.
+- Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
+- App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
+- If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
+
+### Local storage, synchronization, and conflicts
+
+- Native apps and CLI use host-side SQLite. ReactLynx accesses storage through platform Native Modules. Desktop app, CLI, and local stdio MCP share the same local data; CLI/MCP continue to work when the app window is closed.
+- Use PostgreSQL for server synchronization data, retained events, and server state. Remote MCP can read/write synchronized data when every user device is off; devices receive these changes on reconnect.
+- Synchronize all repositories, tasks, prompts, and history, not a user-selected subset. Notification enablement/display preferences are device-local exceptions.
+- Initial synchronization preserves both datasets. Merge repositories with the same normalized URL; preserve tasks with different IDs separately. Conflicting versions with the same ID require resolution.
+- Preserve both versions of concurrent task edits and require explicit resolution. The conflict unit is the **whole task**, including edits to different subfields. Until resolution, that task is read-only outside the resolution operation.
+- App, CLI, and MCP can compare and resolve conflicts. Preserve both conflicting versions and the resolution as history; the selected/edited resolution is a new version.
+- If multiple devices resolve the same conflict differently, keep the resolution first accepted by the server. Reject a later stale resolution and require reading current state again.
+- Desktop supports background synchronization after the app window closes. Mobile synchronizes while running and at platform-permitted background opportunities. Web uses its active online connection; do not imply an offline data mode.
+- Use server change notifications for live updates. Local process changes must reach the running app without requiring an app restart; verify this during implementation.
+- Native/CLI connectivity failure or expired Logto authorization does not block local work. Preserve pending changes; resume synchronization after reconnection/reauthentication.
+- Unsupported synchronization format stops synchronization with an update instruction, while compatible local features and pending changes remain available. An older app must not open/write an unsupported local data format or initialize it as empty; require a supported version.
+- Operators must configure server input-size and request-rate limits before startup. Provide no default limits; missing configuration fails startup. Do not apply these server limits to standalone local input. An oversized upload blocks only that item with an explanation; other items continue synchronizing. Lowering limits must not block reading/downloading/deleting previously accepted data; reject only oversized new or modified uploads.
+
+### Authentication, connection management, and deletion
+
+- Use existing Logto for online identity. `lane-api` depends on `delcore-api` for shared tenant authorization under the existing Delcore contracts; Logto remains the identity provider. CLI/remote MCP connect through browser login approval. Local stdio MCP does not require a server login.
+- Every approved remote MCP connection has full management access to all repositories in its account. Provide an approved-connection list and individual access revocation in app/CLI. Enforce revocation on server access.
+- Provide device list, last synchronization time, and device disconnection through app/CLI/MCP. Disconnection prevents later server access; it cannot erase an offline device's existing local data.
+- Isolate local data by OS user/browser profile as applicable. Do not add a Lane password/biometric app lock. Account switching must keep retained data from an earlier account in a separate local space and must not upload it to the new account.
+- On logout or disabling synchronization, let the user keep local data or remove it from that device.
+- Delete task/repository content and history permanently; no trash or recovery. Deletion wins over concurrent offline edits. Remove content/history immediately from connected stores, retaining only identity/deletion-version records needed to stop resurrection and propagate deletion when a device reconnects.
+- Separate these actions: remove this device's data; delete server and connected-device data; delete server synchronization data and webhook receiving settings while retaining local data. Keep the shared Logto identity in all cases.
+- When deleting server data while retaining local data, disconnect **all devices** to prevent automatic reupload. Restarting synchronization requires explicit reconnection.
+- For individual task/repository deletion, the app asks for confirmation; a CLI delete command or MCP delete call is itself confirmation. Server-wide/account-data deletion requires explicit target-account confirmation and Logto reauthentication.
+- Task creation uses a request ID. Same ID/content returns the existing result; different content under the same ID is an error. Replaying creation after the task was deleted returns a deleted-result indication, with no body and no recreation.
+- The server may process synchronized content: apply access controls and encryption in transit/at rest. End-to-end encryption is not required. Do not log task/prompt content, webhook payloads, or authentication secrets.
+
+### Webhooks and agent-driven automation
+
+- Support only the Lane common webhook format: required sender event ID, event type, occurrence time, and JSON object payload. No GitHub-specific adapter is required.
+- Each receiving endpoint belongs to a repository. Changing its repository affects only future events. Retained events remain in their original repository.
+- The server only receives, retains, and synchronizes events. A user's existing agent reads them through MCP and decides whether to create tasks. Lane does not interpret events with AI, execute agents, or add a user-rule automation engine.
+- App, CLI, and MCP manage receiving settings and list/delete events. Retain events until explicitly deleted.
+- Require a secret-key signature over request content and timestamp. Accept timestamps within five minutes in either direction of server time. Retries use the same event ID with a fresh timestamp/signature. A rotated key invalidates the prior key immediately. Show secrets once on creation/rotation; loss requires rotation, not retrieval.
+- Deduplicate by receiving configuration and sender event ID. Same ID/content returns the prior result; changed content is an error. Retain deletion identity records so replay of a deleted event reports already received/deleted and does not store it again.
+- Reading does not mark processing complete. Agents explicitly complete events and link zero or more generated task IDs. Zero tasks is a valid outcome.
+- Processing requires an online server lease. A lease lasts five minutes and can be renewed before expiry for five minutes from renewal. Require a valid lease token for completion; reject expired/released tokens even if no new worker has claimed the event.
+- Atomically validate the lease, create resulting tasks, and mark event completion. Failed completion must not leave partial generated tasks. Preserve request deduplication for response-loss retries.
+- Agents can release a lease with an error reason for immediate reclaim. A disconnected agent's lease becomes reclaimable on expiry. Offline devices can read retained events but cannot acquire leases or complete processing offline.
+- Allow reopening completed events while preserving prior processing records and task links; the event can then be claimed again.
+- Deleting an event or its owning repository invalidates its lease and rejects later completion/task creation from that lease.
+- Deleting a receiving setting stops new intake but retains existing events and permits existing leases, completion, and reprocessing.
+
+### Notifications
+
+- Provide in-app pending-proposal indications and counts. Only a **new proposal created through MCP** triggers an OS notification. App/CLI changes do not trigger notifications. No task-progress or decision-item notifications.
+- Without synchronization, use local notifications for local MCP proposals. With synchronization, notify other eligible devices through server push. Deduplicate by proposal ID/device ID so the origin device does not receive the same proposal notification twice.
+- Request OS notification permission only when the user enables notifications in settings. Configure enablement and content per device. Default content shows repository name and task title; users can select a generic notice instead.
+- Direct provider integration: APNs for Apple, FCM for Android, and Web Push for web. **Windows remote WNS delivery is deferred**; Windows supports running/background-client synchronization and local notifications. Do not add WNS package-registration requirements to this version.
+- Unsupported remote-push environments, including Android without required Google Play services, can still use Lane. Explain the limitation and retain in-app indications and available local notifications.
+- Persist pending push deliveries. After an initial transient failure, retry at intervals of 30 seconds, 2 minutes, 10 minutes, 30 minutes, and 60 minutes, at most five retries. Expire delivery two hours after creation. Respect provider Retry-After; do not retry earlier or beyond expiry. Stop on permanent failure. Cancel unsent notifications if the proposal is accepted, rejected, or deleted.
+- Provider connection code, configuration instructions, and mocked tests are in scope. Actual provider registration, account/device delivery acceptance, store publication, and production deployment are not required here.
+
+### CLI, MCP, and repository integration
+
+- CLI defaults to local operations; only an explicit remote option targets server data. Default output is human-readable; `--json` emits structured results/errors. Provide macOS/Windows/Linux executables and the npm installer package **`@delinoio/lane`**, with installation instructions.
+- Local MCP uses stdio. Optional remote MCP uses browser-approved Logto authentication. Both expose the agreed management functions, with online-only server operations identified explicitly.
+- Supply a common Lane `SKILL.md` and remote/local MCP connection instructions. Do not run or distribute an AI execution service.
+- Preserve the Lane project ID/application ID and existing platform/toolchain contracts. Follow repository defaults for new server implementation (Rust), other unspecified new projects (Go), UUID v7 entity IDs, and Connect RPC business interfaces. MCP and webhook adapters must preserve the same ownership, version, deletion, and idempotency rules.
+- Keep client, protocol, server, CLI, and distribution work in the same repository. Before runtime expansion, update `docs/project-lane.md`, the application foundation, and the documentation catalog; add owning server/protocol/CLI/distribution contracts and required scoped ownership instructions. Do not place issue-specific requirements or issue identifiers in repository instruction files.
+- Follow repository license, environment, dependency, generated-output, formatting, and validation contracts. Retain existing PR/main/affected CI platform restrictions, including no new macOS PR runners.
+
+### Operations and observability
+
+- Produce deployable web/API/remote-MCP artifacts, configuration, and runbooks for the specified domains. Do not perform actual production deployment. Native completion requires build/install/behavior validation; store publication and formal distribution are follow-up work.
+- Run database migrations explicitly, never on server startup. Roll back only to a binary compatible with the current schema; otherwise recover with a corrected forward version. Do not require down migrations.
+- No numeric latency, capacity, or availability SLO is promised. Measure response time/error rate and test functional recovery. Alert thresholds below are operational triggers, not SLOs.
+- Include structured logs, request correlation IDs, health checks, basic metrics, dashboards, and automatic alerts. Record operational metadata, not user content or credentials. Server logs expire after 30 days. Local native/CLI logs remain local, expire after 30 days, and have a combined 100 MiB limit; remove oldest entries when either limit is reached. No automatic diagnostic upload.
+- Supply Prometheus rules and Alertmanager email routing/configuration. Operators configure email transport and recipients. No Lane-owned email provider integration is required.
+- Service and DB health: probe every 30 seconds with a five-second timeout; alert after five minutes of continuous failure; resolve after five minutes continuously healthy.
+- API: over a rolling five-minute window with at least 20 requests, alert if server errors/timeouts exceed 5% or p95 response time exceeds two seconds continuously for five minutes. Exclude long-lived connection lifetime from request-latency measurement.
+- Push: alert when transient failure rate exceeds 10% over a 15-minute window with at least 20 delivery attempts, continuously for five minutes; also alert when the oldest pending delivery exceeds ten minutes.
+- Resolve API/push alerts after the triggering condition clears continuously for ten minutes. Insufficient samples alone do not prove recovery; an empty push queue clears its age condition. Send email once on firing, once per hour while active, and once on recovery. Make these numbers operator-configurable with the agreed initial values.
+- Document user troubleshooting and operator procedures for server/DB failures, synchronization, webhooks, push delivery, and alerts. No separate customer-support/admin diagnostic product is required.
+
+### Explicit exclusions
+
+- Decision items in their entirety: no question/answer records, choices, answer history, deferral/reopening/acknowledgment, decision-specific UI/API/MCP functions, links, or notifications.
+- Lane-driven AI calls, agent execution, Git content access, Git access verification, event interpretation by Lane AI, user-rule automation engines, and provider-specific webhook adapters.
+- Team workspaces, billing/paid plans, feature flags, app password/biometric locks, end-to-end encryption, independent offline browser data, and Linux native GUI.
+- File import/export, separate user backup/restore, trash/recovery, priority/labels/due dates, old repository URL aliases, mini-app implementations, and a separate customer-support tool.
+- Windows remote WNS push and its package-registration work, actual production deployment, store publication/formal release, and actual Logto/push/email account/device delivery validation.
 
 ## Storage
 
-There is no product persistence. `dist`, native build output, generated Xcode
+Use the [shared local-store contract](apps-lane-local-store-contract.md) for native persistence and the [server contract](servers-lane-api-contract.md) for online web and synchronization. Web has no independent persistent task store. `dist`, native build output, generated Xcode
 projects, CocoaPods and local SDK paths remain ignored. Native packages embed
 only the compiled template, required runtime resources and license notices.
 
 ## Security
 
-The scaffold has no service credentials, network permissions or application
-capabilities. Keep SDK downloads and signing material outside tracked source.
+Add only the network, callback and notification capabilities required by the product behavior above. Keep SDK downloads, credentials and signing material outside tracked source. Native callbacks use `lane-dev://` in development and `lane://` in distribution; accept only validated callback state and repository/task identifiers.
 Development commands follow the root Infisical contract. SDK libraries and
 notices must remain together when packaging native applications.
 
@@ -65,7 +190,7 @@ notices must remain together when packaging native applications.
 
 Build helpers emit structured start, completion and failure events. Native hosts
 report startup and template-load failures without user content. Platform runtime
-logs remain available through the platform's development tools.
+logs remain available through the platform's development tools. Apply the content exclusion, retention and shared size limit specified above.
 
 ## Build and Test
 
@@ -75,10 +200,15 @@ lifecycle, signing, installation and store submission need separate platform
 validation. No macOS runner is added to PR, main-push or affected manual CI.
 Remove generated `dist` after validation.
 
+Required product tests cover all task/proposal transitions, optional prompts, explicit-save history, prompt restore as a new version, task moves, repository normalization and conflicts, safe Markdown, and input retention on errors. Test keyboard operation, screen readers, visible focus, non-color states and text enlargement on every released GUI platform.
+
+Native acceptance must exercise SQLite reads/writes, close/reopen, failed writes, concurrent CLI/MCP access while the window is closed, and automatic observation in a running app on each relevant host. Android/Windows execution and automatic change observation remain acceptance gates. Earlier isolated macOS/iOS probes do not establish product completion. Do not infer web offline support from an IndexedDB experiment.
+
+Use the shared protocol vectors for sync, deletion, replay and conflict behavior. Use disposable PostgreSQL and mocked Logto, Delcore, push and email dependencies for integrations. Actual external accounts/providers, production deployment and store/formal release acceptance are excluded from automated acceptance claims.
+
 ## Dependencies and Integrations
 
-The ReactLynx toolchain versions match the existing Lynx UI workspace. The empty
-root does not need UI primitives. Native SDKs are platform dependencies, not
+The ReactLynx toolchain versions match the existing Lynx UI workspace. Use shared UI primitives where they meet the approved design and platform accessibility requirements. Native SDKs are platform dependencies, not
 vendored source. Desktop uses an operator-supplied SDK; Android resolves Maven
 artifacts; iOS resolves CocoaPods. Preserve original third-party licenses. `native/licenses` retains the Lynx 4.1.0
 license and notice for desktop distributions. Mobile dependency managers retain
