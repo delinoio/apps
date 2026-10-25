@@ -4,6 +4,7 @@ package syncclient
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -19,6 +20,9 @@ type NotificationPreferences struct {
 	Permission string `json:"permission"`
 }
 type LocalStatus struct {
+	ReconnectRequired       bool                    `json:"reconnectRequired"`
+	AccountID               string                  `json:"accountId"`
+	SyncErrorReason         string                  `json:"syncErrorReason"`
 	SpaceID                 string                  `json:"spaceId"`
 	DeviceID                string                  `json:"deviceId"`
 	SyncEnabled             bool                    `json:"syncEnabled"`
@@ -57,7 +61,7 @@ func Status(ctx context.Context, s Store, syncEnabled, connected bool) (LocalSta
 			return err
 		}
 		values := map[string]string{}
-		for _, key := range []string{"last_sync_at_us", "notification_enabled", "notification_content", "notification_permission"} {
+		for _, key := range []string{"last_sync_at_us", "notification_enabled", "notification_content", "notification_permission", "reconnect_required", "sync_error_reason"} {
 			value, e := meta(ctx, c, key)
 			if e != nil {
 				return e
@@ -67,6 +71,8 @@ func Status(ctx context.Context, s Store, syncEnabled, connected bool) (LocalSta
 		if us, e := strconv.ParseInt(values["last_sync_at_us"], 10, 64); e == nil && us > 0 {
 			out.LastSyncAt = time.UnixMicro(us).UTC().Format(time.RFC3339Nano)
 		}
+		out.ReconnectRequired = values["reconnect_required"] == "1"
+		out.SyncErrorReason = values["sync_error_reason"]
 		out.NotificationPreferences.Enabled = values["notification_enabled"] == "1"
 		if v := values["notification_content"]; v == "GENERIC" || v == "2" || v == "NOTIFICATION_CONTENT_GENERIC" {
 			out.NotificationPreferences.Content = "NOTIFICATION_CONTENT_GENERIC"
@@ -76,5 +82,18 @@ func Status(ctx context.Context, s Store, syncEnabled, connected bool) (LocalSta
 		}
 		return nil
 	})
+	if err == nil {
+		registry, e := sql.Open("sqlite", filepath.Join(s.Root(), "registry.sqlite")+"?mode=ro")
+		if e != nil {
+			return out, e
+		}
+		defer registry.Close()
+		var id sql.NullString
+		e = registry.QueryRowContext(ctx, "SELECT account_id FROM spaces WHERE id=?", s.SpaceID()).Scan(&id)
+		if e != nil {
+			return out, e
+		}
+		out.AccountID = id.String
+	}
 	return out, err
 }

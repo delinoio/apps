@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -52,17 +53,22 @@ func (OSCredentials) Delete(key string) error {
 }
 
 type Credential struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int64     `json:"expires_in"`
-	Issuer       string    `json:"issuer"`
-	AccountID    string    `json:"account_id"`
-	TenantID     string    `json:"tenant_id"`
-	DeviceID     string    `json:"device_id"`
-	SessionID    string    `json:"session_id"`
-	Endpoint     string    `json:"endpoint"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	ApprovalSequence   string    `json:"approval_sequence"`
+	ApprovalSpaceID    string    `json:"approval_space_id"`
+	ApprovalEpoch      string    `json:"approval_epoch"`
+	ReconnectConfirmed bool      `json:"reconnect_confirmed"`
+	ApprovalExpiresAt  time.Time `json:"approval_expires_at"`
+	AccessToken        string    `json:"access_token"`
+	RefreshToken       string    `json:"refresh_token"`
+	TokenType          string    `json:"token_type"`
+	ExpiresIn          int64     `json:"expires_in"`
+	Issuer             string    `json:"issuer"`
+	AccountID          string    `json:"account_id"`
+	TenantID           string    `json:"tenant_id"`
+	DeviceID           string    `json:"device_id"`
+	SessionID          string    `json:"session_id"`
+	Endpoint           string    `json:"endpoint"`
+	ExpiresAt          time.Time `json:"expires_at"`
 }
 
 type Approval struct {
@@ -70,13 +76,18 @@ type Approval struct {
 	ChallengeID      string `json:"challengeId"`
 }
 type pendingApproval struct {
-	State, Verifier, RedirectURI, Endpoint, DeviceID string
-	ExpiresAt                                        time.Time
+	Sequence                                                            string
+	SpaceID, Epoch                                                      string
+	ReconnectConfirmed                                                  bool
+	State, Verifier, RedirectURI, Endpoint, DeviceID, ExpectedAccountID string
+	ExpiresAt                                                           time.Time
 }
 type Auth struct {
-	Credentials CredentialStore
-	HTTPClient  *http.Client
-	ClientID    string
+	// CredentialLockRoot is an explicit test override; production uses the OS user cache.
+	CredentialLockRoot string
+	Credentials        CredentialStore
+	HTTPClient         *http.Client
+	ClientID           string
 }
 
 func (a Auth) vault() CredentialStore {
@@ -139,6 +150,40 @@ func redirectURL(raw string) error {
 // Begin persists PKCE/state in OS credentials before returning the browser URL.
 // The caller opens this URL; a later process calls Complete with the callback URI.
 func (a Auth) Begin(ctx context.Context, spaceID, deviceID, endpoint, redirectURI string) (Approval, error) {
+	return a.BeginForAccount(ctx, spaceID, deviceID, endpoint, redirectURI, "")
+}
+func (a Auth) BeginForAccount(ctx context.Context, spaceID, deviceID, endpoint, redirectURI, expectedAccountID string) (Approval, error) {
+	return a.begin(ctx, spaceID, deviceID, endpoint, redirectURI, expectedAccountID, "", "", false)
+}
+
+// BeginStore captures reconnect consent before browser approval. The callback
+// cannot add consent or change the selected space/account/generation afterward.
+func (a Auth) BeginStore(ctx context.Context, s Store, endpoint, redirectURI, expectedAccountID string, confirmEpochChange bool) (Approval, error) {
+	var epoch, required, sequence string
+	err := s.WithRead(ctx, func(c *sql.Conn) error {
+		var e error
+		epoch, e = meta(ctx, c, "account_epoch")
+		if e != nil {
+			return e
+		}
+		required, e = meta(ctx, c, "reconnect_required")
+		if e != nil {
+			return e
+		}
+		return c.QueryRowContext(ctx, "SELECT CAST(coalesce(max(sequence),0) AS TEXT) FROM changes WHERE change_kind IN(1,2)").Scan(&sequence)
+	})
+	if err != nil {
+		return Approval{}, err
+	}
+	if required == "1" && !confirmEpochChange {
+		return Approval{}, ErrReconnectRequired
+	}
+	if confirmEpochChange && (required != "1" || expectedAccountID == "") {
+		return Approval{}, ErrReconnectRequired
+	}
+	return a.begin(ctx, s.SpaceID(), s.DeviceID(), endpoint, redirectURI, expectedAccountID, epoch, sequence, required == "1" && confirmEpochChange)
+}
+func (a Auth) begin(ctx context.Context, spaceID, deviceID, endpoint, redirectURI, expectedAccountID, epoch, sequence string, confirmed bool) (Approval, error) {
 	if err := ctx.Err(); err != nil {
 		return Approval{}, err
 	}
@@ -160,7 +205,7 @@ func (a Auth) Begin(ctx context.Context, spaceID, deviceID, endpoint, redirectUR
 	if err != nil {
 		return Approval{}, err
 	}
-	pending := pendingApproval{State: state, Verifier: verifier, RedirectURI: redirectURI, Endpoint: endpoint, DeviceID: deviceID, ExpiresAt: time.Now().Add(10 * time.Minute)}
+	pending := pendingApproval{Sequence: sequence, SpaceID: spaceID, Epoch: epoch, ReconnectConfirmed: confirmed, ExpectedAccountID: expectedAccountID, State: state, Verifier: verifier, RedirectURI: redirectURI, Endpoint: endpoint, DeviceID: deviceID, ExpiresAt: time.Now().Add(10 * time.Minute)}
 	raw, err := json.Marshal(pending)
 	if err != nil {
 		return Approval{}, err
@@ -188,6 +233,11 @@ func (a Auth) Complete(ctx context.Context, spaceID, callbackURI string) (Creden
 	if state == "" || q.Get("code") == "" {
 		return Credential{}, ErrApproval
 	}
+	unlock, err := a.lockCredential(ctx, pendingKey(spaceID, state))
+	if err != nil {
+		return Credential{}, err
+	}
+	defer unlock()
 	raw, err := a.vault().Get(pendingKey(spaceID, state))
 	if err != nil {
 		return Credential{}, ErrApproval
@@ -204,12 +254,17 @@ func (a Auth) Complete(ctx context.Context, spaceID, callbackURI string) (Creden
 	if err != nil {
 		return Credential{}, err
 	}
-	if credential.DeviceID != pending.DeviceID {
+	if credential.DeviceID != pending.DeviceID || (pending.ExpectedAccountID != "" && credential.AccountID != pending.ExpectedAccountID) {
 		return Credential{}, ErrAccountMismatch
 	}
 	if err = a.vault().Delete(pendingKey(spaceID, state)); err != nil {
 		return Credential{}, err
 	}
+	credential.ApprovalSequence = pending.Sequence
+	credential.ApprovalSpaceID = pending.SpaceID
+	credential.ApprovalEpoch = pending.Epoch
+	credential.ReconnectConfirmed = pending.ReconnectConfirmed
+	credential.ApprovalExpiresAt = pending.ExpiresAt
 	return credential, nil
 }
 func (a Auth) exchange(ctx context.Context, endpoint string, form url.Values) (Credential, error) {
@@ -217,9 +272,14 @@ func (a Auth) exchange(ctx context.Context, endpoint string, form url.Values) (C
 	if err := a.post(ctx, endpoint+"/oauth/token", "application/x-www-form-urlencoded", form.Encode(), "", &c); err != nil {
 		return c, err
 	}
-	if c.AccessToken == "" || c.TokenType != "Bearer" || c.ExpiresIn <= 0 || c.Issuer == "" || c.AccountID == "" || c.TenantID == "" || c.DeviceID == "" || c.SessionID == "" {
+	if c.AccessToken == "" || c.TokenType != "Bearer" || c.ExpiresIn <= 0 || c.ExpiresIn > 31536000 || c.Issuer == "" || c.AccountID == "" || c.TenantID == "" || c.DeviceID == "" || c.SessionID == "" {
 		return Credential{}, ErrCredentials
 	}
+	c.ApprovalSequence = ""
+	c.ApprovalSpaceID = ""
+	c.ApprovalEpoch = ""
+	c.ReconnectConfirmed = false
+	c.ApprovalExpiresAt = time.Time{}
 	c.Endpoint = endpoint
 	c.ExpiresAt = time.Now().Add(time.Duration(c.ExpiresIn) * time.Second)
 	return c, nil
@@ -252,6 +312,14 @@ func (a Auth) post(ctx context.Context, target, contentType, body, token string,
 	return nil
 }
 func (a Auth) Save(ctx context.Context, spaceID, deviceID string, c Credential) error {
+	unlock, err := a.lockCredential(ctx, credentialKey(spaceID, deviceID, c.Issuer, c.AccountID, c.TenantID))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return a.save(ctx, spaceID, deviceID, c)
+}
+func (a Auth) save(ctx context.Context, spaceID, deviceID string, c Credential) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -285,6 +353,11 @@ func (a Auth) Load(ctx context.Context, spaceID, deviceID, issuer, accountID, te
 	return c, nil
 }
 func (a Auth) Token(ctx context.Context, spaceID, deviceID, issuer, accountID, tenantID string) (string, error) {
+	unlock, err := a.lockCredential(ctx, credentialKey(spaceID, deviceID, issuer, accountID, tenantID))
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	c, err := a.Load(ctx, spaceID, deviceID, issuer, accountID, tenantID)
 	if err != nil {
 		return "", err
@@ -305,12 +378,17 @@ func (a Auth) Token(ctx context.Context, spaceID, deviceID, issuer, accountID, t
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = c.RefreshToken
 	}
-	if err = a.Save(ctx, spaceID, deviceID, fresh); err != nil {
+	if err = a.save(ctx, spaceID, deviceID, fresh); err != nil {
 		return "", err
 	}
 	return fresh.AccessToken, nil
 }
 func (a Auth) Delete(ctx context.Context, spaceID, deviceID, issuer, accountID, tenantID string) error {
+	unlock, err := a.lockCredential(ctx, credentialKey(spaceID, deviceID, issuer, accountID, tenantID))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -358,4 +436,35 @@ func (a Auth) ReauthenticationProof(ctx context.Context, c Credential, challenge
 		return "", ErrApproval
 	}
 	return response.Proof, nil
+}
+
+// CompleteStore also rejects local content or generation changes that occurred
+// while the browser was open. Use this for the CLI/native callback entry point.
+func (a Auth) CompleteStore(ctx context.Context, s Store, callbackURI string) (Credential, error) {
+	c, e := a.Complete(ctx, s.SpaceID(), callbackURI)
+	if e != nil {
+		return Credential{}, e
+	}
+	e = s.WithRead(ctx, func(conn *sql.Conn) error {
+		epoch, e := meta(ctx, conn, "account_epoch")
+		if e != nil {
+			return e
+		}
+		var sequence string
+		if e = conn.QueryRowContext(ctx, "SELECT CAST(coalesce(max(sequence),0) AS TEXT) FROM changes WHERE change_kind IN(1,2)").Scan(&sequence); e != nil {
+			return e
+		}
+		required, e := meta(ctx, conn, "reconnect_required")
+		if e != nil {
+			return e
+		}
+		if c.ApprovalSpaceID != s.SpaceID() || c.ApprovalEpoch != epoch || c.ApprovalSequence != sequence || c.ReconnectConfirmed != (required == "1") {
+			return ErrReconnectRequired
+		}
+		return nil
+	})
+	if e != nil {
+		return Credential{}, e
+	}
+	return c, nil
 }

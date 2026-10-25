@@ -3,8 +3,11 @@ package syncclient
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -76,8 +79,19 @@ func openTestStore(t *testing.T) *testStore {
 	t.Cleanup(func() { db.Close() })
 	return &testStore{db, root}
 }
+func tid(label string) string {
+	sum := sha256.Sum256([]byte(label))
+	var id uuid.UUID
+	copy(id[:], sum[:16])
+	id[6] = (id[6] & 15) | 0x70
+	id[8] = (id[8] & 63) | 0x80
+	return id.String()
+}
 func version(id, vid string, parents ...string) *lanev1.EntityVersion {
-	return &lanev1.EntityVersion{FormatVersion: 1, EntityId: id, VersionId: vid, Kind: lanev1.EntityKind_ENTITY_KIND_TASK, ParentVersionIds: parents, CreatedAt: timestamppb.Now(), Body: &lanev1.EntityVersion_Task{Task: &lanev1.Task{RepositoryId: "repo", Title: "private title", Progress: lanev1.Progress_PROGRESS_TODO, Proposal: lanev1.Proposal_PROPOSAL_REGULAR}}}
+	for i, p := range parents {
+		parents[i] = tid(p)
+	}
+	return &lanev1.EntityVersion{FormatVersion: 1, EntityId: tid(id), VersionId: tid(vid), Kind: lanev1.EntityKind_ENTITY_KIND_TASK, ParentVersionIds: parents, CreatedAt: timestamppb.New(time.Now().Truncate(time.Microsecond)), Origin: &lanev1.Origin{Kind: lanev1.OriginKind_ORIGIN_KIND_CLI, DeviceId: tid("device")}, Body: &lanev1.EntityVersion_Task{Task: &lanev1.Task{RepositoryId: tid("repo"), Title: "private title", Progress: lanev1.Progress_PROGRESS_TODO, Proposal: lanev1.Proposal_PROPOSAL_REGULAR}}}
 }
 func enqueue(t *testing.T, s *testStore, id string, v *lanev1.EntityVersion) {
 	t.Helper()
@@ -254,10 +268,10 @@ func TestDeletionAndDelayedEdit(t *testing.T) {
 	s := openTestStore(t)
 	v := version("task", "v")
 	enqueue(t, s, "req", v)
-	if _, e := s.db.Exec("INSERT INTO receipts VALUES('CreateTask','req','digest','task','private body')"); e != nil {
+	if _, e := s.db.Exec("INSERT INTO receipts VALUES('CreateTask','req','digest',?,'private body')", tid("task")); e != nil {
 		t.Fatal(e)
 	}
-	tomb := &lanev1.EntityVersion{FormatVersion: 1, EntityId: "task", VersionId: "deleted", Kind: lanev1.EntityKind_ENTITY_KIND_TASK, Deleted: true}
+	tomb := &lanev1.EntityVersion{FormatVersion: 1, EntityId: tid("task"), VersionId: tid("deleted"), Kind: lanev1.EntityKind_ENTITY_KIND_TASK, Deleted: true}
 	for _, snapshot := range []*lanev1.EntityVersion{tomb, v} {
 		if e := s.WithWrite(context.Background(), func(c *sql.Conn) error {
 			return ApplySyncResult(context.Background(), c, &lanev1.EntityResult{Version: snapshot})
@@ -283,7 +297,7 @@ func TestConcurrentLocalDescendantSurvivesAck(t *testing.T) {
 	}); e != nil {
 		t.Fatal(e)
 	}
-	if count(t, s, "SELECT count(*) FROM heads WHERE version_id='next'") != 1 || count(t, s, "SELECT count(*) FROM heads") != 1 {
+	if count(t, s, fmt.Sprintf("SELECT count(*) FROM heads WHERE version_id='%s'", tid("next"))) != 1 || count(t, s, "SELECT count(*) FROM heads") != 1 {
 		t.Fatal("ack overwrote local descendant")
 	}
 	other := version("task", "other", "base")

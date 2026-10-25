@@ -27,6 +27,7 @@ type Store interface {
 }
 
 var (
+	ErrDisconnected      = errors.New("synchronization is disabled; reconnect explicitly")
 	ErrLeaseHeld         = errors.New("another process owns synchronization for this space")
 	ErrLeaseLost         = errors.New("synchronization ownership expired or changed")
 	ErrAccountMismatch   = errors.New("credential does not belong to this account space")
@@ -45,6 +46,8 @@ type Options struct {
 	Logger         *slog.Logger
 	// CheckEnabled must check the pinned registry identity, not the active UI selection.
 	CheckEnabled func(context.Context) error
+	// OnAccountDeleted runs after durable redaction and lease release, outside SQL transactions.
+	OnAccountDeleted func(context.Context) error
 }
 
 type Worker struct {
@@ -98,10 +101,17 @@ func putMeta(ctx context.Context, c *sql.Conn, key, value string) error {
 func (w *Worker) lease(ctx context.Context) error {
 	if w.options.CheckEnabled != nil {
 		if err := w.options.CheckEnabled(ctx); err != nil {
-			return err
+			return errors.Join(ErrDisconnected, err)
 		}
 	}
 	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		removed, e := meta(ctx, c, "account_deleted")
+		if e != nil {
+			return e
+		}
+		if removed == "1" {
+			return ErrDisconnected
+		}
 		owner, err := meta(ctx, c, "sync_owner")
 		if err != nil {
 			return err
@@ -122,6 +132,11 @@ func (w *Worker) lease(ctx context.Context) error {
 	})
 }
 func (w *Worker) guard(ctx context.Context, c *sql.Conn) error {
+	if w.options.CheckEnabled != nil {
+		if e := w.options.CheckEnabled(ctx); e != nil {
+			return errors.Join(ErrDisconnected, e)
+		}
+	}
 	owner, err := meta(ctx, c, "sync_owner")
 	if err != nil {
 		return err
@@ -160,7 +175,22 @@ func (w *Worker) Run(ctx context.Context, once bool) (err error) {
 	if err = w.lease(ctx); err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, w.release()) }()
+	defer func() {
+		err = errors.Join(err, w.release())
+		if errors.Is(err, ErrAccountDeleted) && w.options.OnAccountDeleted != nil {
+			err = errors.Join(err, w.options.OnAccountDeleted(ctx))
+		}
+	}()
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	watching := false
+	watchDone := make(chan struct{})
+	defer func() {
+		stopWatch()
+		if watching {
+			<-watchDone
+		}
+	}()
+	updates := make(chan struct{}, 1)
 	delay := w.options.PollInterval
 	for {
 		err = w.cycle(ctx)
@@ -168,24 +198,42 @@ func (w *Worker) Run(ctx context.Context, once bool) (err error) {
 			return err
 		}
 		if err != nil {
-			if errors.Is(err, ErrLeaseLost) || errors.Is(err, ErrLeaseHeld) || errors.Is(err, ErrStaleEpoch) || errors.Is(err, ErrUnsupportedFormat) || errors.Is(err, ErrAccountMismatch) || connect.CodeOf(err) == connect.CodeUnauthenticated || connect.CodeOf(err) == connect.CodePermissionDenied {
+			if errors.Is(err, ErrReconnectRequired) || errors.Is(err, ErrAccountDeleted) || errors.Is(err, ErrDisconnected) || errors.Is(err, ErrLeaseLost) || errors.Is(err, ErrLeaseHeld) || errors.Is(err, ErrStaleEpoch) || errors.Is(err, ErrUnsupportedFormat) || errors.Is(err, ErrAccountMismatch) || connect.CodeOf(err) == connect.CodeUnauthenticated || connect.CodeOf(err) == connect.CodePermissionDenied {
 				return err
 			}
 			w.options.Logger.Warn("lane sync attempt failed", "code", connect.CodeOf(err).String())
 			delay = min(delay*2, 30*time.Second)
 		} else {
 			delay = w.options.PollInterval
+			if !watching {
+				watching = true
+				go func() { defer close(watchDone); w.watch(watchCtx, updates) }()
+			}
 		}
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return ctx.Err()
+		case <-updates:
+			timer.Stop()
 		case <-timer.C:
 		}
 	}
 }
 func (w *Worker) cycle(ctx context.Context) error {
+	if e := w.store.WithRead(ctx, func(c *sql.Conn) error {
+		required, e := meta(ctx, c, "reconnect_required")
+		if e != nil {
+			return e
+		}
+		if required == "1" {
+			return ErrReconnectRequired
+		}
+		return nil
+	}); e != nil {
+		return e
+	}
 	if err := w.lease(ctx); err != nil {
 		return err
 	}
@@ -214,12 +262,25 @@ func (w *Worker) cycle(ctx context.Context) error {
 			return err
 		}
 		if previous != "" && previous != epoch {
-			return ErrStaleEpoch
+			if e := putMeta(ctx, c, "reconnect_required", "1"); e != nil {
+				return e
+			}
+			if e := putMeta(ctx, c, "sync_error_reason", lanev1.ErrorReason_ERROR_REASON_STALE_EPOCH.String()); e != nil {
+				return e
+			}
+			return nil
 		}
 		return putMeta(ctx, c, "account_epoch", epoch)
 	})
 	if err != nil {
 		return err
+	}
+	var required string
+	if e := w.store.WithRead(ctx, func(c *sql.Conn) error { var e error; required, e = meta(ctx, c, "reconnect_required"); return e }); e != nil {
+		return e
+	}
+	if required == "1" {
+		return ErrStaleEpoch
 	}
 	if err = w.push(ctx, epoch); err != nil {
 		return err
@@ -289,13 +350,18 @@ func (w *Worker) push(ctx context.Context, epoch string) error {
 		if err := applyMappings(ctx, c, response.Msg.RepositoryMappings); err != nil {
 			return err
 		}
-		for _, r := range response.Msg.Results {
+		for i, r := range response.Msg.Results {
 			if r.Error != nil {
 				if r.Error.Reason == lanev1.ErrorReason_ERROR_REASON_STALE_EPOCH {
 					return ErrStaleEpoch
 				}
 				if r.Error.Reason == lanev1.ErrorReason_ERROR_REASON_UNSUPPORTED_FORMAT {
 					return ErrUnsupportedFormat
+				}
+				if r.Error.Reason == lanev1.ErrorReason_ERROR_REASON_STALE_RESOLUTION {
+					if _, e := c.ExecContext(ctx, "DELETE FROM heads WHERE entity_id=? AND version_id=?", items[i].GetVersion().GetEntityId(), items[i].GetVersion().GetVersionId()); e != nil {
+						return e
+					}
 				}
 				state := 2
 				if r.Error.Retryable {
@@ -340,6 +406,9 @@ func (w *Worker) pull(ctx context.Context, epoch string) error {
 				return err
 			}
 			for _, change := range response.Msg.Changes {
+				if d := change.GetDeletion(); d != nil && d.Kind == lanev1.EntityKindOrRemoteKind_ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT && d.Id != w.options.AccountID {
+					return ErrAccountMismatch
+				}
 				if err := applyChange(ctx, c, change); err != nil {
 					return err
 				}
@@ -348,6 +417,11 @@ func (w *Worker) pull(ctx context.Context, epoch string) error {
 		})
 		if err != nil {
 			return err
+		}
+		for _, change := range response.Msg.Changes {
+			if d := change.GetDeletion(); d != nil && d.Kind == lanev1.EntityKindOrRemoteKind_ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT {
+				return ErrAccountDeleted
+			}
 		}
 		if !response.Msg.HasMore {
 			return nil
@@ -364,3 +438,50 @@ func RetryBlocked(ctx context.Context, s Store) error {
 }
 
 func invalid(message string) error { return fmt.Errorf("%w: %s", ErrInvalidResponse, message) }
+
+// Watch notifications are hints. Polling still discovers local writes and repairs
+// missed notifications; only PullChanges may advance the durable cursor.
+func (w *Worker) watch(ctx context.Context, updates chan<- struct{}) {
+	for ctx.Err() == nil {
+		var epoch, cursor string
+		err := w.store.WithRead(ctx, func(c *sql.Conn) error {
+			var e error
+			epoch, e = meta(ctx, c, "account_epoch")
+			if e != nil {
+				return e
+			}
+			cursor, e = meta(ctx, c, "pull_cursor")
+			return e
+		})
+		if err != nil {
+			return
+		}
+		call, cancel := context.WithTimeout(ctx, 30*time.Second)
+		stream, e := w.client.WatchChanges(call, connect.NewRequest(&lanev1.WatchChangesRequest{Epoch: epoch, Cursor: cursor}))
+		if e == nil {
+			for stream.Receive() {
+				select {
+				case updates <- struct{}{}:
+				default:
+				}
+			}
+			e = stream.Err()
+			stream.Close()
+		}
+		cancel()
+		if connect.CodeOf(e) == connect.CodeUnimplemented {
+			w.options.Logger.Warn("lane live invalidations unavailable; polling remains active")
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		timer := time.NewTimer(w.options.PollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}

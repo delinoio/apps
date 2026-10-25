@@ -34,8 +34,37 @@ func ImportStandalone(ctx context.Context, source, dest Store) error {
 	if sourceKey != "local" || destKey == "local" || destKey == "" {
 		return ErrAccountMismatch
 	}
+	// Reserve this account's import before copying. A failed copy can resume only
+	// into the same destination space. Removing that space never makes the old
+	// standalone data eligible for automatic upload again.
+	marker := "standalone_import_account_" + destKey
+	skip := false
+	err = source.WithWrite(ctx, func(c *sql.Conn) error {
+		previous, e := meta(ctx, c, marker)
+		if e != nil {
+			return e
+		}
+		if previous != "" && previous != dest.SpaceID() {
+			skip = true
+			return nil
+		}
+		return putMeta(ctx, c, marker, dest.SpaceID())
+	})
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
 	return source.WithWrite(ctx, func(src *sql.Conn) error {
 		return dest.WithWrite(ctx, func(dst *sql.Conn) error {
+			completed, e := meta(ctx, dst, "standalone_import_source_"+source.SpaceID())
+			if e != nil {
+				return e
+			}
+			if completed == "1" {
+				return nil
+			}
 			// Merge URL identities before inserting projections. Immutable histories and
 			// transport mutations retain their original IDs and use the mapping on reads.
 			rows, err := src.QueryContext(ctx, "SELECT id,normalized_url FROM entities WHERE kind=1 AND deleted=0 AND normalized_url IS NOT NULL")
@@ -247,7 +276,10 @@ func ImportStandalone(ctx context.Context, source, dest Store) error {
 			}
 			err = rows.Err()
 			rows.Close()
-			return err
+			if err != nil {
+				return err
+			}
+			return putMeta(ctx, dst, "standalone_import_source_"+source.SpaceID(), "1")
 		})
 	})
 }

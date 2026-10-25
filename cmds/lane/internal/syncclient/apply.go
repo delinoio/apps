@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/google/uuid"
+	"sort"
+	"strings"
 
 	lanev1 "github.com/delinoio/apps/protos/lane/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -68,6 +70,28 @@ func ApplySyncResult(ctx context.Context, c *sql.Conn, r *lanev1.EntityResult) e
 			repo = canonical
 		} else if !errors.Is(e, sql.ErrNoRows) {
 			return e
+		}
+	}
+	if repo != nil {
+		var parentDeleted int
+		e := c.QueryRowContext(ctx, "SELECT deleted FROM entities WHERE id=? AND kind=1", repo).Scan(&parentDeleted)
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		if parentDeleted != 0 {
+			var currentRepo sql.NullString
+			e = c.QueryRowContext(ctx, "SELECT repository_id FROM entities WHERE id=?", v.EntityId).Scan(&currentRepo)
+			if e != nil && !errors.Is(e, sql.ErrNoRows) {
+				return e
+			}
+			if currentRepo.Valid && currentRepo.String != repo {
+				return nil
+			}
+			id, e := uuid.NewV7()
+			if e != nil {
+				return e
+			}
+			return deleteEntity(ctx, c, &lanev1.EntityVersion{FormatVersion: 1, EntityId: v.EntityId, VersionId: id.String(), Kind: v.Kind, Deleted: true})
 		}
 	}
 	if v.GetRepository() != nil {
@@ -163,12 +187,27 @@ func ApplySyncResult(ctx context.Context, c *sql.Conn, r *lanev1.EntityResult) e
 	_, err = c.ExecContext(ctx, "INSERT INTO changes(entity_id,change_kind) VALUES(?,1)", v.EntityId)
 	return err
 }
+func validUUID(id string) bool {
+	u, e := uuid.Parse(id)
+	return e == nil && u.Version() == 7 && u.String() == id
+}
 func validateVersion(v *lanev1.EntityVersion) error {
 	if v == nil || v.FormatVersion != 1 {
 		return ErrUnsupportedFormat
 	}
-	if v.EntityId == "" || v.VersionId == "" || (v.Kind != lanev1.EntityKind_ENTITY_KIND_TASK && v.Kind != lanev1.EntityKind_ENTITY_KIND_REPOSITORY) {
+	if !validUUID(v.EntityId) || !validUUID(v.VersionId) || (v.Kind != lanev1.EntityKind_ENTITY_KIND_TASK && v.Kind != lanev1.EntityKind_ENTITY_KIND_REPOSITORY) {
 		return invalid("entity identity")
+	}
+	if !sort.StringsAreSorted(v.ParentVersionIds) {
+		return invalid("parent order")
+	}
+	for i, p := range v.ParentVersionIds {
+		if !validUUID(p) || p == v.VersionId || (i > 0 && p == v.ParentVersionIds[i-1]) {
+			return invalid("parent identity")
+		}
+	}
+	if v.PromptRestoration && (v.Deleted || v.Kind != lanev1.EntityKind_ENTITY_KIND_TASK) {
+		return invalid("prompt restoration marker")
 	}
 	if v.Deleted {
 		if v.Body != nil {
@@ -176,14 +215,27 @@ func validateVersion(v *lanev1.EntityVersion) error {
 		}
 		return nil
 	}
-	if v.CreatedAt == nil || v.CreatedAt.CheckValid() != nil {
+	if v.CreatedAt == nil || v.CreatedAt.CheckValid() != nil || v.CreatedAt.Nanos%1000 != 0 {
 		return invalid("entity timestamp")
 	}
-	if (v.Kind == lanev1.EntityKind_ENTITY_KIND_TASK && v.GetTask() == nil) || (v.Kind == lanev1.EntityKind_ENTITY_KIND_REPOSITORY && v.GetRepository() == nil) {
-		return invalid("entity body")
+	o := v.Origin
+	if o == nil || o.Kind < lanev1.OriginKind_ORIGIN_KIND_APP || o.Kind > lanev1.OriginKind_ORIGIN_KIND_MCP || (o.DeviceId != "" && !validUUID(o.DeviceId)) {
+		return invalid("entity origin")
+	}
+	switch v.Kind {
+	case lanev1.EntityKind_ENTITY_KIND_TASK:
+		t := v.GetTask()
+		if t == nil || !validUUID(t.RepositoryId) || strings.TrimSpace(t.Title) == "" || t.Progress < lanev1.Progress_PROGRESS_TODO || t.Progress > lanev1.Progress_PROGRESS_CANCELED || t.Proposal < lanev1.Proposal_PROPOSAL_REGULAR || t.Proposal > lanev1.Proposal_PROPOSAL_REJECTED {
+			return invalid("task body")
+		}
+	case lanev1.EntityKind_ENTITY_KIND_REPOSITORY:
+		if v.GetRepository() == nil || v.GetRepository().NormalizedUrl == "" {
+			return invalid("repository body")
+		}
 	}
 	return nil
 }
+
 func insertVersion(ctx context.Context, c *sql.Conn, v *lanev1.EntityVersion) error {
 	body, err := protojson.Marshal(v)
 	if err != nil {
@@ -201,7 +253,22 @@ func insertVersion(ctx context.Context, c *sql.Conn, v *lanev1.EntityVersion) er
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+	for _, parent := range v.ParentVersionIds {
+		if v.Deleted {
+			break
+		}
+		var owner string
+		if e := c.QueryRowContext(ctx, "SELECT entity_id FROM versions WHERE version_id=?", parent).Scan(&owner); e != nil {
+			return invalid("missing version parent")
+		}
+		if owner != v.EntityId {
+			return invalid("cross-entity parent")
+		}
+	}
 	prompt := 0
+	if v.PromptRestoration {
+		prompt = 1
+	}
 	if task := v.GetTask(); task != nil {
 		if len(v.ParentVersionIds) == 0 {
 			if task.Prompt != nil {
