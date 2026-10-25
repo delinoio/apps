@@ -83,6 +83,10 @@ export function collectNotices(root, destination, selected = platforms) {
     resolve(destination, "rust"),
     { recursive: true },
   );
+  cpSync(
+    resolve(sysroot, "share/doc/rust/COPYRIGHT-library.html"),
+    resolve(destination, "rust/COPYRIGHT-library.html"),
+  );
   writeFileSync(
     resolve(destination, "modules.json"),
     `${JSON.stringify(inventory, null, 2)}\n`,

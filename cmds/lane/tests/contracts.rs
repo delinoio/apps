@@ -355,3 +355,40 @@ fn sync_apply_vectors() {
     }
     assert_eq!(selected.len(), 0, "missing fixtures: {selected:?}");
 }
+
+#[test]
+fn invalid_stored_enums_and_body_kinds_fail_closed() {
+    for (field, value) in [
+        ("progress", json!(99)),
+        ("proposal", json!(99)),
+        ("kind", json!("ENTITY_KIND_REPOSITORY")),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path(), "", false).unwrap();
+        let mut version = task(
+            &store,
+            &json!({"title":"Task","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"}),
+        );
+        if field == "kind" {
+            version[field] = value;
+        } else {
+            version["task"][field] = value;
+        }
+        store
+            .with(true, |connection| {
+                connection.execute(
+                    "UPDATE versions SET envelope_json=? WHERE version_id=?",
+                    rusqlite::params![version.to_string(), strv(&version, "versionId")],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            store
+                .invoke("GetTask", &json!({"id":version["entityId"]}))
+                .unwrap_err()
+                .reason,
+            "ERROR_REASON_INVALID_INPUT"
+        );
+    }
+}

@@ -349,7 +349,9 @@ impl Store {
         })
     }
     pub fn identity(&self) -> Result<Identity> {
-        Ok(self.registry.query_row("SELECT coalesce(issuer,''),coalesce(account_id,''),coalesce(tenant_id,''),sync_enabled FROM spaces WHERE id=?",[&self.space],|r|Ok(Identity{issuer:r.get(0)?,account:r.get(1)?,tenant:r.get(2)?,enabled:r.get(3)?}))?)
+        Ok(self.registry.query_row("SELECT coalesce(issuer,''),coalesce(account_id,''),coalesce(tenant_id,''),sync_enabled FROM spaces WHERE id=?",[&self.space],|r|Ok(Identity{
+issuer:r.get(0)?,account:r.get(1)?,tenant:r.get(2)?,enabled:r.get(3)?}
+))?)
     }
     pub fn active(&self) -> Result<String> {
         Ok(self.registry.query_row(
@@ -431,15 +433,45 @@ impl Store {
         })
     }
     pub fn preferences(&self, c: &Connection) -> Result<Value> {
-        Ok(
-            json!({"enabled":meta(c,"notification_enabled")?=="1","content":if meta(c,"notification_content")?=="GENERIC" {"NOTIFICATION_CONTENT_GENERIC"}else{"NOTIFICATION_CONTENT_DETAIL"},"permission":"NOTIFICATION_PERMISSION_UNSUPPORTED"}),
-        )
+        Ok(json!({
+        "enabled":meta(c,"notification_enabled")?=="1","content":if meta(c,"notification_content")?=="GENERIC" {
+        "NOTIFICATION_CONTENT_GENERIC"}
+        else{
+        "NOTIFICATION_CONTENT_DETAIL"}
+        ,"permission":"NOTIFICATION_PERMISSION_UNSUPPORTED"}
+        ))
     }
     pub fn invoke(&self, method: &str, q: &Value) -> Result<Value> {
         match method {
             "GetNotificationPreferences"=>self.with(false,|c|self.preferences(c)),
-            "SetNotificationPreferences"=>self.with(true,|c|{let content=match strv(q,"content"){""|"NOTIFICATION_CONTENT_DETAIL"=>"DETAIL","NOTIFICATION_CONTENT_GENERIC"=>"GENERIC",_=>return Err(invalid("Invalid notification content."))};put_meta(c,"notification_enabled",if q["enabled"]==true{"1"}else{"0"})?;put_meta(c,"notification_content",content)?;c.execute("INSERT INTO changes(change_kind) VALUES(3)",[])?;self.preferences(c)}),
-            "GetLocalStatus"=>self.with(false,|c|{let identity=self.identity()?;let count:i64=c.query_row("SELECT count(*) FROM outbox",[],|r|r.get(0))?;let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;let items=stmt.query_map([],|r|Ok(json!({"requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;let mut out=json!({"spaceId":self.space,"deviceId":self.device,"accountId":identity.account,"syncEnabled":identity.enabled,"connected":false,"reconnectRequired":meta(c,"reconnect_required")?=="1","syncErrorReason":meta(c,"sync_error_reason")?,"pendingItemCount":count.to_string(),"itemErrors":items,"notificationPreferences":self.preferences(c)?});if let Ok(us)=meta(c,"last_sync_at_us")?.parse::<i64>()&& let Some(t)=chrono::DateTime::from_timestamp_micros(us){out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();}Ok(out)}),
+            "SetNotificationPreferences"=>self.with(true,|c|{
+let content=match strv(q,"content"){
+""|"NOTIFICATION_CONTENT_DETAIL"=>"DETAIL","NOTIFICATION_CONTENT_GENERIC"=>"GENERIC",_=>return Err(invalid("Invalid notification content."))}
+;
+put_meta(c,"notification_enabled",if q["enabled"]==true{
+"1"}
+else{
+"0"}
+)?;
+put_meta(c,"notification_content",content)?;
+c.execute("INSERT INTO changes(change_kind) VALUES(3)",[])?;
+self.preferences(c)}
+),
+            "GetLocalStatus"=>self.with(false,|c|{
+let identity=self.identity()?;
+let count:i64=c.query_row("SELECT count(*) FROM outbox",[],|r|r.get(0))?;
+let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;
+let items=stmt.query_map([],|r|Ok(json!({
+"requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?}
+)))?.collect::<std::result::Result<Vec<_>,_>>()?;
+let mut out=json!({
+"spaceId":self.space,"deviceId":self.device,"accountId":identity.account,"syncEnabled":identity.enabled,"connected":false,"reconnectRequired":meta(c,"reconnect_required")?=="1","syncErrorReason":meta(c,"sync_error_reason")?,"pendingItemCount":count.to_string(),"itemErrors":items,"notificationPreferences":self.preferences(c)?}
+);
+if let Ok(us)=meta(c,"last_sync_at_us")?.parse::<i64>()&& let Some(t)=chrono::DateTime::from_timestamp_micros(us){
+out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();
+}
+Ok(out)}
+),
             "CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
             _=>self.with(false,|c|self.query(c,method,q)),
         }

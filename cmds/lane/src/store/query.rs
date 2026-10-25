@@ -34,7 +34,12 @@ fn page(request: &Value, scope: &str) -> Result<(usize, String)> {
     ))
 }
 fn cursor(scope: &str, last: &str) -> String {
-    URL_SAFE_NO_PAD.encode(json!({"Scope":scope,"Last":last}).to_string())
+    URL_SAFE_NO_PAD.encode(
+        json!({
+        "Scope":scope,"Last":last}
+        )
+        .to_string(),
+    )
 }
 fn contains(request: &Value, k: &str, v: &Value) -> bool {
     request[k]
@@ -65,7 +70,9 @@ impl Store {
                 {
                     return Err(Failure::new("NOT_FOUND", "Entity does not exist."));
                 }
-                Ok(json!({"result":result(&heads)}))
+                Ok(json!({
+                "result":result(&heads)}
+                ))
             }
             "ListTasks" | "ListRepositories" => {
                 for (key, valid) in [
@@ -159,7 +166,9 @@ impl Store {
                     items.push(result(&heads));
                     prev = id;
                 }
-                Ok(json!({"items":items,"nextCursor":next}))
+                Ok(json!({
+                "items":items,"nextCursor":next}
+                ))
             }
             "ListHistory" => {
                 heads(connection, strv(request, "id"))?;
@@ -201,7 +210,9 @@ impl Store {
                     versions.push(v);
                     prev = key;
                 }
-                Ok(json!({"versions":versions,"nextCursor":next}))
+                Ok(json!({
+                "versions":versions,"nextCursor":next}
+                ))
             }
             "ListEvents" => {
                 let mut query = request.clone();
@@ -230,7 +241,9 @@ impl Store {
                     prev = strv(&v, "id").into();
                     items.push(v);
                 }
-                Ok(json!({"items":items,"nextCursor":next}))
+                Ok(json!({
+                "items":items,"nextCursor":next}
+                ))
             }
             "GetEvent" => {
                 let raw: Option<String> = connection
@@ -255,7 +268,9 @@ impl Store {
                         processing.push(v);
                     }
                 }
-                Ok(json!({"event":event,"processing":processing}))
+                Ok(json!({
+                "event":event,"processing":processing}
+                ))
             }
             _ => Err(Failure::new(
                 "ONLINE_REQUIRED",

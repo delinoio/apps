@@ -24,3 +24,5 @@ pub mod syncclient;
 mod windows;
 
 mod watch;
+
+pub mod input;

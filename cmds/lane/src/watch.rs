@@ -8,7 +8,6 @@ use std::sync::{
     mpsc,
 };
 use std::time::Duration;
-
 pub struct Watch {
     state: Arc<Mutex<Value>>,
     stop: Arc<AtomicBool>,
@@ -17,9 +16,9 @@ pub struct Watch {
 }
 impl Watch {
     pub fn start(auth: &Auth, credential: Value, epoch: String, cursor: String) -> Self {
-        let state = Arc::new(Mutex::new(
-            json!({"credential":credential,"epoch":epoch,"cursor":cursor}),
-        ));
+        let state = Arc::new(Mutex::new(json!({
+        "credential":credential,"epoch":epoch,"cursor":cursor}
+        )));
         let stop = Arc::new(AtomicBool::new(false));
         let (send, hints) = mpsc::sync_channel(1);
         let cancelled = auth.cancelled.clone();
@@ -33,7 +32,10 @@ impl Watch {
                 return;
             };
             runtime.block_on(async move {
-                let Ok(http) = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(30)).build() else { return; };
+                let Ok(http) = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(30)).build() else {
+ return;
+ }
+;
                 loop {
                     let state = worker_state.lock().unwrap().clone();
                     let stream = receive(&http, &state, &send);
@@ -41,7 +43,8 @@ impl Watch {
                         while !worker_stop.load(Ordering::Relaxed) && !cancelled.load(Ordering::Relaxed) {
                             tokio::time::sleep(Duration::from_millis(25)).await;
                         }
-                    };
+                    }
+;
                     tokio::select! {
                         () = stopped => break,
                         supported = stream => if !supported {
@@ -50,11 +53,14 @@ impl Watch {
                         }
                     }
                     for _ in 0..40 {
-                        if worker_stop.load(Ordering::Relaxed) || cancelled.load(Ordering::Relaxed) { return; }
+                        if worker_stop.load(Ordering::Relaxed) || cancelled.load(Ordering::Relaxed) {
+ return;
+ }
                         tokio::time::sleep(Duration::from_millis(25)).await;
                     }
                 }
-            });
+            }
+);
         });
         Self {
             state,
@@ -64,8 +70,9 @@ impl Watch {
         }
     }
     pub fn update(&self, credential: Value, epoch: String, cursor: String) {
-        *self.state.lock().unwrap() =
-            json!({"credential":credential,"epoch":epoch,"cursor":cursor});
+        *self.state.lock().unwrap() = json!({
+        "credential":credential,"epoch":epoch,"cursor":cursor}
+        );
     }
     pub fn notified(&self) -> bool {
         self.hints.try_recv().is_ok()
@@ -80,7 +87,10 @@ impl Drop for Watch {
     }
 }
 async fn receive(http: &reqwest::Client, state: &Value, hints: &mpsc::SyncSender<()>) -> bool {
-    let body = json!({"epoch":state["epoch"],"cursor":state["cursor"]}).to_string();
+    let body = json!({
+    "epoch":state["epoch"],"cursor":state["cursor"]}
+    )
+    .to_string();
     let Ok(length) = u32::try_from(body.len()) else {
         return true;
     };
@@ -135,4 +145,70 @@ async fn receive(http: &reqwest::Client, state: &Value, hints: &mpsc::SyncSender
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{BufRead, Read, Write},
+        net::TcpListener,
+        time::Instant,
+    };
+    #[test]
+    fn receives_framed_hint_and_cancels_stalled_stream() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = std::io::BufReader::new(&mut stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("POST /lane.v1.SyncService/WatchChanges "));
+            let mut length = 0;
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            assert_eq!(body[0], 0);
+            assert_eq!(
+                u32::from_be_bytes(body[1..5].try_into().unwrap()) as usize,
+                body.len() - 5
+            );
+            let request: Value = serde_json::from_slice(&body[5..]).unwrap();
+            assert_eq!(request["cursor"], "cursor-1");
+            let payload = b"{}";
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/connect+json\r\nContent-Length: 107\r\nConnection: close\r\n\r\n").unwrap();
+            stream.write_all(&[0, 0, 0, 0, 2]).unwrap();
+            stream.write_all(payload).unwrap();
+            stream.flush().unwrap();
+            assert_eq!(stream.read(&mut [0]).unwrap(), 0);
+        });
+        let watch = Watch::start(
+            &Auth::default(),
+            json!({"endpoint":endpoint,"access_token":"synthetic"}),
+            "epoch".into(),
+            "cursor-1".into(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !watch.notified() {
+            assert!(Instant::now() < deadline, "missing hint");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let stopped = Instant::now();
+        drop(watch);
+        assert!(stopped.elapsed() < Duration::from_secs(1));
+        server.join().unwrap();
+    }
 }

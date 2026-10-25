@@ -59,7 +59,7 @@ impl Runtime {
             .cancelled
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return Err(Failure::new("CANCELLED", "Request cancelled."));
+            return Err(Failure::new("DEPENDENCY_UNAVAILABLE", "Request cancelled."));
         }
         self.open(opt, method == "RemoveDeviceData")?;
         let s = self.store.as_mut().unwrap();

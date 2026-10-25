@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     net::TcpListener,
     sync::{
         Arc,
@@ -76,11 +76,13 @@ pub struct Auth {
     pub vault: Arc<dyn Vault>,
     pub http: reqwest::blocking::Client,
     pub cancelled: Arc<AtomicBool>,
+    pub credential_lock_root: Option<std::path::PathBuf>,
 }
 impl Default for Auth {
     fn default() -> Self {
         Self {
             vault: Arc::new(OsVault),
+            credential_lock_root: None,
             http: reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .redirect(reqwest::redirect::Policy::none())
@@ -165,6 +167,9 @@ pub fn approval_snapshot(s: &Store) -> Result<(String, String, bool)> {
 impl Auth {
     pub fn credential_lock(&self, s: &Store, k: &str) -> Result<std::fs::File> {
         let _ = s;
+        if let Some(root) = &self.credential_lock_root {
+            return lock(&root.join(format!("{}.lock", hash(k))), true);
+        }
         #[cfg(target_os = "macos")]
         let base =
             std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Caches"));
@@ -524,13 +529,14 @@ impl Auth {
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
-                    let mut bytes = vec![0; 8192];
-                    let n = stream.read(&mut bytes)?;
-                    let line = std::str::from_utf8(&bytes[..n])
-                        .map_err(|_| approval_error())?
-                        .lines()
-                        .next()
-                        .unwrap_or("");
+                    let mut bytes = Vec::new();
+                    let read = std::io::BufReader::new(&mut stream)
+                        .take(8193)
+                        .read_until(b'\n', &mut bytes);
+                    if read.is_err() || bytes.len() > 8192 || !bytes.ends_with(b"\n") {
+                        continue;
+                    }
+                    let line = std::str::from_utf8(&bytes).map_err(|_| approval_error())?;
                     let parts: Vec<_> = line.split_whitespace().collect();
                     if parts.len() < 2
                         || parts[0] != "GET"

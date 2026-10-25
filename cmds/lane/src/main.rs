@@ -10,6 +10,7 @@ use std::{
 fn main() {
     let mut runtime = lane::runtime::Runtime::default();
     let cancelled = runtime.auth.cancelled.clone();
+    let mut input = lane::input::Input::stdin(cancelled.clone());
     if ctrlc::set_handler(move || cancelled.store(true, Ordering::Relaxed)).is_err() {
         eprintln!("Unable to install termination handler.");
         std::process::exit(1);
@@ -22,7 +23,7 @@ fn main() {
     let code = lane::cli::run(
         &args,
         &mut runtime,
-        &mut io::stdin().lock(),
+        &mut input,
         &mut io::stdout(),
         &mut io::stderr(),
     );
