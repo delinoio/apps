@@ -670,3 +670,103 @@ async fn shared_processing_vectors_execute_database_domain() {
     }
     assert_eq!(exercised, 20);
 }
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn account_claimant_isolation_task_redaction_and_outer_rollback() {
+    let mut f = Fixture::new().await;
+    let event = f.event().await;
+    let token = f.claim(&event).await;
+    let mut q = mutation(&event);
+    q["leaseToken"] = json!(token);
+    q["tasks"] = json!([task(&f.repository, "private task body")]);
+    let owner = f.principal.clone();
+    f.principal.session_id = id();
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap_err().reason, 18);
+    f.principal.account_id = id();
+    assert!(f.call("GetEvent", &json!({"id":event})).await.is_err());
+    assert!(f.call("DeleteEvent", &mutation(&event)).await.is_err());
+    f.principal = owner;
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    webhooks::dispatch_with_config(
+        &mut tx,
+        &f.principal,
+        "CompleteEvent",
+        &q,
+        usize::MAX,
+        Some(&f.config),
+    )
+    .await
+    .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(state(&mut f, &event).await, "LEASED");
+    assert_eq!(task_count(&mut f).await, 0);
+    let completed = f.call("CompleteEvent", &q).await.unwrap();
+    // Receiver IDs are client-selected; the same UUID can identify an event in another table.
+    // Deleting that receiver must not redact the unrelated event's completion receipt.
+    let same_id = json!({"meta":{"requestId":id()},"id":event,"repositoryId":f.repository,"name":"distinct resource"});
+    f.call("CreateReceiver", &same_id).await.unwrap();
+    f.call("DeleteReceiver", &mutation(&event)).await.unwrap();
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap(), completed);
+    let task_id = string(&q["tasks"][0], "id");
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    entities::dispatch(
+        &mut tx,
+        &f.principal,
+        "DeleteTask",
+        &mutation(task_id),
+        usize::MAX,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let replay = f.call("CompleteEvent", &q).await.unwrap();
+    assert_eq!(replay["tasks"][0]["result"], "RESULT_KIND_DELETED");
+    assert!(replay["tasks"][0].get("version").is_none());
+    assert_eq!(
+        replay["processing"]["taskIds"],
+        completed["processing"]["taskIds"]
+    );
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    webhooks::delete_repository(&mut tx, &f.principal.account_id, &f.repository)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(
+        webhooks::receiver_account(&mut f.db, &f.receiver)
+            .await
+            .is_err()
+    );
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    webhooks::delete_account(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for table in [
+        "lane_webhook_receivers",
+        "lane_webhook_events",
+        "lane_webhook_processing",
+        "lane_webhook_receipts",
+    ] {
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(&format!("SELECT count(*) FROM {table}"))
+                .fetch_one(&mut f.db)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+    f.close().await;
+}

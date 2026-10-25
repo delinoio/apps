@@ -99,6 +99,22 @@ impl WebhookConfig {
             .map_err(|_| Fault::unavailable())
     }
 }
+fn stale() -> Fault {
+    Fault::new(connectrpc::ErrorCode::Aborted, 3, "revision is stale")
+}
+fn too_large() -> Fault {
+    Fault::new(
+        connectrpc::ErrorCode::ResourceExhausted,
+        15,
+        "item exceeds configured byte limit",
+    )
+}
+fn lease_invalid(message: &str) -> Fault {
+    Fault::new(connectrpc::ErrorCode::FailedPrecondition, 18, message)
+}
+fn deleted(message: &str) -> Fault {
+    Fault::new(connectrpc::ErrorCode::FailedPrecondition, 7, message)
+}
 fn random_secret() -> [u8; 32] {
     let mut key = [0; 32];
     rand::rng().fill_bytes(&mut key);
@@ -180,7 +196,7 @@ async fn event_row(db: &mut PgConnection, account: &str, id: &str) -> Result<PgR
 }
 fn live_event(row: &PgRow) -> Result<()> {
     if row.get::<String, _>("state") == "DELETED" {
-        Err(Fault::precondition("event is deleted"))
+        Err(deleted("event is deleted"))
     } else {
         Ok(())
     }
@@ -199,7 +215,7 @@ async fn live_repository(db: &mut PgConnection, p: &Principal, repository: &str)
         .unwrap_or(false)
         || result["result"]["version"].is_null()
     {
-        Err(Fault::precondition("repository is deleted"))
+        Err(deleted("repository is deleted"))
     } else {
         Ok(())
     }
@@ -288,7 +304,7 @@ pub async fn dispatch_with_config(
     if !matches!(method, "DeleteReceiver" | "DeleteEvent" | "CompleteEvent")
         && serde_json::to_vec(q)?.len() > max_item_bytes
     {
-        return Err(Fault::quota());
+        return Err(too_large());
     }
     let response = match method {
         "CreateReceiver" => {
@@ -310,10 +326,10 @@ pub async fn dispatch_with_config(
                 .get::<Option<String>, _>("deletion_version_id")
                 .is_some()
             {
-                return Err(Fault::precondition("receiver is deleted"));
+                return Err(deleted("receiver is deleted"));
             }
             if row.get::<i64, _>("revision") != revision(q)? {
-                return Err(Fault::stale());
+                return Err(stale());
             }
             let secret = if method == "RotateReceiverKey" {
                 let config =
@@ -372,7 +388,7 @@ async fn process(
         "ClaimEvent" => {
             let expiry: Option<DateTime<Utc>> = row.get("expires_at");
             if state != "PENDING" && !(state == "LEASED" && expiry.is_some_and(|t| t <= now)) {
-                return Err(Fault::precondition("event cannot be claimed"));
+                return Err(lease_invalid("event cannot be claimed"));
             }
             let token = URL_SAFE_NO_PAD.encode(random_secret());
             let expires = now + chrono::Duration::minutes(5);
@@ -385,7 +401,7 @@ async fn process(
                 return Err(Fault::precondition("only completed events can be reopened"));
             }
             if revision(q)? != row.get::<i64, _>("revision") {
-                return Err(Fault::stale());
+                return Err(stale());
             }
             sqlx::query("UPDATE lane_webhook_events SET state='PENDING',revision=revision+1 WHERE account_id=$1 AND id=$2")
                 .bind(&p.account_id).bind(resource).execute(&mut *db).await?;
@@ -446,7 +462,7 @@ fn validate_lease(row: &PgRow, p: &Principal, token: &str, now: DateTime<Utc>) -
             .get::<Option<DateTime<Utc>>, _>("expires_at")
             .is_some_and(|t| now < t)
     {
-        return Err(Fault::precondition("lease is invalid or expired"));
+        return Err(lease_invalid("lease is invalid or expired"));
     }
     Ok(())
 }
@@ -611,8 +627,8 @@ async fn redact_resource(
     } else {
         json!({"event":{"id":resource,"state":"EVENT_STATE_DELETED"}})
     };
-    sqlx::query("UPDATE lane_webhook_receipts SET response=CASE WHEN method IN ('DeleteEvent','DeleteReceiver') THEN $3 ELSE $4 END WHERE account_id=$1 AND resource_id=$2")
-        .bind(account).bind(resource).bind(json!({"deletion":deletion})).bind(tombstone).execute(db).await?;
+    sqlx::query("UPDATE lane_webhook_receipts SET response=CASE WHEN method IN ('DeleteEvent','DeleteReceiver') THEN $3 ELSE $4 END WHERE account_id=$1 AND resource_id=$2 AND ((method IN ('CreateReceiver','SaveReceiver','RotateReceiverKey','DeleteReceiver')) = $5)")
+        .bind(account).bind(resource).bind(json!({"deletion":deletion})).bind(tombstone).bind(receiver).execute(db).await?;
     Ok(())
 }
 /// Called by repository deletion in the same account-locked transaction.
@@ -677,7 +693,7 @@ pub async fn intake(
     config: &WebhookConfig,
 ) -> Result<Value> {
     if raw.len() > config.max_webhook_bytes {
-        return Err(Fault::quota());
+        return Err(too_large());
     }
     let account: String =
         sqlx::query_scalar("SELECT account_id FROM lane_webhook_receivers WHERE id=$1")
