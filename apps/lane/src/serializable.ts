@@ -8,15 +8,18 @@ import {
 // ReactLynx transports component props as JSON between its two runtimes.
 // Protobuf int64 values therefore stay decimal strings in UI state, with exact
 // bigint restoration only at the background adapter boundary.
-export type UI<T> = T extends bigint
-  ? string
-  : T extends readonly (infer E)[]
-    ? UI<E>[]
-    : T extends object
-      ? { [K in keyof T as K extends "$unknown" ? never : K]: UI<T[K]> }
-      : T;
+export type UI<T> = T extends Uint8Array
+  ? number[]
+  : T extends bigint
+    ? string
+    : T extends readonly (infer E)[]
+      ? UI<E>[]
+      : T extends object
+        ? { [K in keyof T as K extends "$unknown" ? never : K]: UI<T[K]> }
+        : T;
 export function toUI<T>(value: T): UI<T> {
   if (typeof value === "bigint") return value.toString() as UI<T>;
+  if (value instanceof Uint8Array) return Array.from(value) as UI<T>;
   if (Array.isArray(value)) return value.map(toUI) as UI<T>;
   if (value && typeof value === "object")
     return Object.fromEntries(
@@ -39,7 +42,9 @@ export function fromUI<S extends DescMessage>(
     if (field.oneof && container?.case !== field.localName) continue;
     let item = container ? container.value : object[field.localName];
     if (item === undefined || item === null) continue;
-    if (field.fieldKind === "message")
+    if (field.fieldKind === "scalar" && field.scalar === 12)
+      item = Uint8Array.from(item as number[]);
+    else if (field.fieldKind === "message")
       item = fromUI(field.message, item as never);
     else if (
       field.fieldKind === "scalar" &&

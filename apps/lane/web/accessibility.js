@@ -78,6 +78,7 @@ export function installAccessibility(view) {
           form.style.width = "100%";
           form.style.height = "100%";
         }
+        target.style.boxSizing = "border-box";
         target.style.width = "100%";
         target.style.height = "100%";
         target.setAttribute("role", "textbox");

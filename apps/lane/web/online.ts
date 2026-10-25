@@ -9,6 +9,7 @@ import {
   type JsonValue,
 } from "@bufbuild/protobuf";
 import {
+  CaptureService,
   AccountService,
   LaneService,
   SyncService,
@@ -127,6 +128,7 @@ export class OnlineLane {
     if (!this.session) throw new Error("Sign in to Lane to continue.");
     const serviceDescriptor = [
       LaneService,
+      CaptureService,
       AccountService,
       WebhookService,
       SyncService,
@@ -136,6 +138,8 @@ export class OnlineLane {
     );
     if (!method || method.methodKind !== "unary")
       throw new Error("Unsupported Lane operation.");
+    if (service === CaptureService.typeName && methodName !== "GetAttachment")
+      throw new Error("Capture and RealQA settings are available on desktop.");
     const generation = this.generation;
     const response = await this.transport.unary(
       method as DescMethodUnary,
@@ -320,7 +324,7 @@ export class OnlineLane {
           while (more) {
             const page = await client.pullChanges(
               {
-                formatVersion: 1,
+                formatVersion: 2,
                 epoch: this.epoch,
                 cursor: this.cursor,
                 pageSize: 100,

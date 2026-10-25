@@ -515,3 +515,91 @@ text {
 .mobile .nav-spacer {
   display: none;
 }
+.captures,
+.capture-result {
+  width: 100%;
+  min-width: 0;
+}
+.capture-image {
+  width: 100%;
+  height: 320px;
+}
+.capture-metadata {
+  word-break: break-all;
+  width: 100%;
+}
+.realqa-home {
+  max-width: 1100px;
+  width: 100%;
+}
+.capture-actions .button {
+  flex: 1;
+  min-width: 180px;
+  min-height: 64px;
+}
+.realqa-composer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #f7f9fc;
+}
+.composer-header {
+  padding: 16px 24px;
+  background-color: #fff;
+  border-bottom: 1px solid #e4e8ef;
+}
+.composer-scroll {
+  flex: 1;
+  width: 100%;
+}
+.composer-columns {
+  display: flex;
+  flex-direction: row;
+  padding: 20px;
+  gap: 24px;
+}
+.composer-editor {
+  flex: 1;
+  min-width: 0;
+}
+.composer-form {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.compact .composer-columns {
+  flex-direction: column;
+}
+.compact .composer-form {
+  width: 100%;
+}
+.image-edit-surface {
+  width: 100%;
+  height: 360px;
+  background-color: #e4e8ef;
+  border-radius: 12px;
+}
+.editor-image {
+  width: 100%;
+  height: 100%;
+}
+.capture-thumbnail {
+  width: 180px;
+  padding: 8px;
+  border: 1px solid #e4e8ef;
+  border-radius: 10px;
+  background-color: #fff;
+}
+.thumbnail-image {
+  width: 100%;
+  height: 96px;
+}
+.validation {
+  color: #a32a25;
+}
+.mobile .capture-image {
+  height: 220px;
+}

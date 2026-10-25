@@ -27,10 +27,10 @@ test("Lynxtron preserves native requests and response envelopes", async () => {
     },
   });
   const result = await new Promise((resolve) =>
-    modules.store.open('{"formatVersion":1,"spaceId":""}', resolve),
+    modules.store.open('{"formatVersion":2,"spaceId":""}', resolve),
   );
   assert.equal(result, expected);
-  assert.deepEqual(received, [{ formatVersion: 1, spaceId: "" }]);
+  assert.deepEqual(received, [{ formatVersion: 2, spaceId: "" }]);
 });
 
 test("Lynxtron rejects unlisted capabilities before calling native code", async () => {
@@ -83,7 +83,7 @@ test("a delayed storage open cannot ready a replacement Lynxtron window", async 
   const request = {
     module: "LaneStore",
     method: "open",
-    args: ['{"formatVersion":1,"spaceId":""}'],
+    args: ['{"formatVersion":2,"spaceId":""}'],
   };
   const previous = new WindowSession();
   const oldOpen = previous.invoke(native, request);

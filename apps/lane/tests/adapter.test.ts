@@ -23,8 +23,8 @@ function harness() {
           response: {
             spaceId: JSON.parse(_req).spaceId || "space",
             deviceId: "device",
-            formatVersion: 1,
-            schemaVersion: 1,
+            formatVersion: 2,
+            schemaVersion: 2,
             sequence: "0",
           },
         }),
@@ -121,8 +121,8 @@ test("unsupported schema refuses opening", async () => {
       response: {
         spaceId: "s",
         deviceId: "d",
-        schemaVersion: 2,
-        formatVersion: 1,
+        schemaVersion: 99,
+        formatVersion: 2,
         sequence: "0",
       },
     });
@@ -149,7 +149,7 @@ test("explicit route opens exactly the named space with no fallback on error", a
     cb({ ok: false, error: { reason: "NOT_FOUND", message: "Space removed" } });
   };
   await assert.rejects(h.adapter.open("named-space"), /Space removed/);
-  assert.deepEqual(requests, [{ formatVersion: 1, spaceId: "named-space" }]);
+  assert.deepEqual(requests, [{ formatVersion: 2, spaceId: "named-space" }]);
   assert.equal(closes, 1);
   await assert.rejects(
     h.adapter.call(LaneService.method.listTasks, {}),
@@ -170,8 +170,8 @@ test("late read from old space is rejected after a new space opens", async () =>
       response: {
         spaceId: "new-space",
         deviceId: "device",
-        schemaVersion: 1,
-        formatVersion: 1,
+        schemaVersion: 2,
+        formatVersion: 2,
         sequence: "0",
       },
     });
@@ -250,4 +250,43 @@ test("cancel and space change invalidate native deletion challenge", async () =>
     else await h.adapter.open("another");
     await assert.rejects(h.adapter.deleteReauthenticated("challenge"));
   }
+});
+
+test("explicit migration closes the active handle before migrating and reopening the chosen space", async () => {
+  const h = harness();
+  const order: string[] = [];
+  const close = h.module.close;
+  const open = h.module.open;
+  h.module.close = (space, callback) => {
+    order.push(`close:${space}`);
+    close(space, callback);
+  };
+  h.module.open = (request, callback) => {
+    order.push(`open:${JSON.parse(request).spaceId}`);
+    assert.equal(JSON.parse(request).formatVersion, 2);
+    open(request, callback);
+  };
+  h.module.migrate = (space, callback) => {
+    order.push(`migrate:${space}`);
+    callback({
+      ok: true,
+      response: {
+        spaceId: space,
+        deviceId: "device",
+        schemaVersion: 2,
+        formatVersion: 2,
+        sequence: "0",
+      },
+    });
+  };
+  await h.adapter.open("old-space");
+  order.length = 0;
+  await assert.rejects(h.adapter.migrate(""), /existing data space/);
+  assert.deepEqual(order, []);
+  await h.adapter.migrate("chosen-space");
+  assert.deepEqual(order, [
+    "close:old-space",
+    "migrate:chosen-space",
+    "open:chosen-space",
+  ]);
 });

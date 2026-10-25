@@ -32,8 +32,15 @@ import {
   MiniApp,
   MiniAppNavigation,
 } from "./AppNavigation";
+import { RealQA, RealQADialogs } from "./RealQA";
+import { CaptureComposer } from "./CaptureComposer";
+import { useRealQA } from "./useRealQA";
+import { StoreMigration } from "./StoreMigration";
 import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
+  const realqa = useRealQA();
+  const [realqaDirty, setRealqaDirty] = useState(false);
+  const [migrationAdapter, setMigrationAdapter] = useState<LaneAdapter>();
   const [miniApp, setMiniApp] = useState(MiniApp.Lane);
   const previousApp = useRef(MiniApp.Lane);
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
@@ -96,6 +103,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         }
         setAdapter(owned);
       } catch (e) {
+        if (
+          active &&
+          owned?.migrate &&
+          /format|schema|migration|version/i.test(
+            e instanceof Error ? e.message : "",
+          )
+        )
+          setMigrationAdapter(owned);
         if (active)
           setError(e instanceof Error ? e.message : "Lane could not open.");
       } finally {
@@ -198,7 +213,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     miniApp,
   ]);
   const navigate = (fn: () => void) => {
-    if (draft?.dirty) setDiscard(() => fn);
+    if (draft?.dirty || realqaDirty) setDiscard(() => fn);
     else fn();
   };
   const selectApp = (app: MiniApp) => {
@@ -208,6 +223,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         setDraft(undefined);
         setCurrent(undefined);
       }
+      setRealqaDirty(false);
       setMiniApp(app);
     });
   };
@@ -267,6 +283,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     }
     refresh();
   };
+  if (realqa.state?.window === "composer")
+    return (
+      <CaptureComposer
+        controller={realqa}
+        adapter={adapter}
+        repositories={repositories}
+      />
+    );
   return (
     <view
       id="lane-root"
@@ -358,13 +382,37 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             accessibility-label={`${miniApp} workspace`}
           >
             {miniApp !== MiniApp.Lane ? (
-              <ComingSoon app={miniApp} back={() => selectApp(MiniApp.Lane)} />
+              miniApp === MiniApp.RealQA ? (
+                <RealQA
+                  controller={realqa}
+                  adapter={adapter}
+                  repositories={repositories}
+                  back={() => selectApp(MiniApp.Lane)}
+                  dirty={setRealqaDirty}
+                />
+              ) : (
+                <ComingSoon
+                  app={miniApp}
+                  back={() => selectApp(MiniApp.Lane)}
+                />
+              )
             ) : (
               <>
                 {error && (
                   <Notice>
                     {error} <Button onClick={refresh}>Retry loading</Button>
                   </Notice>
+                )}
+                {migrationAdapter && (
+                  <StoreMigration
+                    adapter={migrationAdapter}
+                    ready={() => {
+                      setAdapter(migrationAdapter);
+                      setMigrationAdapter(undefined);
+                      setError("");
+                      refresh();
+                    }}
+                  />
                 )}
                 {loading && !adapter && <text>Opening Lane…</text>}
                 {adapter && (page === "Tasks" || page === "Proposals") && (
@@ -637,6 +685,16 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           </view>
         </view>
       </view>
+      <RealQADialogs
+        controller={realqa}
+        onOpenSaved={(saved) =>
+          setPendingRoute({
+            kind: "task",
+            id: saved.taskId,
+            spaceId: saved.spaceId,
+          })
+        }
+      />
       {discard && (
         <Dialog
           title="Discard unsaved changes?"

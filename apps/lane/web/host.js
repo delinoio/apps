@@ -110,7 +110,12 @@ view.onNativeModulesCall = async (name, data, moduleName) => {
     return {
       ok: false,
       error: {
-        reason: "OPERATION_FAILED",
+        reason:
+          e?.code === 7
+            ? "PERMISSION_DENIED"
+            : e?.code === 16
+              ? "UNAUTHENTICATED"
+              : "OPERATION_FAILED",
         message: e instanceof Error ? e.message : "Operation failed.",
       },
     };

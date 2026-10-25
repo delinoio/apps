@@ -30,6 +30,10 @@ export interface StoreInfo {
   sequence: string;
 }
 export interface LaneStoreModule {
+  migrate?(
+    spaceId: string,
+    callback: (value: string | Reply<StoreInfo>) => void,
+  ): void;
   open(
     requestJson: string,
     callback: (value: string | Reply<StoreInfo>) => void,
@@ -85,9 +89,11 @@ export function decodeReply<T>(raw: string | Reply<T>): T {
 }
 export interface LaneAdapter {
   readonly mode: "native" | "web";
+  readonly spaceId?: string;
   deleteReauthenticated?(challengeId: string): Promise<void>;
   cancelDeletion?(): void;
   open(spaceId?: string): Promise<void>;
+  migrate?(spaceId: string): Promise<void>;
   call<I extends DescMessage, O extends DescMessage>(
     method: DescMethodUnary<I, O>,
     input: UI<MessageInitShape<I>>,
@@ -112,6 +118,9 @@ export interface EventSource {
 export class NativeAdapter implements LaneAdapter {
   readonly mode = "native";
   private info?: StoreInfo;
+  get spaceId() {
+    return this.info?.spaceId;
+  }
   private generation = 0;
   private deletion?: {
     generation: number;
@@ -148,7 +157,7 @@ export class NativeAdapter implements LaneAdapter {
     if (generation !== this.generation)
       throw new Error("The data space changed. Reopen Lane.");
     const info = await new Promise<StoreInfo>((resolve, reject) =>
-      this.module.open(JSON.stringify({ formatVersion: 1, spaceId }), (raw) => {
+      this.module.open(JSON.stringify({ formatVersion: 2, spaceId }), (raw) => {
         try {
           resolve(decodeReply(raw));
         } catch (e) {
@@ -166,11 +175,48 @@ export class NativeAdapter implements LaneAdapter {
         "The host opened a different data space. Navigation was stopped.",
       );
     }
-    if (info.schemaVersion !== 1 || info.formatVersion !== 1)
+    if (info.schemaVersion !== 2 || info.formatVersion !== 2) {
+      await new Promise<void>((resolve) =>
+        this.module.close(info.spaceId, () => resolve()),
+      );
       throw new Error(
         "Update Lane to open this data format. Your data has not been changed.",
       );
+    }
     this.info = info;
+  }
+  async migrate(spaceId: string) {
+    if (!spaceId.trim()) throw new Error("Choose an existing data space ID.");
+    if (!this.module.migrate)
+      throw new Error(
+        "This host does not support explicit migration. Update Lane.",
+      );
+    const previous = this.info;
+    this.info = undefined;
+    this.deletion = undefined;
+    ++this.generation;
+    if (previous)
+      await new Promise<void>((resolve, reject) =>
+        this.module.close(previous.spaceId, (raw) => {
+          try {
+            decodeReply(raw as string | Reply<unknown>);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }),
+      );
+    await new Promise<void>((resolve, reject) =>
+      this.module.migrate!(spaceId.trim(), (raw) => {
+        try {
+          decodeReply(raw);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      }),
+    );
+    await this.open(spaceId.trim());
   }
   private async invoke<T>(method: string, request: unknown): Promise<T> {
     if (!this.info) throw new Error("The local store is not open.");
