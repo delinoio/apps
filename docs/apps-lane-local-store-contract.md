@@ -2,7 +2,7 @@
 
 ## Scope
 
-Planned `apps/lane/native/store` owns the shared SQL schema and native store support. Existing Android, iOS, macOS and Windows hosts own platform Native Module registration and OS integration. Planned `cmds/lane/internal` owns the independent Go adapter to the **same physical database and schema**. These are planned interfaces, not native implementation evidence.
+`apps/lane/native/store` owns the shared SQL schema and native store support. Existing Android, iOS, macOS and Windows hosts own platform Native Module registration and OS integration. `cmds/lane/internal` owns the independent Go adapter to the **same physical database and schema**. These ownership boundaries do not establish native platform acceptance.
 
 ## Runtime and Language
 

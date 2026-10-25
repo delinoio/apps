@@ -19,7 +19,7 @@ Existing paths retain their build ownership:
 - `apps/lane/native/desktop`: macOS and Windows Clay hosts and CMake project.
 - `apps/lane/scripts`: app-local build and development helpers.
 
-The following paths are **planned**, not runtime implementation claims. Create their skeletons before implementation and add explicit workspace membership with runtime code:
+Additional component ownership:
 
 - `apps/lane/native/store`: shared SQLite schema, native store support and bridge domain operations; platform adapters remain in the existing hosts.
 - `cmds/lane`: Go CLI entry point and local stdio MCP.

@@ -6,4 +6,4 @@
 - Keep app-specific build helpers in `scripts/`. Do not commit SDK binaries, generated platform projects, signing material or build output.
 - Run app-local `pnpm test` for frontend changes. Record native build and device acceptance separately.
 
-- Read the [local-store contract](../../docs/apps-lane-local-store-contract.md) and [protocol contract](../../docs/protos-lane-v1-contract.md) for host persistence and cross-language interfaces. Planned `native/store` owns shared SQL and native store support; platform registration remains in each host.
+- Read the [local-store contract](../../docs/apps-lane-local-store-contract.md) and [protocol contract](../../docs/protos-lane-v1-contract.md) for host persistence and cross-language interfaces. `native/store` owns shared SQL and native store support; platform registration remains in each host.
