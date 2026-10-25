@@ -17,7 +17,7 @@ inline void Log(const char* event, const char* state = "", DWORD code = 0) noexc
     if (!identifier(event) || !identifier(state)) return;
     const auto directory = DataRoot() / "logs";
     std::filesystem::create_directories(directory);
-    Handle lock(CreateFileW((directory / "rotation.lock").c_str(), GENERIC_READ | GENERIC_WRITE,
+    Handle lock(CreateFileW((directory / ".rotation.lock").c_str(), GENERIC_READ | GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
     if (!lock) return;
     OVERLAPPED position{};
