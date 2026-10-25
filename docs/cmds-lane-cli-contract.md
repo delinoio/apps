@@ -133,3 +133,23 @@ valid, one-use proof.
 The CLI shares `logs/.rotation.lock` with native writers. POSIX participants take
 an exclusive `flock`; Windows participants take an exclusive `LockFileEx` lock
 on byte zero for length one. Append and retention pruning occur under this lock.
+
+A stale account epoch sets `GetLocalStatus.reconnectRequired` and stops uploads.
+Status also includes the pinned `accountId` and typed `syncErrorReason`. Login or
+an automatic retry does not authorize uploading retained data into a new server
+dataset. A new `sync connect --confirm-epoch-change` invocation explicitly
+confirms that consequence and starts a new browser approval. Without the flag,
+the CLI explains the pending confirmation and does not begin approval. Native
+hosts pass the flag only after the user's reconnect confirmation.
+
+The approval binds the space, account, prior epoch and reconnect intent before
+opening the browser. Callback processing refuses changed local state. It probes
+the prior epoch again: a matching account-deletion directive takes precedence;
+only a typed STALE_EPOCH response permits a confirmed rebuild for the newly
+approved epoch. A first connection that discovers a stale epoch stops and requires
+a new explicit approval. `--account-id` constrains approval to that exact account;
+reconnecting an existing account space also pins its current account identity.
+
+`sync run --retry-blocked` explicitly retries items previously rejected by the
+server. Their original request IDs and immutable versions remain unchanged. It
+does not confirm an epoch change or clear account-deletion state.

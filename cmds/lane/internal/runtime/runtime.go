@@ -43,7 +43,8 @@ func (r *Runtime) Close() {
 		}
 	})
 }
-func (r *Runtime) open(opt cli.Options) (*store.Store, error) {
+func (r *Runtime) open(opt cli.Options) (*store.Store, error) { return r.openMode(opt, false) }
+func (r *Runtime) openMode(opt cli.Options, removal bool) (*store.Store, error) {
 	r.once.Do(func() {
 		root := r.Root
 		if root == "" {
@@ -52,7 +53,11 @@ func (r *Runtime) open(opt cli.Options) (*store.Store, error) {
 				return
 			}
 		}
-		r.db, r.openErr = store.Open(root, opt.Space)
+		if removal {
+			r.db, r.openErr = store.OpenForRemoval(root, opt.Space)
+		} else {
+			r.db, r.openErr = store.Open(root, opt.Space)
+		}
 	})
 	return r.db, r.openErr
 }
@@ -76,7 +81,7 @@ func (r *Runtime) ServeMCP(ctx context.Context, opt cli.Options, in io.Reader, o
 	}, version)
 }
 func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, raw json.RawMessage, kind v1.OriginKind) (result any, err error) {
-	s, e := r.open(opt)
+	s, e := r.openMode(opt, method == "RemoveDeviceData")
 	if e != nil {
 		return nil, e
 	}
@@ -149,10 +154,29 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		if redirect == "" {
 			redirect = "lane://auth/callback"
 		}
-		return r.Auth.Begin(ctx, s.SpaceID(), s.DeviceID(), endpoint, redirect)
+		expected, _ := local["accountId"].(string)
+		if identity.AccountID != "" {
+			if expected != "" && expected != identity.AccountID {
+				return nil, fail("FORBIDDEN", "Reconnect must target the pinned account.")
+			}
+			expected = identity.AccountID
+		}
+		confirm := opt.ConfirmEpochChange
+		if kind == v1.OriginKind_ORIGIN_KIND_MCP {
+			requested, _ := local["accountId"].(string)
+			status, e := syncclient.Status(ctx, s, identity.SyncEnabled, false)
+			if e != nil {
+				return nil, e
+			}
+			confirm = status.ReconnectRequired && requested != "" && requested == identity.AccountID
+		}
+		if confirm && r.Diagnostics != nil {
+			fmt.Fprintln(r.Diagnostics, "Confirmed reconnect: retained local data will be uploaded to the new server dataset after browser approval.")
+		}
+		return r.Auth.BeginStore(ctx, s, endpoint, redirect, expected, confirm)
 	case "SyncCallback":
 		callback, _ := local["callbackUri"].(string)
-		cred, e := r.Auth.Complete(ctx, s.SpaceID(), callback)
+		cred, e := r.Auth.CompleteStore(ctx, s, callback)
 		if e != nil {
 			return nil, e
 		}
@@ -168,6 +192,24 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 			return nil, e
 		}
 		if e = r.Auth.Save(ctx, target.SpaceID(), target.DeviceID(), cred); e != nil {
+			return nil, e
+		}
+		targetIdentity, e := target.Identity(ctx)
+		if e != nil {
+			return nil, e
+		}
+		client, endpoint, e := r.client(ctx, target, targetIdentity, "")
+		if e != nil {
+			return nil, e
+		}
+		e = syncclient.ApprovedReconnect(ctx, target, lanev1connect.NewSyncServiceClient(client, endpoint), cred.AccountID, cred.TenantID, cred)
+		if errors.Is(e, syncclient.ErrAccountDeleted) {
+			if cleanup := r.removeAccount(ctx, target, targetIdentity); cleanup != nil {
+				return nil, cleanup
+			}
+			return nil, e
+		}
+		if e != nil {
 			return nil, e
 		}
 		if identity.AccountID == "" && s.SpaceID() != target.SpaceID() {
@@ -227,7 +269,17 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		if e != nil {
 			return nil, e
 		}
-		w, e := syncclient.NewWorker(s, lanev1connect.NewSyncServiceClient(client, endpoint), syncclient.Options{AccountID: identity.AccountID, TenantID: identity.TenantID, CheckEnabled: func(ctx context.Context) error {
+		if opt.RetryBlocked {
+			if e = syncclient.RetryBlocked(ctx, s); e != nil {
+				return nil, e
+			}
+		}
+		w, e := syncclient.NewWorker(s, lanev1connect.NewSyncServiceClient(client, endpoint), syncclient.Options{AccountID: identity.AccountID, TenantID: identity.TenantID, OnAccountDeleted: func(ctx context.Context) error {
+			if cleanup := r.removeAccount(ctx, s, identity); cleanup != nil {
+				return api.Error(cleanup)
+			}
+			return nil
+		}, CheckEnabled: func(ctx context.Context) error {
 			current, e := s.Identity(ctx)
 			if e != nil {
 				return e
@@ -423,7 +475,15 @@ func classify(err error) error {
 	if err == nil {
 		return nil
 	}
+	var failure *api.Failure
+	if errors.As(err, &failure) {
+		return failure
+	}
 	switch {
+	case errors.Is(err, syncclient.ErrReconnectRequired):
+		return fail("STALE_EPOCH", "Reconnection requires confirmation: retained local data will be uploaded to the new server dataset. Run lane sync connect --confirm-epoch-change for a new browser approval.")
+	case errors.Is(err, syncclient.ErrAccountDeleted):
+		return fail("DELETED", "The server directed account-data deletion. Local data was removed and synchronization stopped.")
 	case errors.Is(err, syncclient.ErrCredentials):
 		return fail("UNAUTHENTICATED", "OS credentials are unavailable. Run lane login and approve the connection again.")
 	case errors.Is(err, syncclient.ErrApproval):
@@ -438,4 +498,14 @@ func classify(err error) error {
 		return fail("STORAGE_BUSY", "Another process owns synchronization. Retry after it exits.")
 	}
 	return err
+}
+
+func (r *Runtime) removeAccount(ctx context.Context, s *store.Store, id store.AccountIdentity) error {
+	if err := s.SetSyncEnabled(ctx, false); err != nil {
+		return err
+	}
+	if err := r.Auth.Delete(ctx, s.SpaceID(), s.DeviceID(), id.Issuer, id.AccountID, id.TenantID); err != nil {
+		return err
+	}
+	return s.RemoveSpace(ctx)
 }

@@ -139,7 +139,7 @@ func Tools() []Tool {
 		s                 schema
 	}{
 		{"GetLocalStatus", "Read selected local space and device synchronization status.", object(map[string]any{})},
-		{"ConnectSync", "Start explicit browser approval for synchronization; accountId is optional for first approval.", object(map[string]any{"accountId": schema{"type": "string"}})},
+		{"ConnectSync", "Start explicit browser approval for synchronization. accountId is optional for first approval. When reconnectRequired is true, a nonempty accountId matching the selected account explicitly confirms uploading retained local data to the new server dataset and starts a new browser approval. Empty or mismatched targets cannot confirm reconnect.", object(map[string]any{"accountId": schema{"type": "string"}})},
 		{"DisconnectSync", "Disconnect synchronization with an explicit retained-local-data choice.", object(map[string]any{"retention": schema{"type": "string", "enum": []string{"LOCAL_RETENTION_KEEP_LOCAL", "LOCAL_RETENTION_REMOVE_LOCAL"}}})},
 		{"RemoveDeviceData", "Permanently remove the selected local space after coordinated handle shutdown; invocation confirms removal.", object(map[string]any{})},
 		{"GetNotificationPreferences", "Read this device's notification preferences and permission.", object(map[string]any{})},

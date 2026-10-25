@@ -17,8 +17,8 @@ import (
 )
 
 type Options struct {
-	Remote, JSON, Once                                 bool
-	Space, ExpectedSpace, Endpoint, RedirectURI, Color string
+	Remote, JSON, Once, ConfirmEpochChange, RetryBlocked bool
+	Space, ExpectedSpace, Endpoint, RedirectURI, Color   string
 }
 type Invoke func(context.Context, Options, string, json.RawMessage) (any, error)
 type App struct {
@@ -34,7 +34,7 @@ var commands = map[string]command{
 	"repository list": {"ListRepositories", "[--page-size N] [--cursor TOKEN]"}, "repository get": {"GetRepository", "ID"}, "repository create": {"CreateRepository", "--url URL [--display-name NAME]"}, "repository edit": {"SaveRepository", "ID --expected-version UUID --url URL [--display-name NAME]"}, "repository delete": {"DeleteRepository", "ID (permanent)"},
 	"task list": {"ListTasks", "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT]"}, "task get": {"GetTask", "ID"}, "task create": {"CreateTask", "--repository-id UUID | --repository-url URL; --title TEXT [--description TEXT] [--prompt TEXT | --prompt-stdin] [--progress STATE] [--proposal STATE]"}, "task edit": {"SaveTask", "ID --expected-version UUID [--title TEXT] [--description TEXT] [--prompt TEXT | --prompt-stdin | --clear-prompt]"}, "task move": {"SaveTask", "ID --expected-version UUID --repository-id UUID"}, "task progress": {"SetProgress", "ID --expected-version UUID --progress STATE"}, "task accept": {"SetProposal", "ID --expected-version UUID"}, "task reject": {"SetProposal", "ID --expected-version UUID"}, "task delete": {"DeleteTask", "ID (permanent)"}, "task history": {"ListHistory", "ID [--page-size N] [--cursor TOKEN]"}, "task prompt-history": {"ListHistory", "ID [--page-size N] [--cursor TOKEN]"}, "task restore-prompt": {"RestorePrompt", "ID --expected-version UUID --source-version UUID"},
 	"conflict list": {"ConflictList", "[--kind task|repository]"}, "conflict get": {"ConflictGet", "ID --kind task|repository"}, "conflict resolve": {"ResolveConflict", "ID --expected-head UUID (repeat for all heads) --resolved-json JSON"},
-	"sync status": {"GetLocalStatus", "(local)"}, "sync connect": {"ConnectSync", "[--redirect-uri URI] [--endpoint URL] (browser approval)"}, "sync callback": {"SyncCallback", "CALLBACK_URI (validates browser state)"}, "sync run": {"SyncRun", "[--once] [--endpoint URL] (local durable worker)"}, "sync disconnect": {"DisconnectSync", "--retention keep-local|remove-local"},
+	"sync status": {"GetLocalStatus", "(local)"}, "sync connect": {"ConnectSync", "[--redirect-uri URI] [--endpoint URL] [--account-id ID] [--confirm-epoch-change] (browser approval)"}, "sync callback": {"SyncCallback", "CALLBACK_URI (validates browser state)"}, "sync run": {"SyncRun", "[--once] [--retry-blocked] [--endpoint URL] (local durable worker)"}, "sync disconnect": {"DisconnectSync", "--retention keep-local|remove-local"},
 	"notification get": {"GetNotificationPreferences", "(per-device)"}, "notification set": {"SetNotificationPreferences", "--enabled true|false [--content detail|generic]"},
 	"device list": {"ListDevices", "--remote"}, "device disconnect": {"DisconnectDevice", "--remote --device-id UUID"}, "connection list": {"ListConnections", "--remote"}, "connection revoke": {"RevokeConnection", "--remote --connection-id UUID"},
 	"receiver list": {"ListReceivers", "--remote [--repository-id UUID]"}, "receiver create": {"CreateReceiver", "--remote --repository-id UUID --name NAME"}, "receiver edit": {"SaveReceiver", "--remote ID --expected-revision N --repository-id UUID --name NAME"}, "receiver rotate-key": {"RotateReceiverKey", "--remote ID --expected-revision N"}, "receiver delete": {"DeleteReceiver", "--remote ID (retains events)"},
@@ -69,7 +69,7 @@ func (a App) Run(ctx context.Context, args []string) int {
 func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) {
 	flags := map[string][]string{}
 	var words []string
-	bools := map[string]bool{"json": true, "remote": true, "once": true, "help": true, "version": true, "prompt-stdin": true, "clear-prompt": true}
+	bools := map[string]bool{"json": true, "remote": true, "once": true, "help": true, "version": true, "prompt-stdin": true, "clear-prompt": true, "confirm-epoch-change": true, "retry-blocked": true}
 	for i := 0; i < len(args); i++ {
 		x := args[i]
 		if x == "-h" {
@@ -104,6 +104,8 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 	opt.JSON = pop("json") == "true"
 	opt.Remote = pop("remote") == "true"
 	opt.Once = pop("once") == "true"
+	opt.ConfirmEpochChange = pop("confirm-epoch-change") == "true"
+	opt.RetryBlocked = pop("retry-blocked") == "true"
 	opt.Space = pop("space")
 	opt.ExpectedSpace = pop("expected-space")
 	opt.Endpoint = pop("endpoint")
@@ -138,6 +140,12 @@ func (a App) run(ctx context.Context, args []string, opt *Options) (int, error) 
 		return 2, errors.New("unknown command; use --help")
 	}
 	pos := words[n:]
+	if opt.ConfirmEpochChange && cmd.method != "ConnectSync" {
+		return 2, errors.New("--confirm-epoch-change requires sync connect or login")
+	}
+	if opt.RetryBlocked && cmd.method != "SyncRun" {
+		return 2, errors.New("--retry-blocked requires sync run")
+	}
 	if cmd.method == "MCP" {
 		if len(pos) != 0 || len(flags) != 0 {
 			return 2, errors.New("unexpected MCP argument")

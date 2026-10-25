@@ -4,6 +4,7 @@ package runtime
 import (
 	"connectrpc.com/connect"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/delinoio/apps/cmds/lane/internal/cli"
 	"github.com/delinoio/apps/cmds/lane/internal/store"
@@ -106,5 +107,58 @@ func TestBrowserDeletionRequiresSeparateProofAndKeepsLocal(t *testing.T) {
 	}
 	if _, e = store.Open(root, account.SpaceID()); e != nil {
 		t.Fatal("retained space missing", e)
+	}
+}
+
+func TestReconnectRequiresNewExplicitConsent(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	local, e := store.Open(root, "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer local.Close()
+	account, e := local.SelectAccount(ctx, "https://issuer.example", "account", "tenant")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer account.Close()
+	if e = account.WithWrite(ctx, func(c *sql.Conn) error {
+		_, e := c.ExecContext(ctx, "INSERT OR REPLACE INTO store_meta(key,value) VALUES('account_epoch',?),('reconnect_required','1'),('sync_error_reason','ERROR_REASON_STALE_EPOCH')", store.NewID())
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	keys := &vault{values: map[string]string{}}
+	r := &Runtime{Root: root, Auth: syncclient.Auth{Credentials: keys}}
+	defer r.Close()
+	_, e = r.Invoke(ctx, cli.Options{}, "ConnectSync", json.RawMessage(`{}`))
+	if e == nil || len(keys.values) != 0 {
+		t.Fatal("ordinary connect started reconnect", e)
+	}
+	_, e = r.invoke(ctx, cli.Options{}, "ConnectSync", json.RawMessage(`{}`), v1.OriginKind_ORIGIN_KIND_MCP)
+	if e == nil || len(keys.values) != 0 {
+		t.Fatal("untargeted MCP confirmed reconnect", e)
+	}
+	_, e = r.invoke(ctx, cli.Options{}, "ConnectSync", json.RawMessage(`{"accountId":"other"}`), v1.OriginKind_ORIGIN_KIND_MCP)
+	if e == nil || len(keys.values) != 0 {
+		t.Fatal("wrong account confirmed reconnect", e)
+	}
+	result, e := r.Invoke(ctx, cli.Options{ConfirmEpochChange: true}, "ConnectSync", json.RawMessage(`{"accountId":"account"}`))
+	if e != nil || len(keys.values) != 1 {
+		t.Fatal(result, e, len(keys.values))
+	}
+	identity, e := account.Identity(ctx)
+	if e != nil || identity.SyncEnabled {
+		t.Fatal("approval start enabled sync before browser completion", identity, e)
+	}
+	// Abandoning the browser leaves durable data and the reconnect requirement intact.
+	result, e = r.Invoke(ctx, cli.Options{}, "GetLocalStatus", json.RawMessage(`{}`))
+	if e != nil {
+		t.Fatal(e)
+	}
+	status := result.(syncclient.LocalStatus)
+	if !status.ReconnectRequired || status.AccountID != "account" {
+		t.Fatal(status)
 	}
 }

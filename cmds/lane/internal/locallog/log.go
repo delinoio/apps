@@ -2,6 +2,7 @@
 package locallog
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -36,9 +37,11 @@ func Record(ctx context.Context, root, operation, reason, correlationID string) 
 	if err != nil {
 		return err
 	}
-	logger := slog.New(slog.NewJSONHandler(f, nil))
+	var encoded bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&encoded, nil))
 	logger.InfoContext(ctx, "operation", slog.String("operation", operation), slog.String("reason", reason), slog.String("correlationId", correlationID))
-	err = f.Close()
+	_, writeErr := f.Write(encoded.Bytes())
+	err = errors.Join(writeErr, f.Close())
 	if err != nil {
 		return err
 	}
