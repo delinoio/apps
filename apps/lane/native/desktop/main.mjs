@@ -43,6 +43,9 @@ function showWindow() {
     height: 820,
     title: "Lane",
     resizable: true,
+    ...(process.platform === "win32"
+      ? { icon: join(resources, "Lane.ico") }
+      : {}),
   });
   window.on("focus", () => runControl("resume"));
   window.on("closed", () => {
@@ -189,20 +192,8 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
         ]),
       );
       if (process.platform === "win32") {
-        // A small code-owned tray mark needs no extra binary asset.
-        const pixels = Buffer.alloc(16 * 16 * 4);
-        for (let y = 0; y < 16; y++)
-          for (let x = 0; x < 16; x++) {
-            const white =
-              (x >= 4 && x <= 6 && y >= 3 && y <= 12) ||
-              (y >= 10 && y <= 12 && x >= 4 && x <= 12);
-            pixels.set(
-              white ? [255, 255, 255, 255] : [235, 99, 37, 255],
-              (y * 16 + x) * 4,
-            );
-          }
         tray = new Tray(
-          nativeImage.createFromBitmap(pixels, { width: 16, height: 16 }),
+          nativeImage.createFromPath(join(resources, "Lane.ico")),
         );
         tray.setToolTip("Lane");
         tray.setContextMenu(

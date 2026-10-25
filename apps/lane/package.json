@@ -25,7 +25,7 @@
     "@delino/protos": "workspace:*",
     "@lynx-js/react": "0.129.0",
     "@lynx-js/web-core": "0.26.5",
-    "markdown-it": "14.1.0",
+    "markdown-it": "14.3.3",
     "text-encoding-utf-8": "1.0.2"
   },
   "devDependencies": {

@@ -96,6 +96,14 @@ try {
       join(resources, "lane_host.node"),
     );
     if (process.platform === "win32") {
+      run(join(binaryRoot, "LaneIcon.exe"), [
+        executable,
+        join(root, "native/desktop/windows/Lane.ico"),
+      ]);
+      cpSync(
+        join(root, "native/desktop/windows/Lane.ico"),
+        join(resources, "Lane.ico"),
+      );
       cpSync(
         join(binaryRoot, "Microsoft.WindowsAppRuntime.Bootstrap.dll"),
         join(resources, "Microsoft.WindowsAppRuntime.Bootstrap.dll"),
@@ -185,11 +193,16 @@ try {
         }),
       );
     if (process.platform === "darwin") {
+      cpSync(
+        join(root, "native/desktop/macos/Lane.icns"),
+        join(app, "Contents/Resources/Lane.icns"),
+      );
       const plist = join(app, "Contents/Info.plist");
       for (const [key, value] of Object.entries({
         CFBundleIdentifier: "io.delino.lane",
         CFBundleName: "Lane",
         CFBundleDisplayName: "Lane",
+        CFBundleIconFile: "Lane.icns",
         LaneURLScheme: scheme,
         CFBundleURLTypes: [
           { CFBundleURLName: "io.delino.lane", CFBundleURLSchemes: [scheme] },
