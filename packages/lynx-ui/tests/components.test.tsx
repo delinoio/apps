@@ -11,6 +11,7 @@ import {
   Theme,
   UIProvider,
 } from "../src";
+import { installWebSupport } from "../src/web";
 
 afterEach(cleanup);
 describe("actions", () => {
@@ -60,7 +61,7 @@ describe("actions", () => {
     },
   );
 });
-it("selects enabled tabs and replaces the visible panel", () => {
+it("maps the selected tab panel and updates it with controlled selection", async () => {
   const change = rstest.fn();
   const items = [
     { value: "a", label: "First", content: <text>Panel A</text> },
@@ -75,18 +76,83 @@ it("selects enabled tabs and replaces the visible panel", () => {
   const { container, rerender } = render(
     <Tabs value="a" onValueChange={change} label="Sections" items={items} />,
   );
-  const tabs = container.querySelectorAll(
-    '[accessibility-role-description="tab"]',
-  );
-  fireEvent.tap(tabs[1]!);
-  expect(change).not.toHaveBeenCalled();
-  fireEvent.tap(tabs[2]!);
-  expect(change).toHaveBeenCalledWith("c");
-  rerender(
-    <Tabs value="c" onValueChange={change} label="Sections" items={items} />,
-  );
-  expect(container.textContent).toContain("Panel C");
-  expect(container.textContent).not.toContain("Panel A");
+  const dispose = installWebSupport(container);
+  try {
+    const tabs = container.querySelectorAll('[role="tab"]');
+    expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(tabs[1]?.getAttribute("aria-disabled")).toBe("true");
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+    expect(container.querySelector('[role="tabpanel"]')?.textContent).toBe(
+      "Panel A",
+    );
+    expect(
+      container.querySelector('[role="tabpanel"]')?.getAttribute("aria-label"),
+    ).toBe("First");
+
+    fireEvent.tap(tabs[1]!);
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.tap(tabs[2]!);
+    expect(change).toHaveBeenCalledWith("c");
+    rerender(
+      <Tabs value="c" onValueChange={change} label="Sections" items={items} />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+    expect(container.querySelector('[role="tabpanel"]')?.textContent).toBe(
+      "Panel C",
+    );
+    expect(
+      container.querySelector('[role="tabpanel"]')?.getAttribute("aria-label"),
+    ).toBe("Last");
+    expect(container.textContent).not.toContain("Panel A");
+    expect(
+      container
+        .querySelectorAll('[role="tab"]')[2]
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    rerender(
+      <Tabs
+        value="c"
+        onValueChange={change}
+        label="Sections"
+        items={[...items.slice(0, 2), { ...items[2], label: "Final" }]}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      container.querySelector('[role="tabpanel"]')?.getAttribute("aria-label"),
+    ).toBe("Final");
+    rerender(
+      <Tabs
+        value="c"
+        onValueChange={change}
+        label="Sections"
+        items={[...items.slice(0, 2), { ...items[2], label: "" }]}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      container.querySelector('[role="tabpanel"]')?.hasAttribute("aria-label"),
+    ).toBe(false);
+
+    rerender(
+      <Tabs value="b" onValueChange={change} label="Sections" items={items} />,
+    );
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+    rerender(
+      <Tabs
+        value="missing"
+        onValueChange={change}
+        label="Sections"
+        items={items}
+      />,
+    );
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+  } finally {
+    dispose();
+  }
 });
 it("changes theme without losing child state and clamps progress", () => {
   const { container, rerender } = render(

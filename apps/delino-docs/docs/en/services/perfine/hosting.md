@@ -1,6 +1,6 @@
 # Private hosted spaces and uploads
 
-Local operation requires no account. Optional hosting at [perfine.delino.io](https://perfine.delino.io) uses your Delcore personal or organization space and Logto sign-in. There is no separate Perfine membership system or CLI browser-login command.
+Local operation requires no account. The optional hosted API at `https://perfine.api.delino.io` uses your Delcore personal or organization space and Logto sign-in. There is no separate Perfine membership system or CLI browser-login command.
 
 ## Independent permissions
 
@@ -21,11 +21,11 @@ Hosting accepts eligible measurements, metadata, profiles, and correctness resul
 
 Raw profiles or test logs can contain source snippets only if a manager approved those artifact types for that repository before the run. Consent applies to subsequent runs. Revocation blocks new raw uploads, including uploads from previously approved runs. Source consent never permits credentials or secrets: remove them or reject the upload. Keep ineligible originals locally or on GitHub, and disclose missing hosted evidence.
 
-AI credentials stay with your locally authenticated AI CLI. For a future eligible cloud adapter, supported unattended authentication must remain entirely inside your repository's Actions environment. Perfine's server never receives, proxies, or stores AI credentials. Neither dashboard configuration nor upload envelopes accept agent authentication configuration. Candidate build/test/measurement receives no AI or publication credentials.
+AI credentials stay with your locally authenticated AI CLI. For a future eligible cloud adapter, supported unattended authentication must remain entirely inside your repository's Actions environment. Perfine's server never receives, proxies, or stores AI credentials. Upload envelopes do not accept agent authentication configuration. Candidate build/test/measurement receives no AI or publication credentials.
 
 ## Upload and manual resend
 
-The CLI builds the evidence bundle, normalized observations, raw artifact references, and manifest checksum from the retained local experiment. You do not need to prepare an upload envelope. Upload is explicit; a local run does not automatically appear in the dashboard.
+The CLI builds the evidence bundle, normalized observations, raw artifact references, and manifest checksum from the retained local experiment. You do not need to prepare an upload envelope. Upload is explicit; a local run is not automatically uploaded to hosting.
 
 Set `DELCORE_API_KEY` securely in your local environment with the exact space and Perfine experiment grant. With UUID v7 request, experiment, space, and connection IDs, run:
 

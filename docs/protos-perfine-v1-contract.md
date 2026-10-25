@@ -10,7 +10,7 @@ Protobuf and Connect RPC. Generate server Rust bindings through the existing ser
 
 ## Users and Operators
 
-CLI/MCP clients, dashboard, Action uploader, API, and external protocol consumers.
+CLI/MCP clients, Action uploader, API, and external protocol consumers.
 
 ## Interfaces and Contracts
 
@@ -36,13 +36,13 @@ Responses and errors expose request IDs. Structured logs must not expose API key
 
 ## Build and Test
 
-With schemas implemented, run root `pnpm proto:lint`, `pnpm proto:generate`, generation freshness checks, and `node protos/scripts/check-breaking.mjs "<comparison-revision>"`. Run affected Go vet/tests/consumer builds and Rust/frontend consumers under the repository boundary contract. Test unsupported majors, additive compatibility, malformed messages, cursor pagination, identifiers, immutable inputs, missing limits, manifest completeness, and separated execution/verdict state.
+With schemas implemented, run root `pnpm proto:lint`, `pnpm proto:generate`, generation freshness checks, and `node protos/scripts/check-breaking.mjs "<comparison-revision>"`. Run affected Go vet/tests/consumer builds and Rust consumers under the repository boundary contract. Test unsupported majors, additive compatibility, malformed messages, cursor pagination, identifiers, immutable inputs, missing limits, manifest completeness, and separated execution/verdict state.
 
 Automated verification is the first-release gate. Follow the acceptance criteria and test scenarios in the [project index](project-perfine.md). Record source revision, commands, results, and unperformed checks in PR/CI evidence. Fixtures, mocked integrations, builds, and packaging do not establish live or native acceptance.
 
 ## Dependencies and Integrations
 
-[Engine contract](crates-perfine-core-contract.md), [Cli contract](cmds-perfine-cli-contract.md), [Api contract](servers-perfine-api-contract.md), [Web contract](apps-perfine-web-contract.md), and [repository boundary](repository-boundary-contract.md).
+[Engine contract](crates-perfine-core-contract.md), [Cli contract](cmds-perfine-cli-contract.md), [Api contract](servers-perfine-api-contract.md), and [repository boundary](repository-boundary-contract.md).
 
 ## Change Triggers
 

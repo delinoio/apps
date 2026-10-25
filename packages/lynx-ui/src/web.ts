@@ -8,10 +8,19 @@
 export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
   const patched = new Map<HTMLElement, PropertyDescriptor | undefined>();
   const blocked = new Map<HTMLElement, boolean>();
+  const registry = root.ownerDocument.defaultView?.customElements;
+  const pendingInputs = new Set<HTMLElement>();
+  let waitingForInputDefinition = false;
+  let disposed = false;
   const set = (element: Element, name: string, value: string) => {
     if (element.getAttribute(name) !== value) element.setAttribute(name, value);
   };
   const synchronize = () => {
+    if (disposed) return;
+    for (const element of pendingInputs) {
+      if (!root.contains(element) || !element.classList.contains("lui-input"))
+        pendingInputs.delete(element);
+    }
     const modal = root.querySelector<HTMLElement>(".lui-dialog");
     const outsideNodes = new Set<HTMLElement>();
     let ancestor: Element | null = modal;
@@ -33,7 +42,7 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
       element.inert = true;
     }
     for (const element of root.querySelectorAll<HTMLElement>(
-      ".lui-button, .lui-toggle, .lui-tab, .lui-input, .lui-progress, .lui-dialog, .lui-tabs, .lui-alert",
+      ".lui-button, .lui-toggle, .lui-tab, .lui-tab-panel, .lui-input, .lui-progress, .lui-dialog, .lui-tabs, .lui-alert",
     )) {
       const disabled = element.classList.contains("lui-disabled");
       const isInput = element.classList.contains("lui-input");
@@ -74,16 +83,76 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
             : "checkbox"
           : element.classList.contains("lui-tab")
             ? "tab"
-            : element.classList.contains("lui-tabs")
-              ? "tablist"
-              : element.classList.contains("lui-progress")
-                ? "progressbar"
-                : element.classList.contains("lui-dialog")
-                  ? "dialog"
-                  : element.classList.contains("lui-alert")
-                    ? "alert"
-                    : "textbox";
+            : element.classList.contains("lui-tab-panel")
+              ? "tabpanel"
+              : element.classList.contains("lui-tabs")
+                ? "tablist"
+                : element.classList.contains("lui-progress")
+                  ? "progressbar"
+                  : element.classList.contains("lui-dialog")
+                    ? "dialog"
+                    : element.classList.contains("lui-alert")
+                      ? "alert"
+                      : "textbox";
       // XInput owns the actual focusable HTML input inside its shadow tree.
+      if (
+        isInput &&
+        element.localName === "x-input" &&
+        !element.shadowRoot?.querySelector("input")
+      ) {
+        if (registry?.get("x-input")) {
+          registry.upgrade(element);
+        } else if (registry) {
+          // Web-core can attach XInput after the outer tree is ready. Recheck
+          // only live hosts here until upstream forwards these semantics on upgrade.
+          pendingInputs.add(element);
+          if (!waitingForInputDefinition) {
+            waitingForInputDefinition = true;
+            void registry.whenDefined("x-input").then(() => {
+              if (disposed) return;
+              let hasLiveInput = false;
+              for (const pending of pendingInputs) {
+                if (
+                  root.contains(pending) &&
+                  pending.classList.contains("lui-input")
+                ) {
+                  registry.upgrade(pending);
+                  // The pinned XInput does not consume default-value on upgrade.
+                  // Replay the current rendered value only for this live host.
+                  const value = pending.getAttribute("default-value");
+                  const input = pending.shadowRoot?.querySelector("input");
+                  if (value !== null && input && input.value !== value) {
+                    try {
+                      const setValue = (
+                        pending as HTMLElement & {
+                          setValue?: (params: { value: string }) => void;
+                        }
+                      ).setValue;
+                      if (typeof setValue === "function")
+                        setValue.call(pending, { value });
+                      else
+                        console.error("lynx-ui.host-method-failed", {
+                          method: "setValue",
+                          code: 3,
+                        });
+                    } catch {
+                      console.error("lynx-ui.host-method-failed", {
+                        method: "setValue",
+                        code: 4,
+                      });
+                    }
+                  }
+                  hasLiveInput = true;
+                }
+              }
+              pendingInputs.clear();
+              if (hasLiveInput) synchronize();
+            });
+          }
+        }
+      } else {
+        pendingInputs.delete(element);
+      }
       const target = isInput
         ? (element.shadowRoot?.querySelector("input") ?? element)
         : element;
@@ -208,6 +277,8 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
   root.addEventListener("keydown", onKey, true);
   synchronize();
   return () => {
+    disposed = true;
+    pendingInputs.clear();
     observer.disconnect();
     root.removeEventListener("keydown", onKey, true);
     for (const [element, descriptor] of patched) {

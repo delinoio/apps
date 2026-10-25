@@ -4,11 +4,12 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, jwk::JwkSet};
 use serde_json::{Value, json};
 use server_common::authority::{Authority, TenantState, bounded_json};
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 pub struct Actions {
     http: reqwest::Client,
     jwks_url: String,
     keys: RwLock<(JwkSet, Instant)>,
+    refresh_lock: Mutex<()>,
 }
 impl Actions {
     pub fn new(http: reqwest::Client, jwks_url: String, keys: JwkSet) -> Self {
@@ -16,6 +17,7 @@ impl Actions {
             http,
             jwks_url,
             keys: RwLock::new((keys, Instant::now())),
+            refresh_lock: Mutex::new(()),
         }
     }
     pub async fn discover() -> anyhow::Result<Self> {
@@ -51,6 +53,7 @@ impl Actions {
             http,
             jwks_url,
             keys: RwLock::new((serde_json::from_value(keys)?, Instant::now())),
+            refresh_lock: Mutex::new(()),
         })
     }
     pub async fn verify(&self, raw: &str) -> Result<Value> {
@@ -59,22 +62,26 @@ impl Actions {
             return Err(Fault::denied());
         }
         let kid = header.kid.ok_or_else(Fault::denied)?;
-        let read = self.keys.read().await;
-        if read.1.elapsed() > Duration::from_secs(300) || read.0.find(&kid).is_none() {
-            drop(read);
-            let mut keys = self.keys.write().await;
-            if keys.1.elapsed() > Duration::from_secs(300) || keys.0.find(&kid).is_none() {
+        let needs_refresh = {
+            let keys = self.keys.read().await;
+            keys.1.elapsed() > Duration::from_secs(300) || keys.0.find(&kid).is_none()
+        };
+        if needs_refresh {
+            // Serialize refreshes separately from the key cache. A key in the fresh
+            // cache stays usable while the provider is slow; cancellation keeps it.
+            let _refresh = self.refresh_lock.lock().await;
+            let needs_refresh = {
+                let keys = self.keys.read().await;
+                keys.1.elapsed() > Duration::from_secs(300) || keys.0.find(&kid).is_none()
+            };
+            if needs_refresh {
                 let response = self.http.get(&self.jwks_url).send().await?;
                 if !response.status().is_success() {
                     return Err(Fault::unavailable());
                 }
-                *keys = (
-                    serde_json::from_value(bounded_json(response, 256 << 10).await?)?,
-                    Instant::now(),
-                );
+                let fresh = serde_json::from_value(bounded_json(response, 256 << 10).await?)?;
+                *self.keys.write().await = (fresh, Instant::now());
             }
-        } else {
-            drop(read)
         }
         let keys = self.keys.read().await;
         let key = keys.0.find(&kid).ok_or_else(Fault::denied)?;

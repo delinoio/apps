@@ -49,7 +49,7 @@ Keep per-host Docker measurement, comparison, resume/cancel and authentication c
 ### AI authentication and isolated execution
 
 - Cloud AI authentication occurs entirely inside the user's repository's GitHub Actions using their configured GitHub Secrets and an officially supported unattended authentication method.
-- The Perfine server must never receive, proxy, or store user AI credentials. Do not provide AI credential fields in the dashboard or server API. Local operation uses each local AI CLI's own authentication.
+- The Perfine server must never receive, proxy, or store user AI credentials. Do not provide AI credential fields in the server API. Local operation uses each local AI CLI's own authentication.
 - Separate AI agent execution, candidate build/test/measurement, evidence upload, and GitHub publication privileges. Candidate code runs in an isolated environment without AI or GitHub publication credentials. Apply credential non-inheritance locally as well; declare required dependency/network access.
 - Only enable cloud tools whose official unattended authentication/execution support is established. Unsupported tools show the reason and local alternative. If none qualify, ship cloud execution unavailable with explicit mock-only integration evidence; lack of an eligible cloud tool does not itself block this first release.
 - BYOS is not permission to export a local subscription token or use an unsupported provider authentication path.

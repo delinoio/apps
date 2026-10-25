@@ -75,18 +75,45 @@ export function Input({
 }: InputProps) {
   const focus = useControlFocus(disabled, FocusKind.Input, focusRef, autoFocus);
   const environment = useEnvironment();
+  const environmentRef = useRef(environment);
+  environmentRef.current = environment;
   const nativeValue = useRef<string | null>(null);
+  const pendingWrite = useRef<{ id: number; value: string } | null>(null);
+  const nextWriteId = useRef(0);
+  const inputVersion = useRef(0);
   const [edit, setEdit] = useState(0);
   // Lynx input is initialized by default-value. Later controlled updates require
   // setValue; avoid resetting selection when the parent accepts a native edit.
   // Keep this bridge until Lynx exposes a controlled value attribute on all hosts.
   useEffect(() => {
-    if (nativeValue.current !== value) {
-      invoke(focus.node.current, "setValue", { value }, environment);
-      nativeValue.current = value;
-    }
-  }, [value, edit, environment]);
+    const node = focus.node.current;
+    const pending = pendingWrite.current;
+    const hasConflictingPendingWrite =
+      pending !== null && pending.value !== value;
+    if (!node || (nativeValue.current === value && !hasConflictingPendingWrite))
+      return;
+    let active = true;
+    const version = inputVersion.current;
+    const writeId = ++nextWriteId.current;
+    pendingWrite.current = { id: writeId, value };
+    invoke(node, "setValue", { value }, environmentRef.current, () => {
+      // A failed or superseded request must not mark the current host as synced.
+      if (
+        active &&
+        focus.node.current === node &&
+        inputVersion.current === version &&
+        pendingWrite.current?.id === writeId
+      ) {
+        nativeValue.current = value;
+        pendingWrite.current = null;
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [value, edit]);
   const onInput: NativeInputProps["bindinput"] = (event) => {
+    inputVersion.current += 1;
     nativeValue.current = event.detail.value;
     if (!disabled && !readOnly) onValueChange(event.detail.value);
     setEdit((previous) => previous + 1);
