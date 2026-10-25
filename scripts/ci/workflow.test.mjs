@@ -505,6 +505,9 @@ test("Rust server matrix gates allocation and preserves independent evidence", (
   assert.equal(job.if, "needs.changes.outputs.rust_servers != '[]'");
   assert.equal(job.needs, "changes");
   assert.equal(job.env.TEST_DATABASE_URL, undefined);
+  const integration = job.steps.find((step) => step.id === "integration");
+  assert.equal(integration["timeout-minutes"], 10);
+  assert.match(integration.run, /--ignored --nocapture/u);
   assert.ok(
     job.steps
       .find((step) => step.id === "integration")

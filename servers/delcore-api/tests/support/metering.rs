@@ -642,9 +642,6 @@ async fn corrections_keep_existing_admission_identities_below_lowered_bounds() {
         let rejected = state.ingest("k7", identity(7, "0")).await.unwrap_err();
         assert_eq!(rejected.reason, CARDINALITY_EXCEEDED, "{aggregation}");
         f.process_metering().await;
-        // The worker's empty-queue probe leaves its rollback pending until the pool reuses
-        // that connection; run a query so the fixture schema can be dropped.
-        let _ = admission(&f).await;
     }
 }
 
