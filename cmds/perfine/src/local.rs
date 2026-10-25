@@ -181,20 +181,41 @@ struct Attempt {
     #[serde(default)]
     finished: bool,
 }
-// Finish admitted work before consuming another candidate/concurrency slot, even
-// when the provider repeats a retained hypothesis after a new proposal.
-fn prioritize_retained(
-    retained: impl IntoIterator<Item = Hypothesis>,
-    fresh: Vec<Hypothesis>,
-) -> Result<Vec<Hypothesis>> {
-    let mut seen = std::collections::BTreeSet::new();
-    let mut ordered = Vec::new();
-    for hypothesis in retained.into_iter().chain(fresh) {
-        if seen.insert(fingerprint(&hypothesis)?) {
-            ordered.push(hypothesis);
-        }
+// Proposal generation is lazy: an unrelated slow or failing provider must not
+// consume the recovery deadline of an already-admitted candidate.
+struct Hypotheses {
+    pending: std::collections::VecDeque<Hypothesis>,
+    seen: std::collections::BTreeSet<Fingerprint>,
+    proposed: bool,
+}
+impl Hypotheses {
+    fn new(retained: impl IntoIterator<Item = Hypothesis>) -> Result<Self> {
+        let mut schedule = Self {
+            pending: std::collections::VecDeque::new(),
+            seen: std::collections::BTreeSet::new(),
+            proposed: false,
+        };
+        schedule.extend(retained)?;
+        Ok(schedule)
     }
-    Ok(ordered)
+    fn extend(&mut self, hypotheses: impl IntoIterator<Item = Hypothesis>) -> Result<()> {
+        for hypothesis in hypotheses {
+            if self.seen.insert(fingerprint(&hypothesis)?) {
+                self.pending.push_back(hypothesis);
+            }
+        }
+        Ok(())
+    }
+    fn next(
+        &mut self,
+        propose: impl FnOnce() -> Result<Vec<Hypothesis>>,
+    ) -> Result<Option<Hypothesis>> {
+        if self.pending.is_empty() && !self.proposed {
+            self.proposed = true;
+            self.extend(propose()?)?;
+        }
+        Ok(self.pending.pop_front())
+    }
 }
 
 // Expired attempts consume their original slot and keep their evidence, but must
@@ -766,32 +787,27 @@ impl App {
             )?;
             let ctx = ExecutionContext {
                 workspace: &base_request.workspace,
-                deadline_unix_seconds: journal
-                    .attempts
-                    .values()
-                    .filter(|a| !a.finished)
-                    .map(|a| a.deadline)
-                    .chain(std::iter::once(deadline))
-                    .max()
-                    .unwrap_or(deadline),
+                deadline_unix_seconds: deadline,
                 cancellation: &signal,
             };
-            let fresh = if now() < deadline
-                && journal.attempts.len() < cfg.experiment.limits.candidate_count as usize
-            {
-                agent.propose(&profile, &ctx)?
-            } else {
-                Vec::new()
-            };
-            let hypotheses = prioritize_retained(
+            let mut hypotheses = Hypotheses::new(
                 journal
                     .attempts
                     .values()
                     .filter(|a| !a.finished)
                     .filter_map(|a| a.hypothesis.clone()),
-                fresh,
             )?;
-            for hypothesis in hypotheses {
+            while let Some(hypothesis) = hypotheses.next(|| {
+                if now() < deadline
+                    && signal.state() == Cancellation::Continue
+                    && !engine.status(&id)?.stop_requested
+                    && journal.attempts.len() < cfg.experiment.limits.candidate_count as usize
+                {
+                    agent.propose(&profile, &ctx).map_err(Into::into)
+                } else {
+                    Ok(Vec::new())
+                }
+            })? {
                 let current = engine.status(&id)?;
                 let hypothesis_hash = fingerprint(&hypothesis)?;
                 let prior = journal.attempts.get(&hypothesis_hash).cloned();
@@ -1378,17 +1394,37 @@ mod tests {
         let retained = hypothesis("retained");
         let fresh = hypothesis("fresh");
         for proposals in [vec![fresh.clone(), retained.clone()], vec![fresh.clone()]] {
-            let ordered = prioritize_retained([retained.clone()], proposals).unwrap();
-            assert_eq!(ordered.len(), 2);
+            let mut schedule = Hypotheses::new([retained.clone()]).unwrap();
+            let first = schedule
+                .next(|| panic!("provider must not run before recovery"))
+                .unwrap()
+                .unwrap();
             assert_eq!(
-                fingerprint(&ordered[0]).unwrap(),
+                fingerprint(&first).unwrap(),
                 fingerprint(&retained).unwrap()
             );
-            assert_eq!(
-                fingerprint(&ordered[1]).unwrap(),
-                fingerprint(&fresh).unwrap()
+            let second = schedule.next(|| Ok(proposals)).unwrap().unwrap();
+            assert_eq!(fingerprint(&second).unwrap(), fingerprint(&fresh).unwrap());
+            assert!(
+                schedule
+                    .next(|| panic!("provider must run only once"))
+                    .unwrap()
+                    .is_none()
             );
         }
+    }
+    #[test]
+    fn retained_candidate_is_available_before_provider_failure() {
+        use super::*;
+        let retained = Hypothesis {
+            explanation: Name::new("retained").unwrap(),
+            source_paths: std::collections::BTreeSet::from([Name::new("src/hot.c").unwrap()]),
+            profile_evidence: vec![digest(b"profile")],
+        };
+        let mut schedule = Hypotheses::new([retained]).unwrap();
+        let unavailable = || Err(anyhow::anyhow!("provider unavailable"));
+        assert!(schedule.next(unavailable).unwrap().is_some());
+        assert!(schedule.next(unavailable).is_err());
     }
     #[test]
     fn manual_workflow_matches_distribution_inputs_and_preserves_inline_config() {

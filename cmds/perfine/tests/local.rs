@@ -302,19 +302,35 @@ fn publication_reconciles_lost_response(
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
 fn interrupted_candidate_resumes_same_workspace_without_duplicate_candidate() {
-    interrupted_candidate_resume(false, false);
+    interrupted_candidate_resume(false, false, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
 fn interrupted_implementation_resumes_original_admission() {
-    interrupted_candidate_resume(true, false);
+    interrupted_candidate_resume(true, false, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
 fn admitted_candidate_resumes_after_start_deadline() {
-    interrupted_candidate_resume(false, true);
+    interrupted_candidate_resume(false, true, false);
 }
-fn interrupted_candidate_resume(before_admission: bool, expire_start: bool) {
+#[test]
+#[ignore = "requires provisioned measurement and mock-agent Docker images"]
+fn retained_candidate_finishes_before_fresh_provider_failure() {
+    interrupted_candidate_resume(false, false, true);
+}
+fn failing_provider(config: &mut Value, root: &Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let fail_marker = root.join("fail-agent");
+    config["experiment"]["limits"]["candidate_count"] = json!(2);
+    let wrapper = root.join("docker-wrapper");
+    let docker = config["agent"]["docker"]["executable"].as_str().unwrap();
+    fs::write(&wrapper, format!("#!/bin/sh\ncase \"$*\" in *mock-agent*) if [ -f '{}' ]; then echo 'fixture provider unavailable' >&2; exit 42; fi;; esac\nexec '{}' \"$@\"\n", fail_marker.display(), docker)).unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+    config["agent"]["docker"]["executable"] = json!(wrapper);
+    fail_marker
+}
+fn interrupted_candidate_resume(before_admission: bool, expire_start: bool, fail_fresh: bool) {
     use std::{
         process::Stdio,
         thread,
@@ -323,6 +339,8 @@ fn interrupted_candidate_resume(before_admission: bool, expire_start: bool) {
     let (temp, mut config) = setup("pass");
     let repo = temp.path().join("repo");
     config["experiment"]["limits"]["candidate_duration_seconds"] = json!(240);
+    let fail_marker = fail_fresh.then(|| failing_provider(&mut config, temp.path()));
+
     if expire_start {
         config["experiment"]["limits"]["start_duration_seconds"] = json!(60);
     }
@@ -391,13 +409,18 @@ fn interrupted_candidate_resume(before_admission: bool, expire_start: bool) {
     if expire_start {
         wait_for_start_deadline(&repo, &id);
     }
+    if let Some(marker) = fail_marker {
+        fs::write(marker, "fail").unwrap();
+    }
     let resumed = run(&repo, &["resume", "--experiment", id.as_str()]);
-    assert!(
+    assert_eq!(
         resumed.status.success(),
+        !fail_fresh,
         "{}",
         String::from_utf8_lossy(&resumed.stdout)
     );
-    let v: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    let status = run(&repo, &["status", "--experiment", id.as_str()]);
+    let v: Value = serde_json::from_slice(&status.stdout).unwrap();
     let candidates = v["result"]["experiment"]["candidates"].as_object().unwrap();
     assert_eq!(candidates.len(), 1);
     let completed = &candidates[&candidate.0];
