@@ -50,6 +50,19 @@ Create, edit, rotate keys, and delete receivers in settings or with `--remote re
 
 Send the Lane common format: sender event ID, event type, occurrence time, and JSON object payload. Sign the exact body bytes with the receiver's decoded secret and a fresh timestamp. The sender uses `Lane-Timestamp` and `Lane-Signature`; only timestamps within five minutes in either direction are accepted. Repeated event identity/content returns its previous result; changed content under that identity fails. Deleted events are not recreated by retries.
 
+The UTF-8 JSON body has this shape:
+
+```json
+{
+  "id": "sender-event-id",
+  "type": "event-type",
+  "occurredAt": "2026-10-25T00:00:00Z",
+  "payload": {}
+}
+```
+
+Require nonempty `id` and `type`, a valid UTC timestamp, and an object payload with no duplicate JSON keys. `Lane-Timestamp` is decimal Unix seconds. Set `Lane-Signature` to `v1=` followed by lowercase HMAC-SHA256 hex over the ASCII timestamp, one period, and the exact raw body bytes. Decode the one-time unpadded base64url secret to bytes before signing. Do not reserialize the body after signing.
+
 Events stay until explicitly deleted. Use `event list/get/delete/claim/renew/release/complete/reopen` for management, with `--remote` for mutations. Reading is not processing. See [MCP event processing](./mcp#process-webhook-events) for leases, atomic completion, and retry rules.
 
 ## Notifications
