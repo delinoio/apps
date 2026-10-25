@@ -52,7 +52,7 @@ test("reset migrates every fresh database using Compose URLs and service-local c
     }),
     { code: 0, signal: null },
   );
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 3 + Object.values(Api).length);
   const target = resolve(serverRoot, "fixture-target");
   assert.equal(calls[0].command, "cargo");
   assert.deepEqual(calls[0].args, [
@@ -99,7 +99,10 @@ test("reset migrates every fresh database using Compose URLs and service-local c
   assert.equal(env.DATABASE_URL, "postgres://remote.invalid/db");
 });
 
-for (const failedStep of [0, 1, 2, 3, 4, 5, 6]) {
+for (const failedStep of Array.from(
+  { length: 3 + Object.values(Api).length },
+  (_, index) => index,
+)) {
   for (const outcome of [
     { code: 7, signal: null },
     { code: null, signal: "SIGINT" },
