@@ -55,7 +55,7 @@ void RegisterProtocol(const std::filesystem::path& executable) {
 }
 bool Forward(const std::wstring& user, const std::string& uri) {
   for (unsigned attempt = 0; attempt != 100; ++attempt) {
-    HWND controller = FindWindowExW(HWND_MESSAGE, nullptr, kControllerClass, user.c_str());
+    HWND controller = FindWindowW(kControllerClass, user.c_str());
     if (controller) {
       auto wide = winrt::to_hstring(uri);
       COPYDATASTRUCT data{kActivation, static_cast<DWORD>((wide.size() + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(wide.c_str())};
@@ -82,9 +82,10 @@ class Application {
     type.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     if (!RegisterClassW(&type)) throw std::runtime_error("Window registration failed");
     controller_ = CreateWindowExW(0, kControllerClass, user_.c_str(), 0, 0, 0, 0, 0,
-        HWND_MESSAGE, nullptr, instance_, this);
+        nullptr, nullptr, instance_, this);
     if (!controller_) throw std::runtime_error("Controller creation failed");
     ui_->Attach(controller_);
+    taskbar_created_ = RegisterWindowMessageW(L"TaskbarCreated");
     RegisterProtocol(executable_);
     const auto icu = (executable_.parent_path() / "data" / "icudtl.dat").string();
     lynx::pub::LynxEnv::GetInstance().SetICUDataPath(icu.c_str());
@@ -172,6 +173,8 @@ class Application {
   }
   LRESULT Message(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (window == controller_) {
+      if (taskbar_created_ && message == taskbar_created_) { AddTray(); return 0; }
+      if (message == WM_POWERBROADCAST && wparam == PBT_APMRESUMEAUTOMATIC && service_) service_->Resume();
       if (message == kDispatch) { ui_->Drain(); return 0; }
       if (message == WM_COPYDATA) {
         auto* data = reinterpret_cast<COPYDATASTRUCT*>(lparam);
@@ -240,6 +243,7 @@ class Application {
   HWND controller_ = nullptr, window_ = nullptr;
   bool stopped_ = false, ready_ = false, tray_ = false;
   uint64_t generation_ = 0;
+  UINT taskbar_created_ = 0;
   std::optional<Json> pending_route_;
   std::shared_ptr<UIQueue> ui_ = std::make_shared<UIQueue>();
   std::shared_ptr<Notifications> notifications_ = std::make_shared<Notifications>();

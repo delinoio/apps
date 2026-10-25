@@ -63,7 +63,9 @@ class Service {
         }
         if (method != "invoke") return Failure("ERROR_REASON_INVALID_INPUT", "Unknown native operation.");
         const auto& operation = args.at(0);
-        auto input = Parse(args.at(1));
+        Json input;
+        try { input = Parse(args.at(1)); }
+        catch (...) { return Failure("ERROR_REASON_INVALID_INPUT", "The native request must be a JSON object."); }
         routed_space_ = Text(input, L"spaceId");
         auto response = store_->invoke(operation, args.at(1));
         if (operation == "RemoveDeviceData" || operation == "DisconnectSync") {
@@ -155,6 +157,9 @@ class Service {
     hooks.requestNotificationPermission = [this] { return actions_.permission(); };
     hooks.disconnect = [this](std::string space) {
       supervisor_->Stop(space);
+      auto status = Parse(store_->invoke("GetLocalStatus", Request(space)));
+      if (status.GetNamedBoolean(L"ok", false) &&
+          !status.GetNamedObject(L"response").GetNamedBoolean(L"syncEnabled", false)) return;
       auto result = Parse(Helper({L"--json", L"--space", Wide(space), L"sync", L"disconnect", L"--retention", L"keep-local"}));
       if (!result.GetNamedBoolean(L"ok", false)) throw std::runtime_error("Cannot disconnect the sync helper");
     };

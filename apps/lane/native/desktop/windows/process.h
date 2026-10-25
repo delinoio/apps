@@ -77,15 +77,15 @@ inline Handle NullHandle() {
   return result;
 }
 inline std::string RunHelper(const std::filesystem::path& executable,
-    const std::vector<std::wstring>& args, const std::string& input = {}) {
+    const std::vector<std::wstring>& args, const std::string& input = {}, DWORD timeout_ms = 60000) {
   SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
   HANDLE read = nullptr, write = nullptr;
   if (!CreatePipe(&read, &write, &security, 0)) throw std::runtime_error("Cannot create helper input");
   Handle child_input(read), parent_input(write);
-  SetHandleInformation(parent_input.Get(), HANDLE_FLAG_INHERIT, 0);
+  if (!SetHandleInformation(parent_input.Get(), HANDLE_FLAG_INHERIT, 0)) throw std::runtime_error("Cannot isolate helper input");
   if (!CreatePipe(&read, &write, &security, 0)) throw std::runtime_error("Cannot create helper output");
   Handle parent_output(read), child_output(write);
-  SetHandleInformation(parent_output.Get(), HANDLE_FLAG_INHERIT, 0);
+  if (!SetHandleInformation(parent_output.Get(), HANDLE_FLAG_INHERIT, 0)) throw std::runtime_error("Cannot isolate helper output");
   auto error = NullHandle();
   auto child = Launch(executable, args, child_input.Get(), child_output.Get(), error.Get());
   child_input.Reset(); child_output.Reset();
@@ -111,16 +111,17 @@ inline std::string RunHelper(const std::filesystem::path& executable,
     }
     parent_input.Reset();
   });
-  const bool timeout = WaitForSingleObject(child->process.Get(), 60000) != WAIT_OBJECT_0;
+  const bool timeout = WaitForSingleObject(child->process.Get(), timeout_ms) != WAIT_OBJECT_0;
   const DWORD code = timeout ? ERROR_TIMEOUT : child->ExitCode();
   if (timeout) child->Stop();
   writer.join(); reader.join();
   if (timeout) return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "The Lane helper timed out. Retry the operation.", true);
-  if (!read_ok || !write_ok) return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "The Lane helper transport failed.", true);
   try {
     auto response = Parse(output);
-    if (response.HasKey(L"ok") && (!response.GetNamedBoolean(L"ok") || (code == 0 && response.HasKey(L"result")))) return Dump(response);
+    if (read_ok && response.HasKey(L"ok") && (!response.GetNamedBoolean(L"ok") ||
+        (write_ok && code == 0 && response.HasKey(L"result")))) return Dump(response);
   } catch (...) {}
+  if (!read_ok || !write_ok) return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "The Lane helper transport failed.", true);
   return Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE",
       code == 2 ? "The packaged Lane helper does not support this operation. Update Lane." : "The Lane helper failed without a valid response.", code != 2);
 }
