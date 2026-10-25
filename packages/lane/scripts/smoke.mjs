@@ -68,6 +68,10 @@ try {
     );
     assert.equal(manifest.version, version);
     assert.equal(manifest.platform, key);
+    assert.equal(
+      manifest.path,
+      key.startsWith("windows") ? "lane.exe" : "lane",
+    );
   }
   for (const [command, prefix] of [
     [process.execPath, [resolve(installed, "bin/lane.mjs")]],

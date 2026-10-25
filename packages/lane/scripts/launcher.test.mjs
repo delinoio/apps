@@ -38,6 +38,8 @@ function fixture(t) {
   writeFileSync(resolve(root, path), bytes, { mode: 0o755 });
   const manifest = {
     schemaVersion: 1,
+    sourceRevision: "a".repeat(40),
+    launcherRevision: "b".repeat(40),
     version: "0.1.0",
     artifacts: {
       [key]: {

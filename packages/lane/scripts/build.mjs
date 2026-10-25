@@ -108,7 +108,7 @@ for (const key of platforms) {
     });
   writeFileSync(
     resolve(artifact, "manifest.json"),
-    `${JSON.stringify({ ...entry, sourceRevision: manifest.sourceRevision }, null, 2)}\n`,
+    `${JSON.stringify({ ...entry, path: name, sourceRevision: manifest.sourceRevision }, null, 2)}\n`,
   );
   writeFileSync(resolve(artifact, "SHA256SUMS"), `${entry.sha256}  ${name}\n`);
   cpSync(artifact, resolve(stage, "artifacts", directory), { recursive: true });

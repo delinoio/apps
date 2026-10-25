@@ -28,6 +28,11 @@ export function verifiedExecutable(root, key = platformKey()) {
     !/^\d+\.\d+\.\d+$/.test(pkg.version)
   )
     throw new Error("manifest version mismatch");
+  if (
+    !/^[a-f0-9]{40}$/.test(manifest.sourceRevision ?? "") ||
+    !/^[a-f0-9]{40}$/.test(manifest.launcherRevision ?? "")
+  )
+    throw new Error("invalid source revision manifest");
   const entry = manifest.artifacts?.[key];
   if (!entry) throw new Error(`missing artifact for ${key}`);
   const expected = `artifacts/lane-${key}/${key.startsWith("windows-") ? "lane.exe" : "lane"}`;
