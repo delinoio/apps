@@ -23,7 +23,7 @@ Use Rspress navigation and sidebars to keep service documentation separate. Each
 
 The default theme provides responsive navigation and local full-text search; this requires no remote search backend or service credentials.
 
-The listed routes remain the English routes. Translated equivalents use the registered language prefix, such as `/ko/`, `/ja/`, `/zh-Hans/`, `/es/`, `/fr/`, `/de/` and `/pt-BR/`. The language menu retains the current page when switching languages. Navigation, page content, theme text, search and HTML metadata use the selected language. Language selection is explicit; do not redirect by browser language. Public source pages live under `docs/en/`, translated pages under `docs/<language>/`, and navigation/theme catalogs under `i18n/`. Follow the [localization contract](apps-delino-site-localization-contract.md) for source tracking and local ChatGPT generation.
+The listed routes remain the English routes. Translated equivalents use the registered language prefix, such as `/ko/`, `/ja/`, `/zh-Hans/`, `/es/`, `/fr/`, `/de/` and `/pt-BR/`. The language menu retains the current page when switching languages for translated pages. Perfine public documentation is English-only: its nine pages under `/services/perfine/` and its dedicated navigation labels are declared in `i18n/locales.json`. Perfine appears in English service navigation and the English service directory only. From a Perfine page, selecting another language opens that language’s service directory; it must not link to an absent Perfine translation. The directory’s Perfine entry uses the explicit English-only section mechanism in the localization contract. Navigation, page content, theme text, search and HTML metadata use the selected language. Language selection is explicit; do not redirect by browser language. Public source pages live under `docs/en/`, translated pages under `docs/<language>/`, and navigation/theme catalogs under `i18n/`. Follow the [localization contract](apps-delino-site-localization-contract.md) for source tracking and local ChatGPT generation.
 
 Run package-local `pnpm dev` on `127.0.0.1:46315`. A port conflict must stop startup. The production origin is `https://docs.delino.io` with base path `/`.
 
@@ -41,7 +41,7 @@ Rspress reports development, rendering and build failures through its CLI. Futur
 
 ## Build and Test
 
-Run package-local `pnpm test` for offline translation checks, TypeScript validation and a production build. `pnpm build` also validates translations, generates `dist` and includes the repository `LICENSE` and `NOTICE`. These checks require no ChatGPT credentials. Remove generated `dist` after validation.
+Run package-local `pnpm test` for offline translation checks, TypeScript validation, a production build and rendered route/link checks. `pnpm build` also validates translations, generates `dist` and includes the repository `LICENSE` and `NOTICE`. These checks require no ChatGPT credentials. Remove generated `dist` after validation.
 
 Affected CI runs `delino-docs-frontend` on Ubuntu and retains validation evidence. Changes in this app or its owning contracts select that job.
 
@@ -53,7 +53,7 @@ For Cloudflare Pages, build from the repository root with `pnpm --filter delino-
 
 `@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
-Pin the Rspress and TypeScript dependencies in the workspace lockfile. Rspress owns its compatible Rsbuild integration. The app does not call service APIs. The DeliTools pages describe supported request and response fields, the supported JSON Schema subset, error reasons, personal and tenant API keys, billing behavior and client troubleshooting. They describe operator-configured limits without stating deployment-specific values, tell readers that submitted content is sent to Vercel AI Gateway and its model provider and that local non-persistence is not a provider retention guarantee, and omit repository paths, server settings and implementation internals. Source and translated pages follow the localization contract; new source text needs `pnpm i18n:translate` before `pnpm i18n:check` passes.
+Pin the Rspress and TypeScript dependencies in the workspace lockfile. Rspress owns its compatible Rsbuild integration. The app does not call service APIs. The DeliTools pages describe supported request and response fields, the supported JSON Schema subset, error reasons, personal and tenant API keys, billing behavior and client troubleshooting. They describe operator-configured limits without stating deployment-specific values, tell readers that submitted content is sent to Vercel AI Gateway and its model provider and that local non-persistence is not a provider retention guarantee, and omit repository paths, server settings and implementation internals. Source and translated pages follow the localization contract; new source text within translated coverage needs `pnpm i18n:translate` before `pnpm i18n:check` passes. Exact English-only page and catalog declarations exclude only those units from generation.
 
 ## Change Triggers
 

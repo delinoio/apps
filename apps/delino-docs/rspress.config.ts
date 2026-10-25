@@ -1,7 +1,7 @@
 import { defineConfig } from "@rspress/core";
 import { readFileSync } from "node:fs";
 import registry from "./i18n/locales.json";
-import { services } from "./services";
+import { servicesForLanguage } from "./services";
 
 const locales = registry.locales.map((locale) => {
   const messages: Record<string, string> = JSON.parse(
@@ -10,6 +10,7 @@ const locales = registry.locales.map((locale) => {
       "utf8",
     ),
   );
+  const services = servicesForLanguage(locale.lang);
   const prefix = locale.lang === registry.sourceLang ? "" : `/${locale.lang}`;
   return {
     ...locale,

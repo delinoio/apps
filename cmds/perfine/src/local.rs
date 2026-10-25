@@ -12,10 +12,13 @@ use perfine_core::{
         },
         profile::{NativeProfileAdapter, map_sources},
     },
-    evidence::{FrozenConfig, Manifest, RunIdentity, VerifiedRun, validate_baseline},
+    evidence::{
+        ExecutionIdentity, FrozenConfig, Manifest, RunIdentity, VerifiedRun, validate_baseline,
+    },
     interfaces::{
         AgentAdapter, Cancellation, CancellationSignal, EnvironmentAdapter, EnvironmentRequest,
-        ExecutionContext, ExecutionRole, LanguageAdapter, MeasurementAdapter, ProfileAdapter,
+        ExecutionContext, ExecutionRole, Hypothesis, LanguageAdapter, MeasurementAdapter,
+        ProfileAdapter,
     },
     lifecycle::{Engine, FailureClass, Workspace},
     policy::{self, Comparison, ReviewEvidence, Round},
@@ -70,21 +73,65 @@ pub fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8(out.stdout)?.trim_end().to_owned())
 }
 #[derive(Clone, Serialize, Deserialize)]
-struct RunRecord {
-    identity: RunIdentity,
-    artifact: Fingerprint,
+pub struct RunRecord {
+    pub(crate) identity: RunIdentity,
+    pub(crate) artifact: Fingerprint,
 }
 #[derive(Clone, Serialize, Deserialize)]
-struct Journal {
+pub struct Journal {
     schema_version: Version,
-    settings: Fingerprint,
+    pub settings: Fingerprint,
+    #[serde(default)]
+    pub language: Option<perfine_core::interfaces::Language>,
+    #[serde(default)]
+    external_execution: Option<ExecutionIdentity>,
     optimize: bool,
     created_request: RequestId,
-    runs: BTreeMap<String, RunRecord>,
+    pub(crate) runs: BTreeMap<String, RunRecord>,
     failure: Option<String>,
     #[serde(default)]
     attempts: BTreeMap<Fingerprint, Attempt>,
 }
+fn github_execution(run: Option<&str>, attempt: Option<&str>) -> Result<Option<ExecutionIdentity>> {
+    let (run, attempt) = match (run, attempt) {
+        (None, None) => return Ok(None),
+        (Some(run), Some(attempt)) => (run, attempt),
+        _ => anyhow::bail!("both GitHub run ID and attempt are required"),
+    };
+    let run_id: u64 = run.parse().context("invalid GitHub run ID")?;
+    let number: u32 = attempt.parse().context("invalid GitHub run attempt")?;
+    ensure!(
+        run_id > 0 && number > 0 && run_id.to_string() == run && number.to_string() == attempt,
+        "positive canonical GitHub execution identity required"
+    );
+    Ok(Some(ExecutionIdentity {
+        provider: Name::new("github")?,
+        workflow_run: Name::new(run)?,
+        attempt: number,
+    }))
+}
+fn execution_environment() -> Result<Option<ExecutionIdentity>> {
+    let read = |key| match std::env::var(key) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(anyhow::Error::from(error)),
+    };
+    github_execution(
+        read("PERFINE_GITHUB_RUN_ID")?.as_deref(),
+        read("PERFINE_GITHUB_RUN_ATTEMPT")?.as_deref(),
+    )
+}
+fn verify_execution(
+    saved: Option<&ExecutionIdentity>,
+    current: Option<&ExecutionIdentity>,
+) -> Result<()> {
+    ensure!(
+        saved == current,
+        "GitHub execution identity changed; create a new experiment"
+    );
+    Ok(())
+}
+
 #[derive(Serialize, Deserialize)]
 struct Initialization {
     config: FrozenConfig,
@@ -129,7 +176,58 @@ struct Attempt {
     candidate: ResourceId,
     workspace: Workspace,
     deadline: u64,
+    #[serde(default)]
+    hypothesis: Option<perfine_core::interfaces::Hypothesis>,
+    #[serde(default)]
+    finished: bool,
 }
+// Proposal generation is lazy: an unrelated slow or failing provider must not
+// consume the recovery deadline of an already-admitted candidate.
+struct Hypotheses {
+    pending: std::collections::VecDeque<Hypothesis>,
+    seen: std::collections::BTreeSet<Fingerprint>,
+    proposed: bool,
+}
+impl Hypotheses {
+    fn new(retained: impl IntoIterator<Item = Hypothesis>) -> Result<Self> {
+        let mut schedule = Self {
+            pending: std::collections::VecDeque::new(),
+            seen: std::collections::BTreeSet::new(),
+            proposed: false,
+        };
+        schedule.extend(retained)?;
+        Ok(schedule)
+    }
+    fn extend(&mut self, hypotheses: impl IntoIterator<Item = Hypothesis>) -> Result<()> {
+        for hypothesis in hypotheses {
+            if self.seen.insert(fingerprint(&hypothesis)?) {
+                self.pending.push_back(hypothesis);
+            }
+        }
+        Ok(())
+    }
+    fn next(
+        &mut self,
+        propose: impl FnOnce() -> Result<Vec<Hypothesis>>,
+    ) -> Result<Option<Hypothesis>> {
+        if self.pending.is_empty() && !self.proposed {
+            self.proposed = true;
+            self.extend(propose()?)?;
+        }
+        Ok(self.pending.pop_front())
+    }
+}
+
+// Expired attempts consume their original slot and keep their evidence, but must
+// not be proposed or reattached again while other candidate slots remain.
+fn settle_expired_attempts(journal: &mut Journal, now: u64) {
+    for attempt in journal.attempts.values_mut() {
+        if now >= attempt.deadline {
+            attempt.finished = true;
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct RequestClaim {
     created_at: u64,
@@ -168,7 +266,9 @@ impl App {
         lock.lock_exclusive()?;
         let payload_file = match command {
             Capability::Publish { draft, .. } => Some(draft.as_path()),
-            Capability::Upload { envelope, .. } => Some(envelope.as_path()),
+            Capability::Compare {
+                review: Some(path), ..
+            } => Some(path.as_path()),
             Capability::Measure { .. }
             | Capability::Optimize { .. }
             | Capability::Resume { .. } => Some(self.config.as_path()),
@@ -379,6 +479,7 @@ impl App {
     ) -> Result<Value> {
         let id = ResourceId::new(id)?;
         let cfg = Settings::read(&self.config)?;
+        let external_execution = execution_environment()?;
         let dir = self.directory(&id)?;
         let lock = OpenOptions::new()
             .create(true)
@@ -391,12 +492,25 @@ impl App {
         let journal_path = dir.join("journal.json");
         let engine = self.engine()?;
         recover_initialization(&engine, &id, &journal_path, &fingerprint(&cfg)?)?;
+        let mut pending_admission = false;
         if journal_path.exists() {
             let saved: Journal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+            verify_execution(
+                saved.external_execution.as_ref(),
+                external_execution.as_ref(),
+            )?;
             ensure!(
                 saved.settings == fingerprint(&cfg)?,
                 "resume settings fingerprint changed; create a new experiment"
             );
+            if resume {
+                let status = engine.status(&id)?;
+                pending_admission = saved.attempts.values().any(|a| {
+                    !a.finished
+                        && now() < a.deadline
+                        && !status.candidates.contains_key(&a.candidate)
+                });
+            }
             if !resume {
                 ensure!(
                     saved.created_request == *req && saved.optimize == optimize,
@@ -437,7 +551,8 @@ impl App {
             ) {
                 return self.report(id.as_str());
             }
-            if now() >= status.start_deadline
+            if !pending_admission
+                && now() >= status.start_deadline
                 && status
                     .candidates
                     .values()
@@ -509,10 +624,15 @@ impl App {
                 "resume settings fingerprint changed; create a new experiment"
             );
             ensure!(
-                resume || engine.status(&id)?.config.fingerprint() == frozen.fingerprint(),
+                engine.status(&id)?.config.fingerprint() == frozen.fingerprint(),
                 "experiment fingerprint changed"
             );
-            engine.resume(req, &id, &frozen, now())?;
+            // An admitted agent attempt precedes its measured head. Do not settle the
+            // experiment at its start deadline before registering that admitted head.
+            // All frozen identities were checked above; the original timeout still applies.
+            if !pending_admission {
+                engine.resume(req, &id, &frozen, now())?;
+            }
             j
         } else {
             ensure!(
@@ -522,6 +642,8 @@ impl App {
             let j = Journal {
                 schema_version: Version,
                 settings: fingerprint(&cfg)?,
+                language: Some(cfg.adapter.language),
+                external_execution,
                 optimize,
                 created_request: req.clone(),
                 runs: BTreeMap::new(),
@@ -541,6 +663,8 @@ impl App {
             atomic(&journal_path, &j)?;
             j
         };
+        settle_expired_attempts(&mut journal, now());
+        atomic(&journal_path, &journal)?;
         let result = (|| -> Result<()> {
             let existing = engine.status(&id)?;
             if matches!(
@@ -548,20 +672,6 @@ impl App {
                 ExecutionState::Completed | ExecutionState::Cancelled | ExecutionState::Failed
             ) {
                 return Ok(());
-            }
-            // Interrupted running candidates retain their workspace and cannot supply conclusions.
-            for candidate in existing
-                .candidates
-                .values()
-                .filter(|c| c.state == ExecutionState::Running)
-            {
-                engine.fail_candidate(
-                    &request(),
-                    &id,
-                    &candidate.id,
-                    FailureClass::Permanent,
-                    now(),
-                )?;
             }
             let deadline = existing.start_deadline;
             let a = measure_step(
@@ -635,7 +745,13 @@ impl App {
                 engine.stop(&request(), &id, false, now())?;
                 return Ok(());
             }
-            if signal.state() != Cancellation::Continue || now() >= deadline {
+            if signal.state() != Cancellation::Continue
+                || (now() >= deadline
+                    && journal
+                        .attempts
+                        .values()
+                        .all(|a| a.finished || now() >= a.deadline))
+            {
                 let status = engine.status(&id)?;
                 if matches!(
                     status.state,
@@ -674,65 +790,165 @@ impl App {
                 deadline_unix_seconds: deadline,
                 cancellation: &signal,
             };
-            let hypotheses = agent.propose(&profile, &ctx)?;
-            for hypothesis in hypotheses
-                .into_iter()
-                .take(cfg.experiment.limits.candidate_count as usize)
-            {
+            let mut hypotheses = Hypotheses::new(
+                journal
+                    .attempts
+                    .values()
+                    .filter(|a| !a.finished)
+                    .filter_map(|a| a.hypothesis.clone()),
+            )?;
+            while let Some(hypothesis) = hypotheses.next(|| {
+                if now() < deadline
+                    && signal.state() == Cancellation::Continue
+                    && !engine.status(&id)?.stop_requested
+                    && journal.attempts.len() < cfg.experiment.limits.candidate_count as usize
+                {
+                    agent.propose(&profile, &ctx).map_err(Into::into)
+                } else {
+                    Ok(Vec::new())
+                }
+            })? {
                 let current = engine.status(&id)?;
-                if current.stop_requested
+                let hypothesis_hash = fingerprint(&hypothesis)?;
+                let prior = journal.attempts.get(&hypothesis_hash).cloned();
+                if prior.as_ref().is_some_and(|a| {
+                    a.finished
+                        || current
+                            .candidates
+                            .get(&a.candidate)
+                            .is_some_and(|c| c.state != ExecutionState::Running)
+                }) {
+                    continue;
+                }
+                // The start deadline closes admission, not an already-running candidate.
+                // Retained attempts keep their own original deadline below.
+                if (prior.is_none() && current.stop_requested)
                     || signal.state() != Cancellation::Continue
-                    || now() >= deadline
-                    || journal.attempts.len() >= cfg.experiment.limits.candidate_count as usize
                 {
                     break;
                 }
-                let hypothesis_hash = fingerprint(&hypothesis)?;
-                if journal.attempts.contains_key(&hypothesis_hash) {
+                if prior.is_none()
+                    && (now() >= deadline
+                        || journal.attempts.len() >= cfg.experiment.limits.candidate_count as usize)
+                {
                     continue;
                 }
-                let started_at = now();
-                let candidate = ResourceId::generate();
-                let candidate_request = prepare(&env, &cfg, candidate.as_str())?;
-                let candidate_deadline =
-                    started_at + cfg.experiment.limits.candidate_duration_seconds;
-                journal.attempts.insert(
-                    hypothesis_hash,
-                    Attempt {
-                        candidate: candidate.clone(),
-                        workspace: candidate_request.workspace.clone(),
-                        deadline: candidate_deadline,
-                    },
-                );
-                atomic(&journal_path, &journal)?;
+                let (candidate, candidate_request, candidate_deadline, started_at) = if let Some(
+                    attempt,
+                ) = prior
+                {
+                    if now() >= attempt.deadline {
+                        journal
+                            .attempts
+                            .get_mut(&hypothesis_hash)
+                            .expect("retained attempt")
+                            .finished = true;
+                        atomic(&journal_path, &journal)?;
+                        engine.tick(&request(), &id, now())?;
+                        continue;
+                    }
+                    let req = EnvironmentRequest {
+                        role: ExecutionRole::Candidate,
+                        base: cfg.experiment.incremental_base.clone(),
+                        workspace: attempt.workspace,
+                        environment: cfg
+                            .experiment
+                            .conditions
+                            .environment
+                            .variables
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.as_str().to_owned()))
+                            .collect(),
+                        dependency_access: cfg.docker.dependency_names.clone(),
+                        network_access: vec![],
+                    };
+                    env.reattach(&req)?;
+                    ensure!(
+                        git(
+                            Path::new(req.workspace.directory.as_str()),
+                            &["status", "--porcelain", "--untracked-files=all"]
+                        )?
+                        .is_empty(),
+                        "interrupted agent left uncommitted edits; retained unchanged, start a new experiment after review"
+                    );
+                    (
+                        attempt.candidate,
+                        req,
+                        attempt.deadline,
+                        attempt.deadline - cfg.experiment.limits.candidate_duration_seconds,
+                    )
+                } else {
+                    let started_at = now();
+                    let candidate = ResourceId::generate();
+                    let req = prepare(&env, &cfg, candidate.as_str())?;
+                    let end = started_at + cfg.experiment.limits.candidate_duration_seconds;
+                    journal.attempts.insert(
+                        hypothesis_hash.clone(),
+                        Attempt {
+                            candidate: candidate.clone(),
+                            workspace: req.workspace.clone(),
+                            deadline: end,
+                            hypothesis: Some(hypothesis.clone()),
+                            finished: false,
+                        },
+                    );
+                    atomic(&journal_path, &journal)?;
+                    (candidate, req, end, started_at)
+                };
                 let ctx = ExecutionContext {
                     workspace: &candidate_request.workspace,
                     deadline_unix_seconds: candidate_deadline,
                     cancellation: &signal,
                 };
-                let head = agent.implement(&hypothesis, &ctx)?;
-                // Empty edits are not a candidate and cannot consume a performance verdict.
+                let observed_head = env.source(&candidate_request.workspace)?;
+                let head = if let Some(c) = current.candidates.get(&candidate) {
+                    ensure!(
+                        observed_head == c.head && c.workspace == candidate_request.workspace,
+                        "interrupted candidate identity changed; create a new experiment"
+                    );
+                    c.head.clone()
+                } else if observed_head != cfg.experiment.incremental_base {
+                    // A crash after the agent commit but before admission must not invoke the agent twice.
+                    ensure!(
+                        git(
+                            Path::new(candidate_request.workspace.directory.as_str()),
+                            &["rev-parse", "HEAD^"]
+                        )? == cfg.experiment.incremental_base.as_str(),
+                        "interrupted implementation ancestry mismatch"
+                    );
+                    observed_head
+                } else {
+                    // The unchanged pinned base and profile must authorize a retained proposal again.
+                    agent.restore_hypothesis(&hypothesis, &profile, &ctx)?;
+                    agent.implement(&hypothesis, &ctx)?
+                };
                 if head == cfg.experiment.incremental_base {
+                    journal
+                        .attempts
+                        .get_mut(&hypothesis_hash)
+                        .context("attempt")?
+                        .finished = true;
+                    atomic(&journal_path, &journal)?;
                     continue;
                 }
                 ensure!(
                     now() < candidate_deadline,
                     "candidate implementation deadline reached"
                 );
-                engine.start_candidate_at(
-                    &request(),
-                    &id,
-                    candidate.clone(),
-                    head,
-                    candidate_request.workspace.clone(),
-                    &a,
-                    &baseline,
-                    &hypothesis.source_paths,
-                    // Admission time is the durable agent-attempt start, not the time
-                    // edits finish. This preserves the start deadline and total timeout.
-                    started_at,
-                    now(),
-                )?;
+                if !current.candidates.contains_key(&candidate) {
+                    engine.start_candidate_from_admission(
+                        &request(),
+                        &id,
+                        candidate.clone(),
+                        head,
+                        candidate_request.workspace.clone(),
+                        &a,
+                        &baseline,
+                        &hypothesis.source_paths,
+                        started_at,
+                        now(),
+                    )?;
+                }
                 let label = format!("candidate-{}", candidate.as_str());
                 let candidate_result = (|| -> Result<()> {
                     let h = measure_step(
@@ -841,6 +1057,12 @@ impl App {
                     )?;
                     Ok(())
                 })();
+                journal
+                    .attempts
+                    .get_mut(&hypothesis_hash)
+                    .context("attempt")?
+                    .finished = true;
+                atomic(&journal_path, &journal)?;
                 if let Err(error) = candidate_result {
                     if engine.status(&id)?.candidates[&candidate].state == ExecutionState::Running {
                         engine.fail_candidate(
@@ -882,6 +1104,16 @@ impl App {
             .candidates
             .get(&candidate)
             .context("unknown candidate")?;
+        let review = self
+            .directory(&id)?
+            .join(format!("review-{}.json", candidate.as_str()));
+        let pending = review.with_extension("pending.json");
+        if pending.exists() {
+            ensure!(
+                review.exists() && fs::read(&pending)? == fs::read(&review)?,
+                "review transaction incomplete; repeat the confirmed review request before publication or upload"
+            );
+        }
         // Reload every artifact before reporting a stored evaluation.
         let journal: Journal =
             serde_json::from_slice(&fs::read(self.directory(&id)?.join("journal.json"))?)?;
@@ -1017,7 +1249,11 @@ fn prepare(env: &DockerEnvironment, cfg: &Settings, label: &str) -> Result<Envir
     env.prepare(&request)?;
     Ok(request)
 }
-fn load(cfg: &FrozenConfig, record: &RunRecord, artifacts: &ArtifactStore) -> Result<VerifiedRun> {
+pub fn load(
+    cfg: &FrozenConfig,
+    record: &RunRecord,
+    artifacts: &ArtifactStore,
+) -> Result<VerifiedRun> {
     let manifest: Manifest = serde_json::from_slice(&artifacts.get(&record.artifact)?)?;
     Ok(verify_local(cfg, &record.identity, manifest, artifacts)?)
 }
@@ -1046,7 +1282,7 @@ fn measure_step(
         experiment: id.clone(),
         candidate,
         run: ResourceId::generate(),
-        external_execution: None,
+        external_execution: journal.external_execution.clone(),
         source: env.source(&req.workspace)?,
         configuration: frozen.fingerprint().clone(),
         conditions: fingerprint(&frozen.config().conditions)?,
@@ -1113,6 +1349,83 @@ fn workflow(config: &str, action: &CommitSha, base: &CommitSha, image: &str) -> 
 mod tests {
     use super::workflow;
     use perfine_core::types::CommitSha;
+    #[test]
+    fn github_execution_is_canonical_and_immutable_across_resume() {
+        use super::*;
+        let execution = github_execution(Some("42"), Some("2")).unwrap();
+        assert_eq!(execution.as_ref().unwrap().provider.as_str(), "github");
+        let restored: Option<ExecutionIdentity> =
+            serde_json::from_slice(&serde_json::to_vec(&execution).unwrap()).unwrap();
+        verify_execution(restored.as_ref(), execution.as_ref()).unwrap();
+        assert!(
+            verify_execution(
+                restored.as_ref(),
+                github_execution(Some("42"), Some("3")).unwrap().as_ref()
+            )
+            .is_err()
+        );
+        assert!(
+            verify_execution(
+                restored.as_ref(),
+                github_execution(Some("43"), Some("2")).unwrap().as_ref()
+            )
+            .is_err()
+        );
+        assert!(verify_execution(restored.as_ref(), None).is_err());
+        assert!(github_execution(None, None).unwrap().is_none());
+        for (run, attempt) in [
+            (Some("0"), Some("1")),
+            (Some("01"), Some("1")),
+            (Some("42"), None),
+            (None, Some("1")),
+            (Some("42"), Some("4294967296")),
+        ] {
+            assert!(github_execution(run, attempt).is_err());
+        }
+    }
+    #[test]
+    fn retained_hypotheses_precede_new_proposals_without_duplicates() {
+        use super::*;
+        let hypothesis = |label| Hypothesis {
+            explanation: Name::new(label).unwrap(),
+            source_paths: std::collections::BTreeSet::from([Name::new("src/hot.c").unwrap()]),
+            profile_evidence: vec![digest(b"profile")],
+        };
+        let retained = hypothesis("retained");
+        let fresh = hypothesis("fresh");
+        for proposals in [vec![fresh.clone(), retained.clone()], vec![fresh.clone()]] {
+            let mut schedule = Hypotheses::new([retained.clone()]).unwrap();
+            let first = schedule
+                .next(|| panic!("provider must not run before recovery"))
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                fingerprint(&first).unwrap(),
+                fingerprint(&retained).unwrap()
+            );
+            let second = schedule.next(|| Ok(proposals)).unwrap().unwrap();
+            assert_eq!(fingerprint(&second).unwrap(), fingerprint(&fresh).unwrap());
+            assert!(
+                schedule
+                    .next(|| panic!("provider must run only once"))
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+    #[test]
+    fn retained_candidate_is_available_before_provider_failure() {
+        use super::*;
+        let retained = Hypothesis {
+            explanation: Name::new("retained").unwrap(),
+            source_paths: std::collections::BTreeSet::from([Name::new("src/hot.c").unwrap()]),
+            profile_evidence: vec![digest(b"profile")],
+        };
+        let mut schedule = Hypotheses::new([retained]).unwrap();
+        let unavailable = || Err(anyhow::anyhow!("provider unavailable"));
+        assert!(schedule.next(unavailable).unwrap().is_some());
+        assert!(schedule.next(unavailable).is_err());
+    }
     #[test]
     fn manual_workflow_matches_distribution_inputs_and_preserves_inline_config() {
         let sha = CommitSha::new("a".repeat(40)).unwrap();
@@ -1184,6 +1497,8 @@ mod initialization_tests {
             let settings = digest(b"original settings");
             let journal = Journal {
                 schema_version: Version,
+                language: None,
+                external_execution: None,
                 settings: settings.clone(),
                 optimize: false,
                 created_request: request(),
@@ -1214,5 +1529,32 @@ mod initialization_tests {
             recover_initialization(&engine, &id, &path, &settings).unwrap();
             assert_eq!(engine.status(&id).unwrap().start_deadline, deadline);
         }
+    }
+}
+
+#[cfg(test)]
+mod expired_attempt_tests {
+    use super::*;
+    #[test]
+    fn expiry_retains_identity_evidence_and_candidate_budget() {
+        let candidate = ResourceId::generate();
+        let hash = digest(b"hypothesis");
+        let mut journal: Journal = serde_json::from_value(json!({
+            "schema_version": 1, "settings": digest(b"settings"), "optimize": true,
+            "created_request": request(), "runs": {}, "failure": null,
+            "attempts": {hash.as_str(): {
+                "candidate": candidate, "workspace": {
+                    "branch": "candidate", "directory": "/tmp/candidate", "build_directory": "/tmp/build"
+                }, "deadline": 10, "finished": false
+            }}
+        })).unwrap();
+        settle_expired_attempts(&mut journal, 9);
+        assert!(!journal.attempts[&hash].finished);
+        settle_expired_attempts(&mut journal, 10);
+        assert!(journal.attempts[&hash].finished);
+        assert_eq!(journal.attempts[&hash].candidate, candidate);
+        assert_eq!(journal.attempts[&hash].deadline, 10);
+        assert_eq!(journal.attempts.len(), 1);
+        assert_eq!(journal.attempts.values().filter(|a| !a.finished).count(), 0);
     }
 }

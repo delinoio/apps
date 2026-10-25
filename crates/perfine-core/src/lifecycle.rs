@@ -321,6 +321,34 @@ impl<S: Store> Engine<S> {
             now,
         )
     }
+    /// Compatibility entry point for durable journal admission.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_candidate_from_admission(
+        &self,
+        request: &RequestId,
+        id: &ResourceId,
+        candidate: ResourceId,
+        head: CommitSha,
+        workspace: Workspace,
+        profile: &VerifiedRun,
+        baseline: &BaselineValidation,
+        optimized_paths: &std::collections::BTreeSet<Name>,
+        admitted_at: u64,
+        now: u64,
+    ) -> Result<Receipt> {
+        self.start_candidate_at(
+            request,
+            id,
+            candidate,
+            head,
+            workspace,
+            profile,
+            baseline,
+            optimized_paths,
+            admitted_at,
+            now,
+        )
+    }
     /// Preserve durable admission time while timestamping the transaction at execution time.
     #[allow(clippy::too_many_arguments)]
     pub fn start_candidate_at(
@@ -337,6 +365,9 @@ impl<S: Store> Engine<S> {
         now: u64,
     ) -> Result<Receipt> {
         workspace.validate()?;
+        if admitted_at > now {
+            return Err(Error::Invalid("admission after operation time"));
+        }
         self.mutate(
             request,
             id,
@@ -371,7 +402,6 @@ impl<S: Store> Engine<S> {
                 let cfg = exp.config.config();
                 if exp.stop_requested
                     || admitted_at < exp.created_at
-                    || admitted_at > now
                     || admitted_at >= exp.start_deadline
                     || !matches!(exp.state, ExecutionState::Queued | ExecutionState::Running)
                     || exp.candidates.len() >= cfg.limits.candidate_count as usize
@@ -464,9 +494,18 @@ impl<S: Store> Engine<S> {
                 review,
             ),
             |db| {
+                // Review can change an exception decision only before publication approval.
+                // Keep approval records immutable; callers must attach review first.
+                let has_approval = db
+                    .approvals
+                    .values()
+                    .any(|a| a.binding.experiment == *id && a.binding.candidate == *candidate);
                 let exp = db.experiments.get_mut(id).ok_or(Error::State)?;
                 let c = exp.candidates.get_mut(candidate).ok_or(Error::State)?;
-                if c.state != ExecutionState::Running || now >= c.deadline {
+                let reviewing = c.state == ExecutionState::Completed;
+                if (!reviewing && (c.state != ExecutionState::Running || now >= c.deadline))
+                    || (reviewing && has_approval)
+                {
                     return Err(Error::Limit);
                 }
                 let identity = &round.incremental.head.manifest().identity;
@@ -476,7 +515,15 @@ impl<S: Store> Engine<S> {
                 {
                     return Err(Error::Mismatch("candidate evidence"));
                 }
-                c.evaluation = Some(policy::evaluate(&exp.config, round, repeat, review)?);
+                let evaluation = policy::evaluate(&exp.config, round, repeat, review)?;
+                if reviewing
+                    && c.evaluation.as_ref().is_none_or(|previous| {
+                        previous.evidence_fingerprints != evaluation.evidence_fingerprints
+                    })
+                {
+                    return Err(Error::Mismatch("review measurements changed"));
+                }
+                c.evaluation = Some(evaluation);
                 c.state = ExecutionState::Completed;
                 exp.tick(now);
                 Ok(Receipt {

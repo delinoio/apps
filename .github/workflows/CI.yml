@@ -22,6 +22,8 @@ jobs:
       git_tracker: ${{ steps.plan.outputs.git_tracker }}
       delino_site: ${{ steps.plan.outputs.delino_site }}
       delino_docs: ${{ steps.plan.outputs.delino_docs }}
+      perfine: ${{ steps.plan.outputs.perfine }}
+      perfine_fixtures: ${{ steps.plan.outputs.perfine_fixtures }}
       protocol: ${{ steps.plan.outputs.protocol }}
       tooling: ${{ steps.plan.outputs.tooling }}
       shared_ui: ${{ steps.plan.outputs.shared_ui }}
@@ -499,6 +501,51 @@ jobs:
       - name: Remove generated output
         if: ${{ always() }}
         run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist"
+  perfine-frontend:
+    needs: changes
+    if: needs.changes.outputs.perfine == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+        id: node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: frontend
+        run: pnpm --dir "apps/perfine" test
+      - id: build
+        run: pnpm --dir "apps/perfine" build
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ steps.node.outputs.cache-path }}
+          key: ${{ steps.node.outputs.cache-key }}
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: perfine-frontend
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-perfine-frontend-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Remove generated output
+        if: ${{ always() }}
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "apps/perfine/dist" "actions/perfine/dist" "packages/perfine/dist"
   rust-clippy:
     name: Rust Clippy
     needs: changes
@@ -538,6 +585,13 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install -y "${packages[@]}"
+      - name: Install Perfine protocol compiler
+        id: protoc
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine')
+        run: |-
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+          protoc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -604,6 +658,13 @@ jobs:
           toolchain: nightly-2026-09-28
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Perfine protocol compiler
+        id: protoc
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine')
+        run: |-
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+          protoc --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -761,6 +822,129 @@ jobs:
       - name: Remove integration database
         if: ${{ always() }}
         run: docker rm --force "$SERVICE-postgres" >/dev/null 2>&1 || true
+  perfine-profiles:
+    name: Perfine fixture profiles (${{ matrix.language }}, ${{ matrix.route }})
+    needs: changes
+    if: needs.changes.outputs.perfine_fixtures == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { language: rust, route: callgrind }
+          - { language: c, route: callgrind }
+          - { language: cpp, route: callgrind }
+          - { language: zig, route: callgrind }
+          - { language: rust, route: gungraun }
+          - { language: c, route: gungraun }
+          - { language: cpp, route: gungraun }
+          - { language: zig, route: gungraun }
+          - { language: go, route: default }
+          - { language: javascript, route: default }
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+      FIXTURE_LANGUAGE: ${{ matrix.language }}
+      FIXTURE_ROUTE: ${{ matrix.route }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+      - uses: actions/setup-go@v6
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+      - id: native-tools
+        run: |
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          sudo apt-get update
+          sudo apt-get install -y build-essential valgrind python3
+          dpkg-query -W gcc g++ valgrind python3
+      - id: zig
+        if: matrix.language == 'zig'
+        run: |
+          curl --fail --location --retry 2 --output "$RUNNER_TEMP/zig.tar.xz" 'https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz'
+          echo "02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
+      - id: gungraun
+        if: matrix.route == 'gungraun'
+        run: cargo install --locked gungraun-runner --version 0.19.4
+      - id: profiles
+        run: node scripts/ci/perfine-profiles.mjs "$FIXTURE_LANGUAGE" "$FIXTURE_ROUTE"
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: perfine-profiles
+          VALIDATION_MATRIX: ${{ toJSON(matrix) }}
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-perfine-profiles-${{ matrix.language }}-${{ matrix.route }}-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+  perfine-adapters:
+    needs: changes
+    if: needs.changes.outputs.perfine_fixtures == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, c, cpp, zig, go, javascript]
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: ./.github/actions/setup-ci-node
+      - id: dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - id: adapters
+        env:
+          FIXTURE_LANGUAGE: ${{ matrix.language }}
+        run: node scripts/ci/perfine-acceptance.mjs "$FIXTURE_LANGUAGE"
+      - name: Record validation
+        if: ${{ always() }}
+        env:
+          VALIDATION_JOB: perfine-adapters
+          VALIDATION_MATRIX: ${{ toJSON(matrix) }}
+          VALIDATION_RESULT: ${{ job.status }}
+          VALIDATION_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/ci/record-validation.mjs
+      - name: Preserve validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-perfine-adapters-${{ matrix.language }}-${{ github.run_attempt }}
+          path: .ci-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
   ci-result:
     if: ${{ always() }}
     needs:
@@ -775,6 +959,9 @@ jobs:
       - git-tracker-clients
       - delino-site-frontend
       - delino-docs-frontend
+      - perfine-frontend
+      - perfine-profiles
+      - perfine-adapters
       - rust-clippy
       - rust-test
       - protocol
@@ -790,7 +977,7 @@ jobs:
           node --input-type=module <<'NODE'
           const needs = JSON.parse(process.env.NEEDS);
           const selection = needs.changes.outputs;
-          const expected = { 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
+          const expected = { 'perfine-frontend': selection.perfine === 'true', 'perfine-profiles': selection.perfine_fixtures === 'true', 'perfine-adapters': selection.perfine_fixtures === 'true', 'rust-servers': selection.rust_servers !== '[]', 'rust-servers-clippy': selection.rust_servers !== '[]', 'git-tracker-clients': selection.git_tracker === 'true', changes: true, tooling: selection.tooling === 'true', 'shared-ui': selection.shared_ui === 'true', workflows: selection.workflows === 'true', 'check-formatting': true, 'delino-site-frontend': selection.delino_site === 'true', 'delino-docs-frontend': selection.delino_docs === 'true', 'devbase-frontend': selection.devbase === 'true', 'delidev-frontend': selection.delidev === 'true', 'delitools-frontend': selection.delitools === 'true', 'rust-clippy': selection.rust_clippy !== '[]', 'rust-test': selection.rust_test !== '[]', protocol: selection.protocol === 'true' };
           for (const [id, required] of Object.entries(expected)) {
             const result = needs[id]?.result;
             if (result !== (required ? 'success' : 'skipped')) throw new Error(id + ': ' + result);

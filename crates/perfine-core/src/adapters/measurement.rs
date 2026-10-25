@@ -478,6 +478,9 @@ impl MeasurementAdapter for NativeMeasurementAdapter<'_> {
                         Path::new(context.workspace.build_directory.as_str()),
                         path.as_str(),
                     )?)?;
+                    // Retain malformed native captures too. A parser error must
+                    // not erase the bytes needed to diagnose an incomplete run.
+                    self.record(&mut manifest.artifacts, ArtifactKind::Profile, &bytes)?;
                     let parsed = profile::parse(workload.format, &bytes)?;
                     if let Some(value) = parsed.totals.get(&Name::new("Ir")?)
                         && ir.replace(*value).is_some()
@@ -491,7 +494,6 @@ impl MeasurementAdapter for NativeMeasurementAdapter<'_> {
                             observed.insert(path);
                         }
                     }
-                    self.record(&mut manifest.artifacts, ArtifactKind::Profile, &bytes)?;
                 }
                 if !workload.required_paths.is_subset(&observed) {
                     return Err(Error::Incomplete(

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Install in the operator's Delcore catalog; replace client_id with the Logto service client.
+kind: service
+key: perfine
+name: Perfine
+client_id: perfine-api-local
+capabilities:
+  - read
+  - experiment
+  - publish
+  - manage
+scopes:
+  - authorize

@@ -32,6 +32,13 @@ const record = {
     "device installation",
     "live provider accounts",
     "signed store uploads",
+    ...(job.startsWith("perfine-")
+      ? [
+          "complete local optimization with authenticated AI tools",
+          "live npm installation and GitHub App/OIDC/AI accounts",
+          "Perfine deployment and Action publication",
+        ]
+      : []),
   ],
 };
 mkdirSync(".ci-evidence", { recursive: true });

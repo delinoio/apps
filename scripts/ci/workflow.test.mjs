@@ -60,7 +60,13 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
     const steps = job.steps;
     assert.equal(
       steps.some((step) => step.run?.includes("apt-get")),
-      check === "clippy",
+      true,
+    );
+    const protoc = steps.find((step) => step.id === "protoc");
+    assert.equal(protoc.if, "contains(fromJSON(env.RUST_PACKAGES), 'perfine')");
+    assert.match(protoc.run, /protobuf-compiler libprotobuf-dev/u);
+    assert.ok(
+      steps.indexOf(protoc) < steps.findIndex((step) => step.id === check),
     );
     const command = steps.find((step) => step.id === check);
     assert.equal(command.run, `node scripts/ci/rust-check.mjs ${check}`);
@@ -352,6 +358,8 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
+    perfine: "true",
+    perfine_fixtures: "true",
     protocol: "true",
   };
   assert.equal(run(needs).status, 0);
@@ -386,6 +394,9 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     protocol: "true",
   };
   for (const id of [
+    "perfine-frontend",
+    "perfine-profiles",
+    "perfine-adapters",
     "git-tracker-clients",
     "devbase-frontend",
     "delino-site-frontend",
@@ -618,6 +629,9 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delino-docs-frontend": "delino_docs",
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
+      "perfine-frontend": "perfine",
+      "perfine-profiles": "perfine_fixtures",
+      "perfine-adapters": "perfine_fixtures",
       protocol: "protocol",
     };
     for (const [id, key] of Object.entries(jobOwners))
@@ -651,4 +665,57 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       assert.notEqual(run(changed).status, 0, `${paths}: ${id}`);
     }
   }
+});
+
+test("Perfine jobs use owned package contracts and real fixture interfaces", () => {
+  for (const [id, owner] of [
+    ["perfine-frontend", "perfine"],
+    ["perfine-profiles", "perfine_fixtures"],
+    ["perfine-adapters", "perfine_fixtures"],
+  ]) {
+    const job = workflow.jobs[id];
+    assert.equal(job.needs, "changes");
+    assert.equal(job.if, `needs.changes.outputs.${owner} == 'true'`);
+    assert.ok(workflow.jobs["ci-result"].needs.includes(id));
+    assert.equal(job.env.TURBO_SCM_BASE, "${{ needs.changes.outputs.base }}");
+    assert.equal(job.env.TURBO_SCM_HEAD, "${{ needs.changes.outputs.head }}");
+    assert.equal(
+      job.steps.find((step) => step.name === "Preserve validation evidence").if,
+      "${{ always() }}",
+    );
+  }
+  assert.equal(workflow.jobs["perfine-distribution"], undefined);
+  const profiles = workflow.jobs["perfine-profiles"];
+  assert.deepEqual(
+    [
+      ...new Set(
+        profiles.strategy.matrix.include.map(({ language }) => language),
+      ),
+    ],
+    ["rust", "c", "cpp", "zig", "go", "javascript"],
+  );
+  assert.equal(profiles.strategy["fail-fast"], false);
+  assert.match(
+    profiles.steps.find((step) => step.id === "zig").run,
+    /sha256sum --check/u,
+  );
+  assert.match(
+    profiles.steps.find((step) => step.id === "gungraun").run,
+    /--version 0\.19\.4/u,
+  );
+  assert.deepEqual(workflow.jobs["perfine-adapters"].strategy.matrix.language, [
+    "rust",
+    "c",
+    "cpp",
+    "zig",
+    "go",
+    "javascript",
+  ]);
+  assert.equal(workflow.jobs["perfine-adapters"].strategy["fail-fast"], false);
+  assert.match(
+    workflow.jobs["perfine-adapters"].steps.find(
+      (step) => step.id === "adapters",
+    ).run,
+    /node scripts\/ci\/perfine-acceptance\.mjs/u,
+  );
 });

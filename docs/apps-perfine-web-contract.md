@@ -63,3 +63,77 @@ Update the project index and affected owning contracts together when ownership, 
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
+
+## Browser integration
+
+The app uses the generated Perfine v1 services and `@connectrpc/connect-query`.
+Logto supplies bearer tokens; Delcore `GetCurrentUser` supplies paginated personal
+and organization spaces. There is no anonymous result route. Query state is
+scoped by space/resource and cleared on sign-out. Permission failures hide cached
+results. Manage, experiment and publish controls remain independent of read.
+
+Repository setup uses an operator-configured GitHub App installation URL and
+explicit repository/installation IDs and a masked GitHub access token input.
+The token field spans both desktop columns and stacks with the form on mobile.
+Its helper explains that the token verifies repository administrator access and
+is not saved. Send it only in the connection request's `x-github-token` header;
+never retain it in mutation variables, browser storage, or shared transport state.
+Clear the input when dispatching and require re-entry after failure. Disable
+submission while pending and preserve the manage permission gate.
+The API resolves IDs and verifies both
+management and GitHub administrator authority. Connections and histories use
+cursor pagination. Evidence links are issued on demand, after server checks.
+
+Execution setup uses editable source SHA, language, input-hash, workload-case,
+frequency/protection, correctness-check, workload confirmation, tool/environment,
+limit and policy fields. Empty defaults must not invent source or evidence.
+`PrepareExperiment` computes authoritative fingerprints and returns the immutable
+specification and engine configuration for review and local use. Preparation is
+available to authorized experiment operators even without an eligible cloud tool.
+Optional JSON import seeds editable settings and still requires fresh preparation.
+The browser never asks users to calculate configuration fingerprints. Changes
+invalidate the prepared result and confirmation, including stale in-flight replies.
+Start submits the reviewed authoritative specification; started runs stay immutable.
+
+Engine v1 uncertainty uses near-threshold margin and repeat tolerance for Ir,
+and also maximum relative sample range and decision margin for declared policies.
+A sample range is not a confidence interval. Measurements-only mode makes no
+pass claim. Detail and publication review show the exact frozen policy without
+deprecated confidence-interval summaries. The API validates all settings independently.
+
+Publication has a separate review view at both widths. Confirmation resets on
+content edits. The client compares the returned approval binding with the exact
+submitted draft, then sends that binding to `PublishDraft`. It polls retained
+approval/publication records on uncertain outcomes without creating another
+approval or automatically resubmitting publication. Source changes require
+remeasurement; prose-only edits require new approval, not new measurements.
+
+## App-local configuration and checks
+
+`pnpm dev` in `apps/perfine` injects the root Infisical development configuration,
+then registers the Portless name `perfine` with fixed upstream
+`127.0.0.1:46324`. Port conflicts fail. Root orchestration and CI selection belong
+to the repository workflow; this app does not start API servers or databases.
+
+Public browser settings are `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`,
+`PUBLIC_DELCORE_API_URL`, `PUBLIC_DELCORE_RESOURCE`, `PUBLIC_PERFINE_API_URL`,
+`PUBLIC_PERFINE_RESOURCE` and `PUBLIC_PERFINE_GITHUB_APP_URL`. The Perfine resource
+defaults to the Delcore resource, matching existing service identity patterns.
+Configure `/callback` and the sign-out origin in Logto. Cross-origin APIs must
+permit the exact frontend origin and authorization headers. Only public client
+configuration may enter the frontend; service credentials remain server-owned.
+
+`pnpm test` runs TypeScript and mocked typed-RPC interaction tests. `pnpm build`
+produces the Pages bundle and license notices. `tests/browser.config.ts` is a
+separate mocked-RPC browser entry for responsive inspection; it is not imported
+by the production entry and does not bypass production authentication. Start it
+only for verification with `pnpm exec rsbuild dev --config tests/browser.config.ts`.
+It displays an explicit mock-data banner. These checks do not establish live
+Logto, Delcore, GitHub, Actions, R2 or backend acceptance. Remove generated `dist`
+output after validation.
+
+Transient experiment or candidate query failures hide retained review evidence without discarding the mounted publication session. Recovery retains the original approval ID, locked binding, and request ID so retries reconcile the same submission.
+
+A zero/default case repetition count means the API did not supply a usable count. Detail and publication review display it as unavailable, not as evidence of zero measurements. Positive supplied counts remain visible.
+
+Ancestor account, authorization and connection polling failures hide retained evidence and disable actions without discarding an active publication request. Recovery reuses the exact approval, locked draft and publication request identity. Explicit navigation to another space or experiment ends the mounted review session.

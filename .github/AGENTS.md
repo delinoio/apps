@@ -3,7 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `.github/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts before changing workflows, including cross-domain consumers.
-- Keep Rust server Clippy and tests in separate jobs with the same affected-service matrix and independent validation artifacts. Do not install Go or run Go compatibility checks in those jobs. Ordinary CI omits OCI tests and image builds; retain owning release image publication.
+- Keep Rust server Clippy and tests in separate jobs with the same affected-service matrix and independent validation artifacts. Do not install Go or run Go compatibility checks in those jobs. Ordinary CI omits server OCI tests and release image builds; disposable tool images for fixture validation are permitted; retain owning release image publication.
 - Run all formatting checks without change detection or a dependency on the changes job.
 - Protocol CI validates Buf lint, generated-binding freshness and consumer builds without running Buf breaking comparisons. Keep the local comparison command available under the repository workflow contract.
 - Resolve affected project selection before runner allocation. Keep macOS and iOS runners out of PR, main-push and affected manual CI; retain the separate owning mobile release gates.

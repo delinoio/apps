@@ -2170,6 +2170,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "perfine-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "buffa",
+ "buffa-types",
+ "chrono",
+ "connectrpc",
+ "delino-protocol",
+ "flate2",
+ "hex",
+ "hmac",
+ "jsonwebtoken",
+ "reqwest 0.12.28",
+ "rsa",
+ "serde",
+ "serde_json",
+ "server-common",
+ "sha2",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -489,3 +489,128 @@ fn delayed_admission_uses_current_transaction_time_and_original_deadline() {
         .is_err()
     );
 }
+
+#[test]
+fn completed_review_requires_identical_measurements_and_retained_proof() {
+    let f = Fixture::new(config(), [10000., 10000.], [9950., 9950.]);
+    let e = engine(&f);
+    start(&e, &f, f.candidate.clone(), 0, 101).unwrap();
+    e.finish_candidate(
+        &request(),
+        &f.experiment,
+        &f.candidate,
+        &f.round(),
+        None,
+        &ReviewEvidence::default(),
+        102,
+    )
+    .unwrap();
+    let review = ReviewEvidence {
+        equally_simple_or_simpler: Some(digest(b"profile")),
+        ..ReviewEvidence::default()
+    };
+    e.finish_candidate(
+        &request(),
+        &f.experiment,
+        &f.candidate,
+        &f.round(),
+        None,
+        &review,
+        1000,
+    )
+    .unwrap();
+    let evaluated = e.status(&f.experiment).unwrap().candidates[&f.candidate]
+        .evaluation
+        .clone()
+        .unwrap();
+    assert_eq!(evaluated.exception, Some(Exception::EquallySimple));
+    let changed = run(
+        &f.cfg,
+        &f.experiment,
+        Some(f.candidate.clone()),
+        sha('d'),
+        [9000., 9000.],
+    );
+    let round = Round {
+        incremental: Comparison {
+            base: &f.base,
+            head: &changed,
+            baseline: &f.baseline,
+        },
+        cumulative: None,
+    };
+    assert!(
+        e.finish_candidate(
+            &request(),
+            &f.experiment,
+            &f.candidate,
+            &round,
+            None,
+            &review,
+            1001
+        )
+        .is_err()
+    );
+    let missing = ReviewEvidence {
+        equally_simple_or_simpler: Some(digest(b"missing")),
+        ..ReviewEvidence::default()
+    };
+    assert!(
+        e.finish_candidate(
+            &request(),
+            &f.experiment,
+            &f.candidate,
+            &f.round(),
+            None,
+            &missing,
+            1002
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn delayed_head_registration_keeps_original_deadline_after_engine_clock_advances() {
+    let f = fixture();
+    let e = engine(&f);
+    e.record_step(
+        &request(),
+        &f.experiment,
+        &f.cfg,
+        name("independent-step"),
+        digest(b"record"),
+        105,
+    )
+    .unwrap();
+    e.start_candidate_from_admission(
+        &request(),
+        &f.experiment,
+        f.candidate.clone(),
+        sha('d'),
+        workspace(0),
+        &f.base,
+        &f.baseline,
+        &BTreeSet::from([name("src/hot.rs")]),
+        101,
+        106,
+    )
+    .unwrap();
+    let c = &e.status(&f.experiment).unwrap().candidates[&f.candidate];
+    assert_eq!(c.started_at, 101);
+    assert_eq!(c.deadline, 131);
+    assert!(
+        e.start_candidate_from_admission(
+            &request(),
+            &f.experiment,
+            ResourceId::generate(),
+            sha('d'),
+            workspace(1),
+            &f.base,
+            &f.baseline,
+            &BTreeSet::from([name("src/hot.rs")]),
+            101,
+            132
+        )
+        .is_err()
+    );
+}

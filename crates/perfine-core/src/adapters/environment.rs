@@ -197,6 +197,85 @@ impl DockerEnvironment {
         }
         Ok(())
     }
+    /// Reattach a durable task-owned checkout after process interruption. Never adopt user work.
+    pub fn reattach(&self, request: &EnvironmentRequest) -> Result<()> {
+        self.validate_request(request)?;
+        let marker = PathBuf::from(format!(
+            "{}.ownership.json",
+            request.workspace.directory.as_str()
+        ));
+        if fs::symlink_metadata(&marker)?.file_type().is_symlink() {
+            return Err(Error::Invalid("ownership marker symlink"));
+        }
+        let expected = serde_json::to_vec(&(request, &self.config))?;
+        if fs::read(marker)? != expected {
+            return Err(Error::Mismatch("retained workspace ownership"));
+        }
+        for path in [
+            &request.workspace.directory,
+            &request.workspace.build_directory,
+        ] {
+            let p = Path::new(path.as_str());
+            if p.canonicalize()? != p || !p.is_dir() {
+                return Err(Error::Invalid("retained workspace path"));
+            }
+        }
+        let directory = Path::new(request.workspace.directory.as_str());
+        if String::from_utf8_lossy(&git(directory, &["branch", "--show-current"])?).trim()
+            != request.workspace.branch.as_str()
+            || !git(directory, &["remote"])?.is_empty()
+            || directory.join(".git/objects/info/alternates").exists()
+        {
+            return Err(Error::Mismatch("retained workspace branch or remotes"));
+        }
+        self.require_clean(&request.workspace)?;
+        git(
+            directory,
+            &["merge-base", "--is-ancestor", request.base.as_str(), "HEAD"],
+        )?;
+        // A killed CLI can leave a container alive. Refuse overlapping execution;
+        // the operator can wait for it to exit before resuming the same attempt.
+        let docker = |args: &[&str]| -> Result<Vec<u8>> {
+            let mut command = Process::new(&self.config.executable);
+            command
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .args(args);
+            let out = process::run(&mut command, &[], None, Duration::from_secs(15), || {})?;
+            if out.code != 0 {
+                return Err(Error::Incomplete("container reconciliation unavailable"));
+            }
+            Ok(out.stdout)
+        };
+        let ids = String::from_utf8(docker(&["ps", "--quiet"])?)
+            .map_err(|_| Error::Invalid("container IDs"))?;
+        for id in ids.split_whitespace() {
+            let containers: serde_json::Value = serde_json::from_slice(&docker(&["inspect", id])?)?;
+            for container in containers
+                .as_array()
+                .ok_or(Error::Invalid("container inspection"))?
+            {
+                for mount in container["Mounts"]
+                    .as_array()
+                    .ok_or(Error::Invalid("container mounts"))?
+                {
+                    if mount["Source"].as_str().is_some_and(|p| {
+                        p == request.workspace.directory.as_str()
+                            || p == request.workspace.build_directory.as_str()
+                    }) {
+                        return Err(Error::Incomplete(
+                            "retained workspace still has an active container; wait before resume",
+                        ));
+                    }
+                }
+            }
+        }
+        self.prepared.lock().map_err(|_| Error::State)?.insert(
+            request.workspace.directory.as_str().into(),
+            (request.workspace.clone(), request.base.clone()),
+        );
+        Ok(())
+    }
     pub fn source(&self, workspace: &Workspace) -> Result<CommitSha> {
         let out = git(
             Path::new(workspace.directory.as_str()),
@@ -331,6 +410,18 @@ impl EnvironmentAdapter for DockerEnvironment {
         if self.source(&request.workspace)? != request.base {
             return Err(Error::Mismatch("prepared source"));
         }
+        // The host-owned marker is outside all source/build mounts and contains no credentials.
+        let marker = PathBuf::from(format!(
+            "{}.ownership.json",
+            request.workspace.directory.as_str()
+        ));
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(marker)?;
+        use std::io::Write;
+        file.write_all(&serde_json::to_vec(&(request, &self.config))?)?;
+        file.sync_all()?;
         self.prepared.lock().map_err(|_| Error::State)?.insert(
             request.workspace.directory.as_str().into(),
             (request.workspace.clone(), request.base.clone()),

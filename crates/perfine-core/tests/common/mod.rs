@@ -181,7 +181,7 @@ impl Fixture {
             baseline,
         }
     }
-    pub fn round(&self) -> Round<'_> {
+    pub const fn round(&self) -> Round<'_> {
         Round {
             incremental: Comparison {
                 base: &self.base,
