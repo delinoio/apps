@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #import <UIKit/UIKit.h>
 #import "LaneHost.h"
+#import <XElement/LynxUIInput.h>
+#import <XElement/LynxUITextArea.h>
 #import "LaneLog.h"
 #import <Lynx/LynxConfig.h>
 #import <Lynx/LynxEnv.h>
@@ -28,18 +30,25 @@
 
 @interface LaneController : UIViewController
 @property(nonatomic, strong) LynxView *lynxView;
+@property(nonatomic) CGRect keyboardFrame;
 @end
 @implementation LaneController
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.view.backgroundColor = UIColor.whiteColor;
+  [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:) name:UIKeyboardWillChangeFrameNotification object:nil];
+  [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardChanged:) name:UIKeyboardWillHideNotification object:nil];
   [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateTextSize) name:UIContentSizeCategoryDidChangeNotification object:nil];
   self.lynxView = [[LynxView alloc] initWithBuilderBlock:^(LynxViewBuilder *builder) {
     LynxConfig *config = [[LynxConfig alloc] initWithProvider:[LaneProvider new]];
+    [config registerUI:LynxUIInput.class withName:@"input"];
+    [config registerShadowNode:LynxUIInputShadowNode.class withName:@"input"];
+    [config registerUI:LynxUITextArea.class withName:@"textarea"];
+    [config registerShadowNode:LynxUITextAreaShadowNode.class withName:@"textarea"];
     [config registerModule:LaneStoreModule.class];
     [config registerModule:LaneHostModule.class];
     builder.config = config;
-    builder.screenSize = self.view.bounds.size;
+    builder.screenSize = self.view.safeAreaLayoutGuide.layoutFrame.size;
     builder.fontScale = [UIFontMetrics.defaultMetrics scaledValueForValue:1.0];
   }];
   self.lynxView.layoutWidthMode = LynxViewSizeModeExact;
@@ -47,6 +56,12 @@
   [self.view addSubview:self.lynxView];
   [LaneHost shared].view = self.lynxView;
   [self.lynxView loadTemplateFromURL:@"main.lynx" initData:nil];
+}
+- (void)keyboardChanged:(NSNotification *)notification {
+  self.keyboardFrame = [notification.name isEqual:UIKeyboardWillHideNotification] ? CGRectZero :
+    [self.view convertRect:[notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
+  [self.view setNeedsLayout];
+  [self.view layoutIfNeeded];
 }
 - (void)updateTextSize { [self.lynxView updateFontScale:[UIFontMetrics.defaultMetrics scaledValueForValue:1.0]]; }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
@@ -60,9 +75,17 @@
 }
 - (void)viewDidLayoutSubviews {
   [super viewDidLayoutSubviews];
-  self.lynxView.frame = self.view.bounds;
-  self.lynxView.preferredLayoutWidth = self.view.bounds.size.width;
-  self.lynxView.preferredLayoutHeight = self.view.bounds.size.height;
+  CGRect contentFrame = self.view.safeAreaLayoutGuide.layoutFrame;
+  // Keep the editor footer usable with a docked keyboard. Floating keyboards
+  // leave the full safe-area viewport available for normal scrolling.
+  CGRect keyboard = CGRectIntersection(self.view.bounds, self.keyboardFrame);
+  if (!CGRectIsNull(keyboard) && keyboard.size.width >= contentFrame.size.width && keyboard.size.height > 0)
+    contentFrame.size.height = MAX(0, MIN(CGRectGetMaxY(contentFrame), CGRectGetMinY(keyboard)) - contentFrame.origin.y);
+  BOOL resized = !CGSizeEqualToSize(self.lynxView.bounds.size, contentFrame.size);
+  self.lynxView.frame = contentFrame;
+  self.lynxView.preferredLayoutWidth = contentFrame.size.width;
+  self.lynxView.preferredLayoutHeight = contentFrame.size.height;
+  if (resized) [self.lynxView updateScreenMetricsWithWidth:contentFrame.size.width height:contentFrame.size.height];
   [self.lynxView triggerLayout];
 }
 @end

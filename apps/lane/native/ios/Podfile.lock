@@ -1,4 +1,6 @@
 PODS:
+  - Lynx (4.1.0):
+    - Lynx/Framework (= 4.1.0)
   - Lynx/Framework (4.1.0):
     - Lynx/Gfx
     - Lynx/ReleaseResource
@@ -41,17 +43,21 @@ PODS:
     - PrimJS/quickjs
   - PrimJS/quickjs (4.1.1):
     - PrimJS/log
+  - XElement/Input (4.1.0):
+    - Lynx (= 4.1.0)
 
 DEPENDENCIES:
   - Lynx/Framework (= 4.1.0)
   - PrimJS/napi (= 4.1.1)
   - PrimJS/quickjs (= 4.1.1)
+  - XElement/Input (= 4.1.0)
 
 SPEC REPOS:
   https://github.com/lynx-family/Specs.git:
     - Lynx
     - LynxBase
     - LynxServiceAPI
+    - XElement
   trunk:
     - PrimJS
 
@@ -60,7 +66,8 @@ SPEC CHECKSUMS:
   LynxBase: b9dc9686737683666f116d804870d5082114cbb2
   LynxServiceAPI: 89db9ac7aecf6e600217c3813ff8856aa0f8a8cd
   PrimJS: 2bb7f0e0c314cc81f6dc53aa814082b66f149e7c
+  XElement: 81b11cf09c9b2c773bfc3b9b631811502328016b
 
-PODFILE CHECKSUM: 029542e77e5252e1361766e46fda50ad92991f47
+PODFILE CHECKSUM: 0140eb230226cbca8b7a3448df7ee24468195e06
 
 COCOAPODS: 1.16.2
