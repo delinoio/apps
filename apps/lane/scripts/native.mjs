@@ -32,8 +32,14 @@ try {
     else throw new Error("Use macOS or Windows for Clay hosts");
   } else if (platform === "android" && action === "build") {
     run(
-      "gradle",
-      ["--no-daemon", ":app:assembleRelease"],
+      "java",
+      [
+        "-classpath",
+        "gradle/wrapper/gradle-wrapper.jar",
+        "org.gradle.wrapper.GradleWrapperMain",
+        "--no-daemon",
+        ":app:assembleRelease",
+      ],
       join(root, "native/android"),
     );
   } else if (platform === "ios" && ["init", "build"].includes(action)) {

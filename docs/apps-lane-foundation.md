@@ -34,7 +34,8 @@ Native builds embed the local production bundle and do not fetch remote template
   macOS requires Xcode command-line tools and CMake; Windows requires Visual
   Studio C++ tools and CMake. Desktop opens a resizable window and exits after
   the last window closes.
-- Android: install JDK 17, Android SDK 35 and Gradle 8.11.1. Run
+- Android: install JDK 17 or 21 and Android SDK 35. The committed Gradle
+  wrapper selects 8.11.1. Run
   `pnpm build:android` for an unsigned release APK. Import `native/android` in
   Android Studio for installation and debugging.
 - iOS: install Xcode, XcodeGen and CocoaPods. Run `pnpm mobile:ios:init` to

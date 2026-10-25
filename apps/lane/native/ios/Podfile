@@ -14,6 +14,12 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+      # SDK 4.1 treats warnings from newer Clang/libc++ headers as errors.
+      # Keep warnings visible; remove when SDK flags support current Xcode.
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      flags = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']
+      flags = [flags] unless flags.is_a?(Array)
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags + ['-Wno-error']
     end
   end
 end
