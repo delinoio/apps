@@ -307,3 +307,36 @@ test("all platform archives use matching metadata and identical npm entry bytes"
     );
   }
 });
+
+test("entry publication requires every exact platform version first", () => {
+  const yaml = require("js-yaml");
+  const workflow = yaml.load(
+    readFileSync(join(root, ".github/workflows/release-perfine.yml"), "utf8"),
+  );
+  if (workflow.jobs.publish.needs.includes("prepare-set")) {
+    assert.ok(
+      workflow.jobs.publish.steps.some((step) =>
+        step.run?.includes('release-set.mjs" publish-npm'),
+      ),
+    );
+    return;
+  }
+  const publish = workflow.jobs.publish.steps.find((step) =>
+    step.run?.includes("npm publish"),
+  );
+  assert.ok(publish);
+  for (const platform of [
+    "linux-x64",
+    "darwin-x64",
+    "darwin-arm64",
+    "win32-x64",
+  ])
+    assert.ok(publish.run.includes(platform));
+  assert.match(
+    publish.run,
+    /test "\$\(npm view "@delinoio\/perfine-\$platform@\$RELEASE_VERSION" version\)" = "\$RELEASE_VERSION"/,
+  );
+  assert.ok(
+    publish.run.indexOf("npm view") < publish.run.indexOf("npm publish"),
+  );
+});
