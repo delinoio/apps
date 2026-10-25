@@ -32,6 +32,18 @@
   [self openWindow];
   for (NSURL* url in self.pendingURLs) [_runtime handleURL:url];
   self.pendingURLs = nil;
+#ifdef LANE_NATIVE_TESTING
+  if ([NSProcessInfo.processInfo.environment[@"LANE_NATIVE_TEST_LIFECYCLE"] isEqualToString:@"1"]) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+      [self.window performClose:nil];
+      fprintf(stderr, "LANE_NATIVE_WINDOW_CLOSED\n");
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [self openWindow];
+        fprintf(stderr, "LANE_NATIVE_WINDOW_REOPENED\n");
+      });
+    });
+  }
+#endif
 }
 - (void)openWindow {
   if (_lynxView) { [self.window makeKeyAndOrderFront:nil]; return; }

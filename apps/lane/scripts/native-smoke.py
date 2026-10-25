@@ -27,7 +27,28 @@ shutil.copytree(args.app, app)
 shutil.copyfile(args.bundle, app / "Contents/Resources/main.lynx.bundle")
 home = args.scratch / "home"
 root = home / "Library/Application Support/io.delino.lane"
-env = dict(os.environ, HOME=str(home), LANE_NATIVE_TEST_ROOT=str(root), NSUnbufferedIO="YES")
+env = dict(os.environ, HOME=str(home), LANE_NATIVE_TEST_ROOT=str(root), NSUnbufferedIO="YES",
+           LANE_NATIVE_TEST_LIFECYCLE="1")
+host_path = app / "Contents/MacOS/Lane"
+helper_path = host_path.parent / "helpers/lane"
+assert host_path.resolve() != helper_path.resolve()
+assert not os.path.samefile(host_path, helper_path), "Host and helper must be separate files"
+helper_version = subprocess.check_output([str(helper_path), "--version"], env=env,
+                                         text=True, timeout=10).strip()
+assert helper_version == "lane 0.1.0", helper_version
+mcp = subprocess.run([str(helper_path), "mcp", "serve"], input=json.dumps({
+    "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2024-11-05", "capabilities": {},
+        "clientInfo": {"name": "native-package-validation", "version": "1"},
+    },
+}) + "\n", env=env, text=True, capture_output=True, timeout=20)
+assert mcp.returncode == 0, mcp.stderr
+messages = [json.loads(line) for line in mcp.stdout.splitlines() if line.strip()]
+assert any(item.get("id") == 1 and "result" in item for item in messages), messages
+(args.scratch / "packaging.json").write_text(json.dumps({
+    "host": "Contents/MacOS/Lane", "helper": "Contents/MacOS/helpers/lane",
+    "distinctFiles": True, "helperVersion": helper_version, "helperMcpInitialize": True,
+}, indent=2) + "\n")
 task_id = "01900000-0000-7000-8000-000000000001"
 
 
@@ -75,7 +96,14 @@ for iteration in range(2):
             })
             await_log(log, "LANE_NATIVE_EVENT", host, offset)
             await_log(log, "LANE_NATIVE_EXTERNAL_COMMIT_OBSERVED", host, offset)
-            results.append({"launch": iteration, "creation": expected,
+            await_log(log, "LANE_NATIVE_WINDOW_CLOSED", host)
+            closed_offset = len(log.read_text())
+            # The independent CLI remains usable while the visible host is gone.
+            closed_read = cli("task", "get", "--id", task_id)
+            assert closed_read["result"]["version"]["task"]["title"] == "external commit"
+            await_log(log, "LANE_NATIVE_WINDOW_REOPENED", host, closed_offset)
+            await_log(log, "LANE_NATIVE_READY", host, closed_offset)
+            results.append({"launch": iteration, "windowCloseReopen": True, "creation": expected,
                             "goReadNativeWrite": True, "nativeObservedGoWrite": True})
         finally:
             host.terminate()

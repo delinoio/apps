@@ -128,7 +128,7 @@ std::string Failure(NSString* reason, NSString* message) {
   }
 }
 - (NSURL*)helperURL {
-  NSURL* url = [[NSBundle mainBundle] URLForAuxiliaryExecutable:@"lane"];
+  NSURL* url = [[[NSBundle mainBundle].executableURL URLByDeletingLastPathComponent] URLByAppendingPathComponent:@"helpers/lane"];
   if (!url || ![[NSFileManager defaultManager] isExecutableFileAtPath:url.path])
     throw std::runtime_error("Bundled synchronization helper unavailable");
   return url;
