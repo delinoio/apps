@@ -39,6 +39,26 @@ const cliRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: cliRoot,
   encoding: "utf8",
 }).trim();
+const launcherState = () =>
+  execFileSync(
+    "git",
+    [
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--",
+      "packages/lane",
+      "LICENSE",
+      "NOTICE",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+if (launcherState())
+  throw new Error("Launcher build inputs must be committed before packaging");
+const launcherRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: root,
+  encoding: "utf8",
+}).trim();
 const source = resolve(root, "packages/lane");
 const dist = resolve(source, "dist");
 const pkg = JSON.parse(readFileSync(resolve(source, "package.json")));
@@ -63,10 +83,7 @@ const manifest = {
   schemaVersion: 1,
   version: pkg.version,
   sourceRevision: cliRevision,
-  launcherRevision: execFileSync("git", ["rev-parse", "HEAD"], {
-    cwd: root,
-    encoding: "utf8",
-  }).trim(),
+  launcherRevision,
   artifacts: {},
 };
 for (const key of platforms) {
@@ -126,6 +143,11 @@ writeFileSync(
 );
 if (
   sourceState() ||
+  launcherState() ||
+  execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim() !== launcherRevision ||
   execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: cliRoot,
     encoding: "utf8",

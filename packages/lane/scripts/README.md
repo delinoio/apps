@@ -1,6 +1,6 @@
 # Prepare Lane artifacts
 
-Run root `pnpm install`, then `pnpm --filter @delinoio/lane test`, `pnpm --filter @delinoio/lane build`, and `pnpm --filter @delinoio/lane smoke`. Use the root-selected Go and Node versions. Packaging requires committed CLI, module and protocol inputs. It refuses a dirty source or a source revision change during the build.
+Run root `pnpm install`, then `pnpm --filter @delinoio/lane test`, `pnpm --filter @delinoio/lane build`, and `pnpm --filter @delinoio/lane smoke`. Use the root-selected Go and Node versions. Packaging requires committed CLI, module, protocol, launcher and license inputs. It refuses a dirty source or a source revision change during the build.
 
 `node packages/lane/scripts/build.mjs --source-root <absolute-checkout>` can read a separately owned committed CLI checkout without modifying it. The manifest records CLI source and launcher revisions separately. This is a packaging input, not a protocol dependency pin or an alternative workspace integration model. Final integrated acceptance should run the normal build from the integrated revision.
 
