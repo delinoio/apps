@@ -21,6 +21,8 @@ scrape_configs:
         labels:
           service: lane
   - job_name: lane-health
+    # Allow exporter response overhead without shortening its five-second probe.
+    scrape_timeout: 6s
     metrics_path: /probe
     params:
       module: [lane_http]

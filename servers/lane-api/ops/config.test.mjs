@@ -23,5 +23,6 @@ test("probes use 30s cadence and 5s timeout; metrics require a separate bearer s
   assert.equal(read("blackbox.yml").modules.lane_http.timeout, "5s");
   assert.equal(config.scrape_configs[0].authorization.type, "Bearer");
   assert.ok(config.scrape_configs[0].authorization.credentials_file);
+  assert.equal(config.scrape_configs[1].scrape_timeout, "6s");
   assert.equal(config.scrape_configs[1].static_configs.length, 2);
 });
