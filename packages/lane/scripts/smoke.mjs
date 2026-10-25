@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: Apache-2.0
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  mkdirSync,
+  lstatSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { verifiedExecutable, platformKey, platforms } from "../bin/verify.mjs";
+const source = fileURLToPath(new URL("../", import.meta.url));
+const { version } = JSON.parse(readFileSync(resolve(source, "package.json")));
+const temporary = mkdtempSync(resolve(tmpdir(), "lane-packed-"));
+try {
+  execFileSync(
+    "npm",
+    [
+      "install",
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--prefix",
+      temporary,
+      resolve(source, "dist", `delinoio-lane-${version}.tgz`),
+    ],
+    { stdio: "inherit" },
+  );
+  const installed = resolve(temporary, "node_modules/@delinoio/lane");
+  for (const key of platforms) {
+    const executable = verifiedExecutable(installed, key);
+    const archive = resolve(source, "dist", `lane-${key}-${version}.tar.gz`);
+    const entries = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
+      .trim()
+      .split("\n");
+    assert.ok(
+      entries.every(
+        (name) =>
+          name.startsWith(`lane-${key}/`) &&
+          !name.split("/").includes("..") &&
+          !name.startsWith("/"),
+      ),
+    );
+    for (const required of [
+      "LICENSE",
+      "NOTICE",
+      "manifest.json",
+      "SHA256SUMS",
+      "THIRD_PARTY_NOTICES/modules.json",
+    ])
+      assert.ok(entries.includes(`lane-${key}/${required}`), required);
+    const extracted = resolve(temporary, key);
+    mkdirSync(extracted);
+    execFileSync("tar", ["-xzf", archive, "-C", extracted]);
+    const binary = resolve(
+      extracted,
+      `lane-${key}`,
+      key.startsWith("windows") ? "lane.exe" : "lane",
+    );
+    assert.ok(lstatSync(binary).isFile());
+    assert.deepEqual(readFileSync(binary), readFileSync(executable));
+    const manifest = JSON.parse(
+      readFileSync(resolve(extracted, `lane-${key}`, "manifest.json")),
+    );
+    assert.equal(manifest.version, version);
+    assert.equal(manifest.platform, key);
+  }
+  for (const [command, prefix] of [
+    [process.execPath, [resolve(installed, "bin/lane.mjs")]],
+    [verifiedExecutable(installed), []],
+  ]) {
+    const run = spawnSync(command, [...prefix, "--version"], {
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout.trim(), `lane ${version}`);
+    const help = spawnSync(command, [...prefix, "--help"], {
+      encoding: "utf8",
+    });
+    assert.equal(help.status, 0, help.stderr);
+    // Initialization and discovery do not open or mutate the user's local store.
+    const requests = [
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "lane-package-smoke", version },
+        },
+      },
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    ];
+    const mcp = spawnSync(command, [...prefix, "mcp", "serve"], {
+      input: requests.map((r) => JSON.stringify(r)).join("\n") + "\n",
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    assert.equal(mcp.status, 0, mcp.stderr);
+    const messages = mcp.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(messages[0].result.protocolVersion, "2025-06-18");
+    assert.ok(
+      messages
+        .find((message) => message.id === 2)
+        .result.tools.some((tool) => tool.name === "lane_create_task"),
+    );
+  }
+  console.log(
+    `Real packed Lane ${version} version/help/MCP initialize+discovery verified on ${platformKey()}; other platforms require native execution.`,
+  );
+} finally {
+  rmSync(temporary, { recursive: true, force: true });
+}

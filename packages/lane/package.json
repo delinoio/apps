@@ -1,0 +1,34 @@
+{
+  "name": "@delinoio/lane",
+  "version": "0.1.0",
+  "description": "Local Lane CLI and MCP launcher",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "lane": "bin/lane.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "bin",
+    "artifacts",
+    "manifest.json",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES",
+    "README.md",
+    "SKILL.md",
+    "guides"
+  ],
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/delinoio/apps.git",
+    "directory": "packages/lane"
+  }
+}
