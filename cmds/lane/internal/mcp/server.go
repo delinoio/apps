@@ -62,6 +62,11 @@ type frame struct {
 // pending read. For other readers, the caller must unblock Read on cancellation.
 // Serve does not close out. No diagnostic output is written to either stream.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, invoke Invoke) error {
+	return ServeVersion(ctx, in, out, invoke, "0.1.0")
+}
+
+// ServeVersion reports the executable release version in the MCP handshake.
+func ServeVersion(ctx context.Context, in io.Reader, out io.Writer, invoke Invoke, version string) error {
 	if in == nil || out == nil || invoke == nil {
 		return errors.New("MCP requires input, output, and an invocation dispatcher")
 	}
@@ -222,7 +227,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, invoke Invoke) erro
 					break
 				}
 				initialized = true
-				result = map[string]any{"protocolVersion": protocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "lane", "version": "1.0.0"}}
+				result = map[string]any{"protocolVersion": protocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "lane", "version": version}}
 			case "ping":
 				result = map[string]any{}
 			case "tools/list":

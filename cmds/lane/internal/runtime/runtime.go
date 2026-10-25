@@ -26,6 +26,7 @@ const DefaultEndpoint = "https://lane.api.delino.io"
 
 // Root is injectable only by embedding tests; the executable has no data-root override.
 type Runtime struct {
+	Version     string
 	Root        string
 	Diagnostics io.Writer
 	Auth        syncclient.Auth
@@ -62,13 +63,17 @@ func (r *Runtime) Invoke(ctx context.Context, opt cli.Options, method string, ra
 	return r.invoke(ctx, opt, method, raw, v1.OriginKind_ORIGIN_KIND_CLI)
 }
 func (r *Runtime) ServeMCP(ctx context.Context, opt cli.Options, in io.Reader, out io.Writer) error {
-	return mcp.Serve(ctx, in, out, func(ctx context.Context, method string, raw json.RawMessage) (any, error) {
+	version := r.Version
+	if version == "" {
+		version = "0.1.0"
+	}
+	return mcp.ServeVersion(ctx, in, out, func(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 		result, e := r.invoke(ctx, opt, method, raw, v1.OriginKind_ORIGIN_KIND_MCP)
 		if e != nil {
 			return nil, api.Error(e)
 		}
 		return result, nil
-	})
+	}, version)
 }
 func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, raw json.RawMessage, kind v1.OriginKind) (result any, err error) {
 	s, e := r.open(opt)
