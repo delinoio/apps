@@ -134,28 +134,54 @@ export function App({
             <Notice title="Space unavailable">
               New work is blocked. Contact your space manager.
             </Notice>
-          ) : (
-            <Space key={space} spaceId={space} name={current.name} />
+          ) : null}
+          {space && (
+            <div
+              hidden={
+                !!user.error || !current || current.blocked || current.deleting
+              }
+            >
+              <Space
+                key={space}
+                spaceId={space}
+                name={current?.name ?? ""}
+                available={
+                  !user.error &&
+                  !!current &&
+                  !current.blocked &&
+                  !current.deleting
+                }
+              />
+            </div>
           )}
         </main>
       </div>
     </>
   );
 }
-function Space({ spaceId, name }: { spaceId: string; name: string }) {
+function Space({
+  spaceId,
+  name,
+  available,
+}: {
+  spaceId: string;
+  name: string;
+  available: boolean;
+}) {
   const requestId = useRequestId();
   const access = useQuery(
     AccessService.method.getAuthorization,
     { spaceId, requestId },
-    { refetchInterval: 30_000 },
+    { enabled: available, refetchInterval: 30_000 },
   );
   const [view, setView] = useState(View.Experiments),
     [connectionId, setConnection] = useState(""),
     [experimentId, setExperiment] = useState("");
   const [cursors, setCursors] = useState([""]);
-  const permissions = access.error
-    ? []
-    : access.data?.authorization?.permissions || [];
+  const permissions =
+    !available || access.error
+      ? []
+      : access.data?.authorization?.permissions || [];
   const may = (p: Permission) => permissions.includes(p);
   const connections = useQuery(
     ConnectionService.method.listConnections,
@@ -182,165 +208,182 @@ function Space({ spaceId, name }: { spaceId: string; name: string }) {
     setView(v);
     setExperiment("");
   }
-  if (access.isPending) return <Notice title="Checking space permissions…" />;
-  if (access.error)
-    return <Failure error={access.error} retry={() => void access.refetch()} />;
+  const detailAvailable =
+    available && access.isSuccess && may(Permission.READ) && !!connection;
   return (
     <>
-      <nav className="tabs" aria-label="Workspace">
-        <Button
-          variant={view === View.Repositories ? "secondary" : "ghost"}
-          onClick={() => navigate(View.Repositories)}
-        >
-          Repositories
-        </Button>
-        <Button
-          variant={view === View.Experiments ? "secondary" : "ghost"}
-          onClick={() => navigate(View.Experiments)}
-        >
-          Experiments
-        </Button>
-        <Button
-          variant={view === View.Settings ? "secondary" : "ghost"}
-          onClick={() => navigate(View.Settings)}
-        >
-          Settings
-        </Button>
-      </nav>
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{name}</p>
-          <h1>
-            {view === View.Repositories
-              ? "Repositories"
-              : view === View.Settings
-                ? "Repository settings"
-                : view === View.Start
-                  ? "Start an experiment"
-                  : experimentId
-                    ? "Experiment detail"
-                    : "Experiments"}
-          </h1>
+      {access.isPending && <Notice title="Checking space permissions…" />}
+      {access.error && (
+        <Failure error={access.error} retry={() => void access.refetch()} />
+      )}
+      <div hidden={!available || !access.isSuccess}>
+        <nav className="tabs" aria-label="Workspace">
+          <Button
+            variant={view === View.Repositories ? "secondary" : "ghost"}
+            onClick={() => navigate(View.Repositories)}
+          >
+            Repositories
+          </Button>
+          <Button
+            variant={view === View.Experiments ? "secondary" : "ghost"}
+            onClick={() => navigate(View.Experiments)}
+          >
+            Experiments
+          </Button>
+          <Button
+            variant={view === View.Settings ? "secondary" : "ghost"}
+            onClick={() => navigate(View.Settings)}
+          >
+            Settings
+          </Button>
+        </nav>
+        <div className="page-heading">
+          <div>
+            <p className="eyebrow">{name}</p>
+            <h1>
+              {view === View.Repositories
+                ? "Repositories"
+                : view === View.Settings
+                  ? "Repository settings"
+                  : view === View.Start
+                    ? "Start an experiment"
+                    : experimentId
+                      ? "Experiment detail"
+                      : "Experiments"}
+            </h1>
+          </div>
+          {may(Permission.EXPERIMENT) &&
+            connection &&
+            view === View.Experiments && (
+              <Button onClick={() => navigate(View.Start)}>
+                New experiment
+              </Button>
+            )}
         </div>
-        {may(Permission.EXPERIMENT) &&
-          connection &&
-          view === View.Experiments && (
-            <Button onClick={() => navigate(View.Start)}>New experiment</Button>
+        <div className="repository-picker">
+          <label className="field">
+            Repository
+            <NativeSelect
+              value={connectionId}
+              onChange={(e) => {
+                setConnection(e.target.value);
+                setExperiment("");
+              }}
+            >
+              <option value="">Select a repository</option>
+              {visibleConnections &&
+                connection &&
+                !visibleConnections?.connections.some(
+                  (c) => c.id === connection.id,
+                ) && (
+                  <option value={connection.id}>
+                    {connection.repository?.owner}/{connection.repository?.name}
+                  </option>
+                )}
+              {visibleConnections?.connections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.repository?.owner}/{c.repository?.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          {visibleConnections?.page?.nextCursor || cursors.length > 1 ? (
+            <Pager
+              previous={
+                cursors.length > 1
+                  ? () => setCursors((c) => c.slice(0, -1))
+                  : undefined
+              }
+              next={
+                visibleConnections?.page?.nextCursor
+                  ? () =>
+                      setCursors((c) => [
+                        ...c,
+                        visibleConnections!.page!.nextCursor,
+                      ])
+                  : undefined
+              }
+              busy={connections.isFetching}
+            />
+          ) : null}
+        </div>
+        {connections.isLoading && <Notice title="Loading repositories…" />}
+        {connections.error && (
+          <Failure
+            error={connections.error}
+            retry={() => void connections.refetch()}
+          />
+        )}
+        {selected.error && (
+          <Failure
+            error={selected.error}
+            retry={() => void selected.refetch()}
+          />
+        )}
+        {view === View.Repositories ? (
+          <Repositories
+            spaceId={spaceId}
+            manage={may(Permission.MANAGE)}
+            connections={visibleConnections?.connections || []}
+            onSelect={(c) => {
+              setConnection(c.id);
+              navigate(View.Experiments);
+            }}
+          />
+        ) : view === View.Settings ? (
+          <Settings
+            key={connectionId}
+            spaceId={spaceId}
+            connection={connection}
+            manage={may(Permission.MANAGE)}
+          />
+        ) : !may(Permission.READ) && may(Permission.EXPERIMENT) ? (
+          <Operations spaceId={spaceId} />
+        ) : !connection ? (
+          <Notice title="Choose a repository">
+            Select a connected repository, or open Repositories to connect one.
+          </Notice>
+        ) : view === View.Start ? (
+          <Start
+            key={connectionId}
+            spaceId={spaceId}
+            connection={connection}
+            allowed={may(Permission.EXPERIMENT)}
+            onStarted={(id) => {
+              setExperiment(id);
+              setView(View.Experiments);
+            }}
+          />
+        ) : !may(Permission.READ) ? (
+          <Notice title="Read permission required">
+            Management, experiment and publication permissions do not grant
+            result access.
+          </Notice>
+        ) : experimentId ? null : (
+          <History
+            key={connectionId}
+            spaceId={spaceId}
+            connectionId={connectionId}
+            open={setExperiment}
+          />
+        )}
+        {/* Keep request identity alive across ancestor polling errors. */}
+        {view === View.Experiments &&
+          experimentId &&
+          selected.data?.connection && (
+            <div hidden={!detailAvailable}>
+              <Detail
+                key={experimentId}
+                spaceId={spaceId}
+                connection={selected.data.connection}
+                experimentId={experimentId}
+                permissions={permissions}
+                available={detailAvailable}
+                back={() => setExperiment("")}
+              />
+            </div>
           )}
       </div>
-      <div className="repository-picker">
-        <label className="field">
-          Repository
-          <NativeSelect
-            value={connectionId}
-            onChange={(e) => {
-              setConnection(e.target.value);
-              setExperiment("");
-            }}
-          >
-            <option value="">Select a repository</option>
-            {visibleConnections &&
-              connection &&
-              !visibleConnections?.connections.some(
-                (c) => c.id === connection.id,
-              ) && (
-                <option value={connection.id}>
-                  {connection.repository?.owner}/{connection.repository?.name}
-                </option>
-              )}
-            {visibleConnections?.connections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.repository?.owner}/{c.repository?.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-        {visibleConnections?.page?.nextCursor || cursors.length > 1 ? (
-          <Pager
-            previous={
-              cursors.length > 1
-                ? () => setCursors((c) => c.slice(0, -1))
-                : undefined
-            }
-            next={
-              visibleConnections?.page?.nextCursor
-                ? () =>
-                    setCursors((c) => [
-                      ...c,
-                      visibleConnections!.page!.nextCursor,
-                    ])
-                : undefined
-            }
-            busy={connections.isFetching}
-          />
-        ) : null}
-      </div>
-      {connections.isLoading && <Notice title="Loading repositories…" />}
-      {connections.error && (
-        <Failure
-          error={connections.error}
-          retry={() => void connections.refetch()}
-        />
-      )}
-      {selected.error && (
-        <Failure error={selected.error} retry={() => void selected.refetch()} />
-      )}
-      {view === View.Repositories ? (
-        <Repositories
-          spaceId={spaceId}
-          manage={may(Permission.MANAGE)}
-          connections={visibleConnections?.connections || []}
-          onSelect={(c) => {
-            setConnection(c.id);
-            navigate(View.Experiments);
-          }}
-        />
-      ) : view === View.Settings ? (
-        <Settings
-          key={connectionId}
-          spaceId={spaceId}
-          connection={connection}
-          manage={may(Permission.MANAGE)}
-        />
-      ) : !may(Permission.READ) && may(Permission.EXPERIMENT) ? (
-        <Operations spaceId={spaceId} />
-      ) : !connection ? (
-        <Notice title="Choose a repository">
-          Select a connected repository, or open Repositories to connect one.
-        </Notice>
-      ) : view === View.Start ? (
-        <Start
-          key={connectionId}
-          spaceId={spaceId}
-          connection={connection}
-          allowed={may(Permission.EXPERIMENT)}
-          onStarted={(id) => {
-            setExperiment(id);
-            setView(View.Experiments);
-          }}
-        />
-      ) : !may(Permission.READ) ? (
-        <Notice title="Read permission required">
-          Management, experiment and publication permissions do not grant result
-          access.
-        </Notice>
-      ) : experimentId ? (
-        <Detail
-          key={experimentId}
-          spaceId={spaceId}
-          connection={connection}
-          experimentId={experimentId}
-          permissions={permissions}
-          back={() => setExperiment("")}
-        />
-      ) : (
-        <History
-          key={connectionId}
-          spaceId={spaceId}
-          connectionId={connectionId}
-          open={setExperiment}
-        />
-      )}
     </>
   );
 }

@@ -192,12 +192,14 @@ export function Detail({
   connection,
   experimentId,
   permissions,
+  available = true,
   back,
 }: {
   spaceId: string;
   connection: Connection;
   experimentId: string;
   permissions: Permission[];
+  available?: boolean;
   back: () => void;
 }) {
   const requestId = useRequestId(),
@@ -205,7 +207,7 @@ export function Detail({
   const experiment = useQuery(
     ExperimentService.method.getExperiment,
     { spaceId, experimentId, requestId },
-    { refetchInterval: 5000 },
+    { enabled: available, refetchInterval: 5000 },
   );
   const [cursors, setCursors] = useState([""]);
   const candidates = useQuery(
@@ -217,7 +219,7 @@ export function Detail({
       page: { pageSize: 20, cursor: cursors.at(-1) },
     },
     {
-      enabled: !!experiment.data && !experiment.error,
+      enabled: available && !!experiment.data && !experiment.error,
       refetchInterval: 10_000,
     },
   );
@@ -228,7 +230,7 @@ export function Detail({
     ExperimentService.method.getCandidate,
     { spaceId, experimentId, candidateId, requestId },
     {
-      enabled: !!candidateId && !experiment.error && !deleted,
+      enabled: available && !!candidateId && !experiment.error && !deleted,
       refetchInterval: 10_000,
     },
   );
@@ -268,7 +270,7 @@ export function Detail({
           />
         )}
         {/* Keep the publication session mounted while errors hide retained evidence. */}
-        <div hidden={!!experiment.error || !!candidate.error}>
+        <div hidden={!available || !!experiment.error || !!candidate.error}>
           <Review
             key={`${candidate.data.candidate.id}/${candidate.data.candidate.headSha}/${candidate.data.candidate.evidenceManifestSha256}`}
             spaceId={spaceId}
@@ -276,6 +278,7 @@ export function Detail({
             candidate={candidate.data.candidate}
             connection={connection}
             allowed={
+              available &&
               permissions.includes(Permission.PUBLISH) &&
               !experiment.error &&
               !candidate.error
@@ -290,6 +293,7 @@ export function Detail({
         </div>
       </>
     );
+  if (!available) return null;
   if (experiment.isPending) return <Notice title="Loading experiment…" />;
   if (experiment.error)
     return (

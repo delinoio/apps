@@ -67,7 +67,7 @@ export function Review({
     PublicationService.method.getPublication,
     { spaceId, approvalId, requestId },
     {
-      enabled: !!approvalId,
+      enabled: allowed && !!approvalId,
       refetchInterval: (q) =>
         q.state.data?.publication?.state === PublicationState.PUBLISHED
           ? false
@@ -77,7 +77,7 @@ export function Review({
   const currentApproval = useQuery(
     PublicationService.method.getApproval,
     { spaceId, approvalId, requestId },
-    { enabled: !!approvalId, refetchInterval: 10_000 },
+    { enabled: allowed && !!approvalId, refetchInterval: 10_000 },
   );
   const requiresJudgment =
     candidate.humanJudgmentRequired ||

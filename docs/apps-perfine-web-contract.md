@@ -135,3 +135,5 @@ output after validation.
 Transient experiment or candidate query failures hide retained review evidence without discarding the mounted publication session. Recovery retains the original approval ID, locked binding, and request ID so retries reconcile the same submission.
 
 A zero/default case repetition count means the API did not supply a usable count. Detail and publication review display it as unavailable, not as evidence of zero measurements. Positive supplied counts remain visible.
+
+Ancestor account, authorization and connection polling failures hide retained evidence and disable actions without discarding an active publication request. Recovery reuses the exact approval, locked draft and publication request identity. Explicit navigation to another space or experiment ends the mounted review session.

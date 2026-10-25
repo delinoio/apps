@@ -144,7 +144,12 @@ export type FixtureOptions = {
   evidencePending?: boolean;
   connectionsDenied?: boolean;
   cancelFailure?: "confirmed" | "uncertain";
-  pollFailure?: "getExperiment" | "getCandidate";
+  pollFailure?:
+    | "getExperiment"
+    | "getCandidate"
+    | "getConnection"
+    | "getAuthorization"
+    | "getCurrentUser";
 };
 export function fixture(options: FixtureOptions = {}) {
   const calls: {
@@ -169,13 +174,27 @@ export function fixture(options: FixtureOptions = {}) {
   ];
   const transport = createRouterTransport((router) => {
     router.service(DelcoreService, {
-      getCurrentUser: () => ({
-        userId: "fixture-user",
-        tenants: [{ id: spaceId, name: "Example engineering", personal: true }],
-      }),
+      getCurrentUser: () => {
+        if (options.pollFailure === "getCurrentUser")
+          throw new ConnectError(
+            "Fixture: getCurrentUser poll failed",
+            Code.Unavailable,
+          );
+        return {
+          userId: "fixture-user",
+          tenants: [
+            { id: spaceId, name: "Example engineering", personal: true },
+          ],
+        };
+      },
     });
     router.service(P.AccessService, {
       getAuthorization: () => {
+        if (options.pollFailure === "getAuthorization")
+          throw new ConnectError(
+            "Fixture: getAuthorization poll failed",
+            Code.Unavailable,
+          );
         if (options.deny)
           throw new ConnectError(
             "Fixture: authority denied",
@@ -203,7 +222,14 @@ export function fixture(options: FixtureOptions = {}) {
           );
         return { connections: options.empty ? [] : [connection] };
       },
-      getConnection: () => ({ connection }),
+      getConnection: () => {
+        if (options.pollFailure === "getConnection")
+          throw new ConnectError(
+            "Fixture: getConnection poll failed",
+            Code.Unavailable,
+          );
+        return { connection };
+      },
       connectRepository: async (req, ctx) => {
         calls.push({
           method: "connectRepository",
