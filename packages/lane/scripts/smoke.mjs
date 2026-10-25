@@ -134,6 +134,7 @@ try {
       .split("\n")
       .map((line) => JSON.parse(line));
     assert.equal(messages[0].result.protocolVersion, "2025-06-18");
+    assert.equal(messages[0].result.serverInfo.version, version);
     assert.ok(
       messages
         .find((message) => message.id === 2)
