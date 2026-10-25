@@ -26,6 +26,7 @@ import { Repositories } from "./Repositories";
 import { Settings } from "./Settings";
 import { Events } from "./Events";
 import {
+  AppIcon,
   AppRail,
   ComingSoon,
   MiniApp,
@@ -278,7 +279,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         <view className="app-content">
           {miniApp === MiniApp.Lane ? (
             <view className="navigation">
-              {!mobile && <text className="brand">▰ Lane</text>}
+              {!mobile && (
+                <view className="lane-brand">
+                  <AppIcon app={MiniApp.Lane} />
+                  <text className="brand">Lane</text>
+                </view>
+              )}
               <view className="nav-items">
                 {[
                   "Tasks",

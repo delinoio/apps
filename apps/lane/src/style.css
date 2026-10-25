@@ -41,6 +41,16 @@ text {
   color: #075aff;
   margin-bottom: 16px;
 }
+.lane-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.lane-brand .brand {
+  margin-bottom: 0;
+}
 .nav-items {
   display: flex;
   flex-direction: column;
@@ -423,11 +433,9 @@ text {
   height: 24px;
   flex-shrink: 0;
 }
-.app-icon .lane-ribbon {
-  font-size: 32px;
-  line-height: 24px;
-  text-align: center;
-  color: #526079;
+.lane-icon {
+  width: 100%;
+  height: 100%;
 }
 .pace-artwork {
   width: 24px;
@@ -438,9 +446,6 @@ text {
   width: 24px;
   height: 24px;
   border-radius: 5px;
-}
-.selected .lane-ribbon {
-  color: #075aff;
 }
 .miniapp-brand {
   display: flex;
