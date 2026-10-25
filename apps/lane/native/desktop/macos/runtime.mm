@@ -50,6 +50,7 @@ std::string Failure(NSString* reason, NSString* message) {
   NSMutableArray<NSDictionary*>* _routes;
   NSString* _currentSpace;
   NSString* _authorizationSpace;
+  NSDictionary* _reauthentication;
   std::string _claimant;
   BOOL _stopped;
 }
@@ -110,11 +111,42 @@ std::string Failure(NSString* reason, NSString* message) {
     return JSON(result);
   };
   hooks.remote = [weak](std::string space, std::string method, std::string request) -> std::string {
-    try { return JSON([weak helper:@[@"--remote", @"--json", @"--expected-space", Text(space), @"rpc", Text(method), @"--request-json", @"-"] input:Text(request)]); }
+    LaneRuntime* host = weak;
+    if (!host) throw std::runtime_error("Host stopped");
+    try {
+      NSMutableDictionary* body = [Parse(request) mutableCopy];
+      NSMutableArray* args = [@[@"--remote", @"--json", @"--expected-space", Text(space)] mutableCopy];
+      if (method == "BeginDataDeletion") [host cancelReauthentication:nil];
+      if (method == "DeleteAccountData") {
+        NSDictionary* pending = host->_reauthentication;
+        if (!pending || ![pending[@"ready"] boolValue] ||
+            ![pending[@"spaceId"] isEqualToString:Text(space)] ||
+            ![pending[@"challengeId"] isEqual:body[@"challengeId"]] ||
+            ![pending[@"accountId"] isEqual:body[@"confirmedAccountId"]] ||
+            ![pending[@"mode"] isEqual:body[@"mode"]] ||
+            [pending[@"expiresAt"] timeIntervalSinceNow] <= 0 || body[@"reauthProof"] || body[@"reauth_proof"])
+          return Failure(@"ERROR_REASON_FORBIDDEN", @"Repeat browser approval for this deletion request.");
+        [args addObjectsFromArray:@[@"--reauth-challenge",pending[@"challengeId"]]];
+        [body removeObjectForKey:@"challengeId"];
+        // Consume the host flow before I/O. A failed request requires fresh approval;
+        // the helper/server retain their own one-use and expiry enforcement.
+        host->_reauthentication = nil;
+      }
+      [args addObjectsFromArray:@[@"rpc", Text(method), @"--request-json", @"-"]];
+      NSDictionary* result = [host helper:args input:Text(JSON(body))];
+      if (method == "BeginDataDeletion") {
+        if (!IsID(result[@"challengeId"])) throw std::runtime_error("Invalid challenge");
+        host->_reauthentication = @{@"spaceId":Text(space),@"challengeId":result[@"challengeId"],
+          @"accountId":body[@"confirmedAccountId"],@"mode":body[@"mode"],@"ready":@NO,
+          @"expiresAt":[NSDate dateWithTimeIntervalSinceNow:300]};
+      }
+      return JSON(result);
+    }
     catch (const HelperFailure& error) { return error.envelope; }
   };
   hooks.disconnect = [weak](std::string space) {
     LaneRuntime* host = weak;
+    if ([host->_reauthentication[@"spaceId"] isEqual:Text(space)]) [host cancelReauthentication:nil];
     [host stopWorker:Text(space)];
     NSDictionary* status = Parse(host->_store->invoke("GetLocalStatus",JSON(@{@"spaceId":Text(space),@"request":@{}})))[@"response"];
     if (![status[@"syncEnabled"] boolValue]) return;
@@ -172,6 +204,16 @@ std::string Failure(NSString* reason, NSString* message) {
     return "NOTIFICATION_PERMISSION_NOT_REQUESTED";
   return result.UTF8String;
 }
+- (void)cancelReauthentication:(NSString*)challenge {
+  NSDictionary* pending = _reauthentication;
+  if (!pending || (challenge && ![challenge isEqual:pending[@"challengeId"]])) return;
+  _reauthentication = nil;
+  // Local invalidation is immediate even if the optional helper is unavailable.
+  // No remaining host path can redeem or submit this canceled flow.
+  try { [self helper:@[@"--json",@"--space",pending[@"spaceId"],@"sync",@"cancel-reauth",
+                      @"--challenge-id",pending[@"challengeId"]] input:nil]; }
+  catch (...) { LaneLog("reauth_cancel_helper_unavailable"); }
+}
 - (std::shared_ptr<lane::desktop::Handler>)storeHandler {
   LaneRuntime* host = self;
   return std::make_shared<lane::desktop::Handler>([host](const std::string& method, const std::vector<std::string>& args) {
@@ -184,15 +226,21 @@ std::string Failure(NSString* reason, NSString* message) {
           response = host->_store->open(args.at(0));
           NSDictionary* body = Parse(response);
           if ([body[@"ok"] boolValue]) {
+            if (host->_currentSpace && ![host->_currentSpace isEqual:body[@"response"][@"spaceId"]])
+              [host cancelReauthentication:nil];
             host->_currentSpace = body[@"response"][@"spaceId"];
             [host->_spaces addObject:host->_currentSpace];
             [host flushRoutes];
           }
         } else if (method == "close") {
+          if ([host->_reauthentication[@"spaceId"] isEqual:Text(args.at(0))]) [host cancelReauthentication:nil];
           response = host->_store->close(args.at(0));
           // Keep the application service and local notifications alive.
         } else if (method == "invoke") {
           NSDictionary* route = Parse(args.at(1));
+          if (host->_currentSpace && ![host->_currentSpace isEqual:route[@"spaceId"]]) [host cancelReauthentication:nil];
+          if (args.at(0) == "DisconnectSync" || args.at(0) == "RemoveDeviceData" || args.at(0) == "ConnectSync")
+            [host cancelReauthentication:nil];
           host->_currentSpace = route[@"spaceId"];
           response = host->_store->invoke(args.at(0), args.at(1));
         }
@@ -203,7 +251,13 @@ std::string Failure(NSString* reason, NSString* message) {
   });
 }
 - (std::shared_ptr<lane::desktop::Handler>)hostHandler {
-  return std::make_shared<lane::desktop::Handler>([](const std::string& method, const std::vector<std::string>& args) {
+  LaneRuntime* host = self;
+  return std::make_shared<lane::desktop::Handler>([host](const std::string& method, const std::vector<std::string>& args) {
+    if (method == "cancelReauthentication") {
+      if (!IsID(Text(args.at(0)))) return Failure(@"ERROR_REASON_INVALID_INPUT", @"Invalid challenge identifier.");
+      dispatch_sync(host->_queue, ^{ [host cancelReauthentication:Text(args.at(0))]; });
+      return JSON(@{@"ok":@YES});
+    }
     __block BOOL success = NO;
     NSString* value = Text(args.at(0));
     dispatch_sync(dispatch_get_main_queue(), ^{
@@ -302,12 +356,33 @@ std::string Failure(NSString* reason, NSString* message) {
     }];
   });
 }
+- (void)viewClosed {
+  dispatch_async(_queue, ^{ [self cancelReauthentication:nil]; });
+}
 - (void)handleURL:(NSURL*)url {
   if (![url.scheme isEqualToString:Scheme()] || url.user || url.password || url.fragment) return;
   dispatch_async(_queue, ^{
     try {
       [self ensureStore];
       if ([url.host isEqualToString:@"auth"] && [url.path isEqualToString:@"/callback"]) {
+        NSURLComponents* components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+        NSString* reauthChallenge = nil;
+        for (NSURLQueryItem* item in components.queryItems) if ([item.name isEqualToString:@"reauth_challenge"]) {
+          if (reauthChallenge) return;
+          reauthChallenge = item.value;
+        }
+        if (reauthChallenge) {
+          NSDictionary* pending = self->_reauthentication;
+          if (!pending || ![pending[@"challengeId"] isEqual:reauthChallenge] ||
+              ![pending[@"spaceId"] isEqual:self->_currentSpace] ||
+              [pending[@"expiresAt"] timeIntervalSinceNow] <= 0) return;
+          NSDictionary* result = [self helper:@[@"--json",@"--space",pending[@"spaceId"],@"sync",@"callback",url.absoluteString] input:nil];
+          if (![result[@"challengeId"] isEqual:reauthChallenge]) throw std::runtime_error("Challenge mismatch");
+          NSMutableDictionary* approved = [pending mutableCopy]; approved[@"ready"] = @YES;
+          self->_reauthentication = approved;
+          [self emit:@"lane.reauthenticated" arguments:@[@{@"challengeId":reauthChallenge}]];
+          return;
+        }
         NSString* authorizationSpace = self->_authorizationSpace ?: self->_currentSpace;
         if (!IsID(authorizationSpace)) return;
         NSDictionary* result = [self helper:@[@"--json",@"--space",authorizationSpace,@"sync",@"callback",url.absoluteString] input:nil];

@@ -106,6 +106,7 @@ inline napi_value HostModule(napi_env env, napi_value exports, const char*, void
   auto handler = *static_cast<std::shared_ptr<Handler>*>(opaque);
   Export(env, exports, handler, "copyText", 1);
   Export(env, exports, handler, "openURL", 1);
+  Export(env, exports, handler, "cancelReauthentication", 1);
   return exports;
 }
 }  // namespace lane::desktop

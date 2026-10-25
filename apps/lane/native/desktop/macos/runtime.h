@@ -9,6 +9,7 @@
 - (std::shared_ptr<lane::desktop::Handler>)storeHandler;
 - (std::shared_ptr<lane::desktop::Handler>)hostHandler;
 - (void)resume;
+- (void)viewClosed;
 - (void)handleURL:(NSURL*)url;
 - (void)handleNotification:(NSDictionary*)info;
 - (void)stop;

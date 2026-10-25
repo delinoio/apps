@@ -92,7 +92,7 @@
 - (void)windowDidResignKey:(NSNotification*)notification {
   if (_lynxView) _lynxView->OnEnterBackground();
 }
-- (void)windowWillClose:(NSNotification*)notification { _lynxView.reset(); }
+- (void)windowWillClose:(NSNotification*)notification { [_runtime viewClosed]; _lynxView.reset(); }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender { return NO; }
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {
   [self openWindow]; [_runtime resume]; return YES;
