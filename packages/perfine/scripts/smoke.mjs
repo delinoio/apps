@@ -102,9 +102,32 @@ try {
   assert.equal(entryProvenance.version, version);
   for (const name of ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"])
     assert.ok(readFileSync(join(entryRoot, name)).length);
+  if (process.platform === "win32") {
+    // Exercise npm's generated Windows shim as well as the archived launcher.
+    // Pass its path as data; do not interpolate user-directory bytes into code.
+    const output = execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "& $env:PERFINE_SMOKE_SHIM --version; exit $LASTEXITCODE",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PERFINE_SMOKE_SHIM: join(directory, "node_modules/.bin/perfine.cmd"),
+        },
+      },
+    ).trim();
+    assert.equal(output, `perfine ${version}`);
+  }
   for (const [kind, binary, prefix] of [
     ["standalone", join(standalone, "runtime", info.executable), []],
-    ["npm", process.execPath, [join(entryRoot, "bin/perfine.cjs")]],
+    process.platform === "win32"
+      ? ["npm", process.execPath, [join(entryRoot, "bin/perfine.cjs")]]
+      : ["npm", join(directory, "node_modules/.bin/perfine"), []],
   ]) {
     const output = execFileSync(binary, [...prefix, "--version"], {
       encoding: "utf8",
