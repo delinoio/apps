@@ -139,7 +139,7 @@ Confirmed deleted spaces release active repository bindings even when they conta
 
 Structured uploads reject duplicate object keys at every depth before decoding observations. Structured uploads accept only the exact engine bundle and normalized artifacts inspected through its verified run references. Unreferenced structured files are rejected, including for baseline-only uploads; declaring that a file contains no source snippets does not bypass this check.
 
-Execution maintenance selects at most 100 connections by their persisted last-check time, oldest first. Connections with unavailable GitHub access retain their run identities but yield later batches to other connections so authority checks and cancellation are not starved.
+Execution maintenance selects at most 100 connections by their persisted last-check time, oldest first. Unavailable Delcore, Logto, or GitHub authority checks advance the last-check time and retry on a later tick without changing connection state or cancelling runs. A definitive tenant, grant, or repository denial still marks authority lost and requests cancellation. Connections with unavailable access retain their run identities but yield later batches to other connections so authority checks and cancellation are not starved.
 
 Execution reconciliation reads the stored GitHub run attempt and verifies both run ID and attempt number before accepting terminal status or cancellation confirmation. A later rerun cannot replace the original experiment’s outcome.
 

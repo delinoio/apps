@@ -13,6 +13,254 @@ use std::{
 fn uid() -> String {
     uuid::Uuid::now_v7().to_string()
 }
+
+#[tokio::test]
+#[ignore = "requires disposable TEST_DATABASE_URL; all providers are mocks"]
+async fn execution_authority_outages_preserve_runs_and_definitive_denials_cancel() {
+    let url = std::env::var("TEST_DATABASE_URL").unwrap();
+    let admin = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!("perfine_{}", uuid::Uuid::now_v7().simple());
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let search = schema.clone();
+    let db = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(move |connection, _| {
+            let search = search.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO {search}"))
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!("../migrations/00001_perfine.sql"))
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let mode = Arc::new(Mutex::new("healthy"));
+    let cancellations = Arc::new(Mutex::new(0u32));
+    let remote_complete = Arc::new(Mutex::new(false));
+    let (mock_mode, mock_cancellations, mock_complete) =
+        (mode.clone(), cancellations.clone(), remote_complete.clone());
+    let app = Router::new().fallback(move |req: Request| {
+        let (mode, cancellations, complete) = (
+            mock_mode.clone(),
+            mock_cancellations.clone(),
+            mock_complete.clone(),
+        );
+        async move {
+            let path = req.uri().path().to_owned();
+            let mode = *mode.lock().unwrap();
+            if mode == "states_timeout" && path.ends_with("/GetTenantStates") {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            if (mode == "states_503" && path.ends_with("/GetTenantStates"))
+                || (mode == "grant_503" && path.ends_with("/Authorize"))
+                || (mode == "logto_503" && path == "/token")
+                || (mode == "installation_503" && path.ends_with("/access_tokens"))
+                || (mode == "repository_502" && path == "/repositories/42")
+            {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            if mode == "repository_429" && path == "/repositories/42" {
+                return StatusCode::TOO_MANY_REQUESTS.into_response();
+            }
+            if mode == "repository_rate_403" && path == "/repositories/42" {
+                return (
+                    StatusCode::FORBIDDEN,
+                    [("x-ratelimit-remaining", "0")],
+                )
+                    .into_response();
+            }
+            if mode == "repository_404" && path == "/repositories/42" {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            if mode == "repository_403" && path == "/repositories/42" {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            if mode == "grant_denied_fault" && path.ends_with("/Authorize") {
+                return (StatusCode::FORBIDDEN, Json(json!({"code":"permission_denied"})))
+                    .into_response();
+            }
+            if path.ends_with("/cancel") {
+                *cancellations.lock().unwrap() += 1;
+                return Json(json!({})).into_response();
+            }
+            let value = match path.as_str() {
+                "/token" => json!({"access_token":"fixture-service","expires_in":0}),
+                "/delcore.v1.DelcoreService/GetTenantStates" => {
+                    let body = axum::body::to_bytes(req.into_body(), 1024).await.unwrap();
+                    let request: Value = serde_json::from_slice(&body).unwrap();
+                    json!({"states":[{"tenantId":request["tenantIds"][0],"state":if mode == "tenant_blocked" { "TENANT_STATE_BLOCKED" } else if mode == "tenant_unknown" { "TENANT_STATE_UNKNOWN" } else { "TENANT_STATE_ACTIVE" }}]})
+                }
+                "/delcore.v1.DelcoreService/Authorize" => {
+                    json!({"allowed":mode != "grant_false"})
+                }
+                "/app/installations/1/access_tokens" => json!({"token":"fixture-installation"}),
+                "/repositories/42" => json!({"id":if mode == "repository_mismatch" { 43 } else { 42 },"full_name":"owner/repo"}),
+                "/repos/owner/repo/actions/runs/1/attempts/1" => json!({"id":1,"run_attempt":1,"status":if *complete.lock().unwrap() { "completed" } else { "in_progress" },"conclusion":"success"}),
+                _ => return StatusCode::NOT_FOUND.into_response(),
+            };
+            Json(value).into_response()
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let space = uid();
+    let connection = uid();
+    let experiment = uid();
+    let subject = uid();
+    let initial_connection = json!({"id":connection,"spaceId":space,"state":"CONNECTION_STATE_CONNECTED","repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"});
+    let initial_experiment = json!({"id":experiment,"spaceId":space,"connectionId":connection,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_RUNNING","githubExecution":{"githubRunId":"1","runAttempt":1}});
+    sqlx::query("INSERT INTO perfine_connections(id,space,repository,owner_subject,github_actor,active,data) VALUES($1,$2,42,$3,'fixture',true,$4)")
+        .bind(uuid::Uuid::parse_str(&connection).unwrap()).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(&subject).bind(&initial_connection).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(uuid::Uuid::parse_str(&experiment).unwrap())
+        .bind(uuid::Uuid::parse_str(&space).unwrap())
+        .bind(uuid::Uuid::parse_str(&connection).unwrap())
+        .bind(&initial_experiment)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let server = || {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_millis(75))
+            .build()
+            .unwrap();
+        Server {
+            metrics: Default::default(),
+            db: db.clone(),
+            authority: Authority::new(
+                http.clone(),
+                base.clone(),
+                format!("{base}/token"),
+                "resource".into(),
+                "client".into(),
+                "fixture".into(),
+            ),
+            actions: Actions::new(http.clone(), format!("{base}/jwks"), actions_keys()),
+            github: GitHub {
+                http: http.clone(),
+                base: base.clone(),
+                app_id: "1".into(),
+                key: jsonwebtoken::EncodingKey::from_rsa_pem(include_bytes!(
+                    "fixtures/github-test-key.pem"
+                ))
+                .unwrap(),
+            },
+            storage: R2 {
+                endpoint: base.clone(),
+                bucket: "bucket".into(),
+                access: "fixture".into(),
+                secret: "fixture".into(),
+                http,
+            },
+            quota: 10_000_000,
+            upload_limit: 2_000_000,
+            rate: 100,
+        }
+    };
+    let mut previous_check = None;
+    for failure in [
+        "states_503",
+        "states_timeout",
+        "grant_503",
+        "logto_503",
+        "installation_503",
+        "repository_502",
+        "repository_429",
+        "repository_rate_403",
+        "tenant_unknown",
+    ] {
+        *mode.lock().unwrap() = failure;
+        server().maintain().await.unwrap();
+        let (data, active): (Value, bool) =
+            sqlx::query_as("SELECT data,active FROM perfine_connections WHERE id=$1")
+                .bind(uuid::Uuid::parse_str(&connection).unwrap())
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        let run: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(&experiment).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(data["state"], "CONNECTION_STATE_CONNECTED", "{failure}");
+        assert!(active, "{failure}");
+        assert!(data.get("executionCancellations").is_none(), "{failure}");
+        assert_eq!(
+            run["executionState"], "EXECUTION_STATE_RUNNING",
+            "{failure}"
+        );
+        assert_eq!(*cancellations.lock().unwrap(), 0, "{failure}");
+        let checked = data["_lastExecutionCheckAt"].as_str().unwrap().to_owned();
+        if let Some(previous) = &previous_check {
+            assert!(
+                checked > *previous,
+                "last check did not advance after {failure}"
+            );
+        }
+        previous_check = Some(checked);
+    }
+    *mode.lock().unwrap() = "healthy";
+    *remote_complete.lock().unwrap() = true;
+    server().maintain().await.unwrap();
+    let run: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+        .bind(uuid::Uuid::parse_str(&experiment).unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(run["executionState"], "EXECUTION_STATE_COMPLETED");
+
+    for denial in [
+        "tenant_blocked",
+        "grant_false",
+        "grant_denied_fault",
+        "repository_404",
+        "repository_403",
+        "repository_mismatch",
+    ] {
+        sqlx::query("UPDATE perfine_connections SET data=$2 WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(&connection).unwrap())
+            .bind(&initial_connection)
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE perfine_experiments SET data=$2 WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(&experiment).unwrap())
+            .bind(&initial_experiment)
+            .execute(&db)
+            .await
+            .unwrap();
+        *mode.lock().unwrap() = denial;
+        let before = *cancellations.lock().unwrap();
+        server().maintain().await.unwrap();
+        let (data, active): (Value, bool) =
+            sqlx::query_as("SELECT data,active FROM perfine_connections WHERE id=$1")
+                .bind(uuid::Uuid::parse_str(&connection).unwrap())
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(data["state"], "CONNECTION_STATE_AUTHORITY_LOST", "{denial}");
+        assert!(active, "{denial}");
+        assert_eq!(*cancellations.lock().unwrap(), before + 1, "{denial}");
+    }
+    task.abort();
+    db.close().await;
+    sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+}
 fn name(s: &str) -> Name {
     Name::new(s).unwrap()
 }

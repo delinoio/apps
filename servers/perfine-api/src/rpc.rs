@@ -5,6 +5,7 @@ use crate::{
     hash, id, integer, stamp, string,
 };
 use buffa::Message;
+use connectrpc::ErrorCode;
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult};
 use delino_protocol::perfine::v1::*;
 use serde_json::{Value, json};
@@ -120,6 +121,12 @@ fn inactive(c: &Value) -> Result<()> {
     } else {
         Ok(())
     }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AuthorityProbe {
+    Allowed,
+    Denied,
+    Unavailable,
 }
 impl Server {
     pub async fn handle<R: serde::de::DeserializeOwned>(
@@ -1506,13 +1513,50 @@ impl Server {
             let Some(current) = current else { continue };
             let mut c: Value = current.get("data");
             let subject: String = current.get("owner_subject");
-            let active = matches!(self.authority.states(&[space.to_string()]).await,Ok(states) if states==[server_common::authority::TenantState::Active]);
-            let grant = if let Ok(token) = self.authority.service_token().await {
-                self.authority.call("Authorize",&format!("Bearer {token}"),json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false})).await.is_ok_and(|v|v["allowed"]==true)
-            } else {
-                false
+            let tenant = match self.authority.states(&[space.to_string()]).await {
+                Ok(states) if states == [server_common::authority::TenantState::Active] => {
+                    AuthorityProbe::Allowed
+                }
+                Ok(states) if states == [server_common::authority::TenantState::Unknown] => {
+                    AuthorityProbe::Unavailable
+                }
+                Ok(states) if states.len() == 1 => AuthorityProbe::Denied,
+                _ => AuthorityProbe::Unavailable,
             };
-            if !active || !grant || inactive(&c).is_err() || self.github.current(&c).await.is_err()
+            let grant = match self.authority.service_token().await {
+                Ok(token) => match self.authority.call("Authorize",&format!("Bearer {token}"),json!({"tenantId":space,"userId":subject,"capability":"experiment","paid":false})).await {
+                    Ok(value) if value["allowed"] == true => AuthorityProbe::Allowed,
+                    Ok(value) if value["allowed"] == false => AuthorityProbe::Denied,
+                    Ok(_) => AuthorityProbe::Unavailable,
+                    Err(fault) if fault.code == ErrorCode::PermissionDenied => AuthorityProbe::Denied,
+                    Err(_) => AuthorityProbe::Unavailable,
+                },
+                Err(_) => AuthorityProbe::Unavailable,
+            };
+            let connection = if inactive(&c).is_ok() {
+                AuthorityProbe::Allowed
+            } else {
+                AuthorityProbe::Denied
+            };
+            let repository = match self.github.current_classified(&c).await {
+                Ok(_) => AuthorityProbe::Allowed,
+                Err(error) if error.is_definitive_denial() => AuthorityProbe::Denied,
+                Err(_) => AuthorityProbe::Unavailable,
+            };
+            let probes = [
+                ("tenant", tenant),
+                ("grant", grant),
+                ("connection", connection),
+                ("repository", repository),
+            ];
+            for (probe, result) in probes {
+                if result == AuthorityProbe::Unavailable {
+                    tracing::warn!(connection_id=%row.get::<uuid::Uuid,_>("id"),probe,"Execution authority probe unavailable");
+                }
+            }
+            if probes
+                .iter()
+                .any(|(_, result)| *result == AuthorityProbe::Denied)
             {
                 if c["state"] == "CONNECTION_STATE_CONNECTED" {
                     c["state"] = json!("CONNECTION_STATE_AUTHORITY_LOST");
@@ -1523,6 +1567,12 @@ impl Server {
                     .bind(&c)
                     .execute(&mut *tx)
                     .await?;
+            } else if probes
+                .iter()
+                .any(|(_, result)| *result == AuthorityProbe::Unavailable)
+            {
+                tx.commit().await?;
+                continue;
             }
             if let Ok(token) = self.github.token(&c).await {
                 let executions:Vec<Value>=sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE connection=$1 AND data->>'origin'='EXECUTION_ORIGIN_GITHUB_ACTIONS' AND data->>'executionState' IN ('EXECUTION_STATE_RUNNING','EXECUTION_STATE_QUEUED')").bind(id(string(&c,"id"))?).fetch_all(&mut *tx).await?;
