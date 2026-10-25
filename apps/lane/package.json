@@ -1,0 +1,31 @@
+{
+  "name": "lane",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "infisical run --env=dev --project-config-dir=../.. -- portless run --name lane --app-port 46325 rspeedy dev",
+    "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- node scripts/native.mjs desktop run",
+    "build": "rspeedy build",
+    "build:frontend": "pnpm build",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm typecheck && pnpm build",
+    "build:desktop": "pnpm build && node scripts/native.mjs desktop build",
+    "build:android": "pnpm build && node scripts/native.mjs android build",
+    "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
+    "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build"
+  },
+  "dependencies": {
+    "@lynx-js/react": "0.129.0",
+    "@lynx-js/web-core": "0.26.5"
+  },
+  "devDependencies": {
+    "@lynx-js/types": "4.3.0",
+    "@lynx-js/react-rsbuild-plugin": "0.22.0",
+    "@lynx-js/rspeedy": "0.18.3",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.14",
+    "typescript": "5.9.3"
+  }
+}

@@ -32,3 +32,5 @@
 - [Git Tracker web](../docs/apps-git-tracker-web-contract.md)
 
 - Perfine ownership: [project](../docs/project-perfine.md); [web contract](../docs/apps-perfine-web-contract.md).
+
+- Lane ownership: [project](../docs/project-lane.md); [application foundation](../docs/apps-lane-foundation.md).

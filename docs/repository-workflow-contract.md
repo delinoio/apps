@@ -118,6 +118,7 @@ The root pins Portless as a development dependency. Run `pnpm dev` from the repo
 | DevBase API     | `https://devbase-api.localhost`     | `127.0.0.1:46317` |
 | Git Tracker API | `https://git-tracker-api.localhost` | `127.0.0.1:46321` |
 | DeliTools API   | `https://delitools-api.localhost`   | `127.0.0.1:46322` |
+| Lane            | `https://lane.localhost`            | `127.0.0.1:46325` |
 | Perfine         | `https://perfine.localhost`         | `127.0.0.1:46324` |
 | Perfine API     | `https://perfine-api.localhost`     | `127.0.0.1:46323` |
 
@@ -250,3 +251,10 @@ The DeliTools tag starts only its web publication. Dispatch `release-delitools-m
 Git Tracker client changes select `git-tracker-clients` on Ubuntu. The job checks the web app, Action tests/bundle freshness and shared generated bindings under `protos/`. Root `pnpm proto:generate` generates Go and TypeScript bindings together; both protocol and client freshness checks reject tracked and untracked changes in that tree. Protocol changes also select the client job because the web app consumes those schemas. Default manual validation remains affected-only.
 
 Delcore, DevBase, Git Tracker and DeliTools use the [server Rust workspace](servers-rust-workspace-contract.md). Their development launchers execute compiled binaries. Delcore retains optional working-directory `.env` loading for every invocation; DevBase, Git Tracker, DeliTools and Perfine load it only with `--dev-env`. Shared crate changes select all five Rust API matrix entries. Their Go service implementations, Go test oracles and Air configurations are removed; the root Go module continues to own generated protocol bindings and Go consumers.
+
+### Lane validation
+
+Lane source and owning contract changes select the Ubuntu `lane-frontend` job.
+It checks TypeScript and builds native and browser bundles. These checks do not
+establish native SDK compilation or device/store acceptance. Native host build
+commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md).

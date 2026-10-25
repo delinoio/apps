@@ -1,0 +1,10 @@
+/native/desktop/build/
+/native/android/.gradle/
+/native/android/.kotlin/
+/native/android/build/
+/native/android/app/build/
+/native/android/local.properties
+/native/ios/Lane.xcodeproj/
+/native/ios/Lane.xcworkspace/
+/native/ios/Pods/
+/native/ios/build/

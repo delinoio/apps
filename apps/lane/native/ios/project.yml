@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Lane
+options:
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: io.delino.lane
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  Lane:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../../dist/main.lynx.bundle
+        buildPhase: resources
+      - path: ../../dist/LICENSE
+        buildPhase: resources
+      - path: ../../dist/NOTICE
+        buildPhase: resources
+      - path: ../licenses
+        buildPhase: resources
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Lane
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+    postBuildScripts:
+      - name: Include dependency notices
+        script: |
+          set -eu
+          cp "${PODS_ROOT}/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdPartyNotices.plist"
+        inputFiles:
+          - "$(PODS_ROOT)/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdPartyNotices.plist"
