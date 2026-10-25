@@ -7,6 +7,7 @@
 #include <roapi.h>
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <chrono>
 #include <cstring>
 #include <filesystem>

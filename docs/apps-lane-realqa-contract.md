@@ -215,3 +215,50 @@ creates its review ZIP. Store copy and privacy materials live in `store/`.
 Publisher account access, a real assigned extension ID, hosted privacy/support
 information, runtime screenshots and Google review remain publication inputs.
 Builds and fixture tests do not establish browser/native or store acceptance.
+
+## Desktop capture host interface
+
+The desktop `LaneHost.realqa(requestJson, callback)` method accepts an `op`
+discriminant. It returns a JSON-string `{ok:true,value}` envelope or a safe typed
+error. It exposes capture sources, capture actions, device shortcuts, permission
+settings, the current draft, image edits, undo/redo, image ordering, export,
+explicit discard and successful-save completion. It exposes no paths, arbitrary
+OS commands or image import API. UI callers use this method only from the Lynx
+background runtime.
+
+The host owns one memory-only draft across its floating composer and main window.
+Images have UUID v7 identities, pixel dimensions, PNG previews, ordered layers,
+optional crop and literal browser metadata. Draft task and request identities are
+stable across unchanged retries. Rendering always starts from the in-memory
+original and flattens the ordered layers before applying the crop. Only exported
+final PNGs, their SHA-256 digests and retained metadata enter `CreateCaptureTask`.
+Export freezes mutations until `complete` or `saveFailed`; this prevents capture
+arrivals during saving from being discarded by a successful completion. Store
+failure retains the draft. A successful completion carries both task and space
+identities in `lane.realqa.saved`; consumers must use the existing account and
+unsaved-edit navigation guard.
+
+`lane.realqa.changed` invalidates draft/settings state. `lane.realqa.select`
+requests a monitor/window chooser. `lane.realqa.closeRequested` requests explicit
+discard confirmation; the native close button cannot discard a draft directly.
+The `state` response identifies its requesting window as `main` or `composer` so
+initial view loading does not depend on receiving a one-time event. Selection
+cancellation does not mutate the draft. Quit cancels active native selection,
+stops Chrome connections and releases capture memory.
+
+macOS 14 and later use ScreenCaptureKit screenshot APIs. To preserve Lynxtron's
+macOS 12 minimum, earlier systems use the OS memory capture API through a scoped
+dynamic compatibility path; the ScreenCaptureKit framework is weak-linked.
+Windows uses monitor/window enumeration, GDI memory capture and GDI+ PNG
+encoding/rendering. Platform renderers implement crop, paths, arrows, rectangles,
+text, blur and opaque cover. Neither renderer writes capture files. Region
+selection supports arrows, Shift plus arrows, Return and Escape, as well as the
+pointer. Shortcuts use exclusive Carbon registration and system reservation
+checks on macOS, and `RegisterHotKey` on Windows. Changing a shortcut registers
+its replacement before releasing its previous valid binding.
+
+Chrome status includes identified pending approvals and device connections.
+`chrome.approve` and `chrome.reject` name the pending approval; `chrome.disconnect`
+names the profile to revoke. The host decodes accepted PNG bytes with the OS
+renderer before adding them. DOM selection failures retain the draft and provide
+context-specific Chrome guidance without substituting region capture.

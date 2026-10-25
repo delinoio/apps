@@ -63,7 +63,7 @@ release workflow, signing identity or store registration.
 
 ### Approved UI composition
 
-Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace and RealQA show their own sidebars and `Coming soon` pages until implemented. Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
+Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
 
 ### Application icon
 
@@ -126,9 +126,9 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
 - Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
   Tooltips must fit the complete app name outside the trigger's bounds.
-- At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon, selected `Overview` item and `Coming soon` status, without Lane navigation. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
+- At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon and selected `Overview` item, without Lane navigation. Pace retains `Coming soon`; RealQA shows the capture/settings or read-only entry defined in its owning contract. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine navigation entry is removed.
-- Apply the existing unsaved-edit confirmation before switching apps. Cancel retains the current screen and draft; confirming discards the unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. Mini-app features remain future work.
+- Apply the existing unsaved-edit confirmation before switching apps. Cancel retains the current screen and draft; confirming discards the unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. RealQA capture, composer, settings and saved-result behavior follow the [RealQA contract](apps-lane-realqa-contract.md).
 - User-facing app and CLI text is English only. Validate keyboard operation, screen readers, visible focus, state distinctions that do not rely on color, and text enlargement on every released GUI platform. Follow repository form-focus and Escape-to-close rules where applicable.
 
 ### Repositories
@@ -300,3 +300,45 @@ start/settings, floating composer/editor and read-only attachment views. Keep
 Pace's placeholder, approved artwork and existing Lane navigation behavior.
 The RealQA contract also defines the Chrome Web Store publication requirement
 and the explicit Windows installation/runtime deferral.
+
+### Desktop capture packaging and local validation
+
+The desktop build also compiles `lane-chrome-host`, a standalone relay launcher.
+It bundles the official Node 24.22.1 security release and its original license
+next to the relay module. macOS packages also include the patched Node 22.23.4
+compatibility runtime for macOS 12 through 13.4, because the official Node 24
+binary requires macOS 13.5. The launcher selects the compatible runtime. Both
+versions address the [October security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases);
+artifact checksums establish download integrity, not absence of vulnerabilities.
+This private runtime does not update Lynxtron's separately embedded runtime. The launcher starts only this private runtime, never
+Lynxtron or the Lane application. `LANE_CHROME_EXTENSION_IDS` supplies exact,
+comma-separated development or published extension IDs at build time. An empty
+value leaves Chrome registration and the connection service disabled; it does
+not produce a placeholder store listing.
+
+From `apps/lane`, `node scripts/desktop.mjs install` installs the generated Lane
+application in the current user's application directory and registers the
+packaged relay for its configured extension IDs. It refuses to replace an
+existing installation. After quitting Lane, `node scripts/desktop.mjs uninstall`
+removes the matching registration and application; it preserves Lane user data.
+Registration removal verifies its owner so an obsolete installer cannot remove
+a newer installation's registration. The existing Windows signing/runtime
+acceptance boundary still applies.
+
+Use a `LANE_NATIVE_TESTING=1` build with an absolute `LANE_NATIVE_TEST_ROOT` for
+native tests. The opt-in `LANE_NATIVE_TEST_CAPTURE=1` probe requires that scratch
+root. It checks existing capture permission without granting it, captures actual
+OS sources in memory, edits the result and saves/retrieves a fully covered small
+fixture through the native store. It does not establish human selector,
+permission-dialog, accessibility, Chrome or publication acceptance. CTest also
+provides the synthetic memory renderer and reauthentication tests; desktop
+controller tests run with `node --test native/desktop/realqa.test.mjs`.
+
+For isolated install/removal checks, set `LANE_NATIVE_TESTING=1` and an absolute
+`LANE_NATIVE_INSTALL_TEST_ROOT`. Only a native-testing package can enter this
+scratch installation path. Its application and Native Messaging registration
+remain under the scratch root. Use an explicitly identified test extension ID
+for these fixtures and record them separately from actual Chrome installation
+and published-extension acceptance. Production builds disable native test-root
+injection. Keep Windows compilation evidence separate from its deferred runtime
+checks, and retain the repository CI platform restrictions.

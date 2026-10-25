@@ -97,6 +97,7 @@ inline void Export(napi_env env, napi_value exports, std::shared_ptr<Handler> ha
 inline napi_value StoreModule(napi_env env, napi_value exports, const char*, void* opaque) {
   auto handler = *static_cast<std::shared_ptr<Handler>*>(opaque);
   Export(env, exports, handler, "open", 1);
+  Export(env, exports, handler, "migrate", 1);
   Export(env, exports, handler, "invoke", 2);
   Export(env, exports, handler, "close", 1);
   return exports;

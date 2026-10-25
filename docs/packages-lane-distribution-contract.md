@@ -33,8 +33,10 @@ Native distributions retain the existing SDK, embedded production-bundle and lic
 ## Desktop Chrome companion packaging
 
 The existing Lane desktop package includes the standalone Native Messaging relay,
-its private pinned Node 24 runtime and the original Node license. The relay starts
-only that runtime and connects to an already running Lane host. It must not launch
+its private pinned Node 24 runtime and the original Node license. macOS packages
+also retain a patched Node 22 compatibility runtime and its license for macOS 12
+through 13.4, where the official Node 24 binary cannot run. The launcher selects
+the runtime for the host OS and connects to an already running Lane host. It must not launch
 Lane. The build records the runtime version and verified archive checksum; this
 integrity check does not replace dependency security review.
 
