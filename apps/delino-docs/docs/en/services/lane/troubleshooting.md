@@ -33,3 +33,5 @@ An expired or released lease cannot complete processing. Claim again if the even
 Check this device's notification preference, OS permission, proposal origin, and whether the proposal is still pending. Accepted, rejected, and deleted proposals cancel unsent notifications. Delivery can be delayed by transient provider failure and expires two hours after creation. Permanent provider failures stop retries.
 
 Windows has no remote WNS delivery in this version. Android without required Google Play services may lack remote push. Use in-app proposal counts, available local notifications, and synchronization in these environments. A missing OS notification does not mean the proposal was lost.
+
+On iOS, background notification wakes are controlled by the OS and are not guaranteed. A proposal notification may wait for the next permitted synchronization opportunity or app opening. Native push messages prompt synchronization before local display; receiving a push is not itself proof that a notice was shown.
