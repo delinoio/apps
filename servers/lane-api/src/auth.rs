@@ -569,7 +569,21 @@ impl Auth {
                 .execute(&mut *db)
                 .await?;
             sqlx::query("INSERT INTO lane_account_deletions(account_id,old_epoch,new_epoch,mode) VALUES($1,$2,$3,$4)").bind(&p.account_id).bind(old).bind(&new_epoch).bind(deletion_mode(q)?).execute(&mut *db).await?;
-            disconnect_all(db, p).await?;
+            disconnect_all(&mut *db, p).await?;
+            // Keep only the identities needed for stale-device deletion directives.
+            sqlx::query("UPDATE lane_devices SET name='',last_sync_at=NULL WHERE account_id=$1")
+                .bind(&p.account_id)
+                .execute(&mut *db)
+                .await?;
+            sqlx::query("UPDATE lane_sessions SET csrf_hash='',redirect_uri='',client_id='' WHERE account_id=$1").bind(&p.account_id).execute(&mut *db).await?;
+            sqlx::query("DELETE FROM lane_reauth_challenges WHERE account_id=$1")
+                .bind(&p.account_id)
+                .execute(&mut *db)
+                .await?;
+            sqlx::query("DELETE FROM lane_auth_consents WHERE account_id=$1")
+                .bind(&p.account_id)
+                .execute(db)
+                .await?;
             return Ok(json!({"newEpoch":new_epoch,"disconnected":true}));
         }
         dispatch(db, p, method, q).await
@@ -938,7 +952,8 @@ async fn callback(
         .await?;
     if string(&claims, "nonce") != flow.get::<String, _>("nonce")
         || string(&claims, "sub").is_empty()
-        || (claims.get("azp").is_some() && string(&claims, "azp") != a.config.logto_client)
+        || ((claims.get("azp").is_some() || claims["aud"].as_array().is_some_and(|v| v.len() > 1))
+            && string(&claims, "azp") != a.config.logto_client)
     {
         return Err(Fault::unauthenticated().into());
     }
@@ -1171,7 +1186,9 @@ async fn web_session(State(a): State<Arc<Auth>>, headers: HeaderMap) -> HttpResu
     account_lock(&mut db, &p.account_id).await?;
     a.authorize(&mut db, &p).await?;
     // The readable CSRF token is delivered only through configured credentialed CORS origins.
-    let csrf = random_token();
+    let (session_token, _) = credential(&headers)?;
+    // All tabs sharing this cookie get the same CSRF value until cookie rotation.
+    let csrf = hash(format!("lane-csrf:{session_token}").as_bytes());
     sqlx::query("UPDATE lane_sessions SET csrf_hash=$2 WHERE id=$1")
         .bind(&p.session_id)
         .bind(hash(csrf.as_bytes()))
@@ -1456,15 +1473,16 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
             (user.clone(), tenant.clone())
         );
         a.allow_account(&user, &tenant).await.unwrap();
-        let calls = m.calls.lock().unwrap();
-        assert_eq!(calls[1].2["page"]["afterId"], "second");
-        assert_eq!(calls[0].1, "Bearer delcore-user-token");
-        assert_eq!(calls[2].1, "Bearer service-only");
-        assert_eq!(
-            calls[2].2,
-            json!({"tenantId":tenant,"userId":user,"capability":"manage","paid":false})
-        );
-        drop(calls);
+        {
+            let calls = m.calls.lock().unwrap();
+            assert_eq!(calls[1].2["page"]["afterId"], "second");
+            assert_eq!(calls[0].1, "Bearer delcore-user-token");
+            assert_eq!(calls[2].1, "Bearer service-only");
+            assert_eq!(
+                calls[2].2,
+                json!({"tenantId":tenant,"userId":user,"capability":"manage","paid":false})
+            );
+        }
         for state in [
             "TENANT_STATE_BLOCKED",
             "TENANT_STATE_DELETING",
@@ -1526,6 +1544,51 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         let mut pieces: Vec<&str> = token.split('.').collect();
         pieces[2] = "AAAAAAAA";
         assert!(a.validate_jwt(&pieces.join("."), "browser").await.is_err());
+    }
+
+    async fn reauth_callback_fixture(
+        a: Arc<Auth>,
+        m: &Mock,
+        challenge: &str,
+        account: &str,
+        tenant: &str,
+        auth_time: i64,
+    ) -> HttpResult {
+        let start = reauth_start(
+            State(a.clone()),
+            Query(HashMap::from([("challenge_id".into(), challenge.into())])),
+        )
+        .await?;
+        let location = Url::parse(start.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        let query: HashMap<String, String> = location
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(query["prompt"], "login");
+        assert_eq!(query["max_age"], "0");
+        let flow_cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let claims = json!({"iss":a.config.issuer,"aud":"browser","sub":"logto-subject","exp":Utc::now().timestamp()+60,"nonce":query["nonce"],"auth_time":auth_time});
+        *m.oidc_tokens.lock().unwrap() = json!({"id_token":sign_claims(claims),"access_token":sign_claims(json!({"iss":a.config.issuer,"aud":"delcore","sub":"logto-subject","exp":Utc::now().timestamp()+60}))});
+        *m.pages.lock().unwrap() = vec![
+            json!({"userId":account,"tenants":[{"id":tenant,"ownerId":account,"personal":true}]}),
+        ];
+        let mut browser = HeaderMap::new();
+        browser.insert(header::COOKIE, HeaderValue::from_str(&flow_cookie).unwrap());
+        callback(
+            State(a),
+            browser,
+            Query(HashMap::from([
+                ("state".into(), query["state"].clone()),
+                ("code".into(), "logto-code".into()),
+            ])),
+        )
+        .await
     }
 
     #[tokio::test]
@@ -1680,9 +1743,71 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         account_lock(&mut db, &account).await.unwrap();
         a.authorize(&mut db, &p).await.unwrap();
         let challenge = id();
-        let proof = random_token();
-        sqlx::query("INSERT INTO lane_reauth_challenges(id,account_id,session_id,mode,expires_at,authenticated_at,proof_hash,proof_expires_at) VALUES($1,$2,$3,'DATA_DELETION_MODE_DELETE_EVERYWHERE',clock_timestamp()+interval '5 minutes',clock_timestamp(),$4,clock_timestamp()+interval '5 minutes')").bind(&challenge).bind(&account).bind(&p.session_id).bind(hash(proof.as_bytes())).execute(&mut *db).await.unwrap();
+        sqlx::query("INSERT INTO lane_reauth_challenges(id,account_id,session_id,mode,created_at,expires_at) VALUES($1,$2,$3,'DATA_DELETION_MODE_DELETE_EVERYWHERE',clock_timestamp()-interval '3 seconds',clock_timestamp()+interval '5 minutes')").bind(&challenge).bind(&account).bind(&p.session_id).execute(&mut *db).await.unwrap();
         db.commit().await.unwrap();
+        assert!(
+            reauth_callback_fixture(
+                a.clone(),
+                &m,
+                &challenge,
+                &account,
+                &tenant,
+                Utc::now().timestamp() - 60
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            reauth_callback_fixture(
+                a.clone(),
+                &m,
+                &challenge,
+                &id(),
+                &tenant,
+                Utc::now().timestamp()
+            )
+            .await
+            .is_err()
+        );
+        let response = reauth_callback_fixture(
+            a.clone(),
+            &m,
+            &challenge,
+            &account,
+            &tenant,
+            Utc::now().timestamp(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        assert!(
+            response.headers()[header::LOCATION]
+                .to_str()
+                .unwrap()
+                .starts_with("http://127.0.0.1:46326/callback?reauth_challenge=")
+        );
+        let response = reauth_proof(
+            State(a.clone()),
+            headers.clone(),
+            Json(json!({"challenge_id":challenge})),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.0));
+        let value: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 65536)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let proof = string(&value, "reauth_proof");
+        assert!(
+            reauth_proof(
+                State(a.clone()),
+                headers.clone(),
+                Json(json!({"challenge_id":challenge}))
+            )
+            .await
+            .is_err()
+        );
         let q = json!({"confirmedAccountId":account,"mode":"DATA_DELETION_MODE_DELETE_EVERYWHERE","reauthProof":proof});
         let mut db = pool.begin().await.unwrap();
         account_lock(&mut db, &account).await.unwrap();
@@ -1696,6 +1821,48 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         consume_deletion_proof(&mut db, &p, &q).await.unwrap();
         assert!(consume_deletion_proof(&mut db, &p, &q).await.is_err());
         db.commit().await.unwrap();
+        let mut db = pool.begin().await.unwrap();
+        account_lock(&mut db, &account).await.unwrap();
+        let web=a.finish_approval(&mut db,&account,&tenant,&json!({"kind":"web","return_to":"https://lane.example.test/callback","device_id":id(),"device_name":"Web"})).await.unwrap();
+        db.commit().await.unwrap();
+        let mut wh = HeaderMap::new();
+        wh.insert(
+            header::COOKIE,
+            HeaderValue::from_str(
+                web.headers()[header::SET_COOKIE]
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
+        let session = web_session(State(a.clone()), wh.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{}", e.0));
+        let value: Value = serde_json::from_slice(
+            &axum::body::to_bytes(session.into_body(), 65536)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(web_refresh(State(a.clone()), wh.clone()).await.is_err());
+        wh.insert(
+            "x-lane-csrf",
+            HeaderValue::from_str(string(&value, "csrf_token")).unwrap(),
+        );
+        wh.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://attacker.example"),
+        );
+        assert!(web_refresh(State(a.clone()), wh.clone()).await.is_err());
+        wh.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://lane.example.test"),
+        );
+        assert!(web_refresh(State(a.clone()), wh.clone()).await.is_ok());
+        assert!(a.authenticate(&wh).await.is_err());
         let refresh = HashMap::from([
             ("grant_type".into(), "refresh_token".into()),
             ("client_id".into(), "lane-cli".into()),
