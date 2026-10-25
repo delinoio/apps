@@ -128,6 +128,6 @@ Historical DeliDev validation describes the retired implementation and does not 
 
 - [Local store and native bridge](apps-lane-local-store-contract.md)
 - [Connect protocol and conformance](protos-lane-v1-contract.md)
-- [Go CLI and local MCP](cmds-lane-cli-contract.md)
+- [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [API, remote MCP and operations](servers-lane-api-contract.md)
 - [Distribution and common skill](packages-lane-distribution-contract.md)

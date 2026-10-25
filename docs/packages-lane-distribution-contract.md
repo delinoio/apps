@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-The installer is a small Node.js launcher/package; the product CLI is Go. Follow pinned repository Node/pnpm tooling and Rstack formatting. Produce Go executables for macOS, Windows and Linux, initially amd64 and arm64 where the executable dependencies support those targets. CLI architecture support does not imply a native GUI SDK for the same architecture. In particular, do not infer Windows ARM64 GUI support from a Go cross-build.
+The installer is a small Node.js launcher/package; the product CLI is Rust. Follow pinned repository Node/pnpm tooling and Rstack formatting. Produce Rust executables for macOS, Windows and Linux, initially amd64 and arm64 where the executable dependencies support those targets. CLI architecture support does not imply a native GUI SDK for the same architecture. In particular, do not infer Windows ARM64 GUI support from a Rust cross-build.
 
 ## Users and Operators
 

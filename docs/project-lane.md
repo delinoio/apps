@@ -22,8 +22,8 @@ Existing paths retain their build ownership:
 Additional component ownership:
 
 - `apps/lane/native/store`: shared SQLite schema, native store support and bridge domain operations; platform adapters remain in the existing hosts.
-- `cmds/lane`: Go CLI entry point and local stdio MCP.
-- `cmds/lane/internal`: Go local store, domain rules, synchronization and CLI/MCP adapters in the root Go module.
+- `cmds/lane`: Rust CLI entry point and local stdio MCP.
+- `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
 - `protos/lane/v1`: canonical schemas, checked-in Go/TypeScript bindings and shared cross-language fixtures. Rust generation remains in `servers/crates/delino-protos` Cargo output.
 - `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging and operator assets in the independent server workspace.
 - `packages/lane`: npm executable installer, common agent `SKILL.md`, installation and MCP connection guides.
@@ -33,15 +33,15 @@ Additional component ownership:
 - [Application and full product behavior](apps-lane-foundation.md)
 - [Protocol, domain rules and conformance vectors](protos-lane-v1-contract.md)
 - [Shared local store and native bridge](apps-lane-local-store-contract.md)
-- [Go CLI and local MCP](cmds-lane-cli-contract.md)
+- [Rust CLI and local MCP](cmds-lane-cli-contract.md)
 - [Server, synchronization, identity and operations](servers-lane-api-contract.md)
 - [Distribution and common agent skill](packages-lane-distribution-contract.md)
 
 ## Cross-Domain Invariants
 
-Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx, Lynx SDK, Clay and Rspeedy build contracts. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Go and server code uses Rust.
+Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx, Lynx SDK, Clay and Rspeedy build contracts. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Rust and server code uses Rust.
 
-Native hosts and Go CLI share the specified SQLite format on desktop. They implement the same versioned domain rules and run the same fixture vectors. Native business logic runs in the host, not in ReactLynx. Web reads/writes the server only, without an offline mutation queue or independent browser database. PostgreSQL owns server state; local SQLite owns standalone work and durable pending synchronization changes.
+Native hosts and Rust CLI share the specified SQLite format on desktop. They implement the same versioned domain rules and run the same fixture vectors. Native business logic runs in the host, not in ReactLynx. Web reads/writes the server only, without an offline mutation queue or independent browser database. PostgreSQL owns server state; local SQLite owns standalone work and durable pending synchronization changes.
 
 Connect is the business interface. Local Native Modules, CLI, stdio MCP, remote MCP and webhooks are adapters to the same typed commands and invariants. Use UUID v7 entity, request and version identities. Preserve whole-task conflicts, history, deletion precedence and replay protection across languages. Never use wall-clock last-write-wins.
 

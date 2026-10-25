@@ -1,0 +1,295 @@
+// SPDX-License-Identifier: Apache-2.0
+use lane::{
+    protocol::{self, id, strv},
+    store::Store,
+};
+use serde_json::{Value, json};
+fn fixture(name: &str) -> Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(format!(
+            "{}/../../protos/lane/v1/fixtures/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap(),
+    )
+    .unwrap()
+}
+fn call(s: &Store, m: &str, mut q: Value) -> lane::error::Result<Value> {
+    if protocol::method(m).is_some() {
+        q = protocol::request(m, &q)?;
+        let mut allocated = vec![];
+        protocol::attribute(
+            protocol::method(m).unwrap().input(),
+            &mut q,
+            &json!({"kind":"ORIGIN_KIND_CLI","deviceId":s.device,"deviceName":"Lane","accountId":s.identity()?.account}),
+            &mut allocated,
+        )?;
+    }
+    s.invoke(m, &q)
+}
+fn task(s: &Store, t: &Value) -> Value {
+    let repo = "019a0000-0000-7000-8000-000000000002";
+    call(
+        s,
+        "CreateRepository",
+        json!({"id":repo,"url":"https://example.com/fixture"}),
+    )
+    .unwrap();
+    let mut q = t.clone();
+    q.as_object_mut().unwrap().remove("repositoryId");
+    q["repository"] = json!({"id":repo});
+    call(s, "CreateTask", q).unwrap()["result"]["version"].clone()
+}
+#[test]
+fn normalization_vectors() {
+    for case in fixture("normalization")["cases"].as_array().unwrap() {
+        let result = lane::store::normalize::url(strv(&case["input"], "url"));
+        if case["expected"].get("reason").is_some() {
+            assert!(result.is_err(), "{}", case["id"]);
+        } else {
+            assert_eq!(
+                result.unwrap(),
+                strv(&case["expected"], "normalizedUrl"),
+                "{}",
+                case["id"]
+            );
+        }
+    }
+}
+#[test]
+fn fingerprint_vectors() {
+    for case in fixture("fingerprints")["cases"].as_array().unwrap() {
+        let request = protocol::request("CreateTask", &case["input"]["normalizedRequest"]).unwrap();
+        assert_eq!(
+            protocol::fingerprint(&request),
+            strv(&case["expected"], "sha256"),
+            "{}",
+            case["id"]
+        );
+    }
+}
+#[test]
+fn task_vectors() {
+    for case in fixture("tasks")["cases"].as_array().unwrap() {
+        let temp = tempfile::tempdir().unwrap();
+        let s = Store::open(temp.path(), "", false).unwrap();
+        let input = &case["input"];
+        let want = &case["expected"];
+        let method = strv(input, "method");
+        match method {
+            "CreateTask" => {
+                let result = call(&s, method, input["request"].clone());
+                if let Some(reason) = want.get("reason") {
+                    assert_eq!(result.unwrap_err().reason, *reason, "{}", case["id"]);
+                    let count = s
+                        .with(false, |c| {
+                            Ok(c.query_row::<i64, _, _>(
+                                "SELECT count(*) FROM entities",
+                                [],
+                                |r| r.get(0),
+                            )?)
+                        })
+                        .unwrap();
+                    assert_eq!(count, 0);
+                } else {
+                    let got = result.unwrap();
+                    let t = &got["result"]["version"]["task"];
+                    assert_eq!(t["progress"], want["progress"]);
+                    assert_eq!(t["proposal"], want["proposal"]);
+                    assert_eq!(t.get("prompt").is_some(), want["promptPresent"] == true);
+                }
+            }
+            "SetProgress" | "SaveTask" => {
+                let v = task(&s, &input["before"]);
+                let mut q = input["request"].clone();
+                q["id"] = v["entityId"].clone();
+                q["expectedVersionId"] = v["versionId"].clone();
+                let result = call(&s, method, q);
+                if let Some(reason) = want.get("reason") {
+                    assert_eq!(result.unwrap_err().reason, *reason);
+                } else {
+                    let result = result.unwrap();
+                    assert_eq!(
+                        protocol::message("Task", &result["result"]["version"]["task"]).unwrap(),
+                        protocol::message("Task", &want["task"]).unwrap(),
+                        "{}",
+                        case["id"]
+                    );
+                }
+            }
+            _ => {
+                if let Some(decisions) = input["decisions"].as_array() {
+                    let mut v = task(&s, &input["task"]);
+                    for (i, p) in decisions.iter().enumerate() {
+                        v=call(&s,"SetProposal",json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"proposal":p})).unwrap()["result"]["version"].clone();
+                        assert_eq!(v["task"]["progress"], want["progresses"][i]);
+                        assert_eq!(v["task"]["proposal"], want["proposals"][i]);
+                    }
+                } else if let Some(snapshots) = input["snapshots"].as_array() {
+                    let mut v = task(&s, &snapshots[0]);
+                    let mut ids = vec![v["versionId"].clone()];
+                    for t in &snapshots[1..] {
+                        v = call(
+                            &s,
+                            "SaveTask",
+                            json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"task":t}),
+                        )
+                        .unwrap()["result"]["version"]
+                            .clone();
+                        ids.push(v["versionId"].clone());
+                    }
+                    v=call(&s,"RestorePrompt",json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"sourceVersionId":ids[input["restoreSourceIndex"].as_u64().unwrap() as usize]})).unwrap()["result"]["version"].clone();
+                    assert_eq!(v["task"]["prompt"], want["prompt"]);
+                    assert_eq!(v["promptRestoration"], true);
+                    let history = call(
+                        &s,
+                        "ListHistory",
+                        json!({"id":v["entityId"],"promptsOnly":true}),
+                    )
+                    .unwrap();
+                    if let Some(n) = want["promptHistoryCount"].as_u64() {
+                        assert_eq!(history["versions"].as_array().unwrap().len(), n as usize);
+                    }
+                } else if input["operation"] == "search" {
+                    if strv(input, "title").is_empty() {
+                        continue;
+                    }
+                    call(&s,"CreateTask",json!({"title":input["title"],"description":input["description"],"repository":{"url":"https://example.com/search"}})).unwrap();
+                    let result = call(&s, "ListTasks", json!({"search":input["query"]})).unwrap();
+                    assert_eq!(
+                        !result["items"].as_array().unwrap().is_empty(),
+                        want["matches"] == true,
+                        "{}",
+                        case["id"]
+                    );
+                } else if input["operation"] == "validateStoredTask" {
+                    let v = task(
+                        &s,
+                        &json!({"repositoryId":"019a0000-0000-7000-8000-000000000002","title":"Initial","description":"","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"}),
+                    );
+                    assert!(call(&s,"SaveTask",json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"task":input["task"]})).is_err());
+                } else {
+                    panic!("Unhandled vector {}", case["id"]);
+                }
+            }
+        }
+    }
+}
+#[test]
+fn retry_conflict_delete_and_prompt_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let s = Store::open(temp.path(), "", false).unwrap();
+    let request = id();
+    let q = json!({"meta":{"requestId":request},"title":"Initial","repository":{"url":"https://example.com/a/repo.git"}});
+    let v = call(&s, "CreateTask", q.clone()).unwrap()["result"]["version"].clone();
+    assert_eq!(
+        call(&s, "CreateTask", q.clone()).unwrap()["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    let mut changed = q.clone();
+    changed["title"] = "Changed".into();
+    assert_eq!(
+        call(&s, "CreateTask", changed).unwrap_err().reason,
+        "ERROR_REASON_REQUEST_ID_REUSED"
+    );
+    let mut t = v["task"].clone();
+    t["prompt"] = "".into();
+    let edit = call(
+        &s,
+        "SaveTask",
+        json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"task":t}),
+    )
+    .unwrap();
+    let mut t = v["task"].clone();
+    t["title"] = "Concurrent".into();
+    let stale = call(
+        &s,
+        "SaveTask",
+        json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"task":t}),
+    )
+    .unwrap_err();
+    assert_eq!(stale.reason, "ERROR_REASON_STALE_VERSION");
+    assert_eq!(stale.current_head_ids.len(), 2);
+    let current = call(&s, "GetTask", json!({"id":v["entityId"]})).unwrap();
+    assert_eq!(
+        current["result"]["alternatives"].as_array().unwrap().len(),
+        2
+    );
+    call(&s,"ResolveConflict",json!({"id":v["entityId"],"expectedHeadIds":stale.current_head_ids,"resolved":edit["result"]["version"]})).unwrap();
+    call(&s, "DeleteTask", json!({"id":v["entityId"]})).unwrap();
+    assert_eq!(
+        call(&s, "CreateTask", q).unwrap()["result"]["result"],
+        "RESULT_KIND_DELETED"
+    );
+    assert!(
+        call(&s, "ListHistory", json!({"id":v["entityId"]})).unwrap()["versions"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+#[test]
+fn schema_and_space_isolation() {
+    let temp = tempfile::tempdir().unwrap();
+    let s = Store::open(temp.path(), "", false).unwrap();
+    let other = s
+        .select_account("https://issuer.example", "account", "tenant")
+        .unwrap();
+    call(
+        &s,
+        "CreateTask",
+        json!({"title":"Local","repository":{"url":"https://example.com/local"}}),
+    )
+    .unwrap();
+    assert!(
+        call(&other, "ListTasks", json!({})).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(Store::open(temp.path(), &id(), false).is_err());
+    s.with(true, |c| {
+        c.execute_batch("PRAGMA user_version=2")?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        call(&s, "ListTasks", json!({})).unwrap_err().reason,
+        "ERROR_REASON_UNSUPPORTED_FORMAT"
+    );
+}
+#[test]
+fn concurrent_writers_and_removal() {
+    let temp = tempfile::tempdir().unwrap();
+    let first = Store::open(temp.path(), "", false).unwrap();
+    let space = first.space.clone();
+    let root = temp.path().to_owned();
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            let root = &root;
+            let space = &space;
+            scope.spawn(move||{let s=Store::open(root,space,false).unwrap();call(&s,"CreateTask",json!({"title":"Concurrent","repository":{"url":format!("https://example.com/{}",id())}})).unwrap();});
+        }
+    });
+    assert_eq!(
+        call(&first, "ListTasks", json!({})).unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    drop(first);
+    let mut s = Store::open(temp.path(), &space, true).unwrap();
+    s.remove().unwrap();
+    assert!(!temp.path().join("spaces").join(&space).exists());
+    assert!(s.lock_path().exists());
+    assert!(Store::open(temp.path(), &space, false).is_err());
+    Store::open(temp.path(), &space, true)
+        .unwrap()
+        .remove()
+        .unwrap();
+}
+#[test]
+fn sqlite_engine_has_wal_reset_fix() {
+    assert!(rusqlite::version_number() >= 3_051_003);
+}
