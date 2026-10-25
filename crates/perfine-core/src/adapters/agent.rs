@@ -4,7 +4,7 @@
 use super::{
     ArtifactStore,
     environment::{DockerConfig, DockerEnvironment, git},
-    process, regular_file, relative,
+    host, process, regular_file, relative,
 };
 use crate::{interfaces::*, types::*};
 use serde::{Deserialize, Serialize};
@@ -76,7 +76,7 @@ impl<'a> HeadlessAgentAdapter<'a> {
             || config.auth_file.to_string_lossy().contains(',')
         {
             return Err(Error::Invalid(
-                "local auth file, dedicated agent network and bounded response",
+                "provide a supported file-based local login, dedicated agent network and bounded response; keychain-only credentials cannot be exported",
             ));
         }
         Ok(Self {
@@ -120,14 +120,14 @@ impl<'a> HeadlessAgentAdapter<'a> {
             "--mount",
             &format!(
                 "type=bind,src={},dst={auth_target}",
-                self.config.auth_file.display()
+                host::mount_path(&self.config.auth_file)?
             ),
         ]);
         cmd.args([
             "--mount",
             &format!(
                 "type=bind,src={},dst=/schema.json,readonly",
-                schema_file.path().display()
+                host::mount_path(schema_file.path())?
             ),
         ]);
         if matches!(self.config.provider, LocalAgent::Codex) {
@@ -213,7 +213,7 @@ impl<'a> HeadlessAgentAdapter<'a> {
         }
         if out.code != 0 {
             return Err(Error::Incomplete(
-                "headless agent failed; local transcripts retained",
+                "headless agent failed; verify the pinned linux/amd64 image, Docker mount access and supported file-based CLI authentication; local transcripts retained",
             ));
         }
         parse_response(self.config.provider, &out.stdout)
@@ -345,10 +345,12 @@ fn safe_edit_path(path: &str) -> Result<()> {
     if path
         .components()
         .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-        || matches!(
-            path.file_name().and_then(|s| s.to_str()),
-            Some("AGENTS.md" | "CLAUDE.md")
-        )
+        || path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|name| {
+                name.eq_ignore_ascii_case("AGENTS.md") || name.eq_ignore_ascii_case("CLAUDE.md")
+            })
     {
         return Err(Error::Invalid("agent edit of configuration/control path"));
     }

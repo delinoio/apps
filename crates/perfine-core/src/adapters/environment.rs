@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{ArtifactStore, process};
+use super::{ArtifactStore, host, process};
 use crate::{interfaces::*, lifecycle::Workspace, types::*};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -31,7 +31,10 @@ impl DockerConfig {
             .rsplit_once("@sha256:")
             .map(|(_, d)| d)
             .or_else(|| self.image.strip_prefix("sha256:"));
-        if !self.executable.is_absolute()
+        if !(self.executable.is_absolute()
+            || self.executable.to_str().is_some_and(|p| {
+                !p.is_empty() && !p.contains(['/', '\\', ':']) && p != "." && p != ".."
+            }))
             || digest.is_none_or(|d| d.len() != 64 || !d.bytes().all(|b| b.is_ascii_hexdigit()))
             || !self
                 .user
@@ -49,13 +52,34 @@ impl DockerConfig {
         }
         Ok(())
     }
+    fn command(&self) -> Result<Process> {
+        let mut command = host::command(&self.executable)?;
+        // A nonexistent, unique config path prevents Docker from loading host
+        // registry credentials, contexts, proxy settings or credential helpers.
+        command.env(
+            "DOCKER_CONFIG",
+            std::env::temp_dir().join(format!(
+                "perfine-docker-{}",
+                ResourceId::generate().as_str()
+            )),
+        );
+        #[cfg(target_os = "macos")]
+        if let Some(home) = std::env::var_os("HOME") {
+            let socket = PathBuf::from(home).join(".docker/run/docker.sock");
+            if socket.exists() {
+                command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
+            }
+        }
+        #[cfg(windows)]
+        command.env("DOCKER_HOST", "npipe:////./pipe/dockerDesktopLinuxEngine");
+        Ok(command)
+    }
     pub(crate) fn base(&self, name: &str, network: &str) -> Result<Process> {
         self.validate()?;
-        let mut cmd = Process::new(&self.executable);
-        // Do not inherit DOCKER_HOST, credential helpers, proxies or publication tokens.
-        cmd.env_clear().env("PATH", "/usr/local/bin:/usr/bin:/bin");
+        let mut cmd = self.command()?;
         cmd.args([
             "run",
+            "--platform=linux/amd64",
             "--rm",
             "--pull=never",
             "--init",
@@ -82,11 +106,8 @@ impl DockerConfig {
         Ok(cmd)
     }
     pub(crate) fn remove(&self, name: &str) -> Result<()> {
-        let mut command = Process::new(&self.executable);
-        command
-            .env_clear()
-            .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-            .args(["rm", "--force", name]);
+        let mut command = self.command()?;
+        command.args(["rm", "--force", name]);
         let output = process::run(&mut command, &[], None, Duration::from_secs(15), || {})?;
         if output.code != 0
             && !String::from_utf8_lossy(&output.stderr).contains("No such container")
@@ -128,13 +149,7 @@ impl DockerEnvironment {
                 "separate repository, execution and evidence roots",
             ));
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            // Keep writable build mounts inaccessible to other host users. Docker
-            // mounts the child directly, so a different container UID can still use it.
-            fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
-        }
+        host::private_directory(&root)?;
         Ok(Self {
             config,
             artifacts,
@@ -236,14 +251,13 @@ impl DockerEnvironment {
         // A killed CLI can leave a container alive. Refuse overlapping execution;
         // the operator can wait for it to exit before resuming the same attempt.
         let docker = |args: &[&str]| -> Result<Vec<u8>> {
-            let mut command = Process::new(&self.config.executable);
-            command
-                .env_clear()
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .args(args);
+            let mut command = self.config.command()?;
+            command.args(args);
             let out = process::run(&mut command, &[], None, Duration::from_secs(15), || {})?;
             if out.code != 0 {
-                return Err(Error::Incomplete("container reconciliation unavailable"));
+                return Err(Error::Incomplete(
+                    "container reconciliation unavailable; start Docker Desktop in Linux mode or the local Docker daemon before resume",
+                ));
             }
             Ok(out.stdout)
         };
@@ -255,13 +269,24 @@ impl DockerEnvironment {
                 .as_array()
                 .ok_or(Error::Invalid("container inspection"))?
             {
+                if container["Config"]["Labels"]["perfine.workspace"].as_str()
+                    == Some(fingerprint(&request.workspace)?.as_str())
+                {
+                    return Err(Error::Incomplete(
+                        "retained workspace still has an active container; wait before resume",
+                    ));
+                }
                 for mount in container["Mounts"]
                     .as_array()
                     .ok_or(Error::Invalid("container mounts"))?
                 {
                     if mount["Source"].as_str().is_some_and(|p| {
-                        p == request.workspace.directory.as_str()
-                            || p == request.workspace.build_directory.as_str()
+                        [
+                            request.workspace.directory.as_str(),
+                            request.workspace.build_directory.as_str(),
+                        ]
+                        .iter()
+                        .any(|expected| mount_matches(p, expected))
                     }) {
                         return Err(Error::Incomplete(
                             "retained workspace still has an active container; wait before resume",
@@ -303,17 +328,22 @@ impl DockerEnvironment {
     ) -> Result<Vec<String>> {
         self.validate_request(request)?;
         let mut cmd = self.config.base(name, "none")?;
+        cmd.args([
+            "--label",
+            &format!(
+                "perfine.workspace={}",
+                fingerprint(&request.workspace)?.as_str()
+            ),
+        ]);
         for (path, target, readonly) in [
             (&request.workspace.directory, "/work", true),
             (&request.workspace.build_directory, "/build", false),
         ] {
-            if path.as_str().contains(',') {
-                return Err(Error::Invalid("comma in Docker mount path"));
-            }
+            let source = host::mount_path(Path::new(path.as_str()))?;
             let suffix = if readonly { ",readonly" } else { "" };
             cmd.args([
                 "--mount",
-                &format!("type=bind,src={},dst={target}{suffix}", path.as_str()),
+                &format!("type=bind,src={source},dst={target}{suffix}"),
             ]);
         }
         cmd.args([
@@ -462,10 +492,8 @@ impl EnvironmentAdapter for DockerEnvironment {
             .entry(key.into())
             .or_default()
             .push(name.clone());
-        let mut cmd = Process::new(&self.config.executable);
-        cmd.env_clear()
-            .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-            .args(args);
+        let mut cmd = self.config.command()?;
+        cmd.args(args);
         let out = process::run(
             &mut cmd,
             &[],
@@ -514,18 +542,24 @@ impl EnvironmentAdapter for DockerEnvironment {
 }
 /// Git is always run without user/system config, hooks, credential helpers or a
 /// pager. Repository Git operations never execute in the credentialed agent role.
-pub(crate) fn git(directory: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let mut command = Process::new("/usr/bin/git");
+pub fn git(directory: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let mut command = host::command(Path::new("git"))?;
+    // Empty task-owned paths also work on Windows, unlike /dev/null.
+    let empty = tempfile::tempdir()?;
+    let config = empty.path().join("config");
+    fs::write(&config, b"")?;
     command
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .env("HOME", "/nonexistent")
+        .env("HOME", empty.path())
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", &config)
         .env("GIT_TERMINAL_PROMPT", "0")
         .args([
             "-c",
-            "core.hooksPath=/dev/null",
+            &format!("core.hooksPath={}", empty.path().display()),
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.longpaths=true",
             "-c",
             "core.fsmonitor=false",
             "-c",
@@ -548,4 +582,86 @@ pub(crate) fn git(directory: &Path, args: &[&str]) -> Result<Vec<u8>> {
         return Err(Error::Incomplete("Git command failed"));
     }
     Ok(output.stdout)
+}
+
+// Desktop reports daemon paths rather than host drive/verbatim paths. Compare
+// known mappings for legacy containers; new runs also carry a workspace label.
+fn mount_matches(actual: &str, expected: &str) -> bool {
+    let Ok(expected) = host::mount_path(Path::new(expected)) else {
+        return false;
+    };
+    let actual = actual
+        .strip_prefix("/host_mnt")
+        .or_else(|| actual.strip_prefix("/run/desktop/mnt/host"))
+        .unwrap_or(actual);
+    if expected.as_bytes().get(1) == Some(&b':') {
+        let drive = format!("/{}{}", &expected[..1], &expected[2..]);
+        actual.eq_ignore_ascii_case(&expected) || actual.eq_ignore_ascii_case(&drive)
+    } else {
+        actual == expected
+    }
+}
+
+#[cfg(test)]
+mod portability_tests {
+    use super::*;
+    fn config() -> DockerConfig {
+        DockerConfig {
+            executable: std::env::current_exe().unwrap(),
+            image: format!("sha256:{}", "a".repeat(64)),
+            dependency_names: vec![],
+            user: "1000:1000".into(),
+            memory_bytes: 1024,
+            cpus: 1,
+            process_limit: 16,
+            command_timeout_seconds: 5,
+        }
+    }
+    #[test]
+    fn docker_platform_and_environment_are_explicit() {
+        let command = config().base("fixture", "none").unwrap();
+        let args: Vec<_> = command.get_args().collect();
+        assert!(args.contains(&std::ffi::OsStr::new("--platform=linux/amd64")));
+        assert!(args.contains(&std::ffi::OsStr::new("--pull=never")));
+        for (key, _) in command.get_envs() {
+            assert!(matches!(
+                key.to_str().unwrap(),
+                "PATH" | "DOCKER_CONFIG" | "DOCKER_HOST" | "SystemRoot" | "WINDIR" | "TEMP" | "TMP"
+            ));
+        }
+    }
+    #[test]
+    fn desktop_mount_reconciliation_handles_host_mapping() {
+        assert!(mount_matches(
+            "/host_mnt/Users/한글/jobs",
+            "/Users/한글/jobs"
+        ));
+        assert!(mount_matches(
+            "/run/desktop/mnt/host/c/User Files/jobs",
+            r"\\?\C:\User Files\jobs"
+        ));
+        assert!(!mount_matches(
+            "/host_mnt/Users/other/jobs",
+            "/Users/한글/jobs"
+        ));
+    }
+    #[test]
+    fn git_preserves_unicode_paths_and_ignores_repository_hooks() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path().join("user files 한글");
+        fs::create_dir(&repository).unwrap();
+        git(&repository, &["init", "-q"]).unwrap();
+        fs::write(repository.join("source.txt"), b"line\n").unwrap();
+        git(&repository, &["add", "."]).unwrap();
+        git(&repository, &["commit", "-qm", "fixture"]).unwrap();
+        assert_eq!(
+            git(&repository, &["show", "HEAD:source.txt"]).unwrap(),
+            b"line\n"
+        );
+        assert!(
+            git(&repository, &["status", "--porcelain"])
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

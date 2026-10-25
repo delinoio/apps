@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust is an explicit project choice instead of the non-server Go default. The CLI consumes this engine; the API owns a compatible server evaluator. Linux x86_64 is the first officially verified execution platform. Add an explicit root Cargo workspace member when Rust implementation begins; a directory skeleton is not a Rust package.
+Rust is an explicit project choice instead of the non-server Go default. The CLI consumes this engine; the API owns a compatible server evaluator. CLI hosts follow the [project host policy](project-perfine.md#supported-cli-hosts); measurements remain Linux x86_64 Docker execution. Host portability does not change evidence versions or guarantee cross-host resume. Add an explicit root Cargo workspace member when Rust implementation begins; a directory skeleton is not a Rust package.
 
 ## Users and Operators
 

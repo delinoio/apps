@@ -49,7 +49,7 @@ adapter:
   tool_probes: {}
   source_prefixes: { /work/: "" }
 docker:
-  executable: /usr/bin/docker
+  executable: docker
   image: null
   dependency_names: []
   user: null

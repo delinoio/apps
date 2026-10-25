@@ -3,6 +3,7 @@
 //! operator inputs, not repository-controlled configuration. No native verification is implied.
 pub mod agent;
 pub mod environment;
+pub(crate) mod host;
 pub mod measurement;
 mod process;
 pub mod profile;
@@ -21,6 +22,7 @@ pub struct ArtifactStore {
 impl ArtifactStore {
     pub fn new(root: impl AsRef<Path>) -> Result<Self> {
         fs::create_dir_all(root.as_ref())?;
+        host::private_directory(root.as_ref())?;
         Ok(Self {
             root: root.as_ref().canonicalize()?,
         })
@@ -62,7 +64,7 @@ pub(crate) fn relative(path: &str) -> Result<&Path> {
     let p = Path::new(path);
     if p.as_os_str().is_empty()
         || p.components().any(|c| !matches!(c, Component::Normal(_)))
-        || path.contains('\\')
+        || path.contains(['\\', ':'])
     {
         return Err(Error::Invalid("relative regular path"));
     }

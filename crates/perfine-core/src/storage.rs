@@ -3,7 +3,7 @@ use crate::{lifecycle::Database, types::*};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -42,6 +42,7 @@ pub struct FileStore {
 impl FileStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         fs::create_dir_all(path.as_ref())?;
+        private_directory(path.as_ref())?;
         Ok(Self {
             directory: path.as_ref().to_path_buf(),
         })
@@ -86,7 +87,7 @@ impl Store for FileStore {
             file.write_all(&serde_json::to_vec(&snapshot)?)?;
             file.sync_all()?;
             fs::rename(&temporary, &path)?;
-            File::open(&self.directory)?.sync_all()?;
+            sync_directory(&self.directory)?;
             Ok(())
         };
         if let Err(error) = write() {
@@ -105,6 +106,7 @@ pub struct EvidenceDirectory {
 impl EvidenceDirectory {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         fs::create_dir_all(path.as_ref())?;
+        private_directory(path.as_ref())?;
         Ok(Self {
             directory: path.as_ref().to_path_buf(),
         })
@@ -133,7 +135,7 @@ impl EvidenceDirectory {
                 }
                 Err(e) => return Err(e.into()),
             }
-            File::open(&self.directory)?.sync_all()?;
+            sync_directory(&self.directory)?;
             Ok(())
         }();
         let _ = fs::remove_file(&temporary);
@@ -170,4 +172,20 @@ impl EvidenceDirectory {
             self.read(&artifact.sha256)
         })
     }
+}
+
+/// Persist directory entries where the host supports directory fsync. Windows
+/// file handles are flushed before atomic rename; directory FlushFileBuffers is
+/// unsupported, so do not fail an otherwise committed journal on that platform.
+pub fn sync_directory(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    fs::File::open(path)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Restrict a caller-owned local state directory before writing private evidence.
+pub fn private_directory(path: &Path) -> Result<()> {
+    crate::adapters::host::private_directory(path)
 }

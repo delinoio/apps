@@ -182,7 +182,7 @@ impl NativeMeasurementAdapter<'_> {
             .map(|(name, command)| {
                 let output = self.environment.execute(command, &self.request, context)?;
                 if output.exit_code != 0 {
-                    return Err(Error::Incomplete("tool version probe"));
+                    return Err(Error::Incomplete("tool version probe failed; start Docker (Windows: Desktop WSL 2 Linux backend), provision the pinned linux/amd64 image and required tools, enable ARM Mac emulation, and allow execution-directory mounts"));
                 }
                 let bytes = self.environment.artifacts.get(&output.stdout_artifact)?;
                 // Multiline version output is hashed rather than flattened or truncated.
@@ -219,7 +219,9 @@ impl NativeMeasurementAdapter<'_> {
         let os = probe("-s")?;
         let architecture = probe("-m")?;
         if os.as_str() != "Linux" || architecture.as_str() != "x86_64" {
-            return Err(Error::Invalid("Linux x86_64 execution required"));
+            return Err(Error::Invalid(
+                "Linux x86_64 execution required; provision the pinned linux/amd64 image and enable Docker Desktop amd64 emulation on ARM Macs",
+            ));
         }
         // Kernel and container limits are observed/declared explicitly. CPU model
         // identity is supplied by lscpu's stable machine-readable output hash.
@@ -268,6 +270,18 @@ impl NativeMeasurementAdapter<'_> {
             Name::new(self.environment.config.memory_bytes.to_string())?,
         );
         hardware.insert(Name::new("kernel")?, probe("-r")?);
+        hardware.insert(Name::new("host_os")?, Name::new(std::env::consts::OS)?);
+        hardware.insert(
+            Name::new("host_architecture")?,
+            Name::new(super::host::architecture()?)?,
+        );
+        hardware.insert(
+            Name::new("execution_mode")?,
+            Name::new(execution_mode(
+                std::env::consts::OS,
+                super::host::architecture()?,
+            ))?,
+        );
         Ok(Environment {
             os,
             architecture,
@@ -642,5 +656,25 @@ mod profile_read_tests {
             read_profile(file.path()).unwrap(),
             b"events: Ir\ntotals: 1\n"
         );
+    }
+}
+
+fn execution_mode(os: &str, architecture: &str) -> &'static str {
+    if os == "macos" && architecture == "aarch64" {
+        "linux_amd64_emulated"
+    } else {
+        "linux_amd64_container"
+    }
+}
+
+#[cfg(test)]
+mod host_evidence_tests {
+    use super::*;
+    #[test]
+    fn arm_mac_execution_is_explicitly_emulated() {
+        assert_eq!(execution_mode("macos", "aarch64"), "linux_amd64_emulated");
+        for os in ["linux", "macos", "windows"] {
+            assert_eq!(execution_mode(os, "x86_64"), "linux_amd64_container");
+        }
     }
 }

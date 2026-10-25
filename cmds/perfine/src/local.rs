@@ -35,7 +35,6 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    process::Command as Process,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -55,22 +54,15 @@ pub fn atomic(path: &Path, value: &impl Serialize) -> Result<()> {
     serde_json::to_writer(&mut temporary, value)?;
     temporary.as_file().sync_all()?;
     temporary.persist(path)?;
-    fs::File::open(parent)?.sync_all()?;
+    perfine_core::storage::sync_directory(parent)?;
     Ok(())
 }
 pub fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let out = Process::new("git")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .args(["-c", "core.hooksPath=/dev/null", "-C"])
-        .arg(root)
-        .args(args)
-        .output()?;
-    ensure!(
-        out.status.success(),
-        "Git operation failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    Ok(String::from_utf8(out.stdout)?.trim_end().to_owned())
+    Ok(
+        String::from_utf8(perfine_core::adapters::environment::git(root, args)?)?
+            .trim_end()
+            .to_owned(),
+    )
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RunRecord {
@@ -330,6 +322,7 @@ impl App {
             ".perfine must not be a symlink"
         );
         fs::create_dir_all(&root)?;
+        perfine_core::storage::private_directory(&root)?;
         Ok(root)
     }
     pub(crate) fn engine(&self) -> Result<Engine<FileStore>> {

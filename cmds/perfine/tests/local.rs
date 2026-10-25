@@ -301,24 +301,29 @@ fn publication_reconciles_lost_response(
 
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
+#[cfg(unix)]
 fn interrupted_candidate_resumes_same_workspace_without_duplicate_candidate() {
     interrupted_candidate_resume(false, false, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
+#[cfg(unix)]
 fn interrupted_implementation_resumes_original_admission() {
     interrupted_candidate_resume(true, false, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
+#[cfg(unix)]
 fn admitted_candidate_resumes_after_start_deadline() {
     interrupted_candidate_resume(false, true, false);
 }
 #[test]
 #[ignore = "requires provisioned measurement and mock-agent Docker images"]
+#[cfg(unix)]
 fn retained_candidate_finishes_before_fresh_provider_failure() {
     interrupted_candidate_resume(false, false, true);
 }
+#[cfg(unix)]
 fn failing_provider(config: &mut Value, root: &Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let fail_marker = root.join("fail-agent");
@@ -330,6 +335,7 @@ fn failing_provider(config: &mut Value, root: &Path) -> std::path::PathBuf {
     config["agent"]["docker"]["executable"] = json!(wrapper);
     fail_marker
 }
+#[cfg(unix)]
 fn interrupted_candidate_resume(before_admission: bool, expire_start: bool, fail_fresh: bool) {
     use std::{
         process::Stdio,
@@ -434,6 +440,7 @@ fn interrupted_candidate_resume(before_admission: bool, expire_start: bool, fail
     assert_eq!(completed["evaluation"]["verdict"], "pass");
 }
 
+#[cfg(unix)]
 fn wait_for_start_deadline(repo: &Path, id: &ResourceId) {
     let status = run(repo, &["status", "--experiment", id.as_str()]);
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();

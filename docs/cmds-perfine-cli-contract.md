@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust CLI using `crates/perfine-core`, an explicit exception to the non-server Go default. Add an explicit root Cargo workspace member with runtime implementation. Official first-release execution targets Linux x86_64.
+Rust CLI using `crates/perfine-core`, an explicit exception to the non-server Go default. Add an explicit root Cargo workspace member with runtime implementation. CLI hosts follow the four-target [minimum-version policy](project-perfine.md#supported-cli-hosts). Measurement and optimization remain Linux x86_64 Docker execution.
 
 ## Users and Operators
 
@@ -22,6 +22,14 @@ Individual and organization developers operating locally without a hosted accoun
 - `perfine init` creates local configuration. `perfine init --github` generates `.github/workflows/perfine.yml` with the required configuration in that single workflow file; a separate local config file is not required for this mode. Workload code remains a separate prerequisite when absent. Show changes and obtain confirmation before overwriting existing files.
 - Generated workflows are manual by default. Users may add push/PR triggers themselves; the default workflow must not silently enable automatic AI optimization or publication.
 - Execution state: `queued`, `running`, `completed`, `failed`, `cancelled`. Performance verdict is separate: `pass`, `regression`, `inconclusive`, `not_evaluated`. No candidate can be a normal `completed` execution. Clearly report exceptions and approval requirements alongside verdicts.
+
+### Host portability and recovery
+
+Preserve every command, MCP capability, versioned interface, six-language adapter and approval boundary on supported hosts. Resolve host executables and paths without Unix-only assumptions. Support spaces, non-ASCII paths and Windows path syntax; preserve argv, streams and exit status. Diagnose missing tools, unavailable Docker, unsuitable container architecture, inaccessible mounts and permission failures with recovery guidance. Do not install prerequisites implicitly.
+
+Preserve bounded capture, deadlines, subprocess cleanup, graceful and immediate cancellation, dirty user files and retained partial evidence. Windows cancellation must use supported host process controls; do not promise Unix signal semantics on Windows. Keep local authentication isolated from candidate execution. Keychain-only credentials must not be exported implicitly; unsupported authentication arrangements fail explicitly and remain unverified until tested.
+
+Keep `perfine.yaml`, Git-excluded `.perfine/`, evidence versions, identifiers, retention and deletion unchanged. No data migration or cross-host resume guarantee is introduced. Reject changed immutable execution conditions and incompatible retained workspaces. Upload/provider failures must preserve local results and existing retry/reconciliation rules.
 
 ### Rust command interface
 
