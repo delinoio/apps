@@ -60,6 +60,7 @@ val laneAssets = tasks.register<Sync>("prepareLaneAssets") {
     from("../../../dist/LICENSE")
     from("../../../dist/NOTICE")
     from("../../licenses") { into("licenses") }
+    from("../../../dist/licenses") { into("licenses/bundle") }
     val storeNotices = listOf("sqlite/LICENSE", "ada/LICENSE-APACHE", "ada/LICENSE-MIT",
         "json/LICENSE.MIT", "picosha2/LICENSE", "utf8proc/LICENSE.md")
     storeNotices.forEach { notice ->

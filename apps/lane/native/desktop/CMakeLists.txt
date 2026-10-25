@@ -108,6 +108,11 @@ add_custom_target(LaneResources ALL
   COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../licenses" "${LANE_RESOURCES}/licenses"
   VERBATIM)
 add_dependencies(LaneResources Lane)
+if(EXISTS "${LANE_DIST}/licenses")
+  add_custom_command(TARGET LaneResources POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${LANE_DIST}/licenses" "${LANE_RESOURCES}/licenses/bundle"
+    VERBATIM)
+endif()
 
 if(APPLE)
   foreach(notice IN ITEMS sqlite/LICENSE ada/LICENSE-APACHE ada/LICENSE-MIT

@@ -73,10 +73,15 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
     postBuildScripts:
       - name: Include dependency notices
+        basedOnDependencyAnalysis: false
         script: |
           set -eu
           cp "${PODS_ROOT}/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdPartyNotices.plist"
           sh "${SRCROOT}/Scripts/copy-store-notices.sh"
+          if [ -d "${SRCROOT}/../../dist/licenses" ]; then
+            mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/BundleLicenses"
+            cp -R "${SRCROOT}/../../dist/licenses/." "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/BundleLicenses/"
+          fi
         inputFiles:
           - "$(PODS_ROOT)/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist"
           - "$(SRCROOT)/../store/vendor/sqlite/LICENSE"
