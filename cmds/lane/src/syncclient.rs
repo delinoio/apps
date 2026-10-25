@@ -18,6 +18,7 @@ fn busy() -> Failure {
         "Another process owns synchronization. Retry after it exits.",
     )
 }
+#[must_use]
 pub fn deleted() -> Failure {
     Failure::new("DELETED", "The server directed account-data deletion.")
 }
@@ -39,13 +40,13 @@ fn guard(s: &Store, c: &Connection, owner: &str) -> Result<()> {
     Ok(())
 }
 fn lease(s: &Store, owner: &str, identity: Option<&Identity>) -> Result<()> {
-    if let Some(expected) = identity {
-        if s.identity()? != *expected || !expected.enabled {
-            return Err(Failure::new(
-                "FORBIDDEN",
-                "Synchronization was disabled or the account changed.",
-            ));
-        }
+    if let Some(expected) = identity
+        && (s.identity()? != *expected || !expected.enabled)
+    {
+        return Err(Failure::new(
+            "FORBIDDEN",
+            "Synchronization was disabled or the account changed.",
+        ));
     }
     s.with(true, |c| {
         if meta(c, "account_deleted")? == "1" {
@@ -109,15 +110,16 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
     lease(s, &owner, Some(&identity))?;
     let result = (|| {
         let mut delay = 1;
+        let mut watch: Option<crate::watch::Watch> = None;
         loop {
             if auth.cancelled.load(Ordering::Relaxed) {
                 return Ok(());
             }
             let result = cycle(auth, s, endpoint, &owner, &identity);
-            if let Err(e) = &result {
-                if e.reason != "ERROR_REASON_DELETED" {
-                    failure(s, e)?;
-                }
+            if let Err(e) = &result
+                && e.reason != "ERROR_REASON_DELETED"
+            {
+                failure(s, e)?;
             }
             if once {
                 return result;
@@ -138,9 +140,21 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
                 delay = (delay * 2).min(30);
             } else {
                 delay = 1;
+                let credential = auth.token(s)?;
+                let (epoch, cursor) = s.with(false, |c| {
+                    Ok((meta(c, "account_epoch")?, meta(c, "pull_cursor")?))
+                })?;
+                if let Some(watch) = &watch {
+                    watch.update(credential, epoch, cursor);
+                } else {
+                    watch = Some(crate::watch::Watch::start(auth, credential, epoch, cursor));
+                }
             }
             let until = Instant::now() + Duration::from_secs(delay);
             while Instant::now() < until && !auth.cancelled.load(Ordering::Relaxed) {
+                if watch.as_ref().is_some_and(crate::watch::Watch::notified) {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(25));
             }
         }
@@ -373,7 +387,8 @@ pub fn reconnect(auth: &Auth, s: &Store, consent: &Value) -> Result<()> {
                 return Err(auth::reconnect_error());
             }
         }
-        s.with(true,|c|{guard(s,c,&owner)?;if meta(c,"account_epoch")?!=epoch{return Err(auth::reconnect_error());}if !epoch.is_empty(){let current:String=c.query_row("SELECT CAST(coalesce(max(sequence),0) AS TEXT) FROM changes WHERE change_kind IN(1,2)",[],|r|r.get(0))?;if current!=sequence||meta(c,"reconnect_required")?!="1"{return Err(auth::reconnect_error());}let versions=sync::ordered(c)?;c.execute("DELETE FROM outbox",[])?;for(i,v)in versions.into_iter().enumerate(){let rid=id();let count=v["parentVersionIds"].as_array().map_or(0,Vec::len);let kind=if v["deleted"]==true{"MUTATION_KIND_DELETE"}else if count==0{"MUTATION_KIND_CREATE"}else if count==1{"MUTATION_KIND_SAVE"}else{"MUTATION_KIND_RESOLVE"};let m=json!({"meta":{"requestId":rid,"origin":v["origin"]},"version":v,"expectedHeadIds":v["parentVersionIds"],"kind":kind});c.execute("INSERT INTO outbox(request_id,entity_id,request_json,state,created_at_us) VALUES(?,?,?,1,?)",params![rid,strv(&v,"entityId"),m.to_string(),i as i64])?;}}
+        s.with(true,|c|{guard(s,c,&owner)?;if meta(c,"account_epoch")?!=epoch{return Err(auth::reconnect_error());}
+if !epoch.is_empty(){let current:String=c.query_row("SELECT CAST(coalesce(max(sequence),0) AS TEXT) FROM changes WHERE change_kind IN(1,2)",[],|r|r.get(0))?;if current!=sequence||meta(c,"reconnect_required")?!="1"{return Err(auth::reconnect_error());}let versions=sync::ordered(c)?;c.execute("DELETE FROM outbox",[])?;for(i,v)in versions.into_iter().enumerate(){let rid=id();let count=v["parentVersionIds"].as_array().map_or(0,Vec::len);let kind=if v["deleted"]==true{"MUTATION_KIND_DELETE"}else if count==0{"MUTATION_KIND_CREATE"}else if count==1{"MUTATION_KIND_SAVE"}else{"MUTATION_KIND_RESOLVE"};let m=json!({"meta":{"requestId":rid,"origin":v["origin"]},"version":v,"expectedHeadIds":v["parentVersionIds"],"kind":kind});c.execute("INSERT INTO outbox(request_id,entity_id,request_json,state,created_at_us) VALUES(?,?,?,1,?)",params![rid,strv(&v,"entityId"),m.to_string(),i64::try_from(i).map_err(|_| invalid("Too many retained versions."))?])?;}}
             put_meta(c,"account_epoch",next)?;put_meta(c,"reconnect_required","0")?;put_meta(c,"sync_error_reason","")?;put_meta(c,"pull_cursor","")?;c.execute("INSERT INTO changes(change_kind) VALUES(4)",[])?;Ok(())})
     })();
     let released = release(s, &owner);
@@ -409,7 +424,7 @@ pub fn import(source: &Store, dest: &Store) -> Result<()> {
         return Ok(());
     }
     source.with(true,|src|dest.with(true,|dst|{let completed=format!("standalone_import_source_{}",source.space);if meta(dst,&completed)?=="1"{return Ok(());}
-    let mut stmt=src.prepare("SELECT id,normalized_url FROM entities WHERE kind=1 AND deleted=0 AND normalized_url IS NOT NULL")?;for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?{let(local,url)=row?;let canonical:Option<String>=dst.query_row("SELECT id FROM entities WHERE kind=1 AND deleted=0 AND normalized_url=?",[url],|r|r.get(0)).optional()?;if let Some(canonical)=canonical{if canonical!=local{sync::mappings(dst,&json!([{"localId":local,"canonicalId":canonical}]))?;}}}
+    let mut stmt=src.prepare("SELECT id,normalized_url FROM entities WHERE kind=1 AND deleted=0 AND normalized_url IS NOT NULL")?;for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?{let(local,url)=row?;let canonical:Option<String>=dst.query_row("SELECT id FROM entities WHERE kind=1 AND deleted=0 AND normalized_url=?",[url],|r|r.get(0)).optional()?;if let Some(canonical)=canonical&& canonical!=local{sync::mappings(dst,&json!([{"localId":local,"canonicalId":canonical}]))?;}}
     for v in sync::ordered(src)?{sync::apply(dst,&json!({"version":v}))?;}
     let mut stmt=src.prepare("SELECT method,request_id,fingerprint,entity_id,result_json FROM receipts")?;for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?)))?{let(method,id,fp,entity,mut result)=row?;let old:Option<String>=dst.query_row("SELECT fingerprint FROM receipts WHERE method=? AND request_id=?",params![method,id],|r|r.get(0)).optional()?;if old.is_some_and(|old|old!=fp){return Err(invalid("Request ID reused during import."));}let deleted:Option<bool>=dst.query_row("SELECT deleted FROM entities WHERE id=?",[&entity],|r|r.get(0)).optional()?;if deleted==Some(true){result=json!({"result":"RESULT_KIND_DELETED"}).to_string();}dst.execute("INSERT OR IGNORE INTO receipts VALUES(?,?,?,?,?)",params![method,id,fp,entity,result])?;}
     let mut stmt=src.prepare("SELECT request_id,entity_id,request_json,state,error_reason,created_at_us FROM outbox ORDER BY created_at_us,rowid")?;for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i32>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,i64>(5)?)))?{let(id,entity,raw,state,reason,created)=row?;let mutation:Value=serde_json::from_str(&raw)?;let deleted:bool=dst.query_row("SELECT deleted FROM entities WHERE id=?",[&entity],|r|r.get(0))?;if deleted&&mutation["version"]["deleted"]!=true{continue;}let old:Option<String>=dst.query_row("SELECT request_json FROM outbox WHERE request_id=?",[&id],|r|r.get(0)).optional()?;if old.is_some_and(|old|old!=raw){return Err(invalid("Outbox identity reused during import."));}dst.execute("INSERT OR IGNORE INTO outbox VALUES(?,?,?,?,?,?)",params![id,entity,raw,state,reason,created])?;}put_meta(dst,&completed,"1")

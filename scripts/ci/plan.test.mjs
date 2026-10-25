@@ -212,7 +212,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delitools: true,
       perfine_api: false,
       lane_api: false,
-      lane_cli: false,
+      lane_cli: path === "Cargo.lock",
       lane: false,
       perfine_fixtures: path === "Cargo.lock",
       protocol: false,
@@ -234,7 +234,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delitools: false,
     perfine_api: false,
     lane_api: false,
-    lane_cli: true,
+    lane_cli: false,
     lane: false,
     perfine_fixtures: false,
     protocol: true,
@@ -363,7 +363,7 @@ for (const [paths, expected] of [
     [
       "delidev",
       "delitools",
-      ...(/^Cargo\./u.test(path) ? ["perfine_fixtures"] : []),
+      ...(/^Cargo\./u.test(path) ? ["lane_cli", "perfine_fixtures"] : []),
     ],
   ]),
   ...[".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"].map(
@@ -378,11 +378,12 @@ for (const [paths, expected] of [
         "delitools",
         "perfine_api",
         "lane_api",
+        "lane_cli",
         "perfine_fixtures",
       ],
     ],
   ),
-  [["go.mod"], ["lane_cli", "protocol"]],
+  [["go.mod"], ["protocol"]],
   [
     ["buf.yaml"],
     [
@@ -420,7 +421,7 @@ for (const [paths, expected] of [
       "go.mod",
       "servers/devbase-api/src/main.rs",
     ],
-    ["devbase_api", ...frontends, "lane_cli", "protocol"],
+    ["devbase_api", ...frontends, "protocol"],
   ],
 ]) {
   test(`shared categories select their consumers: ${paths.join(", ")}`, () => {
@@ -619,7 +620,7 @@ test("Lane project and protocol contracts select all Lane consumers", () => {
 test("Lane domain paths select owning validators and shared store consumers", () => {
   for (const [path, expected] of [
     ["servers/lane-api/src/lib.rs", ["lane_api"]],
-    ["cmds/lane/main.go", ["lane_cli"]],
+    ["cmds/lane/src/main.rs", ["lane_cli"]],
     ["packages/lane/package.json", ["lane_cli"]],
     ["apps/lane/native/store/schema.sql", ["lane_cli", "lane"]],
     ["packages/lynx-ui/src/components/input.tsx", ["lane"]],

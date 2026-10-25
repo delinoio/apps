@@ -155,7 +155,7 @@ Use structured local logs without content/secrets. Native and CLI share the root
 
 ## Build and Test
 
-Run the common protocol vectors in native and Go adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
+Run the common protocol vectors in native and Rust CLI adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
 
 Run app-local `pnpm test` for frontend changes and the existing platform build commands. Native build/install/behavior gates apply separately to macOS, Windows, iOS and Android. Cross-compiling a CLI or compiling a Lynx bundle does not prove native behavior. Preserve existing CI exclusions for macOS PR/main/affected runs; store/provider acceptance is separate.
 

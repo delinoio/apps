@@ -5,7 +5,14 @@ use crate::{
 };
 use prost_reflect::{Kind, MessageDescriptor};
 use serde_json::{Value, json};
-use std::io::{BufRead, Write};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Write},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 fn object(props: Value) -> Value {
     json!({"type":"object","properties":props,"additionalProperties":false})
 }
@@ -29,14 +36,14 @@ fn schema(m: MessageDescriptor) -> Value {
             }
             Kind::Uint64 | Kind::Fixed64 => json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$"}),
             Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
-                json!({"type":"integer","minimum":-2147483648i64,"maximum":2147483647})
+                json!({"type":"integer","minimum":-2_147_483_648_i64,"maximum":2_147_483_647})
             }
             Kind::Uint32 | Kind::Fixed32 => {
-                json!({"type":"integer","minimum":0,"maximum":4294967295u64})
+                json!({"type":"integer","minimum":0,"maximum":4_294_967_295_u64})
             }
             Kind::Float | Kind::Double => json!({"type":"number"}),
             Kind::Bytes => json!({"type":"string","contentEncoding":"base64"}),
-            _ => json!({"type":"string"}),
+            Kind::String => json!({"type":"string"}),
         };
         if f.is_list() {
             s = json!({"type":"array","items":s});
@@ -68,6 +75,7 @@ fn snake(s: &str) -> String {
     }
     result
 }
+#[must_use]
 pub fn tools() -> Vec<(String, Value)> {
     let mut out = vec![];
     for service in protocol::pool().services().filter(|s| {
@@ -150,13 +158,12 @@ fn validate(s: &Value, v: &Value) -> Result<()> {
             for (k, v) in m {
                 validate(s["properties"].get(k).ok_or_else(bad)?, v)?;
             }
-            if let Some(required) = s["required"].as_array() {
-                if required
+            if let Some(required) = s["required"].as_array()
+                && required
                     .iter()
                     .any(|k| !m.contains_key(k.as_str().unwrap_or("")))
-                {
-                    return Err(bad());
-                }
+            {
+                return Err(bad());
             }
             if let Some(all) = s["allOf"].as_array() {
                 for c in all {
@@ -213,104 +220,171 @@ fn validate(s: &Value, v: &Value) -> Result<()> {
 }
 pub fn serve(
     input: &mut dyn BufRead,
-    out: &mut dyn Write,
-    mut invoke: impl FnMut(&str, Value) -> Result<Value>,
+    out: &mut (dyn Write + Send),
+    invoke: impl Fn(&str, Value, Arc<AtomicBool>) -> Result<Value> + Sync,
 ) -> Result<()> {
     let tools = tools();
     let mut initialized = false;
-    loop {
-        let mut raw = Vec::new();
-        let n = std::io::Read::take(&mut *input, (4 << 20) + 1).read_until(b'\n', &mut raw)?;
-        if n == 0 {
-            return Ok(());
-        }
-        if n > 4 << 20 {
-            return Err(invalid("MCP frame exceeds the size limit."));
-        }
-        if raw.iter().all(u8::is_ascii_whitespace) {
-            continue;
-        }
-        let req = match decode(&raw) {
-            Ok(v) => v,
-            Err(_) => {
-                writeln!(out, "{}", rpc_error(Value::Null, -32700, "Parse error"))?;
-                out.flush()?;
-                continue;
-            }
-        };
-        let id = req.get("id").cloned().unwrap_or(Value::Null);
-        let method = strv(&req, "method");
-        let valid_id = id.is_string() || id.as_i64().is_some();
-        let result = if !req.is_object()
-            || req["jsonrpc"] != "2.0"
-            || method.is_empty()
-            || (req.get("id").is_some() && !valid_id)
-        {
-            rpc_error(Value::Null, -32600, "Invalid Request")
-        } else if req.get("id").is_none() {
-            continue;
-        } else {
-            let p = &req["params"];
-            let result: std::result::Result<Value, (i32, &str)> = match method {
-                "initialize" => {
-                    if initialized
-                        || strv(p, "protocolVersion").is_empty()
-                        || !p["capabilities"].is_object()
-                        || !p["clientInfo"].is_object()
-                    {
-                        Err((-32602, "Invalid initialize parameters"))
-                    } else {
-                        initialized = true;
-                        Ok(
-                            json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"lane","version":env!("CARGO_PKG_VERSION")}}),
-                        )
-                    }
-                }
-                "ping" => Ok(json!({})),
-                "tools/list" => {
-                    if !initialized {
-                        Err((-32600, "Initialize first"))
-                    } else if !p.is_null() && (!p.is_object() || !strv(p, "cursor").is_empty()) {
-                        Err((-32602, "Invalid list parameters"))
-                    } else {
-                        Ok(json!({"tools":tools.iter().map(|(_,t)|t).collect::<Vec<_>>()}))
-                    }
-                }
-                "tools/call" => {
-                    if !initialized {
-                        Err((-32600, "Initialize first"))
-                    } else if let Some((method, tool)) =
-                        tools.iter().find(|(_, t)| t["name"] == p["name"])
-                    {
-                        let q = p.get("arguments").cloned().unwrap_or_else(|| json!({}));
-                        if validate(&tool["inputSchema"], &q).is_err()
-                            || protocol::method(method)
-                                .is_some_and(|_| protocol::request(method, &q).is_err())
-                        {
-                            Err((-32602, "Invalid tool arguments"))
-                        } else {
-                            let (value, failed) = match invoke(method, q) {
-                                Ok(v) => (v, false),
-                                Err(e) => (json!({"error":e}), true),
-                            };
-                            Ok(
-                                json!({"structuredContent":value,"content":[{"type":"text","text":value.to_string()}],"isError":failed}),
-                            )
-                        }
-                    } else {
-                        Err((-32602, "Unknown tool"))
-                    }
-                }
-                _ => Err((-32601, "Method not found")),
-            };
-            match result {
-                Ok(value) => json!({"jsonrpc":"2.0","id":id,"result":value}),
-                Err((code, msg)) => rpc_error(id, code, msg),
-            }
-        };
-        writeln!(out, "{result}")?;
+    let output = Mutex::new(out);
+    let active = Mutex::new(HashMap::<String, Arc<AtomicBool>>::new());
+    let write = |value: Value| -> Result<()> {
+        let mut out = output
+            .lock()
+            .map_err(|_| invalid("MCP output lock failed."))?;
+        writeln!(out, "{value}")?;
         out.flush()?;
-    }
+        drop(out);
+        Ok(())
+    };
+    std::thread::scope(|scope| {
+        let mut workers: Vec<std::thread::ScopedJoinHandle<'_, Result<()>>> = Vec::new();
+        let result = (|| {
+            loop {
+                // Reap completed workers so a long-running MCP session keeps bounded state.
+                let mut index = 0;
+                while index < workers.len() {
+                    if workers[index].is_finished() {
+                        workers
+                            .swap_remove(index)
+                            .join()
+                            .map_err(|_| invalid("MCP worker failed."))??;
+                    } else {
+                        index += 1;
+                    }
+                }
+                let mut raw = Vec::new();
+                let n =
+                    std::io::Read::take(&mut *input, (4 << 20) + 1).read_until(b'\n', &mut raw)?;
+                if n == 0 {
+                    return Ok(());
+                }
+                if n > 4 << 20 {
+                    return Err(invalid("MCP frame exceeds the size limit."));
+                }
+                if raw.iter().all(u8::is_ascii_whitespace) {
+                    continue;
+                }
+                let Ok(req) = decode(&raw) else {
+                    write(rpc_error(Value::Null, -32700, "Parse error"))?;
+                    continue;
+                };
+                let id = req.get("id").cloned().unwrap_or(Value::Null);
+                let method = strv(&req, "method");
+                let valid_id = id.is_string() || id.as_i64().is_some();
+                let result = if !req.is_object()
+                    || req["jsonrpc"] != "2.0"
+                    || method.is_empty()
+                    || (req.get("id").is_some() && !valid_id)
+                {
+                    rpc_error(Value::Null, -32600, "Invalid Request")
+                } else if req.get("id").is_none() {
+                    if method == "notifications/cancelled" {
+                        let key = req["params"]["requestId"].to_string();
+                        if let Some(cancelled) = active.lock().unwrap().get(&key) {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    continue;
+                } else if active.lock().unwrap().contains_key(&id.to_string()) {
+                    rpc_error(id, -32600, "Request ID is already active")
+                } else {
+                    let p = &req["params"];
+                    let result: std::result::Result<Value, (i32, &str)> = match method {
+                        "initialize" => {
+                            if initialized
+                                || strv(p, "protocolVersion").is_empty()
+                                || !p["capabilities"].is_object()
+                                || !p["clientInfo"].is_object()
+                            {
+                                Err((-32602, "Invalid initialize parameters"))
+                            } else {
+                                initialized = true;
+                                Ok(
+                                    json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"lane","version":env!("CARGO_PKG_VERSION")}}),
+                                )
+                            }
+                        }
+                        "ping" => Ok(json!({})),
+                        "tools/list" => {
+                            if !initialized {
+                                Err((-32600, "Initialize first"))
+                            } else if !p.is_null()
+                                && (!p.is_object() || !strv(p, "cursor").is_empty())
+                            {
+                                Err((-32602, "Invalid list parameters"))
+                            } else {
+                                Ok(json!({"tools":tools.iter().map(|(_,t)|t).collect::<Vec<_>>()}))
+                            }
+                        }
+                        "tools/call" => {
+                            if !initialized {
+                                Err((-32600, "Initialize first"))
+                            } else if let Some((method, tool)) =
+                                tools.iter().find(|(_, t)| t["name"] == p["name"])
+                            {
+                                let q = p.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                                if validate(&tool["inputSchema"], &q).is_err()
+                                    || protocol::method(method)
+                                        .is_some_and(|_| protocol::request(method, &q).is_err())
+                                {
+                                    Err((-32602, "Invalid tool arguments"))
+                                } else {
+                                    let mut pending = active.lock().unwrap();
+                                    if pending.len() >= 32 {
+                                        Err((-32000, "Too many concurrent requests"))
+                                    } else {
+                                        let cancelled = Arc::new(AtomicBool::new(false));
+                                        let key = id.to_string();
+                                        pending.insert(key.clone(), cancelled.clone());
+                                        drop(pending);
+                                        let method = method.clone();
+                                        let invoke = &invoke;
+                                        let write = &write;
+                                        let active = &active;
+                                        workers.push(scope.spawn(move || {
+                                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| invoke(&method, q, cancelled.clone())));
+                                    let response = match result {
+                                        Ok(result) => {
+                                            let (value, failed) = match result {
+                                                Ok(v) => (v, false),
+                                                Err(e) => (json!({"error":e}), true),
+                                            };
+                                            json!({"jsonrpc":"2.0","id":id,"result":{"structuredContent":value,"content":[{"type":"text","text":value.to_string()}],"isError":failed}})
+                                        }
+                                        Err(_) => rpc_error(id, -32603, "Internal error"),
+                                    };
+                                    let mut pending = active.lock().unwrap();
+                                    let result = if cancelled.load(Ordering::Relaxed) { Ok(()) } else { write(response) };
+                                    pending.remove(&key);
+                                    result
+                                }));
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                Err((-32602, "Unknown tool"))
+                            }
+                        }
+                        _ => Err((-32601, "Method not found")),
+                    };
+                    match result {
+                        Ok(value) => json!({"jsonrpc":"2.0","id":id,"result":value}),
+                        Err((code, msg)) => rpc_error(id, code, msg),
+                    }
+                };
+                write(result)?;
+            }
+        })();
+        if result.is_err() {
+            for cancelled in active.lock().unwrap().values() {
+                cancelled.store(true, Ordering::Relaxed);
+            }
+        }
+        for worker in workers {
+            worker.join().map_err(|_| invalid("MCP worker failed."))??;
+        }
+        result
+    })
 }
 fn rpc_error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})

@@ -200,10 +200,10 @@ export function select(paths, lockfiles) {
       ),
     lane_cli:
       repositoryShared ||
-      shared.go ||
+      shared.rust ||
       shared.protocol ||
       paths.some((path) =>
-        /^(cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
+        /^(Cargo\.(toml|lock)$|cmds\/lane\/|packages\/lane\/|apps\/lane\/native\/store\/|protos\/lane\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
           path,
         ),
       ),

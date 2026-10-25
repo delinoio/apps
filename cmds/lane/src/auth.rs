@@ -43,23 +43,29 @@ fn mismatch() -> Failure {
         "The credential does not belong to this account space.",
     )
 }
+fn os_entry(key: &str) -> Result<keyring::Entry> {
+    // Preserve the Go helper's credential identity and UTF-8 blob representation.
+    #[cfg(windows)]
+    let entry =
+        keyring::Entry::new_with_target(&format!("io.delino.lane:{key}"), "io.delino.lane", key);
+    #[cfg(not(windows))]
+    let entry = keyring::Entry::new("io.delino.lane", key);
+    entry.map_err(|_| credential_error())
+}
 impl Vault for OsVault {
     fn get(&self, key: &str) -> Result<Value> {
-        let entry = keyring::Entry::new("io.delino.lane", key).map_err(|_| credential_error())?;
-        serde_json::from_str(&entry.get_password().map_err(|_| credential_error())?)
-            .map_err(|_| credential_error())
+        let raw = os_entry(key)?
+            .get_secret()
+            .map_err(|_| credential_error())?;
+        serde_json::from_slice(&raw).map_err(|_| credential_error())
     }
     fn set(&self, key: &str, v: &Value) -> Result<()> {
-        keyring::Entry::new("io.delino.lane", key)
-            .map_err(|_| credential_error())?
-            .set_password(&v.to_string())
+        os_entry(key)?
+            .set_secret(v.to_string().as_bytes())
             .map_err(|_| credential_error())
     }
     fn delete(&self, key: &str) -> Result<()> {
-        match keyring::Entry::new("io.delino.lane", key)
-            .map_err(|_| credential_error())?
-            .delete_credential()
-        {
+        match os_entry(key)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             _ => Err(credential_error()),
         }
@@ -146,6 +152,7 @@ fn random_token() -> String {
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
+#[must_use]
 pub fn reconnect_error() -> Failure {
     Failure::new(
         "STALE_EPOCH",
@@ -157,13 +164,28 @@ pub fn approval_snapshot(s: &Store) -> Result<(String, String, bool)> {
 }
 impl Auth {
     pub fn credential_lock(&self, s: &Store, k: &str) -> Result<std::fs::File> {
+        let _ = s;
+        #[cfg(target_os = "macos")]
+        let base =
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Caches"));
+        #[cfg(target_os = "windows")]
+        let base = Some(crate::windows::data_root()?);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let base = std::env::var_os("XDG_CACHE_HOME")
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            });
+        let base = base.ok_or_else(credential_error)?;
         lock(
-            &s.root
-                .join("credential-locks")
+            &base
+                .join("io.delino.lane/credential-locks")
                 .join(format!("{}.lock", hash(k))),
             true,
         )
     }
+
     pub fn load(&self, s: &Store) -> Result<Value> {
         let identity = s.identity()?;
         let expected = json!({"issuer":identity.issuer,"account_id":identity.account,"tenant_id":identity.tenant});
@@ -253,7 +275,7 @@ impl Auth {
             || c["token_type"] != "Bearer"
             || !c["expires_in"]
                 .as_i64()
-                .is_some_and(|n| n > 0 && n <= 31536000)
+                .is_some_and(|n| n > 0 && n <= 31_536_000)
             || [
                 "issuer",
                 "account_id",
@@ -318,41 +340,41 @@ impl Auth {
         ]);
         Ok(json!({"authorizationUrl":u.to_string(),"challengeId":state}))
     }
-    pub fn complete(&self, s: &Store, callback: &str) -> Result<Value> {
-        let (mut u, q) = callback_query(callback)?;
-        let state = one(&q, "state")?;
-        let code = one(&q, "code")?;
-        if q.contains_key("error") {
+    pub fn complete(&self, store: &Store, callback: &str) -> Result<Value> {
+        let (mut url, query) = callback_query(callback)?;
+        let state = one(&query, "state")?;
+        let code = one(&query, "code")?;
+        if query.contains_key("error") {
             return Err(approval_error());
         }
-        let k = format!("approval:{}:{state}", s.space);
-        let _lock = self.credential_lock(s, &k)?;
-        let p = self.vault.get(&k)?;
-        if p["State"] != state || !expiry(&p, "ExpiresAt") {
+        let key = format!("approval:{}:{state}", store.space);
+        let _lock = self.credential_lock(store, &key)?;
+        let pending = self.vault.get(&key)?;
+        if pending["State"] != state || !expiry(&pending, "ExpiresAt") {
             return Err(approval_error());
         }
-        u.set_query(None);
-        if u.as_str() != strv(&p, "RedirectURI") {
+        url.set_query(None);
+        if url.as_str() != strv(&pending, "RedirectURI") {
             return Err(approval_error());
         }
-        let mut c = self.exchange(
-            strv(&p, "Endpoint"),
+        let mut credential = self.exchange(
+            strv(&pending, "Endpoint"),
             &[
                 ("grant_type", "authorization_code"),
                 ("code", code),
                 ("client_id", "lane-cli"),
-                ("redirect_uri", strv(&p, "RedirectURI")),
-                ("code_verifier", strv(&p, "Verifier")),
+                ("redirect_uri", strv(&pending, "RedirectURI")),
+                ("code_verifier", strv(&pending, "Verifier")),
             ],
         )?;
-        if c["device_id"] != p["DeviceID"]
-            || (!strv(&p, "ExpectedAccountID").is_empty()
-                && c["account_id"] != p["ExpectedAccountID"])
+        if credential["device_id"] != pending["DeviceID"]
+            || (!strv(&pending, "ExpectedAccountID").is_empty()
+                && credential["account_id"] != pending["ExpectedAccountID"])
         {
             return Err(mismatch());
         }
-        self.vault.delete(&k)?;
-        for (k, f) in [
+        self.vault.delete(&key)?;
+        for (key, f) in [
             ("redirect_uri", "RedirectURI"),
             ("approval_sequence", "Sequence"),
             ("approval_space_id", "SpaceID"),
@@ -360,17 +382,17 @@ impl Auth {
             ("reconnect_confirmed", "ReconnectConfirmed"),
             ("approval_expires_at", "ExpiresAt"),
         ] {
-            c[k] = p[f].clone();
+            credential[key] = pending[f].clone();
         }
-        let (epoch, sequence, required) = approval_snapshot(s)?;
-        if c["approval_space_id"] != s.space
-            || c["approval_epoch"] != epoch
-            || c["approval_sequence"] != sequence
-            || c["reconnect_confirmed"] != required
+        let (epoch, sequence, required) = approval_snapshot(store)?;
+        if credential["approval_space_id"] != store.space
+            || credential["approval_epoch"] != epoch
+            || credential["approval_sequence"] != sequence
+            || credential["reconnect_confirmed"] != required
         {
             return Err(reconnect_error());
         }
-        Ok(c)
+        Ok(credential)
     }
     pub fn revoke(&self, c: &Value) -> Result<()> {
         let token = if strv(c, "refresh_token").is_empty() {
@@ -408,28 +430,40 @@ impl Auth {
         }
         self.vault.set(&k,&json!({"SpaceID":s.space,"DeviceID":s.device,"Issuer":c["issuer"],"AccountID":c["account_id"],"TenantID":c["tenant_id"],"SessionID":c["session_id"],"Endpoint":c["endpoint"],"ChallengeID":challenge,"RedirectURI":c["redirect_uri"],"Mode":if mode=="DATA_DELETION_MODE_DELETE_EVERYWHERE"{1}else{2},"ExpiresAt":(Utc::now()+Duration::minutes(5)).to_rfc3339(),"Proof":"","Used":false}))
     }
-    pub fn complete_deletion(&self, s: &Store, c: &Value, callback: &str) -> Result<String> {
-        let (mut u, q) = callback_query(callback)?;
-        let challenge = one(&q, "reauth_challenge")?;
+    pub fn complete_deletion(
+        &self,
+        store: &Store,
+        credential: &Value,
+        callback: &str,
+    ) -> Result<String> {
+        let (mut url, query) = callback_query(callback)?;
+        let challenge = one(&query, "reauth_challenge")?;
         if !valid_id(challenge) {
             return Err(approval_error());
         }
-        let k = format!("deletion:{}:{challenge}", s.space);
-        let _lock = self.credential_lock(s, &k)?;
-        let mut p = self.vault.get(&k)?;
-        check_deletion(s, c, &p, deletion_mode(&p), challenge, true)?;
-        u.set_query(None);
-        if u.as_str() != strv(&p, "RedirectURI") {
+        let key = format!("deletion:{}:{challenge}", store.space);
+        let _lock = self.credential_lock(store, &key)?;
+        let mut pending = self.vault.get(&key)?;
+        check_deletion(
+            store,
+            credential,
+            &pending,
+            deletion_mode(&pending),
+            challenge,
+            true,
+        )?;
+        url.set_query(None);
+        if url.as_str() != strv(&pending, "RedirectURI") {
             return Err(approval_error());
         }
-        if strv(&p, "Proof").is_empty() {
+        if strv(&pending, "Proof").is_empty() {
             let response = self
                 .http
                 .post(format!(
                     "{}/auth/reauth/proof",
-                    endpoint(strv(c, "endpoint"))?
+                    endpoint(strv(credential, "endpoint"))?
                 ))
-                .bearer_auth(strv(c, "access_token"))
+                .bearer_auth(strv(credential, "access_token"))
                 .json(&json!({"challenge_id":challenge}))
                 .send()
                 .map_err(|_| credential_error())?;
@@ -437,8 +471,8 @@ impl Auth {
             if strv(&proof, "reauth_proof").is_empty() {
                 return Err(approval_error());
             }
-            p["Proof"] = proof["reauth_proof"].clone();
-            self.vault.set(&k, &p)?;
+            pending["Proof"] = proof["reauth_proof"].clone();
+            self.vault.set(&key, &pending)?;
         }
         Ok(challenge.into())
     }
@@ -519,7 +553,7 @@ impl Auth {
                     return result;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(std::time::Duration::from_millis(25))
+                    std::thread::sleep(std::time::Duration::from_millis(25));
                 }
                 Err(e) => return Err(e.into()),
             }

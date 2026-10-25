@@ -67,37 +67,32 @@ pub fn with_credential(auth: &Auth, c: &Value, method: &str, q: &Value) -> Resul
                 if let (Some(desc), Ok(raw)) = (
                     protocol::pool().get_message_by_name(name),
                     STANDARD.decode(strv(detail, "value")),
-                ) {
-                    if let Ok(msg) = prost_reflect::DynamicMessage::decode(desc, raw.as_slice()) {
-                        if let Ok(v) = serde_json::to_value(msg) {
-                            if name == "lane.v1.ErrorDetail" {
-                                if let Some(reason) = v["reason"].as_str() {
-                                    error.reason = reason.into();
-                                    error.message = format!(
-                                        "{}.",
-                                        reason
-                                            .trim_start_matches("ERROR_REASON_")
-                                            .replace('_', " ")
-                                    );
-                                }
-                                if !strv(&v, "correlationId").is_empty() {
-                                    error.correlation_id = strv(&v, "correlationId").into();
-                                }
-                                error.entity_id = strv(&v, "entityId").into();
-                                error.retryable = v["retryable"] == true;
-                                error.current_head_ids = v["currentHeadIds"]
-                                    .as_array()
-                                    .map(|a| {
-                                        a.iter()
-                                            .filter_map(Value::as_str)
-                                            .map(str::to_owned)
-                                            .collect()
-                                    })
-                                    .unwrap_or_default();
-                            } else if name == "lane.v1.EntityResult" {
-                                error.conflict = Some(v);
-                            }
+                ) && let Ok(msg) = prost_reflect::DynamicMessage::decode(desc, raw.as_slice())
+                    && let Ok(v) = serde_json::to_value(msg)
+                {
+                    if name == "lane.v1.ErrorDetail" {
+                        if let Some(reason) = v["reason"].as_str() {
+                            error.reason = reason.into();
+                            error.message = format!(
+                                "{}.",
+                                reason.trim_start_matches("ERROR_REASON_").replace('_', " ")
+                            )
+                            .into();
                         }
+                        if !strv(&v, "correlationId").is_empty() {
+                            error.correlation_id = strv(&v, "correlationId").into();
+                        }
+                        error.entity_id = strv(&v, "entityId").into();
+                        error.retryable = v["retryable"] == true;
+                        error.current_head_ids =
+                            v["currentHeadIds"].as_array().map_or_default(|a| {
+                                a.iter()
+                                    .filter_map(Value::as_str)
+                                    .map(str::to_owned)
+                                    .collect()
+                            });
+                    } else if name == "lane.v1.EntityResult" {
+                        error.conflict = Some(Box::new(v));
                     }
                 }
             }

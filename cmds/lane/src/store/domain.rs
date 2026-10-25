@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{
+    Connection, Failure, OptionalExtension, Result, Store, Value, id, invalid, json, normalize,
+    params, rows, strv, valid_id,
+};
 use crate::protocol::{self, fingerprint};
 use std::collections::HashSet;
 pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
@@ -229,7 +232,7 @@ impl Store {
         let mut q = protocol::request(method, input)?;
         match method {
             "CreateRepository" | "SaveRepository" => {
-                q["url"] = normalize::url(strv(&q, "url"))?.into()
+                q["url"] = normalize::url(strv(&q, "url"))?.into();
             }
             "CreateTask" => {
                 if q["progress"] == "PROGRESS_UNSPECIFIED" {
@@ -279,13 +282,15 @@ impl Store {
                 "CreateRepository"|"SaveRepository"=>{if !create&&h[0]["kind"]!="ENTITY_KIND_REPOSITORY"{return Err(invalid("Wrong entity kind."));}v["repository"]=json!({"normalizedUrl":q["url"],"displayName":q["displayName"]});},
                 "CreateTask"=>{let mut rid=strv(&q["repository"],"id").to_owned();let url=strv(&q["repository"],"url");if !url.is_empty(){let existing:Option<String>=c.query_row("SELECT id FROM entities WHERE kind=1 AND normalized_url=? AND deleted=0",[url],|r|r.get(0)).optional()?;if let Some(existing)=existing{rid=existing;repo=Some(result(&heads(c,&rid)?));}else{rid=protocol::id();let mut rv=new_version(&rid,"ENTITY_KIND_REPOSITORY",meta,vec![]);rv["repository"]=json!({"normalizedUrl":url,"displayName":""});self.persist(c,&rv,meta,"MUTATION_KIND_CREATE",false,false)?;repo=Some(result(&[rv]));}}
                     if !matches!(strv(&q,"proposal"),"PROPOSAL_REGULAR"|"PROPOSAL_PENDING"){return Err(invalid("Creation requires regular or pending proposal."));}v["kind"]="ENTITY_KIND_TASK".into();v["task"]=json!({"repositoryId":rid,"title":q["title"],"description":q["description"],"progress":q["progress"],"proposal":q["proposal"]});if let Some(p)=q.get("prompt"){v["task"]["prompt"]=p.clone();prompt=true;}},
-                "SaveTask"=>{if !h[0]["task"].is_object()||!q["task"].is_object(){return Err(invalid("Task is required."));}if q["task"]["proposal"]!=h[0]["task"]["proposal"]{return Err(invalid("Use proposal disposition operation."));}v["task"]=q["task"].clone();},
+                "SaveTask"=>{if !h[0]["task"].is_object()||!q["task"].is_object(){return Err(invalid("Task is required."));}
+if q["task"]["proposal"]!=h[0]["task"]["proposal"]{return Err(invalid("Use proposal disposition operation."));}v["task"]=q["task"].clone();},
                 "SetProgress"|"SetProposal"|"RestorePrompt"=>{if !h[0]["task"].is_object(){return Err(invalid("Wrong entity kind."));}v["task"]=h[0]["task"].clone();match method{"SetProgress"=>v["task"]["progress"]=q["progress"].clone(),"SetProposal"=>{if !matches!(strv(&v["task"],"proposal"),"PROPOSAL_PENDING"|"PROPOSAL_REJECTED")||!matches!(strv(&q,"proposal"),"PROPOSAL_ACCEPTED"|"PROPOSAL_REJECTED"){return Err(invalid("Invalid proposal disposition."));}v["task"]["proposal"]=q["proposal"].clone();},_=>{let raw:Option<String>=c.query_row("SELECT envelope_json FROM versions WHERE entity_id=? AND version_id=?",params![id,strv(&q,"sourceVersionId")],|r|r.get(0)).optional()?;let source:Value=serde_json::from_str(&raw.ok_or_else(||Failure::new("NOT_FOUND","Prompt source does not exist."))?)?;if !source["task"].is_object(){return Err(invalid("Invalid prompt source."));}v["task"].as_object_mut().unwrap().remove("prompt");if let Some(p)=source["task"].get("prompt"){v["task"]["prompt"]=p.clone();}v["promptRestoration"]=true.into();prompt=true;}}},
                 "ResolveConflict"=>{if h.len()<2||json!(head_ids(&h))!=q["expectedHeadIds"]{return Err(Failure::new("STALE_RESOLUTION","Conflict heads changed."));}let resolved=&q["resolved"];if resolved["kind"]!=h[0]["kind"]||resolved["deleted"]==true||resolved["entityId"]!=id||resolved["formatVersion"]!=1{return Err(invalid("Invalid resolved snapshot."));}for field in ["task","repository"]{if let Some(body)=resolved.get(field){v[field]=body.clone();}}v["parentVersionIds"]=json!(head_ids(&h));kind="MUTATION_KIND_RESOLVE";},
                 _=>return Err(invalid("Unknown mutation.")),
             }
             let mut conflict=false;
-            if !create&&method!="ResolveConflict"{let expected=strv(&q,"expectedVersionId");if !valid_id(expected){return Err(invalid("Expected version is required."));}if h[0]["versionId"]!=expected{let n:i64=c.query_row("SELECT count(*) FROM versions WHERE entity_id=? AND version_id=?",params![id,expected],|r|r.get(0))?;if n==0{return Err(invalid("Expected version does not belong to entity."));}conflict=true;}}
+            if !create&&method!="ResolveConflict"{let expected=strv(&q,"expectedVersionId");if !valid_id(expected){return Err(invalid("Expected version is required."));}
+if h[0]["versionId"]!=expected{let n:i64=c.query_row("SELECT count(*) FROM versions WHERE entity_id=? AND version_id=?",params![id,expected],|r|r.get(0))?;if n==0{return Err(invalid("Expected version does not belong to entity."));}conflict=true;}}
             if v["task"].is_object(){validate_task(c,&v["task"])?;prompt|=h.iter().any(|old|old["task"].get("prompt")!=v["task"].get("prompt"));}else if v["repository"].is_object(){let url=strv(&v["repository"],"normalizedUrl");if normalize::url(&format!("https://{url}/lane-validation"))?!=format!("{url}/lane-validation"){return Err(invalid("Invalid normalized repository URL."));}}else{return Err(invalid("Snapshot body is missing."));}
             self.persist(c,&v,meta,kind,conflict,prompt)?;let r=result(&heads(c,&id)?);if conflict{committed_error=Some(stale(&r,&id));}save_receipt(c,method,&q,&fp,&id,&r)?;Ok(response(r,repo))
         })?;
@@ -308,11 +313,8 @@ fn stale(r: &Value, id: &str) -> Failure {
         "Version changed; submitted alternative was preserved.",
     );
     e.entity_id = id.into();
-    e.current_head_ids = r["alternatives"]
-        .as_array()
-        .map(|h| head_ids(h))
-        .unwrap_or_default();
-    e.conflict = Some(r.clone());
+    e.current_head_ids = r["alternatives"].as_array().map_or_default(|h| head_ids(h));
+    e.conflict = Some(Box::new(r.clone()));
     e
 }
 pub(super) fn redact(c: &Connection, id: &str, kind: &str) -> Result<()> {

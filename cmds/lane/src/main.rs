@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::print_stderr,
+    reason = "CLI approval instructions and safe diagnostics must stay off stdout."
+)]
 use std::{
     io::{self, IsTerminal},
     sync::atomic::Ordering,
@@ -19,8 +23,8 @@ fn main() {
         &args,
         &mut runtime,
         &mut io::stdin().lock(),
-        &mut io::stdout().lock(),
-        &mut io::stderr().lock(),
+        &mut io::stdout(),
+        &mut io::stderr(),
     );
     std::process::exit(code);
 }

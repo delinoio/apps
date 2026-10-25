@@ -33,10 +33,7 @@ pub fn url(raw: &str) -> Result<String> {
         None => host.to_owned(),
     };
     let rest = raw.split_once("://").ok_or_else(bad)?.1;
-    let path = rest
-        .find('/')
-        .map(|i| rest[i..].trim_matches('/'))
-        .unwrap_or("");
+    let path = rest.find('/').map_or("", |i| rest[i..].trim_matches('/'));
     let mut out = Vec::new();
     let bytes = path.as_bytes();
     let mut i = 0;

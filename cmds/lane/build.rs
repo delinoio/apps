@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 fn main() {
     let mut config = prost_build::Config::new();
-    config.protoc_executable(protoc_bin_vendored::protoc_bin_path().expect("protoc"));
     config.file_descriptor_set_path(
         std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("lane.bin"),
     );

@@ -39,7 +39,7 @@ pub fn record(root: &Path, operation: &str, reason: &str, correlation: &str) -> 
             continue;
         }
         let modified = metadata.modified()?;
-        if now.duration_since(modified).unwrap_or_default() >= Duration::from_secs(30 * 24 * 3600) {
+        if now.duration_since(modified).unwrap_or_default() >= Duration::from_hours(720) {
             std::fs::remove_file(entry.path())?;
             continue;
         }

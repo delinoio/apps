@@ -5,26 +5,27 @@ pub type Result<T> = std::result::Result<T, Failure>;
 #[serde(rename_all = "camelCase")]
 pub struct Failure {
     pub reason: String,
-    pub message: String,
+    pub message: Box<str>,
     #[serde(default = "crate::protocol::id")]
     pub correlation_id: String,
     #[serde(default)]
     pub retryable: bool,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub entity_id: String,
+    #[serde(default, skip_serializing_if = "str::is_empty")]
+    pub entity_id: Box<str>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub current_head_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub conflict: Option<serde_json::Value>,
+    pub conflict: Option<Box<serde_json::Value>>,
 }
 impl Failure {
+    #[must_use]
     pub fn new(reason: &str, message: &str) -> Self {
         Self {
             reason: format!("ERROR_REASON_{reason}"),
             message: message.into(),
             correlation_id: crate::protocol::id(),
             retryable: reason == "STORAGE_BUSY",
-            entity_id: String::new(),
+            entity_id: "".into(),
             current_head_ids: vec![],
             conflict: None,
         }
@@ -57,6 +58,7 @@ impl From<serde_json::Error> for Failure {
         Self::new("INVALID_INPUT", "Invalid JSON input.")
     }
 }
+#[must_use]
 pub fn invalid(message: &str) -> Failure {
     Failure::new("INVALID_INPUT", message)
 }

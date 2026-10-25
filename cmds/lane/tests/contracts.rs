@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::too_many_lines,
+    reason = "Keep shared fixture branches together."
+)]
 use lane::{
     protocol::{self, id, strv},
     store::Store,
@@ -138,7 +142,7 @@ fn task_vectors() {
                             .clone();
                         ids.push(v["versionId"].clone());
                     }
-                    v=call(&s,"RestorePrompt",json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"sourceVersionId":ids[input["restoreSourceIndex"].as_u64().unwrap() as usize]})).unwrap()["result"]["version"].clone();
+                    v=call(&s,"RestorePrompt",json!({"id":v["entityId"],"expectedVersionId":v["versionId"],"sourceVersionId":ids[usize::try_from(input["restoreSourceIndex"].as_u64().unwrap()).unwrap()]})).unwrap()["result"]["version"].clone();
                     assert_eq!(v["task"]["prompt"], want["prompt"]);
                     assert_eq!(v["promptRestoration"], true);
                     let history = call(
@@ -148,7 +152,10 @@ fn task_vectors() {
                     )
                     .unwrap();
                     if let Some(n) = want["promptHistoryCount"].as_u64() {
-                        assert_eq!(history["versions"].as_array().unwrap().len(), n as usize);
+                        assert_eq!(
+                            history["versions"].as_array().unwrap().len(),
+                            usize::try_from(n).unwrap()
+                        );
                     }
                 } else if input["operation"] == "search" {
                     if strv(input, "title").is_empty() {
@@ -221,11 +228,9 @@ fn retry_conflict_delete_and_prompt_history() {
         call(&s, "CreateTask", q).unwrap()["result"]["result"],
         "RESULT_KIND_DELETED"
     );
-    assert!(
-        call(&s, "ListHistory", json!({"id":v["entityId"]})).unwrap()["versions"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        call(&s, "ListHistory", json!({"id":v["entityId"]})).unwrap()["versions"],
+        json!([])
     );
 }
 #[test]
@@ -241,11 +246,9 @@ fn schema_and_space_isolation() {
         json!({"title":"Local","repository":{"url":"https://example.com/local"}}),
     )
     .unwrap();
-    assert!(
-        call(&other, "ListTasks", json!({})).unwrap()["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        call(&other, "ListTasks", json!({})).unwrap()["items"],
+        json!([])
     );
     assert!(Store::open(temp.path(), &id(), false).is_err());
     s.with(true, |c| {
@@ -292,4 +295,63 @@ fn concurrent_writers_and_removal() {
 #[test]
 fn sqlite_engine_has_wal_reset_fix() {
     assert!(rusqlite::version_number() >= 3_051_003);
+}
+
+#[test]
+fn sync_apply_vectors() {
+    let mut selected = std::collections::BTreeSet::from([
+        "whole-task-conflict",
+        "ancestor-replay",
+        "edit-then-delete",
+        "delete-then-edit",
+        "delete-then-delayed-create",
+        "immutable-version-id",
+        "unsupported-format",
+    ]);
+    for case in fixture("sync")["cases"].as_array().unwrap() {
+        let name = strv(case, "id");
+        if !selected.remove(name) {
+            continue;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path(), "", false).unwrap();
+        let apply = |version: &Value| {
+            store.with(true, |connection| {
+                lane::store::sync::apply(connection, &json!({"version":version}))
+            })
+        };
+        for version in case["input"]["initial"].as_array().into_iter().flatten() {
+            apply(version).unwrap();
+        }
+        if name == "unsupported-format" {
+            assert_eq!(
+                apply(&case["input"]["version"]).unwrap_err().reason,
+                "ERROR_REASON_UNSUPPORTED_FORMAT"
+            );
+            continue;
+        }
+        let mut rejected = false;
+        for mutation in case["input"]["mutations"].as_array().into_iter().flatten() {
+            if let Err(error) = apply(&mutation["version"]) {
+                assert_eq!(name, "immutable-version-id", "{error}");
+                rejected = true;
+            }
+        }
+        if name == "immutable-version-id" {
+            assert!(rejected);
+            continue;
+        }
+        let heads = store
+            .with(false, |connection| {
+                let mut statement =
+                    connection.prepare("SELECT version_id FROM heads ORDER BY version_id")?;
+                let values = statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(values)
+            })
+            .unwrap();
+        assert_eq!(json!(heads), case["expected"]["headIds"], "{name}");
+    }
+    assert_eq!(selected.len(), 0, "missing fixtures: {selected:?}");
 }

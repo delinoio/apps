@@ -17,8 +17,16 @@ const source = fileURLToPath(new URL("../", import.meta.url));
 const { version } = JSON.parse(readFileSync(resolve(source, "package.json")));
 const temporary = mkdtempSync(resolve(tmpdir(), "lane-packed-"));
 try {
+  const manifest = JSON.parse(
+    readFileSync(resolve(source, "dist/package/manifest.json")),
+  );
+  const selectedPlatforms = Object.keys(manifest.artifacts);
+  assert.ok(
+    selectedPlatforms.length &&
+      selectedPlatforms.every((key) => platforms.includes(key)),
+  );
   const expectedArchives = new Set(
-    platforms
+    selectedPlatforms
       .map((key) => `lane-${key}-${version}.tar.gz`)
       .concat(`delinoio-lane-${version}.tgz`),
   );
@@ -53,7 +61,7 @@ try {
     { stdio: "inherit" },
   );
   const installed = resolve(temporary, "node_modules/@delinoio/lane");
-  for (const key of platforms) {
+  for (const key of selectedPlatforms) {
     const executable = verifiedExecutable(installed, key);
     const archive = resolve(source, "dist", `lane-${key}-${version}.tar.gz`);
     const entries = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })

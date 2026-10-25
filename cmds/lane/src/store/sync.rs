@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::domain::{mapped, redact};
-use super::*;
+use super::{
+    Connection, Failure, OptionalExtension, Result, Value, id, invalid, json, params, put_meta,
+    rows, strv, valid_id,
+};
 use crate::protocol;
 use std::collections::{BTreeMap, HashSet};
 fn array(v: &Value) -> &[Value] {
-    v.as_array().map(Vec::as_slice).unwrap_or(&[])
+    v.as_array().map_or(&[], Vec::as_slice)
 }
 pub fn validate(v: &Value) -> Result<()> {
     if v["formatVersion"] != 1 {
@@ -149,8 +152,7 @@ pub fn insert_version(c: &Connection, v: &Value) -> Result<()> {
             v["task"].is_object() && previous["task"].get("prompt") != v["task"].get("prompt");
     }
     let us = chrono::DateTime::parse_from_rfc3339(strv(&v, "createdAt"))
-        .map(|t| t.timestamp_micros())
-        .unwrap_or(0);
+        .map_or(0, |t| t.timestamp_micros());
     c.execute("INSERT INTO versions(version_id,entity_id,envelope_json,created_at_us,prompt_version) VALUES(?,?,?,?,?)",params![version,entity,v.to_string(),us,prompt])?;
     Ok(())
 }
@@ -260,15 +262,15 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
         })
         .collect();
     while let Some(p) = pending.pop() {
-        if ancestors.insert(p.clone()) {
-            if let Some(v) = all.get(&p) {
-                pending.extend(
-                    array(&v["parentVersionIds"])
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned),
-                );
-            }
+        if ancestors.insert(p.clone())
+            && let Some(v) = all.get(&p)
+        {
+            pending.extend(
+                array(&v["parentVersionIds"])
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned),
+            );
         }
     }
     for h in heads {

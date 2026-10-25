@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Use the root Cargo workspace, bindings generated from the canonical Lane schema, and a pinned bundled SQLite driver. Shared native/Rust SQL paths and columns are fixed by the [local-store contract](apps-lane-local-store-contract.md). Rust code uses `tracing`. Keep stdout reserved for requested results or MCP protocol messages; diagnostics use stderr.
+Install `protoc` for schema compilation. Use the root Cargo workspace, bindings generated from the canonical Lane schema, and a pinned bundled SQLite driver. Shared native/Rust SQL paths and columns are fixed by the [local-store contract](apps-lane-local-store-contract.md). Rust code uses `tracing`. Keep stdout reserved for requested results or MCP protocol messages; diagnostics use stderr.
 
 ## Users and Operators
 

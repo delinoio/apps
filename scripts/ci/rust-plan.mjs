@@ -42,11 +42,20 @@ export function selectRust(
       path,
     ),
   );
+  const laneContract = paths.some((path) =>
+    /^(packages\/lane\/|protos\/lane\/|apps\/lane\/native\/store\/|docs\/(?:project-lane|cmds-lane|packages-lane|protos-lane|apps-lane-local-store))/u.test(
+      path,
+    ),
+  );
   const consumers =
-    !global && perfineContract
+    !global && (perfineContract || laneContract)
       ? run("list")
           .packages.map((pkg) => pkg.name)
-          .filter((name) => ["perfine-core", "perfine"].includes(name))
+          .filter(
+            (name) =>
+              (perfineContract && ["perfine-core", "perfine"].includes(name)) ||
+              (laneContract && name === "lane"),
+          )
       : [];
   return {
     rust_clippy: all ?? [...new Set([...direct.packages, ...consumers])],

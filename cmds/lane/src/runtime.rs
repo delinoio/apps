@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::print_stderr,
+    reason = "CLI approval instructions and safe diagnostics must stay off stdout."
+)]
 use crate::{
     auth::{self, Auth},
     cli::{Dispatcher, Options},
@@ -30,7 +34,8 @@ impl Default for Runtime {
     }
 }
 impl Runtime {
-    pub fn new(root: Option<PathBuf>, auth: Auth, origin: &'static str) -> Self {
+    #[must_use]
+    pub const fn new(root: Option<PathBuf>, auth: Auth, origin: &'static str) -> Self {
         Self {
             root,
             auth,
@@ -41,11 +46,7 @@ impl Runtime {
     fn open(&mut self, opt: &Options, removal: bool) -> Result<()> {
         if self.store.is_none() {
             self.store = Some(Store::open(
-                &self
-                    .root
-                    .clone()
-                    .map(Ok)
-                    .unwrap_or_else(store::default_root)?,
+                &self.root.clone().map_or_else(store::default_root, Ok)?,
                 &opt.space,
                 removal,
             )?);
@@ -53,6 +54,13 @@ impl Runtime {
         Ok(())
     }
     fn invoke_inner(&mut self, opt: &Options, method: &str, mut q: Value) -> Result<Value> {
+        if self
+            .auth
+            .cancelled
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(Failure::new("CANCELLED", "Request cancelled."));
+        }
         self.open(opt, method == "RemoveDeviceData")?;
         let s = self.store.as_mut().unwrap();
         if !opt.expected_space.is_empty()
@@ -494,20 +502,41 @@ impl Dispatcher for Runtime {
             let correlation = result
                 .as_ref()
                 .err()
-                .map(|e| e.correlation_id.clone())
-                .unwrap_or_else(protocol::id);
+                .map_or_else(protocol::id, |e| e.correlation_id.clone());
             if crate::locallog::record(&s.root, method, reason, &correlation).is_err() {
                 eprintln!("Local diagnostic log could not be retained.");
             }
         }
         result
     }
-    fn mcp(&mut self, opt: &Options, input: &mut dyn BufRead, out: &mut dyn Write) -> Result<()> {
+    fn mcp(
+        &mut self,
+        opt: &Options,
+        input: &mut dyn BufRead,
+        out: &mut (dyn Write + Send),
+    ) -> Result<()> {
+        let selected = std::sync::Mutex::new(None::<String>);
         let root = self.root.clone();
         let auth = self.auth.clone();
-        crate::mcp::serve(input, out, |method, q| {
-            let mut runtime = Runtime::new(root.clone(), auth.clone(), "ORIGIN_KIND_MCP");
-            runtime.invoke(opt, method, q)
+        // Resolve on the first tool call: discovery must not create user state.
+        // Each call then opens its own connection to the pinned session space.
+        crate::mcp::serve(input, out, |method, q, cancelled| {
+            let mut auth = auth.clone();
+            auth.cancelled = cancelled;
+            let mut runtime = Self::new(root.clone(), auth, "ORIGIN_KIND_MCP");
+            let mut options = opt.clone();
+            {
+                let mut pinned = selected.lock().unwrap();
+                if let Some(space) = pinned.as_ref() {
+                    options.space.clone_from(space);
+                } else {
+                    runtime.open(&options, method == "RemoveDeviceData")?;
+                    let space = runtime.store.as_ref().unwrap().space.clone();
+                    options.space.clone_from(&space);
+                    *pinned = Some(space);
+                }
+            }
+            runtime.invoke(&options, method, q)
         })
     }
 }

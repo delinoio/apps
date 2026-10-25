@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::domain::{heads, mapped, result};
-use super::*;
+use super::{
+    Connection, Failure, OptionalExtension, Result, Store, Value, invalid, json, params, rows, strv,
+};
 use crate::protocol::fingerprint;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use unicode_casefold::UnicodeCaseFold;
-fn page(q: &Value, scope: &str) -> Result<(usize, String)> {
-    let n = q["page"]["size"].as_u64().unwrap_or(0);
-    if n > 1000 {
+use caseless::Caseless;
+fn page(request: &Value, scope: &str) -> Result<(usize, String)> {
+    let size = request["page"]["size"].as_u64().unwrap_or(0);
+    if size > 1000 {
         return Err(invalid("Page size exceeds 1000."));
     }
-    let cursor = strv(&q["page"], "cursor");
-    let mut last = String::new();
-    if !cursor.is_empty() {
+    let cursor = strv(&request["page"], "cursor");
+    let last = if cursor.is_empty() {
+        String::new()
+    } else {
         let bytes = URL_SAFE_NO_PAD
             .decode(cursor)
             .map_err(|_| invalid("Invalid cursor."))?;
@@ -19,28 +22,41 @@ fn page(q: &Value, scope: &str) -> Result<(usize, String)> {
         if v["Scope"] != scope {
             return Err(invalid("Cursor does not match query."));
         }
-        last = strv(&v, "Last").into();
-    }
-    Ok((if n == 0 { 100 } else { n as usize }, last))
+        strv(&v, "Last").into()
+    };
+    Ok((
+        if size == 0 {
+            100
+        } else {
+            usize::try_from(size).map_err(|_| invalid("Invalid page size."))?
+        },
+        last,
+    ))
 }
 fn cursor(scope: &str, last: &str) -> String {
     URL_SAFE_NO_PAD.encode(json!({"Scope":scope,"Last":last}).to_string())
 }
-fn contains(q: &Value, k: &str, v: &Value) -> bool {
-    q[k].as_array()
+fn contains(request: &Value, k: &str, v: &Value) -> bool {
+    request[k]
+        .as_array()
         .is_none_or(|a| a.is_empty() || a.contains(v))
 }
 impl Store {
-    pub(super) fn query(&self, c: &Connection, method: &str, q: &Value) -> Result<Value> {
+    pub(super) fn query(
+        &self,
+        connection: &Connection,
+        method: &str,
+        request: &Value,
+    ) -> Result<Value> {
         match method {
             "GetTask" | "GetRepository" => {
                 let id = if method == "GetRepository" {
-                    mapped(c, strv(q, "id"))?
+                    mapped(connection, strv(request, "id"))?
                 } else {
-                    strv(q, "id").into()
+                    strv(request, "id").into()
                 };
-                let h = heads(c, &id)?;
-                if h[0]["kind"]
+                let heads = heads(connection, &id)?;
+                if heads[0]["kind"]
                     != if method == "GetTask" {
                         "ENTITY_KIND_TASK"
                     } else {
@@ -49,7 +65,7 @@ impl Store {
                 {
                     return Err(Failure::new("NOT_FOUND", "Entity does not exist."));
                 }
-                Ok(json!({"result":result(&h)}))
+                Ok(json!({"result":result(&heads)}))
             }
             "ListTasks" | "ListRepositories" => {
                 for (key, valid) in [
@@ -73,13 +89,13 @@ impl Store {
                         ][..],
                     ),
                 ] {
-                    if let Some(a) = q[key].as_array() {
-                        if a.iter().any(|v| !valid.contains(&v.as_str().unwrap_or(""))) {
-                            return Err(invalid("Invalid state filter."));
-                        }
+                    if let Some(a) = request[key].as_array()
+                        && a.iter().any(|v| !valid.contains(&v.as_str().unwrap_or("")))
+                    {
+                        return Err(invalid("Invalid state filter."));
                     }
                 }
-                let mut query = q.clone();
+                let mut query = request.clone();
                 query.as_object_mut().unwrap().remove("page");
                 let scope = format!(
                     "{}lane.v1.{}Request{}",
@@ -87,40 +103,46 @@ impl Store {
                     method,
                     fingerprint(&query)
                 );
-                let (n, last) = page(q, &scope)?;
+                let (size, last) = page(request, &scope)?;
                 let mut items = vec![];
                 let mut prev = String::new();
                 let mut next = String::new();
                 for id in rows(
-                    c,
+                    connection,
                     "SELECT id FROM entities WHERE kind=? AND deleted=0 AND id>? ORDER BY id",
                     params![if method == "ListTasks" { 2 } else { 1 }, last],
                 )? {
-                    let h = heads(c, &id)?;
+                    let heads = heads(connection, &id)?;
                     let mut matches = method == "ListRepositories";
-                    for v in &h {
-                        let t = &v["task"];
-                        if !t.is_object() {
+                    for v in &heads {
+                        let task = &v["task"];
+                        if !task.is_object() {
                             continue;
                         }
-                        let target = strv(q, "repositoryId");
+                        let target = strv(request, "repositoryId");
                         if !target.is_empty()
-                            && mapped(c, strv(t, "repositoryId"))? != mapped(c, target)?
+                            && mapped(connection, strv(task, "repositoryId"))?
+                                != mapped(connection, target)?
                         {
                             continue;
                         }
-                        if !contains(q, "progress", &t["progress"])
-                            || !contains(q, "proposal", &t["proposal"])
+                        if !contains(request, "progress", &task["progress"])
+                            || !contains(request, "proposal", &task["proposal"])
                         {
                             continue;
                         }
-                        let search = strv(q, "search").case_fold().collect::<String>();
-                        if strv(t, "title")
-                            .case_fold()
+                        let search = strv(request, "search")
+                            .chars()
+                            .default_case_fold()
+                            .collect::<String>();
+                        if strv(task, "title")
+                            .chars()
+                            .default_case_fold()
                             .collect::<String>()
                             .contains(&search)
-                            || strv(t, "description")
-                                .case_fold()
+                            || strv(task, "description")
+                                .chars()
+                                .default_case_fold()
                                 .collect::<String>()
                                 .contains(&search)
                         {
@@ -130,34 +152,34 @@ impl Store {
                     if !matches {
                         continue;
                     }
-                    if items.len() == n {
+                    if items.len() == size {
                         next = cursor(&scope, &prev);
                         break;
                     }
-                    items.push(result(&h));
+                    items.push(result(&heads));
                     prev = id;
                 }
                 Ok(json!({"items":items,"nextCursor":next}))
             }
             "ListHistory" => {
-                heads(c, strv(q, "id"))?;
+                heads(connection, strv(request, "id"))?;
                 let scope = format!(
                     "{}:{}:{}{}",
                     self.space,
                     method,
-                    strv(q, "id"),
-                    if q["promptsOnly"] == true {
+                    strv(request, "id"),
+                    if request["promptsOnly"] == true {
                         ":prompts"
                     } else {
                         ""
                     }
                 );
-                let (n, last) = page(q, &scope)?;
+                let (size, last) = page(request, &scope)?;
                 let mut versions = vec![];
                 let mut prev = String::new();
                 let mut next = String::new();
-                let mut stmt=c.prepare("SELECT envelope_json,prompt_version FROM versions WHERE entity_id=? ORDER BY created_at_us,version_id")?;
-                for row in stmt.query_map([strv(q, "id")], |r| {
+                let mut stmt=connection.prepare("SELECT envelope_json,prompt_version FROM versions WHERE entity_id=? ORDER BY created_at_us,version_id")?;
+                for row in stmt.query_map([strv(request, "id")], |r| {
                     Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?))
                 })? {
                     let (raw, prompt) = row?;
@@ -166,11 +188,13 @@ impl Store {
                         .map_err(|_| invalid("Invalid history timestamp."))?
                         .to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
                     let key = format!("{time}:{}", strv(&v, "versionId"));
-                    if key <= last || v["deleted"] == true || (q["promptsOnly"] == true && !prompt)
+                    if key <= last
+                        || v["deleted"] == true
+                        || (request["promptsOnly"] == true && !prompt)
                     {
                         continue;
                     }
-                    if versions.len() == n {
+                    if versions.len() == size {
                         next = cursor(&scope, &prev);
                         break;
                     }
@@ -180,25 +204,26 @@ impl Store {
                 Ok(json!({"versions":versions,"nextCursor":next}))
             }
             "ListEvents" => {
-                let mut query = q.clone();
+                let mut query = request.clone();
                 query.as_object_mut().unwrap().remove("page");
                 let scope = format!("{}{method}{}", self.space, fingerprint(&query));
-                let (n, last) = page(q, &scope)?;
+                let (size, last) = page(request, &scope)?;
                 let mut items = vec![];
                 let mut prev = String::new();
                 let mut next = String::new();
                 for raw in rows(
-                    c,
+                    connection,
                     "SELECT body_json FROM remote_objects WHERE kind=2 AND deleted=0 AND id>? ORDER BY id",
                     [last],
                 )? {
                     let v: Value = serde_json::from_str(&raw)?;
-                    if (q.get("repositoryId").is_some() && q["repositoryId"] != v["repositoryId"])
-                        || !contains(q, "states", &v["state"])
+                    if (request.get("repositoryId").is_some()
+                        && request["repositoryId"] != v["repositoryId"])
+                        || !contains(request, "states", &v["state"])
                     {
                         continue;
                     }
-                    if items.len() == n {
+                    if items.len() == size {
                         next = cursor(&scope, &prev);
                         break;
                     }
@@ -208,10 +233,10 @@ impl Store {
                 Ok(json!({"items":items,"nextCursor":next}))
             }
             "GetEvent" => {
-                let raw: Option<String> = c
+                let raw: Option<String> = connection
                     .query_row(
                         "SELECT body_json FROM remote_objects WHERE kind=2 AND id=? AND deleted=0",
-                        [strv(q, "id")],
+                        [strv(request, "id")],
                         |r| r.get(0),
                     )
                     .optional()?;
@@ -221,12 +246,12 @@ impl Store {
                     })?)?;
                 let mut processing = vec![];
                 for raw in rows(
-                    c,
+                    connection,
                     "SELECT body_json FROM remote_objects WHERE kind=3 AND deleted=0 ORDER BY id",
                     [],
                 )? {
                     let v: Value = serde_json::from_str(&raw)?;
-                    if v["eventId"] == q["id"] {
+                    if v["eventId"] == request["id"] {
                         processing.push(v);
                     }
                 }

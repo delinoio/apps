@@ -5,6 +5,10 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, io::Write};
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "These are independent public command-line switches."
+)]
 #[derive(Default, Clone)]
 pub struct Options {
     pub remote: bool,
@@ -25,7 +29,7 @@ pub trait Dispatcher {
         &mut self,
         opt: &Options,
         input: &mut dyn std::io::BufRead,
-        out: &mut dyn Write,
+        out: &mut (dyn Write + Send),
     ) -> Result<()>;
 }
 fn pop(flags: &mut BTreeMap<String, Vec<String>>, key: &str) -> String {
@@ -38,8 +42,8 @@ pub fn run(
     args: &[String],
     dispatcher: &mut impl Dispatcher,
     input: &mut dyn std::io::BufRead,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
+    out: &mut (dyn Write + Send),
+    err: &mut (dyn Write + Send),
 ) -> i32 {
     let mut opt = Options {
         json: args.iter().any(|s| s == "--json"),
@@ -62,7 +66,7 @@ fn execute(
     args: &[String],
     dispatcher: &mut impl Dispatcher,
     input: &mut dyn std::io::BufRead,
-    out: &mut dyn Write,
+    out: &mut (dyn Write + Send),
     opt: &mut Options,
     code: &mut i32,
 ) -> Result<()> {
@@ -361,11 +365,22 @@ fn execute(
     if opt.json {
         writeln!(out, "{}", json!({"ok":true,"result":response}))?;
     } else {
-        human(out, &response, "")?;
+        use std::io::IsTerminal;
+        let color = opt.color != "never"
+            && std::env::var_os("NO_COLOR").is_none()
+            && std::io::stdout().is_terminal();
+        if color {
+            write!(out, "\x1b[36m")?;
+        }
+        let result = human(out, &response, "");
+        if color {
+            write!(out, "\x1b[0m")?;
+        }
+        result?;
     }
     Ok(())
 }
-fn human(out: &mut dyn Write, value: &Value, indent: &str) -> Result<()> {
+fn human(out: &mut (dyn Write + Send), value: &Value, indent: &str) -> Result<()> {
     match value {
         Value::Object(m) => {
             for (k, v) in m {
@@ -376,9 +391,7 @@ fn human(out: &mut dyn Write, value: &Value, indent: &str) -> Result<()> {
                     writeln!(
                         out,
                         "{indent}{k}: {}",
-                        v.as_str()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| v.to_string())
+                        v.as_str().map_or_else(|| v.to_string(), str::to_owned)
                     )?;
                 }
             }

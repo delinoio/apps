@@ -6,9 +6,11 @@ use prost_reflect::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
+#[must_use]
 pub fn id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
+#[must_use]
 pub fn valid_id(s: &str) -> bool {
     uuid::Uuid::parse_str(s).is_ok_and(|v| v.get_version_num() == 7 && v.to_string() == s)
 }
@@ -19,6 +21,7 @@ pub fn pool() -> &'static DescriptorPool {
             .expect("compiled Lane descriptors")
     })
 }
+#[must_use]
 pub fn method(name: &str) -> Option<MethodDescriptor> {
     pool()
         .services()
@@ -78,15 +81,15 @@ pub fn attribute(
         if f.name() == "meta" {
             continue;
         }
-        if let prost_reflect::Kind::Message(d) = f.kind() {
-            if let Some(v) = value.get_mut(f.json_name()) {
-                if let Some(items) = v.as_array_mut() {
-                    for item in items {
-                        attribute(d.clone(), item, origin, allocated)?;
-                    }
-                } else if v.is_object() {
-                    attribute(d, v, origin, allocated)?;
+        if let prost_reflect::Kind::Message(d) = f.kind()
+            && let Some(v) = value.get_mut(f.json_name())
+        {
+            if let Some(items) = v.as_array_mut() {
+                for item in items {
+                    attribute(d.clone(), item, origin, allocated)?;
                 }
+            } else if v.is_object() {
+                attribute(d, v, origin, allocated)?;
             }
         }
     }
@@ -119,6 +122,7 @@ pub fn canonical(v: &Value) -> String {
         _ => v.to_string(),
     }
 }
+#[must_use]
 pub fn fingerprint(v: &Value) -> String {
     hash(canonical(v))
 }

@@ -7,6 +7,7 @@ use crate::{
     error::{Failure, Result, invalid},
     protocol::{hash, id, strv, valid_id},
 };
+#[cfg(unix)]
 use fs2::FileExt;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -20,8 +21,8 @@ pub struct Store {
     pub space: String,
     pub device: String,
     pub registry: Connection,
-    db: Option<Connection>,
-    handles: Option<File>,
+    db: std::cell::RefCell<Option<Connection>>,
+    handles: std::cell::RefCell<Option<File>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
@@ -39,10 +40,8 @@ pub fn private(path: &Path, directory: bool) -> Result<()> {
             std::fs::Permissions::from_mode(if directory { 0o700 } else { 0o600 }),
         )?;
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, directory);
-    }
+    #[cfg(windows)]
+    crate::windows::protect(path, directory)?;
     Ok(())
 }
 pub fn mkdir(path: &Path) -> Result<()> {
@@ -51,7 +50,7 @@ pub fn mkdir(path: &Path) -> Result<()> {
 }
 pub fn default_root() -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
-    let root = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let root = Some(crate::windows::data_root()?);
     #[cfg(target_os = "macos")]
     let root =
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"));
@@ -79,6 +78,9 @@ pub fn lock(path: &Path, exclusive: bool) -> Result<File> {
     private(path, false)?;
     let until = Instant::now() + Duration::from_secs(5);
     loop {
+        #[cfg(windows)]
+        let result = crate::windows::try_lock(&file, exclusive);
+        #[cfg(unix)]
         let result = if exclusive {
             FileExt::try_lock_exclusive(&file)
         } else {
@@ -116,7 +118,7 @@ pub fn transaction<T>(
 fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
     let app: i64 = c.query_row("PRAGMA application_id", [], |r| r.get(0))?;
     let version: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if app == 1279348293 && version == 1 {
+    if app == 1_279_348_293 && version == 1 {
         return Ok(());
     }
     let count: i64 = c.query_row(
@@ -124,12 +126,14 @@ fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if app == 0 && version == 0 && count == 0 {
-        if let Some(schema) = schema {
-            c.execute_batch(schema)?;
-            c.execute_batch("PRAGMA application_id=1279348293; PRAGMA user_version=1")?;
-            return Ok(());
-        }
+    if app == 0
+        && version == 0
+        && count == 0
+        && let Some(schema) = schema
+    {
+        c.execute_batch(schema)?;
+        c.execute_batch("PRAGMA application_id=1279348293; PRAGMA user_version=1")?;
+        return Ok(());
     }
     Err(Failure::new(
         "UNSUPPORTED_FORMAT",
@@ -158,7 +162,7 @@ fn open_db(path: &Path, schema: &str) -> Result<Connection> {
                     Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
                 ) && Instant::now() < deadline =>
             {
-                std::thread::sleep(Duration::from_millis(10))
+                std::thread::sleep(Duration::from_millis(10));
             }
             Err(e) => return Err(e.into()),
             _ => {
@@ -197,7 +201,7 @@ impl Store {
         mkdir(root)?;
         let registry = open_db(
             &root.join("registry.sqlite"),
-            include_str!("../../internal/store/registry.sql"),
+            include_str!("../../../../apps/lane/native/store/registry.sql"),
         )?;
         let (space, device) = transaction(&registry, true, |c| {
             let mut space = selected.to_owned();
@@ -255,18 +259,18 @@ impl Store {
             )?;
             Ok((space, device))
         })?;
-        let mut s = Self {
+        let s = Self {
             root: root.into(),
             space,
             device,
             registry,
-            db: None,
-            handles: None,
+            db: std::cell::RefCell::new(None),
+            handles: std::cell::RefCell::new(None),
         };
         if removal && s.unavailable()? {
             return Ok(s);
         }
-        s.handles = Some(lock(&s.lock_path(), false)?);
+        s.handles.replace(Some(lock(&s.lock_path(), false)?));
         if s.unavailable()? {
             return Err(Failure::new("DELETED", "Space is unavailable."));
         }
@@ -275,7 +279,7 @@ impl Store {
         mkdir(&dir)?;
         let db = open_db(
             &dir.join("lane.sqlite"),
-            include_str!("../../internal/store/schema.sql"),
+            include_str!("../../../../apps/lane/native/store/schema.sql"),
         )?;
         transaction(&db, true, |c| {
             for (k, v) in [
@@ -296,7 +300,7 @@ impl Store {
             }
             Ok(())
         })?;
-        s.db = Some(db);
+        s.db.replace(Some(db));
         s.with(false, |_| Ok(()))?;
         Ok(s)
     }
@@ -314,10 +318,12 @@ impl Store {
     }
     pub fn with<T>(&self, write: bool, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         if self.unavailable()? {
+            self.db.borrow_mut().take();
+            self.handles.borrow_mut().take();
             return Err(Failure::new("DELETED", "Space is unavailable."));
         }
-        let c = self
-            .db
+        let connection = self.db.borrow();
+        let c = connection
             .as_ref()
             .ok_or_else(|| Failure::new("DELETED", "Space is unavailable."))?;
         transaction(c, write, |c| {
@@ -401,13 +407,13 @@ impl Store {
             )?;
             Ok(())
         })?;
-        if let Some(db) = self.db.take() {
+        if let Some(db) = self.db.borrow_mut().take() {
             let result = transaction(&db, true, |c| {
                 c.execute_batch("DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM receipts; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM notification_receipts; DELETE FROM repository_mappings; DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version'); INSERT INTO changes(change_kind) VALUES(3); INSERT OR REPLACE INTO store_meta VALUES('removed','1');")?;
                 Ok(())
             });
             drop(db);
-            self.handles.take();
+            self.handles.borrow_mut().take();
             result?;
         }
         let _lock = lock(&self.lock_path(), true)?;
@@ -433,7 +439,7 @@ impl Store {
         match method {
             "GetNotificationPreferences"=>self.with(false,|c|self.preferences(c)),
             "SetNotificationPreferences"=>self.with(true,|c|{let content=match strv(q,"content"){""|"NOTIFICATION_CONTENT_DETAIL"=>"DETAIL","NOTIFICATION_CONTENT_GENERIC"=>"GENERIC",_=>return Err(invalid("Invalid notification content."))};put_meta(c,"notification_enabled",if q["enabled"]==true{"1"}else{"0"})?;put_meta(c,"notification_content",content)?;c.execute("INSERT INTO changes(change_kind) VALUES(3)",[])?;self.preferences(c)}),
-            "GetLocalStatus"=>self.with(false,|c|{let identity=self.identity()?;let count:i64=c.query_row("SELECT count(*) FROM outbox",[],|r|r.get(0))?;let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;let items=stmt.query_map([],|r|Ok(json!({"requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;let mut out=json!({"spaceId":self.space,"deviceId":self.device,"accountId":identity.account,"syncEnabled":identity.enabled,"connected":false,"reconnectRequired":meta(c,"reconnect_required")?=="1","syncErrorReason":meta(c,"sync_error_reason")?,"pendingItemCount":count.to_string(),"itemErrors":items,"notificationPreferences":self.preferences(c)?});if let Ok(us)=meta(c,"last_sync_at_us")?.parse::<i64>() {if let Some(t)=chrono::DateTime::from_timestamp_micros(us){out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();}}Ok(out)}),
+            "GetLocalStatus"=>self.with(false,|c|{let identity=self.identity()?;let count:i64=c.query_row("SELECT count(*) FROM outbox",[],|r|r.get(0))?;let mut stmt=c.prepare("SELECT request_id,entity_id,error_reason FROM outbox WHERE error_reason IS NOT NULL ORDER BY request_id")?;let items=stmt.query_map([],|r|Ok(json!({"requestId":r.get::<_,String>(0)?,"entityId":r.get::<_,String>(1)?,"reason":r.get::<_,String>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;let mut out=json!({"spaceId":self.space,"deviceId":self.device,"accountId":identity.account,"syncEnabled":identity.enabled,"connected":false,"reconnectRequired":meta(c,"reconnect_required")?=="1","syncErrorReason":meta(c,"sync_error_reason")?,"pendingItemCount":count.to_string(),"itemErrors":items,"notificationPreferences":self.preferences(c)?});if let Ok(us)=meta(c,"last_sync_at_us")?.parse::<i64>()&& let Some(t)=chrono::DateTime::from_timestamp_micros(us){out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();}Ok(out)}),
             "CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
             _=>self.with(false,|c|self.query(c,method,q)),
         }

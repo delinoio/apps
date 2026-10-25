@@ -2,15 +2,15 @@
 
 ## Scope
 
-`protos/lane/v1/lane.proto` defines Lane schemas. Checked-in `lane.pb.go`, `lanev1connect/lane.connect.go` and `lane_pb.ts` provide Go and TypeScript bindings. The server protocol crate registers the schema for Rust generation into Cargo output. Shared conformance vectors belong in `protos/lane/v1/fixtures/`. These interfaces do not establish runtime or native acceptance. The [application contract](apps-lane-foundation.md) owns complete product behavior.
+`protos/lane/v1/lane.proto` defines Lane schemas. Checked-in `lane.pb.go`, `lanev1connect/lane.connect.go` and `lane_pb.ts` provide Go and TypeScript bindings. The server protocol crate and Rust CLI build script register the same schema for generation into their respective Cargo output directories. Shared conformance vectors belong in `protos/lane/v1/fixtures/`. These interfaces do not establish runtime or native acceptance. The [application contract](apps-lane-foundation.md) owns complete product behavior.
 
 ## Runtime and Language
 
-Use Protobuf package `lane.v1`, Go package `github.com/delinoio/apps/protos/lane/v1`, Connect-Go package `lanev1connect`, and TypeScript exports from `@delino/protos`. Generate Rust through `servers/crates/delino-protos`; do not check in generated Rust or duplicate schemas. Use typed messages and enums, not an arbitrary JSON command API. JSON below means the standard ProtoJSON representation of the named message, except the explicit webhook JSON object.
+Use Protobuf package `lane.v1`, Go package `github.com/delinoio/apps/protos/lane/v1`, Connect-Go package `lanev1connect`, and TypeScript exports from `@delino/protos`. Generate server Rust through `servers/crates/delino-protos` and CLI Rust descriptors through `cmds/lane/build.rs`; do not check in generated Rust or duplicate schemas. Use typed messages and enums, not an arbitrary JSON command API. JSON below means the standard ProtoJSON representation of the named message, except the explicit webhook JSON object.
 
 ## Users and Operators
 
-ReactLynx hosts, Go CLI/local MCP, online web, Rust server/remote MCP, and integration-test authors.
+ReactLynx hosts, Rust CLI/local MCP, online web, Rust server/remote MCP, and integration-test authors.
 
 ## Interfaces and Contracts
 
@@ -168,7 +168,7 @@ The checked-in fixture files use `{ "formatVersion": 1, "cases": [...] }`. Each 
 - `webhooks.json`: verify the exact `rawBody` bytes and timestamp with the synthetic base64url key. Parsing cases run after transport authentication. Lease clocks use decimal microseconds; deadlines are exclusive. Completion fixtures with `validLease` start with a matching unexpired lease. Replay cases seed a previously committed completion receipt; PENDING means the event was reopened after that completion. No replay creates another task or completes the new round.
 - `push.json`: `retryIndex` is zero for the first retry after the initial failure. Seconds are decimal Unix times; Retry-After delta values are relative to `previousAttemptSeconds`. A null expected next attempt means no send. Enqueue and dispatch cases test separate phases; missing eligibility inputs use an enabled, approved device with granted permission and available provider. Generic content assertions forbid repository/task text without fixing localized wording.
 
-`conformance_test.go` checks field identities, service shape, optional prompt binary/JSON round trips, fixture request decoding, canonical fingerprint digests and signature known answers. It does not implement a runtime store or establish domain conformance. Go, native and server adapters must execute the same fixture inputs against their own implementations and report that coverage separately.
+`conformance_test.go` checks field identities, service shape, optional prompt binary/JSON round trips, fixture request decoding, canonical fingerprint digests and signature known answers. It does not implement a runtime store or establish domain conformance. Rust CLI, native and server adapters must execute the same fixture inputs against their own implementations and report that coverage separately.
 
 ## Storage
 
