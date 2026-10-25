@@ -37,6 +37,22 @@ Default output is human-readable. `--json` returns a structured result or error;
 
 Native desktop packages include their matching background synchronization helper. They do not depend on a globally installed npm package. Development builds use `lane-dev://` and distribution builds use `lane://` for login callbacks, opening Lane, and repository/task links. Use links supplied by Lane; do not substitute one build channel's callback scheme for another.
 
+## Upgrade existing local data
+
+Before using RealQA with data from an older Lane release, update every Lane app, CLI, and MCP client that accesses that local data. Save your work, close other Lane windows, and stop CLI, MCP, and background synchronization processes before migration. Closing a desktop window alone can leave Lane running; quit other Lane instances.
+
+Opening older data does not automatically migrate it or create an empty replacement. In the native app's compatibility error screen, enter the **Existing data space ID**, select **Review migration**, check the space, and confirm **Migrate existing space**. Keep only the instance performing migration open.
+
+Alternatively, quit Lane and run the updated CLI:
+
+```sh
+lane data migrate --space <existing-space-id>
+```
+
+Replace `<existing-space-id>` with the UUID of the existing local space you intend to upgrade. This command requires an explicit space ID, operates locally, and does not accept `--remote` or a request payload.
+
+Migration preserves saved work, history, and pending synchronization changes. If it fails, it does not leave a partially migrated space. Correct the reported cause and retry; do not delete the data or initialize a replacement. After success, reopen the space with updated clients. Older Lane versions refuse the upgraded format. Repeating migration on an already upgraded space makes no changes.
+
 ## RealQA Chrome companion
 
 RealQA capture runs inside the Lane desktop app. Its Chrome extension connects to an already running Lane installation. Use the extension and native component from the same trusted distributor. Native Messaging registration is part of Lane installation and removal; there is no separate RealQA desktop app.

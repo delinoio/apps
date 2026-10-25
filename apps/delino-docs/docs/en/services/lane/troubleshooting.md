@@ -14,6 +14,12 @@ If the server or its authorization dependency is unavailable, retry later with t
 
 For an unsupported local format, install a compatible application version. Do not erase or initialize the store as empty. An unsupported sync format requires an update but does not justify discarding pending changes.
 
+## An existing data space needs an upgrade
+
+Follow the [local-data upgrade procedure](./installation#upgrade-existing-local-data). Update all Lane clients that access the space, save your work, and stop other Lane windows, CLI/MCP writers, and background synchronization processes. Use the native app's explicit **Migrate existing space** action, or quit Lane and run `lane data migrate --space <existing-space-id>` with the existing space's UUID.
+
+If migration reports that the space is in use, stop the remaining clients and retry. A failed migration preserves the existing data; it does not create an empty replacement. If the format is still unsupported, use a compatible Lane release. Do not delete the store or discard pending changes. Older versions cannot reopen an upgraded space.
+
 ## Conflicting versions
 
 Compare both versions before resolving. A conflict covers the entire task, including separate-field edits. Normal edits stay blocked until resolution. If another device resolved first, reread the current version and heads; do not retry an obsolete resolution as an unconditional overwrite. Unsaved editor input remains available while you decide.
