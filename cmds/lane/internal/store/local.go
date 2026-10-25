@@ -62,6 +62,13 @@ func (s *Store) SetSyncEnabled(ctx context.Context, enabled bool) error {
 		if e := compatible(ctx, c, ""); e != nil {
 			return e
 		}
+		var unavailable int
+		if e := c.QueryRowContext(ctx, "SELECT count(*) FROM registry_meta WHERE key=? AND value='1'", "unavailable:"+s.space).Scan(&unavailable); e != nil {
+			return e
+		}
+		if unavailable > 0 {
+			return domainError(7, "Space is unavailable", s.space)
+		}
 		r, e := c.ExecContext(ctx, "UPDATE spaces SET sync_enabled=? WHERE id=?", enabled, s.space)
 		if e != nil {
 			return e
@@ -83,7 +90,11 @@ func (s *Store) RemoveSpace(ctx context.Context) error {
 		if e := compatible(ctx, c, ""); e != nil {
 			return e
 		}
-		_, e := c.ExecContext(ctx, "INSERT OR REPLACE INTO registry_meta(key,value) VALUES(?,'1')", "unavailable:"+s.space)
+
+		if _, e := c.ExecContext(ctx, "INSERT OR REPLACE INTO registry_meta(key,value) VALUES(?,'1')", "unavailable:"+s.space); e != nil {
+			return e
+		}
+		_, e := c.ExecContext(ctx, "UPDATE spaces SET sync_enabled=0,account_key=? WHERE id=?", "removed:"+s.space, s.space)
 		return e
 	})
 	if e != nil {
