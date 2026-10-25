@@ -2,6 +2,7 @@
 // Publication consumes a complete, checked set; failed or partial releases need
 // operator reconciliation and must never replace existing immutable artifacts.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -153,6 +154,21 @@ export function recordHost(directory) {
     target: smoke.target,
     host,
     minimumOs: minimumEvidence(host),
+    commands: [
+      {
+        command: "offline npm install of entry and platform archives",
+        result: "passed",
+      },
+      {
+        command: "standalone archive extraction and checksum verification",
+        result: "passed",
+      },
+      {
+        command:
+          "npm launcher and standalone: --version; measure --help; --json doctor with missing configuration",
+        result: "passed",
+      },
+    ],
     dockerWorkflow: "unperformed",
     liveProvider: "unperformed",
   };
@@ -364,7 +380,7 @@ if (
       "Explicit approved release required",
     );
     preflight(directory);
-    for (const { archive } of verifySet(directory).npmPackages) {
+    for (const { name, archive } of verifySet(directory).npmPackages) {
       execFileSync(
         "npm",
         [
@@ -376,6 +392,19 @@ if (
           "--ignore-scripts",
         ],
         { stdio: "inherit" },
+      );
+      const expected = `sha512-${createHash("sha512")
+        .update(readFileSync(resolve(directory, archive)))
+        .digest("base64")}`;
+      const published = npm(
+        "view",
+        `${name}@${verifySet(directory).version}`,
+        "dist.integrity",
+      );
+      assert.equal(
+        published,
+        expected,
+        `Published npm bytes are not confirmed for ${name}; reconcile before continuing`,
       );
     }
   } else
