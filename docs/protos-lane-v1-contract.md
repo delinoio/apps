@@ -2,7 +2,7 @@
 
 ## Scope
 
-Planned `protos/lane/v1` owns Lane schemas, generated Go/TypeScript bindings and `fixtures/` with language-neutral input/expected-output vectors. This document defines the initial interoperation contract before runtime implementation. The [application contract](apps-lane-foundation.md) owns complete product behavior.
+`protos/lane/v1/lane.proto` defines Lane schemas. Checked-in `lane.pb.go`, `lanev1connect/lane.connect.go` and `lane_pb.ts` provide Go and TypeScript bindings. The server protocol crate registers the schema for Rust generation into Cargo output. Shared conformance vectors belong in `protos/lane/v1/fixtures/`. These interfaces do not establish runtime or native acceptance. The [application contract](apps-lane-foundation.md) owns complete product behavior.
 
 ## Runtime and Language
 
@@ -105,7 +105,7 @@ A stale interactive Save returns `aborted/STALE_VERSION`, current heads and the 
 
 `lane.v1.SyncService` methods:
 
-- `GetSyncInfo(Empty)` returns `uint32 format_version=1, string account_id=2, string tenant_id=3, string epoch=4, uint64 max_item_bytes=5`. `epoch` is a server-issued UUID v7 account-data generation.
+- `GetSyncInfo(GetSyncInfoRequest)` (an empty request) returns `uint32 format_version=1, string account_id=2, string tenant_id=3, string epoch=4, uint64 max_item_bytes=5`. `epoch` is a server-issued UUID v7 account-data generation.
 - `PushChanges` accepts `uint32 format_version=1, string epoch=2, string device_id=3, repeated SyncMutation mutations=4`; returns `repeated SyncResult results=1, repeated RepositoryMapping repository_mappings=2`. Each mutation is `MutationMeta meta=1, EntityVersion version=2, repeated string expected_head_ids=3, MutationKind kind=4` (`CREATE=1, SAVE=2, RESOLVE=3, DELETE=4`). Each result is `string request_id=1, EntityResult result=2, ErrorDetail error=3`. Apply each item in its own transaction and retain input order in results; one oversized/invalid item does not stop other items. Process parents before descendants; a missing parent is retryable, never an implicit creation.
 - `PullChanges` accepts `uint32 format_version=1, string epoch=2, string cursor=3, uint32 page_size=4`; returns `repeated Change changes=1, string next_cursor=2, bool has_more=3`. `Change` is `uint64 sequence=1` plus oneof `EntityResult entity=2, WebhookReceiver receiver=3, WebhookEvent event=4, ProcessingRecord processing=5, DeletionRecord deletion=6`. Read pages at a stable high-water mark; a cursor advances only after durable local apply. Tombstone changes redact earlier content even when a client resumes an older cursor.
 - `WatchChanges` accepts `string epoch=1, string cursor=2`; streams `string cursor=1` invalidations. Clients fetch with PullChanges. Reconnect uses the durable pull cursor, never assumes notifications are reliable content delivery. Revocation terminates subscriptions and denies subsequent pulls.
