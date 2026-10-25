@@ -8,6 +8,8 @@ import (
 	"github.com/delinoio/apps/cmds/lane/internal/cli"
 	"github.com/delinoio/apps/cmds/lane/internal/store"
 	v1 "github.com/delinoio/apps/protos/lane/v1"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -113,5 +115,39 @@ func TestPinnedLocalSpaceDoesNotFollowAccountSwitch(t *testing.T) {
 	}
 	if v.(*v1.CreateTaskResponse).Result.Version.Origin.AccountId != "" {
 		t.Fatal(v)
+	}
+}
+
+func TestRemovalRetriesUnavailableSpace(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	held, err := store.Open(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	id := held.SpaceID()
+	first := &Runtime{Root: root}
+	_, err = first.Invoke(ctx, cli.Options{Space: id}, "RemoveDeviceData", json.RawMessage(`{}`))
+	first.Close()
+	if err == nil {
+		t.Fatal("held lifetime lease must block physical removal")
+	}
+	if _, err = held.Sequence(ctx); err == nil {
+		t.Fatal("marked space must reject and drain held handle")
+	}
+	retry := &Runtime{Root: root}
+	_, err = retry.Invoke(ctx, cli.Options{Space: id}, "RemoveDeviceData", json.RawMessage(`{}`))
+	retry.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(filepath.Join(root, "spaces", id)); !os.IsNotExist(err) {
+		t.Fatalf("space remains: %v", err)
+	}
+	again := &Runtime{Root: root}
+	defer again.Close()
+	if _, err = again.Invoke(ctx, cli.Options{Space: id}, "RemoveDeviceData", json.RawMessage(`{}`)); err != nil {
+		t.Fatalf("restart after unregister: %v", err)
 	}
 }

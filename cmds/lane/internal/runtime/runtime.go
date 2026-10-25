@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,7 +111,7 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		}
 	}
 	identity, e := s.Identity(ctx)
-	if e != nil {
+	if e != nil && !(method == "RemoveDeviceData" && errors.Is(e, sql.ErrNoRows)) {
 		return nil, e
 	}
 	if opt.Remote {
@@ -204,6 +205,13 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		}
 		e = syncclient.ApprovedReconnect(ctx, target, lanev1connect.NewSyncServiceClient(client, endpoint), cred.AccountID, cred.TenantID, cred)
 		if errors.Is(e, syncclient.ErrAccountDeleted) {
+			// SelectAccount opens a second lifetime lease for an existing account.
+			// Release the original lease before coordinated physical removal.
+			if target.SpaceID() == s.SpaceID() {
+				if closeErr := s.Close(); closeErr != nil {
+					return nil, closeErr
+				}
+			}
 			if cleanup := r.removeAccount(ctx, target, targetIdentity); cleanup != nil {
 				return nil, cleanup
 			}
@@ -249,9 +257,8 @@ func (r *Runtime) invoke(ctx context.Context, opt cli.Options, method string, ra
 		}
 		return map[string]any{"completed": true}, nil
 	case "RemoveDeviceData":
-		if e = s.SetSyncEnabled(ctx, false); e != nil {
-			return nil, e
-		}
+		// RemoveSpace disables sync atomically with its unavailable marker.
+		// Repeating SetSyncEnabled here would reject cleanup-pending retries.
 		if identity.AccountID != "" {
 			if e = r.Auth.Delete(ctx, s.SpaceID(), s.DeviceID(), identity.Issuer, identity.AccountID, identity.TenantID); e != nil {
 				return nil, e
