@@ -53,6 +53,7 @@ func (OSCredentials) Delete(key string) error {
 }
 
 type Credential struct {
+	RedirectURI        string    `json:"redirect_uri"`
 	ApprovalSequence   string    `json:"approval_sequence"`
 	ApprovalSpaceID    string    `json:"approval_space_id"`
 	ApprovalEpoch      string    `json:"approval_epoch"`
@@ -260,6 +261,7 @@ func (a Auth) Complete(ctx context.Context, spaceID, callbackURI string) (Creden
 	if err = a.vault().Delete(pendingKey(spaceID, state)); err != nil {
 		return Credential{}, err
 	}
+	credential.RedirectURI = pending.RedirectURI
 	credential.ApprovalSequence = pending.Sequence
 	credential.ApprovalSpaceID = pending.SpaceID
 	credential.ApprovalEpoch = pending.Epoch
@@ -275,6 +277,7 @@ func (a Auth) exchange(ctx context.Context, endpoint string, form url.Values) (C
 	if c.AccessToken == "" || c.TokenType != "Bearer" || c.ExpiresIn <= 0 || c.ExpiresIn > 31536000 || c.Issuer == "" || c.AccountID == "" || c.TenantID == "" || c.DeviceID == "" || c.SessionID == "" {
 		return Credential{}, ErrCredentials
 	}
+	c.RedirectURI = ""
 	c.ApprovalSequence = ""
 	c.ApprovalSpaceID = ""
 	c.ApprovalEpoch = ""
@@ -375,6 +378,7 @@ func (a Auth) Token(ctx context.Context, spaceID, deviceID, issuer, accountID, t
 	if fresh.Issuer != issuer || fresh.AccountID != accountID || fresh.TenantID != tenantID || fresh.DeviceID != deviceID || fresh.SessionID != c.SessionID {
 		return "", ErrAccountMismatch
 	}
+	fresh.RedirectURI = c.RedirectURI
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = c.RefreshToken
 	}
