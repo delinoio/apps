@@ -1,0 +1,366 @@
+// SPDX-License-Identifier: Apache-2.0
+package syncclient
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"time"
+
+	"connectrpc.com/connect"
+	lanev1 "github.com/delinoio/apps/protos/lane/v1"
+	"github.com/delinoio/apps/protos/lane/v1/lanev1connect"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+)
+
+// Store pins one existing space and checks its registry and format on each transaction.
+type Store interface {
+	SpaceID() string
+	DeviceID() string
+	Root() string
+	WithRead(context.Context, func(*sql.Conn) error) error
+	WithWrite(context.Context, func(*sql.Conn) error) error
+}
+
+var (
+	ErrLeaseHeld         = errors.New("another process owns synchronization for this space")
+	ErrLeaseLost         = errors.New("synchronization ownership expired or changed")
+	ErrAccountMismatch   = errors.New("credential does not belong to this account space")
+	ErrStaleEpoch        = errors.New("server generation changed; reconnect explicitly before synchronization")
+	ErrUnsupportedFormat = errors.New("unsupported synchronization format; update Lane")
+	ErrInvalidResponse   = errors.New("invalid synchronization response")
+)
+
+type Options struct {
+	AccountID      string
+	TenantID       string
+	LeaseDuration  time.Duration
+	RequestTimeout time.Duration
+	PollInterval   time.Duration
+	BatchSize      int
+	Logger         *slog.Logger
+	// CheckEnabled must check the pinned registry identity, not the active UI selection.
+	CheckEnabled func(context.Context) error
+}
+
+type Worker struct {
+	store   Store
+	client  lanev1connect.SyncServiceClient
+	options Options
+	owner   string
+}
+
+func NewWorker(s Store, client lanev1connect.SyncServiceClient, o Options) (*Worker, error) {
+	if s == nil || client == nil || o.AccountID == "" || o.TenantID == "" {
+		return nil, ErrAccountMismatch
+	}
+	if o.LeaseDuration == 0 {
+		o.LeaseDuration = time.Minute
+	}
+	if o.RequestTimeout == 0 {
+		o.RequestTimeout = 20 * time.Second
+	}
+	if o.PollInterval == 0 {
+		o.PollInterval = time.Second
+	}
+	if o.BatchSize == 0 {
+		o.BatchSize = 100
+	}
+	if o.LeaseDuration <= 0 || o.RequestTimeout <= 0 || o.RequestTimeout >= o.LeaseDuration/2 || o.PollInterval <= 0 || o.BatchSize < 1 || o.BatchSize > 1000 {
+		return nil, errors.New("invalid synchronization options")
+	}
+	if o.Logger == nil {
+		o.Logger = slog.Default()
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+	return &Worker{store: s, client: client, options: o, owner: id.String()}, nil
+}
+
+func meta(ctx context.Context, c *sql.Conn, key string) (string, error) {
+	var v string
+	err := c.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key=?", key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+func putMeta(ctx context.Context, c *sql.Conn, key, value string) error {
+	_, err := c.ExecContext(ctx, "INSERT INTO store_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value)
+	return err
+}
+func (w *Worker) lease(ctx context.Context) error {
+	if w.options.CheckEnabled != nil {
+		if err := w.options.CheckEnabled(ctx); err != nil {
+			return err
+		}
+	}
+	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		owner, err := meta(ctx, c, "sync_owner")
+		if err != nil {
+			return err
+		}
+		expiry, err := meta(ctx, c, "sync_owner_expires_at_us")
+		if err != nil {
+			return err
+		}
+		until, _ := strconv.ParseInt(expiry, 10, 64)
+		now := time.Now()
+		if owner != "" && owner != w.owner && until > now.UnixMicro() {
+			return ErrLeaseHeld
+		}
+		if err = putMeta(ctx, c, "sync_owner", w.owner); err != nil {
+			return err
+		}
+		return putMeta(ctx, c, "sync_owner_expires_at_us", strconv.FormatInt(now.Add(w.options.LeaseDuration).UnixMicro(), 10))
+	})
+}
+func (w *Worker) guard(ctx context.Context, c *sql.Conn) error {
+	owner, err := meta(ctx, c, "sync_owner")
+	if err != nil {
+		return err
+	}
+	expiry, err := meta(ctx, c, "sync_owner_expires_at_us")
+	if err != nil {
+		return err
+	}
+	until, _ := strconv.ParseInt(expiry, 10, 64)
+	if owner != w.owner || until <= time.Now().UnixMicro() {
+		return ErrLeaseLost
+	}
+	return nil
+}
+func (w *Worker) release() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		owner, err := meta(ctx, c, "sync_owner")
+		if err != nil {
+			return err
+		}
+		if owner != w.owner {
+			return nil
+		}
+		if err = putMeta(ctx, c, "sync_owner", ""); err != nil {
+			return err
+		}
+		return putMeta(ctx, c, "sync_owner_expires_at_us", "0")
+	})
+}
+
+// Run drains durable work. Once runs one bounded upload batch and all available pull pages.
+// Authentication and network errors never remove pending mutations.
+func (w *Worker) Run(ctx context.Context, once bool) (err error) {
+	if err = w.lease(ctx); err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, w.release()) }()
+	delay := w.options.PollInterval
+	for {
+		err = w.cycle(ctx)
+		if once || ctx.Err() != nil {
+			return err
+		}
+		if err != nil {
+			if errors.Is(err, ErrLeaseLost) || errors.Is(err, ErrLeaseHeld) || errors.Is(err, ErrStaleEpoch) || errors.Is(err, ErrUnsupportedFormat) || errors.Is(err, ErrAccountMismatch) || connect.CodeOf(err) == connect.CodeUnauthenticated || connect.CodeOf(err) == connect.CodePermissionDenied {
+				return err
+			}
+			w.options.Logger.Warn("lane sync attempt failed", "code", connect.CodeOf(err).String())
+			delay = min(delay*2, 30*time.Second)
+		} else {
+			delay = w.options.PollInterval
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+func (w *Worker) cycle(ctx context.Context) error {
+	if err := w.lease(ctx); err != nil {
+		return err
+	}
+	call, cancel := context.WithTimeout(ctx, w.options.RequestTimeout)
+	info, err := w.client.GetSyncInfo(call, connect.NewRequest(&lanev1.GetSyncInfoRequest{}))
+	cancel()
+	if err != nil {
+		return err
+	}
+	if info.Msg.FormatVersion != 1 {
+		return ErrUnsupportedFormat
+	}
+	if info.Msg.AccountId != w.options.AccountID || info.Msg.TenantId != w.options.TenantID {
+		return ErrAccountMismatch
+	}
+	if info.Msg.Epoch == "" {
+		return ErrInvalidResponse
+	}
+	epoch := info.Msg.Epoch
+	err = w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		if err := w.guard(ctx, c); err != nil {
+			return err
+		}
+		previous, err := meta(ctx, c, "account_epoch")
+		if err != nil {
+			return err
+		}
+		if previous != "" && previous != epoch {
+			return ErrStaleEpoch
+		}
+		return putMeta(ctx, c, "account_epoch", epoch)
+	})
+	if err != nil {
+		return err
+	}
+	if err = w.push(ctx, epoch); err != nil {
+		return err
+	}
+	if err = w.pull(ctx, epoch); err != nil {
+		return err
+	}
+	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		if err := w.guard(ctx, c); err != nil {
+			return err
+		}
+		if err := putMeta(ctx, c, "last_sync_at_us", strconv.FormatInt(time.Now().UnixMicro(), 10)); err != nil {
+			return err
+		}
+		_, err := c.ExecContext(ctx, "INSERT INTO changes(change_kind) VALUES(4)")
+		return err
+	})
+}
+func (w *Worker) push(ctx context.Context, epoch string) error {
+	var items []*lanev1.SyncMutation
+	err := w.store.WithRead(ctx, func(c *sql.Conn) error {
+		rows, err := c.QueryContext(ctx, "SELECT request_id,request_json FROM outbox WHERE state=1 ORDER BY created_at_us,rowid LIMIT ?", w.options.BatchSize)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, body string
+			if err = rows.Scan(&id, &body); err != nil {
+				return err
+			}
+			m := new(lanev1.SyncMutation)
+			if err = protojson.Unmarshal([]byte(body), m); err != nil {
+				return ErrInvalidResponse
+			}
+			if m.GetMeta().GetRequestId() != id {
+				return ErrInvalidResponse
+			}
+			items = append(items, m)
+		}
+		return rows.Err()
+	})
+	if err != nil || len(items) == 0 {
+		return err
+	}
+	if err = w.lease(ctx); err != nil {
+		return err
+	}
+	call, cancel := context.WithTimeout(ctx, w.options.RequestTimeout)
+	response, err := w.client.PushChanges(call, connect.NewRequest(&lanev1.PushChangesRequest{FormatVersion: 1, Epoch: epoch, DeviceId: w.store.DeviceID(), Mutations: items}))
+	cancel()
+	if err != nil {
+		return err
+	}
+	if len(response.Msg.Results) != len(items) {
+		return ErrInvalidResponse
+	}
+	for i, r := range response.Msg.Results {
+		if r.GetRequestId() != items[i].GetMeta().GetRequestId() || (r.Result == nil) == (r.Error == nil) {
+			return ErrInvalidResponse
+		}
+	}
+	return w.store.WithWrite(ctx, func(c *sql.Conn) error {
+		if err := w.guard(ctx, c); err != nil {
+			return err
+		}
+		if err := applyMappings(ctx, c, response.Msg.RepositoryMappings); err != nil {
+			return err
+		}
+		for _, r := range response.Msg.Results {
+			if r.Error != nil {
+				if r.Error.Reason == lanev1.ErrorReason_ERROR_REASON_STALE_EPOCH {
+					return ErrStaleEpoch
+				}
+				if r.Error.Reason == lanev1.ErrorReason_ERROR_REASON_UNSUPPORTED_FORMAT {
+					return ErrUnsupportedFormat
+				}
+				state := 2
+				if r.Error.Retryable {
+					state = 1
+				}
+				if _, err := c.ExecContext(ctx, "UPDATE outbox SET state=?,error_reason=? WHERE request_id=?", state, r.Error.Reason.String(), r.RequestId); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := ApplySyncResult(ctx, c, r.Result); err != nil {
+				return err
+			}
+			if _, err := c.ExecContext(ctx, "DELETE FROM outbox WHERE request_id=?", r.RequestId); err != nil {
+				return err
+			}
+		}
+		_, err := c.ExecContext(ctx, "INSERT INTO changes(change_kind) VALUES(4)")
+		return err
+	})
+}
+func (w *Worker) pull(ctx context.Context, epoch string) error {
+	for {
+		var cursor string
+		if err := w.store.WithRead(ctx, func(c *sql.Conn) error { var e error; cursor, e = meta(ctx, c, "pull_cursor"); return e }); err != nil {
+			return err
+		}
+		if err := w.lease(ctx); err != nil {
+			return err
+		}
+		call, cancel := context.WithTimeout(ctx, w.options.RequestTimeout)
+		response, err := w.client.PullChanges(call, connect.NewRequest(&lanev1.PullChangesRequest{FormatVersion: 1, Epoch: epoch, Cursor: cursor, PageSize: uint32(w.options.BatchSize)}))
+		cancel()
+		if err != nil {
+			return err
+		}
+		if response.Msg.HasMore && response.Msg.NextCursor == cursor {
+			return ErrInvalidResponse
+		}
+		err = w.store.WithWrite(ctx, func(c *sql.Conn) error {
+			if err := w.guard(ctx, c); err != nil {
+				return err
+			}
+			for _, change := range response.Msg.Changes {
+				if err := applyChange(ctx, c, change); err != nil {
+					return err
+				}
+			}
+			return putMeta(ctx, c, "pull_cursor", response.Msg.NextCursor)
+		})
+		if err != nil {
+			return err
+		}
+		if !response.Msg.HasMore {
+			return nil
+		}
+	}
+}
+
+// RetryBlocked explicitly retries rejected items after the cause has been corrected.
+func RetryBlocked(ctx context.Context, s Store) error {
+	return s.WithWrite(ctx, func(c *sql.Conn) error {
+		_, err := c.ExecContext(ctx, "UPDATE outbox SET state=1,error_reason=NULL WHERE state=2")
+		return err
+	})
+}
+
+func invalid(message string) error { return fmt.Errorf("%w: %s", ErrInvalidResponse, message) }
