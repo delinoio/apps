@@ -38,6 +38,14 @@ CLI login and remote MCP approval use browser Logto authorization code flow with
 
 Device and MCP grant revocation checks run under the same account transaction lock as each data operation. A revocation that commits first blocks that operation; an earlier committed operation can complete. Subscriptions recheck authorization/revocation before publishing invalidations and terminate on revocation. Do not rely on token expiry or a process-local approval cache. List individually approved connections and devices with last synchronization times; disconnecting cannot erase an offline device's existing data.
 
+### Browser and native authorization adapter
+
+`GET /oauth/authorize` accepts authorization-code parameters, an exact registered redirect, S256 PKCE and a UUID v7 `device_id` when the installation already has one. Preserve that device identity through token issuance. `POST /oauth/token` accepts form-encoded code or refresh grants; `POST /oauth/revoke` revokes the bound session. Operator-required `LANE_OAUTH_CLIENTS` binds each client to its redirects, display name, origin kind and API or MCP resource. Browser approval shows full-account consent for MCP. Revalidate registration before callback, consent and token issuance.
+
+Web uses `/auth/login?return_to=...`, `/auth/callback`, `/auth/session`, `/auth/refresh` and `/auth/logout`. The session cookie is Secure, HttpOnly and SameSite=Lax; mutations additionally require the configured Origin and `X-Lane-CSRF`. Session JSON uses snake_case identity fields, `csrf_token`, and `notification_preferences` with `enabled` and numeric `content` (1 detail, 2 generic). `/auth/push-config` exposes only the public VAPID `public_key`, or null when disabled. Web return URLs must be configured exactly. Reauthentication returns only `reauth_challenge` to the saved return URL; authenticated `/auth/reauth/proof` redeems it for the one-use proof.
+
+After explicit new approval, `PullChanges` with a known old epoch whose mode was DELETE_EVERYWHERE returns only an ACCOUNT deletion change naming the authenticated internal account. A keep-local or unknown old epoch returns STALE_EPOCH and never authorizes erasure. `/auth/deletion-status` permits an old credential to retrieve only its content-free generation directive. Neither route grants old credentials general data access.
+
 ### AccountService message catalog
 
 Messages live in the canonical Lane protocol. Fields have consecutive field numbers in the order below. All online mutations include `MutationMeta meta` first. `Device` fields are `string id`, `string name`, `Timestamp last_sync_at`, `Timestamp disconnected_at`; `Connection` fields are `string id`, `string name`, `Timestamp approved_at`, `Timestamp revoked_at`. Lists use the protocol Page/cursor convention.
@@ -107,6 +115,12 @@ Only **new MCP-created PENDING proposals** schedule OS notifications. App/CLI ed
 Use direct APNs for Apple, FCM for Android and Web Push for web. Windows uses local notifications and running/background-client synchronization; no WNS or package-registration requirement. Android without required Play services remains usable with the limitation explained.
 
 Persist deliveries and attempts. After the initial transient failure, retry at delays of 30 s, 120 s, 600 s, 1800 s and 3600 s from the preceding failed attempt, at most five retries. Expire at creation plus two hours. Schedule at `max(previous_attempt + delay, provider Retry-After)`; do not send at/after expiry. Parse both delta-seconds and HTTP-date Retry-After. Permanent failures stop immediately. Recheck proposal state and device approval immediately before dispatch; acceptance/rejection/deletion cancels unsent work. A proposal already sent cannot be recalled. Use a Lane-specific policy rather than a helper that caps or ignores Retry-After.
+
+### Provider payload and metric aggregation
+
+APNs sends background priority-5 payloads `{"aps":{"content-available":1},"type":"lane.proposal","proposalId":"...","accountId":"..."}` with push type `background`. FCM sends the same identity fields as data-only, HIGH-priority messages. Neither includes a native display alert: the authenticated native account/device synchronizes and atomically claims its local notification receipt before display. Background delivery remains platform-discretionary. Web Push sends `{title, body, proposalId, tag, accountId}` to the service worker; detail title/body are repository name/task title, and generic content contains no task text. Stable provider collapse identities reduce duplicates, but a provider acceptance followed by a worker crash is an at-least-once boundary, not an exactly-once provider guarantee.
+
+`lane_api_requests_total{outcome}` and `lane_api_request_duration_seconds` are process-local; aggregate them across instances. All four bounded outcome series start at zero. `lane_push_attempts_total{result}` is a persistent database-global counter with all three result series initialized to zero. Push queue count/age and `lane_sync_pending_failures` project the entire database, including unclaimed work, identically on every replica. Deduplicate these series by service with maximum, not sum; for push counter windows take each replica's increase then maximum by service/result. A healthy replica continues projecting the same rows after failover. Empty push queues report age zero. Metrics require a dedicated `LANE_METRICS_TOKEN` bearer credential.
 
 ## Storage
 

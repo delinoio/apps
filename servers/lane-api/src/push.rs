@@ -289,7 +289,7 @@ impl Delivery {
         } else {
             (self.repository.clone(), self.title.clone())
         };
-        json!({"title":title,"body":body,"proposalId":self.proposal,"tag":self.collapse()})
+        json!({"title":title,"body":body,"proposalId":self.proposal,"tag":self.collapse(),"accountId":self.account})
     }
 }
 fn env(name: &str) -> Result<String> {

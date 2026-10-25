@@ -15,7 +15,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::read(|name| required(name))
+        Self::read(required)
     }
 
     fn read(get: impl Fn(&str) -> anyhow::Result<String>) -> anyhow::Result<Self> {

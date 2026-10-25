@@ -34,3 +34,56 @@ pub async fn account_lock(db: &mut PgConnection, account: &str) -> Result<()> {
 pub mod config;
 pub mod metrics;
 pub mod rate;
+
+pub mod auth;
+pub mod control;
+pub mod entities;
+pub mod error;
+pub mod http;
+pub mod mcp;
+pub mod migration;
+pub mod push;
+pub mod rpc;
+pub mod sync;
+pub mod webhooks;
+
+#[derive(Clone)]
+pub struct Server {
+    pub db: sqlx::PgPool,
+    pub auth: std::sync::Arc<auth::Auth>,
+    pub config: std::sync::Arc<config::Config>,
+    pub metrics: std::sync::Arc<metrics::Metrics>,
+    pub push: std::sync::Arc<push::Push>,
+    pub webhooks: std::sync::Arc<webhooks::WebhookConfig>,
+}
+impl Server {
+    pub fn max_request_bytes(&self) -> usize {
+        self.config
+            .max_item_bytes
+            .saturating_mul(1000)
+            .saturating_add(65536)
+    }
+}
+
+/// Clear only Lane content in the account deletion transaction; identity and deletion directives remain.
+pub async fn clear_account_content(db: &mut PgConnection, account: &str) -> Result<()> {
+    webhooks::delete_account(db, account).await?;
+    for table in [
+        "lane_push_deliveries",
+        "lane_push_registrations",
+        "lane_entity_receipts",
+        "lane_version_identities",
+        "lane_entity_cursors",
+        "lane_repository_mappings",
+        "lane_entities",
+        "lane_changes",
+        "lane_sync_rejections",
+        "lane_control_receipts",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE account_id=$1"))
+            .bind(account)
+            .execute(&mut *db)
+            .await?;
+    }
+    Ok(())
+}

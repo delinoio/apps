@@ -1250,9 +1250,18 @@ async fn web_session(State(a): State<Arc<Auth>>, headers: HeaderMap) -> HttpResu
         .bind(hash(csrf.as_bytes()))
         .execute(&mut *db)
         .await?;
+    let preferences: Option<(bool, i16)> = sqlx::query_as(
+        "SELECT enabled,content FROM lane_push_registrations WHERE account_id=$1 AND device_id=$2",
+    )
+    .bind(&p.account_id)
+    .bind(&p.device_id)
+    .fetch_optional(&mut *db)
+    .await?;
     db.commit().await?;
     let mut v = identity(&p, &a.config.public_url);
     v["csrf_token"] = json!(csrf);
+    let (enabled, content) = preferences.unwrap_or((false, 1));
+    v["notification_preferences"] = json!({"enabled":enabled,"content":content});
     Ok(json_response(v))
 }
 async fn web_refresh(State(a): State<Arc<Auth>>, headers: HeaderMap) -> HttpResult {
@@ -1700,10 +1709,14 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
             .connect(&url)
             .await
             .unwrap();
-        sqlx::raw_sql(include_str!("../migrations/00001_auth.sql"))
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::raw_sql(concat!(
+            include_str!("../migrations/00001_auth.sql"),
+            "\n",
+            include_str!("../migrations/00004_push.sql")
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
         let (authority, m, mock_url) = mock_authority().await;
         let a = Arc::new(fixture_auth(pool.clone(), authority, &mock_url));
         let account = id();

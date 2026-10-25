@@ -761,18 +761,18 @@ async fn handle<B: Backend>(State(backend): State<Arc<B>>, request: Request) -> 
     if !accepts(&headers, "application/json") || !accepts(&headers, "text/event-stream") {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     }
-    if let Some(version) = headers.get("mcp-protocol-version") {
-        if !version.to_str().is_ok_and(|v| VERSIONS.contains(&v)) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(rpc_error(
-                    Value::Null,
-                    -32600,
-                    "unsupported MCP protocol version",
-                )),
-            )
-                .into_response();
-        }
+    if let Some(version) = headers.get("mcp-protocol-version")
+        && !version.to_str().is_ok_and(|v| VERSIONS.contains(&v))
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(rpc_error(
+                Value::Null,
+                -32600,
+                "unsupported MCP protocol version",
+            )),
+        )
+            .into_response();
     }
     let body = match to_bytes(body, backend.max_request_bytes()).await {
         Ok(body) => body,
