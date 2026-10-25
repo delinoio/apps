@@ -239,3 +239,20 @@ func TestTypedDecimalResult(t *testing.T) {
 		t.Fatal(content)
 	}
 }
+
+type structuredFailure struct{}
+
+func (structuredFailure) Error() string { return "conflict" }
+func (structuredFailure) ErrorDetails() any {
+	return map[string]any{"reason": "ERROR_REASON_STALE_VERSION", "currentHeadIds": []string{"a", "b"}}
+}
+func TestStructuredDomainFailure(t *testing.T) {
+	result, rpcErr := call(context.Background(), func(context.Context, string, json.RawMessage) (any, error) { return nil, structuredFailure{} }, "SaveTask", json.RawMessage(`{}`))
+	if rpcErr != nil {
+		t.Fatal(rpcErr)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(encoded), "ERROR_REASON_STALE_VERSION") || !strings.Contains(string(encoded), "currentHeadIds") {
+		t.Fatalf("%s %v", encoded, err)
+	}
+}

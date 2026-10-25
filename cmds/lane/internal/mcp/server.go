@@ -301,6 +301,10 @@ func call(ctx context.Context, invoke Invoke, method string, args json.RawMessag
 	}()
 	value, err := invoke(ctx, method, args)
 	if err != nil {
+		var detail interface{ ErrorDetails() any }
+		if errors.As(err, &detail) {
+			return toolResult(map[string]any{"error": detail.ErrorDetails()}, true), nil
+		}
 		return toolResult(map[string]any{"error": map[string]any{"message": err.Error()}}, true), nil
 	}
 	var raw []byte

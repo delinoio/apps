@@ -93,13 +93,19 @@ func Attribute(m proto.Message, origin *v1.Origin) ([]string, error) {
 }
 
 type Failure struct {
-	Reason        string `json:"reason"`
-	Message       string `json:"message"`
-	CorrelationID string `json:"correlationId"`
-	Retryable     bool   `json:"retryable"`
+	Reason         string          `json:"reason"`
+	Message        string          `json:"message"`
+	CorrelationID  string          `json:"correlationId"`
+	Retryable      bool            `json:"retryable"`
+	EntityID       string          `json:"entityId,omitempty"`
+	CurrentHeadIDs []string        `json:"currentHeadIds,omitempty"`
+	Conflict       json.RawMessage `json:"conflict,omitempty"`
 }
 
 func (f *Failure) Error() string { return f.Message }
+
+// ErrorDetails exposes the same safe structured failure to CLI and MCP clients.
+func (f *Failure) ErrorDetails() any { return f }
 func Error(err error) *Failure {
 	var f *Failure
 	if errors.As(err, &f) {
@@ -112,11 +118,15 @@ func Error(err error) *Failure {
 		for _, d := range ce.Details() {
 			v, e := d.Value()
 			if e == nil {
+				if result, ok := v.(*v1.EntityResult); ok {
+					f.Conflict, _ = protojson.Marshal(result)
+				}
 				if detail, ok := v.(*v1.ErrorDetail); ok {
 					f.Reason = detail.Reason.String()
 					f.CorrelationID = detail.CorrelationId
 					f.Retryable = detail.Retryable
-					break
+					f.EntityID = detail.EntityId
+					f.CurrentHeadIDs = detail.CurrentHeadIds
 				}
 			}
 		}
