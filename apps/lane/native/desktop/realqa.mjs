@@ -161,7 +161,9 @@ export class RealQA {
           "ERROR_REASON_DEPENDENCY_UNAVAILABLE",
           true,
         );
-      return this.extension.startDOMCapture();
+      return this.extension.startDOMCapture({
+        shortcut: request.trigger === "shortcut",
+      });
     }
     if (request.mode !== "region" && !request.sourceId) {
       this.selectSource(request.mode);

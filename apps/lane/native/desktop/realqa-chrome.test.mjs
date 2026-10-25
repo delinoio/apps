@@ -114,3 +114,39 @@ test(
     assert.equal(host.realqa.draft.images.length, 1);
   },
 );
+
+test("Lane DOM actions activate Chrome while shortcuts require foreground Chrome", async () => {
+  let foreground = false;
+  const selections = [];
+  const host = new RealQA({
+    native: {
+      capture(raw, callback) {
+        assert.equal(JSON.parse(raw).op, "activeBrowser");
+        callback(JSON.stringify({ ok: true, value: { chrome: foreground } }));
+      },
+    },
+  });
+  host.extension = await connectChrome({
+    realqa: host,
+    createBridge: async () => ({
+      startSelection: async (options) => selections.push(options),
+    }),
+  });
+  for (const window of ["main", "composer"]) {
+    const reply = JSON.parse(
+      await host.invoke(JSON.stringify({ op: "capture", mode: "dom" }), window),
+    );
+    assert.equal(reply.ok, true);
+  }
+  assert.deepEqual(selections, [{ activate: true }, { activate: true }]);
+  const shortcut = JSON.stringify({
+    op: "capture",
+    mode: "dom",
+    trigger: "shortcut",
+  });
+  assert.equal(JSON.parse(await host.invoke(shortcut)).ok, false);
+  assert.equal(selections.length, 2);
+  foreground = true;
+  assert.equal(JSON.parse(await host.invoke(shortcut)).ok, true);
+  assert.deepEqual(selections[2], { activate: false });
+});

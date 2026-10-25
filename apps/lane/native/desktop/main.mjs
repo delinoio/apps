@@ -159,7 +159,11 @@ function flushEvents() {
     if (event.name === "lane.realqa.shortcut") {
       void realqa
         .invoke(
-          JSON.stringify({ op: "capture", mode: event.arguments[0].mode }),
+          JSON.stringify({
+            op: "capture",
+            mode: event.arguments[0].mode,
+            trigger: "shortcut",
+          }),
           "main",
         )
         .then((raw) => {

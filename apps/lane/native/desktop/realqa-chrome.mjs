@@ -61,8 +61,8 @@ export async function connectChrome({
   });
   return {
     state,
-    async startDOMCapture() {
-      if (!(await realqa.os({ op: "activeBrowser" })).chrome) {
+    async startDOMCapture({ shortcut = false } = {}) {
+      if (shortcut && !(await realqa.os({ op: "activeBrowser" })).chrome) {
         const error = new Error(
           "Activate Google Chrome with the connected RealQA extension, then use the DOM shortcut or select an element from the extension.",
         );
@@ -74,7 +74,7 @@ export async function connectChrome({
         throw error;
       }
       try {
-        await bridge.startSelection();
+        await bridge.startSelection({ activate: !shortcut });
         return { selecting: true };
       } catch (failure) {
         const remedies = {

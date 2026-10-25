@@ -322,13 +322,16 @@ export async function createChromeBridge({
       }));
     },
     revoke,
-    async startSelection() {
+    async startSelection({ activate = false } = {}) {
       const active = [...connections].filter(
         (c) => c.profileId && approvals[c.profileId],
       );
       if (!active.length) throw new Error("CHROME_NOT_CONNECTED");
+      // An in-app action focuses one approved profile, not every connected window.
+      // Shortcut requests keep the foreground window check in each profile.
+      const targets = activate ? active.slice(-1) : active;
       const results = await Promise.all(
-        active.map(
+        targets.map(
           (client) =>
             new Promise((resolve) => {
               const selectionId = randomBytes(16).toString("hex");
@@ -344,7 +347,7 @@ export async function createChromeBridge({
                 },
               });
               client.socket.write(
-                encodeMessage({ type: "select", selectionId }),
+                encodeMessage({ type: "select", selectionId, activate }),
               );
             }),
         ),

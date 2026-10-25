@@ -304,3 +304,48 @@ test("stdio relay forwards framed messages to the already running bridge and exi
   await bridge.close();
   await relay;
 });
+
+test(
+  "in-app selection activates only the last connected approved profile",
+  { timeout: 2000 },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "lane-chrome-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const bridge = await createChromeBridge({
+      dataRoot: root,
+      extensionIds: [extensionId],
+      requestApproval: async () => true,
+      acceptCapture: async () => {},
+    });
+    t.after(() => bridge.close());
+    const first = await client(root),
+      second = await client(root);
+    first.send({ type: "connect", profileName: "First" });
+    const firstToken = (await first.next()).token;
+    const secondId = "22345678-1234-1234-1234-123456789012";
+    second.send({
+      type: "connect",
+      profileId: secondId,
+      profileName: "Second",
+    });
+    const secondToken = (await second.next()).token;
+    const selection = bridge.startSelection({ activate: true });
+    const message = await second.next();
+    assert.equal(message.type, "select");
+    assert.equal(message.activate, true);
+    first.send({ type: "status", token: firstToken });
+    assert.equal(
+      (await first.next()).type,
+      undefined,
+      "other profile receives no focus request",
+    );
+    second.send({
+      type: "selectionResult",
+      profileId: secondId,
+      token: secondToken,
+      selectionId: message.selectionId,
+    });
+    assert.equal((await second.next()).ok, true);
+    await selection;
+  },
+);

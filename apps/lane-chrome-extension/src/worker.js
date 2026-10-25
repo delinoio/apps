@@ -20,7 +20,7 @@ function connection() {
       return;
     }
     if (message.type === "select") {
-      void select()
+      void select({ activate: message.activate === true })
         .then(
           () =>
             request("selectionResult", { selectionId: message.selectionId }),
@@ -79,7 +79,7 @@ async function request(type, body = {}) {
     p.postMessage({ id, type, ...credentials, ...body });
   });
 }
-async function select() {
+async function select({ activate = false } = {}) {
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -88,7 +88,6 @@ async function select() {
   if (
     !tab ||
     tab.incognito ||
-    !win.focused ||
     !/^https?:\/\//.test(tab.url || "") ||
     /^https:\/\/(chromewebstore.google.com|chrome.google.com\/webstore)/.test(
       tab.url,
@@ -96,6 +95,14 @@ async function select() {
   )
     throw new Error("UNSUPPORTED_PAGE");
   await request("status");
+  if (activate) {
+    await chrome.windows.update(tab.windowId, {
+      focused: true,
+      ...(win.state === "minimized" ? { state: "normal" } : {}),
+    });
+  }
+  if (!(await chrome.windows.get(tab.windowId)).focused)
+    throw new Error("CHROME_NOT_AVAILABLE");
   selections.set(tab.id, { url: tab.url, windowId: tab.windowId });
   try {
     await chrome.scripting.executeScript({

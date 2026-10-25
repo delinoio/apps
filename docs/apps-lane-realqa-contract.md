@@ -196,6 +196,9 @@ crops the selected rectangle in memory using the screenshot's pixel dimensions,
 and sends only that PNG to Lane. Lane validates and appends it to the existing
 composer; the extension cannot save a task. A DOM shortcut without an active tab
 grant explains that the user must first click the extension on that page.
+In-app DOM actions focus the last connected approved Chrome profile and select
+its last-focused active tab. Only that profile receives an activation request.
+DOM shortcuts retain the foreground Chrome check and do not activate a browser.
 
 The desktop `chrome-bridge.mjs` owns profile approval and token-hash persistence.
 `chrome-native-host.mjs` is a Chrome-launched stdio relay to an already running

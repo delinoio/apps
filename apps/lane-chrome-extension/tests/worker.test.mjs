@@ -18,7 +18,9 @@ test("worker binds a selection to the approved normal active tab and sends only 
     changeDuringCapture = false;
   let active = 1,
     restricted = false,
-    accessLevel;
+    accessLevel,
+    focused = true;
+  const activations = [];
   const tab = () => ({
     id: 1,
     windowId: 7,
@@ -64,7 +66,13 @@ test("worker binds a selection to the approved normal active tab and sends only 
         return "data:image/png;base64,AQID";
       },
     },
-    windows: { get: async () => ({ focused: true }) },
+    windows: {
+      get: async () => ({ focused, state: focused ? "normal" : "minimized" }),
+      update: async (id, options) => {
+        activations.push({ id, ...options });
+        focused = true;
+      },
+    },
     scripting: {
       executeScript: async () => [
         {
@@ -158,7 +166,36 @@ test("worker binds a selection to the approved normal active tab and sends only 
   );
   assert.equal(sent.filter((value) => value.type === "capture").length, 1);
   assert.equal(JSON.stringify(storage).includes("Literal"), false);
+  focused = false;
+  assert.equal(
+    (await invoke({ type: "capture" })).ok,
+    false,
+    "unfocused shortcut/popup does not activate Chrome",
+  );
+  assert.equal(activations.length, 0);
+  nativeMessages.emit({
+    type: "select",
+    selectionId: "from-lane",
+    activate: true,
+  });
   await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(activations, [{ id: 7, focused: true, state: "normal" }]);
+  assert.equal(
+    sent.find((value) => value.selectionId === "from-lane").reason,
+    undefined,
+  );
+  restricted = true;
+  nativeMessages.emit({
+    type: "select",
+    selectionId: "restricted",
+    activate: true,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    sent.find((value) => value.selectionId === "restricted").reason,
+    "UNSUPPORTED_PAGE",
+  );
+  assert.equal(activations.length, 1, "restricted pages are not activated");
   delete globalThis.chrome;
   delete globalThis.createImageBitmap;
   delete globalThis.OffscreenCanvas;
