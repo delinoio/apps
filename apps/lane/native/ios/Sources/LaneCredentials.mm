@@ -2,8 +2,9 @@
 #import "LaneCredentials.h"
 #import <Security/Security.h>
 #import <CommonCrypto/CommonDigest.h>
-#import <UIKit/UIKit.h>
 
+static NSString *Text(id value) { return [value isKindOfClass:NSString.class] ? value : @""; }
+static double Number(id value) { return [value isKindOfClass:NSNumber.class] || [value isKindOfClass:NSString.class] ? [value doubleValue] : 0; }
 static NSString *Base64URL(NSData *data) {
   return [[[[data base64EncodedStringWithOptions:0] stringByReplacingOccurrencesOfString:@"+" withString:@"-"] stringByReplacingOccurrencesOfString:@"/" withString:@"_"] stringByReplacingOccurrencesOfString:@"=" withString:@""];
 }
@@ -18,19 +19,23 @@ NSString *LaneUUID7(void) {
 @implementation LaneCredentials {
   LaneTransport *_transport;
   NSDictionary *_pending;
+  NSDictionary *_configuration;
 }
 - (instancetype)initWithTransport:(LaneTransport *)transport {
-  if ((self = [super init])) _transport = transport;
+  return [self initWithTransport:transport configuration:NSBundle.mainBundle.infoDictionary];
+}
+- (instancetype)initWithTransport:(LaneTransport *)transport configuration:(NSDictionary *)configuration {
+  if ((self = [super init])) { _transport = transport; _configuration = [configuration copy]; }
   return self;
 }
 - (NSURL *)endpoint:(NSString *)path {
-  NSString *base = [NSBundle.mainBundle objectForInfoDictionaryKey:@"LaneAPIURL"];
+  NSString *base = _configuration[@"LaneAPIURL"];
   NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@%@", [base stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]], path]];
   return [url.scheme isEqualToString:@"https"] && url.host.length && !url.user && !url.password ? url : nil;
 }
-- (NSString *)client { return [NSBundle.mainBundle objectForInfoDictionaryKey:@"LaneOAuthClientID"]; }
+- (NSString *)client { return _configuration[@"LaneOAuthClientID"]; }
 - (NSString *)redirect {
-  NSString *scheme = [NSBundle.mainBundle objectForInfoDictionaryKey:@"LaneURLScheme"];
+  NSString *scheme = _configuration[@"LaneURLScheme"];
   return [NSString stringWithFormat:@"%@://auth/callback", scheme];
 }
 - (NSDictionary *)begin:(NSString *)account device:(NSString *)device {
@@ -74,15 +79,16 @@ NSString *LaneUUID7(void) {
   NSDictionary *token = [_transport postForm:@{@"grant_type": @"authorization_code", @"code": query[@"code"],
     @"client_id": [self client], @"redirect_uri": [self redirect], @"code_verifier": pending[@"verifier"]}
     url:[self endpoint:@"/oauth/token"]];
-  if (![token[@"device_id"] isEqual:pending[@"device"]] || ![token[@"access_token"] isKindOfClass:NSString.class] || ![token[@"token_type"] isEqualToString:@"Bearer"] || [token[@"expires_in"] doubleValue] <= 0) return nil;
+  if (![token[@"device_id"] isEqual:pending[@"device"]] || ![token[@"access_token"] isKindOfClass:NSString.class] || [Text(token[@"token_type"]) caseInsensitiveCompare:@"Bearer"] != NSOrderedSame || Number(token[@"expires_in"]) <= 0) return nil;
   NSDictionary *info = [_transport callService:@"lane.v1.SyncService" method:@"GetSyncInfo" request:@{} token:token[@"access_token"]];
-  if ([info[@"formatVersion"] integerValue] != 1 || ![info[@"accountId"] length] || ![info[@"tenantId"] length] || ![info[@"epoch"] length] ||
+  if (Number(info[@"formatVersion"]) != 1 || !Text(info[@"accountId"]).length || !Text(info[@"tenantId"]).length || !Text(info[@"epoch"]).length ||
       ![info[@"accountId"] isEqual:token[@"account_id"]] || ![info[@"tenantId"] isEqual:token[@"tenant_id"]] ||
       ([pending[@"account"] length] && ![pending[@"account"] isEqual:info[@"accountId"]])) return nil;
-  NSURL *issuer = [NSURL URLWithString:token[@"issuer"] ?: @""];
+  NSURL *issuer = [NSURL URLWithString:Text(token[@"issuer"])];
   if (![issuer.scheme isEqualToString:@"https"] || !issuer.host.length) return nil;
   NSMutableDictionary *credential = [token mutableCopy];
-  credential[@"expiresAt"] = @(NSDate.date.timeIntervalSince1970 + [token[@"expires_in"] doubleValue]);
+  credential[@"expiresAt"] = @(NSDate.date.timeIntervalSince1970 + Number(token[@"expires_in"]));
+  credential[@"approvalState"] = pending[@"state"];
   credential[@"identity"] = @{@"issuer": token[@"issuer"], @"accountId": info[@"accountId"], @"tenantId": info[@"tenantId"], @"epoch": info[@"epoch"], @"deviceId": token[@"device_id"]};
   return credential;
 }
@@ -108,22 +114,26 @@ NSString *LaneUUID7(void) {
   return status == errSecSuccess;
 }
 }
+- (NSString *)deviceForSpace:(NSString *)space {
+  @synchronized (self) { return [self read:space][@"device_id"]; }
+}
 - (NSString *)tokenForSpace:(NSString *)space {
   @synchronized (self) {
   NSDictionary *credential = [self read:space];
   if (!credential) return nil;
-  if ([credential[@"expiresAt"] doubleValue] > NSDate.date.timeIntervalSince1970 + 60) return credential[@"access_token"];
-  if (![credential[@"refresh_token"] length]) return nil;
+  if (Number(credential[@"expiresAt"]) > NSDate.date.timeIntervalSince1970 + 60) return credential[@"access_token"];
+  if (!Text(credential[@"refresh_token"]).length) return nil;
   NSDictionary *fresh = [_transport postForm:@{@"grant_type": @"refresh_token", @"refresh_token": credential[@"refresh_token"], @"client_id": [self client]} url:[self endpoint:@"/oauth/token"]];
-  if (![fresh[@"access_token"] length] || ![fresh[@"token_type"] isEqualToString:@"Bearer"] || [fresh[@"expires_in"] doubleValue] <= 0) return nil;
+  if (!Text(fresh[@"access_token"]).length || [Text(fresh[@"token_type"]) caseInsensitiveCompare:@"Bearer"] != NSOrderedSame || Number(fresh[@"expires_in"]) <= 0) return nil;
   // A refresh must not change the account bound to this local space.
   for (NSString *key in @[@"issuer", @"account_id", @"tenant_id", @"device_id", @"session_id"])
     if (fresh[key] && ![fresh[key] isEqual:credential[key]]) return nil;
   NSMutableDictionary *updated = [credential mutableCopy]; [updated addEntriesFromDictionary:fresh];
-  updated[@"expiresAt"] = @(NSDate.date.timeIntervalSince1970 + [fresh[@"expires_in"] doubleValue]);
+  updated[@"expiresAt"] = @(NSDate.date.timeIntervalSince1970 + Number(fresh[@"expires_in"]));
   return [self save:updated space:space] ? updated[@"access_token"] : nil;
 }
 }
+- (void)forget:(NSString *)space { @synchronized (self) { SecItemDelete((__bridge CFDictionaryRef)[self key:space]); } }
 - (void)disconnect:(NSString *)space {
   @synchronized (self) {
   NSDictionary *credential = [self read:space];

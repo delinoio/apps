@@ -13,4 +13,5 @@ NS_ASSUME_NONNULL_BEGIN
 NSDictionary *LaneJSON(NSString *text);
 NSString *LaneEncode(id value);
 NSString *LaneFailure(NSString *reason, BOOL retryable);
+NSDictionary *LaneConnectFailure(NSData *body, NSInteger status);
 NS_ASSUME_NONNULL_END

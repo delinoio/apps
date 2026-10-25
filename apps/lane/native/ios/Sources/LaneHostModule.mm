@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #import "LaneHost.h"
+#import "LaneTransport.h"
 #import <UIKit/UIKit.h>
 
 static NSString *HostResult(BOOL ok, NSString *reason) {
-  NSDictionary *result = ok ? @{@"ok": @YES} : @{@"ok": @NO, @"error": @{
-    @"reason": reason, @"message": @"The requested host action could not be completed.",
-    @"correlationId": NSUUID.UUID.UUIDString.lowercaseString, @"retryable": @NO}};
-  return [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:result options:0 error:nil]
-                              encoding:NSUTF8StringEncoding];
+  return ok ? LaneEncode(@{@"ok": @YES}) : LaneFailure(reason, NO);
 }
 @implementation LaneHostModule
 + (NSString *)name { return @"LaneHost"; }

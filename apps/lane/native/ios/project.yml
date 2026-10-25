@@ -76,7 +76,20 @@ targets:
         script: |
           set -eu
           cp "${PODS_ROOT}/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdPartyNotices.plist"
+          sh "${SRCROOT}/Scripts/copy-store-notices.sh"
         inputFiles:
           - "$(PODS_ROOT)/Target Support Files/Pods-Lane/Pods-Lane-acknowledgements.plist"
+          - "$(SRCROOT)/../store/vendor/sqlite/LICENSE"
+          - "$(SRCROOT)/../store/vendor/ada/LICENSE-APACHE"
+          - "$(SRCROOT)/../store/vendor/ada/LICENSE-MIT"
+          - "$(SRCROOT)/../store/vendor/json/LICENSE.MIT"
+          - "$(SRCROOT)/../store/vendor/picosha2/LICENSE"
+          - "$(SRCROOT)/../store/vendor/utf8proc/LICENSE.md"
         outputFiles:
           - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdPartyNotices.plist"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/sqlite/LICENSE"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/ada/LICENSE-APACHE"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/ada/LICENSE-MIT"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/json/LICENSE.MIT"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/picosha2/LICENSE"
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/StoreLicenses/utf8proc/LICENSE.md"

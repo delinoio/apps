@@ -2,7 +2,7 @@
 #import "LaneHost.h"
 
 @implementation LaneStoreModule {
-  NSMutableSet<NSString *> *_spaces;
+  NSCountedSet<NSString *> *_spaces;
   BOOL _destroyed;
 }
 + (NSString *)name { return @"LaneStore"; }
@@ -12,7 +12,7 @@
            @"close": NSStringFromSelector(@selector(close:callback:))};
 }
 - (instancetype)init {
-  if ((self = [super init])) _spaces = [NSMutableSet new];
+  if ((self = [super init])) _spaces = [NSCountedSet new];
   return self;
 }
 - (void)open:(NSString *)json callback:(LynxCallbackBlock)callback {
@@ -41,7 +41,7 @@
 - (void)destroy {
   @synchronized (self) {
     _destroyed = YES;
-    for (NSString *space in _spaces) [[LaneHost shared] close:space completion:^(id ignored) {}];
+    for (NSString *space in _spaces) for (NSUInteger i = 0; i < [_spaces countForObject:space]; ++i) [[LaneHost shared] close:space completion:^(id ignored) {}];
     [_spaces removeAllObjects];
   }
 }

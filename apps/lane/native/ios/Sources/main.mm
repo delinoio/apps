@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #import <UIKit/UIKit.h>
 #import "LaneHost.h"
+#import "LaneLog.h"
 #import <Lynx/LynxConfig.h>
 #import <Lynx/LynxEnv.h>
 #import <Lynx/LynxTemplateProvider.h>
@@ -18,7 +19,7 @@
   NSURL *resource = [[NSBundle mainBundle] URLForResource:@"main.lynx" withExtension:@"bundle"];
   NSData *data = resource ? [NSData dataWithContentsOfURL:resource options:0 error:&error] : nil;
   if (!data) {
-    NSLog(@"{\"event\":\"lane_template_failed\",\"platform\":\"ios\"}");
+    LaneLog(@"lane_template_failed");
     error = error ?: [NSError errorWithDomain:@"io.delino.lane" code:2 userInfo:nil];
   }
   callback(data, error);
@@ -32,13 +33,14 @@
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.view.backgroundColor = UIColor.whiteColor;
+  [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateTextSize) name:UIContentSizeCategoryDidChangeNotification object:nil];
   self.lynxView = [[LynxView alloc] initWithBuilderBlock:^(LynxViewBuilder *builder) {
     LynxConfig *config = [[LynxConfig alloc] initWithProvider:[LaneProvider new]];
     [config registerModule:LaneStoreModule.class];
     [config registerModule:LaneHostModule.class];
     builder.config = config;
     builder.screenSize = self.view.bounds.size;
-    builder.fontScale = 1.0;
+    builder.fontScale = [UIFontMetrics.defaultMetrics scaledValueForValue:1.0];
   }];
   self.lynxView.layoutWidthMode = LynxViewSizeModeExact;
   self.lynxView.layoutHeightMode = LynxViewSizeModeExact;
@@ -46,6 +48,8 @@
   [LaneHost shared].view = self.lynxView;
   [self.lynxView loadTemplateFromURL:@"main.lynx" initData:nil];
 }
+- (void)updateTextSize { [self.lynxView updateFontScale:[UIFontMetrics.defaultMetrics scaledValueForValue:1.0]]; }
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (void)viewDidAppear:(BOOL)animated {
   [super viewDidAppear:animated];
   [self.lynxView onEnterForeground];
@@ -75,7 +79,7 @@
   self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
   self.window.rootViewController = [LaneController new];
   [self.window makeKeyAndVisible];
-  NSLog(@"{\"event\":\"lane_started\",\"platform\":\"ios\"}");
+  LaneLog(@"lane_started");
   return YES;
 }
 - (void)applicationDidEnterBackground:(UIApplication *)application {
