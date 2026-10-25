@@ -11,6 +11,11 @@
 #include <atomic>
 #include <thread>
 #include <fstream>
+#include <map>
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 #include "../vendor/picosha2/picosha2.h"
 #include <iomanip>
 #include <iostream>
@@ -667,6 +672,8 @@ void unsupported_schema() {
   require(counts(db) == before, "foreign application database preserved");
 }
 #include "shared_fixture_runner.h"
+#include "disk_full_vfs.h"
+#include "sync_hard_cases.h"
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -686,6 +693,16 @@ int main(int argc, char** argv) {
     {"pagination and removal", pagination_and_removal},
     {"repository conflicts", repository_conflicts},
     {"unsupported schema", unsupported_schema},
+    {"merge repository histories", merge_repository_histories},
+    {"mapping alias reads and writes", mapping_alias_reads_and_writes},
+    {"server accepted resolution", server_resolution_supersedes_provisional},
+    {"repository deletion related content", repository_deletion_redacts_related_content},
+    {"deletion transaction failure", deletion_transaction_failure},
+    {"deletion disk full", deletion_disk_full},
+    {"typed payload preservation", typed_payload_preservation},
+    {"duplicate input keys", duplicate_input_keys},
+    {"cross-process busy", crossprocess_busy},
+    {"account deletion binding", account_deletion_binding},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {
