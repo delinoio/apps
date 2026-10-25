@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,11 +33,91 @@ try {
   await page
     .getByRole("button", { name: "Improve empty states", exact: true })
     .waitFor();
+  const appButton = (name) => page.getByRole("button", { name, exact: true });
+  const rail = await page.locator("lynx-view").evaluate((view) =>
+    [...view.shadowRoot.querySelectorAll(".app-switch")].map((element) => {
+      const { width, height, top } = element.getBoundingClientRect();
+      return { name: element.getAttribute("aria-label"), width, height, top };
+    }),
+  );
+  assert.deepEqual(
+    rail.map((button) => button.name),
+    ["Lane", "Pace", "Handrail"],
+  );
+  assert.ok(
+    rail.every((button) => button.width === 44 && button.height === 44),
+  );
+  assert.equal(rail[1].top - rail[0].top, 56);
+  assert.equal(rail[2].top - rail[1].top, 56);
+  assert.equal(await page.getByText(/Perfine|RealQA/).count(), 0);
+  const search = page.getByRole("textbox", {
+    name: "Search title or description",
+    exact: true,
+  });
+  await search.fill("preserved filter");
+  await appButton("Pace").click();
+  await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
+  assert.equal(await appButton("Pace").getAttribute("aria-pressed"), "true");
+  assert.equal(await appButton("All tasks").count(), 0);
+  assert.equal(await appButton("Overview").count(), 1);
+  await page.waitForFunction(
+    () =>
+      document.querySelector("lynx-view").shadowRoot.activeElement
+        ?.textContent === "Coming soon",
+  );
+  await page.screenshot({ path: join(evidence, "desktop-pace.png") });
+  await appButton("Handrail").focus();
+  await page.keyboard.press(" ");
+  await page
+    .getByText("Handrail is not available yet.", { exact: true })
+    .waitFor();
+  assert.equal(
+    await appButton("Handrail").getAttribute("aria-pressed"),
+    "true",
+  );
+  await page.screenshot({ path: join(evidence, "desktop-handrail.png") });
+  for (const width of [899, 900, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.waitForTimeout(150);
+    const layout = await page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const rail = root.querySelector(".app-rail").getBoundingClientRect();
+      const nav = root.querySelector(".navigation").getBoundingClientRect();
+      const content = root.querySelector(".workspace").getBoundingClientRect();
+      const button = root
+        .querySelector(".coming-soon .button")
+        .getBoundingClientRect();
+      return {
+        railWidth: rail.width,
+        navWidth: nav.width,
+        navBottom: nav.bottom,
+        contentTop: content.top,
+        buttonRight: button.right,
+      };
+    });
+    assert.equal(layout.railWidth, 64);
+    if (width < 900) assert.ok(layout.navBottom <= layout.contentTop + 1);
+    else assert.equal(layout.navWidth, 240);
+    assert.ok(layout.buttonRight <= width);
+  }
+  await page.screenshot({ path: join(evidence, "mobile-handrail.png") });
+  await appButton("Back to Lane").click();
+  await search.waitFor();
+  assert.equal(await search.inputValue(), "preserved filter");
+  await search.fill("");
+  await appButton("Improve empty states").waitFor();
+  await page
+    .getByText("Loading…", { exact: true })
+    .waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=1");
   await page
     .locator("lynx-view")
     .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
   await page.getByText("No tasks here yet", { exact: true }).waitFor();
+  await page
+    .getByText("Loading…", { exact: true })
+    .waitFor({ state: "hidden" });
   assert.equal(
     await page
       .getByRole("button", { name: "Improve empty states", exact: true })
@@ -64,6 +144,14 @@ try {
   assert.equal(await title.inputValue(), "Improve empty states");
   await title.fill("Unsaved local title");
   await page.waitForTimeout(150);
+  await appButton("Pace").click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(await title.inputValue(), "Unsaved local title");
+  assert.equal(await appButton("Lane").getAttribute("aria-pressed"), "true");
   await page.request.get("http://127.0.0.1:46400/test/external");
   await page
     .locator("lynx-view")
@@ -164,9 +252,19 @@ try {
     join(evidence, "result.json"),
     JSON.stringify(
       {
+        sourceRevision: execFileSync("git", ["rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
+        sourceState: "working tree under validation",
+        command: "node tests/browser.mjs (Node.js 24)",
         scope:
           "Mock authenticated server; no live Logto, native, or provider acceptance",
         checks: [
+          "equal Lane, Pace and Handrail rail buttons and app-specific sidebars",
+          "mini-app keyboard activation, selected state and title focus",
+          "Coming soon return preserves Lane filters",
+          "mini-app switching respects unsaved-edit confirmation and Escape",
+          "app rail and mini-app layout at 320, 390, 899 and 900 pixels",
           "desktop navigation and task details",
           "empty and populated task states replace one another",
           "title visible and accessible textbox",

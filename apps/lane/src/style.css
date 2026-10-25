@@ -28,7 +28,7 @@ text {
 .navigation {
   display: flex;
   flex-direction: column;
-  width: 230px;
+  width: 240px;
   flex-shrink: 0;
   padding: 24px 16px;
   gap: 16px;
@@ -262,13 +262,13 @@ text {
   width: 100%;
   height: 240px;
 }
-.mobile .shell {
-  flex-direction: column-reverse;
+.mobile .app-content {
+  flex-direction: column;
 }
 .mobile .navigation {
   width: 100%;
   padding: 8px;
-  border-top: 1px solid #e4e8ef;
+  border-bottom: 1px solid #e4e8ef;
 }
 .mobile .nav-items {
   flex-direction: row;
@@ -348,4 +348,237 @@ text {
 }
 .mobile .nav-items .button text {
   font-size: 0.72rem;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.app-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 64px;
+  padding: 24px 10px;
+  gap: 12px;
+  border-right: 1px solid #e4e8ef;
+  background-color: #fff;
+  z-index: 2;
+}
+.app-switch {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 8px;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background-color: transparent;
+}
+.app-switch.selected {
+  background-color: #e8f0fe;
+}
+.app-switch:focus {
+  border-color: #075aff;
+}
+.app-switch:hover {
+  background-color: #e8f0fe;
+}
+.app-selection {
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 3px;
+  background-color: #075aff;
+}
+.app-tooltip {
+  display: none;
+  position: absolute;
+  left: 48px;
+  top: 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: #172033;
+}
+.app-tooltip text {
+  color: #fff;
+  font-size: 0.85rem;
+}
+.app-switch:hover .app-tooltip,
+.app-switch:focus .app-tooltip {
+  display: flex;
+}
+.app-icon {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.app-icon .lane-ribbon {
+  font-size: 32px;
+  line-height: 24px;
+  text-align: center;
+  color: #526079;
+}
+.pace-dial {
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #526079;
+  border-bottom-color: transparent;
+  border-radius: 12px;
+}
+.pace-needle {
+  position: absolute;
+  left: 12px;
+  top: 6px;
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background-color: #526079;
+  transform: rotate(40deg);
+  transform-origin: bottom center;
+}
+.pace-tick {
+  position: absolute;
+  left: 11px;
+  top: 3px;
+  width: 2px;
+  height: 4px;
+  background-color: #526079;
+}
+.pace-center {
+  position: absolute;
+  left: 10px;
+  top: 13px;
+  width: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background-color: #526079;
+}
+.handrail-top {
+  position: absolute;
+  left: 1px;
+  top: 4px;
+  width: 22px;
+  height: 5px;
+  border: 2px solid #526079;
+  border-radius: 2px;
+}
+.handrail-post {
+  position: absolute;
+  top: 9px;
+  width: 2px;
+  height: 12px;
+  background-color: #526079;
+}
+.post-left {
+  left: 5px;
+}
+.post-right {
+  right: 5px;
+}
+.selected .lane-ribbon {
+  color: #075aff;
+}
+.selected .pace-dial,
+.selected .handrail-top,
+.miniapp-brand .pace-dial,
+.miniapp-brand .handrail-top,
+.coming-soon-icon .pace-dial,
+.coming-soon-icon .handrail-top {
+  border-color: #075aff;
+}
+.selected .pace-dial,
+.miniapp-brand .pace-dial,
+.coming-soon-icon .pace-dial {
+  border-bottom-color: transparent;
+}
+.selected .pace-needle,
+.selected .pace-tick,
+.selected .pace-center,
+.selected .handrail-post,
+.miniapp-brand .pace-needle,
+.miniapp-brand .pace-tick,
+.miniapp-brand .pace-center,
+.miniapp-brand .handrail-post,
+.coming-soon-icon .pace-needle,
+.coming-soon-icon .pace-tick,
+.coming-soon-icon .pace-center,
+.coming-soon-icon .handrail-post {
+  background-color: #075aff;
+}
+.miniapp-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.miniapp-brand .brand {
+  margin-bottom: 0;
+}
+.nav-spacer {
+  flex: 1;
+}
+.coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 48px 24px;
+  gap: 16px;
+}
+.coming-soon-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  background-color: #e8f0fe;
+  margin-bottom: 8px;
+}
+.coming-soon-icon .app-icon {
+  transform: scale(2);
+}
+.coming-soon-title {
+  font-size: 1.75rem;
+  font-weight: 650;
+  text-align: center;
+}
+.coming-soon .muted {
+  text-align: center;
+}
+.coming-soon .button {
+  min-height: 44px;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 12px;
+}
+.mobile .navigation {
+  border-right: 0;
+}
+.mobile .miniapp-navigation {
+  gap: 8px;
+}
+.mobile .miniapp-brand {
+  margin-bottom: 0;
+}
+.mobile .miniapp-brand .brand {
+  font-size: 1.1rem;
+}
+.mobile .miniapp-status,
+.mobile .nav-spacer {
+  display: none;
 }
