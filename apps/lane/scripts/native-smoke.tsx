@@ -61,6 +61,28 @@ function Smoke() {
             throw new Error("Prompt did not persist");
           const history = await call("ListHistory", { id: taskId });
           if (!history.versions.length) throw new Error("History missing");
+          for (const id of ["smoke-input", "smoke-textarea"]) {
+            const value = await new Promise<any>((resolve, reject) => {
+              lynx
+                .createSelectorQuery()
+                .select(`#${id}`)
+                .invoke({
+                  method: "getValue",
+                  success: resolve,
+                  fail: () => reject(new Error(`Native ${id} unavailable`)),
+                })
+                .exec();
+            });
+            // Clay 4.1 returns a string; mobile XElement returns {value,...}.
+            if (
+              (typeof value === "string" ? value : value.value) !==
+              "Native Unicode 한글 😀"
+            )
+              throw new Error(
+                `Native ${id} value mismatch: ${JSON.stringify(value)}`,
+              );
+          }
+          console.log("LANE_NATIVE_INPUT_COMPONENTS_READY");
           ready = true;
           console.log(
             `LANE_NATIVE_READY ${JSON.stringify({ spaceId, taskId, result: created.result.result })}`,
@@ -77,6 +99,19 @@ function Smoke() {
       if (spaceId) NativeModules.LaneStore.close(spaceId, () => {});
     };
   }, []);
-  return <view />;
+  return (
+    <view>
+      <input
+        id="smoke-input"
+        value="Native Unicode 한글 😀"
+        style={{ width: "300px", height: "48px" }}
+      />
+      <textarea
+        id="smoke-textarea"
+        value="Native Unicode 한글 😀"
+        style={{ width: "300px", height: "100px" }}
+      />
+    </view>
+  );
 }
 root.render(<Smoke />);
