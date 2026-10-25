@@ -383,17 +383,19 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: actions/setup-go@v6
+      - uses: dtolnay/rust-toolchain@v1
         with:
-          go-version-file: go.mod
+          toolchain: nightly-2026-09-28
+      - name: Install protocol compiler
+        id: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: cli
         run: |
-          go vet ./cmds/lane/...
-          go test -race ./cmds/lane/...
+          cargo test --locked -p lane
           pnpm --filter @delinoio/lane test
-          pnpm --filter @delinoio/lane build
+          pnpm --filter @delinoio/lane build --platform linux-amd64
           pnpm --filter @delinoio/lane smoke
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
@@ -637,9 +639,9 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install -y "${packages[@]}"
-      - name: Install Perfine protocol compiler
+      - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -710,9 +712,9 @@ jobs:
           toolchain: nightly-2026-09-28
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install Perfine protocol compiler
+      - name: Install CLI protocol compiler
         id: protoc
-        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine')
+        if: contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')
         run: |-
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev

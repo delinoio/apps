@@ -65,7 +65,10 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
       true,
     );
     const protoc = steps.find((step) => step.id === "protoc");
-    assert.equal(protoc.if, "contains(fromJSON(env.RUST_PACKAGES), 'perfine')");
+    assert.equal(
+      protoc.if,
+      "contains(fromJSON(env.RUST_PACKAGES), 'perfine') || contains(fromJSON(env.RUST_PACKAGES), 'lane')",
+    );
     assert.match(protoc.run, /protobuf-compiler libprotobuf-dev/u);
     assert.ok(
       steps.indexOf(protoc) < steps.findIndex((step) => step.id === check),

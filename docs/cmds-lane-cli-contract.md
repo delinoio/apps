@@ -2,11 +2,11 @@
 
 ## Scope
 
-`cmds/lane` owns the Go `lane` executable and local stdio MCP. `cmds/lane/internal` owns Go domain/store/sync adapters in the existing root module. Do not create a companion module, `go.work`, private checkout or Go server. The [distribution contract](packages-lane-distribution-contract.md) owns release artifacts and `@delinoio/lane`.
+`cmds/lane` owns the Rust `lane` executable and local stdio MCP. `cmds/lane/src` owns Rust domain/store/sync adapters in the root Cargo workspace. Do not create a companion module, `go.work`, private checkout or Go server. The [distribution contract](packages-lane-distribution-contract.md) owns release artifacts and `@delinoio/lane`.
 
 ## Runtime and Language
 
-Use Go selected by root `go.mod`, generated Lane Connect bindings, and a pinned CGO-free SQLite driver. Shared native/Go SQL paths and columns are fixed by the [local-store contract](apps-lane-local-store-contract.md). Go code uses `log/slog`. Keep stdout reserved for requested results or MCP protocol messages; diagnostics use stderr.
+Install `protoc` for schema compilation. Use the root Cargo workspace, bindings generated from the canonical Lane schema, and a pinned bundled SQLite driver. Shared native/Rust SQL paths and columns are fixed by the [local-store contract](apps-lane-local-store-contract.md). Rust code uses `tracing`. Keep stdout reserved for requested results or MCP protocol messages; diagnostics use stderr.
 
 ## Users and Operators
 
@@ -69,13 +69,13 @@ Use structured stderr/file metadata with correlation IDs. Exclude task/prompt/we
 
 ## Build and Test
 
-At implementation run root Go tests/vet for affected packages and CLI builds for macOS, Windows and Linux. Run shared protocol vectors, human/JSON output tests, stdio MCP framing/schema tests, SQLite concurrency and native cross-process compatibility tests. Exercise local CLI/MCP with no account, no server and no app window. Test explicit remote targeting, request retries, whole-task conflicts, event completion atomicity, account deletion proof and revocation with mocked services.
+At implementation run root Cargo tests and Clippy for the Lane package and CLI builds for macOS, Windows and Linux. Run shared protocol vectors, human/JSON output tests, stdio MCP framing/schema tests, SQLite concurrency and native cross-process compatibility tests. Exercise local CLI/MCP with no account, no server and no app window. Test explicit remote targeting, request retries, whole-task conflicts, event completion atomicity, account deletion proof and revocation with mocked services.
 
 Cross-compilation alone does not establish executable installation or native app behavior on that OS. Record exact runtime/platform checks separately. Preserve root Rust/frontend checks when those sources also change.
 
 ## Dependencies and Integrations
 
-Use repository protocol generation, the root Go module and platform credential adapters. Coordinate the helper's packaging with native hosts. No external agent runtime is a Lane dependency.
+Use repository protocol generation, the root Cargo workspace and platform credential adapters. Coordinate the helper's packaging with native hosts. No external agent runtime is a Lane dependency.
 
 ## Change Triggers
 
@@ -90,8 +90,8 @@ Change protocol/local-store/app/distribution contracts together for command, sch
 
 ## Desktop helper and approval arguments
 
-The executable entry point is `go build ./cmds/lane`. `lane --version` prints
-`lane 0.1.0`; release builds can set `main.version` with Go linker flags.
+The executable entry point is `cargo build --release -p lane`. `lane --version` prints
+`lane 0.1.0`; release builds use the Cargo package version.
 `--help` lists command arguments without opening storage or requiring credentials.
 
 Desktop hosts use the following helper interfaces:

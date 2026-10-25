@@ -2,17 +2,17 @@
 
 ## Scope
 
-`apps/lane/native/store` owns the shared SQL schema and native store support. Existing Android, iOS, macOS and Windows hosts own platform Native Module registration and OS integration. `cmds/lane/internal` owns the independent Go adapter to the **same physical database and schema**. These ownership boundaries do not establish native platform acceptance.
+`apps/lane/native/store` owns the shared SQL schema and native store support. Existing Android, iOS, macOS and Windows hosts own platform Native Module registration and OS integration. `cmds/lane/src` owns the independent Rust adapter to the **same physical database and schema**. These ownership boundaries do not establish native platform acceptance.
 
 ## Runtime and Language
 
-Keep platform languages and toolchains from the [application foundation](apps-lane-foundation.md). Use C++17/Objective-C++ SQLite integration on desktop/iOS and Kotlin platform SQLite or a bundled SQLite adapter on Android. Go uses `database/sql` with a pinned CGO-free SQLite driver suitable for the CLI targets. Do not require a running GUI, JavaScript process or local HTTP daemon for database operations. Share SQL and conformance vectors; do not assume separate language implementations share correctness automatically.
+Keep platform languages and toolchains from the [application foundation](apps-lane-foundation.md). Use C++17/Objective-C++ SQLite integration on desktop/iOS and Kotlin platform SQLite or a bundled SQLite adapter on Android. Rust uses `rusqlite` with a pinned bundled SQLite engine suitable for the CLI targets. Do not require a running GUI, JavaScript process or local HTTP daemon for database operations. Share SQL and conformance vectors; do not assume separate language implementations share correctness automatically.
 
 All writers must use a SQLite build with the upstream WAL-reset fix (3.51.3 or a verified patched branch/build). A system version string alone is not evidence of a backport. Bundle a patched engine where the platform engine cannot establish this requirement; do not silently mix unsafe writers into one WAL file. Record exact engine/source IDs and dependency notices with platform validation. See the [upstream WAL notes](https://sqlite.org/wal.html#walreset). This requirement does not claim the system SQLite used by earlier probes is patched.
 
 ## Users and Operators
 
-One OS user, their native app, their Go CLI/local stdio MCP, and background synchronization. OS permissions provide isolation; no Lane password/biometric lock is added.
+One OS user, their native app, their Rust CLI/local stdio MCP, and background synchronization. OS permissions provide isolation; no Lane password/biometric lock is added.
 
 ## Interfaces and Contracts
 
@@ -56,7 +56,7 @@ The application and CLI must resolve the following **same** data root, not their
 | iOS       | `<application Library/Application Support>/io.delino.lane`                                             |
 | Android   | `<Context.filesDir>/io.delino.lane`                                                                    |
 
-Use platform directory APIs and identical Go path resolution. Each root has `registry.sqlite`; each data space has `spaces/<space-id>/lane.sqlite`. `space-id` is a UUID v7 allocated once under a registry transaction. Root `logs/` is shared by app/CLI retention. Production processes must not silently fall back to a temporary directory. Test roots may be injected only by explicit test configuration. The current macOS desktop distribution is not sandboxed; a later sandboxed distribution needs an explicit shared-container/CLI access contract before changing this path.
+Use platform directory APIs and identical Rust path resolution. Each root has `registry.sqlite`; each data space has `spaces/<space-id>/lane.sqlite`. `space-id` is a UUID v7 allocated once under a registry transaction. Root `logs/` is shared by app/CLI retention. Production processes must not silently fall back to a temporary directory. Test roots may be injected only by explicit test configuration. The current macOS desktop distribution is not sandboxed; a later sandboxed distribution needs an explicit shared-container/CLI access contract before changing this path.
 
 Registry schema version 1 uses `PRAGMA application_id=1279348293` (hex `0x4c414e45`) and `user_version=1`:
 
@@ -131,11 +131,11 @@ CREATE TABLE notification_receipts (
 
 ### Transactions and observation
 
-Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL` and `busy_timeout=5000` on every physical connection as applicable. Use local disks, not network shares or file-sync services. Use parameterized SQL. Native and Go writers use `BEGIN IMMEDIATE`; re-read expected heads, deleted state, receipt and URL uniqueness **inside** that transaction. Commit entity projection, immutable snapshot/history, head set, request receipt, durable outbox mutation, notification receipt and one `changes` row atomically. Local-only work retains sufficient versions for later initial synchronization; no server is required for commit. Roll back everything on disk-full, I/O, constraint or validation failure. Surface STORAGE_BUSY after the bounded busy wait; the user can retry with the same request ID. Do not retry partial statements outside their original transaction.
+Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL` and `busy_timeout=5000` on every physical connection as applicable. Use local disks, not network shares or file-sync services. Use parameterized SQL. Native and Rust writers use `BEGIN IMMEDIATE`; re-read expected heads, deleted state, receipt and URL uniqueness **inside** that transaction. Commit entity projection, immutable snapshot/history, head set, request receipt, durable outbox mutation, notification receipt and one `changes` row atomically. Local-only work retains sufficient versions for later initial synchronization; no server is required for commit. Roll back everything on disk-full, I/O, constraint or validation failure. Surface STORAGE_BUSY after the bounded busy wait; the user can retry with the same request ID. Do not retry partial statements outside their original transaction.
 
 Read in short consistent transactions. Close cursors promptly. Poll `MAX(changes.sequence)` on a dedicated observer at 500 ms while the view is active, then immediately on foreground/resume; coalesce invalidations. The query works across Android pools because it reads committed table state. A dedicated persistent connection may use `PRAGMA data_version` as an optimization, but only compare values from that same physical connection. SQLite update hooks alone do not observe other processes. A rollback emits no invalidation; own commits can trigger immediate sequence reads. Keep the sequence monotonic and do not prune/reset it in version 1.
 
-Only one background sync owner per space may drain the outbox at a time. Acquire/renew an expiring owner record in a short write transaction; never hold a SQLite lock across network calls. Requests remain idempotent if an owner crashes or a lease expires. Desktop embeds the matching distribution CLI artifact as `helpers/lane` or `helpers/lane.exe` under the packaged Lynxtron application resource directory (`Contents/Resources/app` on macOS, `resources/app` on Windows) (avoiding the case-insensitive host/helper name collision on either platform) and supervises `lane --space <uuid> sync run`. It sends termination only on explicit exit/disconnection, not window closure, and retries failed starts with a bounded delay. Missing helper binaries leave local operations available and report the dependency failure; no global npm executable is assumed. Desktop uses the Go CLI `sync run` worker supervised by the host; CLI users may run the same worker without the app. Mobile host scheduling runs the same wire protocol at platform-permitted opportunities. Closing the desktop window releases rendering, not an enabled worker. App/CLI writes remain possible when the worker is unavailable.
+Only one background sync owner per space may drain the outbox at a time. Acquire/renew an expiring owner record in a short write transaction; never hold a SQLite lock across network calls. Requests remain idempotent if an owner crashes or a lease expires. Desktop embeds the matching distribution CLI artifact as `helpers/lane` or `helpers/lane.exe` under the packaged Lynxtron application resource directory (`Contents/Resources/app` on macOS, `resources/app` on Windows) (avoiding the case-insensitive host/helper name collision on either platform) and supervises `lane --space <uuid> sync run`. It sends termination only on explicit exit/disconnection, not window closure, and retries failed starts with a bounded delay. Missing helper binaries leave local operations available and report the dependency failure; no global npm executable is assumed. Desktop uses the Rust CLI `sync run` worker supervised by the host; CLI users may run the same worker without the app. Mobile host scheduling runs the same wire protocol at platform-permitted opportunities. Closing the desktop window releases rendering, not an enabled worker. App/CLI writes remain possible when the worker is unavailable.
 
 ### Compatibility and migrations
 
@@ -155,7 +155,7 @@ Use structured local logs without content/secrets. Native and CLI share the root
 
 ## Build and Test
 
-Run the common protocol vectors in native and Go adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
+Run the common protocol vectors in native and Rust CLI adapters. Test both writer directions against the same physical file, concurrent saves, crash/rollback/disk-full behavior, close/reopen, unsupported schema refusal, account routing and commit-only observation in a running app. Test task/history/outbox/sequence atomicity. Check runtime SQLite source IDs and the WAL fix on all targets.
 
 Run app-local `pnpm test` for frontend changes and the existing platform build commands. Native build/install/behavior gates apply separately to macOS, Windows, iOS and Android. Cross-compiling a CLI or compiling a Lynx bundle does not prove native behavior. Preserve existing CI exclusions for macOS PR/main/affected runs; store/provider acceptance is separate.
 

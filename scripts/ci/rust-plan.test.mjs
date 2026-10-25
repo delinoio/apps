@@ -184,3 +184,23 @@ test("Perfine contracts and distribution select available core and CLI consumers
     });
   }
 });
+
+test("Lane contracts, schemas and packages select the root Rust CLI", () => {
+  for (const path of [
+    "packages/lane/scripts/build.mjs",
+    "protos/lane/v1/lane.proto",
+    "apps/lane/native/store/schema.sql",
+    "docs/cmds-lane-cli-contract.md",
+  ]) {
+    const result = selectRust(base, [path], (command) =>
+      command === "list"
+        ? {
+            packages: ["lane", "perfine", "delitools-shell"].map((name) => ({
+              name,
+            })),
+          }
+        : { merge_base: base, packages: [] },
+    );
+    assert.deepEqual(result, { rust_clippy: ["lane"], rust_test: ["lane"] });
+  }
+});

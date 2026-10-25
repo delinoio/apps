@@ -1,0 +1,210 @@
+{
+  "repository list": {
+    "method": "ListRepositories",
+    "help": "[--page-size N] [--cursor TOKEN]"
+  },
+  "repository get": {
+    "method": "GetRepository",
+    "help": "ID"
+  },
+  "repository create": {
+    "method": "CreateRepository",
+    "help": "--url URL [--display-name NAME]"
+  },
+  "repository edit": {
+    "method": "SaveRepository",
+    "help": "ID --expected-version UUID --url URL [--display-name NAME]"
+  },
+  "repository delete": {
+    "method": "DeleteRepository",
+    "help": "ID (permanent)"
+  },
+  "task list": {
+    "method": "ListTasks",
+    "help": "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT]"
+  },
+  "task get": {
+    "method": "GetTask",
+    "help": "ID"
+  },
+  "task create": {
+    "method": "CreateTask",
+    "help": "--repository-id UUID | --repository-url URL; --title TEXT [--description TEXT] [--prompt TEXT | --prompt-stdin] [--progress STATE] [--proposal STATE]"
+  },
+  "task edit": {
+    "method": "SaveTask",
+    "help": "ID --expected-version UUID [--title TEXT] [--description TEXT] [--prompt TEXT | --prompt-stdin | --clear-prompt]"
+  },
+  "task move": {
+    "method": "SaveTask",
+    "help": "ID --expected-version UUID --repository-id UUID"
+  },
+  "task progress": {
+    "method": "SetProgress",
+    "help": "ID --expected-version UUID --progress STATE"
+  },
+  "task accept": {
+    "method": "SetProposal",
+    "help": "ID --expected-version UUID"
+  },
+  "task reject": {
+    "method": "SetProposal",
+    "help": "ID --expected-version UUID"
+  },
+  "task delete": {
+    "method": "DeleteTask",
+    "help": "ID (permanent)"
+  },
+  "task history": {
+    "method": "ListHistory",
+    "help": "ID [--page-size N] [--cursor TOKEN]"
+  },
+  "task prompt-history": {
+    "method": "ListHistory",
+    "help": "ID [--page-size N] [--cursor TOKEN]"
+  },
+  "task restore-prompt": {
+    "method": "RestorePrompt",
+    "help": "ID --expected-version UUID --source-version UUID"
+  },
+  "conflict list": {
+    "method": "ConflictList",
+    "help": "[--kind task|repository]"
+  },
+  "conflict get": {
+    "method": "ConflictGet",
+    "help": "ID --kind task|repository"
+  },
+  "conflict resolve": {
+    "method": "ResolveConflict",
+    "help": "ID --expected-head UUID (repeat for all heads) --resolved-json JSON"
+  },
+  "sync cancel-reauth": {
+    "method": "CancelReauthentication",
+    "help": "--challenge-id ID (cancel pending browser reauthentication)"
+  },
+  "sync status": {
+    "method": "GetLocalStatus",
+    "help": "(local)"
+  },
+  "sync connect": {
+    "method": "ConnectSync",
+    "help": "[--redirect-uri URI] [--endpoint URL] [--account-id ID] [--confirm-epoch-change] (browser approval)"
+  },
+  "sync callback": {
+    "method": "SyncCallback",
+    "help": "CALLBACK_URI (validates browser state)"
+  },
+  "sync run": {
+    "method": "SyncRun",
+    "help": "[--once] [--retry-blocked] [--endpoint URL] (local durable worker)"
+  },
+  "sync disconnect": {
+    "method": "DisconnectSync",
+    "help": "--retention keep-local|remove-local"
+  },
+  "notification get": {
+    "method": "GetNotificationPreferences",
+    "help": "(per-device)"
+  },
+  "notification set": {
+    "method": "SetNotificationPreferences",
+    "help": "--enabled true|false [--content detail|generic]"
+  },
+  "device list": {
+    "method": "ListDevices",
+    "help": "--remote"
+  },
+  "device disconnect": {
+    "method": "DisconnectDevice",
+    "help": "--remote --device-id UUID"
+  },
+  "connection list": {
+    "method": "ListConnections",
+    "help": "--remote"
+  },
+  "connection revoke": {
+    "method": "RevokeConnection",
+    "help": "--remote --connection-id UUID"
+  },
+  "receiver list": {
+    "method": "ListReceivers",
+    "help": "--remote [--repository-id UUID]"
+  },
+  "receiver create": {
+    "method": "CreateReceiver",
+    "help": "--remote --repository-id UUID --name NAME"
+  },
+  "receiver edit": {
+    "method": "SaveReceiver",
+    "help": "--remote ID --expected-revision N --repository-id UUID --name NAME"
+  },
+  "receiver rotate-key": {
+    "method": "RotateReceiverKey",
+    "help": "--remote ID --expected-revision N"
+  },
+  "receiver delete": {
+    "method": "DeleteReceiver",
+    "help": "--remote ID (retains events)"
+  },
+  "event list": {
+    "method": "ListEvents",
+    "help": "[--repository-id UUID] [--states STATE] (local cached read or --remote)"
+  },
+  "event get": {
+    "method": "GetEvent",
+    "help": "ID (local cached read or --remote)"
+  },
+  "event delete": {
+    "method": "DeleteEvent",
+    "help": "--remote ID (permanent)"
+  },
+  "event claim": {
+    "method": "ClaimEvent",
+    "help": "--remote ID"
+  },
+  "event renew": {
+    "method": "RenewEventLease",
+    "help": "--remote ID --lease-token TOKEN"
+  },
+  "event release": {
+    "method": "ReleaseEventLease",
+    "help": "--remote ID --lease-token TOKEN [--error-reason TEXT]"
+  },
+  "event complete": {
+    "method": "CompleteEvent",
+    "help": "--remote ID --lease-token TOKEN --tasks-json JSON_ARRAY"
+  },
+  "event reopen": {
+    "method": "ReopenEvent",
+    "help": "--remote ID --expected-revision N"
+  },
+  "data remove-local": {
+    "method": "RemoveDeviceData",
+    "help": "(selected local space, permanent)"
+  },
+  "data delete-everywhere": {
+    "method": "DeleteEverywhere",
+    "help": "--remote --confirmed-account-id ID (browser reauthentication)"
+  },
+  "data clear-server": {
+    "method": "ClearServer",
+    "help": "--remote --confirmed-account-id ID (browser reauthentication)"
+  },
+  "login": {
+    "method": "ConnectSync",
+    "help": "[--redirect-uri URI] [--endpoint URL]"
+  },
+  "logout": {
+    "method": "DisconnectSync",
+    "help": "--retention keep-local|remove-local"
+  },
+  "mcp serve": {
+    "method": "MCP",
+    "help": "(stdio; --remote explicitly selects online tools)"
+  },
+  "rpc": {
+    "method": "RPC",
+    "help": "METHOD --request-json JSON|- (typed helper interface)"
+  }
+}

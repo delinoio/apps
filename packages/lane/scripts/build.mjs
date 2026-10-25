@@ -12,11 +12,22 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { platforms } from "../bin/verify.mjs";
+import { targets } from "./targets.mjs";
 import { collectNotices } from "./notices.mjs";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const { values } = parseArgs({
-  options: { "source-root": { type: "string" } },
+  options: {
+    "source-root": { type: "string" },
+    platform: { type: "string", multiple: true },
+  },
 });
+const selectedPlatforms = values.platform ?? platforms;
+if (
+  !selectedPlatforms.length ||
+  new Set(selectedPlatforms).size !== selectedPlatforms.length ||
+  selectedPlatforms.some((key) => !platforms.includes(key))
+)
+  throw new Error("select distinct supported platforms");
 const cliRoot = values["source-root"] ? resolve(values["source-root"]) : root;
 const sourceState = () =>
   execFileSync(
@@ -27,8 +38,11 @@ const sourceState = () =>
       "--untracked-files=all",
       "--",
       "cmds/lane",
-      "go.mod",
-      "go.sum",
+      "Cargo.toml",
+      "Cargo.lock",
+      ".cargo",
+      "apps/lane/native/store/schema.sql",
+      "apps/lane/native/store/registry.sql",
       "protos",
     ],
     { cwd: cliRoot, encoding: "utf8" },
@@ -73,12 +87,22 @@ for (const name of ["bin", "README.md", "SKILL.md", "guides"])
 for (const name of ["LICENSE", "NOTICE"])
   cpSync(resolve(root, name), resolve(stage, name));
 // Require reviewed dependency notices rather than silently ship a binary without them.
-collectNotices(cliRoot, resolve(stage, "THIRD_PARTY_NOTICES"));
+collectNotices(
+  cliRoot,
+  resolve(stage, "THIRD_PARTY_NOTICES"),
+  selectedPlatforms,
+);
 const { scripts, ...published } = pkg;
 writeFileSync(
   resolve(stage, "package.json"),
   `${JSON.stringify(published, null, 2)}\n`,
 );
+const cargoManifest = readFileSync(
+  resolve(cliRoot, "cmds/lane/Cargo.toml"),
+  "utf8",
+);
+if (!cargoManifest.includes(`version = "${pkg.version}"`))
+  throw new Error("Rust CLI and npm package versions must match");
 const manifest = {
   schemaVersion: 1,
   version: pkg.version,
@@ -86,29 +110,35 @@ const manifest = {
   launcherRevision,
   artifacts: {},
 };
-for (const key of platforms) {
+for (const key of selectedPlatforms) {
   const [os, arch] = key.split("-");
   const directory = `lane-${key}`;
   const name = os === "windows" ? "lane.exe" : "lane";
   const artifact = resolve(dist, "artifacts", directory);
   mkdirSync(artifact, { recursive: true });
+  const target = targets[key];
+  const cargoTarget = resolve(dist, "cargo");
   execFileSync(
-    "go",
+    "cargo",
     [
       "build",
-      "-trimpath",
-      "-buildvcs=false",
-      "-ldflags",
-      `-buildid= -X main.version=${pkg.version}`,
-      "-o",
-      resolve(artifact, name),
-      "./cmds/lane",
+      "--locked",
+      "--release",
+      "-p",
+      "lane",
+      "--target",
+      target,
+      "--target-dir",
+      cargoTarget,
     ],
     {
       cwd: cliRoot,
-      env: { ...process.env, CGO_ENABLED: "0", GOOS: os, GOARCH: arch },
       stdio: "inherit",
     },
+  );
+  cpSync(
+    resolve(cargoTarget, target, "release", name),
+    resolve(artifact, name),
   );
   const bytes = readFileSync(resolve(artifact, name));
   const entry = {
@@ -161,7 +191,7 @@ execFileSync(
   ["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"],
   { cwd: stage, stdio: "inherit" },
 );
-const files = platforms
+const files = selectedPlatforms
   .map((key) => `lane-${key}-${pkg.version}.tar.gz`)
   .concat(`delinoio-lane-${pkg.version}.tgz`);
 writeFileSync(

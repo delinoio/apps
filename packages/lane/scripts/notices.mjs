@@ -1,48 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from "node:child_process";
-import {
-  cpSync,
-  mkdirSync,
-  readdirSync,
-  writeFileSync,
-  existsSync,
-} from "node:fs";
-import { resolve, relative } from "node:path";
+import { cpSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { resolve, relative, dirname } from "node:path";
+import { targets } from "./targets.mjs";
+import { supplementNotices } from "./supplements.mjs";
 import { platforms } from "../bin/verify.mjs";
-export function collectNotices(root, destination) {
+export function collectNotices(root, destination, selected = platforms) {
   mkdirSync(destination, { recursive: true });
-  const outputs = platforms.map((key) => {
-    const [GOOS, GOARCH] = key.split("-");
-    return execFileSync(
-      "go",
-      [
-        "list",
-        "-deps",
-        "-f",
-        "{{if .Module}}{{.Module.Path}}|{{.Module.Version}}|{{.Module.Dir}}{{end}}",
-        "./cmds/lane",
-      ],
-      {
-        cwd: root,
-        env: { ...process.env, CGO_ENABLED: "0", GOOS, GOARCH },
-        encoding: "utf8",
-      },
+  const packages = new Map();
+  for (const key of selected) {
+    const metadata = JSON.parse(
+      execFileSync(
+        "cargo",
+        [
+          "metadata",
+          "--locked",
+          "--format-version",
+          "1",
+          "--filter-platform",
+          targets[key],
+        ],
+        { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      ),
     );
-  });
-  const output = outputs.join("\n");
-  const entries = [...new Set(output.split("\n").filter(Boolean))].sort();
+    const nodes = new Map(
+      metadata.resolve.nodes.map((node) => [node.id, node]),
+    );
+    const ids = new Set();
+    function visit(id) {
+      if (ids.has(id)) return;
+      ids.add(id);
+      for (const dep of nodes.get(id).deps)
+        if (dep.dep_kinds.some((kind) => kind.kind !== "dev")) visit(dep.pkg);
+    }
+    visit(metadata.packages.find((p) => p.name === "lane").id);
+    for (const p of metadata.packages)
+      if (ids.has(p.id) && p.source) packages.set(p.id, p);
+  }
   const inventory = [];
-  for (const entry of entries) {
-    const [module, version, directory] = entry.split("|");
-    if (module === "github.com/delinoio/apps") continue;
-    if (!version || !directory)
-      throw new Error(
-        `unversioned/replaced dependency requires license review: ${module}`,
-      );
-    const target = resolve(
-      destination,
-      `${module.replaceAll("/", "__")}@${version}`,
-    );
+  for (const p of [...packages.values()].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )) {
+    const directory = dirname(p.manifest_path);
+    const target = resolve(destination, `${p.name}@${p.version}`);
     let found = 0;
     function visit(path) {
       for (const item of readdirSync(path, { withFileTypes: true })) {
@@ -50,30 +50,43 @@ export function collectNotices(root, destination) {
         if (item.isDirectory() && item.name !== ".git") visit(file);
         else if (
           item.isFile() &&
-          /^(licen[cs]e|copying|notice|copyright|authors|patents)([._-].*)?$/i.test(
+          (/^(licen[cs]e|copying|notice|copyright|authors|patents)([._-].*)?$/i.test(
             item.name,
-          )
+          ) ||
+            relative(directory, file) === p.license_file)
         ) {
           const dest = resolve(target, relative(directory, file));
-          mkdirSync(resolve(dest, ".."), { recursive: true });
+          mkdirSync(dirname(dest), { recursive: true });
           cpSync(file, dest);
           found++;
         }
       }
     }
     visit(directory);
-    if (!found)
-      throw new Error(`missing dependency license: ${module}@${version}`);
-    inventory.push({ module, version });
+    if (!found) {
+      const text = supplementNotices(p);
+      mkdirSync(target, { recursive: true });
+      writeFileSync(resolve(target, "UPSTREAM-LICENSE.txt"), text);
+    }
+    inventory.push({
+      module: p.name,
+      version: p.version,
+      source: p.source,
+      license: p.license,
+    });
   }
-  const goroot = execFileSync("go", ["env", "GOROOT"], {
-    cwd: root,
+  const sysroot = execFileSync("rustc", ["--print", "sysroot"], {
     encoding: "utf8",
   }).trim();
-  mkdirSync(resolve(destination, "go"));
-  for (const name of ["LICENSE", "PATENTS"])
-    if (existsSync(resolve(goroot, name)))
-      cpSync(resolve(goroot, name), resolve(destination, "go", name));
+  cpSync(
+    resolve(sysroot, "share/doc/rust/licenses"),
+    resolve(destination, "rust"),
+    { recursive: true },
+  );
+  cpSync(
+    resolve(sysroot, "share/doc/rust/COPYRIGHT-library.html"),
+    resolve(destination, "rust/COPYRIGHT-library.html"),
+  );
   writeFileSync(
     resolve(destination, "modules.json"),
     `${JSON.stringify(inventory, null, 2)}\n`,
