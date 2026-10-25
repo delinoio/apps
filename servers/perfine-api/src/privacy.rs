@@ -90,8 +90,14 @@ fn inspect_json(bytes: &[u8], raw: bool) -> Result<()> {
 }
 
 fn complete_json_prefix(bytes: &[u8]) -> bool {
+    let secret_found = Cell::new(false);
     let mut d = serde_json::Deserializer::from_slice(bytes);
-    Inspect { raw: true }.deserialize(&mut d).is_ok()
+    Inspect {
+        raw: true,
+        secret_found: &secret_found,
+    }
+    .deserialize(&mut d)
+    .is_ok()
 }
 
 fn text_label_prefix(line: &str) -> bool {
