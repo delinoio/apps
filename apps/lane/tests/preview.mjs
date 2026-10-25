@@ -34,11 +34,17 @@ const result = (v) => ({
   version: v,
   alternatives: [],
 });
+let emptyList = false;
 let failSave = false;
 let history = [task];
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://127.0.0.1:46400");
+    if (url.pathname === "/test/empty-list") {
+      emptyList = url.searchParams.get("enabled") === "1";
+      res.end("{}");
+      return;
+    }
     if (url.pathname === "/test/fail-save") {
       failSave = true;
       res.end("{}");
@@ -82,7 +88,7 @@ createServer(async (req, res) => {
           response = { items: [result(repo)] };
           break;
         case "ListTasks":
-          response = { items: [result(task)] };
+          response = { items: emptyList ? [] : [result(task)] };
           break;
         case "GetTask":
           response = { result: result(task) };

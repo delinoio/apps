@@ -234,7 +234,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     >
       <view className="shell">
         <view className="navigation">
-          <text className="brand">▰ Lane</text>
+          {!mobile && <text className="brand">▰ Lane</text>}
           <view className="nav-items">
             {["Tasks", "Proposals", "Repositories", "Events", "Settings"].map(
               (p) => (
@@ -250,11 +250,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     })
                   }
                 >
-                  {p === "Proposals"
-                    ? `Proposals · ${pendingCount}`
-                    : p === "Tasks"
-                      ? "All tasks"
-                      : p}
+                  {mobile
+                    ? p === "Repositories"
+                      ? "Repos"
+                      : p
+                    : p === "Proposals"
+                      ? `Proposals · ${pendingCount}`
+                      : p === "Tasks"
+                        ? "All tasks"
+                        : p}
                 </Button>
               ),
             )}
@@ -300,159 +304,177 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             <view className="task-workspace">
               {(!mobile || !draft) && (
                 <view className="task-list">
-                  <view className="row between">
-                    <view>
-                      <text className="heading">
-                        {repository
-                          ? repositoryName(
-                              repositories.find(
-                                (r) => r.version?.entityId === repository,
-                              )?.version,
-                            )
-                          : page === "Proposals"
-                            ? "Proposals"
-                            : "All tasks"}
-                      </text>
-                      <text className="muted">
-                        Manage your tasks and prompts.
-                      </text>
-                    </view>
-                    <Button
-                      primary
-                      onClick={() =>
-                        navigate(() => {
-                          setCurrent(undefined);
-                          setDraft({
-                            id: newId(),
-                            task: blankTask(repository),
-                            dirty: false,
-                            external: false,
-                            deleted: false,
-                          });
-                        })
-                      }
-                    >
-                      + New task
-                    </Button>
-                  </view>
-                  <Field
-                    label="Search title or description"
-                    value={search}
-                    onChange={setSearch}
-                  />
-                  {mobile && (
-                    <Choices
-                      label="Repository"
-                      value={repository}
-                      options={[
-                        ["", "All repositories"],
-                        ...repositories.map(
-                          (r) =>
-                            [
-                              r.version!.entityId,
-                              repositoryName(r.version),
-                            ] as const,
-                        ),
-                      ]}
-                      onChange={setRepository}
-                    />
-                  )}
-                  <Choices
-                    label="Progress filter"
-                    value={progress}
-                    options={[
-                      [Progress.UNSPECIFIED, "All"],
-                      ...progressOptions,
-                    ]}
-                    onChange={setProgress}
-                  />
-                  <Choices
-                    label="Proposal filter"
-                    value={proposal}
-                    options={[
-                      [
-                        Proposal.UNSPECIFIED,
-                        page === "Proposals" ? "Pending proposals" : "All",
-                      ],
-                      ...proposalOptions,
-                    ]}
-                    onChange={setProposal}
-                  />
                   <scroll-view className="rows" scroll-orientation="vertical">
-                    {loading && <text>Loading…</text>}
-                    {!loading && tasks.length === 0 && (
-                      <view className="empty">
-                        <text className="heading">No tasks here yet</text>
-                        <text>
-                          Create a task with a title, or change your filters.
-                        </text>
-                      </view>
-                    )}
-                    {tasks.map((r) => {
-                      const t = taskOf(r.version);
-                      return (
-                        t && (
-                          <view
-                            className={`task-row ${draft?.id === r.version?.entityId ? "selected" : ""}`}
-                            key={r.version?.entityId}
-                          >
-                            <Button
-                              onClick={() =>
-                                navigate(() => {
-                                  void openTask(r.version!.entityId);
-                                })
-                              }
-                            >
-                              {t.title}
-                            </Button>
-                            <text className="badge">
-                              {
-                                progressOptions.find(
-                                  ([v]) => v === t.progress,
-                                )?.[1]
-                              }
-                            </text>
-                            {t.proposal === Proposal.PENDING && (
-                              <text className="badge">Proposal</text>
-                            )}
-                            {conflicted(r) && (
-                              <text className="badge">Conflict</text>
-                            )}
-                          </view>
-                        )
-                      );
-                    })}
-                    {cursor && (
-                      <Button
-                        onClick={() => {
-                          const generation = queryGeneration.current;
-                          void adapter
-                            .call(LaneService.method.listTasks, {
-                              page: { size: 100, cursor },
-                              repositoryId: repository || undefined,
-                              progress: progress ? [progress] : [],
-                              proposal:
-                                page === "Proposals"
-                                  ? [proposal || Proposal.PENDING]
-                                  : proposal
-                                    ? [proposal]
-                                    : [],
-                              search,
+                    <view className="task-list-content">
+                      <view className="row between">
+                        <view>
+                          <text className="heading">
+                            {repository
+                              ? repositoryName(
+                                  repositories.find(
+                                    (r) => r.version?.entityId === repository,
+                                  )?.version,
+                                )
+                              : page === "Proposals"
+                                ? "Proposals"
+                                : "All tasks"}
+                          </text>
+                          <text className="muted">
+                            Manage your tasks and prompts.
+                          </text>
+                        </view>
+                        <Button
+                          primary
+                          onClick={() =>
+                            navigate(() => {
+                              setCurrent(undefined);
+                              setDraft({
+                                id: newId(),
+                                task: blankTask(repository),
+                                dirty: false,
+                                external: false,
+                                deleted: false,
+                              });
                             })
-                            .then(
-                              (r) => {
-                                if (generation === queryGeneration.current) {
-                                  setTasks((t) => [...t, ...r.items]);
-                                  setCursor(r.nextCursor);
-                                }
-                              },
-                              (e) => setError(String(e)),
-                            );
-                        }}
+                          }
+                        >
+                          + New task
+                        </Button>
+                      </view>
+                      <Field
+                        label="Search title or description"
+                        value={search}
+                        onChange={setSearch}
+                      />
+                      {mobile && (
+                        <Choices
+                          label="Repository"
+                          value={repository}
+                          options={[
+                            ["", "All repositories"],
+                            ...repositories.map(
+                              (r) =>
+                                [
+                                  r.version!.entityId,
+                                  repositoryName(r.version),
+                                ] as const,
+                            ),
+                          ]}
+                          onChange={setRepository}
+                        />
+                      )}
+                      <Choices
+                        label="Progress filter"
+                        value={progress}
+                        options={[
+                          [Progress.UNSPECIFIED, "All"],
+                          ...progressOptions,
+                        ]}
+                        onChange={setProgress}
+                      />
+                      <Choices
+                        label="Proposal filter"
+                        value={proposal}
+                        options={[
+                          [
+                            Proposal.UNSPECIFIED,
+                            page === "Proposals" ? "Pending proposals" : "All",
+                          ],
+                          ...proposalOptions,
+                        ]}
+                        onChange={setProposal}
+                      />
+                      <view
+                        className="task-results"
+                        key={
+                          loading
+                            ? "loading"
+                            : tasks.length === 0
+                              ? "empty"
+                              : "populated"
+                        }
                       >
-                        Load more tasks
-                      </Button>
-                    )}
+                        {loading ? (
+                          <text>Loading…</text>
+                        ) : tasks.length === 0 ? (
+                          <view className="empty">
+                            <text className="heading">No tasks here yet</text>
+                            <text>
+                              Create a task with a title, or change your
+                              filters.
+                            </text>
+                          </view>
+                        ) : (
+                          tasks.map((r) => {
+                            const t = taskOf(r.version);
+                            return (
+                              t && (
+                                <view
+                                  className={`task-row ${draft?.id === r.version?.entityId ? "selected" : ""}`}
+                                  key={r.version?.entityId}
+                                >
+                                  <Button
+                                    onClick={() =>
+                                      navigate(() => {
+                                        void openTask(r.version!.entityId);
+                                      })
+                                    }
+                                  >
+                                    {t.title}
+                                  </Button>
+                                  <text className="badge">
+                                    {
+                                      progressOptions.find(
+                                        ([v]) => v === t.progress,
+                                      )?.[1]
+                                    }
+                                  </text>
+                                  {t.proposal === Proposal.PENDING && (
+                                    <text className="badge">Proposal</text>
+                                  )}
+                                  {conflicted(r) && (
+                                    <text className="badge">Conflict</text>
+                                  )}
+                                </view>
+                              )
+                            );
+                          })
+                        )}
+                        {!loading && tasks.length > 0 && cursor && (
+                          <Button
+                            onClick={() => {
+                              const generation = queryGeneration.current;
+                              void adapter
+                                .call(LaneService.method.listTasks, {
+                                  page: { size: 100, cursor },
+                                  repositoryId: repository || undefined,
+                                  progress: progress ? [progress] : [],
+                                  proposal:
+                                    page === "Proposals"
+                                      ? [proposal || Proposal.PENDING]
+                                      : proposal
+                                        ? [proposal]
+                                        : [],
+                                  search,
+                                })
+                                .then(
+                                  (r) => {
+                                    if (
+                                      generation === queryGeneration.current
+                                    ) {
+                                      setTasks((t) => [...t, ...r.items]);
+                                      setCursor(r.nextCursor);
+                                    }
+                                  },
+                                  (e) => setError(String(e)),
+                                );
+                            }}
+                          >
+                            Load more tasks
+                          </Button>
+                        )}
+                      </view>
+                    </view>
                   </scroll-view>
                 </view>
               )}

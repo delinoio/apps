@@ -33,6 +33,29 @@ try {
   await page
     .getByRole("button", { name: "Improve empty states", exact: true })
     .waitFor();
+  await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=1");
+  await page
+    .locator("lynx-view")
+    .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
+  await page.getByText("No tasks here yet", { exact: true }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Improve empty states", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(await page.getByText("Loading…", { exact: true }).count(), 0);
+  await page.request.get("http://127.0.0.1:46400/test/empty-list?enabled=0");
+  await page
+    .locator("lynx-view")
+    .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
+  await page
+    .getByRole("button", { name: "Improve empty states", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByText("No tasks here yet", { exact: true }).count(),
+    0,
+  );
   await page
     .getByRole("button", { name: "Improve empty states", exact: true })
     .click();
@@ -86,6 +109,39 @@ try {
     .click();
   await page.getByRole("button", { name: "+ New task", exact: true }).waitFor();
   await page.screenshot({ path: join(evidence, "mobile-list.png") });
+  for (const width of [320, 390, 402]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.waitForTimeout(150);
+    const layout = await page.locator("lynx-view").evaluate((view) => {
+      const root = view.shadowRoot;
+      const fields = [...root.querySelectorAll(".task-list .field")].map(
+        (e) => {
+          const r = e.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom };
+        },
+      );
+      const tabs = [...root.querySelectorAll(".nav-items .button")].map((e) => {
+        const r = e.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      });
+      return { fields, tabs };
+    });
+    for (let i = 1; i < layout.fields.length; i++)
+      assert.ok(
+        layout.fields[i].top >= layout.fields[i - 1].bottom - 1,
+        "Filter groups must not overlap",
+      );
+    assert.equal(layout.tabs.length, 5);
+    assert.ok(
+      layout.tabs.every((tab) => Math.abs(tab.top - layout.tabs[0].top) < 1),
+      "Mobile tabs remain on one row",
+    );
+    assert.ok(
+      layout.tabs.every((tab) => tab.left >= 0 && tab.right <= width),
+      "Mobile tabs fit viewport",
+    );
+  }
+
   await page.getByRole("button", { name: "+ New task", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
@@ -112,12 +168,14 @@ try {
           "Mock authenticated server; no live Logto, native, or provider acceptance",
         checks: [
           "desktop navigation and task details",
+          "empty and populated task states replace one another",
           "title visible and accessible textbox",
           "external change retains unsaved input",
           "failed save retains input",
           "deletion dialog Escape",
           "safe Markdown and blocked HTTP image",
           "mobile detail/list navigation",
+          "filter groups do not overlap; five tabs fit one row",
           "discard confirmation retains input on cancel",
           "keyboard activation",
           "new task title autofocus",
