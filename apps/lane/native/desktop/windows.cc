@@ -103,17 +103,18 @@ struct WindowsRuntime : PlatformRuntime {
 }
 std::string ReadNotificationActivation(const std::string& resources) {
   lane::windows::ApartmentScope apartment;
-  std::string payload;
+  auto activation = std::make_shared<Events>();
   lane::windows::Notifications receiver;
   // As in the previous native host, register before querying AppInstance so a
   // cold COM activation can be forwarded to the already-running singleton.
-  receiver.Start(std::filesystem::u8path(resources), [&payload](std::string value) {
+  receiver.Start(std::filesystem::u8path(resources), [activation](std::string value) {
     auto route = lane::windows::Parse(value);
     if (lane::windows::Text(route, L"kind") == "task" && lane::windows::UUID(lane::windows::Text(route, L"id")) &&
-        lane::windows::UUID(lane::windows::Text(route, L"spaceId"))) payload = std::move(value);
+        lane::windows::UUID(lane::windows::Text(route, L"spaceId"))) activation->Push("activation", std::move(value));
   });
   receiver.Stop();
-  return payload;
+  auto pending = activation->Drain();
+  return pending.empty() ? std::string{} : pending.front().second;
 }
 std::shared_ptr<PlatformRuntime> CreatePlatformRuntime(
     const std::string& resources, const std::string& scheme, std::shared_ptr<Events> events) {
