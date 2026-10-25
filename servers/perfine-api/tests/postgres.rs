@@ -1032,6 +1032,65 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .unwrap();
         server.maintain().await.unwrap();
     }
+    call(&server,&space,"SetRawArtifactConsent",json!({"connectionId":cid,"expectedRevision":"3","allowedKinds":["ARTIFACT_KIND_RAW_PROFILE","ARTIFACT_KIND_RAW_TEST_LOG"]})).await.unwrap();
+    for (log, expected_state) in [
+        (
+            b"[==========] Running 1 test\n[  PASSED  ]\n".as_slice(),
+            "UPLOAD_STATE_COMPLETE",
+        ),
+        (
+            b"[INFO] password=secret\n".as_slice(),
+            "UPLOAD_STATE_FAILED",
+        ),
+    ] {
+        let log_id = uid();
+        let (spec, mut manifest, mut bytes) = fixture(&log_id);
+        add_raw_log(&mut manifest, &mut bytes, log.to_vec());
+        manifest["consentRevision"] = json!("4");
+        manifest["runStartedAt"] = json!(chrono::Utc::now().to_rfc3339());
+        checksum(&mut manifest);
+        let begin = call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":log_id,"specification":spec,"manifest":manifest,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.unwrap();
+        for target in begin["targets"].as_array().unwrap() {
+            http.put(target["signedPutUrl"].as_str().unwrap())
+                .body(bytes[target["artifactName"].as_str().unwrap()].clone())
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+        let completed = call(
+            &server,
+            &space,
+            "CompleteUpload",
+            json!({"uploadId":begin["upload"]["id"]}),
+        )
+        .await;
+        assert_eq!(completed.is_ok(), expected_state == "UPLOAD_STATE_COMPLETE");
+        assert_eq!(
+            sqlx::query_scalar::<_, String>(
+                "SELECT data->>'state' FROM perfine_uploads WHERE id=$1"
+            )
+            .bind(uuid::Uuid::parse_str(begin["upload"]["id"].as_str().unwrap()).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap(),
+            expected_state
+        );
+        call(
+            &server,
+            &space,
+            "DeleteExperiment",
+            json!({"experimentId":log_id}),
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+            .execute(&db)
+            .await
+            .unwrap();
+        server.maintain().await.unwrap();
+    }
     let page = call(
         &server,
         &space,
@@ -1358,7 +1417,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap(),
-        9
+        11
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
@@ -1556,6 +1615,29 @@ fn add_raw(m: &mut Value, bytes: &mut BTreeMap<String, Vec<u8>>, raw: Vec<u8>) {
     );
     m["artifacts"].as_array_mut().unwrap().push(json!({"name":"native-profile","kind":"ARTIFACT_KIND_RAW_PROFILE","mediaType":"application/octet-stream","sizeBytes":raw.len().to_string(),"sha256":perfine_api::hash(&raw),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":true,"containsSourceSnippets":false}));
     bytes.insert("native-profile".into(), raw);
+    bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
+    let engine = m["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|a| a["name"] == "engine")
+        .unwrap();
+    engine["sha256"] = json!(perfine_api::hash(&bytes["engine"]));
+    engine["sizeBytes"] = json!(bytes["engine"].len().to_string());
+}
+fn add_raw_log(m: &mut Value, bytes: &mut BTreeMap<String, Vec<u8>>, raw: Vec<u8>) {
+    let mut bundle: perfine_api::evidence::Bundle =
+        serde_json::from_slice(&bytes["engine"]).unwrap();
+    bundle.first.as_mut().unwrap().head.artifacts.insert(
+        name("native-log"),
+        engine::Artifact {
+            kind: engine::ArtifactKind::Correctness,
+            sha256: digest(&raw),
+            size: raw.len() as u64,
+        },
+    );
+    m["artifacts"].as_array_mut().unwrap().push(json!({"name":"native-log","kind":"ARTIFACT_KIND_RAW_TEST_LOG","mediaType":"text/plain","sizeBytes":raw.len().to_string(),"sha256":perfine_api::hash(&raw),"completion":"COMPLETION_STATE_COMPLETE","requiredForEvaluation":true,"containsSourceSnippets":false}));
+    bytes.insert("native-log".into(), raw);
     bytes.insert("engine".into(), serde_json::to_vec(&bundle).unwrap());
     let engine = m["artifacts"]
         .as_array_mut()
