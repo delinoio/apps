@@ -115,6 +115,10 @@ jobs:
           & $compiler.FullName --version
           if ($LASTEXITCODE -ne 0) { throw "protoc is not executable" }
       - run: cargo build --locked --release -p perfine --target "$PERFINE_TARGET"
+      - name: Verify native host paths, private state and child cancellation
+        run: |
+          cargo test --locked -p perfine-core --lib --target "$PERFINE_TARGET" adapters::host
+          cargo test --locked -p perfine-core --lib --target "$PERFINE_TARGET" adapters::process::portable_tests
       - name: Linux Action and packaging regression checks
         if: runner.os == 'Linux'
         run: |
