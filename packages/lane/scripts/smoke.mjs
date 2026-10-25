@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
@@ -16,6 +17,27 @@ const source = fileURLToPath(new URL("../", import.meta.url));
 const { version } = JSON.parse(readFileSync(resolve(source, "package.json")));
 const temporary = mkdtempSync(resolve(tmpdir(), "lane-packed-"));
 try {
+  const expectedArchives = new Set(
+    platforms
+      .map((key) => `lane-${key}-${version}.tar.gz`)
+      .concat(`delinoio-lane-${version}.tgz`),
+  );
+  const sums = readFileSync(resolve(source, "dist/SHA256SUMS"), "utf8")
+    .trim()
+    .split("\n");
+  for (const line of sums) {
+    const match = /^([a-f0-9]{64})  ([a-z0-9.@-]+)$/.exec(line);
+    assert.ok(match, "invalid archive checksum entry");
+    const [, checksum, name] = match;
+    assert.ok(expectedArchives.delete(name), "unexpected or duplicate archive");
+    assert.equal(
+      createHash("sha256")
+        .update(readFileSync(resolve(source, "dist", name)))
+        .digest("hex"),
+      checksum,
+    );
+  }
+  assert.equal(expectedArchives.size, 0, "missing archive checksum");
   execFileSync(
     "npm",
     [
