@@ -13,6 +13,7 @@ import { FocusKind, invoke, useEnvironment, type FocusHandle } from "./theme";
 export interface FocusEntry {
   focus(): void;
   disabled: boolean;
+  path(callback: (indices: number[] | null) => void): void;
 }
 export interface FocusScope {
   entries: Map<object, FocusEntry>;
@@ -31,7 +32,7 @@ export function useControlFocus(
   const scope = useContext(FocusContext);
   const environment = useEnvironment();
   const [focused, setFocused] = useState(false);
-  const entry = useRef<FocusEntry>({ disabled, focus() {} });
+  const entry = useRef<FocusEntry>({ disabled, focus() {}, path() {} });
   entry.current.disabled = disabled;
   entry.current.focus = () => {
     if (entry.current.disabled) return;
@@ -42,6 +43,32 @@ export function useControlFocus(
       kind === FocusKind.Input ? {} : { focus: true },
       environment,
     );
+  };
+  entry.current.path = (callback) => {
+    if (!node.current) {
+      callback(null);
+      return;
+    }
+    try {
+      node.current
+        .path((result, status) => {
+          // Lynx documents `path`, while its 4.3 types call it `data`.
+          // Accept both until the host result and type declaration agree.
+          const path = result as {
+            path?: { index: number }[];
+            data?: { index: number }[];
+          } | null;
+          const nodes = path?.path ?? path?.data;
+          callback(
+            status.code === 0 && Array.isArray(nodes)
+              ? nodes.map(({ index }) => index).reverse()
+              : null,
+          );
+        })
+        .exec();
+    } catch {
+      callback(null);
+    }
   };
   useEffect(() => {
     scope?.entries.set(token.current, entry.current);

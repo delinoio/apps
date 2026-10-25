@@ -37,9 +37,11 @@ Controlled values and callbacks are the state contract for inputs, toggles, tabs
 and dialogs. Buttons suppress actions while disabled or loading. Tabs skip
 disabled items during keyboard navigation. Input supports imperative focus and
 automatic focus when a single critical field is shown. Dialog supports Escape,
-initial focus, focus containment and return focus. Nested dialogs are outside
-the initial contract. Apps own empty, error and permission decisions; Alert and
-the layout primitives present their supplied content without network requests.
+initial focus, focus containment and return focus. Native Dialog containment
+follows the current rendered order of enabled library controls when children
+are inserted, removed or moved. Nested dialogs are outside the initial contract.
+Apps own empty, error and permission decisions; Alert and the layout primitives
+present their supplied content without network requests.
 
 ### Runtime boundaries
 

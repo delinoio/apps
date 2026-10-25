@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@lynx-js/react/testing-library";
 import { createRef } from "@lynx-js/react";
-import { Button, Dialog, Input, Tabs, type FocusHandle } from "../src";
+import { Button, Dialog, Input, Switch, Tabs, type FocusHandle } from "../src";
 import * as theme from "../src/theme";
 import { FocusContext, type FocusScope } from "../src/focus";
 
@@ -15,6 +15,51 @@ import { FocusContext, type FocusScope } from "../src/focus";
 // host-method boundary here; the real web gallery validates host integration.
 beforeEach(() => {
   rstest.spyOn(theme, "invoke").mockImplementation(() => {});
+  // The ReactLynx fixture does not implement the native NodesRef.path method.
+  // Replay its documented sibling-index path from the fixture's rendered tree.
+  const prototype = Object.getPrototypeOf(
+    lynx.createSelectorQuery().select("body"),
+  );
+  rstest.spyOn(prototype, "path").mockImplementation(function (
+    this: { _nodeSelectToken: { type: number; identifier: string } },
+    callback: unknown,
+  ) {
+    const complete = callback as (
+      result: { path: { index: number }[] } | null,
+      status: { code: number; data: string },
+    ) => void;
+    const token = this._nodeSelectToken;
+    return {
+      exec() {
+        const node =
+          token.type === 0
+            ? document.querySelector(token.identifier)
+            : Array.from(document.querySelectorAll("*")).find(
+                (element) =>
+                  (element as Element & { $$uiSign?: number }).$$uiSign ===
+                  Number(token.identifier),
+              );
+        if (!node) {
+          complete(null, { code: 1, data: "node not found" });
+          return;
+        }
+        const data: { index: number }[] = [];
+        for (
+          let current: Node | null = node;
+          current?.parentNode;
+          current = current.parentNode
+        ) {
+          data.push({
+            index: Array.prototype.indexOf.call(
+              current.parentNode.childNodes,
+              current,
+            ),
+          });
+        }
+        complete({ path: data }, { code: 0, data: "succeed" });
+      },
+    };
+  });
 });
 afterEach(() => {
   cleanup();
@@ -173,11 +218,13 @@ it("focuses dialog input, closes on Escape and restores trigger focus", async ()
   fireEvent.keydown(container.querySelector(".lui-dialog-backdrop")!, {
     key: "Tab",
   });
-  expect(theme.invoke).toHaveBeenCalledWith(
-    expect.anything(),
-    "setFocus",
-    { focus: true },
-    expect.anything(),
+  await waitFor(() =>
+    expect(theme.invoke).toHaveBeenCalledWith(
+      expect.anything(),
+      "setFocus",
+      { focus: true },
+      expect.anything(),
+    ),
   );
   fireEvent.keydown(container.querySelector(".lui-dialog-backdrop")!, {
     key: "Escape",
@@ -189,4 +236,115 @@ it("focuses dialog input, closes on Escape and restores trigger focus", async ()
     </Dialog>,
   );
   await waitFor(() => expect(restore.current.focus).toHaveBeenCalledTimes(1));
+});
+
+it("uses the current native order for inserted, removed and moved dialog controls", async () => {
+  const restore = { current: { focus: rstest.fn() } };
+  const switchRef = createRef<FocusHandle>();
+  const inputRef = createRef<FocusHandle>();
+  const change = rstest.fn();
+  const children = (
+    showInput: boolean,
+    inputFirst = false,
+    disabled = false,
+  ) => {
+    const toggle = (
+      <Switch
+        key="switch"
+        id="dialog-switch"
+        checked={false}
+        onCheckedChange={() => {}}
+        label="Enable"
+        checkedLabel="On"
+        uncheckedLabel="Off"
+        focusRef={switchRef}
+      />
+    );
+    const input = showInput ? (
+      <Input
+        key="input"
+        id="dialog-input"
+        value=""
+        onValueChange={() => {}}
+        accessibilityLabel="Name"
+        focusRef={inputRef}
+        disabled={disabled}
+      />
+    ) : null;
+    return inputFirst ? [input, toggle] : [toggle, input];
+  };
+  const dialog = (showInput: boolean, inputFirst = false, disabled = false) => (
+    <Dialog
+      open
+      onOpenChange={change}
+      title="Edit"
+      description="Change settings"
+      closeLabel="Close"
+      returnFocusRef={restore}
+    >
+      {children(showInput, inputFirst, disabled)}
+    </Dialog>
+  );
+  const { container, rerender, unmount } = render(dialog(false));
+  const focused = () =>
+    rstest
+      .mocked(theme.invoke)
+      .mock.calls.filter(
+        ([, method]) => method === "focus" || method === "setFocus",
+      )
+      .map(
+        ([ref]) =>
+          container.querySelector(
+            (ref as unknown as { selector: string }).selector,
+          )?.className,
+      );
+  const press = async (key: string, shiftKey = false) => {
+    const before = focused().length;
+    fireEvent.keydown(container.querySelector(".lui-dialog-backdrop")!, {
+      key,
+      shiftKey,
+    });
+    await waitFor(() => expect(focused()).toHaveLength(before + 1));
+    return focused().at(-1);
+  };
+  await waitFor(() => expect(focused()).toHaveLength(1));
+  expect(focused()[0]).toContain("lui-toggle");
+  const survivingSwitch = switchRef.current;
+  expect(await press("Tab")).toContain("lui-dialog-close");
+
+  rerender(dialog(true));
+  await waitFor(() => expect(inputRef.current).not.toBeNull());
+  expect(switchRef.current).toBe(survivingSwitch);
+  expect(focused()).toHaveLength(2);
+  expect(await press("Tab", true)).toContain("lui-input");
+  expect(await press("Tab", true)).toContain("lui-toggle");
+  expect(await press("Tab", true)).toContain("lui-dialog-close");
+  expect(await press("Tab")).toContain("lui-toggle");
+  expect(await press("Tab")).toContain("lui-input");
+  expect(await press("Tab")).toContain("lui-dialog-close");
+
+  const survivingInput = inputRef.current;
+  rerender(dialog(true, true));
+  expect(switchRef.current).toBe(survivingSwitch);
+  expect(inputRef.current).toBe(survivingInput);
+  expect(focused()).toHaveLength(8);
+  expect(await press("Tab")).toContain("lui-input");
+  expect(await press("Tab")).toContain("lui-toggle");
+  expect(await press("Tab")).toContain("lui-dialog-close");
+
+  rerender(dialog(true, true, true));
+  expect(await press("Tab", true)).toContain("lui-toggle");
+  rerender(dialog(false));
+  await waitFor(() => expect(inputRef.current).toBeNull());
+  expect(await press("Tab")).toContain("lui-dialog-close");
+  rerender(dialog(true));
+  await waitFor(() => expect(inputRef.current).not.toBeNull());
+  expect(switchRef.current).toBe(survivingSwitch);
+  expect(await press("Tab")).toContain("lui-toggle");
+  expect(await press("Tab")).toContain("lui-input");
+  rerender(dialog(false));
+  await waitFor(() => expect(inputRef.current).toBeNull());
+  expect(await press("Tab", true)).toContain("lui-dialog-close");
+  unmount();
+  expect(restore.current.focus).toHaveBeenCalledTimes(1);
 });
