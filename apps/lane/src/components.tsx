@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState, type ReactNode } from "@lynx-js/react";
-import { parseMarkdown } from "./markdown";
+import { parseMarkdown, type MarkdownSpan } from "./markdown";
 import { hostAction } from "./runtime";
 export function Button({
   children,
@@ -147,31 +147,56 @@ export function Dialog({
   );
 }
 export function Markdown({ source }: { source: string }) {
+  const span = (s: MarkdownSpan, j: number) => (
+    <text
+      key={j}
+      className={`${s.code ? "code" : ""} ${s.bold ? "bold" : ""} ${s.italic ? "italic" : ""} ${s.href ? "link" : ""}`}
+    >
+      {s.blocked ? `[Image blocked: ${s.text}]` : s.text}
+      {s.href ? ` (${s.href})` : ""}
+    </text>
+  );
   return (
     <view className="markdown">
-      {parseMarkdown(source).map((block, i) => (
-        <view className="paragraph" key={i}>
-          {block.spans.map((span, j) =>
-            span.image ? (
-              <image
-                key={j}
-                className="markdown-image"
-                src={span.image}
-                accessibility-label={span.text}
-              />
-            ) : (
-              <text
-                key={j}
-                text-selection
-                className={`${block.kind === "heading" ? "heading" : ""} ${span.code ? "code" : ""} ${span.bold ? "bold" : ""} ${span.italic ? "italic" : ""} ${span.href ? "link" : ""}`}
-              >
-                {span.blocked ? `[Image blocked: ${span.text}]` : span.text}
-                {span.href ? ` (${span.href})` : ""}
-              </text>
-            ),
-          )}
-        </view>
-      ))}
+      {parseMarkdown(source).map((block, i) => {
+        const groups: { image?: MarkdownSpan; spans: MarkdownSpan[] }[] = [];
+        for (const part of block.spans) {
+          if (part.image) groups.push({ image: part, spans: [] });
+          else {
+            if (!groups.length || groups[groups.length - 1].image)
+              groups.push({ spans: [] });
+            groups[groups.length - 1].spans.push(part);
+          }
+        }
+        return (
+          <view className="paragraph" key={i}>
+            {groups.map((group, j) =>
+              group.image ? (
+                <image
+                  key={j}
+                  className="markdown-image"
+                  src={group.image.image!}
+                  accessibility-label={group.image.text}
+                />
+              ) : (
+                <text
+                  key={j}
+                  text-selection
+                  className={
+                    block.kind === "heading"
+                      ? "heading"
+                      : block.kind === "code"
+                        ? "code"
+                        : ""
+                  }
+                >
+                  {group.spans.map(span)}
+                </text>
+              ),
+            )}
+          </view>
+        );
+      })}
     </view>
   );
 }

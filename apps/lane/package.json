@@ -9,12 +9,13 @@
     "dev:desktop": "infisical run --env=dev --project-config-dir=../.. -- node scripts/native.mjs desktop run",
     "build": "rspeedy build",
     "build:frontend": "pnpm build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "pnpm typecheck && node --experimental-transform-types --test tests/*.test.ts && pnpm build",
     "build:desktop": "pnpm build && node scripts/native.mjs desktop build",
     "build:android": "pnpm build && node scripts/native.mjs android build",
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
-    "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build"
+    "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
+    "test:browser": "pnpm build && node tests/browser.mjs"
   },
   "dependencies": {
     "@lynx-js/react": "0.129.0",
@@ -33,6 +34,7 @@
     "@types/react": "19.2.14",
     "typescript": "5.9.3",
     "@types/markdown-it": "14.1.2",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "playwright": "1.62.0"
   }
 }

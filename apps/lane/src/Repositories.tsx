@@ -3,6 +3,7 @@ import type { UI } from "./serializable";
 import { useState } from "@lynx-js/react";
 import {
   LaneService,
+  ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
 } from "@delino/protos/lane/v1/lane_pb";
@@ -141,16 +142,21 @@ export function Repositories({
                   url: editing.url,
                   displayName: editing.name || undefined,
                 };
-                if (editing.base)
-                  await adapter.call(LaneService.method.saveRepository, {
-                    ...input,
-                    expectedVersionId: editing.base,
-                  });
-                else
-                  await adapter.call(
-                    LaneService.method.createRepository,
-                    input,
+                const response = editing.base
+                  ? await adapter.call(LaneService.method.saveRepository, {
+                      ...input,
+                      expectedVersionId: editing.base,
+                    })
+                  : await adapter.call(
+                      LaneService.method.createRepository,
+                      input,
+                    );
+                if (response.result?.result === ResultKind.CONFLICT) {
+                  refresh();
+                  throw new Error(
+                    "Repository versions conflict. Your input is retained. Close this editor to compare and resolve the saved alternatives.",
                   );
+                }
                 setEditing(undefined);
               })
             }

@@ -5,6 +5,10 @@ import { OnlineLane } from "./online.js";
 const api =
   document.querySelector('meta[name="lane-api"]')?.content ||
   "https://lane.api.delino.io";
+let previousAccount;
+let currentAccount;
+let approvalPopup;
+let routeDelivered = false;
 const returnTo = new URL("/", location.href).href;
 const callbackChallenge = new URL(location.href).searchParams.get(
   "reauth_challenge",
@@ -27,6 +31,17 @@ const online = new OnlineLane({
   returnTo,
   invalidate: () => view.sendGlobalEvent("lane.onlineChanged", [{}]),
   sessionChanged: (session) => {
+    const changed =
+      !!session &&
+      previousAccount !== undefined &&
+      previousAccount !== session.account_id;
+    if (session) {
+      if (!view.hasAttribute("url"))
+        view.setAttribute("url", "./main.web.bundle");
+      else if (!previousAccount || changed) view.reload();
+    }
+    previousAccount = session?.account_id;
+    currentAccount = session?.account_id;
     gate.hidden = !!session;
     view.hidden = !session;
     if (!session) {
@@ -41,6 +56,28 @@ view.nativeModulesMap = {
 };
 view.onNativeModulesCall = async (name, data, moduleName) => {
   try {
+    if (moduleName === "LaneOnline" && name === "ready") {
+      const route = new URL(location.href).searchParams;
+      if (!routeDelivered && currentAccount) {
+        routeDelivered = true;
+        if (route.get("account") && route.get("account") !== currentAccount) {
+          view.sendGlobalEvent("lane.hostError", [
+            {
+              message:
+                "This notification belongs to another account. Switch accounts explicitly to open it.",
+            },
+          ]);
+        } else if (route.get("task"))
+          view.sendGlobalEvent("lane.openRoute", [
+            { kind: "task", id: route.get("task") },
+          ]);
+        else if (route.get("repository"))
+          view.sendGlobalEvent("lane.openRoute", [
+            { kind: "repository", id: route.get("repository") },
+          ]);
+      }
+      return { ok: true };
+    }
     if (moduleName === "LaneOnline")
       return {
         ok: true,
@@ -63,6 +100,7 @@ view.onNativeModulesCall = async (name, data, moduleName) => {
         "lane-approval",
         "popup,width=720,height=800",
       );
+      approvalPopup = popup;
       if (!popup)
         throw new Error("Allow popups for Lane, then retry this action.");
       return { ok: true };
@@ -83,7 +121,7 @@ view.addEventListener("error", () => {
 });
 document.body.append(view);
 installAccessibility(view);
-view.setAttribute("url", "./main.web.bundle");
+
 view.hidden = true;
 const start = async () => {
   status.textContent = "Connecting…";
@@ -100,6 +138,7 @@ retry.addEventListener("click", start);
 window.addEventListener("message", (event) => {
   if (
     event.origin !== location.origin ||
+    event.source !== approvalPopup ||
     event.data?.type !== "lane.reauthenticated"
   )
     return;

@@ -41,6 +41,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
   const [draft, setDraft] = useState<Draft>();
   const [current, setCurrent] = useState<EntityResult>();
+  const [spaceRevision, setSpaceRevision] = useState(0);
   const [revision, setRevision] = useState(0);
   const [mobile, setMobile] = useState(false);
   const [discard, setDiscard] = useState<() => void>();
@@ -197,6 +198,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             setDraft(undefined);
             setCurrent(undefined);
             await adapter.open(route.spaceId);
+            setSpaceRevision((v) => v + 1);
+            setRepository("");
+            setPage("Tasks");
             refresh();
           }
           if (route.kind === "task" && route.id) await openTask(route.id);
@@ -498,12 +502,19 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           {adapter && page === "Settings" && (
             <scroll-view className="page-scroll" scroll-orientation="vertical">
               <Settings
+                key={spaceRevision}
                 adapter={adapter}
                 onReset={() => {
                   setDraft(undefined);
                   setTasks([]);
                   setRepositories([]);
-                  refresh();
+                  void adapter.open().then(
+                    () => {
+                      setSpaceRevision((v) => v + 1);
+                      refresh();
+                    },
+                    (e) => setError(e.message),
+                  );
                 }}
               />
             </scroll-view>

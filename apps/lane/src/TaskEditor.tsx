@@ -108,7 +108,11 @@ export function TaskEditor({
             progress: draft.task.progress,
             proposal: draft.task.proposal,
           });
-      if (reply.result?.result === ResultKind.CONFLICT) {
+      if (!reply.result)
+        throw new Error(
+          "The server returned no task. Your input is retained; refresh before retrying.",
+        );
+      if (reply.result.result === ResultKind.CONFLICT) {
         onSaved(reply.result);
         throw new Error(
           "Both versions were preserved. Compare and resolve the conflict.",
@@ -241,7 +245,10 @@ export function TaskEditor({
           <Field
             label="Repository URL"
             value={repositoryUrl}
-            onChange={setRepositoryUrl}
+            onChange={(value) => {
+              setRepositoryUrl(value);
+              setDraft({ ...draft, dirty: true });
+            }}
           />
         )}
         <view className="row wrap">
@@ -452,7 +459,40 @@ export function TaskEditor({
               <text>
                 {v.versionId} · {v.origin?.deviceName}
               </text>
-              <text text-selection>{JSON.stringify(taskOf(v), null, 2)}</text>
+              <text text-selection>Title: {taskOf(v)?.title}</text>
+              <text text-selection>Description: {taskOf(v)?.description}</text>
+              <text text-selection>
+                Prompt:{" "}
+                {taskOf(v)?.prompt === undefined
+                  ? "Not set"
+                  : taskOf(v)?.prompt === ""
+                    ? "Empty"
+                    : taskOf(v)?.prompt}
+              </text>
+              <text>
+                Progress:{" "}
+                {
+                  progressOptions.find(
+                    ([value]) => value === taskOf(v)?.progress,
+                  )?.[1]
+                }
+              </text>
+              <text>
+                Proposal:{" "}
+                {
+                  proposalOptions.find(
+                    ([value]) => value === taskOf(v)?.proposal,
+                  )?.[1]
+                }
+              </text>
+              <text>
+                Repository:{" "}
+                {repositoryName(
+                  repositories.find(
+                    (r) => r.version?.entityId === taskOf(v)?.repositoryId,
+                  )?.version,
+                )}
+              </text>
               <Button
                 primary={resolution?.versionId === v.versionId}
                 onClick={() => setResolution(v)}
@@ -491,6 +531,33 @@ export function TaskEditor({
                       value: create(TaskSchema, {
                         ...taskOf(resolution)!,
                         description,
+                      }),
+                    },
+                  })
+                }
+              />
+              <Choices
+                label="Resolved prompt presence"
+                value={
+                  taskOf(resolution)!.prompt === undefined
+                    ? "absent"
+                    : "present"
+                }
+                options={[
+                  ["absent", "No prompt"],
+                  ["present", "Include prompt"],
+                ]}
+                onChange={(value) =>
+                  setResolution({
+                    ...resolution,
+                    body: {
+                      case: "task",
+                      value: create(TaskSchema, {
+                        ...taskOf(resolution)!,
+                        prompt:
+                          value === "absent"
+                            ? undefined
+                            : taskOf(resolution)!.prompt || "",
                       }),
                     },
                   })
@@ -585,6 +652,10 @@ export function TaskEditor({
                     resolved: resolution,
                   },
                 );
+                if (!r.result || r.result.result === ResultKind.CONFLICT)
+                  throw new Error(
+                    "The conflict changed. Your resolution is retained. Close this dialog and refresh before resolving again.",
+                  );
                 setResolve(false);
                 onSaved(r.result);
               })

@@ -121,6 +121,9 @@ text {
   background-color: #eef1f6;
   opacity: 0.55;
 }
+.button.disabled text {
+  color: #526079;
+}
 .button:focus,
 .input:focus {
   border: 2px solid #075aff;

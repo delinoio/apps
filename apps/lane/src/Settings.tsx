@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { UI } from "./serializable";
-import { useEffect, useState } from "@lynx-js/react";
+import { useEffect, useRef, useState } from "@lynx-js/react";
 import {
   AccountService,
   DataDeletionMode,
@@ -16,7 +16,12 @@ import {
   type NotificationPreferences,
 } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
-import { hostAction } from "./runtime";
+import {
+  reconnectTarget,
+  confirmReconnect,
+  type ReconnectTarget,
+} from "./reconnect";
+import { hostAction, listenReauthentication } from "./runtime";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
 export function Settings({
@@ -26,7 +31,42 @@ export function Settings({
   adapter: LaneAdapter;
   onReset: () => void;
 }) {
+  const [deletion, setDeletion] = useState<{
+    challengeId: string;
+    ready: boolean;
+    mode: DataDeletionMode;
+    account: string;
+  }>();
+  const deletionRef = useRef(deletion);
+  deletionRef.current = deletion;
+  const cancelDeletion = () => {
+    const pending = deletionRef.current;
+    deletionRef.current = undefined;
+    setDeletion(undefined);
+    adapter.cancelDeletion?.();
+    if (pending)
+      void hostAction("cancelReauthentication", pending.challengeId).catch(
+        (e) => setError(e.message),
+      );
+  };
+  useEffect(() => {
+    if (adapter.mode !== "native") return;
+    const stop = listenReauthentication((challengeId) => {
+      if (deletionRef.current?.challengeId === challengeId)
+        setDeletion({ ...deletionRef.current, ready: true });
+    });
+    return () => {
+      stop();
+      const pending = deletionRef.current;
+      adapter.cancelDeletion?.();
+      if (pending)
+        void hostAction("cancelReauthentication", pending.challengeId).catch(
+          () => {},
+        );
+    };
+  }, [adapter]);
   const [status, setStatus] = useState<LocalStatus>();
+  const prefsDirty = useRef(false);
   const [prefs, setPrefs] = useState<NotificationPreferences>();
   const [devices, setDevices] = useState<Device[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -34,8 +74,9 @@ export function Settings({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<
-    null | "disconnect" | "local" | "server" | "everywhere"
+    null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
+  const [reconnect, setReconnect] = useState<ReconnectTarget>();
   const [account, setAccount] = useState("");
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
@@ -55,7 +96,11 @@ export function Settings({
   const load = async () => {
     const local = await adapter.local("GetLocalStatus", {});
     setStatus(local);
-    setPrefs(await adapter.local("GetNotificationPreferences", {}));
+    const latestPreferences = await adapter.local(
+      "GetNotificationPreferences",
+      {},
+    );
+    if (!prefsDirty.current) setPrefs(latestPreferences);
     // Account lists are online-only; local preferences stay usable if these fail.
     const ds: Device[] = [];
     let cursor = "";
@@ -104,6 +149,13 @@ export function Settings({
           {status?.connected ? "Connected" : "Disconnected"} · Pending items:{" "}
           {status?.pendingItemCount ?? "Unknown"}
         </text>
+        {status?.reconnectRequired && (
+          <Notice>
+            Reconnection required. Synchronization is stopped. Retained local
+            data uploads only after you confirm a new connection.
+          </Notice>
+        )}
+        {status?.syncErrorReason && <Notice>{status.syncErrorReason}</Notice>}
         <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
         {status?.itemErrors?.map((e) => (
           <Notice key={e.entityId}>
@@ -114,16 +166,25 @@ export function Settings({
         <view className="row wrap">
           <Button
             disabled={busy}
-            onClick={() =>
+            onClick={() => {
+              if (status?.reconnectRequired) {
+                try {
+                  setReconnect(reconnectTarget(status));
+                  setConfirm("reconnect");
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+                return;
+              }
               void run(async () => {
                 const r = await adapter.local("ConnectSync", { accountId: "" });
-                if (r.authorizationUrl)
+                if (adapter.mode === "web" && r.authorizationUrl)
                   await hostAction("openURL", r.authorizationUrl);
                 setMessage(
                   "Complete browser approval, then refresh. Retained data from other accounts stays separate.",
                 );
-              })
-            }
+              });
+            }}
           >
             {adapter.mode === "native"
               ? "Connect synchronization / switch account"
@@ -149,7 +210,10 @@ export function Settings({
                 ["off", "Off"],
                 ["on", "On"],
               ]}
-              onChange={(v) => setPrefs({ ...prefs, enabled: v === "on" })}
+              onChange={(v) => {
+                prefsDirty.current = true;
+                setPrefs({ ...prefs, enabled: v === "on" });
+              }}
             />
             <Choices
               label="Notification content"
@@ -161,7 +225,10 @@ export function Settings({
                 [NotificationContent.DETAIL, "Repository and title"],
                 [NotificationContent.GENERIC, "Generic notice"],
               ]}
-              onChange={(content) => setPrefs({ ...prefs, content })}
+              onChange={(content) => {
+                prefsDirty.current = true;
+                setPrefs({ ...prefs, content });
+              }}
             />
             <text>Permission: {String(prefs.permission)}</text>
             <Button
@@ -176,6 +243,7 @@ export function Settings({
                       content: Number(prefs.content) || 1,
                     },
                   );
+                  prefsDirty.current = false;
                   setPrefs(updated);
                   setMessage(
                     "Notification preferences saved. Check the permission status.",
@@ -260,23 +328,76 @@ export function Settings({
             Remove only this device’s data
           </Button>
         )}
-        <Button onClick={() => setConfirm("everywhere")}>
+        <Button
+          onClick={() => {
+            cancelDeletion();
+            setConfirm("everywhere");
+          }}
+        >
           Delete server and connected-device data
         </Button>
-        <Button onClick={() => setConfirm("server")}>
+        <Button
+          onClick={() => {
+            cancelDeletion();
+            setConfirm("server");
+          }}
+        >
           Delete server data, keep local data
         </Button>
       </view>
+      {deletion && (
+        <Dialog title="Complete data deletion" onClose={cancelDeletion}>
+          <Notice>
+            {deletion.ready
+              ? "Reauthentication completed. Select Delete now to permanently remove the confirmed data."
+              : "Complete reauthentication in your browser. No data is deleted until you return and select Delete now."}
+          </Notice>
+          <text>Account: {deletion.account}</text>
+          <text>
+            {deletion.mode === DataDeletionMode.CLEAR_SERVER_KEEP_LOCAL
+              ? "Delete server data, keep local data"
+              : "Delete server and connected-device data"}
+          </text>
+          {error && <Notice>{error}</Notice>}
+          <Button
+            disabled={busy || !deletion.ready}
+            primary
+            onClick={() =>
+              void run(async () => {
+                if (!adapter.deleteReauthenticated)
+                  throw new Error(
+                    "This host does not support secure deletion.",
+                  );
+                await adapter.deleteReauthenticated(deletion.challengeId);
+                deletionRef.current = undefined;
+                setDeletion(undefined);
+                onReset();
+              })
+            }
+          >
+            Delete now
+          </Button>
+          <Button onClick={cancelDeletion}>Cancel deletion</Button>
+        </Dialog>
+      )}
       {confirm && (
         <Dialog
           title={
-            confirm === "disconnect"
-              ? "Disconnect this account"
-              : "Confirm permanent data removal"
+            confirm === "reconnect"
+              ? "Reconnect retained data"
+              : confirm === "disconnect"
+                ? "Disconnect this account"
+                : "Confirm permanent data removal"
           }
           onClose={() => setConfirm(null)}
         >
-          {confirm === "disconnect" ? (
+          {confirm === "reconnect" ? (
+            <Notice>
+              Reconnect this account and upload retained local data into the new
+              server dataset. All retained repositories will synchronize after
+              fresh browser approval. Automatic retries do not reconnect.
+            </Notice>
+          ) : confirm === "disconnect" ? (
             <>
               <Notice>
                 Choose whether to retain local data in this account’s separate
@@ -326,7 +447,14 @@ export function Settings({
             }
             onClick={() =>
               void run(async () => {
-                if (confirm === "disconnect") {
+                if (confirm === "reconnect") {
+                  if (!reconnect) throw new Error("Start a new reconnection.");
+                  await confirmReconnect(adapter, reconnect);
+                  setConfirm(null);
+                  setMessage(
+                    "Complete fresh browser approval to reconnect this account.",
+                  );
+                } else if (confirm === "disconnect") {
                   await adapter.local("DisconnectSync", { retention });
                   setConfirm(null);
                   onReset();
@@ -346,6 +474,20 @@ export function Settings({
                       confirmedAccountId: account,
                     },
                   );
+                  if (adapter.mode === "native") {
+                    const pending = {
+                      challengeId: r.challengeId,
+                      ready: false,
+                      account,
+                      mode:
+                        confirm === "server"
+                          ? DataDeletionMode.CLEAR_SERVER_KEEP_LOCAL
+                          : DataDeletionMode.DELETE_EVERYWHERE,
+                    };
+                    deletionRef.current = pending;
+                    setDeletion(pending);
+                    setConfirm(null);
+                  }
                   await hostAction("openURL", r.authorizationUrl);
                   setMessage(
                     "Complete Logto reauthentication in the browser. Your data has not yet been deleted.",

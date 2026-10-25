@@ -7,23 +7,27 @@ self.addEventListener("push", (event) => {
   } catch {
     return;
   }
-  if (!data?.proposalId) return;
+  if (
+    !data?.proposalId ||
+    !data?.accountId ||
+    typeof data.title !== "string" ||
+    typeof data.body !== "string"
+  )
+    return;
+  // The server applies the registered device's generic/detail preference.
   event.waitUntil(
-    self.registration.showNotification(
-      data.generic ? "New Lane proposal" : data.title || "New Lane proposal",
-      {
-        body: data.generic ? "Open Lane to review." : data.repositoryName || "",
-        tag: `lane-proposal-${data.proposalId}`,
-        data: { taskId: data.proposalId },
-      },
-    ),
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: data.tag || `lane-${data.accountId}-${data.proposalId}`,
+      data: { taskId: data.proposalId, accountId: data.accountId },
+    }),
   );
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     clients.openWindow(
-      `/?task=${encodeURIComponent(event.notification.data.taskId)}`,
+      `/?task=${encodeURIComponent(event.notification.data.taskId)}&account=${encodeURIComponent(event.notification.data.accountId)}`,
     ),
   );
 });

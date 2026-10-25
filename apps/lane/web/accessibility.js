@@ -50,6 +50,21 @@ export function installAccessibility(view) {
     for (const field of root.querySelectorAll("x-input,x-textarea")) {
       const target = field.shadowRoot?.querySelector("input,textarea");
       if (target) {
+        // Give each editor a full-size form box; the runtime defaults to display:contents.
+        const form = field.shadowRoot.querySelector("form");
+        if (form) {
+          form.style.display = "block";
+          form.style.width = "100%";
+          form.style.height = "100%";
+        }
+        target.style.width = "100%";
+        target.style.height = "100%";
+        target.setAttribute("role", "textbox");
+        target.setAttribute("tabindex", "0");
+        target.setAttribute(
+          "aria-multiline",
+          String(field.tagName === "X-TEXTAREA"),
+        );
         target.setAttribute(
           "aria-label",
           field.getAttribute("accessibility-label") || "",
@@ -58,6 +73,10 @@ export function installAccessibility(view) {
           field.hasAttribute("disabled") &&
           field.getAttribute("disabled") !== "false";
       }
+    }
+    for (const notice of root.querySelectorAll(".notice")) {
+      notice.setAttribute("role", "status");
+      notice.setAttribute("aria-live", "polite");
     }
     const dialogs = root.querySelectorAll(".dialog");
     const dialog = dialogs[dialogs.length - 1];
@@ -79,7 +98,7 @@ export function installAccessibility(view) {
     const root = view.shadowRoot;
     const style = document.createElement("style");
     style.textContent =
-      ".button:focus-visible{outline:3px solid #075aff;outline-offset:2px}.notice{role:status}";
+      ".button:focus-visible{outline:3px solid #075aff;outline-offset:2px}x-input:focus-within,x-textarea:focus-within{outline:3px solid #075aff;outline-offset:2px}";
     root.append(style);
     new MutationObserver(update).observe(root, {
       childList: true,

@@ -22,6 +22,7 @@ export interface Session {
   device_id: string;
   csrf_token: string;
   tenant_id?: string;
+  notification_preferences?: { enabled: boolean; content: NotificationContent };
 }
 export interface OnlineOptions {
   baseUrl: string;
@@ -32,13 +33,21 @@ export interface OnlineOptions {
 }
 export class OnlineLane {
   private session?: Session;
+  private generation = 0;
   private fetcher: typeof fetch;
   private abort?: AbortController;
+  private watchRetry?: ReturnType<typeof setTimeout>;
+  private retryDelay = 1000;
   private cursor = "";
   private epoch = "";
   private notificationContent = NotificationContent.DETAIL;
   private notificationEnabled = false;
-  private deletion?: { mode: DataDeletionMode; account: string };
+  private deletion?: {
+    mode: DataDeletionMode;
+    account: string;
+    challengeId: string;
+    generation: number;
+  };
   private transport;
   constructor(private options: OnlineOptions) {
     this.fetcher = options.fetch || globalThis.fetch.bind(globalThis);
@@ -79,7 +88,21 @@ export class OnlineLane {
     return response.status === 204 ? {} : response.json();
   }
   async start() {
-    this.session = (await this.auth("/auth/session")) as Session;
+    const session = (await this.auth("/auth/session")) as Session;
+    if (
+      this.session?.account_id !== session.account_id ||
+      this.session?.device_id !== session.device_id
+    ) {
+      ++this.generation;
+      this.deletion = undefined;
+      this.cursor = "";
+      this.epoch = "";
+    }
+    this.session = session;
+    this.notificationEnabled =
+      session.notification_preferences?.enabled ?? false;
+    this.notificationContent =
+      session.notification_preferences?.content ?? NotificationContent.DETAIL;
     this.options.sessionChanged(this.session);
     this.startWatch();
   }
@@ -113,6 +136,7 @@ export class OnlineLane {
     );
     if (!method || method.methodKind !== "unary")
       throw new Error("Unsupported Lane operation.");
+    const generation = this.generation;
     const response = await this.transport.unary(
       method as DescMethodUnary,
       undefined,
@@ -120,6 +144,8 @@ export class OnlineLane {
       undefined,
       fromJson(method.input, input),
     );
+    if (generation !== this.generation)
+      throw new Error("The account changed. Reload before continuing.");
     if (
       service === AccountService.typeName &&
       methodName === "BeginDataDeletion"
@@ -129,6 +155,10 @@ export class OnlineLane {
         confirmedAccountId?: string;
       };
       this.deletion = {
+        challengeId:
+          (toJson(method.output, response.message) as { challengeId?: string })
+            .challengeId || "",
+        generation,
         mode:
           request.mode === "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL" ||
           request.mode === 2
@@ -230,6 +260,7 @@ export class OnlineLane {
         await this.auth("/auth/logout", {});
         this.stop();
         this.session = undefined;
+        ++this.generation;
         this.options.sessionChanged(undefined);
         return { completed: true };
       case "RemoveDeviceData":
@@ -239,13 +270,21 @@ export class OnlineLane {
     }
   }
   async completeDeletion(challengeId: string) {
-    if (!this.deletion)
+    if (
+      !this.deletion ||
+      this.deletion.challengeId !== challengeId ||
+      this.deletion.generation !== this.generation ||
+      this.deletion.account !== this.session?.account_id
+    )
       throw new Error(
         "Return to Settings and start data deletion again to confirm its target.",
       );
+    const target = this.deletion;
     const { reauth_proof } = (await this.auth("/auth/reauth/proof", {
       challenge_id: challengeId,
     })) as { reauth_proof: string };
+    if (this.deletion !== target || target.generation !== this.generation)
+      throw new Error("The account changed. Start data deletion again.");
     await createClient(AccountService, this.transport).deleteAccountData({
       meta: { requestId: uuid() },
       mode: this.deletion.mode,
@@ -255,16 +294,22 @@ export class OnlineLane {
     this.deletion = undefined;
     this.stop();
     this.session = undefined;
+    ++this.generation;
     this.options.sessionChanged(undefined);
   }
   private startWatch() {
+    clearTimeout(this.watchRetry);
     this.abort?.abort();
     const controller = new AbortController();
     this.abort = controller;
     const client = createClient(SyncService, this.transport);
     void (async () => {
       try {
-        const info = await client.getSyncInfo({});
+        const info = await client.getSyncInfo(
+          {},
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
         this.epoch = info.epoch;
         for await (const notification of client.watchChanges(
           { epoch: this.epoch, cursor: this.cursor },
@@ -286,10 +331,19 @@ export class OnlineLane {
             more = page.hasMore;
           }
           void notification;
+          this.retryDelay = 1000;
           this.options.invalidate();
         }
       } catch {
         if (!controller.signal.aborted) this.options.invalidate();
+      } finally {
+        if (!controller.signal.aborted && this.session) {
+          this.watchRetry = setTimeout(
+            () => this.startWatch(),
+            this.retryDelay,
+          );
+          this.retryDelay = Math.min(this.retryDelay * 2, 30000);
+        }
       }
     })();
   }
@@ -300,6 +354,7 @@ export class OnlineLane {
     }
   }
   stop() {
+    clearTimeout(this.watchRetry);
     this.abort?.abort();
   }
 }

@@ -20,6 +20,7 @@ import {
   type EventSource,
 } from "./adapter";
 interface OnlineModule {
+  ready(callback: () => void): void;
   invoke(
     service: string,
     method: string,
@@ -36,7 +37,9 @@ export function getAdapter(): LaneAdapter {
     const module = NativeModules.LaneOnline as OnlineModule;
     return {
       mode: "web",
-      open: async () => {},
+      open: async () => {
+        await new Promise<void>((resolve) => module.ready(resolve));
+      },
       close: () => {},
       async call<I extends DescMessage, O extends DescMessage>(
         method: DescMethodUnary<I, O>,
@@ -85,7 +88,7 @@ export function getAdapter(): LaneAdapter {
   return new NativeAdapter(NativeModules.LaneStore as LaneStoreModule, events);
 }
 export function hostAction(
-  method: "copyText" | "openURL",
+  method: "copyText" | "openURL" | "cancelReauthentication",
   value: string,
 ): Promise<void> {
   "background only";
@@ -123,12 +126,13 @@ export function listenHost(
   const onRoute = (raw: unknown) => {
     if (raw && typeof raw === "object") route(raw as OpenRoute);
   };
-  const onError = (raw: unknown) =>
+  const onError = (raw: unknown) => {
+    const value = raw as
+      { message?: string; error?: { message?: string } } | undefined;
     error(
-      typeof raw === "object" && raw && "message" in raw
-        ? String(raw.message)
-        : "The host operation failed.",
+      value?.error?.message || value?.message || "The host operation failed.",
     );
+  };
   events.addListener("lane.openRoute", onRoute);
   events.addListener("lane.hostError", onError);
   events.addListener("lane.sessionEnded", ended);
@@ -137,4 +141,15 @@ export function listenHost(
     events.removeListener("lane.hostError", onError);
     events.removeListener("lane.sessionEnded", ended);
   };
+}
+
+export function listenReauthentication(ready: (challengeId: string) => void) {
+  "background only";
+  const events = lynx.getJSModule("GlobalEventEmitter");
+  const listener = (raw: unknown) => {
+    const value = raw as { challengeId?: unknown };
+    if (typeof value?.challengeId === "string") ready(value.challengeId);
+  };
+  events.addListener("lane.reauthenticated", listener);
+  return () => events.removeListener("lane.reauthenticated", listener);
 }

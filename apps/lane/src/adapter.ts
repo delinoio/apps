@@ -11,6 +11,8 @@ import {
   type JsonValue,
 } from "@bufbuild/protobuf";
 
+import { AccountService } from "@delino/protos/lane/v1/lane_pb";
+
 export interface BridgeError {
   reason: string;
   message: string;
@@ -48,6 +50,9 @@ export interface LocalStatus {
   spaceId: string;
   deviceId: string;
   syncEnabled: boolean;
+  reconnectRequired?: boolean;
+  accountId?: string;
+  syncErrorReason?: string;
   connected: boolean;
   pendingItemCount: string;
   lastSyncAt?: string;
@@ -80,6 +85,8 @@ export function decodeReply<T>(raw: string | Reply<T>): T {
 }
 export interface LaneAdapter {
   readonly mode: "native" | "web";
+  deleteReauthenticated?(challengeId: string): Promise<void>;
+  cancelDeletion?(): void;
   open(spaceId?: string): Promise<void>;
   call<I extends DescMessage, O extends DescMessage>(
     method: DescMethodUnary<I, O>,
@@ -106,14 +113,40 @@ export class NativeAdapter implements LaneAdapter {
   readonly mode = "native";
   private info?: StoreInfo;
   private generation = 0;
+  private deletion?: {
+    generation: number;
+    challengeId: string;
+    request: Record<string, unknown>;
+  };
   constructor(
     private module: LaneStoreModule,
     private events: EventSource,
   ) {}
   async open(spaceId = "") {
-    if (this.info) this.module.close(this.info.spaceId, () => {});
+    const previous = this.info;
     this.info = undefined;
+    this.deletion = undefined;
     const generation = ++this.generation;
+    if (previous)
+      await new Promise<void>((resolve, reject) =>
+        this.module.close(previous.spaceId, (raw) => {
+          try {
+            const response = typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (
+              response &&
+              typeof response === "object" &&
+              "ok" in response &&
+              !response.ok
+            )
+              throw new Error("Could not close the previous data space.");
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        }),
+      );
+    if (generation !== this.generation)
+      throw new Error("The data space changed. Reopen Lane.");
     const info = await new Promise<StoreInfo>((resolve, reject) =>
       this.module.open(JSON.stringify({ formatVersion: 1, spaceId }), (raw) => {
         try {
@@ -126,6 +159,12 @@ export class NativeAdapter implements LaneAdapter {
     if (generation !== this.generation) {
       this.module.close(info.spaceId, () => {});
       throw new Error("The data space changed. Reopen Lane.");
+    }
+    if (spaceId && info.spaceId !== spaceId) {
+      this.module.close(info.spaceId, () => {});
+      throw new Error(
+        "The host opened a different data space. Navigation was stopped.",
+      );
     }
     if (info.schemaVersion !== 1 || info.formatVersion !== 1)
       throw new Error(
@@ -159,10 +198,30 @@ export class NativeAdapter implements LaneAdapter {
     method: DescMethodUnary<I, O>,
     input: UI<MessageInitShape<I>>,
   ): Promise<UI<MessageShape<O>>> {
+    if (
+      method.name === AccountService.method.beginDataDeletion.name &&
+      method.parent.typeName === AccountService.typeName
+    )
+      this.deletion = undefined;
     const response = await this.invoke<JsonValue>(
       method.name,
       toJson(method.input, fromUI(method.input, input)),
     );
+    if (
+      method.name === AccountService.method.beginDataDeletion.name &&
+      method.parent.typeName === AccountService.typeName
+    ) {
+      const data = response as { challengeId?: string };
+      const request = toJson(
+        method.input,
+        fromUI(method.input, input),
+      ) as Record<string, unknown>;
+      this.deletion = {
+        generation: this.generation,
+        challengeId: data.challengeId || "",
+        request,
+      };
+    }
     return toUI(fromJson(method.output, response));
   }
   local<K extends keyof LocalOperations>(
@@ -171,11 +230,36 @@ export class NativeAdapter implements LaneAdapter {
   ): Promise<LocalOperations[K][1]> {
     return this.invoke(method, input);
   }
+  cancelDeletion() {
+    this.deletion = undefined;
+  }
+  async deleteReauthenticated(challengeId: string) {
+    const pending = this.deletion;
+    if (
+      !pending ||
+      !challengeId ||
+      pending.challengeId !== challengeId ||
+      pending.generation !== this.generation
+    )
+      throw new Error(
+        "The deletion approval expired. Start again in this account.",
+      );
+    await this.invoke("DeleteAccountData", {
+      meta: meta(),
+      mode: pending.request.mode,
+      confirmedAccountId: pending.request.confirmedAccountId,
+      challengeId,
+    });
+    this.deletion = undefined;
+  }
+
   subscribe(listener: () => void) {
     const changed = (event: { spaceId?: string; sequence?: string }) => {
       if (
         event.spaceId === this.info?.spaceId &&
-        event.sequence !== this.info?.sequence
+        event.sequence &&
+        /^\d+$/.test(event.sequence) &&
+        BigInt(event.sequence) > BigInt(this.info?.sequence || "0")
       ) {
         if (this.info && event.sequence) this.info.sequence = event.sequence;
         listener();
