@@ -83,7 +83,9 @@ and errors; pass an accessible name and any error context to its `Input`.
 Set `loadingLabel` when a loading button needs different visible text. Progress
 accepts a percentage from 0 to 100 and clamps out-of-range or non-finite values.
 Tab item values must be unique; an invalid or disabled selected value renders no
-panel. Callers control selection and supply a valid enabled value.
+panel. Callers control selection and supply a valid enabled value. On web, the
+selected panel has the `tabpanel` role and uses its tab label as its accessible
+name. Changing or clearing that label updates the panel's accessible name.
 
 `Button`, `Input`, `Checkbox` and `Switch` accept `focusRef`, a ReactLynx ref to
 `FocusHandle` (`focus()`). Dialog requires `returnFocusRef` pointing to its trigger;
