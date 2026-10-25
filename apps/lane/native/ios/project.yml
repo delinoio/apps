@@ -43,6 +43,7 @@ targets:
     info:
       path: Generated/Info.plist
       properties:
+        UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: io.delino.lane
             CFBundleURLSchemes: ["$(LANE_URL_SCHEME)"]
