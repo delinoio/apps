@@ -6,10 +6,9 @@
 
 ## Runtime and Language
 
-Use Node.js 24, TypeScript, ReactLynx 0.129 and Rspeedy 0.18.3. Native hosts use
+Use Node.js 24, TypeScript, ReactLynx 0.129 and Rspeedy 0.18.3. Mobile hosts use
 Lynx 4.1.0; Android PrimJS uses 4.1.1. Web uses web-core 0.26.5. Kotlin/Gradle,
-Objective-C/CocoaPods and C++17/CMake own native integration. Desktop uses Clay
-on macOS and Windows; Linux can use the browser build.
+Objective-C/CocoaPods and C++17/CMake own native integration. Desktop uses pinned `@lynx-js/lynxtron` 0.0.30 on macOS and Windows. Its npm runtime supplies Lynx; developers do not install a separate desktop Lynx SDK. C++17/CMake builds the Node-API storage and OS adapter using pinned `node-api-headers` 1.9.0. Linux can use the browser build.
 
 ## Users and Operators
 
@@ -26,14 +25,29 @@ Portless route at `https://lane.localhost`, with fixed loopback port 46325 and
 conflict rejection. It serves the browser host and shared bundles through Rspeedy.
 Native builds embed the local production bundle and do not fetch remote templates.
 
-- Desktop: supply an extracted official Lynx 4.1.0 SDK with `LANE_LYNX_SDK`.
-  Run `pnpm build:desktop`, then `pnpm dev:desktop` to launch the built host.
-  macOS requires Xcode command-line tools and CMake; Windows requires Visual
-  Studio C++ tools and CMake. Desktop opens a resizable window. The scaffold exits after
-  the last window closes; product synchronization adds a separate background
-  process so closing the window does not stop enabled desktop synchronization.
-  Preserve the native build interface while adding that lifecycle. Each desktop build synchronizes the current template
-  and application notices, even when the native executable does not relink.
+- Desktop: run `pnpm dev:desktop` from `apps/lane`. After Infisical injection,
+  this builds the shared bundle, compiles the Node-API host, packages the pinned
+  Lynxtron runtime and starts Lane. `pnpm build:desktop` prepares the application
+  without starting it. macOS requires Xcode command-line tools and CMake 3.24 or
+  later; Windows requires Visual Studio C++ tools, CMake and the existing Windows
+  App SDK headers/projections/bootstrap/license configuration for OS notifications.
+  `LANE_LYNX_SDK` is not used. Root `pnpm install` installs the matching runtime
+  through the lockfile; optional dependencies and the approved Lynxtron install
+  script must remain enabled. The helper does not download a separate Lynx SDK.
+  Generated packages are `native/desktop/build/Lane.app` on macOS and
+  `native/desktop/build/application` on Windows. Both embed the shared production
+  bundle and the bundled native module. The main process owns windows, menus,
+  protocol activation and the background native service. Closing a window releases
+  rendering and invalidates pending reauthentication without stopping enabled
+  synchronization; explicit Quit awaits native shutdown. Each build refreshes
+  application resources even when the native module does not relink.
+  Local macOS packages use ad-hoc signing; release signing remains separate.
+  `LANE_URL_SCHEME=lane` selects distribution links; the default is `lane-dev`.
+  The optional `LANE_SYNC_HELPER` is a matching packaged CLI executable with
+  adjacent `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES`. Otherwise the build uses
+  an existing matching `packages/lane/dist/artifacts` executable when available.
+  Missing helpers leave standalone storage available and report synchronization
+  dependency failures. No globally installed CLI is assumed.
 - Android: install JDK 17 or 21 and Android SDK 35. The committed Gradle
   wrapper selects 8.11.1. Run
   `pnpm build:android` for an unsigned release APK. Import `native/android` in
@@ -209,9 +223,8 @@ Use the shared protocol vectors for sync, deletion, replay and conflict behavior
 ## Dependencies and Integrations
 
 The ReactLynx toolchain versions match the existing Lynx UI workspace. Use shared UI primitives where they meet the approved design and platform accessibility requirements. Native SDKs are platform dependencies, not
-vendored source. Desktop uses an operator-supplied SDK; Android resolves Maven
-artifacts; iOS resolves CocoaPods. Preserve original third-party licenses. `native/licenses` retains the Lynx 4.1.0
-license and notice for desktop distributions. Mobile dependency managers retain
+vendored source. Desktop resolves its pinned Lynxtron runtime through npm and retains the runtime license files in the packaged application. Android resolves Maven artifacts; iOS resolves CocoaPods. Preserve original third-party licenses. `native/licenses` retains the Lynx 4.1.0
+license and notice for the earlier Lynx SDK; Lynxtron desktop packages retain their own upstream notices without replacing them with those earlier files. Mobile dependency managers retain
 their dependency notices; include them in signed release packaging.
 
 ## Change Triggers
@@ -226,4 +239,5 @@ change. Record validation limits in PR and CI evidence.
 - [Repository defaults](repository-defaults.md)
 - [Environment ownership](repository-environment-contract.md)
 - [Official Lynx integration](https://lynxjs.org/guide/start/integrate-with-existing-apps.html)
-- [Official desktop SDK release](https://github.com/lynx-family/lynx/releases/tag/4.1.0)
+- [Lynxtron](https://lynxjs.org/lynxtron/)
+- [Lynxtron communication](https://lynxjs.org/lynxtron/learn/communication-between-node-and-lynx)

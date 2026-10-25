@@ -16,7 +16,7 @@ Existing paths retain their build ownership:
 - `apps/lane/web`: browser host using Lynx for Web.
 - `apps/lane/native/android`: Android SDK host and Gradle project.
 - `apps/lane/native/ios`: iOS SDK host and XcodeGen project specification.
-- `apps/lane/native/desktop`: macOS and Windows Clay hosts and CMake project.
+- `apps/lane/native/desktop`: macOS and Windows Lynxtron main process, Node-API host module and CMake project.
 - `apps/lane/scripts`: app-local build and development helpers.
 
 Additional component ownership:
@@ -39,7 +39,7 @@ Additional component ownership:
 
 ## Cross-Domain Invariants
 
-Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx, Lynx SDK, Clay and Rspeedy build contracts. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Go and server code uses Rust.
+Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx and Rspeedy for the shared client, Lynx SDKs for mobile, and Lynxtron for desktop. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Go and server code uses Rust.
 
 Native hosts and Go CLI share the specified SQLite format on desktop. They implement the same versioned domain rules and run the same fixture vectors. Native business logic runs in the host, not in ReactLynx. Web reads/writes the server only, without an offline mutation queue or independent browser database. PostgreSQL owns server state; local SQLite owns standalone work and durable pending synchronization changes.
 

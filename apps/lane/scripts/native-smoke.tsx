@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
+import { desktopModules, type DesktopBridge } from "../src/desktop";
 import { root, useEffect } from "@lynx-js/react";
 
 const taskId = "01900000-0000-7000-8000-000000000001";
 const requestId = "01900000-0000-7000-8000-000000000002";
 function Smoke() {
   useEffect(() => {
+    const store =
+      NativeModules.LaneStore ||
+      desktopModules(NativeModules.bridge as unknown as DesktopBridge).store;
     let spaceId = "";
     let ready = false;
     let closed = false;
     const call = (method: string, request: Record<string, unknown>) =>
       new Promise<any>((resolve, reject) => {
-        NativeModules.LaneStore.invoke(
+        store.invoke(
           method,
           JSON.stringify({ spaceId, request }),
           (json: string) => {
@@ -34,7 +38,7 @@ function Smoke() {
       console.error(`LANE_NATIVE_TEST_FAILED ${error.message}`);
     const events = lynx.getJSModule("GlobalEventEmitter");
     events.addListener("lane.storeChanged", changed);
-    NativeModules.LaneStore.open(
+    store.open(
       JSON.stringify({ formatVersion: 1, spaceId: "" }),
       async (json: string) => {
         try {
@@ -62,6 +66,15 @@ function Smoke() {
           const history = await call("ListHistory", { id: taskId });
           if (!history.versions.length) throw new Error("History missing");
           for (const id of ["smoke-input", "smoke-textarea"]) {
+            // Use the same imperative value API as the product Field component.
+            lynx
+              .createSelectorQuery()
+              .select(`#${id}`)
+              .invoke({
+                method: "setValue",
+                params: { value: "Native Unicode 한글 😀" },
+              })
+              .exec();
             const value = await new Promise<any>((resolve, reject) => {
               lynx
                 .createSelectorQuery()
@@ -96,7 +109,7 @@ function Smoke() {
     return () => {
       closed = true;
       events.removeListener("lane.storeChanged", changed);
-      if (spaceId) NativeModules.LaneStore.close(spaceId, () => {});
+      if (spaceId) store.close(spaceId, () => {});
     };
   }, []);
   return (
