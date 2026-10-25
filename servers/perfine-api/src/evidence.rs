@@ -184,6 +184,15 @@ pub fn evaluate(e: &Value, m: &Value, bytes: &BTreeMap<String, Vec<u8>>) -> Resu
     {
         return Err(Fault::precondition("policy mapping mismatch"));
     }
+    let metrics = m["metrics"].as_array();
+    if metrics.is_none_or(|metrics| {
+        metrics.len() != 1
+            || metrics[0] != policy["metric"]
+            || crate::preparation::metric(&json!({ "metric": metrics[0] })).ok()
+                != Some(cfg.conditions.metric.metric)
+    }) {
+        return Err(Fault::precondition("metric mapping mismatch"));
+    }
     let mut runs = BTreeMap::new();
     let mut inspected = BTreeSet::from([string(m, "engineArtifactName").to_owned()]);
     let mut verify = |manifest: &engine::Manifest,

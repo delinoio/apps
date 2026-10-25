@@ -230,6 +230,45 @@ fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
     );
 }
 #[test]
+fn manifest_metrics_match_the_frozen_engine_metric() {
+    let eid = uid();
+    let (spec, manifest, bytes) = fixture(&eid);
+    let experiment = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    let policy_metric = manifest["policy"]["metric"].clone();
+    assert_eq!(manifest["metrics"], json!([policy_metric]));
+    assert!(perfine_api::evidence::evaluate(&experiment, &manifest, &bytes).is_ok());
+
+    let mut cases = vec![
+        ("empty", json!([])),
+        ("two", json!([policy_metric, policy_metric])),
+    ];
+    for (label, field, value) in [
+        ("name", "name", json!("wall_time")),
+        ("unit", "unit", json!("seconds")),
+        ("objective", "objective", json!("METRIC_OBJECTIVE_MAXIMIZE")),
+        (
+            "engine kind",
+            "engineKind",
+            json!("ENGINE_METRIC_KIND_THROUGHPUT"),
+        ),
+    ] {
+        let mut metric = policy_metric.clone();
+        metric[field] = value;
+        cases.push((label, json!([metric])));
+    }
+    for (label, metrics) in cases {
+        let mut changed = manifest.clone();
+        changed["metrics"] = metrics;
+        let failure = perfine_api::evidence::evaluate(&experiment, &changed, &bytes).unwrap_err();
+        assert_eq!(
+            failure.code,
+            connectrpc::ErrorCode::FailedPrecondition,
+            "{label}"
+        );
+        assert_eq!(failure.message, "metric mapping mismatch", "{label}");
+    }
+}
+#[test]
 fn unreferenced_structured_artifacts_are_rejected_with_or_without_candidates() {
     for candidate in [true, false] {
         let eid = uid();
@@ -1050,6 +1089,63 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .await
     .unwrap();
     assert_ne!(page["tools"][0]["toolId"], second["tools"][0]["toolId"]);
+    let invalid_id = uid();
+    let (invalid_spec, mut invalid_manifest, invalid_bytes) = fixture(&invalid_id);
+    invalid_manifest["metrics"] = json!([]);
+    checksum(&mut invalid_manifest);
+    let invalid_begin = call(
+        &server,
+        &space,
+        "BeginUpload",
+        json!({"connectionId":cid,"experimentId":invalid_id,"specification":invalid_spec,"manifest":invalid_manifest,"origin":"EXECUTION_ORIGIN_LOCAL"}),
+    )
+    .await
+    .unwrap();
+    for target in invalid_begin["targets"].as_array().unwrap() {
+        let name = target["artifactName"].as_str().unwrap();
+        http.put(target["signedPutUrl"].as_str().unwrap())
+            .body(invalid_bytes[name].clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let invalid_upload = invalid_begin["upload"]["id"].clone();
+    let failure = call(
+        &server,
+        &space,
+        "CompleteUpload",
+        json!({"uploadId":invalid_upload}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(failure.code, connectrpc::ErrorCode::FailedPrecondition);
+    assert_eq!(failure.message, "metric mapping mismatch");
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "GetUpload",
+            json!({"uploadId":invalid_upload})
+        )
+        .await
+        .unwrap()["upload"]["state"],
+        "UPLOAD_STATE_FAILED"
+    );
+    call(
+        &server,
+        &space,
+        "DeleteExperiment",
+        json!({"experimentId":invalid_id}),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute'")
+        .execute(&db)
+        .await
+        .unwrap();
+    server.maintain().await.unwrap();
     let begin = call(&server, &space, "BeginUpload", q.clone())
         .await
         .unwrap();
@@ -1358,7 +1454,7 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .fetch_one(&db)
             .await
             .unwrap(),
-        9
+        10
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments")
