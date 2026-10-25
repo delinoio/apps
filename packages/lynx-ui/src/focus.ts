@@ -51,14 +51,18 @@ export function useControlFocus(
   }, [scope]);
   useEffect(() => {
     const value = { focus: () => entry.current.focus() };
-    if (typeof handle === "function") handle(value);
-    else if (handle) handle.current = value;
-    if (autoFocus && !disabled) value.focus();
+    const cleanup = typeof handle === "function" ? handle(value) : undefined;
+    if (handle && typeof handle !== "function") handle.current = value;
     return () => {
-      if (typeof handle === "function") handle(null);
-      else if (handle) handle.current = null;
+      if (typeof handle === "function") {
+        handle(null);
+        if (typeof cleanup === "function") cleanup();
+      } else if (handle) handle.current = null;
     };
   }, [scope, handle, autoFocus, disabled]);
+  useEffect(() => {
+    if (autoFocus && !disabled) entry.current.focus();
+  }, [scope, autoFocus, disabled]);
   return {
     node,
     focused,
