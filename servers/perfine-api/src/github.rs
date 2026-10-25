@@ -8,6 +8,52 @@ pub struct PublicationTokens {
     pub head: String,
     pub target: String,
 }
+#[derive(Debug)]
+pub enum GitHubCallError {
+    Response {
+        status: reqwest::StatusCode,
+        rate_limited: bool,
+    },
+    Fault(Fault),
+    RepositoryMismatch,
+}
+impl GitHubCallError {
+    pub fn is_definitive_denial(&self) -> bool {
+        match self {
+            Self::Response {
+                status,
+                rate_limited,
+            } => {
+                !rate_limited
+                    && matches!(
+                        *status,
+                        reqwest::StatusCode::UNAUTHORIZED
+                            | reqwest::StatusCode::FORBIDDEN
+                            | reqwest::StatusCode::NOT_FOUND
+                    )
+            }
+            Self::RepositoryMismatch => true,
+            Self::Fault(_) => false,
+        }
+    }
+
+    pub fn into_fault(self) -> Fault {
+        match self {
+            Self::Response {
+                status,
+                rate_limited,
+            } if status.is_client_error()
+                && !rate_limited
+                && status != reqwest::StatusCode::REQUEST_TIMEOUT =>
+            {
+                Fault::denied()
+            }
+            Self::Response { .. } => Fault::unavailable(),
+            Self::Fault(fault) => fault,
+            Self::RepositoryMismatch => Fault::denied(),
+        }
+    }
+}
 pub struct GitHub {
     pub http: reqwest::Client,
     pub base: String,
@@ -35,10 +81,23 @@ impl GitHub {
         token: &str,
         body: Option<Value>,
     ) -> Result<Value> {
+        self.call_classified(method, path, token, body)
+            .await
+            .map_err(GitHubCallError::into_fault)
+    }
+    pub async fn call_classified(
+        &self,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: Option<Value>,
+    ) -> std::result::Result<Value, GitHubCallError> {
         let mut req = self
             .http
             .request(
-                method.parse().map_err(|_| Fault::invalid("method"))?,
+                method
+                    .parse()
+                    .map_err(|_| GitHubCallError::Fault(Fault::invalid("method")))?,
                 format!("{}{path}", self.base),
             )
             .bearer_auth(token)
@@ -47,18 +106,27 @@ impl GitHub {
         if let Some(body) = body {
             req = req.json(&body);
         }
-        let response = req.send().await?;
+        let response = req
+            .send()
+            .await
+            .map_err(|error| GitHubCallError::Fault(error.into()))?;
         if !response.status().is_success() {
-            return Err(if response.status().is_client_error() {
-                Fault::denied()
-            } else {
-                Fault::unavailable()
+            return Err(GitHubCallError::Response {
+                status: response.status(),
+                rate_limited: response.status() == reqwest::StatusCode::FORBIDDEN
+                    && (response.headers().get("retry-after").is_some()
+                        || response
+                            .headers()
+                            .get("x-ratelimit-remaining")
+                            .is_some_and(|value| value == "0")),
             });
         }
         if response.status() == reqwest::StatusCode::NO_CONTENT {
             return Ok(json!({}));
         }
-        bounded_json(response, 8 << 20).await
+        bounded_json(response, 8 << 20)
+            .await
+            .map_err(GitHubCallError::Fault)
     }
     pub fn app_token(&self) -> Result<String> {
         let now = chrono::Utc::now().timestamp();
@@ -70,16 +138,32 @@ impl GitHub {
         .map_err(|_| Fault::unavailable())
     }
     pub async fn token(&self, connection: &Value) -> Result<String> {
-        let v=self.call("POST",&format!("/app/installations/{}/access_tokens",integer(connection,"githubInstallationId")),&self.app_token()?,Some(json!({"repository_ids":[integer(&connection["repository"],"githubRepositoryId")]}))).await?;
+        self.token_classified(connection)
+            .await
+            .map_err(GitHubCallError::into_fault)
+    }
+    pub async fn token_classified(
+        &self,
+        connection: &Value,
+    ) -> std::result::Result<String, GitHubCallError> {
+        let v=self.call_classified("POST",&format!("/app/installations/{}/access_tokens",integer(connection,"githubInstallationId")),&self.app_token().map_err(GitHubCallError::Fault)?,Some(json!({"repository_ids":[integer(&connection["repository"],"githubRepositoryId")]}))).await?;
         if string(&v, "token").is_empty() {
-            return Err(Fault::unavailable());
+            return Err(GitHubCallError::Fault(Fault::unavailable()));
         }
         Ok(string(&v, "token").into())
     }
     pub async fn current(&self, c: &Value) -> Result<String> {
-        let token = self.token(c).await?;
+        self.current_classified(c)
+            .await
+            .map_err(GitHubCallError::into_fault)
+    }
+    pub async fn current_classified(
+        &self,
+        c: &Value,
+    ) -> std::result::Result<String, GitHubCallError> {
+        let token = self.token_classified(c).await?;
         let v = self
-            .call(
+            .call_classified(
                 "GET",
                 &format!(
                     "/repositories/{}",
@@ -97,7 +181,7 @@ impl GitHub {
                     string(&c["repository"], "name")
                 )
         {
-            return Err(Fault::denied());
+            return Err(GitHubCallError::RepositoryMismatch);
         }
         Ok(token)
     }
