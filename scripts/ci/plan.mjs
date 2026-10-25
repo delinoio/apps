@@ -17,7 +17,7 @@ function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
       affected.every(
         (path) =>
           Object.values(select([path])).some(Boolean) ||
-          Object.values(selectChecks([path])).some(Boolean),
+          classifyShared([path]).shared.lynxUi,
       )
     ) {
       paths = paths
