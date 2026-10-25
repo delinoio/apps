@@ -12,6 +12,7 @@ if(NOT LANE_URL_SCHEME MATCHES "^(lane-dev|lane)$")
   message(FATAL_ERROR "LANE_URL_SCHEME must be lane-dev or lane")
 endif()
 add_subdirectory(../store "${CMAKE_CURRENT_BINARY_DIR}/store")
+option(LANE_NATIVE_TESTING "Allow explicit synthetic native test roots" OFF)
 set(LANE_SYNC_HELPER "" CACHE FILEPATH "Matching packaged Lane CLI executable")
 set(LANE_DIST "${CMAKE_CURRENT_SOURCE_DIR}/../../dist")
 if(NOT EXISTS "${LANE_DIST}/main.lynx.bundle")
@@ -42,6 +43,7 @@ if(APPLE)
     VERBATIM)
 elseif(WIN32)
   add_executable(Lane WIN32 windows.cc)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/windows/integration.cmake")
   target_compile_definitions(Lane PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00)
   target_link_libraries(Lane PRIVATE "${LYNX_SDK}/lib/lynx.dll.lib")
   set(LANE_RESOURCES "$<TARGET_FILE_DIR:Lane>")
@@ -56,6 +58,9 @@ else()
 endif()
 target_link_libraries(Lane PRIVATE lane_store)
 target_compile_definitions(Lane PRIVATE USE_WEAK_SUFFIX_NAPI)
+if(LANE_NATIVE_TESTING)
+  target_compile_definitions(Lane PRIVATE LANE_NATIVE_TESTING)
+endif()
 if(LANE_SYNC_HELPER)
   if(NOT EXISTS "${LANE_SYNC_HELPER}")
     message(FATAL_ERROR "LANE_SYNC_HELPER does not exist")
@@ -63,9 +68,10 @@ if(LANE_SYNC_HELPER)
   if(APPLE)
     set(LANE_HELPER_DEST "$<TARGET_BUNDLE_CONTENT_DIR:Lane>/MacOS/lane")
   else()
-    set(LANE_HELPER_DEST "$<TARGET_FILE_DIR:Lane>/lane.exe")
+    set(LANE_HELPER_DEST "$<TARGET_FILE_DIR:Lane>/helpers/lane.exe")
   endif()
   add_custom_target(LaneSyncHelper ALL
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:Lane>/helpers"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${LANE_SYNC_HELPER}" "${LANE_HELPER_DEST}"
     VERBATIM)
   add_dependencies(LaneSyncHelper Lane)
@@ -81,3 +87,15 @@ add_custom_target(LaneResources ALL
   COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../licenses" "${LANE_RESOURCES}/licenses"
   VERBATIM)
 add_dependencies(LaneResources Lane)
+
+if(APPLE)
+  foreach(notice IN ITEMS sqlite/LICENSE ada/LICENSE-APACHE ada/LICENSE-MIT
+      json/LICENSE.MIT picosha2/LICENSE utf8proc/LICENSE.md)
+    get_filename_component(owner "${notice}" DIRECTORY)
+    add_custom_command(TARGET LaneResources POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${LANE_RESOURCES}/licenses/lane-store/${owner}"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../store/vendor/${notice}"
+        "${LANE_RESOURCES}/licenses/lane-store/${notice}"
+      VERBATIM)
+  endforeach()
+endif()

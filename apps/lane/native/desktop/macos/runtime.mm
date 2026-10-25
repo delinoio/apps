@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #import "runtime.h"
+#include "log.h"
 #include "../../store/lane_store.h"
 #include <chrono>
 #include <set>
 #include <stdexcept>
 
 namespace {
+struct HelperFailure : std::runtime_error {
+  std::string envelope;
+  explicit HelperFailure(std::string value) : std::runtime_error("Helper rejected operation"), envelope(std::move(value)) {}
+};
 std::string JSON(id value) {
   NSData* data = [NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingSortedKeys error:nil];
   if (!data) throw std::runtime_error("Invalid native response");
@@ -40,6 +45,7 @@ std::string Failure(NSString* reason, NSString* message) {
   std::unique_ptr<lane::Store> _store;
   NSMutableDictionary<NSString*, NSTask*>* _workers;
   NSMutableDictionary<NSString*, NSDate*>* _retryAfter;
+  NSMutableDictionary<NSString*, NSString*>* _workerStates;
   NSMutableSet<NSString*>* _spaces;
   NSMutableArray<NSDictionary*>* _routes;
   NSString* _currentSpace;
@@ -50,7 +56,7 @@ std::string Failure(NSString* reason, NSString* message) {
 - (instancetype)init {
   if ((self = [super init])) {
     _queue = dispatch_queue_create("io.delino.lane.storage", DISPATCH_QUEUE_SERIAL);
-    _workers = [NSMutableDictionary new]; _retryAfter = [NSMutableDictionary new];
+    _workers = [NSMutableDictionary new]; _retryAfter = [NSMutableDictionary new]; _workerStates = [NSMutableDictionary new];
     _spaces = [NSMutableSet new]; _routes = [NSMutableArray new]; _claimant = UUID();
     _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);
     dispatch_source_set_timer(_timer, dispatch_time(DISPATCH_TIME_NOW, 0), 500*NSEC_PER_MSEC, 50*NSEC_PER_MSEC);
@@ -66,6 +72,13 @@ std::string Failure(NSString* reason, NSString* message) {
     inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];
   if (!support) throw std::runtime_error("Application storage unavailable");
   NSURL* root = [support URLByAppendingPathComponent:@"io.delino.lane" isDirectory:YES];
+#ifdef LANE_NATIVE_TESTING
+  NSString* injected = NSProcessInfo.processInfo.environment[@"LANE_NATIVE_TEST_ROOT"];
+  if (injected) {
+    if (!injected.isAbsolutePath) throw std::runtime_error("Test root must be absolute");
+    root = [NSURL fileURLWithPath:injected isDirectory:YES];
+  }
+#endif
   _store = std::make_unique<lane::Store>(root.fileSystemRepresentation);
   __weak LaneRuntime* weak = self;
   lane::HostHooks hooks;
@@ -78,7 +91,18 @@ std::string Failure(NSString* reason, NSString* message) {
     NSMutableArray* args = [@[@"--json", @"--space", host->_currentSpace, @"sync", @"connect",
       @"--redirect-uri", [NSString stringWithFormat:@"%@://auth/callback", Scheme()]] mutableCopy];
     if (!account.empty()) [args addObjectsFromArray:@[@"--account-id", Text(account)]];
-    NSDictionary* result = [host helper:args input:nil];
+    NSDictionary* status = Parse(host->_store->invoke("GetLocalStatus", JSON(@{@"spaceId":host->_currentSpace,@"request":@{}})))[@"response"];
+    if ([status[@"reconnectRequired"] boolValue]) {
+      // The existing bridge contract uses an explicitly targeted ConnectSync
+      // only after the UI confirms retained-data upload. An untargeted login
+      // must never be upgraded into epoch-change approval.
+      if (account.empty() || ![status[@"accountId"] isEqualToString:Text(account)])
+        return Failure(@"ERROR_REASON_STALE_EPOCH", @"Confirm reconnecting this account before uploading retained data.");
+      [args addObject:@"--confirm-epoch-change"];
+    }
+    NSDictionary* result;
+    try { result = [host helper:args input:nil]; }
+    catch (const HelperFailure& error) { return error.envelope; }
     NSURL* url = [NSURL URLWithString:result[@"authorizationUrl"]];
     if (![url.scheme isEqualToString:@"https"] || !url.host.length) throw std::runtime_error("Invalid authorization URL");
     host->_authorizationSpace = host->_currentSpace;
@@ -86,11 +110,14 @@ std::string Failure(NSString* reason, NSString* message) {
     return JSON(result);
   };
   hooks.remote = [weak](std::string space, std::string method, std::string request) -> std::string {
-    return JSON([weak helper:@[@"--remote", @"--json", @"--expected-space", Text(space), @"rpc", Text(method), @"--request-json", @"-"] input:Text(request)]);
+    try { return JSON([weak helper:@[@"--remote", @"--json", @"--expected-space", Text(space), @"rpc", Text(method), @"--request-json", @"-"] input:Text(request)]); }
+    catch (const HelperFailure& error) { return error.envelope; }
   };
   hooks.disconnect = [weak](std::string space) {
     LaneRuntime* host = weak;
     [host stopWorker:Text(space)];
+    NSDictionary* status = Parse(host->_store->invoke("GetLocalStatus",JSON(@{@"spaceId":Text(space),@"request":@{}})))[@"response"];
+    if (![status[@"syncEnabled"] boolValue]) return;
     [host helper:@[@"--json", @"--space", Text(space), @"sync", @"disconnect", @"--retention", @"keep-local"] input:nil];
   };
   _store->setHostHooks(std::move(hooks));
@@ -123,6 +150,8 @@ std::string Failure(NSString* reason, NSString* message) {
   NSData* bytes = [output.fileHandleForReading readDataToEndOfFile];
   [task waitUntilExit];
   NSDictionary* response = [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil];
+  if ([response isKindOfClass:NSDictionary.class] && ![response[@"ok"] boolValue] && [response[@"error"] isKindOfClass:NSDictionary.class])
+    throw HelperFailure(JSON(response));
   if (task.terminationStatus != 0 || ![response isKindOfClass:NSDictionary.class] || ![response[@"ok"] boolValue])
     throw std::runtime_error("Synchronization helper rejected operation");
   if (![response[@"result"] isKindOfClass:NSDictionary.class]) throw std::runtime_error("Invalid helper response");
@@ -210,11 +239,23 @@ std::string Failure(NSString* reason, NSString* message) {
         if ([value[@"syncEnabled"] boolValue]) [self startWorker:space]; else [self stopWorker:space];
         if ([value[@"notificationPreferences"][@"enabled"] boolValue]) [self deliverNotifications:space];
       }
-    } catch (...) { NSLog(@"{\"event\":\"lane_native_poll_failed\"}"); }
-  } @catch (NSException*) { NSLog(@"{\"event\":\"lane_native_platform_failed\"}"); }
+    } catch (...) { LaneLog("lane_native_poll_failed"); }
+  } @catch (NSException*) { LaneLog("lane_native_platform_failed"); }
+}
+- (void)workerState:(NSString*)space state:(NSString*)state code:(int)code {
+  if ([_workerStates[space] isEqualToString:state]) return;
+  _workerStates[space] = state;
+  if (![state isEqualToString:@"running"] && _store)
+    _store->recordSyncFailure(space.UTF8String, "ERROR_REASON_DEPENDENCY_UNAVAILABLE");
+  [self emit:@"lane.hostStatus" arguments:@[@{@"spaceId":space,@"syncState":state,@"exitCode":@(code)}]];
 }
 - (void)startWorker:(NSString*)space {
-  if (_workers[space].running || [_retryAfter[space] timeIntervalSinceNow] > 0) return;
+  if (_workers[space].running) return;
+  if (_workers[space]) {
+    [self workerState:space state:@"exited" code:_workers[space].terminationStatus];
+    [_workers removeObjectForKey:space];
+  }
+  if ([_retryAfter[space] timeIntervalSinceNow] > 0) return;
   _retryAfter[space] = [NSDate dateWithTimeIntervalSinceNow:30];
   try {
     NSTask* task = [NSTask new]; task.executableURL = [self helperURL];
@@ -222,9 +263,11 @@ std::string Failure(NSString* reason, NSString* message) {
     task.standardOutput = NSFileHandle.fileHandleWithNullDevice;
     task.standardError = NSFileHandle.fileHandleWithStandardError;
     NSError* error = nil;
-    if ([task launchAndReturnError:&error]) _workers[space] = task;
-    else NSLog(@"{\"event\":\"lane_sync_helper_start_failed\"}");
-  } catch (...) { NSLog(@"{\"event\":\"lane_sync_helper_unavailable\"}"); }
+    if ([task launchAndReturnError:&error]) {
+      _workers[space] = task;
+      [self workerState:space state:@"running" code:0];
+    } else [self workerState:space state:@"launch_failed" code:0];
+  } catch (...) { [self workerState:space state:@"missing_helper" code:0]; }
 }
 - (void)stopWorker:(NSString*)space {
   NSTask* task = _workers[space];
@@ -245,7 +288,7 @@ std::string Failure(NSString* reason, NSString* message) {
       if (!error) dispatch_async(self->_queue, ^{
         if (self->_store && !self->_stopped) self->_store->acknowledgeNotification(space.UTF8String, [proposal[@"proposalId"] UTF8String]);
       });
-      else NSLog(@"{\"event\":\"lane_notification_delivery_failed\"}");
+      else LaneLog("lane_notification_delivery_failed");
     }];
   }
 }
@@ -265,11 +308,14 @@ std::string Failure(NSString* reason, NSString* message) {
     try {
       [self ensureStore];
       if ([url.host isEqualToString:@"auth"] && [url.path isEqualToString:@"/callback"]) {
-        if (!self->_authorizationSpace) return;
-        NSDictionary* result = [self helper:@[@"--json",@"--space",self->_authorizationSpace,@"sync",@"callback",url.absoluteString] input:nil];
+        NSString* authorizationSpace = self->_authorizationSpace ?: self->_currentSpace;
+        if (!IsID(authorizationSpace)) return;
+        NSDictionary* result = [self helper:@[@"--json",@"--space",authorizationSpace,@"sync",@"callback",url.absoluteString] input:nil];
         self->_authorizationSpace = nil;
         if (IsID(result[@"spaceId"])) {
           [self emit:@"lane.storeChanged" arguments:@[@{@"spaceId":result[@"spaceId"],@"sequence":result[@"sequence"] ?: @"0"}]];
+          [self->_routes addObject:@{@"kind":@"open",@"spaceId":result[@"spaceId"]}];
+          [self flushRoutes];
         }
         [self tick]; return;
       }
@@ -283,10 +329,44 @@ std::string Failure(NSString* reason, NSString* message) {
     } catch (...) { [self emit:@"lane.hostError" arguments:@[@{@"reason":@"ERROR_REASON_DEPENDENCY_UNAVAILABLE",@"message":@"The authorization callback could not be completed."}]]; }
   });
 }
+- (void)handleNotification:(NSDictionary*)info {
+  NSString* space = info[@"spaceId"], *task = info[@"taskId"];
+  if (!IsID(space) || !IsID(task)) return;
+  dispatch_async(_queue, ^{
+    try {
+      [self ensureStore];
+      // A notification pins its account space. Never reinterpret its task ID
+      // in the active space, which may belong to a different retained account.
+      NSDictionary* opened = Parse(self->_store->open(JSON(@{@"formatVersion":@1,@"spaceId":space})));
+      if (![opened[@"ok"] boolValue]) return;
+      self->_store->close(space.UTF8String);
+      [self->_routes addObject:@{@"kind":@"task",@"id":task,@"spaceId":space}];
+      [self flushRoutes];
+    } catch (...) { LaneLog("lane_notification_route_failed"); }
+  });
+}
 - (void)flushRoutes {
   if (!_currentSpace) return;
   for (NSDictionary* route in _routes) [self emit:@"lane.openRoute" arguments:@[route]];
   [_routes removeAllObjects];
+}
+- (void)receivePush:(NSDictionary*)payload {
+  if (![payload[@"type"] isEqualToString:@"lane.proposal"] ||
+      ![payload[@"accountId"] isKindOfClass:NSString.class] || !IsID(payload[@"proposalId"])) return;
+  NSString* account = payload[@"accountId"];
+  dispatch_async(_queue, ^{
+    try {
+      [self ensureStore];
+      NSDictionary* matched = Parse(self->_store->spacesForAccount(account.UTF8String));
+      if (![matched[@"ok"] boolValue]) return;
+      for (NSString* space in matched[@"response"][@"items"]) {
+        [self->_spaces addObject:space];
+        [self startWorker:space];
+      }
+      // Push is only a wake hint. The authenticated worker downloads versions;
+      // ordinary store observation later claims eligible local notifications.
+    } catch (...) { LaneLog("lane_push_wake_failed"); }
+  });
 }
 - (void)registerPushToken:(NSData*)token {
   // Register only after explicit notification enablement. Credentials remain in
@@ -302,11 +382,12 @@ std::string Failure(NSString* reason, NSString* message) {
         NSDictionary* preferences = status[@"notificationPreferences"];
         NSDictionary* request = @{@"meta":@{@"requestId":Text(UUID())},@"deviceId":status[@"deviceId"],@"provider":@"PUSH_PROVIDER_APNS",@"endpoint":hex,@"enabled":preferences[@"enabled"] ?: @NO,@"content":preferences[@"content"] ?: @"NOTIFICATION_CONTENT_DETAIL"};
         [self helper:@[@"--remote",@"--json",@"--expected-space",space,@"rpc",@"RegisterPush",@"--request-json",@"-"] input:Text(JSON(request))];
-      } catch (...) { NSLog(@"{\"event\":\"lane_push_registration_unavailable\"}"); }
+      } catch (...) { LaneLog("lane_push_registration_unavailable"); }
     }
   });
 }
-- (void)stop {
+- (void)stop { [self stopWithCompletion:nil]; }
+- (void)stopWithCompletion:(dispatch_block_t)completion {
   // Do not wait on the storage queue from the main thread: an explicit permission
   // request can be awaiting a main-thread OS callback there.
   dispatch_source_cancel(_timer);
@@ -314,6 +395,7 @@ std::string Failure(NSString* reason, NSString* message) {
     self->_stopped = YES;
     for (NSString* space in [self->_workers.allKeys copy]) [self stopWorker:space];
     self->_store.reset();
+    if (completion) dispatch_async(dispatch_get_main_queue(), completion);
   });
 }
 @end

@@ -100,7 +100,7 @@
   NSLog(@"{\"event\":\"lane_push_unavailable\"}");
 }
 - (void)application:(NSApplication*)app didReceiveRemoteNotification:(NSDictionary*)payload {
-  [_runtime resume];
+  [_runtime receivePush:payload];
 }
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center willPresentNotification:(UNNotification*)notification
   withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completion {
@@ -110,10 +110,12 @@
   withCompletionHandler:(void (^)(void))completion {
   [self openWindow];
   NSDictionary* info = response.notification.request.content.userInfo;
-  NSString* scheme = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"LaneURLScheme"] ?: @"lane-dev";
-  if ([info[@"taskId"] isKindOfClass:NSString.class])
-    [_runtime handleURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@://task/%@",scheme,info[@"taskId"]]]];
+  [_runtime handleNotification:info];
   completion();
+}
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+  [_runtime stopWithCompletion:^{ [NSApp replyToApplicationShouldTerminate:YES]; }];
+  return NSTerminateLater;
 }
 - (void)applicationWillTerminate:(NSNotification*)notification { [_runtime stop]; _lynxView.reset(); }
 @end

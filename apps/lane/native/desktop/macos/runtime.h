@@ -10,6 +10,9 @@
 - (std::shared_ptr<lane::desktop::Handler>)hostHandler;
 - (void)resume;
 - (void)handleURL:(NSURL*)url;
+- (void)handleNotification:(NSDictionary*)info;
 - (void)stop;
+- (void)stopWithCompletion:(dispatch_block_t)completion;
+- (void)receivePush:(NSDictionary*)payload;
 - (void)registerPushToken:(NSData*)token;
 @end
