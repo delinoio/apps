@@ -14,6 +14,21 @@ fn number(v: &Value, key: &str) -> Result<f64> {
         .filter(|n| n.is_finite())
         .ok_or_else(invalid)
 }
+pub fn optional_finite_number(v: &Value, key: &str) -> Result<f64> {
+    match v.get(key) {
+        None | Some(Value::Null) => Ok(0.0),
+        Some(value) => value
+            .as_f64()
+            .filter(|number| number.is_finite())
+            .ok_or_else(invalid),
+    }
+}
+fn optional_bool(v: &Value, key: &str) -> Result<bool> {
+    match v.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(value) => value.as_bool().ok_or_else(invalid),
+    }
+}
 pub fn duration(v: &Value, key: &str) -> Result<u64> {
     string(v, key)
         .strip_suffix('s')
@@ -36,15 +51,14 @@ pub fn policy(p: &Value) -> Result<policy::Policy> {
         return Err(invalid());
     }
     let u = &p["uncertainty"];
-    if [
+    for key in [
         "confidenceLevel",
         "maximumRelativeIntervalWidth",
         "nearThresholdMargin",
-    ]
-    .iter()
-    .any(|k| u[*k].as_f64().unwrap_or(0.0) != 0.0)
-    {
-        return Err(invalid());
+    ] {
+        if optional_finite_number(u, key)? != 0.0 {
+            return Err(invalid());
+        }
     }
     let exceptions = p
         .get("allowedExceptions")
@@ -55,8 +69,8 @@ pub fn policy(p: &Value) -> Result<policy::Policy> {
         "POLICY_KIND_MEASUREMENTS_ONLY" => {
             if integer(p, "repetitions") != 0
                 || !exceptions.is_empty()
-                || p["minimumImprovement"].as_f64().unwrap_or(0.0) != 0.0
-                || p["maximumCaseRegression"].as_f64().unwrap_or(0.0) != 0.0
+                || optional_finite_number(p, "minimumImprovement")? != 0.0
+                || optional_finite_number(p, "maximumCaseRegression")? != 0.0
                 || [
                     "maximumRelativeRange",
                     "decisionMargin",
@@ -74,8 +88,8 @@ pub fn policy(p: &Value) -> Result<policy::Policy> {
             if integer(u, "engineSchemaVersion") != 1 {
                 return Err(invalid());
             }
-            let min = p["minimumImprovement"].as_f64().unwrap_or(0.0);
-            let max = p["maximumCaseRegression"].as_f64().unwrap_or(0.0);
+            let min = optional_finite_number(p, "minimumImprovement")?;
+            let max = optional_finite_number(p, "maximumCaseRegression")?;
             let near = number(u, "nearThreshold")?;
             let repeat = number(u, "repeatTolerance")?;
             match kind {
@@ -194,7 +208,7 @@ pub fn prepare(c: &Value, repository: &Value, now: chrono::DateTime<chrono::Utc>
             "FREQUENCY_SOURCE_ASSUMED_ONE" if number(case, "frequency")? == 1.0 => Value::Null,
             _ => return Err(invalid()),
         };
-        if cases.insert(string(case,"id"), json!({"family":case["family"],"frequency":frequency,"protected":case["protectedCase"].as_bool().unwrap_or(false)})).is_some() { return Err(invalid()); }
+        if cases.insert(string(case,"id"), json!({"family":case["family"],"frequency":frequency,"protected":optional_bool(case, "protectedCase")?})).is_some() { return Err(invalid()); }
     }
     let limits = &c["limits"];
     let start = duration(limits, "startDuration")?;
