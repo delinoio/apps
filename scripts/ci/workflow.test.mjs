@@ -567,6 +567,16 @@ test("Rust server Clippy runs independently with the affected-service matrix", (
 
 test("shared checks allocate independent jobs from planner outputs", () => {
   assert.equal(workflow.jobs.validate, undefined);
+  assert.equal(
+    workflow.jobs["shared-ui"].steps.find((step) => step.id === "lynx-ui").run,
+    "pnpm --filter @delino/lynx-ui test",
+  );
+  assert.match(
+    workflow.jobs["shared-ui"].steps.find(
+      (step) => step.name === "Remove generated output",
+    ).run,
+    /packages\/lynx-ui\/dist/u,
+  );
   for (const [id, key, command] of [
     ["tooling", "tooling", "pnpm test:tooling"],
     ["shared-ui", "shared_ui", "pnpm --filter @delino/ui test"],

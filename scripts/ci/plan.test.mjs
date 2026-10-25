@@ -402,6 +402,8 @@ test("shared validation checks select only affected check categories", () => {
     ],
     [["apps/devbase/src/main.tsx"], [false, false, false]],
     [["packages/ui/src/components/button.tsx"], [false, true, false]],
+    [["packages/lynx-ui/src/components/button.tsx"], [false, true, false]],
+    [["docs/packages-lynx-ui-contract.md"], [false, true, false]],
     [["scripts/localization/catalog.mjs"], [true, false, false]],
     [["servers/scripts/dev-api.mjs"], [true, false, false]],
     [["apps/delitools/scripts/mobile-workflow.test.mjs"], [true, false, false]],

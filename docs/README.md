@@ -106,6 +106,11 @@ Historical DeliDev validation describes the retired implementation and does not 
 - [Project index](project-ui.md)
 - [Shared UI foundation](packages-ui-foundation.md)
 
+### lynx-ui
+
+- [Project index](project-lynx-ui.md)
+- [Lynx UI foundation](packages-lynx-ui-contract.md)
+
 ### perfine
 
 - [Project index](project-perfine.md)

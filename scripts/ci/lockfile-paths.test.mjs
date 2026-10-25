@@ -118,6 +118,23 @@ test("shared importer edits preserve shared consumers", () => {
   );
 });
 
+test("Lynx UI importer edits select shared checks without application jobs", () => {
+  const lockfiles = {
+    baseLockfile: lockfile("packages/lynx-ui"),
+    headLockfile: lockfile("packages/lynx-ui", "19.2.9"),
+  };
+  assert.ok(
+    Object.values(select(["pnpm-lock.yaml"], lockfiles)).every(
+      (value) => !value,
+    ),
+  );
+  assert.deepEqual(selectChecks(["pnpm-lock.yaml"], lockfiles), {
+    tooling: false,
+    shared_ui: true,
+    workflows: false,
+  });
+});
+
 test("root, package-manager, resolution, snapshot and setting edits stay global", () => {
   for (const head of [
     baseLockfile.replace("devDependencies: {}", "dependencies: {}"),

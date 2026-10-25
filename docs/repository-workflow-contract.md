@@ -144,6 +144,12 @@ For server-to-server calls from Git Tracker to local Delcore, set `DELCORE_URL` 
 
 ## Validation
 
+The `shared-ui` job validates both `@delino/ui` and `@delino/lynx-ui` on Ubuntu.
+Lynx UI source and owning contract changes select this job without selecting
+unrelated application or server checks. The Lynx gallery builds web and native
+bundles; these builds do not establish native host acceptance. Remove its
+generated `packages/lynx-ui/dist` output after validation.
+
 The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the same version and a version-specific store cache. Dependency overrides and build-script decisions are configured in `pnpm-workspace.yaml`, because pnpm 12 does not read the `pnpm` field in `package.json`.
 
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.

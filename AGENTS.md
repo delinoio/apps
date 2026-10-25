@@ -59,6 +59,7 @@
 - `servers/`: Delcore, DevBase, Git Tracker and DeliTools services, migrations, OCI packaging and the independent server Cargo workspace; follow `servers/AGENTS.md`.
 - `servers/crates/`: shared server Rust modules under FSL-1.1-ALv2. Keep these outside the root client Cargo workspace.
 - `packages/ui`: Shared React UI primitives; follow `packages/AGENTS.md`.
+- `packages/lynx-ui`: Shared ReactLynx UI primitives; follow `packages/AGENTS.md` and [Lynx UI contracts](docs/project-lynx-ui.md).
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/devbase`: DevBase web application; its API server lives in `servers/devbase-api`.
 - `apps/delino-site`: Delino web application.

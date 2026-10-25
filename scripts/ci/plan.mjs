@@ -14,7 +14,11 @@ function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
     // Unknown ownership must retain global validation instead of skipping jobs.
     if (
       !affected.includes("pnpm-lock.yaml") &&
-      affected.every((path) => Object.values(select([path])).some(Boolean))
+      affected.every(
+        (path) =>
+          Object.values(select([path])).some(Boolean) ||
+          Object.values(selectChecks([path])).some(Boolean),
+      )
     ) {
       paths = paths
         .filter((path) => path !== "pnpm-lock.yaml")
@@ -27,6 +31,8 @@ function affectedPaths(paths, { baseLockfile, headLockfile } = {}) {
 function classifyShared(paths) {
   const sharedPatterns = {
     frontend: /^packages\/ui\//u,
+    lynxUi:
+      /^(packages\/lynx-ui\/|docs\/(?:project-lynx-ui|packages-lynx-ui-contract)\.md$)/u,
     native:
       /^(Cargo\.(toml|lock)$|prebuilt-dependencies\.lock\.json$|scripts\/(?:tauri-cli|prebuilt-dependencies|archive)(?:\.test)?\.mjs$)/u,
     rust: /^(rust-toolchain(?:\.toml)?$|\.cargo\/)/u,
@@ -60,7 +66,7 @@ export function selectChecks(paths, lockfiles) {
           path,
         ),
       ),
-    shared_ui: repositoryShared || shared.frontend,
+    shared_ui: repositoryShared || shared.frontend || shared.lynxUi,
     workflows:
       repositoryShared ||
       shared.go ||

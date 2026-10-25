@@ -164,6 +164,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - id: shared-ui
         run: pnpm --filter @delino/ui test
+      - id: lynx-ui
+        run: pnpm --filter @delino/lynx-ui test
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
@@ -187,7 +189,7 @@ jobs:
           if-no-files-found: error
       - name: Remove generated output
         if: ${{ always() }}
-        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist"
+        run: rm -rf "apps/delidev/dist" "apps/delitools/dist" "apps/devbase/dist" "apps/delino-site/dist" "apps/delino-docs/dist" "apps/git-tracker/dist" "packages/lynx-ui/dist"
   workflows:
     needs: changes
     if: needs.changes.outputs.workflows == 'true'

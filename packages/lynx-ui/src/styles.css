@@ -1,0 +1,323 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.lui-root {
+  --lui-bg: #ffffff;
+  --lui-fg: #202124;
+  --lui-surface: #f3f4f5;
+  --lui-border: #d9dce1;
+  --lui-muted: #626975;
+  --lui-primary: #202124;
+  --lui-on-primary: #ffffff;
+  --lui-danger: #c92030;
+  --lui-danger-bg: #fff0f1;
+  --lui-success: #17763b;
+  --lui-success-bg: #e8f6ec;
+  --lui-focus: #3366dd;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background-color: var(--lui-bg);
+}
+.lui-dark {
+  --lui-bg: #1b1d20;
+  --lui-fg: #f5f6f7;
+  --lui-surface: #2b2e33;
+  --lui-border: #4b5058;
+  --lui-muted: #b9bec8;
+  --lui-primary: #f5f6f7;
+  --lui-on-primary: #202124;
+  --lui-danger: #ff8992;
+  --lui-danger-bg: #41272b;
+  --lui-success: #8cdda7;
+  --lui-success-bg: #203e2b;
+  --lui-focus: #98b8ff;
+}
+.lui-stack {
+  display: flex;
+  min-width: 0;
+}
+.lui-text,
+.lui-button-label,
+.lui-badge-label,
+.lui-input,
+.lui-checkmark {
+  font-family: sans-serif;
+}
+.lui-column {
+  flex-direction: column;
+}
+.lui-row {
+  flex-direction: row;
+  align-items: center;
+}
+.lui-wrap {
+  flex-wrap: wrap;
+}
+.lui-gap-0 {
+  gap: 0px;
+}
+.lui-gap-4 {
+  gap: 4px;
+}
+.lui-gap-8 {
+  gap: 8px;
+}
+.lui-gap-16 {
+  gap: 16px;
+}
+.lui-gap-24 {
+  gap: 24px;
+}
+.lui-gap-32 {
+  gap: 32px;
+}
+.lui-text {
+  color: var(--lui-fg);
+  font-size: 16px;
+  line-height: 24px;
+}
+.lui-text-title {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.lui-text-caption {
+  font-size: 14px;
+  line-height: 20px;
+}
+.lui-muted {
+  color: var(--lui-muted);
+}
+.lui-error {
+  color: var(--lui-danger);
+}
+.lui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+  background-color: var(--lui-bg);
+  min-width: 0;
+}
+.lui-separator {
+  height: 1px;
+  background-color: var(--lui-border);
+  width: 100%;
+}
+.lui-button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 16px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background-color: var(--lui-primary);
+}
+.lui-button-label {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--lui-on-primary);
+}
+.lui-button-secondary {
+  background-color: var(--lui-surface);
+}
+.lui-button-outline {
+  background-color: var(--lui-bg);
+  border-color: var(--lui-border);
+}
+.lui-button-ghost {
+  background-color: transparent;
+}
+.lui-button-secondary .lui-button-label,
+.lui-button-outline .lui-button-label,
+.lui-button-ghost .lui-button-label {
+  color: var(--lui-fg);
+}
+.lui-button-danger {
+  background-color: #c92030;
+}
+.lui-button-danger .lui-button-label {
+  color: #ffffff;
+}
+.lui-disabled {
+  opacity: 0.45;
+}
+.lui-spinner {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  border: 2px solid var(--lui-on-primary);
+  border-right-color: transparent;
+  border-radius: 8px;
+}
+.lui-button-secondary .lui-spinner,
+.lui-button-outline .lui-spinner,
+.lui-button-ghost .lui-spinner {
+  border-color: var(--lui-fg);
+  border-right-color: transparent;
+}
+.lui-focused {
+  border-color: var(--lui-focus);
+}
+.lui-input {
+  width: 100%;
+  height: 48px;
+  padding: 10px 12px;
+  color: var(--lui-fg);
+  background-color: var(--lui-bg);
+  border: 2px solid var(--lui-border);
+  border-radius: 10px;
+  font-size: 16px;
+}
+.lui-invalid {
+  border-color: var(--lui-danger);
+}
+.lui-input.lui-focused {
+  border-color: var(--lui-focus);
+}
+.lui-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+.lui-toggle.lui-focused {
+  border-color: var(--lui-focus);
+}
+.lui-checkbox {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--lui-border);
+  border-radius: 6px;
+  background-color: var(--lui-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lui-checkbox.lui-checked {
+  background-color: var(--lui-primary);
+}
+.lui-checkmark {
+  color: var(--lui-on-primary);
+  font-size: 18px;
+}
+.lui-switch {
+  width: 44px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 13px;
+  background-color: var(--lui-border);
+}
+.lui-switch.lui-checked {
+  background-color: var(--lui-primary);
+}
+.lui-switch-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background-color: var(--lui-bg);
+}
+.lui-switch.lui-checked .lui-switch-thumb {
+  transform: translateX(18px);
+}
+.lui-badge {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background-color: var(--lui-surface);
+}
+.lui-badge-label {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--lui-fg);
+}
+.lui-tone-success {
+  background-color: var(--lui-success-bg);
+}
+.lui-tone-success .lui-badge-label {
+  color: var(--lui-success);
+}
+.lui-tone-danger {
+  background-color: var(--lui-danger-bg);
+}
+.lui-tone-danger .lui-badge-label {
+  color: var(--lui-danger);
+}
+.lui-tabs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background-color: var(--lui-surface);
+  border-radius: 10px;
+}
+.lui-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+.lui-tab-selected {
+  background-color: var(--lui-bg);
+}
+.lui-tab.lui-focused {
+  border-color: var(--lui-focus);
+}
+.lui-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+}
+.lui-progress {
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: var(--lui-surface);
+}
+.lui-progress-fill {
+  height: 12px;
+  border-radius: 6px;
+  background-color: var(--lui-primary);
+}
+.lui-dialog-backdrop {
+  position: fixed;
+  top: 0px;
+  right: 0px;
+  bottom: 0px;
+  left: 0px;
+  z-index: 1000;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.lui-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 100%;
+  padding: 24px;
+  background-color: var(--lui-bg);
+  border: 1px solid var(--lui-border);
+  border-radius: 10px;
+}
