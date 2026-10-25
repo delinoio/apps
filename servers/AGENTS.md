@@ -43,4 +43,6 @@
 
 - Delcore, DevBase, Git Tracker and DeliTools production binaries and OCI images are Rust. Their runtime source and tests belong to the server Cargo workspace; Go service implementations and Air configurations are removed. Build the server workspace before direct service-local development. Shared runtime modules belong in `crates/server-common`; protocol generation belongs in `servers/crates/delino-protos` under the server workspace license.
 
+- Perfine builds and tests must use server-owned evaluation code and fixtures; do not add path dependencies or source includes into root client crates.
+
 - Perfine ownership: [project](../docs/project-perfine.md); [api contract](../docs/servers-perfine-api-contract.md).

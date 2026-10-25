@@ -216,3 +216,5 @@ tmp/
 /.dev-environment/
 
 .ci-evidence/
+
+/actions/perfine/action.cjs

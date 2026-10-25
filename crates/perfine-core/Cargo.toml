@@ -20,5 +20,5 @@ tempfile = "3"
 
 
 
-# Standalone metadata: this crate is also consumed from the independent server workspace.
+# Local engine metadata is independent of the server workspace.
 [lints]

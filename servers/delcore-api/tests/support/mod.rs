@@ -6,8 +6,8 @@ use delcore_api::{Server, auth::Verifier, config::Config, postgres, worker::Work
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts};
 use serde_json::{Value, json};
-use sqlx::PgPool;
-use std::{collections::HashMap, sync::Arc};
+use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 pub mod api_keys;
 pub mod billing_domain;
@@ -66,7 +66,12 @@ impl Fixture {
                     Ok(())
                 })
             })
-            .connect(&database_url)
+            .connect_with(
+                database_url
+                    .parse::<PgConnectOptions>()
+                    .unwrap()
+                    .application_name(&schema),
+            )
             .await
             .unwrap();
         postgres::migrate(&db).await.unwrap();
@@ -209,20 +214,77 @@ impl Drop for Fixture {
         }
         let url = self.database_url.clone();
         let schema = self.schema.clone();
-        // A separate runtime also cleans up when an assertion unwinds the test runtime.
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
+        // Drop blocks the test runtime, so aborted handlers and queued SQLx rollbacks
+        // cannot release their locks here. Terminate only this fixture's tagged sessions
+        // before dropping its schema. Keep this until teardown can be fully asynchronous.
+        let result = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
                 .unwrap()
                 .block_on(async move {
-                    if let Ok(pool) = PgPool::connect(&url).await {
-                        let _ = sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
-                            .execute(&pool)
-                            .await;
-                        pool.close().await;
-                    }
-                });
+                    tokio::time::timeout(Duration::from_secs(10), async {
+                        let mut connection = PgConnection::connect(&url).await?;
+                        sqlx::query("SET statement_timeout = '5s'")
+                            .execute(&mut connection)
+                            .await?;
+                        sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND pid<>pg_backend_pid()")
+                            .bind(&schema)
+                            .execute(&mut connection)
+                            .await?;
+                        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+                            .execute(&mut connection)
+                            .await?;
+                        connection.close().await
+                    })
+                    .await
+                })
         })
         .join()
         .unwrap();
+        if !matches!(result, Ok(Ok(()))) {
+            // Preserve the original assertion when teardown runs during unwinding.
+            tracing::error!(?result, "fixture database cleanup failed");
+            assert!(
+                std::thread::panicking(),
+                "fixture database cleanup failed: {result:?}"
+            );
+        }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a disposable TEST_DATABASE_URL"]
+async fn cleanup_releases_frozen_transactions_without_touching_other_fixtures() {
+    let other = Fixture::setup().await;
+    for unwind in [false, true] {
+        let fixture = Fixture::setup().await;
+        let schema = fixture.schema.clone();
+        let pool = fixture.db.clone();
+        let mut tx = postgres::begin(&pool).await.unwrap();
+        sqlx::query("SELECT * FROM delcore_schema")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        // Keep the transaction alive while synchronous Drop freezes its owning runtime.
+        // This also models a cancelled handler whose rollback has not been polled yet.
+        let started = std::time::Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _fixture = fixture;
+            assert!(!unwind, "fixture teardown during an assertion failure");
+        }));
+        assert_eq!(result.is_err(), unwind);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=$1)")
+                .bind(&schema)
+                .fetch_one(&other.db)
+                .await
+                .unwrap();
+        assert!(!exists, "fixture schema must be removed");
+        drop(tx);
+        pool.close().await;
+    }
+    // The unrelated fixture's sessions and the database-wide state lock remain usable.
+    other.bootstrap().await;
 }

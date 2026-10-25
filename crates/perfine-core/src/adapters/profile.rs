@@ -307,7 +307,7 @@ fn callgrind(bytes: &[u8]) -> Result<ParsedProfile> {
 struct CpuProfile {
     nodes: Vec<CpuNode>,
     samples: Vec<u64>,
-    time_deltas: Vec<u64>,
+    time_deltas: Vec<i64>,
     start_time: f64,
     end_time: f64,
 }
@@ -326,6 +326,33 @@ struct Frame {
     url: String,
     line_number: i64,
 }
+// V8 can emit samples out of timestamp order. Reconstruct the signed timeline
+// and stably reorder samples, as Chrome DevTools does, rather than clamping or
+// discarding negative deltas. Original profile bytes remain in the artifact store.
+// https://chromium.googlesource.com/devtools/devtools-frontend/+/main/front_end/models/cpu_profile/CPUProfileDataModel.ts
+fn node_timeline(samples: &[u64], deltas: &[i64]) -> Result<Vec<(u64, u64)>> {
+    let mut elapsed = 0_i64;
+    let mut timeline = Vec::with_capacity(samples.len());
+    for (&sample, &delta) in samples.iter().zip(deltas) {
+        elapsed = elapsed
+            .checked_add(delta)
+            .ok_or(Error::Invalid("Node timestamp overflow"))?;
+        let timestamp = u64::try_from(elapsed)
+            .map_err(|_| Error::Invalid("Node sample before profile start"))?;
+        timeline.push((timestamp, sample));
+    }
+    timeline.sort_by_key(|&(timestamp, _)| timestamp);
+    let mut previous = 0;
+    Ok(timeline
+        .into_iter()
+        .map(|(timestamp, sample)| {
+            let delta = timestamp - previous;
+            previous = timestamp;
+            (sample, delta)
+        })
+        .collect())
+}
+
 fn node(bytes: &[u8]) -> Result<ParsedProfile> {
     let cpu: CpuProfile = serde_json::from_slice(bytes)?;
     if cpu.samples.len() != cpu.time_deltas.len()
@@ -383,17 +410,17 @@ fn node(bytes: &[u8]) -> Result<ParsedProfile> {
     };
     let mut costs: BTreeMap<u64, u64> = BTreeMap::new();
     let mut edges: BTreeMap<(u64, u64), u64> = BTreeMap::new();
-    for (sample, delta) in cpu.samples.iter().zip(&cpu.time_deltas) {
-        source(sample)?;
-        let count = costs.entry(*sample).or_default();
+    for (sample, delta) in node_timeline(&cpu.samples, &cpu.time_deltas)? {
+        source(&sample)?;
+        let count = costs.entry(sample).or_default();
         *count = count
-            .checked_add(*delta)
+            .checked_add(delta)
             .ok_or(Error::Invalid("Node cost overflow"))?;
-        let mut child = *sample;
+        let mut child = sample;
         while let Some(parent) = parents.get(&child) {
             let count = edges.entry((*parent, child)).or_default();
             *count = count
-                .checked_add(*delta)
+                .checked_add(delta)
                 .ok_or(Error::Invalid("Node edge overflow"))?;
             child = *parent;
         }

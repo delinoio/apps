@@ -6,6 +6,7 @@ fn main() {
             "../../../protos/gittracker/v1/gittracker.proto",
             "../../../protos/delcore/v1/delcore.proto",
             "../../../protos/delitools/v1/delitools.proto",
+            "../../../protos/perfine/v1/perfine.proto",
         ])
         .includes(&["../../../protos"])
         .include_file("_connectrpc.rs")

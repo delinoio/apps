@@ -566,20 +566,17 @@ else:
         environment.prepare(&request).unwrap();
         let auth = tmp.path().join("auth.json");
         fs::write(&auth, "mock local authentication sentinel").unwrap();
-        let agent = HeadlessAgentAdapter::new(
-            LocalAgentConfig {
-                provider,
-                docker,
-                executable: "agent-cli".into(),
-                auth_file: auth,
-                network: "perfine-agent-egress".into(),
-                model: None,
-                maximum_source_bytes: 8192,
-                maximum_edits: 2,
-            },
-            &environment,
-        )
-        .unwrap();
+        let agent_config = LocalAgentConfig {
+            provider,
+            docker,
+            executable: "agent-cli".into(),
+            auth_file: auth,
+            network: "perfine-agent-egress".into(),
+            model: None,
+            maximum_source_bytes: 8192,
+            maximum_edits: 2,
+        };
+        let agent = HeadlessAgentAdapter::new(agent_config.clone(), &environment).unwrap();
         let context = ExecutionContext {
             workspace: &workspace,
             deadline_unix_seconds: std::time::SystemTime::now()
@@ -610,6 +607,19 @@ else:
         };
         let hypotheses = agent.propose(&profile, &context).unwrap();
         assert_eq!(hypotheses.len(), 1);
+        drop(agent);
+        let agent = HeadlessAgentAdapter::new(agent_config, &environment).unwrap();
+        assert!(agent.implement(&hypotheses[0], &context).is_err());
+        let mut invalid = hypotheses[0].clone();
+        invalid.profile_evidence = vec![digest(b"absent profile")];
+        assert!(
+            agent
+                .restore_hypothesis(&invalid, &profile, &context)
+                .is_err()
+        );
+        agent
+            .restore_hypothesis(&hypotheses[0], &profile, &context)
+            .unwrap();
         let sha = agent.implement(&hypotheses[0], &context).unwrap();
         if unchanged {
             assert_eq!(sha, base);
@@ -661,5 +671,69 @@ fn codex_commentary_does_not_replace_the_final_schema_response() {
     assert_eq!(
         parse_response(LocalAgent::Codex, events.as_bytes()).unwrap()["hypotheses"],
         serde_json::json!([])
+    );
+}
+
+#[test]
+fn node_signed_deltas_reorder_samples_without_losing_elapsed_cost() {
+    // Synthetic parser regression for out-of-order samples seen in actual V8
+    // captures. This test does not supply benchmark or acceptance measurements.
+    let raw = br#"{"nodes":[{"id":1,"callFrame":{"functionName":"root","url":"","lineNumber":-1},"children":[2,3]},{"id":2,"callFrame":{"functionName":"a","url":"file:///work/a.mjs","lineNumber":0}},{"id":3,"callFrame":{"functionName":"b","url":"file:///work/b.mjs","lineNumber":0}}],"startTime":10,"endTime":410,"samples":[2,3,2],"timeDeltas":[100,-4,200]}"#;
+    let parsed = profile::parse(ProfileFormat::NodeCpu, raw).unwrap();
+    let costs: BTreeMap<_, _> = parsed
+        .profile
+        .costs
+        .iter()
+        .map(|cost| (cost.source.file.as_str(), cost.cost))
+        .collect();
+    assert_eq!(costs["file:///work/a.mjs"], 200.0);
+    assert_eq!(costs["file:///work/b.mjs"], 96.0);
+    assert_eq!(
+        parsed
+            .profile
+            .edges
+            .iter()
+            .map(|edge| edge.cost)
+            .sum::<f64>(),
+        296.0
+    );
+    let text = std::str::from_utf8(raw).unwrap();
+    for deltas in ["[100,-200,200]", "[9223372036854775807,1,1]"] {
+        let invalid = text.replace("[100,-4,200]", deltas);
+        assert!(profile::parse(ProfileFormat::NodeCpu, invalid.as_bytes()).is_err());
+    }
+}
+
+#[test]
+fn captured_node_signed_timeline_preserves_total_and_source_coverage() {
+    // Actual normal-JIT capture, used only as an offline parser regression.
+    let bytes = include_bytes!("adapter-data/node-linux-amd64-emulated.cpuprofile");
+    assert_eq!(
+        digest(bytes).as_str(),
+        "e9e7563ef45efbe7b0adfc2297e33ffe3ed286b75c43e36f69adc0c44e4a87e6"
+    );
+    let parsed = profile::parse(ProfileFormat::NodeCpu, bytes).unwrap();
+    assert_eq!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .map(|cost| cost.cost)
+            .sum::<f64>(),
+        9_615_385.0
+    );
+    assert!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .any(|cost| cost.source.file.as_str() == "file:///work/kernel.mjs" && cost.cost > 0.0)
+    );
+    assert!(
+        parsed
+            .profile
+            .costs
+            .iter()
+            .all(|cost| cost.metric.unit.as_str() == "microseconds")
     );
 }

@@ -9,6 +9,7 @@ export const Api = Object.freeze({
   DeliTools: "delitools",
   DevBase: "devbase",
   GitTracker: "git-tracker",
+  Perfine: "perfine",
 });
 export const databaseHandoff = "DEV_COMPOSE_DATABASE_URLS";
 const root = fileURLToPath(new URL("../", import.meta.url));

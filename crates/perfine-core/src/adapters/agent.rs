@@ -296,6 +296,50 @@ pub fn parse_response(provider: LocalAgent, bytes: &[u8]) -> Result<Value> {
         }
     }
 }
+impl HeadlessAgentAdapter<'_> {
+    /// Revalidate a retained hypothesis against its original profile after a process restart.
+    pub fn restore_hypothesis(
+        &self,
+        hypothesis: &Hypothesis,
+        profile: &Profile,
+        context: &ExecutionContext<'_>,
+    ) -> Result<()> {
+        self.environment.validate_workspace(context.workspace)?;
+        self.environment.require_clean(context.workspace)?;
+        let paths: BTreeSet<_> = profile
+            .costs
+            .iter()
+            .filter(|c| c.cost > 0.0)
+            .map(|c| c.source.file.clone())
+            .collect();
+        if hypothesis.source_paths.is_empty()
+            || !hypothesis.source_paths.is_subset(&paths)
+            || hypothesis.profile_evidence.is_empty()
+            || hypothesis
+                .profile_evidence
+                .iter()
+                .any(|h| !profile.raw_artifacts.contains(h))
+        {
+            return Err(Error::Invalid("retained hypothesis profile linkage"));
+        }
+        for hash in &hypothesis.profile_evidence {
+            self.artifacts.get(hash)?;
+        }
+        for path in &hypothesis.source_paths {
+            safe_edit_path(path.as_str())?;
+        }
+        let sources = self.sources(&hypothesis.source_paths, context)?;
+        let hashes = sources
+            .iter()
+            .map(|(p, s)| (p.clone(), digest(s.as_bytes())))
+            .collect();
+        self.issued
+            .lock()
+            .map_err(|_| Error::State)?
+            .insert(fingerprint(hypothesis)?, hashes);
+        Ok(())
+    }
+}
 fn safe_edit_path(path: &str) -> Result<()> {
     let path = relative(path)?;
     if path

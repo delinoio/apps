@@ -2,11 +2,12 @@
 import { useLang, useLocation } from "@rspress/core/runtime";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import registry from "../i18n/locales.json";
-import { services } from "../services";
+import { servicesForLanguage } from "../services";
 import "./service-switcher.css";
 
 export function ServiceSwitcher() {
   const lang = useLang();
+  const services = servicesForLanguage(lang);
   const { pathname } = useLocation();
   const prefix = lang === registry.sourceLang ? "" : `/${lang}`;
   const current = services.find(({ id }) =>
