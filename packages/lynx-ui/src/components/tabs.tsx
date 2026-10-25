@@ -115,6 +115,7 @@ export function Tabs({ value, onValueChange, label, items }: TabsProps) {
       </view>
       {selected ? (
         <view
+          className="lui-tab-panel"
           accessibility-role-description="tabpanel"
           accessibility-label={selected.label}
         >
