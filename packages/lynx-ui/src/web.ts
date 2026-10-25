@@ -90,6 +90,7 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
       set(target, "role", role);
       const label = element.getAttribute("accessibility-label");
       if (label) set(target, "aria-label", label);
+      else target.removeAttribute("aria-label");
       if (isControl || isInput) set(target, "aria-disabled", String(disabled));
       if (isInput)
         set(

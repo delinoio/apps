@@ -2,6 +2,29 @@
 import { expect, it, rstest } from "@rstest/core";
 import { installWebSupport } from "../src/web";
 
+it("clears mapped labels when the source is removed or emptied", async () => {
+  const host = document.createElement("div");
+  host.innerHTML =
+    '<div class="lui-button" accessibility-label="Save">Save</div>';
+  const dispose = installWebSupport(host);
+  const button = host.firstElementChild!;
+  try {
+    expect(button.getAttribute("aria-label")).toBe("Save");
+    button.textContent = "Saved";
+    button.removeAttribute("accessibility-label");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(button.hasAttribute("aria-label")).toBe(false);
+    button.setAttribute("accessibility-label", "Save again");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(button.getAttribute("aria-label")).toBe("Save again");
+    button.setAttribute("accessibility-label", "");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(button.hasAttribute("aria-label")).toBe(false);
+  } finally {
+    dispose();
+  }
+});
+
 it("maps web semantics, suppresses repeated activation and cleans up methods", () => {
   const host = document.createElement("div");
   host.innerHTML =
