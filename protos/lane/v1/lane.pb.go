@@ -1018,15 +1018,16 @@ func (x *Task) GetProposal() Proposal {
 }
 
 type EntityVersion struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	FormatVersion    uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"` // exactly 1
-	EntityId         string                 `protobuf:"bytes,2,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
-	Kind             EntityKind             `protobuf:"varint,3,opt,name=kind,proto3,enum=lane.v1.EntityKind" json:"kind,omitempty"` // REPOSITORY=1, TASK=2
-	VersionId        string                 `protobuf:"bytes,4,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
-	ParentVersionIds []string               `protobuf:"bytes,5,rep,name=parent_version_ids,json=parentVersionIds,proto3" json:"parent_version_ids,omitempty"`
-	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	Origin           *Origin                `protobuf:"bytes,7,opt,name=origin,proto3" json:"origin,omitempty"`
-	Deleted          bool                   `protobuf:"varint,8,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion     uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"` // exactly 1
+	EntityId          string                 `protobuf:"bytes,2,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	Kind              EntityKind             `protobuf:"varint,3,opt,name=kind,proto3,enum=lane.v1.EntityKind" json:"kind,omitempty"` // REPOSITORY=1, TASK=2
+	VersionId         string                 `protobuf:"bytes,4,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
+	ParentVersionIds  []string               `protobuf:"bytes,5,rep,name=parent_version_ids,json=parentVersionIds,proto3" json:"parent_version_ids,omitempty"`
+	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Origin            *Origin                `protobuf:"bytes,7,opt,name=origin,proto3" json:"origin,omitempty"`
+	Deleted           bool                   `protobuf:"varint,8,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	PromptRestoration bool                   `protobuf:"varint,9,opt,name=prompt_restoration,json=promptRestoration,proto3" json:"prompt_restoration,omitempty"` // explicit RestorePrompt snapshot, including unchanged text
 	// Types that are valid to be assigned to Body:
 	//
 	//	*EntityVersion_Repository
@@ -1118,6 +1119,13 @@ func (x *EntityVersion) GetOrigin() *Origin {
 func (x *EntityVersion) GetDeleted() bool {
 	if x != nil {
 		return x.Deleted
+	}
+	return false
+}
+
+func (x *EntityVersion) GetPromptRestoration() bool {
+	if x != nil {
+		return x.PromptRestoration
 	}
 	return false
 }
@@ -6579,7 +6587,7 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\x06prompt\x18\x04 \x01(\tH\x00R\x06prompt\x88\x01\x01\x12-\n" +
 	"\bprogress\x18\x05 \x01(\x0e2\x11.lane.v1.ProgressR\bprogress\x12-\n" +
 	"\bproposal\x18\x06 \x01(\x0e2\x11.lane.v1.ProposalR\bproposalB\t\n" +
-	"\a_prompt\"\xab\x03\n" +
+	"\a_prompt\"\xda\x03\n" +
 	"\rEntityVersion\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1b\n" +
 	"\tentity_id\x18\x02 \x01(\tR\bentityId\x12'\n" +
@@ -6590,7 +6598,8 @@ const file_lane_v1_lane_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12'\n" +
 	"\x06origin\x18\a \x01(\v2\x0f.lane.v1.OriginR\x06origin\x12\x18\n" +
-	"\adeleted\x18\b \x01(\bR\adeleted\x125\n" +
+	"\adeleted\x18\b \x01(\bR\adeleted\x12-\n" +
+	"\x12prompt_restoration\x18\t \x01(\bR\x11promptRestoration\x125\n" +
 	"\n" +
 	"repository\x18\n" +
 	" \x01(\v2\x13.lane.v1.RepositoryH\x00R\n" +

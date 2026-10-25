@@ -154,6 +154,7 @@ message EntityVersion {
   google.protobuf.Timestamp created_at = 6;
   Origin origin = 7;
   bool deleted = 8;
+  bool prompt_restoration = 9; // explicit RestorePrompt snapshot, including unchanged text
   oneof body {
     Repository repository = 10;
     Task task = 11;

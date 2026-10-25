@@ -43,7 +43,7 @@ func TestWireContract(t *testing.T) {
 		}
 	}
 	envelope := file.Messages().ByName("EntityVersion")
-	for name, number := range map[string]int{"format_version": 1, "entity_id": 2, "kind": 3, "version_id": 4, "parent_version_ids": 5, "created_at": 6, "origin": 7, "deleted": 8, "repository": 10, "task": 11} {
+	for name, number := range map[string]int{"format_version": 1, "entity_id": 2, "kind": 3, "version_id": 4, "parent_version_ids": 5, "created_at": 6, "origin": 7, "deleted": 8, "prompt_restoration": 9, "repository": 10, "task": 11} {
 		if field := envelope.Fields().ByName(protoreflect.Name(name)); field == nil || int(field.Number()) != number {
 			t.Errorf("EntityVersion.%s field number changed", name)
 		}
@@ -254,5 +254,41 @@ func TestCanonicalFingerprintKnownAnswers(t *testing.T) {
 				t.Fatal("canonical text differs from normalized request")
 			}
 		})
+	}
+}
+
+func TestRestorationMarkerSyncRoundTrip(t *testing.T) {
+	for _, marked := range []bool{false, true} {
+		version := &lanev1.EntityVersion{FormatVersion: 1, Kind: lanev1.EntityKind_ENTITY_KIND_TASK, PromptRestoration: marked, Body: &lanev1.EntityVersion_Task{Task: &lanev1.Task{Prompt: proto.String("same")}}}
+		mutation := &lanev1.SyncMutation{Kind: lanev1.MutationKind_MUTATION_KIND_SAVE, Version: version}
+		wire, err := proto.Marshal(mutation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := new(lanev1.SyncMutation)
+		if err := proto.Unmarshal(wire, decoded); err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(mutation, decoded) {
+			t.Fatal("sync binary lost restoration marker")
+		}
+		data, err := protojson.Marshal(decoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored := new(lanev1.SyncMutation)
+		if err := protojson.Unmarshal(data, restored); err != nil {
+			t.Fatal(err)
+		}
+		if restored.Version.PromptRestoration != marked {
+			t.Fatal("sync JSON lost restoration marker")
+		}
+	}
+	old := new(lanev1.EntityVersion)
+	if err := protojson.Unmarshal([]byte(`{"formatVersion":1,"task":{"prompt":"same"}}`), old); err != nil {
+		t.Fatal(err)
+	}
+	if old.PromptRestoration {
+		t.Fatal("missing marker must default to false")
 	}
 }
