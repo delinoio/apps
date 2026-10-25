@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
 import handrailIcon from "../assets/handrail-icon.png?inline";
+import paceIcon from "../assets/pace-icon.png?inline";
 
 export enum MiniApp {
   Lane = "Lane",
@@ -18,12 +19,7 @@ export function AppIcon({ app }: { app: MiniApp }) {
       {app === MiniApp.Lane ? (
         <text className="lane-ribbon">▰</text>
       ) : app === MiniApp.Pace ? (
-        <>
-          <view className="pace-dial" />
-          <view className="pace-tick" />
-          <view className="pace-needle" />
-          <view className="pace-center" />
-        </>
+        <image className="pace-artwork" src={paceIcon} mode="aspectFit" />
       ) : (
         <image
           className="handrail-artwork"

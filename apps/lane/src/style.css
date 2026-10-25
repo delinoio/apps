@@ -403,6 +403,8 @@ text {
   position: absolute;
   left: 48px;
   top: 4px;
+  /* The tooltip sits outside its 44px trigger; size it independently of that box. */
+  width: max-content;
   padding: 8px 12px;
   border-radius: 6px;
   background-color: #172033;
@@ -427,43 +429,10 @@ text {
   text-align: center;
   color: #526079;
 }
-.pace-dial {
-  position: absolute;
-  left: 1px;
-  top: 2px;
-  width: 22px;
-  height: 22px;
-  border: 2px solid #526079;
-  border-bottom-color: transparent;
-  border-radius: 12px;
-}
-.pace-needle {
-  position: absolute;
-  left: 12px;
-  top: 6px;
-  width: 2px;
-  height: 10px;
-  border-radius: 1px;
-  background-color: #526079;
-  transform: rotate(40deg);
-  transform-origin: bottom center;
-}
-.pace-tick {
-  position: absolute;
-  left: 11px;
-  top: 3px;
-  width: 2px;
-  height: 4px;
-  background-color: #526079;
-}
-.pace-center {
-  position: absolute;
-  left: 10px;
-  top: 13px;
-  width: 5px;
-  height: 5px;
-  border-radius: 3px;
-  background-color: #526079;
+.pace-artwork {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 .handrail-artwork {
   width: 24px;
@@ -472,27 +441,6 @@ text {
 }
 .selected .lane-ribbon {
   color: #075aff;
-}
-.selected .pace-dial,
-.miniapp-brand .pace-dial,
-.coming-soon-icon .pace-dial {
-  border-color: #075aff;
-}
-.selected .pace-dial,
-.miniapp-brand .pace-dial,
-.coming-soon-icon .pace-dial {
-  border-bottom-color: transparent;
-}
-.selected .pace-needle,
-.selected .pace-tick,
-.selected .pace-center,
-.miniapp-brand .pace-needle,
-.miniapp-brand .pace-tick,
-.miniapp-brand .pace-center,
-.coming-soon-icon .pace-needle,
-.coming-soon-icon .pace-tick,
-.coming-soon-icon .pace-center {
-  background-color: #075aff;
 }
 .miniapp-brand {
   display: flex;
