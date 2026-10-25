@@ -1797,8 +1797,8 @@ fn validate_spec(s: &Value) -> Result<()> {
         }
     }
     for key in ["minimumImprovement", "maximumCaseRegression"] {
-        let ratio = policy[key].as_f64().unwrap_or(0.0);
-        if !ratio.is_finite() || !(0.0..1.0).contains(&ratio) {
+        let ratio = crate::preparation::optional_finite_number(policy, key)?;
+        if !(0.0..1.0).contains(&ratio) {
             return Err(Fault::invalid("policy ratio invalid"));
         }
     }

@@ -207,6 +207,131 @@ fn preparation_freezes_exact_policy_and_rejects_statistical_aliases() {
     assert!(perfine_api::preparation::verify_spec(&altered, &repo).is_err());
 }
 #[test]
+fn policy_ratios_reject_non_numbers_without_changing_valid_fingerprints() {
+    let (spec, _, _) = fixture(&uid());
+    let repo = json!({"owner":"owner","name":"repo"});
+    let now = chrono::Utc::now();
+    let baseline = configuration(&spec);
+    let prepared = perfine_api::preparation::prepare(&baseline, &repo, now).unwrap();
+    assert_eq!(
+        prepared["specification"]["fingerprintSha256"],
+        spec["fingerprintSha256"]
+    );
+    let mut protobuf_json = baseline.clone();
+    protobuf_json["policy"]["minimumImprovement"] = json!("NaN");
+    let typed: delino_protocol::perfine::v1::ExperimentConfiguration =
+        serde_json::from_value(protobuf_json).unwrap();
+    let converted = serde_json::to_value(typed).unwrap();
+    assert_eq!(converted["policy"]["minimumImprovement"], "NaN");
+    assert_eq!(
+        perfine_api::preparation::prepare(&converted, &repo, now)
+            .unwrap_err()
+            .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
+
+    for key in ["minimumImprovement", "maximumCaseRegression"] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+            json!([]),
+        ] {
+            let mut config = baseline.clone();
+            config["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::prepare(&config, &repo, now)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "prepare {key}={value}"
+            );
+            let mut altered = spec.clone();
+            altered["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::verify_spec(&altered, &repo)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "verify {key}={value}"
+            );
+        }
+        let mut omitted = baseline.clone();
+        omitted["policy"].as_object_mut().unwrap().remove(key);
+        assert!(perfine_api::preparation::prepare(&omitted, &repo, now).is_ok());
+        omitted["policy"][key] = Value::Null;
+        assert!(perfine_api::preparation::prepare(&omitted, &repo, now).is_ok());
+    }
+
+    for key in [
+        "confidenceLevel",
+        "maximumRelativeIntervalWidth",
+        "nearThresholdMargin",
+    ] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+            json!(0.5),
+        ] {
+            let mut config = baseline.clone();
+            config["policy"]["uncertainty"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::prepare(&config, &repo, now)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "prepare {key}={value}"
+            );
+            let mut altered = spec.clone();
+            altered["policy"]["uncertainty"][key] = value.clone();
+            assert_eq!(
+                perfine_api::preparation::verify_spec(&altered, &repo)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::InvalidArgument,
+                "verify {key}={value}"
+            );
+        }
+        let mut accepted = baseline.clone();
+        accepted["policy"]["uncertainty"][key] = json!(0);
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+        accepted["policy"]["uncertainty"][key] = Value::Null;
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+        accepted["policy"]["uncertainty"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(perfine_api::preparation::prepare(&accepted, &repo, now).is_ok());
+    }
+}
+#[test]
+fn malformed_manifest_policy_fails_before_evaluation() {
+    let eid = uid();
+    let (spec, manifest, bytes) = fixture(&eid);
+    let experiment = json!({"id":eid,"origin":"EXECUTION_ORIGIN_LOCAL","specification":spec});
+    for key in ["minimumImprovement", "maximumCaseRegression"] {
+        for value in [
+            json!("NaN"),
+            json!("Infinity"),
+            json!("-Infinity"),
+            json!(true),
+        ] {
+            let mut altered = manifest.clone();
+            altered["policy"][key] = value.clone();
+            assert_eq!(
+                perfine_api::evidence::evaluate(&experiment, &altered, &bytes)
+                    .unwrap_err()
+                    .code,
+                connectrpc::ErrorCode::FailedPrecondition,
+                "evaluate {key}={value}"
+            );
+        }
+    }
+}
+#[test]
 fn shared_evaluator_rejects_corrupt_or_incomplete_evidence() {
     let eid = uid();
     let (spec, m, mut bytes) = fixture(&eid);
@@ -725,6 +850,20 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
         prepared["specification"]["fingerprintSha256"],
         spec["fingerprintSha256"]
     );
+    let mut invalid_configuration = configuration(&spec);
+    invalid_configuration["policy"]["minimumImprovement"] = json!("NaN");
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "PrepareExperiment",
+            json!({"connectionId":cid,"configuration":invalid_configuration})
+        )
+        .await
+        .unwrap_err()
+        .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM perfine_experiments WHERE space=$1")
             .bind(uuid::Uuid::parse_str(&space).unwrap())
@@ -736,6 +875,16 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let mut fabricated = spec.clone();
     fabricated["fingerprintSha256"] = json!("f".repeat(64));
     assert!(call(&server,&space,"BeginUpload",json!({"connectionId":cid,"experimentId":eid,"specification":fabricated,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"})).await.is_err());
+
+    let mut invalid_spec = spec.clone();
+    invalid_spec["policy"]["maximumCaseRegression"] = json!("Infinity");
+    assert_eq!(
+        call(&server, &space, "BeginUpload", json!({"connectionId":cid,"experimentId":eid,"specification":invalid_spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"}))
+            .await
+            .unwrap_err()
+            .code,
+        connectrpc::ErrorCode::InvalidArgument
+    );
 
     let q = json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":m,"origin":"EXECUTION_ORIGIN_LOCAL"});
     let original_quota = server.quota;
@@ -1178,6 +1327,51 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     .await
     .unwrap();
     assert_eq!(e["experiment"]["verdict"], "PERFORMANCE_VERDICT_PASS");
+    let mut invalid_upload_manifest = m.clone();
+    invalid_upload_manifest["runStartedAt"] =
+        json!((chrono::Utc::now() + chrono::Duration::seconds(1)).to_rfc3339());
+    checksum(&mut invalid_upload_manifest);
+    let second_begin = call(
+        &server,
+        &space,
+        "BeginUpload",
+        json!({"connectionId":cid,"experimentId":eid,"specification":spec,"manifest":invalid_upload_manifest,"origin":"EXECUTION_ORIGIN_LOCAL"}),
+    )
+    .await
+    .unwrap();
+    let second_upload = second_begin["upload"]["id"].as_str().unwrap();
+    for target in second_begin["targets"].as_array().unwrap() {
+        let name = target["artifactName"].as_str().unwrap();
+        http.put(target["signedPutUrl"].as_str().unwrap())
+            .body(bytes[name].clone())
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    invalid_upload_manifest["policy"]["minimumImprovement"] = json!("NaN");
+    checksum(&mut invalid_upload_manifest);
+    sqlx::query(
+        "UPDATE perfine_uploads SET data=jsonb_set(data,'{manifest}',$2::jsonb) WHERE id=$1",
+    )
+    .bind(uuid::Uuid::parse_str(second_upload).unwrap())
+    .bind(&invalid_upload_manifest)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        call(
+            &server,
+            &space,
+            "CompleteUpload",
+            json!({"uploadId":second_upload})
+        )
+        .await
+        .unwrap_err()
+        .code,
+        connectrpc::ErrorCode::FailedPrecondition
+    );
     let download = call(
         &server,
         &space,
