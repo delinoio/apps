@@ -431,3 +431,50 @@ fn standalone_import_and_sync_once_preserve_versions_and_drain_outbox() {
         "keep"
     );
 }
+
+#[test]
+fn remote_cancellation_interrupts_stalled_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let auth = Auth::default();
+    let cancelled = auth.cancelled.clone();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+            .unwrap();
+        let mut reader = std::io::BufReader::new(&mut stream);
+        let mut length = 0;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(value) = line.to_lowercase().strip_prefix("content-length:") {
+                length = value.trim().parse::<usize>().unwrap();
+            }
+        }
+        reader.read_exact(&mut vec![0; length]).unwrap();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{"
+        )
+        .unwrap();
+        stream.flush().unwrap();
+        cancelled.store(true, Ordering::Relaxed);
+        assert_eq!(stream.read(&mut [0]).unwrap(), 0);
+    });
+    let start = std::time::Instant::now();
+    assert!(
+        lane::remote::with_credential(
+            &auth,
+            &json!({"endpoint":endpoint,"access_token":"synthetic"}),
+            "ListTasks",
+            &json!({})
+        )
+        .is_err()
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    server.join().unwrap();
+}

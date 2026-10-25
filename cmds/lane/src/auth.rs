@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::network::SendRequest;
 use crate::{
     error::{Failure, Result, invalid},
     protocol::{hash, strv, valid_id},
@@ -74,7 +75,7 @@ impl Vault for OsVault {
 #[derive(Clone)]
 pub struct Auth {
     pub vault: Arc<dyn Vault>,
-    pub http: reqwest::blocking::Client,
+    pub http: reqwest::Client,
     pub cancelled: Arc<AtomicBool>,
     pub credential_lock_root: Option<std::path::PathBuf>,
 }
@@ -83,7 +84,7 @@ impl Default for Auth {
         Self {
             vault: Arc::new(OsVault),
             credential_lock_root: None,
-            http: reqwest::blocking::Client::builder()
+            http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -273,7 +274,7 @@ impl Auth {
             .http
             .post(format!("{endpoint}/oauth/token"))
             .form(form)
-            .send()
+            .send_cancellable(self)
             .map_err(|_| credential_error())?;
         let mut c = read_response(response, 1 << 20)?;
         if strv(&c, "access_token").is_empty()
@@ -409,7 +410,7 @@ impl Auth {
             .http
             .post(format!("{}/oauth/revoke", endpoint(strv(c, "endpoint"))?))
             .form(&[("token", token), ("client_id", "lane-cli")])
-            .send()
+            .send_cancellable(self)
             .map_err(|_| credential_error())?;
         if !response.status().is_success() {
             return Err(credential_error());
@@ -470,7 +471,7 @@ impl Auth {
                 ))
                 .bearer_auth(strv(credential, "access_token"))
                 .json(&json!({"challenge_id":challenge}))
-                .send()
+                .send_cancellable(self)
                 .map_err(|_| credential_error())?;
             let proof = read_response(response, 1 << 20)?;
             if strv(&proof, "reauth_proof").is_empty() {
@@ -567,15 +568,11 @@ impl Auth {
         Err(approval_error())
     }
 }
-pub fn read_response(response: reqwest::blocking::Response, limit: u64) -> Result<Value> {
+pub fn read_response(response: crate::network::Response, limit: u64) -> Result<Value> {
     if !response.status().is_success() {
         return Err(credential_error());
     }
-    let mut bytes = vec![];
-    response
-        .take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| credential_error())?;
+    let bytes = response.body;
     if bytes.len() as u64 > limit {
         return Err(credential_error());
     }

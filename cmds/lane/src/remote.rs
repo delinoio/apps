@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::network::SendRequest;
 use crate::{
     auth::{Auth, endpoint},
     error::{Failure, Result, invalid},
@@ -7,7 +8,6 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::Value;
-use std::io::Read;
 pub fn call(
     auth: &Auth,
     s: &Store,
@@ -39,17 +39,10 @@ pub fn with_credential(auth: &Auth, c: &Value, method: &str, q: &Value) -> Resul
         .header("Connect-Protocol-Version", "1")
         .bearer_auth(strv(c, "access_token"))
         .json(&request)
-        .send()
+        .send_cancellable(auth)
         .map_err(|_| Failure::new("DEPENDENCY_UNAVAILABLE", "Lane service is unavailable."))?;
     let status = response.status();
-    let mut bytes = vec![];
-    response
-        .take((16 << 20) + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| Failure::new("DEPENDENCY_UNAVAILABLE", "Lane response could not be read."))?;
-    if bytes.len() > 16 << 20 {
-        return Err(invalid("Lane response exceeds the size limit."));
-    }
+    let bytes = response.body;
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| Failure::new("DEPENDENCY_UNAVAILABLE", "Invalid Lane service response."))?;
     if !status.is_success() {

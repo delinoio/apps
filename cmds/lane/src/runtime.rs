@@ -3,6 +3,7 @@
     clippy::print_stderr,
     reason = "CLI approval instructions and safe diagnostics must stay off stdout."
 )]
+use crate::network::SendRequest;
 use crate::{
     auth::{self, Auth},
     cli::{Dispatcher, Options},
@@ -430,7 +431,7 @@ impl Runtime {
                     auth::endpoint(strv(&c, "endpoint"))?
                 ))
                 .bearer_auth(strv(&c, "access_token"))
-                .send()
+                .send_cancellable(&self.auth)
                 .map_err(|_| original.clone())?;
             let directive = auth::read_response(response, 64 << 10)?;
             if directive["disconnected"] != true
