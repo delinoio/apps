@@ -679,6 +679,7 @@ void unsupported_schema() {
 #include "sync_hard_cases.h"
 #include "shared_sync_runner.h"
 #include "epoch_lifecycle.h"
+#include "lifetime_locks.h"
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -710,6 +711,9 @@ int main(int argc, char** argv) {
     {"account deletion binding", account_deletion_binding},
     {"epoch reapproval lifecycle", epoch_reapproval_lifecycle},
     {"exact account space lookup", exact_account_space_lookup},
+    {"lifetime lock removal retry", lifetime_lock_removal_retry},
+    {"restart marked cleanup", restart_marked_cleanup},
+    {"deferred registry compatibility failure", deferred_registry_compatibility_failure},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {
