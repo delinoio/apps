@@ -1024,7 +1024,11 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
     assert_eq!(fault.source, FaultSource::GitHub);
     *provider_outage.lock().unwrap() = Some("delcore");
-    let fault = server.authority.states(&[space.clone()]).await.unwrap_err();
+    let fault = server
+        .authority
+        .states(std::slice::from_ref(&space))
+        .await
+        .unwrap_err();
     assert_eq!(fault.code, connectrpc::ErrorCode::Unavailable);
     assert_eq!(fault.source, FaultSource::Application);
     *provider_outage.lock().unwrap() = Some("logto");
