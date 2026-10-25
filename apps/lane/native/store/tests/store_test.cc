@@ -7,6 +7,11 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <future>
+#include <atomic>
+#include <thread>
+#include <fstream>
+#include "../vendor/picosha2/picosha2.h"
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -211,7 +216,7 @@ void prompt_history_restore() {
   require(!removed.at("task").contains("prompt"), "restore absence");
   auto other = f.task();
   error(f.raw("RestorePrompt", {{"meta", f.meta()}, {"id", removed.at("entityId")},
-      {"expectedVersionId", removed.at("versionId")}, {"sourceVersionId", other.at("versionId")}}), "INVALID_INPUT");
+      {"expectedVersionId", removed.at("versionId")}, {"sourceVersionId", other.at("versionId")}}), "NOT_FOUND");
 }
 void conflicts_and_resolution() {
   Fixture f; auto base = f.task(); auto body = base.at("task");
@@ -357,8 +362,38 @@ void observation_and_rollback() {
   f.call("SaveTask", save_request);
   require(f.get(v.at("entityId")).at("task").at("title") == "Must roll back", "retry after rollback");
 }
+// Simulate the authenticated sync adapter, never the untrusted UI origin field.
+struct RemoteProposals {
+  Fixture& f;
+  std::string epoch = uuid(), owner = uuid(), remote_device = uuid();
+  J repository;
+  explicit RemoteProposals(Fixture& fixture) : f(fixture) {
+    success(f.store.approveAccount(J{{"issuer", "https://identity.example.test"},
+        {"accountId", uuid()}, {"tenantId", uuid()}, {"epoch", epoch}}.dump(), false));
+    f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+    success(f.store.acquireSync(f.space, owner));
+    repository = f.call("CreateRepository", {{"meta", f.meta()}, {"id", uuid()},
+        {"url", "https://example.test/remote/proposals"}}).at("result").at("version");
+  }
+  void apply(const J& version) {
+    success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", epoch}, {"owner", owner},
+        {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {
+            {"result", "RESULT_KIND_APPLIED"}, {"version", version}}}}})},
+            {"nextCursor", "synthetic-proposal-cursor"}, {"hasMore", false}}}}.dump()));
+  }
+  J create() {
+    J version = {{"formatVersion", 1}, {"entityId", uuid()}, {"kind", "ENTITY_KIND_TASK"},
+        {"versionId", uuid()}, {"parentVersionIds", J::array()}, {"createdAt", "2026-01-01T00:00:00Z"},
+        {"origin", {{"kind", "ORIGIN_KIND_MCP"}, {"deviceId", remote_device},
+            {"deviceName", "Synthetic remote MCP"}, {"accountId", ""}}}, {"deleted", false},
+        {"task", {{"repositoryId", repository.at("entityId")}, {"title", "Remote proposal"},
+            {"description", ""}, {"progress", "PROGRESS_TODO"}, {"proposal", "PROPOSAL_PENDING"}}}};
+    apply(version);
+    return version;
+  }
+};
 void preferences_and_notifications() {
-  Fixture f; int prompts = 0;
+  Fixture f; RemoteProposals remote(f); int prompts = 0;
   lane::HostHooks hooks;
   hooks.requestNotificationPermission = [&] { ++prompts; return "NOTIFICATION_PERMISSION_GRANTED"; };
   f.store.setHostHooks(hooks);
@@ -369,9 +404,8 @@ void preferences_and_notifications() {
   auto preferences = f.call("GetNotificationPreferences");
   require(preferences.at("enabled") == true && preferences.at("content") == "NOTIFICATION_CONTENT_GENERIC" &&
           preferences.at("permission") == "NOTIFICATION_PERMISSION_GRANTED", "preferences read back");
-  auto request = f.createRequest(); request["meta"] = f.meta("MCP"); request["proposal"] = "PROPOSAL_PENDING";
-  auto proposal = f.task(request);
-  f.task(request);
+  auto proposal = remote.create();
+  remote.apply(proposal);
   Sql db(f.database());
   const auto id = proposal.at("entityId").get<std::string>();
   require(db.scalar("SELECT count(*) FROM notification_receipts WHERE proposal_id='" + id + "'") == "1", "notification replay dedupe");
@@ -379,17 +413,21 @@ void preferences_and_notifications() {
   f.store.pendingNotifications(f.space);
   success(f.store.acknowledgeNotification(f.space, id));
   require(db.scalar("SELECT state FROM notification_receipts WHERE proposal_id='" + id + "'") == "2", "delivery acknowledged durably");
-  request = f.createRequest(); request["meta"] = f.meta("MCP"); request["proposal"] = "PROPOSAL_PENDING";
-  auto cancel = f.task(request);
+  auto cancel = remote.create();
   f.call("SetProposal", {{"meta", f.meta()}, {"id", cancel.at("entityId")},
       {"expectedVersionId", cancel.at("versionId")}, {"proposal", "PROPOSAL_REJECTED"}});
   f.store.pendingNotifications(f.space);
   require(db.scalar("SELECT count(*) FROM notification_receipts WHERE state=1 AND proposal_id='" +
       cancel.at("entityId").get<std::string>() + "'") == "0", "rejected notification canceled");
   const auto count = db.scalar("SELECT count(*) FROM notification_receipts");
-  for (const auto* origin : {"APP", "CLI"}) {
-    request = f.createRequest(); request["meta"] = f.meta(origin); request["proposal"] = "PROPOSAL_PENDING";
-    f.task(request);
+  for (const auto* origin : {"APP", "CLI", "MCP"}) {
+    auto request = f.createRequest(); request["meta"] = f.meta(origin); request["proposal"] = "PROPOSAL_PENDING";
+    request["meta"]["origin"]["deviceId"] = uuid();
+    request["meta"]["origin"]["accountId"] = "forged-account";
+    auto created = f.task(request);
+    require(created.at("origin").at("kind") == "ORIGIN_KIND_APP" &&
+            created.at("origin").at("deviceId") == f.device &&
+            created.at("origin").at("accountId") != "forged-account", "UI cannot forge adapter origin");
   }
   require(db.scalar("SELECT count(*) FROM notification_receipts") == count, "only MCP proposals notify");
   hooks.requestNotificationPermission = [&] { ++prompts; return "NOTIFICATION_PERMISSION_DENIED"; };
@@ -398,6 +436,47 @@ void preferences_and_notifications() {
   require(prompts == 1, "disable never requests permission");
   f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
   require(f.call("GetNotificationPreferences").at("permission") == "NOTIFICATION_PERMISSION_DENIED", "denial visible");
+}
+void concurrent_notification_claims() {
+  Fixture f; RemoteProposals remote(f);
+  lane::HostHooks hooks;
+  hooks.requestNotificationPermission = [] { return "NOTIFICATION_PERMISSION_GRANTED"; };
+  f.store.setHostHooks(hooks);
+  f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
+  auto proposal = remote.create();
+  lane::Store other(f.root.path.string());
+  success(other.open(J{{"formatVersion", 1}, {"spaceId", f.space}}.dump()));
+  std::atomic<int> ready{0};
+  auto claim = [&](lane::Store& store) {
+    const auto claimant = uuid();
+    return std::async(std::launch::async, [&store, &ready, &f, claimant] {
+      ++ready;
+      while (ready.load() != 2) std::this_thread::yield();
+      return success(store.claimNotifications(f.space, claimant)).at("items");
+    });
+  };
+  auto first = claim(f.store); auto second = claim(other);
+  auto a = first.get(), b = second.get();
+  require(a.size() + b.size() == 1, "two concurrent stores claim once");
+  const auto claimed = a.empty() ? b.at(0) : a.at(0);
+  require(claimed.at("proposalId") == proposal.at("entityId") && claimed.at("deviceId") == f.device,
+          "OS dedupe identity preserved in claim");
+  require(success(other.claimNotifications(f.space, uuid())).at("items").empty(), "active claim excluded");
+  success(f.store.acknowledgeNotification(f.space, proposal.at("entityId")));
+  remote.apply(proposal);
+  require(success(other.claimNotifications(f.space, uuid())).at("items").empty(), "remote replay after delivery cannot notify again");
+  auto pending = remote.create();
+  success(f.store.recordNotificationPermission(f.space, "NOTIFICATION_PERMISSION_DENIED"));
+  require(success(other.claimNotifications(f.space, uuid())).at("items").empty(), "other store rechecks revoked permission");
+  success(f.store.recordNotificationPermission(f.space, "NOTIFICATION_PERMISSION_GRANTED"));
+  f.call("SetNotificationPreferences", {{"enabled", false}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
+  require(success(other.claimNotifications(f.space, uuid())).at("items").empty(), "other store rechecks disabled preference");
+  f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
+  f.call("SetProposal", {{"meta", f.meta()}, {"id", pending.at("entityId")},
+      {"expectedVersionId", pending.at("versionId")}, {"proposal", "PROPOSAL_ACCEPTED"}});
+  require(success(other.claimNotifications(f.space, uuid())).at("items").empty(), "claim rechecks proposal disposition");
+  Sql db(f.database());
+  require(db.scalar("SELECT count(*) FROM notification_receipts") == "2", "remote receipt dedupe persists across stores");
 }
 J identity(const std::string& account, const std::string& tenant, const std::string& epoch) {
   return {{"issuer", "https://identity.example.test"}, {"accountId", account},
@@ -587,9 +666,10 @@ void unsupported_schema() {
   error(f.raw("CreateTask", f.createRequest()), "UNSUPPORTED_FORMAT");
   require(counts(db) == before, "foreign application database preserved");
 }
+#include "shared_fixture_runner.h"
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   const std::vector<std::pair<const char*, std::function<void()>>> tests = {
     {"CRUD, replay and persistence", crud_replay_persistence},
     {"25 progress transitions and proposals", transitions_and_proposals},
@@ -599,6 +679,7 @@ int main() {
     {"URLs, Unicode and validation", urls_unicode_and_validation},
     {"external writers and rollback", observation_and_rollback},
     {"preferences and notifications", preferences_and_notifications},
+    {"concurrent notification claims", concurrent_notification_claims},
     {"accounts and host hooks", accounts_and_host_hooks},
     {"explicit account merge", explicit_account_merge},
     {"sync and remote cache", sync_and_remote_cache},
@@ -612,5 +693,13 @@ int main() {
     catch (const std::exception& e) { ++failures; std::cerr << "FAIL " << test.first << ": " << e.what() << '\n'; }
   }
   std::cout << tests.size() - failures << '/' << tests.size() << " test groups passed\n";
+  std::string fixture_directory;
+#ifdef LANE_STORE_FIXTURE_DIR
+  fixture_directory = LANE_STORE_FIXTURE_DIR;
+#endif
+  if (argc > 2) { std::cerr << "Usage: lane_store_tests [fixture-directory]\n"; return 2; }
+  if (argc == 2) fixture_directory = argv[1];
+  if (!fixture_directory.empty()) failures += run_shared_fixtures(fixture_directory);
+  else std::cout << "Shared fixtures not run: provide fixture-directory or LANE_STORE_FIXTURE_DIR\n";
   return failures ? 1 : 0;
 }
