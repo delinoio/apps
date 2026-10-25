@@ -29,7 +29,7 @@ if(NOT EXISTS "${LANE_WINDOWS_APP_SDK_LICENSE}")
   message(FATAL_ERROR "Set LANE_WINDOWS_APP_SDK_LICENSE to the original SDK package license")
 endif()
 target_include_directories(Lane PRIVATE "${LANE_WINDOWS_APP_SDK_INCLUDE_DIR}" "${LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR}")
-target_compile_definitions(Lane PRIVATE USE_WEAK_SUFFIX_NAPI "$<$<CONFIG:Debug>:LANE_DEVELOPMENT>")
+target_compile_definitions(Lane PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00)
 target_link_libraries(Lane PRIVATE lane_store windowsapp runtimeobject ole32 shell32 advapi32 bcrypt)
 if(MSVC)
   target_compile_options(Lane PRIVATE /utf-8 /EHsc /permissive-)
@@ -53,5 +53,5 @@ foreach(notice IN ITEMS sqlite/LICENSE ada/LICENSE-APACHE ada/LICENSE-MIT
     VERBATIM)
 endforeach()
 # The shared coordinator embeds the matching packages/lane artifact at
-# $<TARGET_FILE_DIR:Lane>/helpers/lane.exe. Lane.exe and lane.exe cannot coexist
-# in one Windows directory. Do not search PATH or invoke a global npm package.
+# resources/app/helpers/lane.exe. Keep it separate from the Lynxtron host.
+# Do not search PATH or invoke a global npm package.

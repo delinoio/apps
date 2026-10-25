@@ -2,9 +2,10 @@
 #pragma once
 #import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
-#include "../async_module.h"
+#include "../handler.h"
 
 @interface LaneRuntime : NSObject
+- (instancetype)initWithHelperURL:(NSURL*)helperURL scheme:(NSString*)scheme;
 @property(nonatomic, copy) void (^eventSink)(NSString*, NSArray*);
 - (std::shared_ptr<lane::desktop::Handler>)storeHandler;
 - (std::shared_ptr<lane::desktop::Handler>)hostHandler;

@@ -23,14 +23,14 @@ args.scratch.mkdir(parents=True, exist_ok=True)
 app = args.scratch / "Lane.app"
 if app.exists():
     raise SystemExit("Use a fresh scratch directory")
-shutil.copytree(args.app, app)
-shutil.copyfile(args.bundle, app / "Contents/Resources/main.lynx.bundle")
+shutil.copytree(args.app, app, symlinks=True)
+shutil.copyfile(args.bundle, app / "Contents/Resources/app/main.lynx.bundle")
 home = args.scratch / "home"
 root = home / "Library/Application Support/io.delino.lane"
 env = dict(os.environ, HOME=str(home), LANE_NATIVE_TEST_ROOT=str(root), NSUnbufferedIO="YES",
-           LANE_NATIVE_TEST_LIFECYCLE="1")
-host_path = app / "Contents/MacOS/Lane"
-helper_path = host_path.parent / "helpers/lane"
+           LANE_NATIVE_TEST_LIFECYCLE="1", LANE_NATIVE_TEST_AUTOQUIT="1")
+host_path = app / "Contents/MacOS/lynxtron"
+helper_path = app / "Contents/Resources/app/helpers/lane"
 assert host_path.resolve() != helper_path.resolve()
 assert not os.path.samefile(host_path, helper_path), "Host and helper must be separate files"
 helper_version = subprocess.check_output([str(helper_path), "--version"], env=env,
@@ -46,7 +46,7 @@ assert mcp.returncode == 0, mcp.stderr
 messages = [json.loads(line) for line in mcp.stdout.splitlines() if line.strip()]
 assert any(item.get("id") == 1 and "result" in item for item in messages), messages
 (args.scratch / "packaging.json").write_text(json.dumps({
-    "host": "Contents/MacOS/Lane", "helper": "Contents/MacOS/helpers/lane",
+    "host": "Contents/MacOS/lynxtron", "helper": "Contents/Resources/app/helpers/lane",
     "distinctFiles": True, "helperVersion": helper_version, "helperMcpInitialize": True,
 }, indent=2) + "\n")
 task_id = "01900000-0000-7000-8000-000000000001"
@@ -80,7 +80,7 @@ results = []
 for iteration in range(2):
     log = args.scratch / f"run-{iteration}.log"
     with log.open("w") as output:
-        host = subprocess.Popen([str(app / "Contents/MacOS/Lane")], env=env,
+        host = subprocess.Popen([str(app / "Contents/MacOS/lynxtron")], env=env,
                                 stdout=output, stderr=output)
         try:
             text = await_log(log, "LANE_NATIVE_READY", host)
@@ -103,10 +103,17 @@ for iteration in range(2):
             assert closed_read["result"]["version"]["task"]["title"] == "external commit"
             await_log(log, "LANE_NATIVE_WINDOW_REOPENED", host, closed_offset)
             await_log(log, "LANE_NATIVE_READY", host, closed_offset)
+            await_log(log, '"event":"lane_stopped"', host)
+            assert host.wait(timeout=10) == 0, "Explicit Quit must exit successfully"
             results.append({"launch": iteration, "windowCloseReopen": True, "creation": expected,
                             "goReadNativeWrite": True, "nativeObservedGoWrite": True})
         finally:
-            host.terminate()
-            host.wait(timeout=10)
+            if host.poll() is None:
+                host.terminate()
+                try:
+                    host.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    host.kill()
+                    host.wait(timeout=5)
 (args.scratch / "result.json").write_text(json.dumps(results, indent=2) + "\n")
 print(json.dumps(results))

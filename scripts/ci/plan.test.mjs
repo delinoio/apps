@@ -594,7 +594,7 @@ test("Perfine API and server evaluator changes select server validation", () => 
 
 for (const path of [
   "apps/lane/src/App.tsx",
-  "apps/lane/native/desktop/macos.mm",
+  "apps/lane/native/desktop/main.mjs",
   "docs/apps-lane-foundation.md",
 ]) {
   test(`Lane paths select only Lane: ${path}`, () => {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { desktopModules, type HostModule, type DesktopBridge } from "./desktop";
 import { toUI, fromUI, type UI } from "./serializable";
 import {
   create,
@@ -81,11 +82,15 @@ export function getAdapter(): LaneAdapter {
       },
     };
   }
-  if (!NativeModules.LaneStore)
+  const store =
+    NativeModules.LaneStore ||
+    (NativeModules.bridge &&
+      desktopModules(NativeModules.bridge as unknown as DesktopBridge).store);
+  if (!store)
     throw new Error(
       "Lane storage is unavailable. Install a host with LaneStore support.",
     );
-  return new NativeAdapter(NativeModules.LaneStore as LaneStoreModule, events);
+  return new NativeAdapter(store as LaneStoreModule, events);
 }
 export function hostAction(
   method: "copyText" | "openURL" | "cancelReauthentication",
@@ -95,7 +100,10 @@ export function hostAction(
   if (method === "openURL" && !/^https:\/\//i.test(value))
     return Promise.reject(new Error("Only HTTPS links can be opened."));
   return new Promise((resolve, reject) => {
-    const host = NativeModules.LaneHost;
+    const host = (NativeModules.LaneHost ||
+      (NativeModules.bridge &&
+        desktopModules(NativeModules.bridge as unknown as DesktopBridge)
+          .host)) as HostModule | undefined;
     if (!host?.[method]) {
       reject(new Error("This host does not support this action."));
       return;
