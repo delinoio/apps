@@ -670,7 +670,7 @@ test("Lane development keeps its database and provider configuration API-local",
   const config = JSON.parse(
     readFileSync(new URL("../turbo.json", import.meta.url), "utf8"),
   );
-  const task = config.tasks["@delinoio/lane-api#dev"];
+  const task = config.tasks["lane-api#dev"];
   assert.deepEqual(task.dependsOn, ["//#server-build"]);
   for (const key of [
     databaseHandoff,

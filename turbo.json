@@ -241,7 +241,7 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "@delinoio/lane-api#dev": {
+    "lane-api#dev": {
       "cache": false,
       "persistent": true,
       "dependsOn": ["//#server-build"],
