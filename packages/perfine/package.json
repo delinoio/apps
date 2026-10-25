@@ -7,18 +7,11 @@
   "bin": {
     "perfine": "bin/perfine.cjs"
   },
-  "os": [
-    "linux"
-  ],
-  "cpu": [
-    "x64"
-  ],
   "engines": {
     "node": ">=24"
   },
   "files": [
     "bin",
-    "runtime",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES",
@@ -35,5 +28,11 @@
     "build": "pnpm --dir ../../actions/perfine build && node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",
     "release:verify": "node scripts/release.mjs verify"
+  },
+  "optionalDependencies": {
+    "@delinoio/perfine-linux-x64": "0.1.0",
+    "@delinoio/perfine-darwin-x64": "0.1.0",
+    "@delinoio/perfine-darwin-arm64": "0.1.0",
+    "@delinoio/perfine-win32-x64": "0.1.0"
   }
 }

@@ -28,19 +28,36 @@ export function commit(value) {
     throw new Error("Exact nonzero commit SHA required");
   return value;
 }
-export function linuxBinary(file) {
+import platforms from "../bin/platforms.cjs";
+export const { targets, targetInfo, hostTarget } = platforms;
+export function nativeBinary(file, target) {
   if (!lstatSync(file).isFile())
     throw new Error("Binary must be a regular file");
-  const bytes = readFileSync(file);
-  if (
-    bytes.length < 64 ||
-    bytes.subarray(0, 4).toString("hex") !== "7f454c46" ||
-    bytes[4] !== 2 ||
-    bytes[5] !== 1 ||
-    bytes.readUInt16LE(18) !== 62
-  )
-    throw new Error("Linux x86_64 ELF binary required");
-  return bytes;
+  return platforms.validateBinary(readFileSync(file), target);
+}
+export function linuxBinary(file) {
+  return nativeBinary(file, "x86_64-unknown-linux-gnu");
+}
+export function archiveNames(releaseVersion, target) {
+  version(releaseVersion);
+  const info = targetInfo(target);
+  return {
+    entry: `perfine-${releaseVersion}.tgz`,
+    platform: `${info.packageName.slice(1).replace("/", "-")}-${releaseVersion}.tgz`,
+    standalone: `perfine-v${releaseVersion}-${info.suffix}.tar.gz`,
+  };
+}
+// Run npm's JavaScript entry on Windows without a shell or .cmd argument parsing.
+export function npm(args, options = {}) {
+  if (process.platform !== "win32") return execFileSync("npm", args, options);
+  const commands = execFileSync("where.exe", ["npm.cmd"], { encoding: "utf8" })
+    .trim()
+    .split(/\r?\n/);
+  const cli = commands
+    .map((command) => join(dirname(command), "node_modules/npm/bin/npm-cli.js"))
+    .find(existsSync);
+  if (!cli) throw new Error("Cannot locate npm CLI beside npm.cmd");
+  return execFileSync(process.execPath, [cli, ...args], options);
 }
 export function stage({
   binary,
@@ -49,10 +66,13 @@ export function stage({
   sourceCommit,
   releaseVersion,
   repositoryRoot = root,
+  target = "x86_64-unknown-linux-gnu",
 }) {
   version(releaseVersion);
   commit(sourceCommit);
-  const bytes = linuxBinary(binary);
+  output = resolve(output);
+  const info = targetInfo(target);
+  const bytes = nativeBinary(binary, target);
   if (!readFileSync(notices, "utf8").trim())
     throw new Error("Third-party license texts required");
   if (existsSync(output))
@@ -69,16 +89,22 @@ export function stage({
     version: releaseVersion,
     sourceRepository: "delinoio/apps",
     sourceCommit,
-    target: "x86_64-unknown-linux-gnu",
+    target,
     binarySha256: sha256(bytes),
   };
-  for (const kind of ["npm", "standalone", "action"]) {
+  for (const kind of [
+    "platform",
+    "standalone",
+    ...(info.os === "linux" ? ["action"] : []),
+  ]) {
     const dest = join(output, kind);
     mkdirSync(join(dest, "runtime"), { recursive: true });
-    writeFileSync(join(dest, "runtime/perfine"), bytes, { mode: 0o755 });
+    writeFileSync(join(dest, "runtime", info.executable), bytes, {
+      mode: 0o755,
+    });
     writeFileSync(
       join(dest, "runtime/SHA256SUMS"),
-      `${sha256(bytes)}  perfine\n`,
+      `${sha256(bytes)}  ${info.executable}\n`,
     );
     for (const name of ["LICENSE", "NOTICE"])
       cpSync(join(repositoryRoot, name), join(dest, name));
@@ -88,6 +114,32 @@ export function stage({
       `${JSON.stringify(provenance, null, 2)}\n`,
     );
   }
+  const expectedDependencies = Object.fromEntries(
+    Object.keys(targets).map((key) => [
+      targetInfo(key).packageName,
+      releaseVersion,
+    ]),
+  );
+  if (
+    JSON.stringify(pkg.optionalDependencies) !==
+    JSON.stringify(expectedDependencies)
+  )
+    throw new Error("Exact matching platform optionalDependencies required");
+  mkdirSync(join(output, "npm"));
+  for (const name of ["LICENSE", "NOTICE"])
+    cpSync(join(repositoryRoot, name), join(output, "npm", name));
+  writeFileSync(
+    join(output, "npm/THIRD_PARTY_NOTICES"),
+    "The launcher uses Node.js built-ins only. Native dependency licenses are included in the selected platform package.\n",
+  );
+  writeFileSync(
+    join(output, "npm/provenance.json"),
+    `${JSON.stringify({ schemaVersion: 1, version: releaseVersion, sourceRepository: "delinoio/apps", sourceCommit }, null, 2)}\n`,
+  );
+  writeFileSync(
+    join(output, "platform/package.json"),
+    `${JSON.stringify({ name: info.packageName, version: releaseVersion, description: `Perfine native executable for ${info.os}/${info.cpu}`, license: "Apache-2.0", os: [info.os], cpu: [info.cpu], ...(info.os === "linux" ? { libc: ["glibc"] } : {}), files: ["runtime", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES", "provenance.json"], repository: pkg.repository }, null, 2)}\n`,
+  );
   // Publish only the staged manifest. The source package has no install-time network hooks.
   delete pkg.scripts;
   writeFileSync(
@@ -104,30 +156,31 @@ export function stage({
     join(repositoryRoot, "packages/perfine/README.md"),
     join(output, "npm/README.md"),
   );
-  for (const name of [
-    "action.cjs",
-    "action.yml",
-    "README.md",
-    "ACTION_NOTICES",
-  ])
-    cpSync(
-      join(repositoryRoot, "actions/perfine", name),
-      join(output, "action", name),
-    );
-  const archive = `perfine-v${releaseVersion}-linux-x86_64.tar.gz`;
+  if (info.os === "linux")
+    for (const name of [
+      "action.cjs",
+      "action.yml",
+      "README.md",
+      "ACTION_NOTICES",
+    ])
+      cpSync(
+        join(repositoryRoot, "actions/perfine", name),
+        join(output, "action", name),
+      );
+  const archives = archiveNames(releaseVersion, target);
   execFileSync("tar", [
     "-czf",
-    join(output, archive),
+    join(output, archives.standalone),
     "-C",
     join(output, "standalone"),
     ".",
   ]);
-  execFileSync(
-    "npm",
-    ["pack", "--ignore-scripts", "--pack-destination", output],
-    { cwd: join(output, "npm"), stdio: "pipe" },
-  );
-  const files = [archive, `perfine-${releaseVersion}.tgz`];
+  for (const kind of ["npm", "platform"])
+    npm(["pack", "--ignore-scripts", "--pack-destination", output], {
+      cwd: join(output, kind),
+      stdio: "pipe",
+    });
+  const files = Object.values(archives);
   writeFileSync(
     join(output, "SHA256SUMS"),
     files
@@ -140,20 +193,30 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
+  const target = process.env.PERFINE_TARGET ?? "x86_64-unknown-linux-gnu";
+  const info = targetInfo(target);
   const binary =
-    process.env.PERFINE_BINARY ?? join(root, "target/release/perfine");
-  linuxBinary(binary);
+    process.env.PERFINE_BINARY ??
+    join(
+      root,
+      "target",
+      ...(process.env.PERFINE_TARGET ? [target] : []),
+      "release",
+      info.executable,
+    );
+  nativeBinary(binary, target);
   const notices =
     process.env.PERFINE_NOTICES ??
     join(root, "packages/perfine/dist/THIRD_PARTY_NOTICES");
   if (process.env.PERFINE_NOTICES === undefined) {
     const { collectNotices } = await import("./notices.mjs");
     mkdirSync(dirname(notices), { recursive: true });
-    writeFileSync(notices, collectNotices(root));
+    writeFileSync(notices, collectNotices(root, target));
   }
   console.log(
     JSON.stringify(
       stage({
+        target,
         binary,
         notices,
         output:

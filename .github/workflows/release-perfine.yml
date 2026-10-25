@@ -125,7 +125,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PERFINE_NPM_TOKEN }}
           RELEASE_VERSION: ${{ needs.source.outputs.version }}
-        run: npm publish "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" --access public --provenance --ignore-scripts
+        # This single-target workflow cannot publish the platform dependencies.
+        # Keep the entry blocked until all exact versions exist; the complete
+        # native release pipeline replaces this step with platform-first publication.
+        run: |
+          for platform in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
+            test "$(npm view "@delinoio/perfine-$platform@$RELEASE_VERSION" version)" = "$RELEASE_VERSION"
+          done
+          npm publish "packages/perfine/dist/release/perfine-$RELEASE_VERSION.tgz" --access public --provenance --ignore-scripts
       - name: Publish standalone release and verified Action record
         env:
           GH_TOKEN: ${{ github.token }}
