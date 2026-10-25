@@ -8,5 +8,6 @@ protos/**/*_pb.ts linguist-generated=true
 .agents/skills/lynx-trace-analysis/scripts/shared.bundle.cjs filter=lfs diff=lfs merge=lfs -text
 .agents/skills/lynx-trace-analysis/scripts/trace_query.bundle.cjs filter=lfs diff=lfs merge=lfs -text
 apps/lane/assets/icon-source.png filter=lfs diff=lfs merge=lfs -text
+apps/lane/assets/pace-icon-source.png filter=lfs diff=lfs merge=lfs -text
 apps/lane/native/desktop/macos/Lane.icns filter=lfs diff=lfs merge=lfs -text
 apps/lane/native/ios/Assets.xcassets/AppIcon.appiconset/AppIcon.png filter=lfs diff=lfs merge=lfs -text
