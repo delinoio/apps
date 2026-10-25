@@ -150,7 +150,7 @@ func TestSharedTaskVectors(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if r.Msg.Result.Version.GetTask().Prompt == nil || r.Msg.Result.Version.GetTask().GetPrompt() != want.Prompt || count(t, s, "versions") != want.NewVersionsIncludingCreation+1 {
+				if !r.Msg.Result.Version.PromptRestoration || r.Msg.Result.Version.GetTask().Prompt == nil || r.Msg.Result.Version.GetTask().GetPrompt() != want.Prompt || count(t, s, "versions") != want.NewVersionsIncludingCreation+1 {
 					t.Fatal("restoration differs")
 				}
 				if want.PromptHistoryCount > 0 {

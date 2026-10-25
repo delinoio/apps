@@ -2,6 +2,7 @@
 package store
 
 import (
+	"bytes"
 	"connectrpc.com/connect"
 	"context"
 	"database/sql"
@@ -536,5 +537,157 @@ func TestRegistryUpgradeAndDeviceMismatchRefused(t *testing.T) {
 	}
 	if e := s.WithWrite(ctx, func(*sql.Conn) error { t.Fatal("mismatched device entered transaction callback"); return nil }); reason(e) != 8 {
 		t.Fatal("device mismatch accepted", e)
+	}
+}
+
+func TestUnknownDatabaseUnchangedBeforeWAL(t *testing.T) {
+	for _, tc := range []struct {
+		name, setup string
+		store       bool
+	}{{"unrelated", "CREATE TABLE unrelated(value TEXT); INSERT INTO unrelated VALUES('preserve');", false}, {"future-schema", "PRAGMA application_id=1279348293; PRAGMA user_version=2; CREATE TABLE unrelated(value TEXT);", false}, {"future-format", "PRAGMA application_id=1279348293; PRAGMA user_version=1; CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT); INSERT INTO store_meta VALUES('format_version','2');", true}, {"missing-format", "PRAGMA application_id=1279348293; PRAGMA user_version=1; CREATE TABLE store_meta(key TEXT PRIMARY KEY,value TEXT);", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "unknown.sqlite")
+			db, e := sql.Open("sqlite", path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e = db.Exec(tc.setup); e != nil {
+				t.Fatal(e)
+			}
+			if e = db.Close(); e != nil {
+				t.Fatal(e)
+			}
+			before, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			got, e := openDB(path, tc.store)
+			if got != nil {
+				got.Close()
+				t.Fatal("unknown database opened")
+			}
+			if reason(e) != 8 {
+				t.Fatal("wrong compatibility error", e)
+			}
+			after, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatal("unknown database changed before rejection")
+			}
+			check, e := sql.Open("sqlite", path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer check.Close()
+			var mode string
+			if e = check.QueryRow("PRAGMA journal_mode").Scan(&mode); e != nil || mode != "delete" {
+				t.Fatal("unknown database journal mode changed", mode, e)
+			}
+			if _, e = os.Stat(path + "-wal"); !os.IsNotExist(e) {
+				t.Fatal("unknown database acquired WAL file", e)
+			}
+		})
+	}
+}
+func TestConcurrentInitialOpen(t *testing.T) {
+	root := t.TempDir()
+	var wg sync.WaitGroup
+	type opened struct {
+		s *Store
+		e error
+	}
+	results := make(chan opened, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); s, e := Open(root, ""); results <- opened{s, e} }()
+	}
+	wg.Wait()
+	close(results)
+	space, device := "", ""
+	for r := range results {
+		if r.e != nil {
+			t.Error(r.e)
+			continue
+		}
+		defer r.s.Close()
+		if space == "" {
+			space, device = r.s.SpaceID(), r.s.DeviceID()
+		}
+		if r.s.SpaceID() != space || r.s.DeviceID() != device {
+			t.Fatal("concurrent initialization allocated multiple identities")
+		}
+	}
+}
+func TestRemovalCheckpointBusyAndRetry(t *testing.T) {
+	s := testStore(t)
+	create(t, s)
+	reader, e := s.db.Conn(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer reader.Close()
+	if _, e = reader.ExecContext(ctx, "BEGIN"); e != nil {
+		t.Fatal(e)
+	}
+	var n int
+	if e = reader.QueryRowContext(ctx, "SELECT count(*) FROM entities").Scan(&n); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.RemoveSpace(ctx); reason(e) != 9 {
+		t.Fatal("blocked checkpoint falsely succeeded", e)
+	}
+	if _, e = Open(s.Root(), s.SpaceID()); reason(e) != 7 {
+		t.Fatal("removed space accepted normal operations", e)
+	}
+	if _, e = reader.ExecContext(ctx, "ROLLBACK"); e != nil {
+		t.Fatal(e)
+	}
+	retry, e := OpenForRemoval(s.Root(), s.SpaceID())
+	if e != nil {
+		t.Fatal("cannot reopen incomplete removal", e)
+	}
+	defer retry.Close()
+	if e = retry.RemoveSpace(ctx); e != nil {
+		t.Fatal("checkpoint retry failed", e)
+	}
+	if _, e = OpenForRemoval(s.Root(), s.SpaceID()); reason(e) != 2 {
+		t.Fatal("completed removal remains registered", e)
+	}
+}
+func TestPromptRestorationWireRoundTrip(t *testing.T) {
+	s := testStore(t)
+	_, v := create(t, s)
+	r, e := s.RestorePrompt(ctx, connect.NewRequest(&lane.RestorePromptRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, SourceVersionId: v.VersionId}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	v = r.Msg.Result.Version
+	if !v.PromptRestoration {
+		t.Fatal("explicit equal restoration lost marker")
+	}
+	b, e := proto.Marshal(v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	decoded := new(lane.EntityVersion)
+	if e = proto.Unmarshal(b, decoded); e != nil || !decoded.PromptRestoration {
+		t.Fatal("marker lost in wire roundtrip", e)
+	}
+	var raw string
+	e = s.WithRead(ctx, func(c *sql.Conn) error {
+		return c.QueryRowContext(ctx, "SELECT request_json FROM outbox WHERE request_id=?", v.VersionId).Scan(&raw)
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	mutation := new(lane.SyncMutation)
+	if e = protojson.Unmarshal([]byte(raw), mutation); e != nil || !mutation.Version.PromptRestoration {
+		t.Fatal("outbox lost restoration marker", e)
+	}
+	saved, e := s.SaveTask(ctx, connect.NewRequest(&lane.SaveTaskRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, Task: v.GetTask()}))
+	if e != nil || saved.Msg.Result.Version.PromptRestoration {
+		t.Fatal("ordinary save inherited restoration marker", e)
 	}
 }

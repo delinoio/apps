@@ -75,7 +75,17 @@ func (s *Store) SetSyncEnabled(ctx context.Context, enabled bool) error {
 // RemoveSpace drains writers and removes logical data. Empty database files remain because
 // another process may still hold a SQLite connection; unlinking them could split writers.
 func (s *Store) RemoveSpace(ctx context.Context) error {
-	e := s.WithWrite(ctx, func(c *sql.Conn) error {
+	e := transaction(ctx, s.db, true, func(c *sql.Conn) error {
+		if e := s.checkState(ctx, c, true); e != nil {
+			return e
+		}
+		var removed int
+		if e := c.QueryRowContext(ctx, "SELECT count(*) FROM store_meta WHERE key='removed' AND value='1'").Scan(&removed); e != nil {
+			return e
+		}
+		if removed > 0 {
+			return nil
+		}
 		for _, q := range []string{"DELETE FROM heads", "DELETE FROM versions", "DELETE FROM entities", "DELETE FROM receipts", "DELETE FROM outbox", "DELETE FROM remote_objects", "DELETE FROM notification_receipts", "DELETE FROM repository_mappings", "DELETE FROM store_meta WHERE key NOT IN ('space_id','device_id','format_version')", "INSERT INTO changes(change_kind) VALUES(3)"} {
 			if _, e := c.ExecContext(ctx, q); e != nil {
 				return e
@@ -88,7 +98,20 @@ func (s *Store) RemoveSpace(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+
+	// SQLite reports blocked checkpoints in the result row, not as an SQL error.
+	// Keep registry routing until checkpoint completion so removal can be retried.
+	var busy, logFrames, checkpointed int
+	if e = s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &checkpointed); e != nil {
+		return storageError(e)
+	}
+	if busy != 0 || logFrames != checkpointed {
+		return domainError(9, "Removal checkpoint is busy; close other readers and retry", s.space)
+	}
 	e = transaction(ctx, s.registry, true, func(c *sql.Conn) error {
+		if e := compatible(ctx, c, ""); e != nil {
+			return e
+		}
 		if _, e := c.ExecContext(ctx, "DELETE FROM spaces WHERE id=?", s.space); e != nil {
 			return e
 		}
@@ -98,8 +121,7 @@ func (s *Store) RemoveSpace(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	_, e = s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
-	return storageError(e)
+	return nil
 }
 
 type NotificationPreferences struct {

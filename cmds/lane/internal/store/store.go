@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 //go:embed schema.sql
@@ -37,15 +38,12 @@ func validID(s string) bool {
 	return e == nil && u.Version() == 7 && u.String() == s
 }
 
-func openDB(path string) (*sql.DB, error) {
+func openDB(path string, storeDatabase bool) (*sql.DB, error) {
 	f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
 		return nil, e
 	}
 	f.Close()
-	if e = protectPath(path, false); e != nil {
-		return nil, e
-	}
 	u := url.URL{Scheme: "file", Path: path}
 	q := u.Query()
 	for _, p := range []string{"foreign_keys(1)", "busy_timeout(5000)", "synchronous(FULL)", "secure_delete(1)"} {
@@ -57,28 +55,67 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(4)
-	// Inspect identity before changing journal mode on an unrelated database.
-	var app, version, tables int
-	if e = db.QueryRow("PRAGMA application_id").Scan(&app); e != nil {
-		db.Close()
-		return nil, domainError(8, "Invalid database format", "")
-	}
-	if e = db.QueryRow("PRAGMA user_version").Scan(&version); e != nil {
+
+	// Read all compatibility fields in one snapshot. Concurrent first-open writers
+	// must not expose a mixture of the empty and initialized database identities.
+	e = transaction(context.Background(), db, false, func(c *sql.Conn) error {
+		var app, version, tables int
+		if e := c.QueryRowContext(context.Background(), "PRAGMA application_id").Scan(&app); e != nil {
+			return domainError(8, "Invalid database format", "")
+		}
+		if e := c.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&version); e != nil {
+			return e
+		}
+		if e := c.QueryRowContext(context.Background(), "SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&tables); e != nil {
+			return e
+		}
+		if !(app == applicationID && version == 1) && !(app == 0 && version == 0 && tables == 0) {
+			return domainError(8, "Update Lane to open this database", "")
+		}
+		if storeDatabase && tables > 0 {
+			var format string
+			if e := c.QueryRowContext(context.Background(), "SELECT value FROM store_meta WHERE key='format_version'").Scan(&format); e != nil || format != "1" {
+				return domainError(8, "Update Lane to open this store format", "")
+			}
+		}
+		return nil
+	})
+	if e != nil {
 		db.Close()
 		return nil, e
-	}
-	if e = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&tables); e != nil {
-		db.Close()
-		return nil, e
-	}
-	if !(app == applicationID && version == 1) && !(app == 0 && version == 0 && tables == 0) {
-		db.Close()
-		return nil, domainError(8, "Update Lane to open this database", "")
 	}
 
-	if _, e = db.Exec("PRAGMA journal_mode=WAL"); e != nil {
+	if e = protectPath(path, false); e != nil {
 		db.Close()
 		return nil, e
+	}
+
+	// Concurrent first opens can race while converting DELETE to WAL. SQLite can
+	// reject that lock upgrade immediately despite busy_timeout. No domain
+	// transaction has started: reread the mode and retry only this idempotent
+	// initialization step within the same five-second budget.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var mode string
+		e = db.QueryRow("PRAGMA journal_mode").Scan(&mode)
+		if e == nil && mode == "wal" {
+			break
+		}
+		if e == nil {
+			e = db.QueryRow("PRAGMA journal_mode=WAL").Scan(&mode)
+			if e == nil && mode == "wal" {
+				break
+			}
+		}
+		var sqliteError interface{ Code() int }
+		if e == nil || !errors.As(e, &sqliteError) || (sqliteError.Code()&255 != 5 && sqliteError.Code()&255 != 6) || !time.Now().Before(deadline) {
+			db.Close()
+			if e == nil {
+				return nil, domainError(8, "WAL mode is unavailable", "")
+			}
+			return nil, storageError(e)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	return db, nil
 }
@@ -124,7 +161,12 @@ func compatible(ctx context.Context, c *sql.Conn, init string) error {
 	}
 	return domainError(8, "Update Lane to open this database", "")
 }
-func Open(root, space string) (s *Store, err error) {
+func Open(root, space string) (*Store, error) { return openStore(root, space, false) }
+
+// OpenForRemoval resumes a removal whose checkpoint was blocked by an older reader.
+// Other operations on the returned handle still reject the removed marker.
+func OpenForRemoval(root, space string) (*Store, error) { return openStore(root, space, true) }
+func openStore(root, space string, removal bool) (s *Store, err error) {
 	if root == "" {
 		root, err = DefaultRoot()
 		if err != nil {
@@ -144,7 +186,7 @@ func Open(root, space string) (s *Store, err error) {
 	if err = protectPath(root, true); err != nil {
 		return nil, err
 	}
-	r, err := openDB(filepath.Join(root, "registry.sqlite"))
+	r, err := openDB(filepath.Join(root, "registry.sqlite"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -206,13 +248,23 @@ func Open(root, space string) (s *Store, err error) {
 	if err = protectPath(dir, true); err != nil {
 		return nil, err
 	}
-	s.db, err = openDB(filepath.Join(dir, "lane.sqlite"))
+	s.db, err = openDB(filepath.Join(dir, "lane.sqlite"), true)
 	if err != nil {
 		return nil, err
 	}
 	err = transaction(ctx, s.db, true, func(c *sql.Conn) error {
 		if e := compatible(ctx, c, schema); e != nil {
 			return e
+		}
+
+		if removal {
+			var removed int
+			if e := c.QueryRowContext(ctx, "SELECT count(*) FROM store_meta WHERE key='removed' AND value='1'").Scan(&removed); e != nil {
+				return e
+			}
+			if removed > 0 {
+				return s.checkState(ctx, c, true)
+			}
 		}
 		for k, v := range map[string]string{"space_id": space, "device_id": s.device, "format_version": "1", "account_epoch": "", "pull_cursor": "", "notification_enabled": "0", "notification_content": "DETAIL", "sync_owner": "", "sync_owner_expires_at_us": "0"} {
 			if _, e := c.ExecContext(ctx, "INSERT OR IGNORE INTO store_meta(key,value) VALUES(?,?)", k, v); e != nil {
@@ -223,7 +275,8 @@ func Open(root, space string) (s *Store, err error) {
 	})
 	return s, err
 }
-func (s *Store) check(ctx context.Context, c *sql.Conn) error {
+func (s *Store) check(ctx context.Context, c *sql.Conn) error { return s.checkState(ctx, c, false) }
+func (s *Store) checkState(ctx context.Context, c *sql.Conn, allowRemoved bool) error {
 	if e := compatible(ctx, c, ""); e != nil {
 		return e
 	}
@@ -264,7 +317,7 @@ func (s *Store) check(ctx context.Context, c *sql.Conn) error {
 	if e := c.QueryRowContext(ctx, "SELECT count(*) FROM store_meta WHERE key='removed' AND value='1'").Scan(&removed); e != nil {
 		return e
 	}
-	if removed > 0 {
+	if removed > 0 && !allowRemoved {
 		return domainError(7, "Space is unavailable", s.space)
 	}
 	if space != s.space || format != "1" {

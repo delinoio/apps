@@ -549,6 +549,7 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 			t.Proposal = x.Proposal
 			v.Body = &lane.EntityVersion_Task{Task: t}
 		case *lane.RestorePromptRequest:
+			v.PromptRestoration = true
 			if h[0].GetTask() == nil {
 				return domainError(1, "Wrong entity kind", id)
 			}
