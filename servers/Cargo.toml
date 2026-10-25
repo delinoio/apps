@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 [workspace]
 resolver = "2"
-members = ["crates/delino-protos", "crates/server-common", "devbase-api", "git-tracker-api", "delcore-api", "delitools-api", "perfine-api"]
+members = ["crates/delino-protos", "crates/server-common", "devbase-api", "git-tracker-api", "delcore-api", "delitools-api", "perfine-api", "lane-api"]
 
 [workspace.package]
 license = "FSL-1.1-ALv2"
