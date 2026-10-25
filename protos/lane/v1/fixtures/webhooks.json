@@ -1,0 +1,616 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "signature-offset--301",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886099",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=627ed8c9466c4c576b1a01f796ec16cde9cd413d5b6132a07f33aeabd2c9e6a6"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "signature-offset--300",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886100",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=8c36e7feb01ea880cc6d0efb0c5ba24d3e9f2f1816c4048978c6c80d4ae36f95"
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "signature-offset-0",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886400",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=df05e69af4df3f1cc7417d6a84cf652a42ff54f8b22070f1197d9c0113c9b081"
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "signature-offset-300",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886700",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=913564d1acaf1a6cb88035f22926de41f4ef24f0071ac1c8fbbfad195c78d79b"
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "signature-offset-301",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886701",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=6d3093fee28d1431373699ab7f26f7576eb7217b29487a7dc81e823d24ce2217"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "changed-body",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886400",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":2}}",
+        "signature": "v1=df05e69af4df3f1cc7417d6a84cf652a42ff54f8b22070f1197d9c0113c9b081"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "rotated-old-key",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886400",
+        "secretBase64url": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=df05e69af4df3f1cc7417d6a84cf652a42ff54f8b22070f1197d9c0113c9b081"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "rotated-new-key",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "1792886400",
+        "secretBase64url": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=aa375a3fc3e470a7334a0a77a19d2e6ab427193d622bf1916f13a4f9222b5e79"
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "noncanonical-timestamp",
+      "input": {
+        "operation": "verifySignature",
+        "nowSeconds": "1792886400",
+        "timestamp": "01792886400",
+        "secretBase64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "signature": "v1=32e7322514bda4a330d376e1f8c5d3bc9af2df9e3b20b94f43650fd806c3757d"
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "duplicate-key",
+      "input": {
+        "operation": "parseIntake",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1,\"x\":2}}"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "array-payload",
+      "input": {
+        "operation": "parseIntake",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":[]}"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "empty-id",
+      "input": {
+        "operation": "parseIntake",
+        "rawBody": "{\"id\":\"\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "empty-type",
+      "input": {
+        "operation": "parseIntake",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-time",
+      "input": {
+        "operation": "parseIntake",
+        "rawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"yesterday\",\"payload\":{\"x\":1}}"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "identical-event",
+      "input": {
+        "operation": "intakeReplay",
+        "receiverId": "019a0000-0000-7000-8000-000000000050",
+        "firstRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "retryRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "deletedBeforeRetry": false
+      },
+      "expected": {
+        "result": "REPLAYED",
+        "newEventsOnRetry": 0,
+        "retainedBodies": 1
+      }
+    },
+    {
+      "id": "changed-event",
+      "input": {
+        "operation": "intakeReplay",
+        "receiverId": "019a0000-0000-7000-8000-000000000050",
+        "firstRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "retryRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":2}}",
+        "deletedBeforeRetry": false
+      },
+      "expected": {
+        "result": "CONFLICT",
+        "newEventsOnRetry": 0,
+        "retainedBodies": 1
+      }
+    },
+    {
+      "id": "deleted-event",
+      "input": {
+        "operation": "intakeReplay",
+        "receiverId": "019a0000-0000-7000-8000-000000000050",
+        "firstRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "retryRawBody": "{\"id\":\"sender-1\",\"type\":\"task.ready\",\"occurredAt\":\"2026-10-25T00:00:00Z\",\"payload\":{\"x\":1}}",
+        "deletedBeforeRetry": true
+      },
+      "expected": {
+        "result": "DELETED",
+        "newEventsOnRetry": 0,
+        "retainedBodies": 0
+      }
+    },
+    {
+      "id": "complete-deadline-299999999",
+      "input": {
+        "operation": "complete",
+        "leaseCreatedAtMicros": "0",
+        "expiresAtMicros": "300000000",
+        "nowMicros": "299999999",
+        "tokenMatches": true
+      },
+      "expected": {
+        "accepted": true
+      }
+    },
+    {
+      "id": "complete-deadline-300000000",
+      "input": {
+        "operation": "complete",
+        "leaseCreatedAtMicros": "0",
+        "expiresAtMicros": "300000000",
+        "nowMicros": "300000000",
+        "tokenMatches": true
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "renew-deadline-299999999",
+      "input": {
+        "operation": "renew",
+        "leaseCreatedAtMicros": "0",
+        "expiresAtMicros": "300000000",
+        "nowMicros": "299999999",
+        "tokenMatches": true
+      },
+      "expected": {
+        "accepted": true,
+        "expiresAtMicros": "599999999"
+      }
+    },
+    {
+      "id": "renew-deadline-300000000",
+      "input": {
+        "operation": "renew",
+        "leaseCreatedAtMicros": "0",
+        "expiresAtMicros": "300000000",
+        "nowMicros": "300000000",
+        "tokenMatches": true
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "id": "complete-released",
+      "input": {
+        "operation": "complete",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000",
+        "tokenMatches": true,
+        "released": true
+      },
+      "expected": {
+        "accepted": false,
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "complete-unknown",
+      "input": {
+        "operation": "complete",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000",
+        "tokenMatches": false
+      },
+      "expected": {
+        "accepted": false,
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "complete-event-deleted",
+      "input": {
+        "operation": "complete",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000",
+        "tokenMatches": true,
+        "eventDeleted": true
+      },
+      "expected": {
+        "accepted": false,
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "complete-repository-deleted",
+      "input": {
+        "operation": "complete",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000",
+        "tokenMatches": true,
+        "repositoryDeleted": true
+      },
+      "expected": {
+        "accepted": false,
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "complete-receiver-deleted",
+      "input": {
+        "operation": "complete",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000",
+        "tokenMatches": true,
+        "receiverDeleted": true
+      },
+      "expected": {
+        "accepted": true,
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "complete-tasks-0-False",
+      "input": {
+        "operation": "complete",
+        "validLease": true,
+        "tasks": []
+      },
+      "expected": {
+        "accepted": true,
+        "newTasks": 0,
+        "processingRecords": 1,
+        "state": "EVENT_STATE_COMPLETED"
+      }
+    },
+    {
+      "id": "complete-tasks-2-False",
+      "input": {
+        "operation": "complete",
+        "validLease": true,
+        "tasks": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000064",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-00000000005a",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Task"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000065",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-00000000005b",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Task"
+          }
+        ]
+      },
+      "expected": {
+        "accepted": true,
+        "newTasks": 2,
+        "processingRecords": 1,
+        "state": "EVENT_STATE_COMPLETED"
+      }
+    },
+    {
+      "id": "complete-tasks-2-True",
+      "input": {
+        "operation": "complete",
+        "validLease": true,
+        "tasks": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000064",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-00000000005a",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Task"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000065",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-00000000005b",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": ""
+          }
+        ]
+      },
+      "expected": {
+        "accepted": false,
+        "newTasks": 0,
+        "processingRecords": 0,
+        "state": "EVENT_STATE_LEASED"
+      }
+    },
+    {
+      "id": "completion-replay-COMPLETED",
+      "input": {
+        "operation": "completionReplay",
+        "identicalRequest": true,
+        "receiptExists": true,
+        "currentState": "EVENT_STATE_COMPLETED",
+        "tokenConsumed": true,
+        "originalTaskIds": [
+          "019a0000-0000-7000-8000-00000000005a",
+          "019a0000-0000-7000-8000-00000000005b"
+        ]
+      },
+      "expected": {
+        "newTasks": 0,
+        "state": "EVENT_STATE_COMPLETED",
+        "taskIds": [
+          "019a0000-0000-7000-8000-00000000005a",
+          "019a0000-0000-7000-8000-00000000005b"
+        ],
+        "result": "RESULT_KIND_REPLAYED"
+      }
+    },
+    {
+      "id": "completion-replay-PENDING",
+      "input": {
+        "operation": "completionReplay",
+        "identicalRequest": true,
+        "receiptExists": true,
+        "currentState": "EVENT_STATE_PENDING",
+        "tokenConsumed": true,
+        "originalTaskIds": [
+          "019a0000-0000-7000-8000-00000000005a",
+          "019a0000-0000-7000-8000-00000000005b"
+        ]
+      },
+      "expected": {
+        "newTasks": 0,
+        "state": "EVENT_STATE_PENDING",
+        "taskIds": [
+          "019a0000-0000-7000-8000-00000000005a",
+          "019a0000-0000-7000-8000-00000000005b"
+        ],
+        "result": "RESULT_KIND_REPLAYED"
+      }
+    },
+    {
+      "id": "completion-replay-DELETED",
+      "input": {
+        "operation": "completionReplay",
+        "identicalRequest": true,
+        "receiptExists": true,
+        "currentState": "EVENT_STATE_DELETED",
+        "tokenConsumed": true,
+        "originalTaskIds": [
+          "019a0000-0000-7000-8000-00000000005a",
+          "019a0000-0000-7000-8000-00000000005b"
+        ]
+      },
+      "expected": {
+        "newTasks": 0,
+        "state": "EVENT_STATE_DELETED",
+        "result": "RESULT_KIND_DELETED",
+        "bodyPresent": false
+      }
+    },
+    {
+      "id": "changed-completion-retry",
+      "input": {
+        "operation": "completionReplay",
+        "identicalRequest": false,
+        "receiptExists": true
+      },
+      "expected": {
+        "reason": "ERROR_REASON_REQUEST_ID_REUSED",
+        "newTasks": 0
+      }
+    },
+    {
+      "id": "receiver-reassignment",
+      "input": {
+        "operation": "reassignReceiver",
+        "oldRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "newRepositoryId": "019a0000-0000-7000-8000-000000000004",
+        "existingEventId": "019a0000-0000-7000-8000-000000000050"
+      },
+      "expected": {
+        "existingEventRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "newEventRepositoryId": "019a0000-0000-7000-8000-000000000004"
+      }
+    },
+    {
+      "id": "completion-storage-rollback",
+      "input": {
+        "operation": "complete",
+        "validLease": true,
+        "taskCount": 2,
+        "failAt": "after_first_task_before_processing_record"
+      },
+      "expected": {
+        "newTasks": 0,
+        "processingRecords": 0,
+        "state": "EVENT_STATE_LEASED"
+      }
+    },
+    {
+      "id": "release-permits-immediate-claim",
+      "input": {
+        "operation": "releaseThenClaim",
+        "nowMicros": "1",
+        "expiresAtMicros": "300000000"
+      },
+      "expected": {
+        "claimAccepted": true,
+        "oldTokenValid": false,
+        "newExpiresAtMicros": "300000001"
+      }
+    },
+    {
+      "id": "claim-at-expiry",
+      "input": {
+        "operation": "claim",
+        "nowMicros": "300000000",
+        "expiresAtMicros": "300000000",
+        "state": "EVENT_STATE_LEASED"
+      },
+      "expected": {
+        "accepted": true,
+        "expiresAtMicros": "600000000",
+        "oldTokenValid": false
+      }
+    },
+    {
+      "id": "webhook-over-limit",
+      "input": {
+        "operation": "boundedIntake",
+        "maxWebhookBytes": "100",
+        "receivedBytes": "101"
+      },
+      "expected": {
+        "accepted": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "deleted-receiver-intake",
+      "input": {
+        "operation": "intake",
+        "receiverDeleted": true
+      },
+      "expected": {
+        "accepted": false,
+        "newEvents": 0
+      }
+    }
+  ]
+}

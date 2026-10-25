@@ -1,0 +1,1275 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "create-defaults",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": "Title"
+        }
+      },
+      "expected": {
+        "progress": "PROGRESS_TODO",
+        "proposal": "PROPOSAL_REGULAR",
+        "promptPresent": false,
+        "repositoryCount": 1,
+        "taskCount": 1,
+        "historyCount": 1
+      }
+    },
+    {
+      "id": "progress-TODO-TODO",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_TODO"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-TODO-IN_PROGRESS",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_IN_PROGRESS"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-TODO-BLOCKED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_BLOCKED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-TODO-DONE",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_DONE"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-TODO-CANCELED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_CANCELED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-IN_PROGRESS-TODO",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_TODO"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-IN_PROGRESS-IN_PROGRESS",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_IN_PROGRESS"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-IN_PROGRESS-BLOCKED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_BLOCKED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-IN_PROGRESS-DONE",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_DONE"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-IN_PROGRESS-CANCELED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_CANCELED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-BLOCKED-TODO",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_TODO"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-BLOCKED-IN_PROGRESS",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_IN_PROGRESS"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-BLOCKED-BLOCKED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_BLOCKED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-BLOCKED-DONE",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_DONE"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-BLOCKED-CANCELED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_CANCELED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-DONE-TODO",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_TODO"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-DONE-IN_PROGRESS",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_IN_PROGRESS"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-DONE-BLOCKED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_BLOCKED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-DONE-DONE",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_DONE"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-DONE-CANCELED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_CANCELED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-CANCELED-TODO",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_TODO"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-CANCELED-IN_PROGRESS",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_IN_PROGRESS"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_IN_PROGRESS",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-CANCELED-BLOCKED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_BLOCKED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-CANCELED-DONE",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_DONE"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_DONE",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "progress-CANCELED-CANCELED",
+      "input": {
+        "method": "SetProgress",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "progress": "PROGRESS_CANCELED"
+        }
+      },
+      "expected": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_CANCELED",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "newVersions": 1
+      }
+    },
+    {
+      "id": "blank-title-26",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": ""
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "blank-title-27",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": " \t\n"
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "blank-title-28",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": " "
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "proposal-rejected-then-accepted",
+      "input": {
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_BLOCKED",
+          "proposal": "PROPOSAL_PENDING"
+        },
+        "decisions": [
+          "PROPOSAL_REJECTED",
+          "PROPOSAL_ACCEPTED"
+        ]
+      },
+      "expected": {
+        "progresses": [
+          "PROGRESS_BLOCKED",
+          "PROGRESS_BLOCKED"
+        ],
+        "proposals": [
+          "PROPOSAL_REJECTED",
+          "PROPOSAL_ACCEPTED"
+        ],
+        "newVersions": 2
+      }
+    },
+    {
+      "id": "regular-cannot-be-proposal",
+      "input": {
+        "method": "SaveTask",
+        "before": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        },
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000c",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "expectedVersionId": "019a0000-0000-7000-8000-000000000014",
+          "task": {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_PENDING"
+          }
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "prompt-presence-and-restore",
+      "input": {
+        "snapshots": [
+          {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR"
+          },
+          {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "prompt": ""
+          },
+          {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "prompt": "one"
+          }
+        ],
+        "restoreSourceIndex": 1
+      },
+      "expected": {
+        "prompt": "",
+        "promptPresent": true,
+        "newVersionsIncludingCreation": 4
+      }
+    },
+    {
+      "id": "restore-equal-is-new-save",
+      "input": {
+        "snapshots": [
+          {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "prompt": "one"
+          }
+        ],
+        "restoreSourceIndex": 0
+      },
+      "expected": {
+        "prompt": "one",
+        "newVersionsIncludingCreation": 2,
+        "promptHistoryCount": 2
+      }
+    },
+    {
+      "id": "invalid-stored-progress-PROGRESS_UNSPECIFIED",
+      "input": {
+        "operation": "validateStoredTask",
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_UNSPECIFIED",
+          "proposal": "PROPOSAL_REGULAR"
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-stored-progress-99",
+      "input": {
+        "operation": "validateStoredTask",
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": 99,
+          "proposal": "PROPOSAL_REGULAR"
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-stored-proposal-PROPOSAL_UNSPECIFIED",
+      "input": {
+        "operation": "validateStoredTask",
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_UNSPECIFIED"
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-stored-proposal-99",
+      "input": {
+        "operation": "validateStoredTask",
+        "task": {
+          "repositoryId": "019a0000-0000-7000-8000-000000000002",
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": 99
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "search-37",
+      "input": {
+        "operation": "search",
+        "query": "STRASSE",
+        "title": "Straße",
+        "description": ""
+      },
+      "expected": {
+        "matches": true
+      }
+    },
+    {
+      "id": "search-38",
+      "input": {
+        "operation": "search",
+        "query": "[x]",
+        "title": "[x] literal",
+        "description": ""
+      },
+      "expected": {
+        "matches": true
+      }
+    },
+    {
+      "id": "search-39",
+      "input": {
+        "operation": "search",
+        "query": ".*",
+        "title": "anything",
+        "description": ""
+      },
+      "expected": {
+        "matches": false
+      }
+    },
+    {
+      "id": "search-40",
+      "input": {
+        "operation": "search",
+        "query": "café",
+        "title": "",
+        "description": "CAFÉ"
+      },
+      "expected": {
+        "matches": true
+      }
+    }
+  ]
+}

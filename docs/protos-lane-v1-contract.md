@@ -128,7 +128,7 @@ Compare request content after typed decoding, default expansion and URL normaliz
 
 ### Required shared conformance vectors
 
-Store executable fixture files in planned `protos/lane/v1/fixtures/`; run the same vectors in Go, native implementations and Rust, and check UI adapters against the same messages. The following are required expected outcomes, not claims of tests already run. Symbolic IDs below stand for fixed valid UUID v7 values in fixtures.
+Store executable fixture files in `protos/lane/v1/fixtures/`; run the same vectors in Go, native implementations and Rust, and check UI adapters against the same messages. The following are required expected outcomes, not claims of tests already run. Symbolic IDs below stand for fixed valid UUID v7 values in fixtures.
 
 | Input / sequence                                                                                         | Expected outcome                                                      |
 | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -155,6 +155,19 @@ Store executable fixture files in planned `protos/lane/v1/fixtures/`; run the sa
 | Delete server data retaining local; old epoch push                                                       | STALE_EPOCH/revoked device, no reupload                               |
 
 Also fixture absent/unknown enums, unsupported format/schema, prompt history after resolution, concurrent repository edits/URL collision, Unicode URL/search, dedupe after event deletion, and the exact server lease/signature/push boundary vectors in the server contract.
+
+### Fixture consumption
+
+The checked-in fixture files use `{ "formatVersion": 1, "cases": [...] }`. Each case has a stable `id`, `input` and `expected`. Run each case with isolated storage and a fake clock. Treat `expected` as assertions on the operation result and persisted state, not as input to the implementation. Compare only the named assertions; counts are exact. UUIDs and keys in these files are fixed synthetic test values.
+
+- `normalization.json`: normalize `input.url`, or reject it with the expected reason and no writes.
+- `tasks.json`: apply the named method to the supplied `before` task. Progress cases use the request's expected version as the initial head. Other cases supply ordered snapshots, proposal decisions or a named validation/search operation. A restore source index refers to the zero-based snapshot index. Each successful explicit save adds one version.
+- `sync.json`: seed `initial` versions in order, then apply `mutations` in order. Inputs use `SyncMutation` ProtoJSON. `interactiveRequest` instead invokes its named LaneService method. The remaining cases specify replay, repository mapping, account isolation, failure injection and batch-size scenarios. Byte sizes are measured encoded-item sizes; they are independent of JSON whitespace in the fixture file. `existingReceipt` seeds the original request identity for the changed-content retry case.
+- `fingerprints.json`: serialize the supplied normalized request with RFC 8785 and compare both exact UTF-8 text and SHA-256. These cases distinguish absent, empty and nonempty prompts. They do not replace URL/default expansion tests.
+- `webhooks.json`: verify the exact `rawBody` bytes and timestamp with the synthetic base64url key. Parsing cases run after transport authentication. Lease clocks use decimal microseconds; deadlines are exclusive. Completion fixtures with `validLease` start with a matching unexpired lease. Replay cases seed a previously committed completion receipt; PENDING means the event was reopened after that completion. No replay creates another task or completes the new round.
+- `push.json`: `retryIndex` is zero for the first retry after the initial failure. Seconds are decimal Unix times; Retry-After delta values are relative to `previousAttemptSeconds`. A null expected next attempt means no send. Enqueue and dispatch cases test separate phases; missing eligibility inputs use an enabled, approved device with granted permission and available provider. Generic content assertions forbid repository/task text without fixing localized wording.
+
+`conformance_test.go` checks field identities, service shape, optional prompt binary/JSON round trips, fixture request decoding, canonical fingerprint digests and signature known answers. It does not implement a runtime store or establish domain conformance. Go, native and server adapters must execute the same fixture inputs against their own implementations and report that coverage separately.
 
 ## Storage
 

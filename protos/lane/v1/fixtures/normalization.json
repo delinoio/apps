@@ -1,0 +1,272 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "url-0",
+      "input": {
+        "url": "https://GitHub.com/Acme/Repo.git"
+      },
+      "expected": {
+        "normalizedUrl": "github.com/Acme/Repo"
+      }
+    },
+    {
+      "id": "url-1",
+      "input": {
+        "url": "git@github.com:Acme/Repo"
+      },
+      "expected": {
+        "normalizedUrl": "github.com/Acme/Repo"
+      }
+    },
+    {
+      "id": "url-2",
+      "input": {
+        "url": "ssh://git@github.com:22/Acme/Repo.git/"
+      },
+      "expected": {
+        "normalizedUrl": "github.com/Acme/Repo"
+      }
+    },
+    {
+      "id": "url-3",
+      "input": {
+        "url": "https://github.com/Acme/repo"
+      },
+      "expected": {
+        "normalizedUrl": "github.com/Acme/repo"
+      }
+    },
+    {
+      "id": "url-4",
+      "input": {
+        "url": "https://example.com:8443/a/b.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com:8443/a/b"
+      }
+    },
+    {
+      "id": "url-5",
+      "input": {
+        "url": "https://example.com/a/%62.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/b"
+      }
+    },
+    {
+      "id": "url-6",
+      "input": {
+        "url": "https://user:password@EXAMPLE.com:443/a/b.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/b"
+      }
+    },
+    {
+      "id": "url-7",
+      "input": {
+        "url": "ssh://git@example.com:2222/a/b.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com:2222/a/b"
+      }
+    },
+    {
+      "id": "url-8",
+      "input": {
+        "url": "https://bücher.example/Ä/Repo.git"
+      },
+      "expected": {
+        "normalizedUrl": "xn--bcher-kva.example/Ä/Repo"
+      }
+    },
+    {
+      "id": "url-9",
+      "input": {
+        "url": "https://example.com/a/%c3%a9.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/%C3%A9"
+      }
+    },
+    {
+      "id": "url-10",
+      "input": {
+        "url": "https://example.com/a/repo.git.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/repo.git"
+      }
+    },
+    {
+      "id": "url-11",
+      "input": {
+        "url": "https://example.com/a/Repo.GIT"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/Repo.GIT"
+      }
+    },
+    {
+      "id": "url-12",
+      "input": {
+        "url": "https://example.com/a/%7e.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com/a/~"
+      }
+    },
+    {
+      "id": "invalid-url-0",
+      "input": {
+        "url": "https://example.com/a/../b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-1",
+      "input": {
+        "url": "https://example.com/a/./b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-2",
+      "input": {
+        "url": "https://example.com/a/%2e%2e/b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-3",
+      "input": {
+        "url": "https://example.com/a%2Fb"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-4",
+      "input": {
+        "url": "https://example.com/a%5cb"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-5",
+      "input": {
+        "url": "https://example.com/a\\b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-6",
+      "input": {
+        "url": "https://example.com/a/%"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-7",
+      "input": {
+        "url": "https://example.com/a/%GG"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-8",
+      "input": {
+        "url": "https://example.com/a?x=1"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-9",
+      "input": {
+        "url": "https://example.com/a#x"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-10",
+      "input": {
+        "url": "https:///a"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-11",
+      "input": {
+        "url": "https://example.com/"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-12",
+      "input": {
+        "url": "file:///a/b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-13",
+      "input": {
+        "url": "http://example.com/a/b"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-url-14",
+      "input": {
+        "url": "git@example.com:"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    }
+  ]
+}
