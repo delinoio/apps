@@ -830,6 +830,10 @@ jobs:
         run: |
           cargo test --locked --manifest-path servers/Cargo.toml -p "$SERVICE"
         id: unit
+      - name: Validate Lane monitoring rules and routes
+        if: matrix.service == 'lane-api'
+        id: monitoring
+        run: servers/lane-api/ops/check.sh
       - name: Start integration database
         run: |
           # Interrupted jobs can leave this container on a persistent runner.

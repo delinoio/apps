@@ -281,6 +281,8 @@ commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md
 
 ## Lane development and validation
 
+The affected Lane API test job also runs `servers/lane-api/ops/check.sh` with disposable Prometheus and Alertmanager tool containers plus the Node routing/probe tests. This validates monitoring configuration and simulated alert behavior without starting the service or contacting providers.
+
 Lane participates in root development through its existing `lane` frontend route and the `lane-api` Rust service route. The API uses fixed loopback port `46326`; the frontend keeps `46325`. Root Compose includes `lane-postgres`, with loopback port `${LANE_POSTGRES_PORT:-55437}`, database/user `lane` and disposable password `local-lane`. Its named `lane-postgres-data` volume is independent of other services. These values are local development defaults only.
 
 Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migrate` command explicitly before serving; application startup does not migrate. Root `pnpm dev` waits for Compose, then runs Turbo directly. Only the Lane API task receives its resolved database URL, after service-local Infisical injection. Root `pnpm dev:db:reset` includes the Lane database in its existing build, reset and explicit migration procedure. Do not run that destructive reset merely to validate a change; tests use disposable data.
