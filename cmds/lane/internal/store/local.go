@@ -24,7 +24,7 @@ func (s *Store) Identity(ctx context.Context) (a AccountIdentity, e error) {
 	return
 }
 
-// SelectAccount requires completed browser approval from the caller. It never merges another space.
+// SelectAccount requires completed browser approval from the caller. It never merges another space and leaves sync disabled until explicit enablement.
 func (s *Store) SelectAccount(ctx context.Context, issuer, accountID, tenantID string) (*Store, error) {
 	if issuer == "" || accountID == "" || tenantID == "" {
 		return nil, domainError(1, "Approved account identity is required", "")
@@ -39,12 +39,12 @@ func (s *Store) SelectAccount(ctx context.Context, issuer, accountID, tenantID s
 		e := c.QueryRowContext(ctx, "SELECT id FROM spaces WHERE account_key=?", key).Scan(&id)
 		if errors.Is(e, sql.ErrNoRows) {
 			id = NewID()
-			_, e = c.ExecContext(ctx, "INSERT INTO spaces(id,account_key,account_id,tenant_id,issuer,sync_enabled) VALUES(?,?,?,?,?,1)", id, key, accountID, tenantID, issuer)
+			_, e = c.ExecContext(ctx, "INSERT INTO spaces(id,account_key,account_id,tenant_id,issuer,sync_enabled) VALUES(?,?,?,?,?,0)", id, key, accountID, tenantID, issuer)
 		}
 		if e != nil {
 			return e
 		}
-		if _, e = c.ExecContext(ctx, "UPDATE spaces SET sync_enabled=1 WHERE id=?", id); e != nil {
+		if _, e = c.ExecContext(ctx, "UPDATE spaces SET sync_enabled=0 WHERE id=?", id); e != nil {
 			return e
 		}
 		_, e = c.ExecContext(ctx, "UPDATE registry_meta SET value=? WHERE key='active_space_id'", id)

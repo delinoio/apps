@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 //go:embed schema.sql
@@ -38,37 +37,15 @@ func validID(s string) bool {
 	return e == nil && u.Version() == 7 && u.String() == s
 }
 
-func DefaultRoot() (string, error) {
-	home, e := os.UserHomeDir()
-	if e != nil {
-		return "", e
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "io.delino.lane"), nil
-	case "windows":
-		base := os.Getenv("LOCALAPPDATA")
-		if base == "" {
-			return "", errors.New("LocalAppData is unavailable")
-		}
-		return filepath.Join(base, "io.delino.lane"), nil
-	default:
-		base := os.Getenv("XDG_DATA_HOME")
-		if base == "" {
-			base = filepath.Join(home, ".local", "share")
-		}
-		if !filepath.IsAbs(base) {
-			return "", errors.New("data directory must be absolute")
-		}
-		return filepath.Join(base, "io.delino.lane"), nil
-	}
-}
 func openDB(path string) (*sql.DB, error) {
 	f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
 		return nil, e
 	}
 	f.Close()
+	if e = protectPath(path, false); e != nil {
+		return nil, e
+	}
 	u := url.URL{Scheme: "file", Path: path}
 	q := u.Query()
 	for _, p := range []string{"foreign_keys(1)", "busy_timeout(5000)", "synchronous(FULL)", "secure_delete(1)"} {
@@ -80,6 +57,25 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(4)
+	// Inspect identity before changing journal mode on an unrelated database.
+	var app, version, tables int
+	if e = db.QueryRow("PRAGMA application_id").Scan(&app); e != nil {
+		db.Close()
+		return nil, domainError(8, "Invalid database format", "")
+	}
+	if e = db.QueryRow("PRAGMA user_version").Scan(&version); e != nil {
+		db.Close()
+		return nil, e
+	}
+	if e = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&tables); e != nil {
+		db.Close()
+		return nil, e
+	}
+	if !(app == applicationID && version == 1) && !(app == 0 && version == 0 && tables == 0) {
+		db.Close()
+		return nil, domainError(8, "Update Lane to open this database", "")
+	}
+
 	if _, e = db.Exec("PRAGMA journal_mode=WAL"); e != nil {
 		db.Close()
 		return nil, e
@@ -145,6 +141,9 @@ func Open(root, space string) (s *Store, err error) {
 	if err = os.MkdirAll(root, 0700); err != nil {
 		return nil, err
 	}
+	if err = protectPath(root, true); err != nil {
+		return nil, err
+	}
 	r, err := openDB(filepath.Join(root, "registry.sqlite"))
 	if err != nil {
 		return nil, err
@@ -163,24 +162,29 @@ func Open(root, space string) (s *Store, err error) {
 		if e := compatible(ctx, c, registrySchema); e != nil {
 			return e
 		}
-		var n int
-		if e := c.QueryRowContext(ctx, "SELECT count(*) FROM spaces").Scan(&n); e != nil {
-			return e
-		}
-		if n == 0 {
-			if space != "" {
-				return domainError(2, "Space does not exist", space)
-			}
-			id := NewID()
-			if _, e := c.ExecContext(ctx, "INSERT INTO spaces(id,account_key) VALUES(?, 'local'); INSERT INTO registry_meta(key,value) VALUES('active_space_id',?),('device_id',?)", id, id, NewID()); e != nil {
-				return e
-			}
-		}
+
 		if space == "" {
-			if e := c.QueryRowContext(ctx, "SELECT value FROM registry_meta WHERE key='active_space_id'").Scan(&space); e != nil {
+			e := c.QueryRowContext(ctx, "SELECT value FROM registry_meta WHERE key='active_space_id'").Scan(&space)
+			if errors.Is(e, sql.ErrNoRows) {
+				e = c.QueryRowContext(ctx, "SELECT id FROM spaces WHERE account_key='local'").Scan(&space)
+				if errors.Is(e, sql.ErrNoRows) {
+					space = NewID()
+					_, e = c.ExecContext(ctx, "INSERT INTO spaces(id,account_key) VALUES(?,'local')", space)
+				}
+				if e != nil {
+					return e
+				}
+				if _, e = c.ExecContext(ctx, "INSERT INTO registry_meta(key,value) VALUES('active_space_id',?)", space); e != nil {
+					return e
+				}
+				if _, e = c.ExecContext(ctx, "INSERT OR IGNORE INTO registry_meta(key,value) VALUES('device_id',?)", NewID()); e != nil {
+					return e
+				}
+			} else if e != nil {
 				return e
 			}
 		}
+
 		var id string
 		if e := c.QueryRowContext(ctx, "SELECT id FROM spaces WHERE id=?", space).Scan(&id); e != nil {
 			return domainError(2, "Space does not exist", space)
@@ -193,6 +197,12 @@ func Open(root, space string) (s *Store, err error) {
 	}
 	dir := filepath.Join(root, "spaces", space)
 	if err = os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
+	}
+	if err = protectPath(filepath.Join(root, "spaces"), true); err != nil {
+		return nil, err
+	}
+	if err = protectPath(dir, true); err != nil {
 		return nil, err
 	}
 	s.db, err = openDB(filepath.Join(dir, "lane.sqlite"))
@@ -215,6 +225,14 @@ func Open(root, space string) (s *Store, err error) {
 func (s *Store) check(ctx context.Context, c *sql.Conn) error {
 	if e := compatible(ctx, c, ""); e != nil {
 		return e
+	}
+
+	var invalidHeads int
+	if e := c.QueryRowContext(ctx, "SELECT count(*) FROM heads h LEFT JOIN versions v ON v.version_id=h.version_id WHERE v.version_id IS NULL OR h.entity_id<>v.entity_id").Scan(&invalidHeads); e != nil {
+		return e
+	}
+	if invalidHeads > 0 {
+		return domainError(1, "Invalid head linkage", s.space)
 	}
 	var space, format string
 	if e := c.QueryRowContext(ctx, "SELECT value FROM store_meta WHERE key='space_id'").Scan(&space); e != nil {

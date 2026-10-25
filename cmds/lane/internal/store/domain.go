@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -30,6 +31,21 @@ func heads(ctx context.Context, c *sql.Conn, id string) ([]*lane.EntityVersion, 
 		v := new(lane.EntityVersion)
 		if e = protojson.Unmarshal([]byte(b), v); e != nil {
 			return nil, e
+		}
+
+		if v.FormatVersion != 1 {
+			return nil, domainError(8, "Unsupported entity format", id)
+		}
+		if v.EntityId != id || !validID(v.VersionId) || v.Kind < 1 || v.Kind > 2 || v.CreatedAt == nil || v.CreatedAt.CheckValid() != nil {
+			return nil, domainError(1, "Invalid stored version", id)
+		}
+		if !v.Deleted {
+			if v.Kind == 1 && v.GetRepository() == nil || v.Kind == 2 && v.GetTask() == nil {
+				return nil, domainError(1, "Invalid stored body", id)
+			}
+			if t := v.GetTask(); t != nil && (t.Progress < 1 || t.Progress > 5 || t.Proposal < 1 || t.Proposal > 4) {
+				return nil, domainError(1, "Invalid stored task", id)
+			}
 		}
 		out = append(out, v)
 	}
@@ -249,6 +265,20 @@ func redactCaches(ctx context.Context, c *sql.Conn, id string, kind lane.EntityK
 		return e
 	}
 	events := map[string]bool{}
+
+	if kind == lane.EntityKind_ENTITY_KIND_TASK {
+		for _, x := range items {
+			if x.k == 3 {
+				p := new(lane.ProcessingRecord)
+				if e = protojson.Unmarshal([]byte(x.b), p); e != nil {
+					return e
+				}
+				if slices.Contains(p.TaskIds, id) {
+					events[p.EventId] = true
+				}
+			}
+		}
+	}
 	for _, x := range items {
 		if x.k == 2 {
 			v := new(lane.WebhookEvent)
@@ -332,6 +362,15 @@ func normalizeRequest(m proto.Message) error {
 	return nil
 }
 func (s *Store) mutate(ctx context.Context, method string, input proto.Message) (r, repo *lane.EntityResult, err error) {
+
+	started := time.Now()
+	defer func() {
+		slog.DebugContext(ctx, "local domain operation", "method", method, "success", err == nil, "duration_ms", time.Since(started).Milliseconds())
+	}()
+	if input == nil || !input.ProtoReflect().IsValid() {
+		err = domainError(1, "Request is required", "")
+		return
+	}
 	m := proto.Clone(input)
 	if err = normalizeRequest(m); err != nil {
 		return
@@ -348,8 +387,16 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 	}
 	var committedError error
 	err = s.WithWrite(ctx, func(c *sql.Conn) error {
+
+		identity, e := s.Identity(ctx)
+		if e != nil {
+			return e
+		}
+		if meta.Origin.AccountId != identity.AccountID {
+			return domainError(1, "Origin account does not match selected space", "")
+		}
 		var old, b string
-		e := c.QueryRowContext(ctx, "SELECT fingerprint,result_json FROM receipts WHERE method=? AND request_id=?", method, meta.RequestId).Scan(&old, &b)
+		e = c.QueryRowContext(ctx, "SELECT fingerprint,result_json FROM receipts WHERE method=? AND request_id=?", method, meta.RequestId).Scan(&old, &b)
 		if e == nil {
 			if old != fp {
 				return domainError(6, "Request ID was reused with different content", getID(m))
@@ -357,6 +404,18 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 			r = new(lane.EntityResult)
 			if e = protojson.Unmarshal([]byte(b), r); e != nil {
 				return e
+			}
+
+			if r.Result == lane.ResultKind_RESULT_KIND_CONFLICT {
+				committedError = domainError(3, "Version changed; submitted alternative was preserved", getID(m), headIDs(r.Alternatives)...)
+			} else if r.Result != lane.ResultKind_RESULT_KIND_DELETED {
+				r.Result = lane.ResultKind_RESULT_KIND_REPLAYED
+			}
+			if method == "CreateTask" && r.Version.GetTask() != nil {
+				rh, e := heads(ctx, c, r.Version.GetTask().RepositoryId)
+				if e == nil {
+					repo = result(rh)
+				}
 			}
 			return nil
 		}
@@ -386,7 +445,16 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 			if e = c.QueryRowContext(ctx, "SELECT count(*) FROM entities WHERE id=?", id).Scan(&n); e != nil {
 				return e
 			}
+
 			if n != 0 {
+				h, e = heads(ctx, c, id)
+				if e != nil {
+					return e
+				}
+				if h[0].Deleted {
+					r = result(h)
+					return saveReceipt(ctx, c, method, meta.RequestId, fp, id, r)
+				}
 				return domainError(1, "Entity ID already exists", id)
 			}
 		}
@@ -535,6 +603,17 @@ func (s *Store) mutate(ctx context.Context, method string, input proto.Message) 
 			if !create {
 				old := h[0].GetTask()
 				prompt = prompt || !reflect.DeepEqual(old.Prompt, t.Prompt)
+				for _, alternative := range h {
+					if alternative.GetTask() != nil && !reflect.DeepEqual(alternative.GetTask().Prompt, t.Prompt) {
+						prompt = true
+					}
+				}
+			}
+
+		} else if r := v.GetRepository(); r != nil {
+			normalized, e := NormalizeURL("https://" + r.NormalizedUrl + "/lane-validation")
+			if e != nil || normalized != r.NormalizedUrl+"/lane-validation" {
+				return domainError(1, "Invalid normalized repository URL", id)
 			}
 		} else if v.GetRepository() == nil {
 			return domainError(1, "Snapshot body is missing", id)

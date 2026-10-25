@@ -256,9 +256,7 @@ func (s *Store) list(ctx context.Context, c *sql.Conn, p *lane.Page, m proto.Mes
 				if target != "" && rid != target || len(filter.Progress) > 0 && !slices.Contains(filter.Progress, t.Progress) || len(filter.Proposal) > 0 && !slices.Contains(filter.Proposal, t.Proposal) {
 					continue
 				}
-				fold := cases.Fold()
-				q := fold.String(filter.Search)
-				if q != "" && !strings.Contains(fold.String(t.Title), q) && !strings.Contains(fold.String(t.Description), q) {
+				if !MatchesSearch(t.Title, t.Description, filter.Search) {
 					continue
 				}
 				matches = true
@@ -274,4 +272,10 @@ func (s *Store) list(ctx context.Context, c *sql.Conn, p *lane.Page, m proto.Mes
 		prev = id
 	}
 	return out, "", nil
+}
+
+func MatchesSearch(title, description, query string) bool {
+	fold := cases.Fold()
+	q := fold.String(query)
+	return strings.Contains(fold.String(title), q) || strings.Contains(fold.String(description), q)
 }

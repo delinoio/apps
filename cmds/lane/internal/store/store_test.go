@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	lane "github.com/delinoio/apps/protos/lane/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -371,5 +372,150 @@ func TestSQLiteEngine(t *testing.T) {
 	t.Logf("SQLite %s source %s", version, source)
 	if version < "3.51.3" {
 		t.Fatal("unpatched WAL engine")
+	}
+}
+
+func TestRepositoryRenameMoveAndCascade(t *testing.T) {
+	s := testStore(t)
+	_, v := create(t, s)
+	x := v.GetTask().RepositoryId
+	xr, e := s.GetRepository(ctx, connect.NewRequest(&lane.GetRepositoryRequest{Id: x}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	y, e := s.CreateRepository(ctx, connect.NewRequest(&lane.CreateRepositoryRequest{Meta: meta(s), Url: "https://example.com/other"}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	task := proto.Clone(v.GetTask()).(*lane.Task)
+	task.RepositoryId = y.Msg.Result.Version.EntityId
+	moved, e := s.SaveTask(ctx, connect.NewRequest(&lane.SaveTaskRequest{Meta: meta(s), Id: v.EntityId, ExpectedVersionId: v.VersionId, Task: task}))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.SaveRepository(ctx, connect.NewRequest(&lane.SaveRepositoryRequest{Meta: meta(s), Id: x, ExpectedVersionId: xr.Msg.Result.Version.VersionId, Url: "https://example.com/new"})); e != nil {
+		t.Fatal(e)
+	}
+	newRepo, e := s.CreateRepository(ctx, connect.NewRequest(&lane.CreateRepositoryRequest{Meta: meta(s), Url: "https://example.com/acme/repo.git"}))
+	if e != nil || newRepo.Msg.Result.Version.EntityId == x {
+		t.Fatal("old URL retained alias", e)
+	}
+	if _, e = s.DeleteRepository(ctx, connect.NewRequest(&lane.DeleteRepositoryRequest{Meta: meta(s), Id: x})); e != nil {
+		t.Fatal(e)
+	}
+	got, e := s.GetTask(ctx, connect.NewRequest(&lane.GetTaskRequest{Id: v.EntityId}))
+	if e != nil || got.Msg.Result.Version.VersionId != moved.Msg.Result.Version.VersionId {
+		t.Fatal("moved task removed", e)
+	}
+	h, e := s.ListHistory(ctx, connect.NewRequest(&lane.ListHistoryRequest{Id: v.EntityId}))
+	if e != nil || len(h.Msg.Versions) != 2 {
+		t.Fatal("moved history removed", e)
+	}
+	if _, e = s.DeleteRepository(ctx, connect.NewRequest(&lane.DeleteRepositoryRequest{Meta: meta(s), Id: y.Msg.Result.Version.EntityId})); e != nil {
+		t.Fatal(e)
+	}
+	got, e = s.GetTask(ctx, connect.NewRequest(&lane.GetTaskRequest{Id: v.EntityId}))
+	if e != nil || got.Msg.Result.Result != 3 {
+		t.Fatal("cascade missed current task", e)
+	}
+}
+func TestBusyAndDiskFullRollback(t *testing.T) {
+	s := testStore(t)
+	_, v := create(t, s)
+	c, e := s.db.Conn(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	if _, e = c.ExecContext(ctx, "BEGIN IMMEDIATE"); e != nil {
+		t.Fatal(e)
+	}
+	other, e := Open(s.Root(), s.SpaceID())
+	if e == nil {
+		other.Close()
+		t.Fatal("opening locked database should exhaust bounded wait")
+	}
+	if reason(e) != 9 {
+		t.Fatal("busy error not typed", e)
+	}
+	if _, e = c.ExecContext(ctx, "ROLLBACK"); e != nil {
+		t.Fatal(e)
+	}
+	before, _ := s.Sequence(ctx)
+	var pages int
+	if e = c.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pages); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = c.ExecContext(ctx, "PRAGMA max_page_count="+fmt.Sprint(pages+1)); e != nil {
+		t.Fatal(e)
+	}
+	// Pin the limit to the writer connection; this exercises an actual SQLite FULL rollback.
+	e = transaction(ctx, s.db, true, func(conn *sql.Conn) error {
+		if _, e := conn.ExecContext(ctx, "PRAGMA max_page_count="+fmt.Sprint(pages+1)); e != nil {
+			return e
+		}
+		_, e := conn.ExecContext(ctx, "INSERT INTO outbox(request_id,entity_id,request_json,created_at_us) VALUES(?,?,?,0)", NewID(), v.EntityId, strings.Repeat("x", 1024*1024))
+		return e
+	})
+	if reason(e) != 10 {
+		t.Fatalf("want full: %v", e)
+	}
+	after, _ := s.Sequence(ctx)
+	if after != before || count(t, s, "outbox") != 2 {
+		t.Fatal("disk full partially committed")
+	}
+}
+func TestRemoveReopenAndReplayKinds(t *testing.T) {
+	s := testStore(t)
+	req, v := create(t, s)
+	req.Repository.Target = &lane.RepositoryTarget_Url{Url: "git@example.com:acme/repo"}
+	r, e := s.CreateTask(ctx, connect.NewRequest(req))
+	if e != nil || r.Msg.Result.Result != 2 {
+		t.Fatal("identical normalized replay not REPLAYED", e)
+	}
+	id := s.DeviceID()
+	if e = s.RemoveSpace(ctx); e != nil {
+		t.Fatal(e)
+	}
+	next, e := Open(s.Root(), "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer next.Close()
+	if next.DeviceID() != id || next.SpaceID() == s.SpaceID() {
+		t.Fatal("removal changed install device or reused space")
+	}
+	if _, e = next.GetTask(ctx, connect.NewRequest(&lane.GetTaskRequest{Id: v.EntityId})); reason(e) != 2 {
+		t.Fatal("removed content resurrected", e)
+	}
+}
+func TestPaginationScopeAndExternalSequence(t *testing.T) {
+	s := testStore(t)
+	_, v := create(t, s)
+	for i := 0; i < 2; i++ {
+		r := &lane.CreateTaskRequest{Meta: meta(s), Title: fmt.Sprint(i), Repository: &lane.RepositoryTarget{Target: &lane.RepositoryTarget_Id{Id: v.GetTask().RepositoryId}}}
+		if _, e := s.CreateTask(ctx, connect.NewRequest(r)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	page, e := s.ListTasks(ctx, connect.NewRequest(&lane.ListTasksRequest{Page: &lane.Page{Size: 1}}))
+	if e != nil || len(page.Msg.Items) != 1 || page.Msg.NextCursor == "" {
+		t.Fatal("pagination absent", e)
+	}
+	if _, e = s.ListTasks(ctx, connect.NewRequest(&lane.ListTasksRequest{Search: "different", Page: &lane.Page{Cursor: page.Msg.NextCursor}})); reason(e) != 1 {
+		t.Fatal("cursor reused across query", e)
+	}
+	other, e := Open(s.Root(), s.SpaceID())
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer other.Close()
+	seq, _ := s.Sequence(ctx)
+	if _, e = other.SetProgress(ctx, connect.NewRequest(&lane.SetProgressRequest{Meta: meta(other), Id: v.EntityId, ExpectedVersionId: v.VersionId, Progress: 4})); e != nil {
+		t.Fatal(e)
+	}
+	next, e := s.Sequence(ctx)
+	if e != nil || next <= seq {
+		t.Fatal("external commit invisible", e)
 	}
 }

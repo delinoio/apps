@@ -143,6 +143,36 @@ func fingerprint(m proto.Message) (string, error) {
 }
 func canonical(b *bytes.Buffer, v any) {
 	switch x := v.(type) {
+	case string:
+		b.WriteByte('"')
+		for _, r := range x {
+			switch r {
+			case '\b':
+				b.WriteString(`\b`)
+			case '\t':
+				b.WriteString(`\t`)
+			case '\n':
+				b.WriteString(`\n`)
+			case '\f':
+				b.WriteString(`\f`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '"':
+				b.WriteString(`\"`)
+			case '\\':
+				b.WriteString(`\\`)
+			default:
+				if r < 32 {
+					const hex = "0123456789abcdef"
+					b.WriteString(`\u00`)
+					b.WriteByte(hex[r>>4])
+					b.WriteByte(hex[r&15])
+				} else {
+					b.WriteRune(r)
+				}
+			}
+		}
+		b.WriteByte('"')
 	case map[string]any:
 		keys := make([]string, 0, len(x))
 		for k := range x {
