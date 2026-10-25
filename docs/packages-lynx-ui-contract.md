@@ -85,12 +85,16 @@ and errors; pass an accessible name and any error context to its `Input`.
 Set `loadingLabel` when a loading button needs different visible text. Progress
 accepts a percentage from 0 to 100 and clamps out-of-range or non-finite values.
 Tab item values must be unique; an invalid or disabled selected value renders no
-panel. Callers control selection and supply a valid enabled value.
+panel. Callers control selection and supply a valid enabled value. On web, the
+selected panel has the `tabpanel` role and uses its tab label as its accessible
+name. Changing or clearing that label updates the panel's accessible name.
 
 `Button`, `Input`, `Checkbox` and `Switch` accept `focusRef`, a ReactLynx ref to
-`FocusHandle` (`focus()`). Dialog requires `returnFocusRef` pointing to its trigger;
-set `initialFocusRef` to the sole critical input when present. Render Dialog near
-the root, outside clipped or transformed containers. Use library controls inside
+`FocusHandle` (`focus()`). Callback refs receive `null` on replacement and unmount,
+followed by their returned cleanup when present. Replacing a callback ref alone
+does not restart `Input` automatic focus. Dialog requires `returnFocusRef` pointing
+to its trigger; set `initialFocusRef` to the sole critical input when present.
+Render Dialog near the root, outside clipped or transformed containers. Use library controls inside
 Dialog so its native focus scope can register them. Nested dialogs and arbitrary
 third-party focusable children require a separate host integration.
 
@@ -116,10 +120,11 @@ view.setAttribute("url", "/gallery.web.bundle");
 The bridge supplies DOM roles, checked/disabled/selected states, keyboard
 activation, roving tab stops, modal background isolation and Clay-compatible
 focus methods. It handles shadow-DOM keyboard retargeting in the pinned runtime.
-Install once per view; dispose on permanent unmount. It does not patch global
-prototypes. This entry belongs in the browser host, never in a background-thread
-bundle. Native hosts use Lynx key events and focus methods directly, with
-accessibility-focus fallback when Clay `setFocus` is unavailable.
+Install once per view; retain the bridge through persisted `pagehide`/`pageshow`
+cycles, and dispose on permanent unmount or non-persisted `pagehide`. It does not
+patch global prototypes. This entry belongs in the browser host, never in a
+background-thread bundle. Native hosts use Lynx key events and focus methods
+directly, with accessibility-focus fallback when Clay `setFocus` is unavailable.
 
 Semantic CSS variables use the `--lui-` prefix. Override them on the provider's
 style (for example `--lui-primary`, `--lui-on-primary`, `--lui-focus`) while
