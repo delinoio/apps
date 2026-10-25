@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+source 'https://cdn.cocoapods.org/'
+source 'https://github.com/lynx-family/Specs.git'
+platform :ios, '16.0'
+project 'Lane.xcodeproj'
+target 'Lane' do
+  pod 'Lynx', '4.1.0', :subspecs => ['Framework']
+  pod 'PrimJS', '4.1.1', :subspecs => ['quickjs', 'napi']
+end
+
+# Lynx 4.1 pods declare iOS 9/10 targets that current Xcode no longer supports.
+# Match Lane's minimum until upstream podspecs use a supported deployment target.
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
+  end
+end

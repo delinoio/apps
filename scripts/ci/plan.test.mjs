@@ -16,6 +16,7 @@ test("isolated projects select only their validation", () => {
     delitools: true,
     perfine_api: false,
     perfine: false,
+    lane: false,
     perfine_fixtures: false,
     protocol: false,
   });
@@ -32,6 +33,7 @@ test("isolated projects select only their validation", () => {
     delitools: false,
     perfine_api: true,
     perfine: true,
+    lane: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -48,6 +50,7 @@ test("isolated projects select only their validation", () => {
     delitools: true,
     perfine_api: true,
     perfine: true,
+    lane: true,
     perfine_fixtures: true,
     protocol: true,
   });
@@ -78,6 +81,7 @@ for (const [project, key] of [
         delitools: false,
         perfine_api: false,
         perfine: false,
+        lane: false,
         perfine_fixtures: false,
         protocol: false,
       });
@@ -99,6 +103,7 @@ test("consumer examples select protocol validation without native runners", () =
     delitools: false,
     perfine_api: false,
     perfine: false,
+    lane: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -202,6 +207,7 @@ for (const path of ["Cargo.lock", "prebuilt-dependencies.lock.json"]) {
       delitools: true,
       perfine_api: false,
       perfine: false,
+      lane: false,
       perfine_fixtures: path === "Cargo.lock",
       protocol: false,
     });
@@ -222,6 +228,7 @@ test("go.sum selects Go protocol and consumer validation only", () => {
     delitools: false,
     perfine_api: false,
     perfine: false,
+    lane: false,
     perfine_fixtures: false,
     protocol: true,
   });
@@ -574,3 +581,14 @@ test("Perfine API and server evaluator changes select server validation", () => 
     ],
   );
 });
+
+for (const path of [
+  "apps/lane/src/App.tsx",
+  "apps/lane/native/desktop/macos.mm",
+  "docs/project-lane.md",
+  "docs/apps-lane-foundation.md",
+]) {
+  test(`Lane paths select only Lane: ${path}`, () => {
+    assert.deepEqual(selectedJobs([path]), ["lane"]);
+  });
+}

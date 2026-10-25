@@ -34,6 +34,7 @@ test("ordinary CI preserves affected-only dispatch and Linux allocation", () => 
     ["delino-docs-frontend", "delino_docs"],
     ["delidev-frontend", "delidev"],
     ["delitools-frontend", "delitools"],
+    ["lane-frontend", "lane"],
     ["protocol", "protocol"],
     ["tooling", "tooling"],
     ["shared-ui", "shared_ui"],
@@ -312,6 +313,7 @@ test("validation evidence and main-only cache saves survive the job split", () =
     "delino-docs-frontend",
     "delidev-frontend",
     "delitools-frontend",
+    "lane-frontend",
     "rust-clippy",
     "protocol",
   ]) {
@@ -355,6 +357,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "true",
     delidev: "true",
     delitools: "true",
+    lane: "true",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -388,6 +391,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     delino_docs: "false",
     delidev: "false",
     delitools: "false",
+    lane: "false",
     tooling: "true",
     shared_ui: "true",
     workflows: "true",
@@ -403,6 +407,7 @@ test("result aggregation rejects every selected failed, canceled or skipped job"
     "delino-docs-frontend",
     "delidev-frontend",
     "delitools-frontend",
+    "lane-frontend",
     "rust-clippy",
     "rust-test",
   ])
@@ -624,6 +629,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
     ["scripts/localization/catalog.mjs"],
     ["go.mod"],
     ["apps/devbase/src/main.tsx"],
+    ["apps/lane/src/App.tsx"],
   ]) {
     const selection = { ...select(paths), ...selectChecks(paths) };
     const needs = Object.fromEntries(
@@ -639,6 +645,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
       "delino-docs-frontend": "delino_docs",
       "delidev-frontend": "delidev",
       "delitools-frontend": "delitools",
+      "lane-frontend": "lane",
       "perfine-frontend": "perfine",
       "perfine-profiles": "perfine_fixtures",
       "perfine-adapters": "perfine_fixtures",

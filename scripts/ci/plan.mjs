@@ -196,6 +196,11 @@ export function select(paths, lockfiles) {
           path,
         ),
       ),
+    lane:
+      repositoryShared ||
+      paths.some((path) =>
+        /^(apps\/lane\/|docs\/(?:project-lane|apps-lane))/.test(path),
+      ),
     perfine_fixtures:
       repositoryShared ||
       shared.rust ||
