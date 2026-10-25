@@ -30,6 +30,21 @@ User guides cover installation, repository registration/rename/moves, task/propo
 
 Native distributions retain the existing SDK, embedded production-bundle and license-notice contracts. A desktop package must make its matching `lane sync run` helper available to host supervision without assuming a globally installed npm package. Register deep-link routes by build channel; queue cold-launch routing until storage/UI listeners are ready. Formal signing/store setup is separate from unsigned build/install/behavior validation. Do not add WNS registration to Windows packaging.
 
+## Desktop Chrome companion packaging
+
+The existing Lane desktop package includes the standalone Native Messaging relay,
+its private pinned Node 24 runtime and the original Node license. The relay starts
+only that runtime and connects to an already running Lane host. It must not launch
+Lane. The build records the runtime version and verified archive checksum; this
+integrity check does not replace dependency security review.
+
+The desktop installer registers the exact installed relay path for the explicitly
+configured extension IDs. An empty ID list disables registration and connection
+service. Uninstall removes only the matching registration and preserves Lane data.
+Use the [application packaging procedure](apps-lane-foundation.md#desktop-capture-packaging-and-local-validation)
+for local builds and isolated installer checks. Fixture IDs and unsigned packages
+do not establish Chrome Web Store publication or native runtime acceptance.
+
 ## Storage
 
 All `dist` directories are ignored generated output and must be removed from the final worktree. Generate packages before tests that consume them; never commit built executables, SDKs or release credentials. Assets at least 512 KiB use exact-path LFS attributes when they are legitimate tracked source assets; hydrate before builds/tests. Runtime data uses the shared local-store path, never the installation directory.
