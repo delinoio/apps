@@ -603,3 +603,8 @@ text {
 .mobile .capture-image {
   height: 220px;
 }
+/* Align the toolbar and repository label so scrolling the toolbar into view
+   does not leave the first form label above the composer's scroll boundary. */
+.image-editor {
+  padding: 12px 24px 24px;
+}

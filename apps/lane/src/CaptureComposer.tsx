@@ -20,7 +20,11 @@ import {
 import type { RealQAController } from "./useRealQA";
 import { conflicted, repositoryName } from "./model";
 import { connectionOf } from "./URLConnections";
-import { decodePNG, matchingRepository } from "./captures-model";
+import {
+  captureValidation,
+  decodePNG,
+  matchingRepository,
+} from "./captures-model";
 
 export function CaptureComposer({
   controller,
@@ -49,6 +53,11 @@ export function CaptureComposer({
   const options = repositories
     .filter((r) => r.version && !r.version.deleted && !conflicted(r))
     .map((r) => [r.version!.entityId, repositoryName(r.version)] as const);
+  const validation = captureValidation(
+    draft,
+    options.map(([id]) => id),
+  );
+  const invalid = Object.values(validation).some(Boolean);
   useEffect(() => {
     if (!adapter) return;
     let active = true;
@@ -93,16 +102,21 @@ export function CaptureComposer({
     void controller.updateDraft(patch);
   };
   const save = async () => {
-    if (saveLock.current || !adapter || !draft) return;
+    if (saveLock.current || !adapter || !draft || invalid) return;
+    const spaceId = adapter.spaceId;
     saveLock.current = true;
     setSaving(true);
     setSaveError("");
     try {
-      if (!options.some(([id]) => id === draft.repositoryId))
-        throw new Error("Select an available repository.");
-      if (!draft.title.trim()) throw new Error("Enter a title.");
-      if (!draft.images.length) throw new Error("Add at least one capture.");
+      if (!spaceId)
+        throw new Error(
+          "The data space is unavailable. Reopen Lane before saving.",
+        );
       const exported = await realqa<CaptureDraft>({ op: "export" });
+      if (adapter.spaceId !== spaceId)
+        throw new Error(
+          "The data space changed. Your draft is retained; reopen it in the original space before saving.",
+        );
       const key = JSON.stringify(exported);
       if (!identity.current || identity.current.draftId !== exported.id)
         identity.current = {
@@ -153,7 +167,7 @@ export function CaptureComposer({
       await realqa({
         op: "complete",
         taskId: identity.current.taskId,
-        spaceId: adapter.spaceId,
+        spaceId,
       });
     } catch (e) {
       await realqa({ op: "saveFailed" }).catch(() => {});
@@ -277,6 +291,9 @@ export function CaptureComposer({
               ))}
             </view>
             <text className="label">Add capture</text>
+            {validation.images && (
+              <text className="validation">{validation.images}</text>
+            )}
             {!saving && <CaptureActions controller={controller} />}
           </view>
           <view className="composer-form">
@@ -293,11 +310,8 @@ export function CaptureComposer({
               disabled={saving}
               onChange={(repositoryId) => update({ repositoryId })}
             />
-            {!options.some(([id]) => id === draft?.repositoryId) && (
-              <text className="validation">
-                Select a repository. A deleted or conflicted repository must be
-                reselected.
-              </text>
+            {validation.repository && (
+              <text className="validation">{validation.repository}</text>
             )}
             <Field
               label="Title"
@@ -306,8 +320,8 @@ export function CaptureComposer({
               disabled={saving}
               onChange={(title) => update({ title })}
             />
-            {!draft?.title.trim() && (
-              <text className="validation">Enter a title.</text>
+            {validation.title && (
+              <text className="validation">{validation.title}</text>
             )}
             <Field
               label="Description"
@@ -362,9 +376,7 @@ export function CaptureComposer({
             {saveError && <Notice>{saveError} Your draft is retained.</Notice>}
             <Button
               primary
-              disabled={
-                saving || controller.busy || !adapter || !draft?.images.length
-              }
+              disabled={saving || controller.busy || !adapter || invalid}
               onClick={() => void save()}
             >
               {saving ? "Saving…" : saveError ? "Retry" : "Save to Lane"}
@@ -498,7 +510,7 @@ function ImageEditor({
     };
   };
   return (
-    <view className="section">
+    <view className="section image-editor">
       <view className="row wrap editor-tools">
         {Object.values(EditTool).map((value) => (
           <Button

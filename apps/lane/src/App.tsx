@@ -36,6 +36,7 @@ import { RealQA, RealQADialogs } from "./RealQA";
 import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
 import { StoreMigration } from "./StoreMigration";
+import { savedCaptureRoute } from "./captures-model";
 import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
@@ -687,13 +688,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       </view>
       <RealQADialogs
         controller={realqa}
-        onOpenSaved={(saved) =>
-          setPendingRoute({
-            kind: "task",
-            id: saved.taskId,
-            spaceId: saved.spaceId,
-          })
-        }
+        onOpenSaved={(saved) => setPendingRoute(savedCaptureRoute(saved))}
       />
       {discard && (
         <Dialog

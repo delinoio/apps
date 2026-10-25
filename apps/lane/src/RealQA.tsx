@@ -376,6 +376,7 @@ export function RealQADialogs({
           title="Saved to Lane"
           onClose={() => controller.setSaved(undefined)}
         >
+          {controller.error && <Notice>{controller.error}</Notice>}
           <Notice>
             The task is saved locally. Optional synchronization may still be
             pending.

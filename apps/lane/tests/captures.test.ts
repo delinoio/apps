@@ -9,6 +9,8 @@ import {
 } from "@delino/protos/lane/v1/lane_pb";
 import { fromUI, toUI } from "../src/serializable.ts";
 import {
+  captureValidation,
+  savedCaptureRoute,
   attachmentSource,
   decodePNG,
   matchingRepository,
@@ -114,4 +116,36 @@ test("root URL rules match the origin and descendants without crossing host boun
     matchingRepository("https://example.com.evil/app", rules),
     undefined,
   );
+});
+
+test("composer validation identifies each required control independently", () => {
+  const empty = captureValidation(
+    { repositoryId: "", title: "  ", images: [] },
+    ["repository"],
+  );
+  assert.ok(empty.repository);
+  assert.ok(empty.title);
+  assert.ok(empty.images);
+  const valid = captureValidation(
+    { repositoryId: "repository", title: "Problem", images: [{}] },
+    ["repository"],
+  );
+  assert.deepEqual(valid, { repository: "", title: "", images: "" });
+  assert.ok(
+    captureValidation(
+      { repositoryId: "deleted", title: "Problem", images: [{}] },
+      ["repository"],
+    ).repository,
+  );
+});
+test("saved capture routes require their originating space and never infer the current account", () => {
+  assert.deepEqual(
+    savedCaptureRoute({ taskId: "task", spaceId: "original-space" }),
+    { kind: "task", id: "task", spaceId: "original-space" },
+  );
+  for (const spaceId of [undefined, "", " "])
+    assert.throws(
+      () => savedCaptureRoute({ taskId: "task", spaceId }),
+      /navigation was stopped/,
+    );
 });

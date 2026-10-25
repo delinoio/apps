@@ -4,7 +4,9 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 const port = Number(process.env.LANE_PREVIEW_PORT || 46400);
-const root = resolve(import.meta.dirname, "../dist");
+const root = process.env.LANE_PREVIEW_ROOT
+  ? resolve(process.env.LANE_PREVIEW_ROOT)
+  : resolve(import.meta.dirname, "../dist");
 const repo = {
   formatVersion: 1,
   entityId: "019a196d-0000-7000-8000-000000000001",

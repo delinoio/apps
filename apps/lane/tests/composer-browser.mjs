@@ -38,18 +38,18 @@ await page.route("**/host.js", async (route) => {
   body = body.replace(
     "view.onNativeModulesCall = async (name, data, moduleName) => {",
     `let fixtureDraft;
-let windowKind='main';let savedCount=0;let attempts=[];let failOnce=true;const operations=[];
+let windowKind='main';let savedCount=0;let attempts=[];let failOnce=true;const operations=[];const storeCalls=[];
 const fixtureId='019a196d-0000-7000-8000-000000000001';
 const state=()=>({window:windowKind,draft:fixtureDraft,shortcuts:{},permission:'granted',chrome:{state:'disconnected',pending:[],connections:[]}});
 const emit=()=>view.sendGlobalEvent('lane.realqa.changed',[{}]);
-window.fixtureState=()=>({draft:fixtureDraft,savedCount,attempts,operations});
+window.fixtureState=()=>({draft:fixtureDraft,savedCount,attempts,operations,storeCalls});
 view.onNativeModulesCall = async (name, data, moduleName) => {
 if(moduleName==='bridge') {
  const {module,method,args}=data;
  if(module==='LaneStore'){
- if(method==='open')return JSON.stringify({ok:true,response:{spaceId:'fixture-space',deviceId:'fixture-device',schemaVersion:2,formatVersion:2,sequence:'0'}});
+ if(method==='open'){const spaceId=JSON.parse(args[0]).spaceId||'fixture-space';storeCalls.push({method:'open',spaceId});if(spaceId==='unavailable-space')return JSON.stringify({ok:false,error:{reason:'NOT_FOUND',message:'Synthetic unavailable space'}});return JSON.stringify({ok:true,response:{spaceId,deviceId:'fixture-device',schemaVersion:2,formatVersion:2,sequence:'0'}});}
  if(method==='close')return JSON.stringify({ok:true,response:{}});
- const input=JSON.parse(args[1]).request;let response={};
+ const wrapper=JSON.parse(args[1]);storeCalls.push({method:args[0],spaceId:wrapper.spaceId});const input=wrapper.request;let response={};
  if(args[0]==='GetLocalStatus')response={syncEnabled:false,pendingItemCount:'0',connected:false};
  else if(args[0]==='ListURLConnections')response={items:[]};
  else if(args[0]==='CreateCaptureTask') {attempts.push(input);if(failOnce){failOnce=false;return JSON.stringify({ok:false,error:{reason:'STORAGE_FULL',message:'Synthetic storage failure'}});}savedCount++;response={result:{result:'RESULT_KIND_APPLIED',version:{entityId:input.id,versionId:fixtureId,kind:'ENTITY_KIND_TASK',task:{repositoryId:input.repositoryId,title:input.title}}}};}
@@ -80,6 +80,44 @@ try {
   await button("Full screen").click();
   await button("Test monitor · 480 × 240").click();
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.waitForTimeout(150);
+  const initialLayout = await page.locator("lynx-view").evaluate((view) => {
+    const root = view.shadowRoot;
+    const rect = (selector) => {
+      const r = root.querySelector(selector).getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    };
+    const input = root
+      .querySelector(".composer-form x-input")
+      ?.shadowRoot?.querySelector("input");
+    return {
+      header: rect(".composer-header"),
+      repository: rect(".composer-form .label"),
+      scroll: rect(".composer-scroll"),
+      titleFocused: input === input?.getRootNode().activeElement,
+    };
+  });
+  assert.ok(initialLayout.titleFocused, "Title must retain initial autofocus");
+  assert.ok(
+    initialLayout.repository.top >= initialLayout.header.bottom,
+    JSON.stringify(initialLayout),
+  );
+  await page.getByText("Enter a title.", { exact: true }).waitFor();
+  await page
+    .getByText(
+      "Select a repository. A deleted or conflicted repository must be reselected.",
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal(
+    await button("Save to Lane").getAttribute("aria-disabled"),
+    "true",
+  );
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).attempts.length,
+    0,
+  );
+  await page.screenshot({ path: `${evidence}/desktop-composer-initial.png` });
   await page
     .getByRole("textbox", { name: "Title", exact: true })
     .fill("Synthetic capture task");
@@ -94,6 +132,15 @@ try {
     () => window.fixtureState().draft.images[0].layers.length === 1,
   );
   await page.locator(".editor-tools").scrollIntoViewIfNeeded();
+  const repositoryLabel = await page
+    .locator(".composer-form .label")
+    .first()
+    .boundingBox();
+  const header = await page.locator(".composer-header").boundingBox();
+  assert.ok(
+    repositoryLabel.y >= header.y + header.height - 1,
+    JSON.stringify({ repositoryLabel, header }),
+  );
   await page.screenshot({ path: `${evidence}/desktop-composer.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".composer-form").scrollIntoViewIfNeeded();
@@ -119,6 +166,70 @@ try {
   assert.equal(result.attempts[1].images[0].capture.cssSelector, undefined);
   assert.equal(result.attempts[1].description, "Synthetic problem description");
   assert.ok(result.operations.some((op) => op.op === "saveFailed"));
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.openRoute", [
+        { kind: "open", spaceId: "different-space" },
+      ]),
+    );
+  await page.waitForFunction(() =>
+    window
+      .fixtureState()
+      .storeCalls.some(
+        (call) => call.method === "open" && call.spaceId === "different-space",
+      ),
+  );
+  await button("Open in Lane").click();
+  await page.waitForFunction(() =>
+    window
+      .fixtureState()
+      .storeCalls.some(
+        (call) => call.method === "GetTask" && call.spaceId === "fixture-space",
+      ),
+  );
+  const routeCalls = (await page.evaluate(() => window.fixtureState()))
+    .storeCalls;
+  const lastOpen = routeCalls.filter((call) => call.method === "open").at(-1);
+  assert.equal(lastOpen.spaceId, "fixture-space");
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.realqa.saved", [
+        { taskId: "saved-task", spaceId: "unavailable-space" },
+      ]),
+    );
+  await button("Open in Lane").click();
+  await page
+    .getByText("Synthetic unavailable space", { exact: false })
+    .waitFor();
+  const afterRefusal = (await page.evaluate(() => window.fixtureState()))
+    .storeCalls;
+  const refusedIndex = afterRefusal.findLastIndex(
+    (call) => call.method === "open" && call.spaceId === "unavailable-space",
+  );
+  assert.ok(refusedIndex >= 0);
+  assert.equal(
+    afterRefusal
+      .slice(refusedIndex + 1)
+      .some((call) => call.method === "GetTask"),
+    false,
+  );
+  await page
+    .locator("lynx-view")
+    .evaluate((view) =>
+      view.sendGlobalEvent("lane.realqa.saved", [{ taskId: "saved-task" }]),
+    );
+  await button("Open in Lane").click();
+  await page
+    .getByText("The saved task's data space is missing.", { exact: false })
+    .waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.fixtureState())).storeCalls.filter(
+      (call) => call.method === "open",
+    ).length,
+    afterRefusal.filter((call) => call.method === "open").length,
+  );
   assert.deepEqual(errors, []);
   await writeFile(
     `${evidence}/composer-result.json`,
@@ -126,6 +237,8 @@ try {
       {
         result: "passed",
         fixture: true,
+        initialLayout,
+        repositoryLabel,
         savedCount: result.savedCount,
         retries: result.attempts.length,
         errors,

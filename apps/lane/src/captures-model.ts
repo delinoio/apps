@@ -66,3 +66,27 @@ export function matchingRepository(
     })
     .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.repositoryId;
 }
+
+export function captureValidation(
+  draft:
+    | { repositoryId: string; title: string; images: readonly unknown[] }
+    | null
+    | undefined,
+  repositoryIds: readonly string[],
+) {
+  return {
+    repository:
+      !draft || !repositoryIds.includes(draft.repositoryId)
+        ? "Select a repository. A deleted or conflicted repository must be reselected."
+        : "",
+    title: !draft?.title.trim() ? "Enter a title." : "",
+    images: !draft?.images.length ? "Add at least one capture." : "",
+  };
+}
+export function savedCaptureRoute(saved: { taskId: string; spaceId?: string }) {
+  if (!saved.taskId?.trim() || !saved.spaceId?.trim())
+    throw new Error(
+      "The saved task's data space is missing. Reopen Lane to locate the task; navigation was stopped.",
+    );
+  return { kind: "task" as const, id: saved.taskId, spaceId: saved.spaceId };
+}
