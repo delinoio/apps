@@ -42,14 +42,14 @@ try {
   );
   assert.deepEqual(
     rail.map((button) => button.name),
-    ["Lane", "Pace", "Handrail"],
+    ["Lane", "Pace", "RealQA"],
   );
   assert.ok(
     rail.every((button) => button.width === 44 && button.height === 44),
   );
   assert.equal(rail[1].top - rail[0].top, 56);
   assert.equal(rail[2].top - rail[1].top, 56);
-  assert.equal(await page.getByText(/Perfine|RealQA/).count(), 0);
+  assert.equal(await page.getByText(/Perfine/).count(), 0);
   const search = page.getByRole("textbox", {
     name: "Search title or description",
     exact: true,
@@ -66,16 +66,13 @@ try {
         ?.textContent === "Coming soon",
   );
   await page.screenshot({ path: join(evidence, "desktop-pace.png") });
-  await appButton("Handrail").focus();
+  await appButton("RealQA").focus();
   await page.keyboard.press(" ");
   await page
-    .getByText("Handrail is not available yet.", { exact: true })
+    .getByText("RealQA is not available yet.", { exact: true })
     .waitFor();
-  assert.equal(
-    await appButton("Handrail").getAttribute("aria-pressed"),
-    "true",
-  );
-  await page.screenshot({ path: join(evidence, "desktop-handrail.png") });
+  assert.equal(await appButton("RealQA").getAttribute("aria-pressed"), "true");
+  await page.screenshot({ path: join(evidence, "desktop-realqa.png") });
   for (const width of [899, 900, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.waitForTimeout(150);
@@ -100,7 +97,7 @@ try {
     else assert.equal(layout.navWidth, 240);
     assert.ok(layout.buttonRight <= width);
   }
-  await page.screenshot({ path: join(evidence, "mobile-handrail.png") });
+  await page.screenshot({ path: join(evidence, "mobile-realqa.png") });
   await appButton("Back to Lane").click();
   await search.waitFor();
   assert.equal(await search.inputValue(), "preserved filter");
@@ -260,7 +257,7 @@ try {
         scope:
           "Mock authenticated server; no live Logto, native, or provider acceptance",
         checks: [
-          "equal Lane, Pace and Handrail rail buttons and app-specific sidebars",
+          "equal Lane, Pace and RealQA rail buttons and app-specific sidebars",
           "mini-app keyboard activation, selected state and title focus",
           "Coming soon return preserves Lane filters",
           "mini-app switching respects unsaved-edit confirmation and Escape",
