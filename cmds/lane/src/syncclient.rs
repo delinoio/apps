@@ -480,11 +480,7 @@ sync::mappings(dst,&json!([{
 ]))?;
 }
 }
-    for v in sync::ordered(src)?{
-sync::apply(dst,&json!({
-"version":v}
-))?;
-}
+    import_versions(src, dst)?;
     let mut stmt=src.prepare("SELECT method,request_id,fingerprint,entity_id,result_json FROM receipts")?;
 for row in stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?)))?{
 let(method,id,fp,entity,mut result)=row?;
@@ -517,4 +513,63 @@ dst.execute("INSERT OR IGNORE INTO outbox VALUES(?,?,?,?,?,?)",params![id,entity
 put_meta(dst,&completed,"1")
     }
 ))
+}
+
+// History must not become a live projection during import: a repository may
+// have released an old URL that another account repository now owns.
+fn import_versions(src: &Connection, dst: &Connection) -> Result<()> {
+    let mut stmt =
+        src.prepare("SELECT id,kind,repository_id,normalized_url,deleted FROM entities")?;
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i32>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, bool>(4)?,
+        ))
+    })? {
+        let (entity, kind, repository, mut url, deleted) = row?;
+        let mapped: bool = dst.query_row(
+            "SELECT EXISTS(SELECT 1 FROM repository_mappings WHERE local_id=?)",
+            [&entity],
+            |r| r.get(0),
+        )?;
+        if mapped {
+            url = None;
+        }
+        dst.execute("INSERT OR IGNORE INTO entities(id,kind,repository_id,normalized_url,deleted) VALUES(?,?,?,?,?)", params![entity,kind,repository,url,deleted])?;
+    }
+    for v in sync::ordered(src)? {
+        let deleted: bool = dst.query_row(
+            "SELECT deleted FROM entities WHERE id=?",
+            [strv(&v, "entityId")],
+            |r| r.get(0),
+        )?;
+        if deleted && v["deleted"] != true {
+            continue;
+        }
+        sync::validate(&v)?;
+        sync::insert_version(dst, &v)?;
+        let prompt: bool = src.query_row(
+            "SELECT prompt_version FROM versions WHERE version_id=?",
+            [strv(&v, "versionId")],
+            |r| r.get(0),
+        )?;
+        if prompt {
+            dst.execute(
+                "UPDATE versions SET prompt_version=1 WHERE version_id=?",
+                [strv(&v, "versionId")],
+            )?;
+        }
+    }
+    for raw in rows(
+        src,
+        "SELECT v.envelope_json FROM heads h JOIN versions v ON v.version_id=h.version_id ORDER BY v.entity_id,v.version_id",
+        [],
+    )? {
+        let version: Value = serde_json::from_str(&raw)?;
+        sync::apply(dst, &json!({"version":version}))?;
+    }
+    Ok(())
 }

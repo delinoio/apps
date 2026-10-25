@@ -448,3 +448,59 @@ fn synchronized_deletions_have_empty_history() {
         }
     }
 }
+
+#[test]
+fn standalone_import_projects_only_current_repository_heads() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = Store::open(temp.path(), "", false).unwrap();
+    let original = call(
+        &source,
+        "CreateRepository",
+        json!({"url":"https://example.com/old"}),
+    )
+    .unwrap()["result"]["version"]
+        .clone();
+    let current = call(&source, "SaveRepository", json!({"id":original["entityId"],"expectedVersionId":original["versionId"],"url":"https://example.com/current"})).unwrap()["result"]["version"].clone();
+    let task = call(
+        &source,
+        "CreateTask",
+        json!({"repository":{"id":original["entityId"]},"title":"Imported","prompt":"preserved"}),
+    )
+    .unwrap()["result"]["version"]
+        .clone();
+    let dest = source.select_account("issuer", &id(), "tenant").unwrap();
+    let existing = call(
+        &dest,
+        "CreateRepository",
+        json!({"url":"https://example.com/old"}),
+    )
+    .unwrap()["result"]["version"]
+        .clone();
+    for _ in 0..2 {
+        lane::syncclient::import(&source, &dest).unwrap();
+        assert_eq!(
+            call(&dest, "GetRepository", json!({"id":original["entityId"]})).unwrap()["result"]["version"],
+            current
+        );
+        assert_eq!(
+            call(&dest, "GetRepository", json!({"id":existing["entityId"]})).unwrap()["result"]["version"],
+            existing
+        );
+        assert_eq!(
+            call(&dest, "GetTask", json!({"id":task["entityId"]})).unwrap()["result"]["version"],
+            task
+        );
+        let history = call(&dest, "ListHistory", json!({"id":original["entityId"]})).unwrap();
+        assert_eq!(history["versions"], json!([original, current]));
+        dest.with(false, |c| {
+            let pending: i64 = c.query_row(
+                "SELECT count(*) FROM outbox WHERE entity_id=?",
+                [strv(&original, "entityId")],
+                |r| r.get(0),
+            )?;
+            assert_eq!(pending, 2);
+            Ok(())
+        })
+        .unwrap();
+    }
+}
