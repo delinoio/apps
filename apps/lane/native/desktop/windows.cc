@@ -87,7 +87,7 @@ class Application {
     type.lpszClassName = kControllerClass;
     if (!RegisterClassW(&type)) throw std::runtime_error("Controller registration failed");
     type.lpszClassName = kWindowClass; type.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    type.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    type.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(1));
     if (!RegisterClassW(&type)) throw std::runtime_error("Window registration failed");
     controller_ = CreateWindowExW(0, kControllerClass, user_.c_str(), 0, 0, 0, 0, 0,
         nullptr, nullptr, instance_, this);
@@ -247,7 +247,7 @@ class Application {
     NOTIFYICONDATAW icon{};
     icon.cbSize = sizeof(icon); icon.hWnd = controller_; icon.uID = 1;
     icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    icon.uCallbackMessage = kTray; icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    icon.uCallbackMessage = kTray; icon.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(1));
     wcscpy_s(icon.szTip, L"Lane");
     tray_ = Shell_NotifyIconW(NIM_ADD, &icon);
   }
