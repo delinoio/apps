@@ -9,6 +9,7 @@ import {
 import { createRef } from "@lynx-js/react";
 import { Button, Dialog, Input, Tabs, type FocusHandle } from "../src";
 import * as theme from "../src/theme";
+import { FocusContext, type FocusScope } from "../src/focus";
 
 // The ReactLynx fixture has no native input or focus implementation. Assert the
 // host-method boundary here; the real web gallery validates host integration.
@@ -18,6 +19,38 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   rstest.restoreAllMocks();
+});
+
+it("preserves scope order across loading and callback ref changes", async () => {
+  const scope: FocusScope = { entries: new Map(), active: null };
+  const oldRef = rstest.fn();
+  const newRef = rstest.fn();
+  const controls = (loading: boolean, focusRef: typeof oldRef) => (
+    <FocusContext.Provider value={scope}>
+      <Input value="" onValueChange={() => {}} accessibilityLabel="Name" />
+      <Button loading={loading} focusRef={focusRef}>
+        Submit
+      </Button>
+      <Button>Close</Button>
+    </FocusContext.Provider>
+  );
+  const { rerender, unmount } = render(controls(false, oldRef));
+  await waitFor(() => expect(scope.entries.size).toBe(3));
+  const order = Array.from(scope.entries.keys());
+  rerender(controls(true, oldRef));
+  await waitFor(() => expect(scope.entries.get(order[1])!.disabled).toBe(true));
+  expect(Array.from(scope.entries.keys())).toEqual(order);
+  rerender(controls(false, newRef));
+  await waitFor(() =>
+    expect(newRef).toHaveBeenCalledWith(
+      expect.objectContaining({ focus: expect.any(Function) }),
+    ),
+  );
+  expect(oldRef).toHaveBeenLastCalledWith(null);
+  expect(scope.entries.get(order[1])!.disabled).toBe(false);
+  expect(Array.from(scope.entries.keys())).toEqual(order);
+  unmount();
+  await waitFor(() => expect(scope.entries.size).toBe(0));
 });
 
 it("synchronizes controlled input and focuses the critical input", async () => {

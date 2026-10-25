@@ -45,12 +45,16 @@ export function useControlFocus(
   };
   useEffect(() => {
     scope?.entries.set(token.current, entry.current);
+    return () => {
+      scope?.entries.delete(token.current);
+    };
+  }, [scope]);
+  useEffect(() => {
     const value = { focus: () => entry.current.focus() };
     if (typeof handle === "function") handle(value);
     else if (handle) handle.current = value;
     if (autoFocus && !disabled) value.focus();
     return () => {
-      scope?.entries.delete(token.current);
       if (typeof handle === "function") handle(null);
       else if (handle) handle.current = null;
     };
