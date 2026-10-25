@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+file(READ "${CMAKE_CURRENT_LIST_DIR}/dependencies.json" lock)
+string(JSON count LENGTH "${lock}" sha256)
+math(EXPR last "${count} - 1")
+foreach(index RANGE 0 ${last})
+  string(JSON path MEMBER "${lock}" sha256 ${index})
+  string(JSON expected GET "${lock}" sha256 "${path}")
+  file(SHA256 "${CMAKE_CURRENT_LIST_DIR}/${path}" actual)
+  if(NOT actual STREQUAL expected)
+    message(FATAL_ERROR "Lane vendored source hash mismatch: ${path}. Hydrate Git LFS objects before building; do not substitute system SQLite.")
+  endif()
+endforeach()

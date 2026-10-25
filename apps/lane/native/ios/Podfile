@@ -5,6 +5,7 @@ platform :ios, '16.0'
 project 'Lane.xcodeproj'
 target 'Lane' do
   pod 'Lynx', '4.1.0', :subspecs => ['Framework']
+  pod 'XElement', '4.1.0', :subspecs => ['Input']
   pod 'PrimJS', '4.1.1', :subspecs => ['quickjs', 'napi']
 end
 

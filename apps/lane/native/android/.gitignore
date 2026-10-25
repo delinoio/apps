@@ -1,0 +1,3 @@
+# Android native build caches and local SDK configuration.
+.cxx/
+local.properties

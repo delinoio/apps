@@ -2,7 +2,7 @@
 
 ## Scope
 
-Planned `cmds/lane` owns the Go `lane` executable and local stdio MCP. `cmds/lane/internal` owns Go domain/store/sync adapters in the existing root module. Do not create a companion module, `go.work`, private checkout or Go server. The [distribution contract](packages-lane-distribution-contract.md) owns release artifacts and `@delinoio/lane`.
+`cmds/lane` owns the Go `lane` executable and local stdio MCP. `cmds/lane/internal` owns Go domain/store/sync adapters in the existing root module. Do not create a companion module, `go.work`, private checkout or Go server. The [distribution contract](packages-lane-distribution-contract.md) owns release artifacts and `@delinoio/lane`.
 
 ## Runtime and Language
 

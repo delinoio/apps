@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+import test from "node:test";
+import assert from "node:assert/strict";
+import { create } from "@bufbuild/protobuf";
+import {
+  EntityResultSchema,
+  EntityVersionSchema,
+  TaskSchema,
+  Progress,
+  Proposal,
+  ResultKind,
+} from "@delino/protos/lane/v1/lane_pb";
+import {
+  draftFor,
+  receiveExternal,
+  historyChanges,
+  heads,
+  conflicted,
+} from "../src/model.ts";
+const version = (id: string, title: string, progress = Progress.TODO) =>
+  create(EntityVersionSchema, {
+    entityId: "task",
+    versionId: id,
+    body: {
+      case: "task",
+      value: create(TaskSchema, {
+        title,
+        progress,
+        proposal: Proposal.PENDING,
+        prompt: "original",
+      }),
+    },
+  });
+test("external updates retain unsaved title, description, prompt, progress and original base", () => {
+  const initial = create(EntityResultSchema, { version: version("v1", "old") });
+  const draft = draftFor(initial);
+  draft.task.title = "unsaved";
+  draft.task.description = "unsaved description";
+  draft.task.prompt = "unsaved prompt";
+  draft.dirty = true;
+  const next = receiveExternal(
+    draft,
+    create(EntityResultSchema, {
+      version: version("v2", "remote", Progress.DONE),
+    }),
+  );
+  assert.equal(next.task, draft.task);
+  assert.equal(next.base, "v1");
+  assert.equal(next.external, true);
+});
+test("deletion blocks future editing but retains current-screen source", () => {
+  const draft = draftFor(
+    create(EntityResultSchema, { version: version("v1", "retain me") }),
+  );
+  const next = receiveExternal(
+    draft,
+    create(EntityResultSchema, { result: ResultKind.DELETED }),
+  );
+  assert.equal(next.deleted, true);
+  assert.equal(next.task.title, "retain me");
+});
+test("all progress transitions stay distinct from proposal disposition in history", () => {
+  for (const before of [1, 2, 3, 4, 5])
+    for (const after of [1, 2, 3, 4, 5]) {
+      const a = version("a", "title", before),
+        b = version("b", "title", after);
+      const diff = historyChanges(a, b);
+      assert.equal(
+        diff.some((d) => d.field === "progress"),
+        before !== after,
+      );
+      assert.equal(
+        diff.some((d) => d.field === "proposal"),
+        false,
+      );
+    }
+});
+test("whole-task conflict includes every unique head", () => {
+  const a = version("a", "one"),
+    b = version("b", "two");
+  const r = create(EntityResultSchema, {
+    result: ResultKind.CONFLICT,
+    version: a,
+    alternatives: [a, b],
+  });
+  assert.equal(conflicted(r), true);
+  assert.deepEqual(
+    heads(r).map((h) => h.versionId),
+    ["a", "b"],
+  );
+});
