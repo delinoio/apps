@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { existsSync } from "node:fs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const [platform, action] = process.argv.slice(2);
@@ -22,7 +23,31 @@ try {
   if (platform === "desktop" && action === "build") {
     if (!["darwin", "win32"].includes(process.platform))
       throw new Error("Use macOS or Windows for Clay builds");
-    run("cmake", ["-S", "native/desktop", "-B", "native/desktop/build"]);
+    const architecture = { arm64: "arm64", x64: "amd64", ia32: "386" }[
+      process.arch
+    ];
+    if (!architecture) throw new Error("Unsupported desktop CPU architecture");
+    const os = process.platform === "darwin" ? "darwin" : "windows";
+    const executable = process.platform === "win32" ? "lane.exe" : "lane";
+    const packagedHelper = join(
+      root,
+      "../../packages/lane/dist/artifacts",
+      `lane-${os}-${architecture}`,
+      executable,
+    );
+    const helper =
+      process.env.LANE_SYNC_HELPER ||
+      (existsSync(packagedHelper) ? packagedHelper : "");
+    if (helper && !existsSync(helper))
+      throw new Error("Configured Lane sync helper is missing");
+    run("cmake", [
+      "-S",
+      "native/desktop",
+      "-B",
+      "native/desktop/build",
+      `-DLANE_SYNC_HELPER=${helper}`,
+      `-DLANE_URL_SCHEME=${process.env.LANE_URL_SCHEME || "lane-dev"}`,
+    ]);
     run("cmake", ["--build", "native/desktop/build", "--config", "Release"]);
   } else if (platform === "desktop" && action === "run") {
     if (process.platform === "darwin")
