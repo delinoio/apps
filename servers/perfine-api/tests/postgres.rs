@@ -916,6 +916,30 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
             .await
             .unwrap_err();
             assert_eq!(error.message, "rejected upload cannot be completed");
+            // No reservation is released while a signed PUT can still recreate bytes.
+            *fail_delete.lock().unwrap() = false;
+            server.maintain().await.unwrap();
+            let reserved: i64 =
+                sqlx::query_scalar("SELECT reserved_bytes FROM perfine_uploads WHERE id=$1")
+                    .bind(upload_id)
+                    .fetch_one(&db)
+                    .await
+                    .unwrap();
+            assert!(reserved > 0);
+            sqlx::query("UPDATE perfine_uploads SET staging_expires_at=now()-interval '1 minute' WHERE id=$1")
+                .bind(upload_id).execute(&db).await.unwrap();
+            *fail_delete.lock().unwrap() = true;
+            server.maintain().await.unwrap();
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT reserved_bytes FROM perfine_uploads WHERE id=$1"
+                )
+                .bind(upload_id)
+                .fetch_one(&db)
+                .await
+                .unwrap(),
+                reserved
+            );
             *fail_delete.lock().unwrap() = false;
             sqlx::query("UPDATE perfine_rejected_objects SET expires_at=now()-interval '1 minute',next_attempt=now()")
                 .execute(&db).await.unwrap();
@@ -925,6 +949,27 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
                     .fetch_one(&db)
                     .await
                     .unwrap(),
+                0
+            );
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT reserved_bytes FROM perfine_uploads WHERE id=$1"
+                )
+                .bind(upload_id)
+                .fetch_one(&db)
+                .await
+                .unwrap(),
+                0
+            );
+            server.maintain().await.unwrap();
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT reserved_bytes FROM perfine_uploads WHERE id=$1"
+                )
+                .bind(upload_id)
+                .fetch_one(&db)
+                .await
+                .unwrap(),
                 0
             );
             // Removing the cleanup record must not permit a later URL renewal.

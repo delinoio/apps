@@ -1254,7 +1254,7 @@ impl Server {
                 sqlx::query("UPDATE perfine_rejected_objects SET next_attempt=now()+interval '1 minute' WHERE object_key=$1").bind(key).execute(&self.db).await?;
             }
         }
-        let stages=sqlx::query("SELECT u.id,u.experiment,u.data,e.space FROM perfine_uploads u JOIN perfine_experiments e ON e.id=u.experiment WHERE NOT u.staging_cleaned AND u.staging_expires_at<now() AND u.data->>'state'='UPLOAD_STATE_COMPLETE' LIMIT 100").fetch_all(&self.db).await?;
+        let stages=sqlx::query("SELECT u.id,u.experiment,u.data,e.space FROM perfine_uploads u JOIN perfine_experiments e ON e.id=u.experiment WHERE NOT u.staging_cleaned AND u.staging_expires_at<now() AND u.data->>'state' IN ('UPLOAD_STATE_COMPLETE','UPLOAD_STATE_FAILED') LIMIT 100").fetch_all(&self.db).await?;
         for row in stages {
             let mut tx = self.db.begin().await?;
             let space: uuid::Uuid = row.get("space");
@@ -1262,26 +1262,36 @@ impl Server {
             let uid: uuid::Uuid = row.get("id");
             let eid: uuid::Uuid = row.get("experiment");
             let data: Value = row.get("data");
+            let rejected = data["state"] == "UPLOAD_STATE_FAILED";
             let mut failed = false;
             for a in data["manifest"]["artifacts"]
                 .as_array()
                 .ok_or_else(Fault::unavailable)?
             {
-                if self
-                    .storage
-                    .delete(&crate::storage::key(
-                        &eid.to_string(),
-                        &uid.to_string(),
-                        string(a, "name"),
-                    ))
-                    .await
-                    .is_err()
-                {
-                    failed = true;
+                let mut prefixes = vec![uid.to_string()];
+                if rejected {
+                    // A prior completion attempt may have copied only some objects.
+                    // Failed uploads retain no accepted bytes after cleanup.
+                    prefixes.push(format!("accepted-{uid}"));
+                }
+                for prefix in prefixes {
+                    if self
+                        .storage
+                        .delete(&crate::storage::key(
+                            &eid.to_string(),
+                            &prefix,
+                            string(a, "name"),
+                        ))
+                        .await
+                        .is_err()
+                    {
+                        failed = true;
+                    }
                 }
             }
             if !failed {
-                sqlx::query("UPDATE perfine_uploads SET reserved_bytes=reserved_bytes/2,staging_cleaned=true WHERE id=$1 AND NOT staging_cleaned").bind(uid).execute(&mut *tx).await?;
+                sqlx::query("UPDATE perfine_uploads SET reserved_bytes=CASE WHEN $2 THEN 0 ELSE reserved_bytes/2 END,staging_cleaned=true WHERE id=$1 AND NOT staging_cleaned")
+                    .bind(uid).bind(rejected).execute(&mut *tx).await?;
             }
             tx.commit().await?;
         }
