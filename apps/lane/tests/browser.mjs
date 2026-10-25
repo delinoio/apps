@@ -54,6 +54,31 @@ try {
     name: "Search title or description",
     exact: true,
   });
+  for (const name of ["Lane", "Pace", "Handrail"]) {
+    const button = appButton(name);
+    const tooltip = button.locator(".app-tooltip");
+    await search.focus();
+    await page.mouse.move(1400, 880);
+    assert.equal(await tooltip.isVisible(), false);
+    await button.hover();
+    assert.equal(await tooltip.isVisible(), true);
+    assert.equal(await tooltip.textContent(), name);
+    const triggerBounds = await button.boundingBox();
+    const tooltipBounds = await tooltip.boundingBox();
+    assert.ok(tooltipBounds.x >= triggerBounds.x + triggerBounds.width);
+    const textFits = await tooltip.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const text = element.querySelector("x-text").getBoundingClientRect();
+      return text.left >= bounds.left && text.right <= bounds.right;
+    });
+    assert.ok(textFits, `${name} tooltip text must fit its clipping boundary`);
+    await page.mouse.move(1400, 880);
+    assert.equal(await tooltip.isVisible(), false);
+    await button.focus();
+    assert.equal(await tooltip.isVisible(), true);
+    await search.focus();
+    assert.equal(await tooltip.isVisible(), false);
+  }
   await search.fill("preserved filter");
   await appButton("Pace").click();
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();

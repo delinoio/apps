@@ -410,6 +410,9 @@ text {
 }
 .app-tooltip {
   display: none;
+  /* Pre-3.5 Lynx targets can paint text under display:none. Clip this parent
+     until all supported targets suppress that painting without the workaround. */
+  overflow: hidden;
   position: absolute;
   left: 48px;
   top: 4px;
