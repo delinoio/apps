@@ -8,6 +8,7 @@
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Foundation.h>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <future>

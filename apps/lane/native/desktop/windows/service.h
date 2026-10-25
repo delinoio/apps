@@ -2,6 +2,7 @@
 #pragma once
 #include "platform.h"
 #include "process.h"
+#include "logging.h"
 #include "serial_worker.h"
 #include "../../store/lane_store.h"
 #include <set>
@@ -129,6 +130,7 @@ class Service {
     owner_ = NewID();
     store_ = std::make_unique<lane::Store>(DataRoot().u8string());
     supervisor_ = std::make_unique<SyncSupervisor>(helper_, [this](const auto& space, auto state, DWORD code) {
+      Log("lane_sync_helper_state", StateName(state), code);
       if (state == SyncState::MissingHelper || state == SyncState::LaunchFailed ||
           state == SyncState::Exited || state == SyncState::InvalidInvocation) {
         std::string reason = "ERROR_REASON_DEPENDENCY_UNAVAILABLE";
@@ -235,6 +237,7 @@ class Service {
       // Content and OS exception strings can include private paths. Emit only
       // the category, and retry on the next bounded observer tick.
       if (!observer_failed_) actions_.event("lane.hostStatus", Failure("ERROR_REASON_DEPENDENCY_UNAVAILABLE", "The Windows observer could not refresh native state.", true));
+      if (!observer_failed_) Log("lane_observer_failed");
       observer_failed_ = true;
       return;
     }

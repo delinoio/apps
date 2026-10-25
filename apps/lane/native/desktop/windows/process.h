@@ -101,16 +101,21 @@ inline std::string RunHelper(const std::filesystem::path& executable,
       try { output.append(buffer, count); } catch (...) { read_ok = false; break; }
     }
   });
-  std::thread writer([&] {
-    size_t position = 0;
-    while (position < input.size()) {
-      DWORD written = 0;
-      if (!WriteFile(parent_input.Get(), input.data() + position,
-          static_cast<DWORD>(std::min<size_t>(input.size() - position, 65536)), &written, nullptr) || !written) { write_ok = false; break; }
-      position += written;
-    }
-    parent_input.Reset();
-  });
+  std::thread writer;
+  try {
+    writer = std::thread([&] {
+      size_t position = 0;
+      while (position < input.size()) {
+        DWORD written = 0;
+        if (!WriteFile(parent_input.Get(), input.data() + position,
+            static_cast<DWORD>(std::min<size_t>(input.size() - position, 65536)), &written, nullptr) || !written) { write_ok = false; break; }
+        position += written;
+      }
+      parent_input.Reset();
+    });
+  } catch (...) {
+    child->Stop(); parent_input.Reset(); reader.join(); throw;
+  }
   const bool timeout = WaitForSingleObject(child->process.Get(), timeout_ms) != WAIT_OBJECT_0;
   const DWORD code = timeout ? ERROR_TIMEOUT : child->ExitCode();
   if (timeout) child->Stop();

@@ -265,7 +265,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
   }
   auto* application = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
   try { return application ? application->Message(window, message, wparam, lparam) : DefWindowProcW(window, message, wparam, lparam); }
-  catch (...) { std::cerr << "{\"event\":\"lane_windows_dispatch_failed\"}\n"; return 0; }
+  catch (...) { Log("lane_windows_dispatch_failed"); std::cerr << "{\"event\":\"lane_windows_dispatch_failed\"}\n"; return 0; }
 }
 }  // namespace
 
@@ -306,6 +306,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     app.Start();
     if (!toast_activation) app.Activate(uri);
     std::clog << "{\"event\":\"lane_started\",\"platform\":\"windows\"}\n";
+    Log("lane_started");
     MSG message{};
     int status;
     while ((status = GetMessageW(&message, nullptr, 0, 0)) > 0) {
@@ -313,6 +314,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
     return status < 0 ? 1 : static_cast<int>(message.wParam);
   } catch (...) {
+    Log("lane_start_failed");
     std::cerr << "{\"event\":\"lane_start_failed\",\"platform\":\"windows\"}\n";
     return 1;
   }
