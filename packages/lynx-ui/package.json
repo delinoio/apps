@@ -24,14 +24,15 @@
     "@lynx-js/types": "^4.3.0"
   },
   "devDependencies": {
-    "@lynx-js/web-core": "0.26.5",
-    "@types/node": "24.19.2",
     "@lynx-js/react": "0.129.0",
-    "@lynx-js/types": "4.3.0",
     "@lynx-js/react-rsbuild-plugin": "0.22.0",
     "@lynx-js/rspeedy": "0.18.3",
     "@lynx-js/testing-environment": "0.4.0",
+    "@lynx-js/types": "4.3.0",
+    "@lynx-js/web-core": "0.26.5",
+    "@lynx-js/web-elements": "0.12.15",
     "@rstest/core": "0.12.4",
+    "@types/node": "24.19.2",
     "@types/react": "19.2.14",
     "jsdom": "20.0.3",
     "typescript": "5.9.3"
