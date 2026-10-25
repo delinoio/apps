@@ -532,6 +532,15 @@ impl Server {
                         "graceful workflow control is unavailable; use local cancellation or request immediate GitHub cancellation",
                     ));
                 }
+                if matches!(
+                    string(&e, "executionState"),
+                    "EXECUTION_STATE_COMPLETED"
+                        | "EXECUTION_STATE_FAILED"
+                        | "EXECUTION_STATE_CANCELLED"
+                ) || e["cancellation"]["state"] == "CANCELLATION_STATE_CONFIRMED"
+                {
+                    return Ok(json!({"experiment":e}));
+                }
                 let token = self.github.current(&c).await?;
                 let path = crate::github::path(&c["repository"]);
                 let run = integer(&e["githubExecution"], "githubRunId");

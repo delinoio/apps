@@ -509,7 +509,9 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     let creation_override = Arc::new(Mutex::new(None::<Value>));
     let response = creation_override.clone();
     let (p, posts) = (pulls.clone(), creates.clone());
-    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone());async move{
+    let cancel_posts = Arc::new(Mutex::new(Vec::<String>::new()));
+    let cancels = cancel_posts.clone();
+    let app=Router::new().fallback(move|req:Request|{let (g,st,o,fd,act,p,posts,denied,response,cancels)=(g.clone(),st.clone(),o.clone(),fd.clone(),act.clone(),p.clone(),posts.clone(),denied.clone(),response.clone(),cancels.clone());async move{
   let path=req.uri().path().to_owned();let method=req.method().clone();let body=axum::body::to_bytes(req.into_body(),8<<20).await.unwrap();
   if path.starts_with("/bucket/") {
    let mut objects=o.lock().unwrap();return match method.as_str(){"PUT"=>{objects.insert(path,body.to_vec());StatusCode::OK.into_response()},"GET"=>objects.get(&path).cloned().map(IntoResponse::into_response).unwrap_or(StatusCode::NOT_FOUND.into_response()),"DELETE"=>if *fd.lock().unwrap(){StatusCode::SERVICE_UNAVAILABLE.into_response()}else{objects.remove(&path);StatusCode::NO_CONTENT.into_response()},_=>StatusCode::METHOD_NOT_ALLOWED.into_response()};
@@ -527,6 +529,10 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
    },
    "/repos/owner/repo/pulls"=>json!(*p.lock().unwrap()),
    "/repos/owner/repo/actions/runs/7/attempts/2"=>json!({"id":7,"run_attempt":2,"repository":{"id":42},"head_repository":{"id":42},"actor":{"id":99},"head_sha":"d".repeat(40),"path":".github/workflows/perfine.yml","event":"workflow_dispatch"}),
+   "/repos/owner/repo/actions/runs/9/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::CONFLICT.into_response()},
+   "/repos/owner/repo/actions/runs/10/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::BAD_GATEWAY.into_response()},
+   "/repos/owner/repo/actions/runs/11/cancel" if method=="POST"=>{cancels.lock().unwrap().push(path);return StatusCode::NO_CONTENT.into_response()},
+   "/repos/owner/repo/actions/runs/11/attempts/1"=>json!({"id":11,"run_attempt":1,"status":"completed","conclusion":"cancelled"}),
    "/repos/owner/repo/actions/runs/1/cancel"=>json!({}),
    "/repos/owner/repo/actions/runs/1"=>json!({"id":1,"run_attempt":2,"status":"completed","conclusion":"success"}),
    "/repos/owner/repo/actions/runs/1/attempts/1"=>json!({"id":1,"run_attempt":1,"status":"completed","conclusion":"cancelled"}),
@@ -590,6 +596,121 @@ async fn postgres_private_lifecycle_revocation_tombstone_and_retry() {
     }
     let c=call(&server,&space,"ConnectRepository",json!({"repository":{"githubRepositoryId":"42","owner":"owner","name":"repo"},"githubInstallationId":"1"})).await.unwrap()["connection"].clone();
     let cid = c["id"].as_str().unwrap();
+    *grants.lock().unwrap() = vec!["manage".into(), "experiment".into()];
+    let terminal = uuid::Uuid::now_v7();
+    let confirmed = json!({"id":terminal,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":"EXECUTION_STATE_CANCELLED","githubExecution":{"githubRunId":"9","runAttempt":1},"cancellation":{"mode":"CANCELLATION_MODE_IMMEDIATE","state":"CANCELLATION_STATE_CONFIRMED","reason":"GitHub confirmed cancellation","directCancelUrl":"https://github.com/owner/repo/actions/runs/9"}});
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(terminal)
+        .bind(uuid::Uuid::parse_str(&space).unwrap())
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&confirmed)
+        .execute(&db)
+        .await
+        .unwrap();
+    let response = call(
+        &server,
+        &space,
+        "CancelExperiment",
+        json!({"experimentId":terminal,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response["experiment"], confirmed);
+    let stored: Value = sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+        .bind(terminal)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(stored, confirmed);
+    assert!(cancel_posts.lock().unwrap().is_empty());
+
+    let running_confirmed = uuid::Uuid::now_v7();
+    let mut preserved = confirmed.clone();
+    preserved["id"] = json!(running_confirmed);
+    preserved["executionState"] = json!("EXECUTION_STATE_RUNNING");
+    sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+        .bind(running_confirmed)
+        .bind(uuid::Uuid::parse_str(&space).unwrap())
+        .bind(uuid::Uuid::parse_str(cid).unwrap())
+        .bind(&preserved)
+        .execute(&db)
+        .await
+        .unwrap();
+    let response = call(
+        &server,
+        &space,
+        "CancelExperiment",
+        json!({"experimentId":running_confirmed,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response["experiment"], preserved);
+    assert!(cancel_posts.lock().unwrap().is_empty());
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(running_confirmed)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    for (run, expected_state) in [
+        ("9", "CANCELLATION_STATE_FAILED"),
+        ("10", "CANCELLATION_STATE_FAILED"),
+        ("11", "CANCELLATION_STATE_REQUESTED"),
+    ] {
+        let experiment_id = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO perfine_experiments(id,space,connection,data) VALUES($1,$2,$3,$4)")
+            .bind(experiment_id).bind(uuid::Uuid::parse_str(&space).unwrap()).bind(uuid::Uuid::parse_str(cid).unwrap())
+            .bind(json!({"id":experiment_id,"spaceId":space,"connectionId":cid,"origin":"EXECUTION_ORIGIN_GITHUB_ACTIONS","executionState":if run == "10" {"EXECUTION_STATE_QUEUED"} else {"EXECUTION_STATE_RUNNING"},"githubExecution":{"githubRunId":run,"runAttempt":1}})).execute(&db).await.unwrap();
+        let response = call(
+            &server,
+            &space,
+            "CancelExperiment",
+            json!({"experimentId":experiment_id,"mode":"CANCELLATION_MODE_IMMEDIATE"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response["experiment"]["cancellation"]["state"],
+            expected_state
+        );
+        assert_eq!(
+            response["experiment"]["cancellation"]["directCancelUrl"],
+            format!("https://github.com/owner/repo/actions/runs/{run}")
+        );
+        assert_eq!(
+            cancel_posts
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|path| path.ends_with(&format!("/{run}/cancel")))
+                .count(),
+            1
+        );
+        if run == "11" {
+            server.maintain().await.unwrap();
+            let reconciled: Value =
+                sqlx::query_scalar("SELECT data FROM perfine_experiments WHERE id=$1")
+                    .bind(experiment_id)
+                    .fetch_one(&db)
+                    .await
+                    .unwrap();
+            assert_eq!(reconciled["executionState"], "EXECUTION_STATE_CANCELLED");
+            assert_eq!(
+                reconciled["cancellation"]["state"],
+                "CANCELLATION_STATE_CONFIRMED"
+            );
+        }
+        sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+            .bind(experiment_id)
+            .execute(&db)
+            .await
+            .unwrap();
+    }
+    sqlx::query("DELETE FROM perfine_experiments WHERE id=$1")
+        .bind(terminal)
+        .execute(&db)
+        .await
+        .unwrap();
     // Block reconciliation after its candidate query, then commit a reconnect.
     // It must inspect the replacement state after acquiring the space lock.
     let race_run = uuid::Uuid::now_v7();
