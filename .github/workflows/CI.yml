@@ -39,7 +39,7 @@ jobs:
         env:
           COMPARISON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/ci/plan.mjs
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
@@ -61,11 +61,11 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           components: rustfmt
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -96,7 +96,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-check-formatting-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -139,7 +139,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-tooling-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -184,7 +184,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-shared-ui-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -208,7 +208,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -230,7 +230,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-workflows-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -273,7 +273,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-delidev-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -316,7 +316,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-delitools-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -359,7 +359,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-lane-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -383,7 +383,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
       - name: Install protocol compiler
@@ -412,7 +412,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-lane-cli-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -436,7 +436,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -462,7 +462,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-git-tracker-clients-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -505,7 +505,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-devbase-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -548,7 +548,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-delino-site-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -591,7 +591,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-delino-docs-frontend-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -621,7 +621,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           components: clippy
@@ -673,7 +673,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-rust-clippy-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -707,7 +707,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
       - id: dependencies
@@ -763,7 +763,7 @@ jobs:
         id: node
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
           components: clippy
@@ -790,7 +790,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-rust-servers-clippy-${{ matrix.service }}-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -822,7 +822,7 @@ jobs:
         id: node
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
       - name: Install protocol compiler
@@ -875,7 +875,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-rust-servers-${{ matrix.service }}-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -918,10 +918,10 @@ jobs:
       - uses: ./.github/actions/setup-ci-node
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         if: matrix.language == 'go'
         with:
           go-version-file: go.mod
@@ -954,7 +954,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-perfine-profiles-${{ matrix.language }}-${{ matrix.route }}-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -981,7 +981,7 @@ jobs:
       - uses: ./.github/actions/setup-ci-node
       - id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-09-28
       - name: Install protocol compiler
@@ -1001,7 +1001,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-perfine-adapters-${{ matrix.language }}-${{ github.run_attempt }}
           path: .ci-evidence/
@@ -1062,7 +1062,7 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: node
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - id: dependencies
@@ -1095,7 +1095,7 @@ jobs:
         run: node scripts/ci/record-validation.mjs
       - name: Preserve validation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: validation-protocol-${{ github.run_attempt }}
           path: .ci-evidence/

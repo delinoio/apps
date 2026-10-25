@@ -39,4 +39,4 @@ async-stream = "0.3"
 unicode-casefold = "0.2"
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
+tower = { version = "=0.5.3", features = ["util"] }

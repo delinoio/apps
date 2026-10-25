@@ -32,6 +32,6 @@ email_address = "0.2"
 [dev-dependencies]
 # Compresses request fixtures for the received-message size tests. Already in the lock graph
 # through connectrpc's gzip support.
-flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
 # Captures structured logs in the decoding-failure privacy test. Already in the lock graph.
 tracing-subscriber.workspace = true
