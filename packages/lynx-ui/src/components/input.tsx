@@ -76,17 +76,31 @@ export function Input({
   const focus = useControlFocus(disabled, FocusKind.Input, focusRef, autoFocus);
   const environment = useEnvironment();
   const nativeValue = useRef<string | null>(null);
+  const inputVersion = useRef(0);
   const [edit, setEdit] = useState(0);
   // Lynx input is initialized by default-value. Later controlled updates require
   // setValue; avoid resetting selection when the parent accepts a native edit.
   // Keep this bridge until Lynx exposes a controlled value attribute on all hosts.
   useEffect(() => {
-    if (nativeValue.current !== value) {
-      invoke(focus.node.current, "setValue", { value }, environment);
-      nativeValue.current = value;
-    }
+    const node = focus.node.current;
+    if (!node || nativeValue.current === value) return;
+    let active = true;
+    const version = inputVersion.current;
+    invoke(node, "setValue", { value }, environment, () => {
+      // A failed or superseded request must not mark the current host as synced.
+      if (
+        active &&
+        focus.node.current === node &&
+        inputVersion.current === version
+      )
+        nativeValue.current = value;
+    });
+    return () => {
+      active = false;
+    };
   }, [value, edit, environment]);
   const onInput: NativeInputProps["bindinput"] = (event) => {
+    inputVersion.current += 1;
     nativeValue.current = event.detail.value;
     if (!disabled && !readOnly) onValueChange(event.detail.value);
     setEdit((previous) => previous + 1);

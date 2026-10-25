@@ -15,6 +15,7 @@ import {
   Input,
   Switch,
   Tabs,
+  UIProvider,
   type FocusHandle,
 } from "../src";
 import * as theme from "../src/theme";
@@ -23,7 +24,11 @@ import { FocusContext, type FocusScope } from "../src/focus";
 // The ReactLynx fixture has no native input or focus implementation. Assert the
 // host-method boundary here; the real web gallery validates host integration.
 beforeEach(() => {
-  rstest.spyOn(theme, "invoke").mockImplementation(() => {});
+  rstest
+    .spyOn(theme, "invoke")
+    .mockImplementation((_, method, __, ___, onSuccess) => {
+      if (method === "setValue") onSuccess?.();
+    });
   // The ReactLynx fixture does not implement the native NodesRef.path method.
   // Replay its documented sibling-index path from the fixture's rendered tree.
   const prototype = Object.getPrototypeOf(
@@ -403,6 +408,7 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "first" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
   expect(theme.invoke).toHaveBeenCalledWith(
@@ -425,6 +431,7 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "first" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
   rerender(
@@ -441,8 +448,91 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "reset" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
+});
+
+it("keeps failed input values pending and ignores superseded success", async () => {
+  const successes: Array<() => void> = [];
+  rstest
+    .mocked(theme.invoke)
+    .mockImplementation((_, method, __, ___, onSuccess) => {
+      if (method === "setValue" && onSuccess) successes.push(onSuccess);
+    });
+  const firstError = rstest.fn();
+  const secondError = rstest.fn();
+  const thirdError = rstest.fn();
+  const view = (onHostError: typeof firstError) => (
+    <UIProvider onHostError={onHostError}>
+      <Input value="Alice" onValueChange={() => {}} accessibilityLabel="Name" />
+    </UIProvider>
+  );
+  const { rerender } = render(view(firstError));
+  await waitFor(() => expect(successes).toHaveLength(1));
+  rerender(view(firstError));
+  await waitFor(() => expect(successes).toHaveLength(2));
+  rerender(view(secondError));
+  await waitFor(() => expect(successes).toHaveLength(3));
+
+  successes[0]();
+  rerender(view(thirdError));
+  await waitFor(() => expect(successes).toHaveLength(4));
+  successes[3]();
+  rerender(view(firstError));
+  expect(successes).toHaveLength(4);
+});
+
+it("does not write back an accepted native edit but restores a rejected edit", async () => {
+  const onValueChange = rstest.fn();
+  let accept = true;
+  const Controlled = () => {
+    const [value, setValue] = useState("Alice");
+    return (
+      <Input
+        id="edited-name"
+        value={value}
+        accessibilityLabel="Name"
+        onValueChange={(next) => {
+          onValueChange(next);
+          if (accept) setValue(next);
+        }}
+      />
+    );
+  };
+  render(<Controlled />);
+  await waitFor(() =>
+    expect(theme.invoke).toHaveBeenCalledWith(
+      expect.anything(),
+      "setValue",
+      { value: "Alice" },
+      expect.anything(),
+      expect.any(Function),
+    ),
+  );
+  const setValueCalls = () =>
+    rstest
+      .mocked(theme.invoke)
+      .mock.calls.filter(([, method]) => method === "setValue");
+  expect(setValueCalls()).toHaveLength(1);
+  const input = lynx
+    .createSelectorQuery()
+    .select("#edited-name") as unknown as Node;
+  const edit = (value: string) =>
+    fireEvent(
+      input,
+      Object.assign(new CustomEvent("bindEvent:input", { detail: { value } }), {
+        eventType: "bindEvent",
+        eventName: "input",
+      }),
+    );
+  edit("Alicia");
+  await waitFor(() => expect(onValueChange).toHaveBeenCalledWith("Alicia"));
+  expect(setValueCalls()).toHaveLength(1);
+  accept = false;
+  edit("Bad");
+  await waitFor(() => expect(setValueCalls()).toHaveLength(2));
+  expect(setValueCalls()[1]?.[2]).toEqual({ value: "Alicia" });
 });
 
 it("uses Enter and Space without activating repeated keys", () => {

@@ -117,6 +117,31 @@ export function installWebSupport(root: ShadowRoot | HTMLElement): () => void {
                   pending.classList.contains("lui-input")
                 ) {
                   registry.upgrade(pending);
+                  // The pinned XInput does not consume default-value on upgrade.
+                  // Replay the current rendered value only for this live host.
+                  const value = pending.getAttribute("default-value");
+                  const input = pending.shadowRoot?.querySelector("input");
+                  if (value !== null && input && input.value !== value) {
+                    try {
+                      const setValue = (
+                        pending as HTMLElement & {
+                          setValue?: (params: { value: string }) => void;
+                        }
+                      ).setValue;
+                      if (typeof setValue === "function")
+                        setValue.call(pending, { value });
+                      else
+                        console.error("lynx-ui.host-method-failed", {
+                          method: "setValue",
+                          code: 3,
+                        });
+                    } catch {
+                      console.error("lynx-ui.host-method-failed", {
+                        method: "setValue",
+                        code: 4,
+                      });
+                    }
+                  }
                   hasLiveInput = true;
                 }
               }
