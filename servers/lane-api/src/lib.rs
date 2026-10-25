@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-pub use server_common::{Fault, Result, canonical_id, id, now, string};
 use serde_json::Value;
+pub use server_common::{Fault, Result, canonical_id, id, now, string};
 use sqlx::PgConnection;
 
 /// Identity established by the authenticated adapter, never by a request body.
@@ -25,6 +25,12 @@ pub fn hash(bytes: &[u8]) -> String {
 }
 pub async fn account_lock(db: &mut PgConnection, account: &str) -> Result<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(account).execute(db).await?;
+        .bind(account)
+        .execute(db)
+        .await?;
     Ok(())
 }
+
+pub mod config;
+pub mod metrics;
+pub mod rate;
