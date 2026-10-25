@@ -35,3 +35,14 @@ Check this device's notification preference, OS permission, proposal origin, and
 Windows has no remote WNS delivery in this version. Android without required Google Play services may lack remote push. Use in-app proposal counts, available local notifications, and synchronization in these environments. A missing OS notification does not mean the proposal was lost.
 
 On iOS, background notification wakes are controlled by the OS and are not guaranteed. A proposal notification may wait for the next permitted synchronization opportunity or app opening. Native push messages prompt synchronization before local display; receiving a push is not itself proof that a notice was shown.
+
+## RealQA and Chrome
+
+- **Lane is not running:** start Lane and retry the explicit capture. Closing its main window is different from quitting the app.
+- **Connection unavailable:** check that the installed Lane build includes the matching extension registration. Reinstall the matching trusted build if registration is missing. Another browser is not supported for DOM capture.
+- **Approval required or disconnected:** connect from the extension and approve its profile in Lane. A revoked token cannot be reused.
+- **Page cannot be selected:** use a normal HTTP or HTTPS page outside incognito and the Chrome Web Store. Click the extension on that page to grant access, then retry.
+- **Element is clipped:** only visible pixels are included. Scroll and make another capture yourself. RealQA never stitches hidden portions.
+- **Screen recording denied:** follow Lane's OS settings guidance, enable capture access, and retry. Your current draft remains open.
+- **Attachment waiting for synchronization:** keep the source device connected until its saved image uploads. The local task is already saved. Retry failed synchronization without creating a duplicate task.
+- **Save failed:** keep the composer open, correct the reported cause, and retry Save. Discard closes the unsaved draft and releases its images.

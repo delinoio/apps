@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "RealQA for Lane",
+  "version": "0.1.0",
+  "description": "Capture a visible page element into the running Lane app for human-led visual QA.",
+  "minimum_chrome_version": "116",
+  "incognito": "not_allowed",
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "storage"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RealQA for Lane"
+  },
+  "commands": {
+    "select-element": { "description": "Select an element for RealQA" }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

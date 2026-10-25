@@ -70,3 +70,35 @@ Events stay until explicitly deleted. Use `event list/get/delete/claim/renew/rel
 Enable notifications in settings to request OS permission. Configure each device independently. Default notices show repository name and task title; choose generic content for more privacy. Only a newly proposed task created through MCP triggers an OS notice. CLI/app changes and progress updates do not. Pending proposals remain visible in-app.
 
 Local MCP proposals can notify locally without synchronization. With sync, other eligible devices receive push; proposal/device deduplication avoids duplicates on the origin device. Windows remote WNS is not supported in this version; running/background synchronization and local notifications remain available. Android without required Google Play services and other unsupported push environments can still use Lane and its in-app indications.
+
+## RealQA: capture a problem as a task
+
+RealQA is part of Lane on macOS and Windows. Start Lane, select **RealQA**, and choose **Screen**, **Window**, **Region**, or **Chrome element**. Screen capture asks which monitor to capture. Window capture asks which window. For a region, drag a rectangle; press Esc to cancel only that selection. Capture is available while Lane's main window is closed, but stops when you quit Lane.
+
+A successful capture opens the floating composer. Use **Add capture** to append more images to the same draft. Arrange or remove images before saving. A canceled or failed capture does not discard the draft. Retry a failed capture manually after correcting its cause.
+
+Select an image to draw, add arrows, rectangles or text, crop, blur, or cover an area. Undo, redo, and layer ordering apply to the selected image. Inspect the final image carefully before saving, especially when it contains private information. Saved attachments contain the final PNG; editable layers and original captures are not saved with the task.
+
+Choose a repository, enter a title, and describe the problem. For browser captures, inspect each image's page URL, title, and CSS selector. Edit or remove any value, including sensitive query parameters. Removing a value excludes it from the saved prompt. A selector is descriptive text; Lane does not execute it.
+
+**Save task** creates one task with the description, ordered images, and retained browser metadata in its prompt. A local save needs no account or network. If synchronization is enabled, images can still be waiting to upload after the task is saved. Do not create a second task to retry an upload. A failed local save keeps the draft for manual retry. Closing an unsaved composer asks whether to keep editing or discard it.
+
+### Chrome element capture
+
+Install the matching RealQA extension, start Lane, and open a normal Chrome profile. Click the extension, name the profile so you can identify it in Lane, and select **Connect to Lane**. In Lane, inspect the extension and profile identifiers, then select **Approve** or **Reject**. Approval applies to that profile on that device. Disconnect it in RealQA settings or in the extension to invalidate its credentials. A later connection needs approval again.
+
+Click **Select an element**, point at an element, then click to capture it. You can also use Tab or Shift+Tab to select visible elements and Enter to capture. Esc cancels. Only the part inside the visible page is captured. Scroll yourself and capture again if you need another portion; RealQA does not scroll or stitch images. The Chrome element shortcut requires access to the current tab: if prompted, click the extension on that page first.
+
+Incognito, Chrome internal pages, the Chrome Web Store, local files, and other browsers are not supported for element selection. Start Lane if the extension says it is unavailable. RealQA does not start a quit Lane automatically or substitute region capture when element capture fails. You can select **Region** separately.
+
+### Shortcuts and URL connections
+
+The four capture shortcuts start unassigned. Assign, change, or clear each one in RealQA settings. If a shortcut conflicts, choose another; the previous valid shortcut remains active.
+
+URL connections suggest a repository for a captured page. Add an HTTP or HTTPS URL prefix and an existing repository in settings. Prefix matching ignores the query and fragment, respects path boundaries, and uses the longest matching prefix. Inspect the selected repository before saving; you can change it. Deleting a repository removes its connections. Rules can synchronize with your Lane account; Chrome profile approvals and shortcuts stay on the device.
+
+### View saved captures
+
+Open the task in Lane on desktop, mobile, or web to view its prompt and images. Mobile and web show saved results; capture and RealQA configuration require desktop. Use the image viewer to inspect an attachment. If an image is waiting for synchronization, reconnect its source device and wait for upload. Access is limited to the task's current authorized account or local space. Deleted images are not replaced with stale cached data.
+
+Task moves preserve images and prompt history. Restoring an earlier prompt restores its retained image references as a new version. Deleting the owning task or repository removes its attachments with the rest of its content. CLI and approved MCP clients retrieve attachments through Lane's attachment commands; downloaded access links can expire and are not permanent image addresses.

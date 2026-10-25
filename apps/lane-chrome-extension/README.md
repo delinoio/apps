@@ -1,0 +1,15 @@
+# RealQA Chrome companion
+
+This workspace builds the Chrome Manifest V3 companion to the running Lane desktop app. It is part of Lane, with no standalone desktop installer. The [RealQA contract](../../docs/apps-lane-realqa-contract.md) owns product behavior.
+
+Use the workspace Node.js 24 runtime. ZIP packaging also requires Python 3 and uses only its standard library. Run `pnpm test` here to test protocol, approval/revocation, framing, relay failure and registration, then build `dist`. Load `dist` with Chrome's **Load unpacked** for development. The build packages the approved 128-pixel RealQA icon and repository notices. Use `pnpm package` to generate `dist/realqa-chrome.zip` for review; archive creation does not submit or publish it.
+
+The existing Lane installer must bundle a relay executable that runs `chrome-native-host.mjs --data-root <Lane data root>` and forwards Chrome's origin argument. This executable must not start Lane. A bundled Node runtime or standalone executable must run the relay without assuming a global Node installation. Include `chrome-framing.mjs` with it. The Lane main process uses `createChromeBridge` with explicit extension IDs and callbacks for approval and validated image acceptance. Keep the bridge alive when the main window closes; close it on Quit.
+
+Call `installNativeMessaging` from `scripts/native-registration.mjs` during Lane installation with the real extension IDs and absolute bundled relay executable path. macOS uses the current user's Google Chrome NativeMessagingHosts directory. Windows uses a manifest in the installed app and the current user's Chrome registry key. Call `removeNativeMessaging` with the same installation identity on removal. It refuses to remove a replacement installation's registration. Never register wildcards or fabricate a production extension ID.
+
+A Chrome-created relay connects to Lane's existing Unix socket or Windows named pipe. It does not expose HTTP. A runtime secret protects the endpoint; profile tokens are stored as hashes in Lane, and Chrome storage access is limited to trusted extension contexts. Lane approves each profile; revocation persists before a subsequent capture can be accepted. The OS-user boundary applies. No transport logs contain images, URLs, page text, or credentials.
+
+The extension uses temporary `activeTab` access. A Lane shortcut can initiate selection only after Chrome granted access to that tab through an explicit extension action; otherwise the extension tells the user to click its button. Incognito and restricted pages are rejected. The selector runs in Chrome's isolated world, and metadata is treated as text. Cropping uses the screenshot's actual pixel dimensions and the page viewport, without scroll/stitch operations. Lane's image decoder must validate the PNG before adding it to the composer.
+
+Store copy, permission justifications, privacy text, reviewer steps and remaining publisher inputs are under `store/`. Fixture tests do not establish real Chrome, packaged-host, Windows runtime, or store acceptance.

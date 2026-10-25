@@ -487,6 +487,8 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  apps/lane-chrome-extension: {}
+
   examples/devbase-client-ts:
     dependencies:
       '@bufbuild/protobuf':

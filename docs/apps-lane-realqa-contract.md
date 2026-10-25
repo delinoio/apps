@@ -185,3 +185,33 @@ only for the behavior specified here; Pace remains outside this scope.
 - New file import/export, backup/restore, numeric RealQA SLO, or unrelated Lane redesign.
 - Windows installation/runtime acceptance and formal signed distribution before signing-key availability; these are follow-up work, not evidence supplied by these builds.
 - Lane's formal app-store launch and server production deployment. Chrome Web Store publication is explicitly in scope.
+
+## Chrome companion transport and packaging
+
+`apps/lane-chrome-extension/src` owns a Manifest V3 extension with `activeTab`,
+`scripting`, `nativeMessaging`, and `storage` permissions. Incognito is disabled.
+The selector runs in Chrome's isolated world. It sends a selected visible rectangle
+and literal metadata to the extension worker. The worker captures the active tab,
+crops the selected rectangle in memory using the screenshot's pixel dimensions,
+and sends only that PNG to Lane. Lane validates and appends it to the existing
+composer; the extension cannot save a task. A DOM shortcut without an active tab
+grant explains that the user must first click the extension on that page.
+
+The desktop `chrome-bridge.mjs` owns profile approval and token-hash persistence.
+`chrome-native-host.mjs` is a Chrome-launched stdio relay to an already running
+Lane Unix socket or Windows named pipe. It never starts Lane or serves HTTP.
+The endpoint uses a per-run secret; runtime files and Unix sockets use owner-only
+permissions. Stored profile approvals are device-local and are not synchronized.
+Revocation invalidates credentials and closes matching connections. The OS-user
+boundary applies to the desktop bridge and its state.
+
+The existing Lane installer bundles the relay with a private runtime or standalone
+executable and registers exact extension origins through the extension's
+`scripts/native-registration.mjs`. Removal unregisters only that installation's
+manifest. A real development or published extension ID is required; packaging
+must not substitute a fabricated Chrome Web Store ID. `pnpm test` in the extension
+workspace validates fixtures and creates its unpacked build; `pnpm package`
+creates its review ZIP. Store copy and privacy materials live in `store/`.
+Publisher account access, a real assigned extension ID, hosted privacy/support
+information, runtime screenshots and Google review remain publication inputs.
+Builds and fixture tests do not establish browser/native or store acceptance.

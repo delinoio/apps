@@ -36,3 +36,11 @@ The CLI defaults to local data, including after login. Only an explicit `--remot
 Default output is human-readable. `--json` returns a structured result or error; it never includes terminal colors. Use `NO_COLOR` or `--color=never` to disable colors in human output. Exit status 0 means success, 1 means an operation failed, and 2 means the invocation was invalid.
 
 Native desktop packages include their matching background synchronization helper. They do not depend on a globally installed npm package. Development builds use `lane-dev://` and distribution builds use `lane://` for login callbacks, opening Lane, and repository/task links. Use links supplied by Lane; do not substitute one build channel's callback scheme for another.
+
+## RealQA Chrome companion
+
+RealQA capture runs inside the Lane desktop app. Its Chrome extension connects to an already running Lane installation. Use the extension and native component from the same trusted distributor. Native Messaging registration is part of Lane installation and removal; there is no separate RealQA desktop app.
+
+A Chrome Web Store listing is not yet claimed by this guide. Until a reviewed listing is available, maintainers can supply a review build for **Load unpacked** in `chrome://extensions`. The exact extension ID must be registered by the matching Lane installation. An unpacked review build is not evidence of Chrome Web Store publication. Never use an arbitrary extension ID or grant access to an unrelated extension.
+
+After installation, open Lane and approve each normal Chrome profile on that device. See [Chrome element capture](./user-guide#chrome-element-capture). Removing the extension stops its access; disconnect the profile in Lane to remove its stored approval as well. Lane removal unregisters its Native Messaging component. Windows signed installation and runtime acceptance remain separate from build validation.
