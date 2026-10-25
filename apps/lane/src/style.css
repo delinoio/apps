@@ -442,37 +442,10 @@ text {
   height: 24px;
   border-radius: 6px;
 }
-.realqa-top {
-  position: absolute;
-  left: 1px;
-  top: 4px;
-  width: 22px;
-  height: 5px;
-  border: 2px solid #526079;
-  border-radius: 2px;
-}
-.realqa-post {
-  position: absolute;
-  top: 9px;
-  width: 2px;
-  height: 12px;
-  background-color: #526079;
-}
-.post-left {
-  left: 5px;
-}
-.post-right {
-  right: 5px;
-}
-.selected .realqa-top,
-.miniapp-brand .realqa-top,
-.coming-soon-icon .realqa-top {
-  border-color: #075aff;
-}
-.selected .realqa-post,
-.miniapp-brand .realqa-post,
-.coming-soon-icon .realqa-post {
-  background-color: #075aff;
+.realqa-artwork {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
 }
 .miniapp-brand {
   display: flex;

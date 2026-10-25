@@ -86,6 +86,21 @@ only to platform variants, and keep both lanes distinct at small sizes. Check
 16-, 32- and 64-pixel rendering, platform masking and packaged icon references.
 Asset compilation does not establish launcher, Dock, taskbar or device acceptance.
 
+### RealQA mini-app icon
+
+RealQA uses a white checklist with two blue checkmarks and an overlapping white
+mouse cursor on a cobalt-blue background. Pale-blue folded edges match the Lane
+application icon. This represents assistance for human-led QA.
+
+`apps/lane/assets/realqa-icon-source.png` owns the approved square artwork.
+`apps/lane/assets/realqa-icon.png` is its 128-pixel runtime derivative, embedded
+as a data URI so packaged native hosts need no remote image request. Regenerate
+it with `sips -z 128 128 apps/lane/assets/realqa-icon-source.png --out apps/lane/assets/realqa-icon.png`.
+Use the same artwork in the 24-pixel app rail and sidebar marks and the scaled
+coming-soon mark, with rounded corners. Keep accessible names, selection markers,
+keyboard behavior and navigation unchanged. This does not change Lane platform
+icons or implement RealQA QA functionality.
+
 ### Pace mini-app icon
 
 `apps/lane/assets/pace-icon-source.png` owns the approved Pace artwork: a white
@@ -109,7 +124,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free.
 - Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
-- Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and a two-post rail for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
+- Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
   Tooltips must fit the complete app name outside the trigger's bounds.
 - At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon, selected `Overview` item and `Coming soon` status, without Lane navigation. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine navigation entry is removed.

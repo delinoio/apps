@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Button } from "./components";
+import realqaIcon from "../assets/realqa-icon.png?inline";
 import laneIcon from "../assets/icon-source.png?inline";
 import paceIcon from "../assets/pace-icon.png?inline";
 
@@ -21,11 +22,7 @@ export function AppIcon({ app }: { app: MiniApp }) {
       ) : app === MiniApp.Pace ? (
         <image className="pace-artwork" src={paceIcon} mode="aspectFit" />
       ) : (
-        <>
-          <view className="realqa-top" />
-          <view className="realqa-post post-left" />
-          <view className="realqa-post post-right" />
-        </>
+        <image className="realqa-artwork" src={realqaIcon} mode="aspectFit" />
       )}
     </view>
   );
