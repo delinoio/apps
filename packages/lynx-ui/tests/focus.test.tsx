@@ -15,6 +15,7 @@ import {
   Input,
   Switch,
   Tabs,
+  UIProvider,
   type FocusHandle,
 } from "../src";
 import * as theme from "../src/theme";
@@ -23,7 +24,11 @@ import { FocusContext, type FocusScope } from "../src/focus";
 // The ReactLynx fixture has no native input or focus implementation. Assert the
 // host-method boundary here; the real web gallery validates host integration.
 beforeEach(() => {
-  rstest.spyOn(theme, "invoke").mockImplementation(() => {});
+  rstest
+    .spyOn(theme, "invoke")
+    .mockImplementation((_, method, __, ___, onSuccess) => {
+      if (method === "setValue") onSuccess?.();
+    });
   // The ReactLynx fixture does not implement the native NodesRef.path method.
   // Replay its documented sibling-index path from the fixture's rendered tree.
   const prototype = Object.getPrototypeOf(
@@ -403,6 +408,7 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "first" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
   expect(theme.invoke).toHaveBeenCalledWith(
@@ -425,6 +431,7 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "first" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
   rerender(
@@ -441,8 +448,154 @@ it("synchronizes controlled input and focuses the critical input", async () => {
       "setValue",
       { value: "reset" },
       expect.anything(),
+      expect.any(Function),
     ),
   );
+});
+
+it("keeps failed input values pending and ignores superseded success", async () => {
+  const successes: Array<() => void> = [];
+  rstest
+    .mocked(theme.invoke)
+    .mockImplementation((_, method, __, ___, onSuccess) => {
+      if (method === "setValue" && onSuccess) successes.push(onSuccess);
+    });
+  const firstError = rstest.fn();
+  const secondError = rstest.fn();
+  const thirdError = rstest.fn();
+  const view = (value: string, onHostError: typeof firstError) => (
+    <UIProvider onHostError={onHostError}>
+      <Input value={value} onValueChange={() => {}} accessibilityLabel="Name" />
+    </UIProvider>
+  );
+  const { rerender } = render(view("Alice", firstError));
+  await waitFor(() => expect(successes).toHaveLength(1));
+  rerender(view("Bob", firstError));
+  await waitFor(() => expect(successes).toHaveLength(2));
+  rerender(view("Carol", secondError));
+  await waitFor(() => expect(successes).toHaveLength(3));
+
+  successes[0]();
+  rerender(view("Dave", thirdError));
+  await waitFor(() => expect(successes).toHaveLength(4));
+  successes[3]();
+  rerender(view("Dave", firstError));
+  expect(successes).toHaveLength(4);
+});
+
+it("does not retry a failed write when only the error handler changes", async () => {
+  const firstError = rstest.fn();
+  const latestError = rstest.fn();
+  const environments: Array<Parameters<typeof theme.invoke>[3]> = [];
+  rstest
+    .mocked(theme.invoke)
+    .mockImplementation((_, method, __, environment) => {
+      if (method !== "setValue") return;
+      environments.push(environment);
+      environment.onHostError({ method, code: 3 });
+    });
+  const view = (onHostError: typeof firstError, value = "Alice") => (
+    <UIProvider onHostError={onHostError}>
+      <Input value={value} onValueChange={() => {}} accessibilityLabel="Name" />
+    </UIProvider>
+  );
+  const { rerender } = render(view(firstError));
+  await waitFor(() => expect(environments).toHaveLength(1));
+
+  rerender(view(latestError));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(environments).toHaveLength(1);
+
+  rerender(view(latestError, "Bob"));
+  await waitFor(() => expect(environments).toHaveLength(2));
+  expect(environments[1]?.onHostError).toBe(latestError);
+});
+
+it("does not write back an accepted native edit but restores a rejected edit", async () => {
+  const onValueChange = rstest.fn();
+  let accept = true;
+  const Controlled = () => {
+    const [value, setValue] = useState("Alice");
+    return (
+      <Input
+        id="edited-name"
+        value={value}
+        accessibilityLabel="Name"
+        onValueChange={(next) => {
+          onValueChange(next);
+          if (accept) setValue(next);
+        }}
+      />
+    );
+  };
+  render(<Controlled />);
+  await waitFor(() =>
+    expect(theme.invoke).toHaveBeenCalledWith(
+      expect.anything(),
+      "setValue",
+      { value: "Alice" },
+      expect.anything(),
+      expect.any(Function),
+    ),
+  );
+  const setValueCalls = () =>
+    rstest
+      .mocked(theme.invoke)
+      .mock.calls.filter(([, method]) => method === "setValue");
+  expect(setValueCalls()).toHaveLength(1);
+  const input = lynx
+    .createSelectorQuery()
+    .select("#edited-name") as unknown as Node;
+  const edit = (value: string) =>
+    fireEvent(
+      input,
+      Object.assign(new CustomEvent("bindEvent:input", { detail: { value } }), {
+        eventType: "bindEvent",
+        eventName: "input",
+      }),
+    );
+  edit("Alicia");
+  await waitFor(() => expect(onValueChange).toHaveBeenCalledWith("Alicia"));
+  expect(setValueCalls()).toHaveLength(1);
+  accept = false;
+  edit("Bad");
+  await waitFor(() => expect(setValueCalls()).toHaveLength(2));
+  expect(setValueCalls()[1]?.[2]).toEqual({ value: "Alicia" });
+});
+
+it("restores a controlled value when an earlier host write is still pending", async () => {
+  let hostValue = "";
+  const writes: Array<{ value: string; settle: () => void }> = [];
+  rstest
+    .spyOn(theme, "invoke")
+    .mockImplementation((_node, method, params, _environment, onSuccess) => {
+      if (method !== "setValue") return;
+      const value = String(params.value);
+      writes.push({
+        value,
+        settle: () => {
+          hostValue = value;
+          onSuccess?.();
+        },
+      });
+    });
+  const props = {
+    accessibilityLabel: "Name",
+    onValueChange: () => {},
+  };
+  const { rerender } = render(<Input {...props} value="A" />);
+  await waitFor(() => expect(writes).toHaveLength(1));
+  writes[0].settle();
+
+  rerender(<Input {...props} value="B" />);
+  await waitFor(() => expect(writes).toHaveLength(2));
+  rerender(<Input {...props} value="A" />);
+  await waitFor(() => expect(writes).toHaveLength(3));
+
+  writes[1].settle();
+  expect(hostValue).toBe("B");
+  writes[2].settle();
+  expect(hostValue).toBe("A");
 });
 
 it("uses Enter and Space without activating repeated keys", () => {

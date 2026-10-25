@@ -70,11 +70,13 @@ export function invoke(
   method: string,
   params: Record<string, unknown>,
   environment: UIEnvironment,
+  onSuccess?: () => void,
 ) {
   node
     ?.invoke({
       method,
       params,
+      success: onSuccess,
       fail: ({ code }) => {
         // setFocus is a Clay API. Mobile hosts instead expose accessibility focus.
         // Restrict this fallback to METHOD_NOT_FOUND so real host failures stay visible.
