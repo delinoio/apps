@@ -50,6 +50,7 @@ class Store {
   // retry after crash uses the same OS notification identifier.
   std::string claimNotifications(std::string spaceId, std::string claimant);
   std::string recordNotificationPermission(std::string spaceId, std::string permission);
+  std::string recordSyncFailure(std::string spaceId, std::string reason);
   static std::string sqliteSourceId();
  private:
   struct Impl;

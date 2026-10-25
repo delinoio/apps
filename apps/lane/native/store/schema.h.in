@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
+#pragma once
+inline constexpr const char* kSchema = R"LANESQL(@LANE_SCHEMA@)LANESQL";
+inline constexpr const char* kRegistry = R"LANESQL(@LANE_REGISTRY@)LANESQL";

@@ -1,0 +1,42 @@
+{
+  "sqlite": {
+    "version": "3.51.3",
+    "url": "https://sqlite.org/2026/sqlite-amalgamation-3510300.zip",
+    "verifiedSha3_256": "32d5424f97e0a7fc5ed2f6335afbb58be4e0298bd7117a34e39d345ff13d859e",
+    "releaseEvidence": "https://sqlite.org/releaselog/3_51_3.html",
+    "sourceId": "2026-03-13 10:38:09 737ae4a34738ffa0c3ff7f9bb18df914dd1cad163f28fd6b6e114a344fe6d618"
+  },
+  "ada": {
+    "version": "2.9.2",
+    "source": "https://github.com/ada-url/ada"
+  },
+  "utf8proc": {
+    "version": "2.11.0",
+    "source": "https://github.com/JuliaStrings/utf8proc"
+  },
+  "json": {
+    "version": "3.12.0",
+    "source": "https://github.com/nlohmann/json"
+  },
+  "picosha2": {
+    "version": "1.0.1",
+    "source": "https://github.com/okdshin/PicoSHA2"
+  },
+  "sha256": {
+    "vendor/ada/LICENSE-APACHE": "508d4676d4083e874df706f302d9d42e5e7f9aed3f5a7ea614dc6d2b2252a22f",
+    "vendor/ada/ada.h": "46ecdbdd0e460ed81f5eec0120f7bc144f56a92edf243be43f7f4b9cf0f79eb5",
+    "vendor/ada/ada.cpp": "30f1265b340b928e5e105787bc7af207396903c6c234cc1dca9279a90cec327b",
+    "vendor/ada/LICENSE-MIT": "af0d7d2cef91fc243cf4ad98570b03d1f26f5e0227cad0f5f4a7376e2feb3160",
+    "vendor/picosha2/LICENSE": "6c30eb1f37554ec4199cb82a8c86d9e7a852da78a757832bebb03ac9ddc44ff1",
+    "vendor/picosha2/picosha2.h": "b13c180161ffac8d0adc81e033e493c409457c4d1258ab9781ac80579ba3bdd8",
+    "vendor/utf8proc/LICENSE.md": "3b510150d34f248a221bb88e1d811238d6c6c18b51231822c42974c39bb07256",
+    "vendor/utf8proc/utf8proc.c": "b0df763ea34c8cceac9730ec20e8795c336bf21a3b4f7d2e56b88b07601f5b3d",
+    "vendor/utf8proc/utf8proc_data.c": "950e549dbfc853c4304425f3af1875e72fa9fc9697c273c763400c2da4e380a7",
+    "vendor/utf8proc/utf8proc.h": "3ec0d5c70b1171b236815a437b319163e6ada1570f4f9115bbdc497075b1b014",
+    "vendor/sqlite/LICENSE": "a42046ff9c5009e8f6ba34e0855b3d6e4bd4a1063a845796091d9aaaca7b4ee7",
+    "vendor/sqlite/sqlite3.c": "9512509b1bccb7461f79bea8aad6280ae4699e925fa4804381b71f59e7efb0c5",
+    "vendor/sqlite/sqlite3.h": "19585c8b5230e9d4f223bf31b709ece7b6a0bb3faf00d8310625d8e58cda1b1d",
+    "vendor/json/LICENSE.MIT": "46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603",
+    "vendor/json/json.hpp": "0d55a51a8ad7a9e3ff129639c29d23eea480242aa1d855d4f4d47e629555dbd2"
+  }
+}
