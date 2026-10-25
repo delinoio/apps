@@ -1,0 +1,1980 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "whole-task-conflict",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000001f",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000015",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Changed title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_SAVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000020",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000016",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": "Changed prompt"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ]
+      },
+      "expected": {
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016"
+        ],
+        "alternatives": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000015",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Changed title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000016",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "prompt": "Changed prompt"
+            }
+          }
+        ],
+        "result": "RESULT_KIND_CONFLICT"
+      }
+    },
+    {
+      "id": "ancestor-replay",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000015",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Changed title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000001e",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000014",
+              "parentVersionIds": [],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_CREATE"
+          }
+        ]
+      },
+      "expected": {
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000015"
+        ],
+        "result": "RESULT_KIND_REPLAYED",
+        "newVersions": 0
+      }
+    },
+    {
+      "id": "conflict-read-only",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000015",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Changed title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000016",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "prompt": "Changed prompt"
+            }
+          }
+        ],
+        "interactiveRequest": {
+          "method": "SetProgress",
+          "request": {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000021",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "expectedVersionId": "019a0000-0000-7000-8000-000000000015",
+            "progress": "PROGRESS_DONE"
+          }
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_CONFLICT_READ_ONLY",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016"
+        ],
+        "newVersions": 0
+      }
+    },
+    {
+      "id": "first-resolution-wins",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000015",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Changed title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000016",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "prompt": "Changed prompt"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000021",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000017",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000015",
+                "019a0000-0000-7000-8000-000000000016"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Changed title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": "Changed prompt"
+              }
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000015",
+              "019a0000-0000-7000-8000-000000000016"
+            ],
+            "kind": "MUTATION_KIND_RESOLVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000022",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000018",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000015",
+                "019a0000-0000-7000-8000-000000000016"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000015",
+              "019a0000-0000-7000-8000-000000000016"
+            ],
+            "kind": "MUTATION_KIND_RESOLVE"
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          "RESULT_KIND_APPLIED",
+          "ERROR_REASON_STALE_RESOLUTION"
+        ],
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000017"
+        ],
+        "retainedVersionIds": [
+          "019a0000-0000-7000-8000-000000000014",
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016",
+          "019a0000-0000-7000-8000-000000000017"
+        ],
+        "prompt": "Changed prompt"
+      }
+    },
+    {
+      "id": "missing-parent",
+      "input": {
+        "initial": [],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000001f",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000015",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Changed title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ]
+      },
+      "expected": {
+        "retryable": true,
+        "writes": 0
+      }
+    },
+    {
+      "id": "immutable-version-id",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000023",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000014",
+              "parentVersionIds": [],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "different",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_CREATE"
+          }
+        ],
+        "existingReceipt": {
+          "requestId": "019a0000-0000-7000-8000-000000000023",
+          "version": {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_REQUEST_ID_REUSED",
+        "writes": 0
+      }
+    },
+    {
+      "id": "edit-then-delete",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000028",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000015",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Changed title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_SAVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000029",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000019",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": true
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_DELETE"
+          }
+        ]
+      },
+      "expected": {
+        "result": "RESULT_KIND_DELETED",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000019"
+        ],
+        "bodyPresent": false,
+        "historyBodies": 0,
+        "alternatives": []
+      }
+    },
+    {
+      "id": "delete-then-edit",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000028",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000019",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": true
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_DELETE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000029",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000015",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Changed title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ]
+      },
+      "expected": {
+        "result": "RESULT_KIND_DELETED",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000019"
+        ],
+        "bodyPresent": false,
+        "historyBodies": 0,
+        "alternatives": []
+      }
+    },
+    {
+      "id": "delete-then-delayed-create",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000028",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000019",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": true
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_DELETE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000029",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000014",
+              "parentVersionIds": [],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              }
+            },
+            "expectedHeadIds": [],
+            "kind": "MUTATION_KIND_CREATE"
+          }
+        ]
+      },
+      "expected": {
+        "result": "RESULT_KIND_DELETED",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000019"
+        ],
+        "bodyPresent": false,
+        "historyBodies": 0,
+        "alternatives": []
+      }
+    },
+    {
+      "id": "retry-equivalent-url",
+      "input": {
+        "method": "CreateTask",
+        "requests": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Title"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "git@github.com:Acme/Repo"
+            },
+            "title": "Title"
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          "RESULT_KIND_APPLIED",
+          "RESULT_KIND_REPLAYED"
+        ],
+        "taskCount": 1,
+        "historyCount": 1
+      }
+    },
+    {
+      "id": "retry-changed-title",
+      "input": {
+        "method": "CreateTask",
+        "requests": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Title"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Changed"
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          "RESULT_KIND_APPLIED",
+          "ERROR_REASON_REQUEST_ID_REUSED"
+        ],
+        "taskCount": 1,
+        "historyCount": 1
+      }
+    },
+    {
+      "id": "creation-replay-after-delete",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": "Title"
+        },
+        "deleteBeforeReplay": true
+      },
+      "expected": {
+        "result": "RESULT_KIND_DELETED",
+        "bodyPresent": false,
+        "historyBodies": 0,
+        "taskCount": 0
+      }
+    },
+    {
+      "id": "move-preserves-event",
+      "input": {
+        "taskId": "019a0000-0000-7000-8000-000000000003",
+        "fromRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "toRepositoryId": "019a0000-0000-7000-8000-000000000004",
+        "prompt": "one",
+        "eventRepositoryId": "019a0000-0000-7000-8000-000000000002"
+      },
+      "expected": {
+        "taskId": "019a0000-0000-7000-8000-000000000003",
+        "repositoryId": "019a0000-0000-7000-8000-000000000004",
+        "prompt": "one",
+        "eventRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "historyRetained": true
+      }
+    },
+    {
+      "id": "rename-releases-url",
+      "input": {
+        "repositoryId": "019a0000-0000-7000-8000-000000000002",
+        "oldUrl": "example.com/a",
+        "newUrl": "example.com/b",
+        "createId": "019a0000-0000-7000-8000-000000000004",
+        "createUrl": "example.com/a"
+      },
+      "expected": {
+        "repositoryUrls": {
+          "019a0000-0000-7000-8000-000000000002": "example.com/b",
+          "019a0000-0000-7000-8000-000000000004": "example.com/a"
+        },
+        "oldAlias": false
+      }
+    },
+    {
+      "id": "initial-repository-merge",
+      "input": {
+        "localRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "remoteRepositoryId": "019a0000-0000-7000-8000-000000000004",
+        "normalizedUrl": "example.com/a",
+        "taskIds": [
+          "019a0000-0000-7000-8000-000000000003",
+          "019a0000-0000-7000-8000-000000000005"
+        ],
+        "replay": true
+      },
+      "expected": {
+        "repositoryMappings": [
+          {
+            "localId": "019a0000-0000-7000-8000-000000000002",
+            "canonicalId": "019a0000-0000-7000-8000-000000000004"
+          }
+        ],
+        "taskIds": [
+          "019a0000-0000-7000-8000-000000000003",
+          "019a0000-0000-7000-8000-000000000005"
+        ],
+        "rewriteImmutableBodies": false
+      }
+    },
+    {
+      "id": "repository-display-conflict",
+      "input": {
+        "normalizedUrl": "example.com/a",
+        "versions": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000002",
+            "kind": "ENTITY_KIND_REPOSITORY",
+            "versionId": "019a0000-0000-7000-8000-000000000032",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "repository": {
+              "normalizedUrl": "example.com/a",
+              "displayName": "Local"
+            }
+          },
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000002",
+            "kind": "ENTITY_KIND_REPOSITORY",
+            "versionId": "019a0000-0000-7000-8000-000000000033",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "repository": {
+              "normalizedUrl": "example.com/a",
+              "displayName": "Remote"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "result": "RESULT_KIND_CONFLICT",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000032",
+          "019a0000-0000-7000-8000-000000000033"
+        ]
+      }
+    },
+    {
+      "id": "resolution-url-collision",
+      "input": {
+        "otherRepository": {
+          "id": "019a0000-0000-7000-8000-000000000004",
+          "normalizedUrl": "example.com/taken"
+        },
+        "resolved": {
+          "formatVersion": 1,
+          "entityId": "019a0000-0000-7000-8000-000000000002",
+          "kind": "ENTITY_KIND_REPOSITORY",
+          "versionId": "019a0000-0000-7000-8000-000000000034",
+          "parentVersionIds": [
+            "019a0000-0000-7000-8000-000000000032",
+            "019a0000-0000-7000-8000-000000000033"
+          ],
+          "createdAt": "2026-10-25T00:00:00.000001Z",
+          "origin": {
+            "kind": "ORIGIN_KIND_CLI",
+            "deviceId": "019a0000-0000-7000-8000-000000000001",
+            "deviceName": "Fixture CLI",
+            "accountId": ""
+          },
+          "deleted": false,
+          "repository": {
+            "normalizedUrl": "example.com/taken"
+          }
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "account-isolation",
+      "input": {
+        "accounts": [
+          "019a0000-0000-7000-8000-00000000003c",
+          "019a0000-0000-7000-8000-00000000003d"
+        ],
+        "requests": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Title"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-00000000000a",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repository": {
+              "url": "https://GitHub.com/Acme/Repo.git"
+            },
+            "title": "Title"
+          }
+        ]
+      },
+      "expected": {
+        "tasksPerAccount": [
+          1,
+          1
+        ],
+        "crossAccountReads": false,
+        "crossAccountDedupe": false
+      }
+    },
+    {
+      "id": "atomic-local-write",
+      "input": {
+        "request": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "https://GitHub.com/Acme/Repo.git"
+          },
+          "title": "Title"
+        },
+        "failAt": "after_snapshot_before_outbox"
+      },
+      "expected": {
+        "snapshotCount": 0,
+        "historyCount": 0,
+        "outboxCount": 0,
+        "sequenceDelta": 0
+      }
+    },
+    {
+      "id": "per-item-limit",
+      "input": {
+        "maxItemBytes": "100",
+        "itemSizes": [
+          "99",
+          "101",
+          "100"
+        ]
+      },
+      "expected": {
+        "results": [
+          "RESULT_KIND_APPLIED",
+          "ERROR_REASON_ITEM_TOO_LARGE",
+          "RESULT_KIND_APPLIED"
+        ],
+        "pendingIndices": [
+          1
+        ]
+      }
+    },
+    {
+      "id": "stale-account-epoch",
+      "input": {
+        "currentEpoch": "019a0000-0000-7000-8000-000000000046",
+        "pushEpoch": "019a0000-0000-7000-8000-000000000047",
+        "mode": "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_STALE_EPOCH",
+        "writes": 0,
+        "localContentRetained": true
+      }
+    },
+    {
+      "id": "unsupported-format",
+      "input": {
+        "version": {
+          "formatVersion": 2,
+          "entityId": "019a0000-0000-7000-8000-000000000003",
+          "kind": "ENTITY_KIND_TASK",
+          "versionId": "019a0000-0000-7000-8000-000000000014",
+          "parentVersionIds": [],
+          "createdAt": "2026-10-25T00:00:00.000001Z",
+          "origin": {
+            "kind": "ORIGIN_KIND_CLI",
+            "deviceId": "019a0000-0000-7000-8000-000000000001",
+            "deviceName": "Fixture CLI",
+            "accountId": ""
+          },
+          "deleted": false,
+          "task": {
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "title": "Title",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR"
+          }
+        }
+      },
+      "expected": {
+        "reason": "ERROR_REASON_UNSUPPORTED_FORMAT",
+        "writes": 0,
+        "compatibleLocalStateUnchanged": true
+      }
+    },
+    {
+      "id": "unsupported-schema",
+      "input": {
+        "schemaVersion": 2
+      },
+      "expected": {
+        "opened": false,
+        "writes": 0
+      }
+    },
+    {
+      "id": "repository-delete-cascade",
+      "input": {
+        "operation": "deleteRepository",
+        "repositoryId": "019a0000-0000-7000-8000-000000000002",
+        "tasks": [
+          {
+            "id": "019a0000-0000-7000-8000-000000000003",
+            "repositoryId": "019a0000-0000-7000-8000-000000000002"
+          },
+          {
+            "id": "019a0000-0000-7000-8000-000000000005",
+            "repositoryId": "019a0000-0000-7000-8000-000000000004",
+            "previousRepositoryId": "019a0000-0000-7000-8000-000000000002"
+          }
+        ],
+        "events": [
+          {
+            "id": "019a0000-0000-7000-8000-000000000050",
+            "repositoryId": "019a0000-0000-7000-8000-000000000002",
+            "linkedTaskIds": [
+              "019a0000-0000-7000-8000-000000000005"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "deletedTaskIds": [
+          "019a0000-0000-7000-8000-000000000003"
+        ],
+        "retainedTaskIds": [
+          "019a0000-0000-7000-8000-000000000005"
+        ],
+        "deletedEventIds": [
+          "019a0000-0000-7000-8000-000000000050"
+        ],
+        "movedTaskHistoryRetained": true,
+        "deletedRepositoryBodyRetained": false
+      }
+    },
+    {
+      "id": "deleted-repository-delayed-task",
+      "input": {
+        "operation": "syncTask",
+        "deletedRepositoryId": "019a0000-0000-7000-8000-000000000002",
+        "taskId": "019a0000-0000-7000-8000-000000000003",
+        "taskRepositoryId": "019a0000-0000-7000-8000-000000000002"
+      },
+      "expected": {
+        "result": "RESULT_KIND_DELETED",
+        "taskBodyPresent": false
+      }
+    },
+    {
+      "id": "lowered-limit-read-delete",
+      "input": {
+        "operation": "existingItemAccess",
+        "storedBytes": "1000",
+        "maxItemBytes": "100",
+        "methods": [
+          "GetTask",
+          "ListHistory",
+          "DeleteTask"
+        ]
+      },
+      "expected": {
+        "allowed": [
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "id": "repository-concurrent-edits",
+      "input": {
+        "operation": "concurrentRepositorySaves",
+        "baseVersionId": "019a0000-0000-7000-8000-000000000014",
+        "versions": [
+          {
+            "versionId": "019a0000-0000-7000-8000-000000000015",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "displayName": "First"
+          },
+          {
+            "versionId": "019a0000-0000-7000-8000-000000000016",
+            "parentVersionIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "displayName": "Second"
+          }
+        ]
+      },
+      "expected": {
+        "result": "RESULT_KIND_CONFLICT",
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016"
+        ],
+        "displayNames": [
+          "First",
+          "Second"
+        ]
+      }
+    },
+    {
+      "id": "parent-set-order",
+      "input": {
+        "operation": "normalizeParentIds",
+        "parentVersionIds": [
+          "019a0000-0000-7000-8000-000000000016",
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016"
+        ]
+      },
+      "expected": {
+        "parentVersionIds": [
+          "019a0000-0000-7000-8000-000000000015",
+          "019a0000-0000-7000-8000-000000000016"
+        ]
+      }
+    },
+    {
+      "id": "invalid-entity-kind-ENTITY_KIND_UNSPECIFIED",
+      "input": {
+        "operation": "validateEnvelope",
+        "kind": "ENTITY_KIND_UNSPECIFIED"
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "invalid-entity-kind-99",
+      "input": {
+        "operation": "validateEnvelope",
+        "kind": 99
+      },
+      "expected": {
+        "reason": "ERROR_REASON_INVALID_INPUT",
+        "writes": 0
+      }
+    },
+    {
+      "id": "sync-restoration-equal-text",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "prompt": "one"
+            },
+            "promptRestoration": false
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000083",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000081",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": "one"
+              },
+              "promptRestoration": true
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000084",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000082",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000081"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": "one"
+              },
+              "promptRestoration": false
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000081"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ],
+        "replayMutationIndices": [
+          0,
+          1
+        ]
+      },
+      "expected": {
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000082"
+        ],
+        "newVersions": 2,
+        "newPromptHistoryVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "restorationVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "promptPresent": true,
+        "replayNewVersions": 0
+      }
+    },
+    {
+      "id": "sync-restoration-absent",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            },
+            "promptRestoration": false
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000083",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000081",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              },
+              "promptRestoration": true
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000084",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000082",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000081"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR"
+              },
+              "promptRestoration": false
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000081"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ],
+        "replayMutationIndices": [
+          0,
+          1
+        ]
+      },
+      "expected": {
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000082"
+        ],
+        "newVersions": 2,
+        "newPromptHistoryVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "restorationVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "promptPresent": false,
+        "replayNewVersions": 0
+      }
+    },
+    {
+      "id": "sync-restoration-empty",
+      "input": {
+        "initial": [
+          {
+            "formatVersion": 1,
+            "entityId": "019a0000-0000-7000-8000-000000000003",
+            "kind": "ENTITY_KIND_TASK",
+            "versionId": "019a0000-0000-7000-8000-000000000014",
+            "parentVersionIds": [],
+            "createdAt": "2026-10-25T00:00:00.000001Z",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            },
+            "deleted": false,
+            "task": {
+              "repositoryId": "019a0000-0000-7000-8000-000000000002",
+              "title": "Title",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "prompt": ""
+            },
+            "promptRestoration": false
+          }
+        ],
+        "mutations": [
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000083",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000081",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000014"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": ""
+              },
+              "promptRestoration": true
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000014"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          },
+          {
+            "meta": {
+              "requestId": "019a0000-0000-7000-8000-000000000084",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              }
+            },
+            "version": {
+              "formatVersion": 1,
+              "entityId": "019a0000-0000-7000-8000-000000000003",
+              "kind": "ENTITY_KIND_TASK",
+              "versionId": "019a0000-0000-7000-8000-000000000082",
+              "parentVersionIds": [
+                "019a0000-0000-7000-8000-000000000081"
+              ],
+              "createdAt": "2026-10-25T00:00:00.000001Z",
+              "origin": {
+                "kind": "ORIGIN_KIND_CLI",
+                "deviceId": "019a0000-0000-7000-8000-000000000001",
+                "deviceName": "Fixture CLI",
+                "accountId": ""
+              },
+              "deleted": false,
+              "task": {
+                "repositoryId": "019a0000-0000-7000-8000-000000000002",
+                "title": "Title",
+                "description": "",
+                "progress": "PROGRESS_TODO",
+                "proposal": "PROPOSAL_REGULAR",
+                "prompt": ""
+              },
+              "promptRestoration": false
+            },
+            "expectedHeadIds": [
+              "019a0000-0000-7000-8000-000000000081"
+            ],
+            "kind": "MUTATION_KIND_SAVE"
+          }
+        ],
+        "replayMutationIndices": [
+          0,
+          1
+        ]
+      },
+      "expected": {
+        "headIds": [
+          "019a0000-0000-7000-8000-000000000082"
+        ],
+        "newVersions": 2,
+        "newPromptHistoryVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "restorationVersionIds": [
+          "019a0000-0000-7000-8000-000000000081"
+        ],
+        "promptPresent": true,
+        "replayNewVersions": 0
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Planned `protos/lane/v1` owns Lane schemas, generated Go/TypeScript bindings and `fixtures/` with language-neutral input/expected-output vectors. This document defines the initial interoperation contract before runtime implementation. The [application contract](apps-lane-foundation.md) owns complete product behavior.
+`protos/lane/v1/lane.proto` defines Lane schemas. Checked-in `lane.pb.go`, `lanev1connect/lane.connect.go` and `lane_pb.ts` provide Go and TypeScript bindings. The server protocol crate registers the schema for Rust generation into Cargo output. Shared conformance vectors belong in `protos/lane/v1/fixtures/`. These interfaces do not establish runtime or native acceptance. The [application contract](apps-lane-foundation.md) owns complete product behavior.
 
 ## Runtime and Language
 
@@ -46,6 +46,7 @@ message EntityVersion {
   google.protobuf.Timestamp created_at = 6;
   Origin origin = 7;
   bool deleted = 8;
+  bool prompt_restoration = 9; // explicit RestorePrompt snapshot, including unchanged text
   oneof body {
     Repository repository = 10;
     Task task = 11;
@@ -71,7 +72,7 @@ Entity IDs, version IDs, request IDs and device IDs are lowercase UUID v7 string
 
 `Origin` is assigned by the authenticated adapter. MCP tools cannot supply an agent name or override origin/account/device attribution. A grant without a physical device has an empty device ID and its server-recorded connection name as device name. Clients may supply their registered device identity during sync; the server validates the association. Preserve original origins when importing accepted history.
 
-A task snapshot is the entire conflict unit. A prompt is embedded, so concurrent prompt/title/progress/move changes cannot merge silently. Prompt history consists of snapshots that change prompt presence/content, plus explicit restoration snapshots even when the restored text equals current text. An explicit successful Save creates a version; a transport retry of that Save does not. History exposes before/after, time and origin for title, description, progress, proposal and repository moves. Preserve conflicting alternatives and the resolving version until deletion.
+A task snapshot is the entire conflict unit. A prompt is embedded, so concurrent prompt/title/progress/move changes cannot merge silently. Prompt history consists of snapshots that change prompt presence/content, plus explicit restoration snapshots even when the restored text equals current text. `EntityVersion.prompt_restoration` is true only for a nondeleted task snapshot created by an explicit `RestorePrompt`, including restoration to an absent or unchanged prompt. It is false for repository versions, tombstones and ordinary saves; do not inherit it from a parent snapshot. Preserve this immutable marker in sync, history and request fingerprints. A `SyncMutation` with kind SAVE can carry a restoration snapshot; receivers use the marker when rebuilding prompt-history membership. A missing marker decodes as false and cannot recover an earlier unmarked equal-text restoration. An explicit successful Save creates a version; a transport retry of that Save does not. History exposes before/after, time and origin for title, description, progress, proposal and repository moves. Preserve conflicting alternatives and the resolving version until deletion.
 
 ### Typed business service
 
@@ -105,7 +106,7 @@ A stale interactive Save returns `aborted/STALE_VERSION`, current heads and the 
 
 `lane.v1.SyncService` methods:
 
-- `GetSyncInfo(Empty)` returns `uint32 format_version=1, string account_id=2, string tenant_id=3, string epoch=4, uint64 max_item_bytes=5`. `epoch` is a server-issued UUID v7 account-data generation.
+- `GetSyncInfo(GetSyncInfoRequest)` (an empty request) returns `uint32 format_version=1, string account_id=2, string tenant_id=3, string epoch=4, uint64 max_item_bytes=5`. `epoch` is a server-issued UUID v7 account-data generation.
 - `PushChanges` accepts `uint32 format_version=1, string epoch=2, string device_id=3, repeated SyncMutation mutations=4`; returns `repeated SyncResult results=1, repeated RepositoryMapping repository_mappings=2`. Each mutation is `MutationMeta meta=1, EntityVersion version=2, repeated string expected_head_ids=3, MutationKind kind=4` (`CREATE=1, SAVE=2, RESOLVE=3, DELETE=4`). Each result is `string request_id=1, EntityResult result=2, ErrorDetail error=3`. Apply each item in its own transaction and retain input order in results; one oversized/invalid item does not stop other items. Process parents before descendants; a missing parent is retryable, never an implicit creation.
 - `PullChanges` accepts `uint32 format_version=1, string epoch=2, string cursor=3, uint32 page_size=4`; returns `repeated Change changes=1, string next_cursor=2, bool has_more=3`. `Change` is `uint64 sequence=1` plus oneof `EntityResult entity=2, WebhookReceiver receiver=3, WebhookEvent event=4, ProcessingRecord processing=5, DeletionRecord deletion=6`. Read pages at a stable high-water mark; a cursor advances only after durable local apply. Tombstone changes redact earlier content even when a client resumes an older cursor.
 - `WatchChanges` accepts `string epoch=1, string cursor=2`; streams `string cursor=1` invalidations. Clients fetch with PullChanges. Reconnect uses the durable pull cursor, never assumes notifications are reliable content delivery. Revocation terminates subscriptions and denies subsequent pulls.
@@ -128,7 +129,7 @@ Compare request content after typed decoding, default expansion and URL normaliz
 
 ### Required shared conformance vectors
 
-Store executable fixture files in planned `protos/lane/v1/fixtures/`; run the same vectors in Go, native implementations and Rust, and check UI adapters against the same messages. The following are required expected outcomes, not claims of tests already run. Symbolic IDs below stand for fixed valid UUID v7 values in fixtures.
+Store executable fixture files in `protos/lane/v1/fixtures/`; run the same vectors in Go, native implementations and Rust, and check UI adapters against the same messages. The following are required expected outcomes, not claims of tests already run. Symbolic IDs below stand for fixed valid UUID v7 values in fixtures.
 
 | Input / sequence                                                                                         | Expected outcome                                                      |
 | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -155,6 +156,19 @@ Store executable fixture files in planned `protos/lane/v1/fixtures/`; run the sa
 | Delete server data retaining local; old epoch push                                                       | STALE_EPOCH/revoked device, no reupload                               |
 
 Also fixture absent/unknown enums, unsupported format/schema, prompt history after resolution, concurrent repository edits/URL collision, Unicode URL/search, dedupe after event deletion, and the exact server lease/signature/push boundary vectors in the server contract.
+
+### Fixture consumption
+
+The checked-in fixture files use `{ "formatVersion": 1, "cases": [...] }`. Each case has a stable `id`, `input` and `expected`. Run each case with isolated storage and a fake clock. Treat `expected` as assertions on the operation result and persisted state, not as input to the implementation. Compare only the named assertions; counts are exact. UUIDs and keys in these files are fixed synthetic test values.
+
+- `normalization.json`: normalize `input.url`, or reject it with the expected reason and no writes.
+- `tasks.json`: apply the named method to the supplied `before` task. Progress cases use the request's expected version as the initial head. Other cases supply ordered snapshots, proposal decisions or a named validation/search operation. A restore source index refers to the zero-based snapshot index. Each successful explicit save adds one version.
+- `sync.json`: seed `initial` versions in order, then apply `mutations` in order. Inputs use `SyncMutation` ProtoJSON. `interactiveRequest` instead invokes its named LaneService method. The remaining cases specify replay, repository mapping, account isolation, failure injection and batch-size scenarios. Byte sizes are measured encoded-item sizes; they are independent of JSON whitespace in the fixture file. `existingReceipt` seeds the original request identity for the changed-content retry case. `replayMutationIndices` selects zero-based mutations to resend after the initial sequence; replay assertions count only those retries. `newPromptHistoryVersionIds` lists added history members, excluding the seeded initial versions.
+- `fingerprints.json`: serialize the supplied normalized request with RFC 8785 and compare both exact UTF-8 text and SHA-256. These cases distinguish absent, empty and nonempty prompts. They do not replace URL/default expansion tests.
+- `webhooks.json`: verify the exact `rawBody` bytes and timestamp with the synthetic base64url key. Parsing cases run after transport authentication. Lease clocks use decimal microseconds; deadlines are exclusive. Completion fixtures with `validLease` start with a matching unexpired lease. Replay cases seed a previously committed completion receipt; PENDING means the event was reopened after that completion. No replay creates another task or completes the new round.
+- `push.json`: `retryIndex` is zero for the first retry after the initial failure. Seconds are decimal Unix times; Retry-After delta values are relative to `previousAttemptSeconds`. A null expected next attempt means no send. Enqueue and dispatch cases test separate phases; missing eligibility inputs use an enabled, approved device with granted permission and available provider. Generic content assertions forbid repository/task text without fixing localized wording.
+
+`conformance_test.go` checks field identities, service shape, optional prompt binary/JSON round trips, fixture request decoding, canonical fingerprint digests and signature known answers. It does not implement a runtime store or establish domain conformance. Go, native and server adapters must execute the same fixture inputs against their own implementations and report that coverage separately.
 
 ## Storage
 

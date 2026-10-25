@@ -1,0 +1,540 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "retry-1",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": "30"
+      }
+    },
+    {
+      "id": "retry-2",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 1,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": "120"
+      }
+    },
+    {
+      "id": "retry-3",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 2,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": "600"
+      }
+    },
+    {
+      "id": "retry-4",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 3,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": "1800"
+      }
+    },
+    {
+      "id": "retry-5",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 4,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": "3600"
+      }
+    },
+    {
+      "id": "no-sixth-retry",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 5,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": null
+      }
+    },
+    {
+      "id": "permanent-failure",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "PERMANENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": null
+      }
+    },
+    {
+      "id": "retry-after-delta",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": "180"
+      },
+      "expected": {
+        "nextAttemptSeconds": "180"
+      }
+    },
+    {
+      "id": "retry-after-http-date",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": "Thu, 01 Jan 1970 00:03:00 GMT"
+      },
+      "expected": {
+        "nextAttemptSeconds": "180"
+      }
+    },
+    {
+      "id": "retry-after-at-expiry",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": "7200"
+      },
+      "expected": {
+        "nextAttemptSeconds": null
+      }
+    },
+    {
+      "id": "retry-after-beyond-expiry",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "0",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": "7201"
+      },
+      "expected": {
+        "nextAttemptSeconds": null
+      }
+    },
+    {
+      "id": "retry-after-delay-crosses-expiry",
+      "input": {
+        "operation": "scheduleRetry",
+        "retryIndex": 0,
+        "previousAttemptSeconds": "7190",
+        "createdAtSeconds": "0",
+        "failure": "TRANSIENT",
+        "retryAfter": null
+      },
+      "expected": {
+        "nextAttemptSeconds": null
+      }
+    },
+    {
+      "id": "origin-APP-REGULAR",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_APP",
+        "proposal": "PROPOSAL_REGULAR",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-APP-PENDING",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_APP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-APP-ACCEPTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_APP",
+        "proposal": "PROPOSAL_ACCEPTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-APP-REJECTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_APP",
+        "proposal": "PROPOSAL_REJECTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-CLI-REGULAR",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_CLI",
+        "proposal": "PROPOSAL_REGULAR",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-CLI-PENDING",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_CLI",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-CLI-ACCEPTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_CLI",
+        "proposal": "PROPOSAL_ACCEPTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-CLI-REJECTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_CLI",
+        "proposal": "PROPOSAL_REJECTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-MCP-REGULAR",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_REGULAR",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-MCP-PENDING",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": true
+      }
+    },
+    {
+      "id": "origin-MCP-ACCEPTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_ACCEPTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "origin-MCP-REJECTED",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_REJECTED",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false
+      }
+    },
+    {
+      "id": "no-notification-denied",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_DENIED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "no-notification-unsupported",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_UNSUPPORTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "no-notification-disabled",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": false,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "no-notification-origin-delivered",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": true,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "no-notification-duplicate",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": true,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": true
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "no-notification-edit",
+      "input": {
+        "operation": "enqueue",
+        "origin": "ORIGIN_KIND_MCP",
+        "proposal": "PROPOSAL_PENDING",
+        "newTask": false,
+        "permission": "NOTIFICATION_PERMISSION_GRANTED",
+        "enabled": true,
+        "originDeviceDelivered": false,
+        "dedupeReceiptExists": false
+      },
+      "expected": {
+        "enqueue": false,
+        "inAppIndication": true
+      }
+    },
+    {
+      "id": "cancel-before-send-ACCEPTED",
+      "input": {
+        "operation": "dispatch",
+        "currentProposalState": "ACCEPTED",
+        "deliveryPending": true
+      },
+      "expected": {
+        "send": false,
+        "canceled": true
+      }
+    },
+    {
+      "id": "cancel-before-send-REJECTED",
+      "input": {
+        "operation": "dispatch",
+        "currentProposalState": "REJECTED",
+        "deliveryPending": true
+      },
+      "expected": {
+        "send": false,
+        "canceled": true
+      }
+    },
+    {
+      "id": "cancel-before-send-DELETED",
+      "input": {
+        "operation": "dispatch",
+        "currentProposalState": "DELETED",
+        "deliveryPending": true
+      },
+      "expected": {
+        "send": false,
+        "canceled": true
+      }
+    },
+    {
+      "id": "generic-content",
+      "input": {
+        "operation": "renderNotification",
+        "content": "NOTIFICATION_CONTENT_GENERIC",
+        "repositoryName": "Private repository",
+        "taskTitle": "Private task"
+      },
+      "expected": {
+        "includesRepositoryName": false,
+        "includesTaskTitle": false
+      }
+    },
+    {
+      "id": "detail-content",
+      "input": {
+        "operation": "renderNotification",
+        "content": "NOTIFICATION_CONTENT_DETAIL",
+        "repositoryName": "Private repository",
+        "taskTitle": "Private task"
+      },
+      "expected": {
+        "includesRepositoryName": true,
+        "includesTaskTitle": true
+      }
+    },
+    {
+      "id": "revoked-before-dispatch",
+      "input": {
+        "operation": "dispatch",
+        "currentProposalState": "PENDING",
+        "deviceApproved": false
+      },
+      "expected": {
+        "send": false
+      }
+    }
+  ]
+}

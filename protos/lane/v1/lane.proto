@@ -1,0 +1,738 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package lane.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/apps/protos/lane/v1;lanev1";
+// Validate domain constraints after decoding. UUIDs are lowercase UUID v7.
+// Timestamps never select conflict winners; deleted versions have no body.
+
+enum OriginKind {
+  ORIGIN_KIND_UNSPECIFIED = 0;
+  ORIGIN_KIND_APP = 1;
+  ORIGIN_KIND_CLI = 2;
+  ORIGIN_KIND_MCP = 3;
+}
+
+enum EntityKind {
+  ENTITY_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_REPOSITORY = 1;
+  ENTITY_KIND_TASK = 2;
+}
+
+enum Progress {
+  PROGRESS_UNSPECIFIED = 0;
+  PROGRESS_TODO = 1;
+  PROGRESS_IN_PROGRESS = 2;
+  PROGRESS_BLOCKED = 3;
+  PROGRESS_DONE = 4;
+  PROGRESS_CANCELED = 5;
+}
+
+enum Proposal {
+  PROPOSAL_UNSPECIFIED = 0;
+  PROPOSAL_REGULAR = 1;
+  PROPOSAL_PENDING = 2;
+  PROPOSAL_ACCEPTED = 3;
+  PROPOSAL_REJECTED = 4;
+}
+
+enum ResultKind {
+  RESULT_KIND_UNSPECIFIED = 0;
+  RESULT_KIND_APPLIED = 1;
+  RESULT_KIND_REPLAYED = 2;
+  RESULT_KIND_DELETED = 3;
+  RESULT_KIND_CONFLICT = 4;
+}
+
+enum MutationKind {
+  MUTATION_KIND_UNSPECIFIED = 0;
+  MUTATION_KIND_CREATE = 1;
+  MUTATION_KIND_SAVE = 2;
+  MUTATION_KIND_RESOLVE = 3;
+  MUTATION_KIND_DELETE = 4;
+}
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_INPUT = 1;
+  ERROR_REASON_NOT_FOUND = 2;
+  ERROR_REASON_STALE_VERSION = 3;
+  ERROR_REASON_CONFLICT_READ_ONLY = 4;
+  ERROR_REASON_STALE_RESOLUTION = 5;
+  ERROR_REASON_REQUEST_ID_REUSED = 6;
+  ERROR_REASON_DELETED = 7;
+  ERROR_REASON_UNSUPPORTED_FORMAT = 8;
+  ERROR_REASON_STORAGE_BUSY = 9;
+  ERROR_REASON_STORAGE_FULL = 10;
+  ERROR_REASON_ONLINE_REQUIRED = 11;
+  ERROR_REASON_UNAUTHENTICATED = 12;
+  ERROR_REASON_FORBIDDEN = 13;
+  ERROR_REASON_DEPENDENCY_UNAVAILABLE = 14;
+  ERROR_REASON_ITEM_TOO_LARGE = 15;
+  ERROR_REASON_RATE_LIMITED = 16;
+  ERROR_REASON_STALE_EPOCH = 17;
+  ERROR_REASON_LEASE_INVALID = 18;
+}
+
+enum PushProvider {
+  PUSH_PROVIDER_UNSPECIFIED = 0;
+  PUSH_PROVIDER_APNS = 1;
+  PUSH_PROVIDER_FCM = 2;
+  PUSH_PROVIDER_WEB_PUSH = 3;
+}
+
+enum NotificationContent {
+  NOTIFICATION_CONTENT_UNSPECIFIED = 0;
+  NOTIFICATION_CONTENT_DETAIL = 1;
+  NOTIFICATION_CONTENT_GENERIC = 2;
+}
+
+enum DataDeletionMode {
+  DATA_DELETION_MODE_UNSPECIFIED = 0;
+  DATA_DELETION_MODE_DELETE_EVERYWHERE = 1;
+  DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL = 2;
+}
+
+enum EventState {
+  EVENT_STATE_UNSPECIFIED = 0;
+  EVENT_STATE_PENDING = 1;
+  EVENT_STATE_LEASED = 2;
+  EVENT_STATE_COMPLETED = 3;
+  EVENT_STATE_DELETED = 4;
+}
+
+enum NotificationPermission {
+  NOTIFICATION_PERMISSION_UNSPECIFIED = 0;
+  NOTIFICATION_PERMISSION_NOT_REQUESTED = 1;
+  NOTIFICATION_PERMISSION_GRANTED = 2;
+  NOTIFICATION_PERMISSION_DENIED = 3;
+  NOTIFICATION_PERMISSION_UNSUPPORTED = 4;
+}
+
+enum LocalRetention {
+  LOCAL_RETENTION_UNSPECIFIED = 0;
+  LOCAL_RETENTION_KEEP_LOCAL = 1;
+  LOCAL_RETENTION_REMOVE_LOCAL = 2;
+}
+
+enum EntityKindOrRemoteKind {
+  ENTITY_KIND_OR_REMOTE_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY = 1;
+  ENTITY_KIND_OR_REMOTE_KIND_TASK = 2;
+  ENTITY_KIND_OR_REMOTE_KIND_RECEIVER = 3;
+  ENTITY_KIND_OR_REMOTE_KIND_EVENT = 4;
+  ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT = 5;
+}
+
+message Origin {
+  OriginKind kind = 1; // APP=1, CLI=2, MCP=3
+  string device_id = 2;
+  string device_name = 3;
+  string account_id = 4; // Delcore internal user ID; empty for standalone work
+}
+message Repository {
+  string normalized_url = 1; // host/path, without scheme or terminal .git
+  optional string display_name = 2;
+}
+message Task {
+  string repository_id = 1;
+  string title = 2;
+  string description = 3; // Markdown; empty is allowed
+  optional string prompt = 4; // absent differs from present empty Markdown
+  Progress progress = 5; // TODO=1, IN_PROGRESS=2, BLOCKED=3, DONE=4, CANCELED=5
+  Proposal proposal = 6; // REGULAR=1, PENDING=2, ACCEPTED=3, REJECTED=4
+}
+message EntityVersion {
+  uint32 format_version = 1; // exactly 1
+  string entity_id = 2;
+  EntityKind kind = 3; // REPOSITORY=1, TASK=2
+  string version_id = 4;
+  repeated string parent_version_ids = 5;
+  google.protobuf.Timestamp created_at = 6;
+  Origin origin = 7;
+  bool deleted = 8;
+  bool prompt_restoration = 9; // explicit RestorePrompt snapshot, including unchanged text
+  oneof body {
+    Repository repository = 10;
+    Task task = 11;
+  }
+}
+message MutationMeta {
+  string request_id = 1;
+  Origin origin = 2;
+}
+message EntityResult {
+  ResultKind result = 1; // APPLIED=1, REPLAYED=2, DELETED=3, CONFLICT=4
+  EntityVersion version = 2;
+  repeated EntityVersion alternatives = 3;
+  string correlation_id = 4;
+}
+
+message Page {
+  uint32 size = 1;
+  string cursor = 2;
+}
+
+message RepositoryTarget {
+  oneof target {
+    string id = 1;
+    string url = 2;
+  }
+}
+
+message SyncMutation {
+  MutationMeta meta = 1;
+  EntityVersion version = 2;
+  repeated string expected_head_ids = 3;
+  MutationKind kind = 4;
+}
+
+message SyncResult {
+  string request_id = 1;
+  EntityResult result = 2;
+  ErrorDetail error = 3;
+}
+
+message RepositoryMapping {
+  string local_id = 1;
+  string canonical_id = 2;
+}
+
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string correlation_id = 2;
+  string entity_id = 3;
+  repeated string current_head_ids = 4;
+  bool retryable = 5;
+}
+
+message Device {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp last_sync_at = 3;
+  google.protobuf.Timestamp disconnected_at = 4;
+}
+
+message Connection {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp approved_at = 3;
+  google.protobuf.Timestamp revoked_at = 4;
+}
+
+message WebhookReceiver {
+  string id = 1;
+  string repository_id = 2;
+  string name = 3;
+  uint64 revision = 4;
+  bool deleted = 5;
+}
+
+message WebhookEvent {
+  string id = 1;
+  string receiver_id = 2;
+  string repository_id = 3;
+  string sender_event_id = 4;
+  string event_type = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+  google.protobuf.Struct payload = 7;
+  EventState state = 8;
+  uint64 revision = 9;
+}
+
+message ProcessingRecord {
+  string id = 1;
+  string event_id = 2;
+  repeated string task_ids = 3;
+  google.protobuf.Timestamp completed_at = 4;
+  Origin origin = 5;
+}
+
+message DeletionRecord {
+  EntityKindOrRemoteKind kind = 1;
+  string id = 2;
+  string deletion_version_id = 3;
+}
+
+message Change {
+  uint64 sequence = 1;
+  oneof change {
+    EntityResult entity = 2;
+    WebhookReceiver receiver = 3;
+    WebhookEvent event = 4;
+    ProcessingRecord processing = 5;
+    DeletionRecord deletion = 6;
+  }
+}
+
+message GetRepositoryRequest {
+  string id = 1;
+}
+
+message GetRepositoryResponse {
+  EntityResult result = 1;
+}
+
+message ListRepositoriesRequest {
+  Page page = 1;
+}
+
+message ListRepositoriesResponse {
+  repeated EntityResult items = 1;
+  string next_cursor = 2;
+}
+
+message CreateRepositoryRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string url = 3;
+  optional string display_name = 4;
+}
+
+message CreateRepositoryResponse {
+  EntityResult result = 1;
+}
+
+message SaveRepositoryRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  string url = 4;
+  optional string display_name = 5;
+}
+
+message SaveRepositoryResponse {
+  EntityResult result = 1;
+}
+
+message DeleteRepositoryRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+
+message DeleteRepositoryResponse {
+  EntityResult result = 1;
+}
+
+message GetTaskRequest {
+  string id = 1;
+}
+
+message GetTaskResponse {
+  EntityResult result = 1;
+}
+
+message ListTasksRequest {
+  Page page = 1;
+  optional string repository_id = 2;
+  repeated Progress progress = 3;
+  repeated Proposal proposal = 4;
+  string search = 5;
+}
+
+message ListTasksResponse {
+  repeated EntityResult items = 1;
+  string next_cursor = 2;
+}
+
+message CreateTaskRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  RepositoryTarget repository = 3;
+  string title = 4;
+  string description = 5;
+  optional string prompt = 6;
+  Progress progress = 7;
+  Proposal proposal = 8;
+}
+
+message CreateTaskResponse {
+  EntityResult result = 1;
+  EntityResult repository = 2;
+}
+
+message SaveTaskRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  Task task = 4;
+}
+
+message SaveTaskResponse {
+  EntityResult result = 1;
+}
+
+message SetProgressRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  Progress progress = 4;
+}
+
+message SetProgressResponse {
+  EntityResult result = 1;
+}
+
+message SetProposalRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  Proposal proposal = 4;
+}
+
+message SetProposalResponse {
+  EntityResult result = 1;
+}
+
+message RestorePromptRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string expected_version_id = 3;
+  string source_version_id = 4;
+}
+
+message RestorePromptResponse {
+  EntityResult result = 1;
+}
+
+message DeleteTaskRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+
+message DeleteTaskResponse {
+  EntityResult result = 1;
+}
+
+message ListHistoryRequest {
+  string id = 1;
+  Page page = 2;
+  bool prompts_only = 3;
+}
+
+message ListHistoryResponse {
+  repeated EntityVersion versions = 1;
+  string next_cursor = 2;
+}
+
+message ResolveConflictRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  repeated string expected_head_ids = 3;
+  EntityVersion resolved = 4;
+}
+
+message ResolveConflictResponse {
+  EntityResult result = 1;
+}
+
+service LaneService {
+  rpc GetRepository(GetRepositoryRequest) returns (GetRepositoryResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc CreateRepository(CreateRepositoryRequest) returns (CreateRepositoryResponse);
+  rpc SaveRepository(SaveRepositoryRequest) returns (SaveRepositoryResponse);
+  rpc DeleteRepository(DeleteRepositoryRequest) returns (DeleteRepositoryResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc SaveTask(SaveTaskRequest) returns (SaveTaskResponse);
+  rpc SetProgress(SetProgressRequest) returns (SetProgressResponse);
+  rpc SetProposal(SetProposalRequest) returns (SetProposalResponse);
+  rpc RestorePrompt(RestorePromptRequest) returns (RestorePromptResponse);
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+  rpc ListHistory(ListHistoryRequest) returns (ListHistoryResponse);
+  rpc ResolveConflict(ResolveConflictRequest) returns (ResolveConflictResponse);
+}
+
+message ListDevicesRequest {
+  Page page = 1;
+}
+
+message ListDevicesResponse {
+  repeated Device items = 1;
+  string next_cursor = 2;
+}
+
+message DisconnectDeviceRequest {
+  MutationMeta meta = 1;
+  string device_id = 2;
+}
+
+message DisconnectDeviceResponse {
+  Device device = 1;
+}
+
+message ListConnectionsRequest {
+  Page page = 1;
+}
+
+message ListConnectionsResponse {
+  repeated Connection items = 1;
+  string next_cursor = 2;
+}
+
+message RevokeConnectionRequest {
+  MutationMeta meta = 1;
+  string connection_id = 2;
+}
+
+message RevokeConnectionResponse {
+  Connection connection = 1;
+}
+
+message RegisterPushRequest {
+  MutationMeta meta = 1;
+  string device_id = 2;
+  PushProvider provider = 3;
+  string endpoint = 4;
+  bytes public_key = 5;
+  bytes auth_secret = 6;
+  bool enabled = 7;
+  NotificationContent content = 8;
+}
+
+message RegisterPushResponse {
+  Device device = 1;
+}
+
+message BeginDataDeletionRequest {
+  MutationMeta meta = 1;
+  DataDeletionMode mode = 2;
+  string confirmed_account_id = 3;
+}
+
+message BeginDataDeletionResponse {
+  string challenge_id = 1;
+  string authorization_url = 2;
+}
+
+message DeleteAccountDataRequest {
+  MutationMeta meta = 1;
+  DataDeletionMode mode = 2;
+  string confirmed_account_id = 3;
+  string reauth_proof = 4;
+}
+
+message DeleteAccountDataResponse {
+  string new_epoch = 1;
+  bool disconnected = 2;
+}
+
+service AccountService {
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  rpc DisconnectDevice(DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
+  rpc ListConnections(ListConnectionsRequest) returns (ListConnectionsResponse);
+  rpc RevokeConnection(RevokeConnectionRequest) returns (RevokeConnectionResponse);
+  rpc RegisterPush(RegisterPushRequest) returns (RegisterPushResponse);
+  rpc BeginDataDeletion(BeginDataDeletionRequest) returns (BeginDataDeletionResponse);
+  rpc DeleteAccountData(DeleteAccountDataRequest) returns (DeleteAccountDataResponse);
+}
+
+message ListReceiversRequest {
+  Page page = 1;
+  optional string repository_id = 2;
+}
+
+message ListReceiversResponse {
+  repeated WebhookReceiver items = 1;
+  string next_cursor = 2;
+}
+
+message CreateReceiverRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string repository_id = 3;
+  string name = 4;
+}
+
+message CreateReceiverResponse {
+  WebhookReceiver receiver = 1;
+  string secret = 2;
+  string endpoint = 3;
+}
+
+message SaveReceiverRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  uint64 expected_revision = 3;
+  string repository_id = 4;
+  string name = 5;
+}
+
+message SaveReceiverResponse {
+  WebhookReceiver receiver = 1;
+}
+
+message RotateReceiverKeyRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  uint64 expected_revision = 3;
+}
+
+message RotateReceiverKeyResponse {
+  WebhookReceiver receiver = 1;
+  string secret = 2;
+}
+
+message DeleteReceiverRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+
+message DeleteReceiverResponse {
+  DeletionRecord deletion = 1;
+}
+
+message ListEventsRequest {
+  Page page = 1;
+  optional string repository_id = 2;
+  repeated EventState states = 3;
+}
+
+message ListEventsResponse {
+  repeated WebhookEvent items = 1;
+  string next_cursor = 2;
+}
+
+message GetEventRequest {
+  string id = 1;
+}
+
+message GetEventResponse {
+  WebhookEvent event = 1;
+  repeated ProcessingRecord processing = 2;
+}
+
+message DeleteEventRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+
+message DeleteEventResponse {
+  DeletionRecord deletion = 1;
+}
+
+message ClaimEventRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+}
+
+message ClaimEventResponse {
+  WebhookEvent event = 1;
+  string lease_token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message RenewEventLeaseRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string lease_token = 3;
+}
+
+message RenewEventLeaseResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+message ReleaseEventLeaseRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string lease_token = 3;
+  string error_reason = 4;
+}
+
+message ReleaseEventLeaseResponse {
+  WebhookEvent event = 1;
+}
+
+message CompleteEventRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  string lease_token = 3;
+  repeated CreateTaskRequest tasks = 4;
+}
+
+message CompleteEventResponse {
+  WebhookEvent event = 1;
+  ProcessingRecord processing = 2;
+  repeated EntityResult tasks = 3;
+}
+
+message ReopenEventRequest {
+  MutationMeta meta = 1;
+  string id = 2;
+  uint64 expected_revision = 3;
+}
+
+message ReopenEventResponse {
+  WebhookEvent event = 1;
+}
+
+service WebhookService {
+  rpc ListReceivers(ListReceiversRequest) returns (ListReceiversResponse);
+  rpc CreateReceiver(CreateReceiverRequest) returns (CreateReceiverResponse);
+  rpc SaveReceiver(SaveReceiverRequest) returns (SaveReceiverResponse);
+  rpc RotateReceiverKey(RotateReceiverKeyRequest) returns (RotateReceiverKeyResponse);
+  rpc DeleteReceiver(DeleteReceiverRequest) returns (DeleteReceiverResponse);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse);
+  rpc DeleteEvent(DeleteEventRequest) returns (DeleteEventResponse);
+  rpc ClaimEvent(ClaimEventRequest) returns (ClaimEventResponse);
+  rpc RenewEventLease(RenewEventLeaseRequest) returns (RenewEventLeaseResponse);
+  rpc ReleaseEventLease(ReleaseEventLeaseRequest) returns (ReleaseEventLeaseResponse);
+  rpc CompleteEvent(CompleteEventRequest) returns (CompleteEventResponse);
+  rpc ReopenEvent(ReopenEventRequest) returns (ReopenEventResponse);
+}
+
+message GetSyncInfoRequest {}
+
+message GetSyncInfoResponse {
+  uint32 format_version = 1;
+  string account_id = 2;
+  string tenant_id = 3;
+  string epoch = 4;
+  uint64 max_item_bytes = 5;
+}
+
+message PushChangesRequest {
+  uint32 format_version = 1;
+  string epoch = 2;
+  string device_id = 3;
+  repeated SyncMutation mutations = 4;
+}
+
+message PushChangesResponse {
+  repeated SyncResult results = 1;
+  repeated RepositoryMapping repository_mappings = 2;
+}
+
+message PullChangesRequest {
+  uint32 format_version = 1;
+  string epoch = 2;
+  string cursor = 3;
+  uint32 page_size = 4;
+}
+
+message PullChangesResponse {
+  repeated Change changes = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message WatchChangesRequest {
+  string epoch = 1;
+  string cursor = 2;
+}
+
+message WatchChangesResponse {
+  string cursor = 1;
+}
+
+service SyncService {
+  rpc GetSyncInfo(GetSyncInfoRequest) returns (GetSyncInfoResponse);
+  rpc PushChanges(PushChangesRequest) returns (PushChangesResponse);
+  rpc PullChanges(PullChangesRequest) returns (PullChangesResponse);
+  rpc WatchChanges(WatchChangesRequest) returns (stream WatchChangesResponse);
+}

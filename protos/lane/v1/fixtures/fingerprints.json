@@ -1,0 +1,94 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "create-fingerprint-absent",
+      "input": {
+        "method": "CreateTask",
+        "normalizedRequest": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "github.com/Acme/Repo"
+          },
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"description\":\"\",\"id\":\"019a0000-0000-7000-8000-000000000003\",\"meta\":{\"origin\":{\"accountId\":\"\",\"deviceId\":\"019a0000-0000-7000-8000-000000000001\",\"deviceName\":\"Fixture CLI\",\"kind\":\"ORIGIN_KIND_CLI\"},\"requestId\":\"019a0000-0000-7000-8000-00000000000a\"},\"progress\":\"PROGRESS_TODO\",\"proposal\":\"PROPOSAL_REGULAR\",\"repository\":{\"url\":\"github.com/Acme/Repo\"},\"title\":\"Title\"}",
+        "sha256": "9ec0b1d8e10f46591ea0c015b5f8df732adc175d53b866608cda4bbfa73dbdae"
+      }
+    },
+    {
+      "id": "create-fingerprint-empty",
+      "input": {
+        "method": "CreateTask",
+        "normalizedRequest": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "github.com/Acme/Repo"
+          },
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "prompt": ""
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"description\":\"\",\"id\":\"019a0000-0000-7000-8000-000000000003\",\"meta\":{\"origin\":{\"accountId\":\"\",\"deviceId\":\"019a0000-0000-7000-8000-000000000001\",\"deviceName\":\"Fixture CLI\",\"kind\":\"ORIGIN_KIND_CLI\"},\"requestId\":\"019a0000-0000-7000-8000-00000000000a\"},\"progress\":\"PROGRESS_TODO\",\"prompt\":\"\",\"proposal\":\"PROPOSAL_REGULAR\",\"repository\":{\"url\":\"github.com/Acme/Repo\"},\"title\":\"Title\"}",
+        "sha256": "a5bf69f3baf50589ed258a094fdbd420ce60ca01efbe285b7f91477c61094929"
+      }
+    },
+    {
+      "id": "create-fingerprint-markdown",
+      "input": {
+        "method": "CreateTask",
+        "normalizedRequest": {
+          "meta": {
+            "requestId": "019a0000-0000-7000-8000-00000000000a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019a0000-0000-7000-8000-000000000001",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019a0000-0000-7000-8000-000000000003",
+          "repository": {
+            "url": "github.com/Acme/Repo"
+          },
+          "title": "Title",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "prompt": "# One\n\n`code`"
+        }
+      },
+      "expected": {
+        "canonicalJson": "{\"description\":\"\",\"id\":\"019a0000-0000-7000-8000-000000000003\",\"meta\":{\"origin\":{\"accountId\":\"\",\"deviceId\":\"019a0000-0000-7000-8000-000000000001\",\"deviceName\":\"Fixture CLI\",\"kind\":\"ORIGIN_KIND_CLI\"},\"requestId\":\"019a0000-0000-7000-8000-00000000000a\"},\"progress\":\"PROGRESS_TODO\",\"prompt\":\"# One\\n\\n`code`\",\"proposal\":\"PROPOSAL_REGULAR\",\"repository\":{\"url\":\"github.com/Acme/Repo\"},\"title\":\"Title\"}",
+        "sha256": "6b9b6459b1d9246f1fa12c9016b69ab42d993cf02c3ff2d74a130519f99821ca"
+      }
+    }
+  ]
+}
