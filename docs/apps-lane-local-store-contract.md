@@ -151,7 +151,7 @@ Use per-user directory permissions (0700 and 0600 files on POSIX; user ACLs on W
 
 ## Logging
 
-Use structured local logs without content/secrets. Native and CLI share the root log retention budget: 30 days and combined 100 MiB, deleting oldest files when either bound is reached. Serialize rotation across processes. No automatic upload. Diagnostic errors expose categories, not user filesystem paths or SQL parameter values.
+Use structured local logs without content/secrets. Native and CLI share the root log retention budget: 30 days and combined 100 MiB, deleting oldest files when either bound is reached. Serialize append and rotation across processes using the retained `root/logs/.rotation.lock`: POSIX `flock(LOCK_EX)` or Windows `LockFileEx` exclusive byte zero, length one. Never remove the lock file during pruning. No automatic upload. Diagnostic errors expose categories, not user filesystem paths or SQL parameter values.
 
 ## Build and Test
 

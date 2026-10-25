@@ -5,10 +5,15 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 args = sys.argv[1:]
 challenge = "01900000-0000-7000-8000-000000000020"
 result = {}
+if "sync" in args and "run" in args:
+    (Path(os.environ["LANE_NATIVE_TEST_ROOT"]) / "helper-worker-pid").write_text(str(os.getpid()))
+    while True:
+        time.sleep(1)
 if "rpc" in args:
     method = args[args.index("rpc") + 1]
     body = json.load(sys.stdin)
