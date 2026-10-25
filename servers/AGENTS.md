@@ -46,3 +46,5 @@
 - Perfine builds and tests must use server-owned evaluation code and fixtures; do not add path dependencies or source includes into root client crates.
 
 - Perfine ownership: [project](../docs/project-perfine.md); [api contract](../docs/servers-perfine-api-contract.md).
+
+- Planned `servers/lane-api` owns the Lane Rust API, remote MCP, webhook intake, persistence and workers. Read the [Lane project](../docs/project-lane.md) and [Lane API contract](../docs/servers-lane-api-contract.md); add explicit server workspace membership when runtime implementation begins.
