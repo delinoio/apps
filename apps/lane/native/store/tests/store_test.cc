@@ -205,6 +205,8 @@ void prompt_history_restore() {
   auto empty = f.save(absent, body);
   body["prompt"] = "one\n"; auto one = f.save(empty, body);
   body["title"] = "Only title changes"; auto title = f.save(one, body);
+  require(!absent.value("promptRestoration", false) && !empty.value("promptRestoration", false) &&
+      !one.value("promptRestoration", false) && !title.value("promptRestoration", false), "ordinary saves do not claim restoration");
   const auto prompt_count = f.history(title, true).size();
   require(prompt_count == f.history(one, true).size(), "title save not prompt history");
   auto restore = [&](const J& current, const J& source) {
@@ -219,6 +221,7 @@ void prompt_history_restore() {
   require(f.history(equal, true).size() == prompt_count + 2, "equal restore creates prompt version");
   auto removed = restore(equal, absent);
   require(!removed.at("task").contains("prompt"), "restore absence");
+  require(restored.value("promptRestoration", false) && equal.value("promptRestoration", false) && removed.value("promptRestoration", false), "all explicit restores carry immutable restoration marker");
   auto other = f.task();
   error(f.raw("RestorePrompt", {{"meta", f.meta()}, {"id", removed.at("entityId")},
       {"expectedVersionId", removed.at("versionId")}, {"sourceVersionId", other.at("versionId")}}), "NOT_FOUND");
@@ -674,6 +677,8 @@ void unsupported_schema() {
 #include "shared_fixture_runner.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
+#include "shared_sync_runner.h"
+#include "epoch_lifecycle.h"
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -703,6 +708,8 @@ int main(int argc, char** argv) {
     {"duplicate input keys", duplicate_input_keys},
     {"cross-process busy", crossprocess_busy},
     {"account deletion binding", account_deletion_binding},
+    {"epoch reapproval lifecycle", epoch_reapproval_lifecycle},
+    {"exact account space lookup", exact_account_space_lookup},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {
@@ -716,7 +723,7 @@ int main(int argc, char** argv) {
 #endif
   if (argc > 2) { std::cerr << "Usage: lane_store_tests [fixture-directory]\n"; return 2; }
   if (argc == 2) fixture_directory = argv[1];
-  if (!fixture_directory.empty()) failures += run_shared_fixtures(fixture_directory);
+  if (!fixture_directory.empty()) { failures += run_shared_fixtures(fixture_directory); failures += run_sync_fixtures(fixture_directory); }
   else std::cout << "Shared fixtures not run: provide fixture-directory or LANE_STORE_FIXTURE_DIR\n";
   return failures ? 1 : 0;
 }
