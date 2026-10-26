@@ -117,7 +117,7 @@ Java_io_delino_lane_NativeStore_call(JNIEnv* env, jobject, jlong handle,
       case 11: return encode(env, engine.recordSyncFailure(decode(env, method), decode(env, request)));
       case 12: return encode(env, engine.spacesForAccount(decode(env, request)));
       case 13: return encode(env, engine.confirmSyncEpoch(decode(env, method), decode(env, request)));
-      case 14: return encode(env, engine.migrate(decode(env, request)));
+      case 14: return encode(env, engine.reset(decode(env, request)));
       case 15: {
         auto body = nlohmann::json::parse(decode(env, request));
         return encode(env, engine.cacheAttachment(decode(env, method), body.at("taskId"), body.at("attachmentId"), body.at("png")));

@@ -8,7 +8,6 @@ import com.lynx.react.bridge.Callback
 
 class LaneStoreModule(context: Context, param: Any) : LynxModule(context, param) {
     private val session = param as LaneSession
-    @LynxMethod fun migrate(spaceId: String, callback: Callback) = session.runtime.migrate(session, spaceId, callback)
     @LynxMethod fun open(requestJson: String, callback: Callback) = session.runtime.open(session, requestJson, callback)
     @LynxMethod fun invoke(method: String, requestJson: String, callback: Callback) =
         session.runtime.invoke(session, method, requestJson, callback)

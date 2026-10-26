@@ -225,7 +225,7 @@ static BOOL UUID7(NSString *value) {
   if (!token.length) return LaneFailure(@"UNAUTHENTICATED", NO);
   NSDictionary *info = [_transport callService:@"lane.v1.SyncService" method:@"GetSyncInfo" request:@{} token:token];
   if (info[@"error"]) return LaneEncode(info);
-  if ([info[@"formatVersion"] integerValue] != 2) return LaneFailure(@"UNSUPPORTED_FORMAT", NO);
+  if ([info[@"formatVersion"] integerValue] != 3) return LaneFailure(@"UNSUPPORTED_FORMAT", NO);
   if (![info[@"accountId"] isEqual:identity[@"accountId"]] || ![info[@"tenantId"] isEqual:identity[@"tenantId"]]) return LaneFailure(@"FORBIDDEN", NO);
   if (![info[@"epoch"] isEqual:pending[@"epoch"]]) return LaneFailure(@"STALE_EPOCH", NO);
   NSDictionary *remote = [_transport callService:@"lane.v1.CaptureService" method:@"GetAttachment" request:request token:token];
@@ -240,15 +240,6 @@ static BOOL UUID7(NSString *value) {
   // cross the renderer boundary; the engine revalidates the owning manifest.
   if (![[_credentials identityForSpace:space] isEqual:identity]) return LaneFailure(@"FORBIDDEN", NO);
   return String(_store->cacheAttachment(UTF8(space), UTF8(request[@"taskId"]), UTF8(request[@"attachmentId"]), UTF8(download[@"png"])));
-}
-- (void)migrate:(NSString *)space completion:(LynxCallbackBlock)completion {
-  dispatch_async(_storage, ^{
-    if (!UUID7(space)) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
-    if (self->_handles[space]) { [self reply:completion value:LaneFailure(@"STORAGE_BUSY", YES)]; return; }
-    if (![self ensureStore]) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; return; }
-    try { [self reply:completion value:String(self->_store->migrate(UTF8(space)))]; }
-    catch (...) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; }
-  });
 }
 - (void)open:(NSString *)json completion:(LynxCallbackBlock)completion {
   if (![json isKindOfClass:NSString.class]) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
@@ -295,6 +286,18 @@ static BOOL UUID7(NSString *value) {
     if (![self ensureStore]) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; return; }
     NSDictionary *request = LaneJSON(json);
     NSString *space = request[@"spaceId"];
+    if ([method isEqualToString:@"ResetDevelopmentData"]) {
+      // Explicit development reset. It works without an open handle so an
+      // unsupported store can be replaced; the engine takes the exclusive
+      // lifetime lease and fails with STORAGE_BUSY while any handle remains.
+      if (![request[@"request"] isKindOfClass:NSDictionary.class] || ([space isKindOfClass:NSString.class] && space.length && !UUID7(space))) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
+      [self->_reauthentication cancel:nil]; ++self->_selectionGeneration;
+      if ([space isKindOfClass:NSString.class] && space.length) { [self->_watches[space] cancel]; [self->_watches removeObjectForKey:space]; }
+      else { for (LaneWatch *watch in self->_watches.allValues) [watch cancel]; [self->_watches removeAllObjects]; }
+      try { [self reply:completion value:String(self->_store->invoke("ResetDevelopmentData", UTF8(json)))]; [self poll]; }
+      catch (...) { [self reply:completion value:LaneFailure(@"DEPENDENCY_UNAVAILABLE", YES)]; }
+      return;
+    }
     if (![method isKindOfClass:NSString.class] || ![request[@"request"] isKindOfClass:NSDictionary.class] || !UUID7(space) || !self->_handles[space]) { [self reply:completion value:LaneFailure(@"INVALID_INPUT", NO)]; return; }
     if ([@[@"CreateCaptureTask", @"CreateURLConnection", @"SaveURLConnection", @"DeleteURLConnection"] containsObject:method]) {
       [self reply:completion value:LaneFailure(@"FORBIDDEN", NO)]; return;
@@ -430,7 +433,7 @@ static BOOL UUID7(NSString *value) {
       if ([current[@"epoch"] isEqual:pending[@"epoch"]] && [Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) {
         if (disposition == LaneDeletionErase) {
           NSDictionary *pull = @{@"changes": @[@{@"deletion": @{@"kind": @"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT", @"id": status[@"accountId"], @"deletionVersionId": directive[@"new_epoch"]}}], @"nextCursor": @"", @"hasMore": @NO};
-          handled = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @2, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"pull": pull})))))[@"ok"] boolValue];
+          handled = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"pull": pull})))))[@"ok"] boolValue];
         } else if (disposition == LaneDeletionRetain) {
           handled = [LaneJSON(String(self->_store->recordSyncFailure(UTF8(space), "ERROR_REASON_STALE_EPOCH")))[@"ok"] boolValue];
           [self->_watches[space] cancel]; [self->_watches removeObjectForKey:space];
@@ -490,10 +493,10 @@ static BOOL UUID7(NSString *value) {
                 pending = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)));
             } catch (...) {}
           });
-          if (!pending || [pending[@"formatVersion"] integerValue] != 2) { [self syncFailure:@"ERROR_REASON_UNSUPPORTED_FORMAT" space:space]; success = NO; break; }
+          if (!pending || [pending[@"formatVersion"] integerValue] != 3) { [self syncFailure:@"ERROR_REASON_UNSUPPORTED_FORMAT" space:space]; success = NO; break; }
           NSDictionary *info = [self->_transport callService:@"lane.v1.SyncService" method:@"GetSyncInfo" request:@{} token:token];
           if (info[@"error"]) { if (![info[@"error"][@"reason"] isEqual:@"ERROR_REASON_UNAUTHENTICATED"] || ![self recoverDeletion:space]) [self syncFailure:info[@"error"][@"reason"] space:space]; success = NO; break; }
-          if (![info[@"formatVersion"] respondsToSelector:@selector(integerValue)] || [info[@"formatVersion"] integerValue] != 2) {
+          if (![info[@"formatVersion"] respondsToSelector:@selector(integerValue)] || [info[@"formatVersion"] integerValue] != 3) {
             [self syncFailure:@"ERROR_REASON_UNSUPPORTED_FORMAT" space:space]; success = NO; break;
           }
           BOOL epochChanged = ![info[@"epoch"] isEqual:pending[@"epoch"]];
@@ -501,24 +504,24 @@ static BOOL UUID7(NSString *value) {
           // carry an explicit ACCOUNT deletion; STALE_EPOCH alone never erases.
           if (!epochChanged && [pending[@"mutations"] count]) {
             NSDictionary *push = [self->_transport callService:@"lane.v1.SyncService" method:@"PushChanges"
-              request:@{@"formatVersion": @2, @"epoch": pending[@"epoch"], @"deviceId": pending[@"deviceId"], @"mutations": pending[@"mutations"]} token:token];
+              request:@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"deviceId": pending[@"deviceId"], @"mutations": pending[@"mutations"]} token:token];
             if (push[@"error"]) { [self syncFailure:push[@"error"][@"reason"] space:space]; success = NO; break; }
             __block BOOL applied = NO;
             dispatch_sync(self->_storage, ^{
               try {
               if (![Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) return;
-              applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @2, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"push": push})))))[@"ok"] boolValue]; } catch (...) {}
+              applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"push": push})))))[@"ok"] boolValue]; } catch (...) {}
             });
             if (!applied) { success = NO; break; }
           }
           NSDictionary *pull = [self->_transport callService:@"lane.v1.SyncService" method:@"PullChanges"
-            request:@{@"formatVersion": @2, @"epoch": pending[@"epoch"], @"cursor": pending[@"cursor"] ?: @"", @"pageSize": @100} token:token];
+            request:@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"cursor": pending[@"cursor"] ?: @"", @"pageSize": @100} token:token];
           if (pull[@"error"]) { [self syncFailure:pull[@"error"][@"reason"] space:space]; success = NO; break; }
           __block BOOL applied = NO;
           dispatch_sync(self->_storage, ^{
             try {
               if (![Response(self->_store->acquireSync(UTF8(space), UTF8(self->_owner)))[@"acquired"] boolValue]) return;
-              applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @2, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"pull": pull})))))[@"ok"] boolValue]; [self poll]; } catch (...) {}
+              applied = [LaneJSON(String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{@"formatVersion": @3, @"epoch": pending[@"epoch"], @"owner": self->_owner, @"pull": pull})))))[@"ok"] boolValue]; [self poll]; } catch (...) {}
           });
           if (!applied) { success = NO; break; }
           more = !epochChanged && [pull[@"hasMore"] boolValue];
@@ -659,7 +662,7 @@ static BOOL UUID7(NSString *value) {
     } catch (...) {}
   });
   NSDictionary *pull = valid ? [_transport callService:@"lane.v1.SyncService" method:@"PullChanges"
-    request:@{@"formatVersion": @2, @"epoch": context[@"epoch"], @"cursor": context[@"cursor"], @"pageSize": @100}
+    request:@{@"formatVersion": @3, @"epoch": context[@"epoch"], @"cursor": context[@"cursor"], @"pageSize": @100}
     token:credential[@"access_token"]] : LaneJSON(LaneFailure(@"STALE_EPOCH", NO));
   dispatch_async(_storage, ^{
     NSString *result = LaneFailure(@"STALE_EPOCH", NO);
@@ -673,7 +676,7 @@ static BOOL UUID7(NSString *value) {
             if ([change isKindOfClass:NSDictionary.class] && [change[@"deletion"] isKindOfClass:NSDictionary.class] &&
                 [change[@"deletion"][@"kind"] isEqual:@"ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT"]) accountDeletion = YES;
           if (accountDeletion) result = String(self->_store->applySync(UTF8(space), UTF8(LaneEncode(@{
-            @"formatVersion": @2, @"epoch": context[@"epoch"], @"owner": self->_owner, @"pull": pull}))));
+            @"formatVersion": @3, @"epoch": context[@"epoch"], @"owner": self->_owner, @"pull": pull}))));
         } else if ([pull[@"error"][@"reason"] isEqual:@"ERROR_REASON_STALE_EPOCH"]) {
           NSDictionary *status = LaneJSON(String(self->_store->invoke("GetLocalStatus", UTF8(LaneEncode(@{@"spaceId": space, @"request": @{}})))));
           NSDictionary *pending = Response(self->_store->pendingSync(UTF8(space), UTF8(self->_owner)));

@@ -128,6 +128,11 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             catch (_: Exception) { /* Local disconnection remains effective while server revocation is unavailable. */ }
         }
     }
+    /** Quiesces this app's work for a space before an explicit development reset. It never signs out. */
+    fun beforeReset(space: String) {
+        reauth.entries.filter { space.isEmpty() || it.value.space == space }.forEach { cancelReauthentication(it.value.session, it.key) }
+        if (space.isNotEmpty()) WorkManager.getInstance(runtime.application).cancelUniqueWork("lane-sync-$space")
+    }
     fun captureConnectionIntent(space: String) {
         val status = JSONObject(runtime.engine("GetLocalStatus", BridgeJson.request(space)))
         val body = BridgeJson.response(status.toString())
@@ -178,7 +183,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             val requestedAccount = pending.getString("accountId")
             require(requestedAccount.isEmpty() || requestedAccount == token.getString("account_id"))
             val info = JSONObject(transport.rpc("lane.v1.SyncService", "GetSyncInfo", "{}", token.getString("access_token")))
-            require(info.getInt("formatVersion") == 2)
+            require(info.getInt("formatVersion") == 3)
             require(info.getString("accountId") == token.getString("account_id") &&
                 info.getString("tenantId") == token.getString("tenant_id"))
             val identity = JSONObject().put("issuer", token.getString("issuer"))
@@ -210,13 +215,13 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
         val owner = uuid7()
         runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
         try {
-            val oldPull = JSONObject().put("formatVersion", 2).put("epoch", binding.getString("epoch"))
+            val oldPull = JSONObject().put("formatVersion", 3).put("epoch", binding.getString("epoch"))
                 .put("cursor", "").put("pageSize", 100)
             try {
                 val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", oldPull.toString(), token.getString("access_token")))
                 SyncBoundary.validatePull(response, binding.getString("accountId"), true)
                 runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
-                    .put("formatVersion", 2).put("epoch", binding.getString("epoch")).put("owner", owner)
+                    .put("formatVersion", 3).put("epoch", binding.getString("epoch")).put("owner", owner)
                     .put("pull", response).toString())) }.get()
                 onDisconnect(space)
             } catch (failure: LaneTransport.Failure) {
@@ -368,7 +373,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                     val identity = credentials.get(space) ?: throw SyncBoundary.Failure("UNAUTHENTICATED")
                     if (info.optString("accountId") != identity.getString("account_id") ||
                         info.optString("tenantId") != identity.getString("tenant_id")) throw SyncBoundary.Failure("FORBIDDEN")
-                    if (info.optInt("formatVersion") != 2) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
+                    if (info.optInt("formatVersion") != 3) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
                     var more = true
                     while (more && !stopped()) {
                         val pending = runtime.submit {
@@ -379,11 +384,11 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                         if (info.getString("epoch") != pending.getString("epoch")) {
                             // A fresh grant may read an old generation's deletion directive. Never upload first.
                             val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", JSONObject()
-                                .put("formatVersion", 2).put("epoch", pending.getString("epoch"))
+                                .put("formatVersion", 3).put("epoch", pending.getString("epoch"))
                                 .put("cursor", pending.optString("cursor")).put("pageSize", 100).toString(), token))
                             SyncBoundary.validatePull(response, identity.getString("account_id"), true)
                             runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
-                                .put("formatVersion", 2).put("epoch", pending.getString("epoch")).put("owner", owner)
+                                .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
                                 .put("pull", response).toString())); runtime.pollSafely() }.get()
                             onDisconnect(space)
                             break
@@ -393,7 +398,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                             if (stopped() || credentials.get(space) == null) break
                             runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
                             val mutation = mutations.getJSONObject(index)
-                            val push = JSONObject().put("formatVersion", 2).put("epoch", pending.getString("epoch"))
+                            val push = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
                                 .put("deviceId", pending.getString("deviceId")).put("mutations", org.json.JSONArray().put(mutation))
                             val response = try {
                                 JSONObject(transport.rpc("lane.v1.SyncService", "PushChanges", push.toString(), token))
@@ -405,17 +410,17 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
                             }
                             if (credentials.get(space) == null) break
                             runtime.submit { BridgeJson.response(runtime.store().apply(space, JSONObject()
-                                .put("formatVersion", 2).put("epoch", pending.getString("epoch")).put("owner", owner)
+                                .put("formatVersion", 3).put("epoch", pending.getString("epoch")).put("owner", owner)
                                 .put("push", response).toString())) }.get()
                         }
                         if (stopped() || credentials.get(space) == null) break
                         runtime.submit { check(BridgeJson.response(runtime.store().acquire(space, owner, 60)).getBoolean("acquired")) }.get()
-                        val pull = JSONObject().put("formatVersion", 2).put("epoch", pending.getString("epoch"))
+                        val pull = JSONObject().put("formatVersion", 3).put("epoch", pending.getString("epoch"))
                             .put("cursor", pending.optString("cursor")).put("pageSize", 100)
                         val response = JSONObject(transport.rpc("lane.v1.SyncService", "PullChanges", pull.toString(), token))
                         val accountDeleted = SyncBoundary.validatePull(response, identity.getString("account_id"), false)
                         runtime.submit {
-                            BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 2)
+                            BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 3)
                                 .put("epoch", pending.getString("epoch")).put("owner", owner).put("pull", response).toString()))
                             runtime.pollSafely()
                         }.get()
@@ -452,7 +457,7 @@ internal class LaneHostServices(private val runtime: LaneRuntime) {
             val pull = SyncBoundary.deletionStatus(status, identity, epoch)
             runtime.submit {
                 require(credentials.get(space)?.optString("account_id") == identity.getString("account_id"))
-                if (pull != null) BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 2)
+                if (pull != null) BridgeJson.response(runtime.store().apply(space, JSONObject().put("formatVersion", 3)
                     .put("epoch", epoch).put("owner", owner).put("pull", pull).toString()))
                 else BridgeJson.response(runtime.store().syncFailure(space, "ERROR_REASON_STALE_EPOCH"))
                 runtime.pollSafely()

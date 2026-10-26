@@ -15,11 +15,14 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <functional>
 #include <map>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 #include <thread>
 #include <vector>
 #ifndef _WIN32
@@ -420,13 +423,25 @@ public:
   }
   LifetimeLock(const LifetimeLock &) = delete;
 };
+// Pre-release exception: only schema 3 / format 3 stores are supported. Any
+// other nonempty store is refused with the explicit reset instruction and is
+// never migrated, replaced or treated as empty.
+constexpr const char *kStoreVersion = "3";
+constexpr const char *kUnsupportedStore =
+    "This Lane data store uses an unsupported format. Lane never migrates or "
+    "resets it automatically. Replace it with an empty store only through the "
+    "explicit development data reset (ResetDevelopmentData in the app, or "
+    "lane --space <uuid> data reset --confirm-development-reset).";
 void compatibility(Db &d, bool registry = false) {
   if (d.one("PRAGMA application_id") != std::to_string(kApp) ||
-      d.one("PRAGMA user_version") != (registry ? "1" : "2"))
-    fail("UNSUPPORTED_FORMAT", "Update Lane to open this data format.");
+      d.one("PRAGMA user_version") != (registry ? "1" : kStoreVersion))
+    fail("UNSUPPORTED_FORMAT", registry
+                                   ? "Update Lane to open this data format."
+                                   : kUnsupportedStore);
   if (!registry &&
-      d.one("SELECT value FROM store_meta WHERE key='format_version'") != "2")
-    fail("UNSUPPORTED_FORMAT", "Update Lane to open this data format.");
+      d.one("SELECT value FROM store_meta WHERE key='format_version'") !=
+          kStoreVersion)
+    fail("UNSUPPORTED_FORMAT", kUnsupportedStore);
 }
 void initialize(Db &d, bool registry) {
   auto v = d.one("PRAGMA user_version"), a = d.one("PRAGMA application_id");
@@ -436,9 +451,9 @@ void initialize(Db &d, bool registry) {
     Tx t(d);
     d.exec(registry ? kRegistry : kSchema);
     d.exec(registry ? "PRAGMA application_id=1279348293; PRAGMA user_version=1;"
-                    : "PRAGMA application_id=1279348293; PRAGMA user_version=2;");
+                    : "PRAGMA application_id=1279348293; PRAGMA user_version=3;");
     if (!registry)
-      d.run("INSERT INTO store_meta VALUES('format_version','2')");
+      d.run("INSERT INTO store_meta VALUES('format_version','3')");
     t.commit();
   }
   compatibility(d, registry);
@@ -655,7 +670,7 @@ J failure(const Error &e) {
                              e.reason == "DEPENDENCY_UNAVAILABLE"}};
   // Preserve typed metadata only. Remote transport errors can contain raw
   // request/native details, which must not cross the JavaScript boundary.
-  for (auto key : {"entityId", "currentHeadIds", "retryable"})
+  for (auto key : {"entityId", "currentHeadIds", "retryable", "violation"})
     if (e.extra.contains(key))
       err[key] = e.extra[key];
   return J{{"ok", false}, {"error", err}};
@@ -676,6 +691,7 @@ template <class F> std::string protect(F f) {
 } // namespace
 
 #include "lane_capture_helpers.h"
+#include "lane_planning.h"
 
 struct Store::Impl {
   fs::path root;
@@ -750,34 +766,50 @@ struct Store::Impl {
       fail("NOT_FOUND", "This local space is unavailable.");
     }
   }
+  // Fresh stores and development resets share this metadata seed.
+  void seedMeta(Db &d, const std::string &s) {
+    setMeta(d, "space_id", s);
+    setMeta(d, "device_id", device());
+    setMeta(d, "account_epoch", "");
+    setMeta(d, "pull_cursor", "");
+    setMeta(d, "notification_enabled", "0");
+    setMeta(d, "notification_content", "DETAIL");
+    setMeta(d, "sync_owner", "");
+    setMeta(d, "sync_owner_expires_at_us", "0");
+  }
   Db &db(const std::string &s) {
     registered(s);
     auto &slot = spaces[s];
     if (!slot.db) {
+      // An interrupted development reset leaves partially removed data. Never
+      // open it as valid; repeating the reset completes it.
+      if (!registry->one("SELECT value FROM registry_meta WHERE key=?",
+                         {"reset:" + s})
+               .empty())
+        fail("STORAGE_BUSY", "A development reset was interrupted. Repeat the "
+                             "reset to finish it.");
       auto lifetime = std::make_unique<LifetimeLock>(
           root / "locks" / (s + ".handles.lock"), false);
       if (unavailable(s))
         fail("NOT_FOUND", "This local space is unavailable.");
-      slot.lifetime = std::move(lifetime);
       auto dir = root / "spaces" / s;
       privateDir(dir);
-      slot.db = std::make_unique<Db>(dir / "lane.sqlite");
-      initialize(*slot.db, false);
-      Tx t(*slot.db);
-      if (meta(*slot.db, "space_id").empty()) {
-        setMeta(*slot.db, "space_id", s);
-        setMeta(*slot.db, "device_id", device());
-        setMeta(*slot.db, "account_epoch", "");
-        setMeta(*slot.db, "pull_cursor", "");
-        setMeta(*slot.db, "notification_enabled", "0");
-        setMeta(*slot.db, "notification_content", "DETAIL");
-        setMeta(*slot.db, "sync_owner", "");
-        setMeta(*slot.db, "sync_owner_expires_at_us", "0");
+      // Install the connections only after compatibility is established so an
+      // unsupported store never keeps its lifetime lease or a half-open slot.
+      auto primary = std::make_unique<Db>(dir / "lane.sqlite");
+      initialize(*primary, false);
+      {
+        Tx t(*primary);
+        if (meta(*primary, "space_id").empty())
+          seedMeta(*primary, s);
+        require(meta(*primary, "space_id") == s, "Storage routing mismatch.");
+        t.commit();
       }
-      require(meta(*slot.db, "space_id") == s, "Storage routing mismatch.");
-      t.commit();
-      slot.observer = std::make_unique<Db>(dir / "lane.sqlite");
-      initialize(*slot.observer, false);
+      auto observer = std::make_unique<Db>(dir / "lane.sqlite");
+      initialize(*observer, false);
+      slot.lifetime = std::move(lifetime);
+      slot.db = std::move(primary);
+      slot.observer = std::move(observer);
     }
     compatibility(*slot.db);
     return *slot.db;
@@ -828,6 +860,92 @@ struct Store::Impl {
       }
       t.commit();
     }
+    return success({{"completed", true}});
+  }
+  // Explicit development reset of one existing local space. Never implicit:
+  // the caller already holds the user's typed confirmation.
+  J resetData(std::string s) {
+    id(s);
+    compatibility(*registry, true);
+    registered(s);
+    auto slot = spaces.find(s);
+    // An open local view handle in this process must make the reset retryable
+    // and change nothing. Releasing its connections would drop the shared
+    // lifetime lease and let the exclusive lock succeed underneath the view.
+    if (slot != spaces.end() && slot->second.handles > 0)
+      fail("STORAGE_BUSY", "Close this space's open handles before resetting it.");
+    // Release this process's own idle connections (for example a sync worker's
+    // slot); another process keeps its shared lease and makes the exclusive
+    // wait fail.
+    if (slot != spaces.end()) {
+      slot->second.observer.reset();
+      slot->second.db.reset();
+      slot->second.lifetime.reset();
+    }
+    LifetimeLock exclusive(root / "locks" / (s + ".handles.lock"), true);
+    const auto dir = root / "spaces" / s;
+    const std::string markerKey = "reset:" + s;
+    // The marker records the binding to keep so a repeated reset after an
+    // interruption behaves exactly like the first attempt.
+    auto marker = registry->one("SELECT value FROM registry_meta WHERE key=?", {markerKey});
+    J binding;
+    if (!marker.empty()) {
+      binding = parse(marker);
+    } else {
+      const bool account =
+          registry->one("SELECT account_key FROM spaces WHERE id=?", {s}) != "local";
+      std::string epoch;
+      if (account) {
+        // Keep the retained epoch when it is readable so reconnect follows the
+        // same confirmation path as an epoch change.
+        sqlite3 *raw = nullptr;
+        auto path = (dir / "lane.sqlite").u8string();
+        if (fs::exists(dir / "lane.sqlite") &&
+            sqlite3_open_v2(path.c_str(), &raw, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK) {
+          sqlite3_stmt *q = nullptr;
+          if (sqlite3_prepare_v2(raw, "SELECT value FROM store_meta WHERE key='account_epoch'", -1, &q, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(q) == SQLITE_ROW && sqlite3_column_text(q, 0))
+              epoch = reinterpret_cast<const char *>(sqlite3_column_text(q, 0));
+            sqlite3_finalize(q);
+          }
+        }
+        if (raw)
+          sqlite3_close(raw);
+      }
+      binding = {{"account", account}, {"epoch", epoch}};
+      Tx t(*registry);
+      registry->run("INSERT INTO registry_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    {markerKey, binding.dump()});
+      t.commit();
+    }
+    std::error_code ec;
+    fs::remove_all(dir, ec); // Same removal path as RemoveDeviceData.
+    if (ec)
+      fail("DEPENDENCY_UNAVAILABLE", "Could not remove this space. Repeat the reset.");
+    privateDir(dir);
+    {
+      Db fresh(dir / "lane.sqlite");
+      initialize(fresh, false);
+      Tx t(fresh);
+      seedMeta(fresh, s);
+      if (binding.value("account", false)) {
+        setMeta(fresh, "account_epoch", str(binding, "epoch"));
+        setMeta(fresh, "reconnect_required", "1");
+        setMeta(fresh, "sync_error_reason", "ERROR_REASON_STALE_EPOCH");
+      }
+      t.commit();
+    }
+    {
+      Tx t(*registry);
+      if (binding.value("account", false))
+        registry->run("UPDATE spaces SET sync_enabled=0 WHERE id=?", {s});
+      registry->run("DELETE FROM registry_meta WHERE key=?", {markerKey});
+      t.commit();
+    }
+    // Force the next observer poll to report the new database.
+    slot = spaces.find(s);
+    if (slot != spaces.end())
+      slot->second.seen = "reset";
     return success({{"completed", true}});
   }
   J origin(const std::string &s) {
@@ -892,8 +1010,7 @@ struct Store::Impl {
     if (h[0].value("deleted", false))
       fail("DELETED", "Entity was permanently deleted.");
     if (kind)
-      require(h[0]["kind"] ==
-              (kind == 1 ? "ENTITY_KIND_REPOSITORY" : kind == 3 ? "ENTITY_KIND_URL_CONNECTION" : "ENTITY_KIND_TASK"));
+      require(h[0]["kind"] == kindName(kind));
     if (h.size() > 1)
       fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
     return h[0];
@@ -976,7 +1093,10 @@ struct Store::Impl {
   }
   J taskBody(Db &d, J t) {
     fields(t, {"repositoryId", "title", "description", "prompt", "progress",
-               "proposal", "captures"});
+               "proposal", "captures", "priority", "type", "labelIds",
+               "startDate", "dueDate", "storyPoints", "milestoneId", "cycleId",
+               "parentTaskId", "dependsOnTaskIds", "relatedTaskIds",
+               "duplicateOfTaskId"});
     id(str(t, "repositoryId"));
     repository(d, str(t, "repositoryId"));
     require(hasText(str(t, "title")), "A title is required.");
@@ -992,21 +1112,22 @@ struct Store::Impl {
       for (const auto &c : t["captures"]) captureManifest(c);
       r["captures"] = t["captures"];
     }
+    planningFieldsShape(t, r);
     return r;
   }
   J version(const std::string &s, const std::string &e, int k, J body,
             J parents = J::array(), bool deleted = false) {
     std::sort(parents.begin(), parents.end());
-    J v = {{"formatVersion", 2},
+    J v = {{"formatVersion", 3},
            {"entityId", e},
-           {"kind", k == 1 ? "ENTITY_KIND_REPOSITORY" : k == 3 ? "ENTITY_KIND_URL_CONNECTION" : "ENTITY_KIND_TASK"},
+           {"kind", kindName(k)},
            {"versionId", uuid()},
            {"parentVersionIds", parents},
            {"createdAt", timestamp()},
            {"origin", origin(s)},
            {"deleted", deleted}};
     if (!deleted)
-      v[k == 1 ? "repository" : k == 3 ? "urlConnection" : "task"] = body;
+      v[bodyKey(k)] = body;
     return v;
   }
   J comparableVersion(J v) {
@@ -1024,7 +1145,7 @@ struct Store::Impl {
   void persist(Db &d, const J &v, bool prompt, bool replace,
                bool projection = true) {
     auto e = str(v, "entityId"), vid = str(v, "versionId");
-    int k = v["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : v["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
+    int k = versionKind(v);
     bool deleted = v.value("deleted", false);
     auto existingKind = d.one("SELECT kind FROM entities WHERE id=?", {e});
     require(existingKind.empty() || existingKind == std::to_string(k),
@@ -1051,18 +1172,231 @@ struct Store::Impl {
       d.run(
           "UPDATE entities SET repository_id=?,normalized_url=?,deleted=? "
           "WHERE id=?",
-          {k != 1 && !deleted ? mapped(d, str(v[k == 3 ? "urlConnection" : "task"], "repositoryId")) : "",
+          {k != 1 && !deleted ? mapped(d, str(v[bodyKey(k)], "repositoryId")) : "",
            k == 1 && !deleted ? str(v["repository"], "normalizedUrl") : "",
            deleted ? "1" : "0", e});
   }
-  void outbox(Db &d, const J &v, const std::string &kind) {
+  // `at` overrides the upload position (microseconds) of the queued mutation;
+  // a version that supersedes a rejected chain keeps the chain's position.
+  void outbox(Db &d, const J &v, const std::string &kind, int64_t at = 0) {
     auto rid = uuid();
     J m = {{"meta", {{"requestId", rid}, {"origin", v["origin"]}}},
            {"version", v},
            {"expectedHeadIds", v["parentVersionIds"]},
            {"kind", kind}};
     d.run("INSERT INTO outbox VALUES(?,?,?,1,NULL,?)",
-          {rid, str(v, "entityId"), m.dump(), std::to_string(now())});
+          {rid, str(v, "entityId"), m.dump(),
+           std::to_string(at ? at : now())});
+  }
+  struct Supersession {
+    J parents;        // parents of the oldest version in the replaced chain
+    int64_t position; // upload position of the oldest replaced version
+  };
+  // An ordinary edit of an entity whose head chain holds a version the server
+  // rejected for a constraint violation replaces that unsynchronized chain: the
+  // correction takes the chain's parents (the last accepted heads, or none for
+  // a creation) and its upload position, because PushChanges requires every
+  // parent to exist on the server. The rejected immutable versions stay in
+  // local history; their outbox rows are dropped so they are never uploaded or
+  // retried. Call only after every validation of the edit has passed.
+  std::optional<Supersession> supersedeBlocked(Db &d, const J &head) {
+    struct Row { std::string request; bool rejected; int64_t at; };
+    std::map<std::string, Row> pending;
+    for (auto &r : d.run("SELECT request_id,request_json,state,COALESCE(error_reason,''),"
+                         "created_at_us FROM outbox WHERE entity_id=?",
+                         {str(head, "entityId")}))
+      pending[str(parse(r[1])["version"], "versionId")] = {
+          r[0],
+          r[2] == "2" && r[3].rfind("CONSTRAINT_VIOLATION:", 0) == 0,
+          std::stoll(r[4])};
+    // Walk the single-parent chain of unsynchronized versions from the head.
+    std::vector<J> chain;
+    J current = head;
+    while (pending.count(str(current, "versionId"))) {
+      chain.push_back(current);
+      auto parents = current.value("parentVersionIds", J::array());
+      if (parents.size() != 1)
+        break;
+      auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?",
+                       {parents[0].get<std::string>()});
+      if (raw.empty())
+        break;
+      current = parse(raw);
+    }
+    const bool rejected = std::any_of(chain.begin(), chain.end(), [&](const J &v) {
+      return pending.at(str(v, "versionId")).rejected;
+    });
+    if (!rejected)
+      return std::nullopt;
+    Supersession s{chain.back().value("parentVersionIds", J::array()), INT64_MAX};
+    for (auto &v : chain) {
+      auto &row = pending.at(str(v, "versionId"));
+      s.position = std::min(s.position, row.at);
+      d.run("DELETE FROM outbox WHERE request_id=?", {row.request});
+    }
+    return s;
+  }
+  static std::string mutationKind(const J &parents) {
+    return parents.empty()      ? "MUTATION_KIND_CREATE"
+           : parents.size() > 1 ? "MUTATION_KIND_RESOLVE"
+                                : "MUTATION_KIND_SAVE";
+  }
+  // Every other entity a version refers to: its repository and, for a task, its
+  // planning items and related tasks. Used to order dependent uploads.
+  static std::vector<std::string> referencedIds(const J &version) {
+    std::vector<std::string> out;
+    for (auto field : {"task", "urlConnection", "label", "milestone", "cycle"}) {
+      if (!version.contains(field) || !version[field].is_object())
+        continue;
+      const J &body = version[field];
+      for (auto key : {"repositoryId", "milestoneId", "cycleId", "parentTaskId", "duplicateOfTaskId"})
+        if (body.contains(key) && body[key].is_string())
+          out.push_back(body[key].get<std::string>());
+      for (auto key : {"labelIds", "dependsOnTaskIds", "relatedTaskIds"})
+        if (body.contains(key) && body[key].is_array())
+          for (auto &x : body[key])
+            if (x.is_string())
+              out.push_back(x.get<std::string>());
+    }
+    return out;
+  }
+  struct PendingRow {
+    std::string entity;
+    J mutation;
+    int state;
+    // Targets of parent, dependency and duplicate-of edges this version removes
+    // relative to its parents, and whether it adds any such edge.
+    std::set<std::string> dropped;
+    bool adds = false;
+  };
+  static std::set<std::string> edgeTargets(const J &task) {
+    std::set<std::string> out;
+    for (auto key : {"parentTaskId", "duplicateOfTaskId"})
+      if (task.contains(key) && task[key].is_string())
+        out.insert(task[key].get<std::string>());
+    if (task.contains("dependsOnTaskIds") && task["dependsOnTaskIds"].is_array())
+      for (auto &x : task["dependsOnTaskIds"])
+        if (x.is_string())
+          out.insert(x.get<std::string>());
+    return out;
+  }
+  // Records the graph edges a pending task version removes and adds by comparing
+  // it with its parent versions.
+  void edgeChanges(Db &d, PendingRow &row) {
+    const J &v = row.mutation["version"];
+    if (v.value("deleted", false) || !v.contains("task"))
+      return;
+    const auto now = edgeTargets(v["task"]);
+    std::set<std::string> before;
+    for (auto &parent : v.value("parentVersionIds", J::array())) {
+      auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?",
+                       {parent.get<std::string>()});
+      if (raw.empty())
+        continue;
+      auto stored = parse(raw);
+      if (stored.contains("task"))
+        for (auto &x : edgeTargets(stored["task"]))
+          before.insert(x);
+    }
+    for (auto &x : before)
+      if (!now.count(x))
+        row.dropped.insert(x);
+    for (auto &x : now)
+      row.adds = row.adds || !before.count(x);
+  }
+  // Orders outbox rows so that every row follows the earlier row of its own
+  // entity and the pending creation of every entity it references, keeping the
+  // stored order otherwise. A corrected version that took an older upload
+  // position therefore still uploads after a label created after it. Reference
+  // cycles are cut at the edge that closes them.
+  static std::vector<size_t> dependencyOrder(const std::vector<PendingRow> &rows) {
+    std::map<std::string, size_t> creations, last;
+    for (size_t i = 0; i < rows.size(); ++i)
+      if (rows[i].mutation.value("kind", "") == "MUTATION_KIND_CREATE")
+        creations.emplace(rows[i].entity, i);
+    std::vector<std::vector<size_t>> deps(rows.size());
+    std::map<std::string, std::vector<size_t>> byEntity;
+    for (size_t i = 0; i < rows.size(); ++i)
+      byEntity[rows[i].entity].push_back(i);
+    // The server validates each item against the state it has accepted so far.
+    // A version that adds a graph edge must therefore follow a version of
+    // another task that removes an edge pointing at the first task, or the
+    // old edge still closes a cycle (B depended on A; A now depends on B and B
+    // no longer depends on A).
+    for (size_t removal = 0; removal < rows.size(); ++removal)
+      for (auto &target : rows[removal].dropped) {
+        auto addition = byEntity.find(target);
+        if (addition == byEntity.end())
+          continue;
+        for (auto index : addition->second)
+          if (index != removal && rows[index].adds && rows[index].entity != rows[removal].entity)
+            deps[index].push_back(removal);
+      }
+    for (size_t i = 0; i < rows.size(); ++i) {
+      auto previous = last.find(rows[i].entity);
+      if (previous != last.end())
+        deps[i].push_back(previous->second);
+      last[rows[i].entity] = i;
+      for (auto &ref : referencedIds(rows[i].mutation["version"])) {
+        auto created = creations.find(ref);
+        if (created != creations.end() && created->second != i)
+          deps[i].push_back(created->second);
+      }
+    }
+    std::vector<int> state(rows.size(), 0); // 1 = on the current path, 2 = placed
+    std::vector<size_t> order;
+    for (size_t start = 0; start < rows.size(); ++start) {
+      if (state[start])
+        continue;
+      state[start] = 1;
+      std::vector<std::pair<size_t, size_t>> stack{{start, 0}};
+      while (!stack.empty()) {
+        auto &[node, next] = stack.back();
+        if (next < deps[node].size()) {
+          auto dep = deps[node][next++];
+          if (!state[dep]) {
+            state[dep] = 1;
+            stack.emplace_back(dep, 0);
+          }
+        } else {
+          state[node] = 2;
+          order.push_back(node);
+          stack.pop_back();
+        }
+      }
+    }
+    return order;
+  }
+  // The next upload batch in causal order. A pending version is held back
+  // while an earlier version of the same entity is blocked, because the server
+  // never accepted its parent, and while it references an entity whose
+  // creation is blocked or itself held back. Both resume after the blocked
+  // item is retried or superseded by a correction.
+  J uploadBatch(Db &d) {
+    std::vector<PendingRow> rows;
+    for (auto &r : d.run("SELECT entity_id,request_json,state FROM outbox ORDER BY "
+                         "created_at_us,rowid"))
+      rows.push_back({r[0], parse(r[1]), std::stoi(r[2]), {}, false});
+    for (auto &row : rows)
+      edgeChanges(d, row);
+    std::set<std::string> blocked, blockedCreations;
+    J out = J::array();
+    for (auto index : dependencyOrder(rows)) {
+      auto &row = rows[index];
+      if (row.state != 1 && row.state != 2)
+        continue;
+      bool held = row.state == 2 || blocked.count(row.entity);
+      for (auto &ref : referencedIds(row.mutation["version"]))
+        held = held || blockedCreations.count(ref);
+      if (!held) {
+        out.push_back(row.mutation);
+        continue;
+      }
+      if (row.mutation.value("kind", "") == "MUTATION_KIND_CREATE")
+        blockedCreations.insert(row.entity);
+      blocked.insert(row.entity);
+    }
+    return out;
   }
   void cancelNotification(Db &d, const std::string &e) {
     d.run("UPDATE notification_receipts SET state=3 WHERE proposal_id=? AND "
@@ -1077,7 +1411,7 @@ struct Store::Impl {
       return;
     bool repo = v["kind"] == "ENTITY_KIND_REPOSITORY";
     if (repo) {
-      for (auto &r : d.run("SELECT id FROM entities WHERE kind IN (2,3) AND deleted=0 "
+      for (auto &r : d.run("SELECT id FROM entities WHERE kind IN (2,3,4,5,6) AND deleted=0 "
                            "AND repository_id=?",
                            {e})) {
         auto old = heads(d, r[0]);
@@ -1163,6 +1497,24 @@ struct Store::Impl {
       r["lastSyncAt"] = last;
     return r;
   }
+  // Replaces the planning fields of `target` (a CreateTask request or a Task
+  // body) with their normalized form and normalizes the relationship edits that
+  // ride on `request`. Equal content therefore yields equal fingerprints.
+  static void normalizePlanning(J &target, J &request) {
+    J shaped = J::object();
+    planningFieldsShape(target, shaped);
+    for (auto key : planningTaskFields)
+      target.erase(key);
+    for (auto it = shaped.begin(); it != shaped.end(); ++it)
+      target[it.key()] = it.value();
+    if (request.contains("relationshipEdits")) {
+      auto edits = normalizedEdits(request["relationshipEdits"]);
+      if (edits.empty())
+        request.erase("relationshipEdits");
+      else
+        request["relationshipEdits"] = edits;
+    }
+  }
   J normalizeRequest(const std::string &m, J q, const std::string &s) {
     if (q.contains("meta")) {
       fields(q["meta"], {"requestId", "origin"});
@@ -1178,7 +1530,11 @@ struct Store::Impl {
     }
     if (m == "CreateTask") {
       fields(q, {"meta", "id", "repository", "title", "description", "prompt",
-                 "progress", "proposal"});
+                 "progress", "proposal", "priority", "type", "labelIds",
+                 "startDate", "dueDate", "storyPoints", "milestoneId",
+                 "cycleId", "parentTaskId", "dependsOnTaskIds",
+                 "relatedTaskIds", "duplicateOfTaskId", "relationshipEdits"});
+      normalizePlanning(q, q);
       fields(q.value("repository", J::object()), {"id", "url"});
       require(q["repository"].size() == 1);
       if (q["repository"].contains("url"))
@@ -1207,6 +1563,18 @@ struct Store::Impl {
       id(str(q["connection"],"repositoryId"));
     }
     if (m == "DeleteURLConnection") fields(q, {"meta","id"});
+    if (m == "CreatePlanningItem" || m == "SavePlanningItem") {
+      if (m == "CreatePlanningItem") fields(q, {"meta", "id", "item"});
+      else fields(q, {"meta", "id", "expectedVersionId", "item"});
+      require(q.contains("item") && q["item"].is_object() && q["item"].size() == 1,
+              "Exactly one of label, milestone or cycle is required.");
+      auto it = q["item"].begin();
+      int kind = it.key() == "label" ? int(kLabel) : it.key() == "milestone" ? int(kMilestone)
+                 : it.key() == "cycle" ? int(kCycle) : 0;
+      require(kind != 0, "Exactly one of label, milestone or cycle is required.");
+      q["item"] = {{it.key(), planningShape(kind, it.value())}};
+    }
+    if (m == "DeletePlanningItem") fields(q, {"meta", "id"});
     if (m == "SetProgress") {
       fields(q, {"meta", "id", "expectedVersionId", "progress"});
       q["progress"] = enumValue(q, "progress", "PROGRESS_", progresses);
@@ -1216,8 +1584,9 @@ struct Store::Impl {
       q["proposal"] = enumValue(q, "proposal", "PROPOSAL_", proposals);
     }
     if (m == "SaveTask") {
-      fields(q, {"meta", "id", "expectedVersionId", "task"});
+      fields(q, {"meta", "id", "expectedVersionId", "task", "relationshipEdits"});
       auto &t = q["task"];
+      normalizePlanning(t, q);
       t["description"] = str(t, "description");
       t["progress"] = enumValue(t, "progress", "PROGRESS_", progresses);
       t["proposal"] = enumValue(t, "proposal", "PROPOSAL_", proposals);
@@ -1239,6 +1608,380 @@ struct Store::Impl {
     }
     return q;
   }
+  // ---- Task planning: references, relationship graph and cleanup ----------
+  struct TaskNode {
+    J head;              // first accepted head (the entity result's version)
+    J orig, cur;         // task body before and after this operation
+    std::vector<J> extra; // task bodies of other conflict heads
+    bool conflicted = false;
+    std::string repo;    // canonical repository
+  };
+  using NodeMap = std::map<std::string, std::unique_ptr<TaskNode>>;
+  // Lazily loads a live task; nullptr means missing, deleted or not a task.
+  TaskNode *taskNode(Db &d, NodeMap &nodes, const std::string &taskId) {
+    auto it = nodes.find(taskId);
+    if (it == nodes.end()) {
+      std::unique_ptr<TaskNode> n;
+      auto h = heads(d, taskId);
+      if (!h.empty() && !h[0].value("deleted", false) &&
+          h[0]["kind"] == "ENTITY_KIND_TASK") {
+        n = std::make_unique<TaskNode>();
+        n->head = h[0];
+        n->orig = n->cur = h[0]["task"];
+        n->conflicted = h.size() > 1;
+        for (size_t i = 1; i < h.size(); ++i)
+          n->extra.push_back(h[i]["task"]);
+        n->repo = mapped(d, str(n->orig, "repositoryId"));
+      }
+      it = nodes.emplace(taskId, std::move(n)).first;
+    }
+    return it->second.get();
+  }
+  // Every reference to `target` is removed from the task body. Reports change.
+  static bool removeTaskReference(J &t, const std::string &target) {
+    bool changed = false;
+    for (auto key : {"parentTaskId", "duplicateOfTaskId"})
+      if (t.contains(key) && t[key] == target) {
+        t.erase(key);
+        changed = true;
+      }
+    for (auto key : {"dependsOnTaskIds", "relatedTaskIds"}) {
+      if (!t.contains(key))
+        continue;
+      std::vector<std::string> list = t[key];
+      auto end = std::remove(list.begin(), list.end(), target);
+      if (end == list.end())
+        continue;
+      list.erase(end, list.end());
+      changed = true;
+      if (list.empty())
+        t.erase(key);
+      else
+        t[key] = list;
+    }
+    return changed;
+  }
+  static bool removePlanningReference(J &t, const std::string &target) {
+    bool changed = false;
+    for (auto key : {"milestoneId", "cycleId"})
+      if (t.contains(key) && t[key] == target) {
+        t.erase(key);
+        changed = true;
+      }
+    if (t.contains("labelIds")) {
+      std::vector<std::string> list = t["labelIds"];
+      auto end = std::remove(list.begin(), list.end(), target);
+      if (end != list.end()) {
+        list.erase(end, list.end());
+        changed = true;
+        if (list.empty())
+          t.erase("labelIds");
+        else
+          t["labelIds"] = list;
+      }
+    }
+    return changed;
+  }
+  // Live tasks whose accepted heads textually mention `target`. A pre-filter
+  // only: callers confirm with the typed reference check.
+  std::vector<std::string> mentioning(Db &d, const std::string &target) {
+    std::vector<std::string> ids;
+    for (auto &r : d.run("SELECT DISTINCT e.id FROM entities e JOIN heads h ON "
+                         "h.entity_id=e.id JOIN versions v ON "
+                         "v.version_id=h.version_id WHERE e.kind=2 AND "
+                         "e.deleted=0 AND instr(v.envelope_json,?)>0 ORDER BY e.id",
+                         {target}))
+      ids.push_back(r[0]);
+    return ids;
+  }
+  // Applies `detach` to every task that references `target`, updating node
+  // bodies. A conflicted task cannot receive a cleanup version.
+  void detachReferences(Db &d, NodeMap &nodes, const std::string &target,
+                        const std::string &skip,
+                        const std::function<bool(J &)> &detach) {
+    for (auto &taskId : mentioning(d, target)) {
+      if (taskId == skip)
+        continue;
+      auto *n = taskNode(d, nodes, taskId);
+      if (!n)
+        continue;
+      bool any = detach(n->cur);
+      for (auto body : n->extra)
+        any = detach(body) || any;
+      if (any && n->conflicted)
+        fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
+    }
+  }
+  // Live planning item of the wanted kind in the task's repository.
+  void planningReference(Db &d, const std::string &itemId, int kind,
+                         const std::string &repo) {
+    auto h = heads(d, itemId);
+    if (h.empty() || h[0].value("deleted", false) ||
+        h[0]["kind"] != kindName(kind))
+      violation("REFERENCE_NOT_FOUND", itemId,
+                "A referenced label, milestone or cycle does not exist.");
+    if (mapped(d, str(h[0].at(bodyKey(kind)), "repositoryId")) != repo)
+      violation("CROSS_REPOSITORY", itemId,
+                "A referenced item belongs to another repository.");
+  }
+  static std::vector<std::string> list(const J &t, const char *key) {
+    std::vector<std::string> out;
+    if (t.contains(key))
+      out = t[key].get<std::vector<std::string>>();
+    return out;
+  }
+  static void putSet(J &t, const char *key, std::vector<std::string> set) {
+    set = sortedUnique(std::move(set));
+    if (set.empty())
+      t.erase(key);
+    else
+      t[key] = set;
+  }
+  // Does a cycle through `start` exist along `key` edges? Conflicted tasks
+  // contribute the union of every head's references.
+  bool cyclesThrough(Db &d, NodeMap &nodes, const std::string &start,
+                     const char *key) {
+    auto successors = [&](const std::string &taskId) {
+      std::vector<std::string> out;
+      auto *n = taskNode(d, nodes, taskId);
+      if (!n)
+        return out;
+      auto add = [&](const J &body) {
+        if (!body.contains(key))
+          return;
+        if (body[key].is_string())
+          out.push_back(body[key].get<std::string>());
+        else
+          for (auto &v : body[key])
+            out.push_back(v.get<std::string>());
+      };
+      add(n->cur);
+      for (auto &body : n->extra)
+        add(body);
+      return out;
+    };
+    std::set<std::string> seen;
+    std::vector<std::string> todo = successors(start);
+    while (!todo.empty()) {
+      auto x = todo.back();
+      todo.pop_back();
+      if (x == start)
+        return true;
+      if (!seen.insert(x).second)
+        continue;
+      for (auto &next : successors(x))
+        todo.push_back(next);
+    }
+    return false;
+  }
+  std::vector<std::string> changedTasks(NodeMap &nodes, const std::string &skip,
+                                        bool enforce) {
+    std::vector<std::string> ids;
+    for (auto &entry : nodes)
+      if (entry.second && entry.first != skip &&
+          entry.second->cur != entry.second->orig) {
+        if (enforce && entry.second->conflicted)
+          fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
+        ids.push_back(entry.first);
+      }
+    return ids; // std::map order is ascending entity ID
+  }
+  // Domain rules for creating or saving task `taskId` with normalized body
+  // `body`. `previousRepo` is empty for a creation. Validates references and
+  // the relationship graph against current heads, applies symmetric related
+  // links and relationship edits, and clears references on a move. Returns the
+  // IDs of the other tasks that need new versions. With `others` false (a
+  // stale save preserved only as a conflict alternative) nothing else changes:
+  // relationship edits and symmetric related links are discarded and the
+  // alternative is checked against the graph that stays committed, the other
+  // tasks unchanged and this task with its existing heads plus the alternative.
+  std::vector<std::string> planTaskWrite(Db &d, NodeMap &nodes,
+                                         const std::string &taskId, J &body,
+                                         const J &requestedEdits,
+                                         const std::string &previousRepo,
+                                         bool others) {
+    static const J noEdits = J::object();
+    const J &edits = others ? requestedEdits : noEdits;
+    const auto repo = mapped(d, str(body, "repositoryId"));
+    auto *previous = previousRepo.empty() ? nullptr : taskNode(d, nodes, taskId);
+    if (!previousRepo.empty() && previousRepo != repo) {
+      // Move: discard the references sent with it and detach incoming ones.
+      for (auto key : {"labelIds", "milestoneId", "cycleId", "parentTaskId",
+                       "dependsOnTaskIds", "relatedTaskIds", "duplicateOfTaskId"})
+        body.erase(key);
+      auto &slot = nodes[taskId];
+      if (!slot) {
+        slot = std::make_unique<TaskNode>();
+        slot->orig = J();
+      }
+      slot->cur = body;
+      if (others)
+        detachReferences(d, nodes, taskId, taskId,
+                         [&](J &t) { return removeTaskReference(t, taskId); });
+      return others ? changedTasks(nodes, taskId, true)
+                    : std::vector<std::string>{};
+    }
+    for (auto &label : list(body, "labelIds"))
+      planningReference(d, label, kLabel, repo);
+    if (body.contains("milestoneId"))
+      planningReference(d, str(body, "milestoneId"), kMilestone, repo);
+    if (body.contains("cycleId"))
+      planningReference(d, str(body, "cycleId"), kCycle, repo);
+    std::vector<std::string> links;
+    for (auto key : {"dependsOnTaskIds", "relatedTaskIds"})
+      for (auto &x : list(body, key))
+        links.push_back(x);
+    for (auto key : {"parentTaskId", "duplicateOfTaskId"})
+      if (body.contains(key))
+        links.push_back(str(body, key));
+    for (auto key : {"addSubtaskIds", "addBlockedTaskIds"})
+      for (auto &x : list(edits, key))
+        links.push_back(x);
+    for (auto &x : links)
+      if (x == taskId)
+        violation("SELF_LINK", taskId, "A task cannot be linked to itself.");
+    for (auto &x : links)
+      if (!taskNode(d, nodes, x))
+        violation("REFERENCE_NOT_FOUND", x, "A linked task does not exist.");
+    for (auto &x : links)
+      if (taskNode(d, nodes, x)->repo != repo)
+        violation("CROSS_REPOSITORY", x, "A linked task belongs to another repository.");
+    // The primary node carries the new body from here on.
+    auto &primary = nodes[taskId];
+    if (!primary) {
+      primary = std::make_unique<TaskNode>();
+      primary->orig = J();
+    }
+    std::vector<std::string> related = list(body, "relatedTaskIds");
+    if (previous)
+      for (auto &x : list(previous->orig, "relatedTaskIds"))
+        related.push_back(x);
+    if (others) {
+      // A synchronized write stores one direction only, so another task can
+      // relate to this one without a stored backlink. Views show the link on
+      // both endpoints, so a save from either endpoint must be able to remove
+      // it: include every live same-repository task with a head that names
+      // this task (the server's write_task() does the same).
+      for (auto &x : mentioning(d, taskId)) {
+        if (x == taskId)
+          continue;
+        auto *n = taskNode(d, nodes, x);
+        if (!n || n->repo != repo)
+          continue;
+        auto names = [&](const J &t) {
+          auto set = list(t, "relatedTaskIds");
+          return std::find(set.begin(), set.end(), taskId) != set.end();
+        };
+        if (names(n->cur) || std::any_of(n->extra.begin(), n->extra.end(), names))
+          related.push_back(x);
+      }
+    }
+    if (others) {
+      primary->cur = body;
+      primary->extra.clear(); // This write supersedes every conflicting head.
+      primary->conflicted = false;
+    } else if (primary->orig.is_null()) {
+      primary->cur = body;
+    } else {
+      // The alternative is stored next to the existing heads, so cycle checks
+      // see the union of their references.
+      primary->extra.push_back(body);
+    }
+    // Edits to another task apply to every head of a conflicted task; changing
+    // any of them fails the whole operation instead of resolving the conflict.
+    auto touch = [&](TaskNode *n, const std::function<void(J &)> &edit) {
+      bool any = false;
+      J before = n->cur;
+      edit(n->cur);
+      any = n->cur != before;
+      for (auto body : n->extra) {
+        J copy = body;
+        edit(copy);
+        any = any || copy != body;
+      }
+      if (any && n->conflicted)
+        fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
+    };
+    const auto mine = list(body, "relatedTaskIds");
+    for (auto &x : sortedUnique(related)) {
+      auto *other = taskNode(d, nodes, x);
+      if (!other || !others)
+        continue;
+      const bool linked = std::find(mine.begin(), mine.end(), x) != mine.end();
+      touch(other, [&](J &t) {
+        auto set = list(t, "relatedTaskIds");
+        set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
+        if (linked)
+          set.push_back(taskId);
+        putSet(t, "relatedTaskIds", set);
+      });
+    }
+    for (auto &x : list(edits, "addSubtaskIds"))
+      touch(taskNode(d, nodes, x), [&](J &t) { t["parentTaskId"] = taskId; });
+    for (auto &x : list(edits, "removeSubtaskIds"))
+      if (auto *n = taskNode(d, nodes, x))
+        touch(n, [&](J &t) {
+          if (t.contains("parentTaskId") && t["parentTaskId"] == taskId)
+            t.erase("parentTaskId");
+        });
+    for (auto &x : list(edits, "addBlockedTaskIds"))
+      touch(taskNode(d, nodes, x), [&](J &t) {
+        auto set = list(t, "dependsOnTaskIds");
+        set.push_back(taskId);
+        putSet(t, "dependsOnTaskIds", set);
+      });
+    for (auto &x : list(edits, "removeBlockedTaskIds"))
+      if (auto *n = taskNode(d, nodes, x))
+        touch(n, [&](J &t) {
+          auto set = list(t, "dependsOnTaskIds");
+          set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
+          putSet(t, "dependsOnTaskIds", set);
+        });
+    // A new cycle must pass through a task this write changed.
+    std::vector<std::string> touched{taskId};
+    for (auto &x : changedTasks(nodes, taskId, false))
+      touched.push_back(x);
+    for (auto &entry : {std::make_pair("parentTaskId", "PARENT_CYCLE"),
+                        std::make_pair("dependsOnTaskIds", "DEPENDENCY_CYCLE"),
+                        std::make_pair("duplicateOfTaskId", "DUPLICATE_CYCLE")})
+      for (auto &x : touched)
+        if (cyclesThrough(d, nodes, x, entry.first))
+          violation(entry.second, taskId, "The relationship forms a cycle.");
+    return others ? changedTasks(nodes, taskId, true)
+                  : std::vector<std::string>{};
+  }
+  // Writes one cleanup or relationship version for another task, in the
+  // caller's transaction and with the acting origin.
+  void writeOtherTask(Db &d, const std::string &s, const std::string &taskId,
+                      TaskNode &node) {
+    auto v = version(s, taskId, kTask, node.cur, J::array({node.head["versionId"]}));
+    persist(d, v, false, true);
+    outbox(d, v, "MUTATION_KIND_SAVE");
+    changed(d, taskId);
+  }
+  // Duplicate-name, repository and immutability rules of a planning item.
+  void planningWrite(Db &d, const std::string &itemId, int kind, const J &body,
+                     const std::vector<J> &existing) {
+    const auto repo = mapped(d, str(body, "repositoryId"));
+    repository(d, repo);
+    for (auto &h : existing)
+      require(h["kind"] == kindName(kind) &&
+                  mapped(d, str(h.at(bodyKey(kind)), "repositoryId")) == repo,
+              "An item's kind and repository cannot change.");
+    const auto name = lowerSimple(str(body, "name"));
+    for (auto &r : d.run("SELECT id FROM entities WHERE kind=? AND deleted=0 AND "
+                         "repository_id=? ORDER BY id",
+                         {std::to_string(kind), repo})) {
+      if (r[0] == itemId)
+        continue;
+      for (auto &h : heads(d, r[0]))
+        if (!h.value("deleted", false) && h.contains(bodyKey(kind)) &&
+            lowerSimple(trimmed(str(h[bodyKey(kind)], "name"))) == name)
+          violation("DUPLICATE_NAME", itemId,
+                    "A " + std::string(bodyKey(kind)) +
+                        " with this name already exists in the repository.");
+    }
+  }
   J mutate(Db &d, const std::string &s, const std::string &m, J q) {
     q = normalizeRequest(m, q, s);
     require(q.contains("meta"));
@@ -1256,6 +1999,27 @@ struct Store::Impl {
       // store the response wrapper; preserve both durable formats on replay.
       if (r.contains("result") && r["result"].is_string())
         r = J{{"result", r}};
+      // Affected tasks replay from their stored versions, so a receipt never
+      // retains content of a task that was deleted after the original call. A
+      // version erased by that deletion is skipped.
+      std::vector<std::string> affectedIds;
+      if (r.contains("affectedVersionIds"))
+        affectedIds = r["affectedVersionIds"].get<std::vector<std::string>>();
+      for (auto &embedded : r.value("affected", J::array()))
+        if (embedded.contains("version"))
+          affectedIds.push_back(str(embedded["version"], "versionId"));
+      r.erase("affectedVersionIds");
+      r.erase("affected");
+      if (!affectedIds.empty()) {
+        r["affected"] = J::array();
+        for (auto &versionId : affectedIds) {
+          auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?", {versionId});
+          if (!raw.empty())
+            r["affected"].push_back({{"result", "RESULT_KIND_REPLAYED"}, {"version", parse(raw)}, {"alternatives", J::array()}});
+        }
+        if (r["affected"].empty())
+          r.erase("affected");
+      }
       auto kind = r["result"].value("result", "");
       if (kind == "RESULT_KIND_CONFLICT") {
         J ids = J::array();
@@ -1265,10 +2029,18 @@ struct Store::Impl {
         r["result"]["result"] = "RESULT_KIND_REPLAYED";
       return r;
     }
-    bool create = m == "CreateTask" || m == "CreateRepository" || m == "CreateCaptureTask" || m == "CreateURLConnection",
-         del = m == "DeleteTask" || m == "DeleteRepository" || m == "DeleteURLConnection",
-         resolve = m == "ResolveConflict";
-    int k = (m.find("Repository") != std::string::npos) ? 1 : m.find("URLConnection") != std::string::npos ? 3 : 2;
+    bool create = m == "CreateTask" || m == "CreateRepository" || m == "CreateCaptureTask" || m == "CreateURLConnection" || m == "CreatePlanningItem",
+         del = m == "DeleteTask" || m == "DeleteRepository" || m == "DeleteURLConnection" || m == "DeletePlanningItem",
+         resolve = m == "ResolveConflict",
+         planning = m.find("PlanningItem") != std::string::npos;
+    // Planning methods learn their kind from the item (create) or the stored head.
+    int itemKind = 0;
+    if (planning && m != "DeletePlanningItem") {
+      auto key = q["item"].begin().key();
+      itemKind = key == "label" ? int(kLabel) : key == "milestone" ? int(kMilestone) : int(kCycle);
+    }
+    int k = planning ? (create ? itemKind : 0)
+            : (m.find("Repository") != std::string::npos) ? 1 : m.find("URLConnection") != std::string::npos ? 3 : 2;
     auto hs = heads(d, e);
     if (!hs.empty() && hs[0].value("deleted", false)) {
       J r = {{"result", result(d, e)}};
@@ -1281,20 +2053,37 @@ struct Store::Impl {
     else if (hs.empty())
       fail("NOT_FOUND", "Entity not found.");
     if (!create) {
-      int actualKind = hs[0]["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : hs[0]["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
-      require(resolve || actualKind == k, "Method does not match entity kind.");
+      int actualKind = versionKind(hs[0]);
+      require(resolve || (planning ? isPlanningKind(actualKind) : actualKind == k), "Method does not match entity kind.");
+      require(!planning || del || itemKind == actualKind, "An item's kind cannot change.");
       k = actualKind;
     }
     J body = J::object(), parents = J::array(), repoResult;
     bool stale = false, prompt = false;
+    NodeMap nodes;
+    std::vector<std::string> otherIds;
     if (del) {
       for (auto &h : hs)
         parents.push_back(h["versionId"]);
+      // Remove assignments and incoming relationships from other tasks in this
+      // same transaction; a failure rolls the whole operation back.
+      if (k == kTask) {
+        detachReferences(d, nodes, e, e, [&](J &t) { return removeTaskReference(t, e); });
+        otherIds = changedTasks(nodes, e, true);
+      } else if (isPlanningKind(k)) {
+        detachReferences(d, nodes, e, "", [&](J &t) { return removePlanningReference(t, e); });
+        otherIds = changedTasks(nodes, e, true);
+      }
+      for (auto &other : otherIds)
+        writeOtherTask(d, s, other, *nodes[other]);
       auto v = version(s, e, k, {}, parents, true);
       tombstone(d, v, true);
     } else {
       if (create) {
-        if (k == 3) {
+        if (planning) {
+          body = q["item"].begin().value();
+          planningWrite(d, e, k, body, {});
+        } else if (k == 3) {
           body = connectionBody(d,e,q.at("connection"));
         } else if (m == "CreateCaptureTask") {
           body = taskBody(d, {{"repositoryId",q["repositoryId"]},{"title",q["title"]},{"description",""},{"prompt",q["description"]},{"progress","PROGRESS_TODO"},{"proposal","PROPOSAL_REGULAR"}});
@@ -1331,8 +2120,12 @@ struct Store::Impl {
                   {"proposal", q["proposal"]}};
           if (q.contains("prompt"))
             body["prompt"] = q["prompt"];
+          for (auto key : planningTaskFields)
+            if (q.contains(key))
+              body[key] = q[key];
           body = taskBody(d, body);
           prompt = body.contains("prompt");
+          otherIds = planTaskWrite(d, nodes, e, body, q.value("relationshipEdits", J::object()), "", true);
         }
       } else if (resolve) {
         std::vector<std::string> actual;
@@ -1349,7 +2142,11 @@ struct Store::Impl {
                 str(resolved, "entityId") == e);
         require(!resolved.contains("kind") ||
                 resolved["kind"] == hs[0]["kind"]);
-        if (k == 3) {
+        if (isPlanningKind(k)) {
+          body = resolved.at(bodyKey(k));
+          body = planningShape(k, body);
+          planningWrite(d, e, k, body, hs);
+        } else if (k == 3) {
           body = connectionBody(d,e,resolved.at("urlConnection"));
         } else if (k == 1) {
           body = resolved.at("repository");
@@ -1365,6 +2162,10 @@ struct Store::Impl {
           require(!regular || body["proposal"] == "PROPOSAL_REGULAR",
                   "A regular task cannot become a proposal.");
           prompt = true;
+          // A resolution validates against the union of every head's links and
+          // applies move cleanup when it changes the accepted repository.
+          otherIds = planTaskWrite(d, nodes, e, body, J::object(),
+                                   mapped(d, str(hs[0]["task"], "repositoryId")), true);
         }
       } else {
         if (hs.size() > 1)
@@ -1382,7 +2183,10 @@ struct Store::Impl {
         J old = parse(base);
         stale = expected != str(hs[0], "versionId");
         parents.push_back(expected);
-        if (k == 3) {
+        if (planning) {
+          body = q["item"].begin().value();
+          planningWrite(d, e, k, body, hs);
+        } else if (k == 3) {
           body = connectionBody(d,e,q.at("connection"));
         } else if (k == 1) {
           body = {{"normalizedUrl", q["url"]}};
@@ -1395,6 +2199,8 @@ struct Store::Impl {
             body = taskBody(d, q.at("task"));
             require(body["proposal"] == old["task"]["proposal"],
                     "Use SetProposal to change proposal disposition.");
+            otherIds = planTaskWrite(d, nodes, e, body, q.value("relationshipEdits", J::object()),
+                                     mapped(d, str(old["task"], "repositoryId")), !stale);
           } else if (m == "SetProgress")
             body["progress"] = q["progress"];
           else if (m == "SetProposal") {
@@ -1420,6 +2226,13 @@ struct Store::Impl {
           } else
             fail("INVALID_INPUT", "Unknown mutation.");
           body = taskBody(d, body);
+          // SetProgress, SetProposal and RestorePrompt copy the planning fields
+          // of the requested base. A stale base becomes a conflict alternative
+          // next to the current heads, so validate it like a stale save: no
+          // cascade and the union of every head's references.
+          if (stale && m != "SaveTask")
+            planTaskWrite(d, nodes, e, body, J::object(),
+                          mapped(d, str(hs[0]["task"], "repositoryId")), false);
           prompt = body.value("captures",J::array()) != old["task"].value("captures",J::array()) || m == "RestorePrompt" ||
                    body.contains("prompt") != old["task"].contains("prompt") ||
                    (body.contains("prompt") &&
@@ -1427,19 +2240,37 @@ struct Store::Impl {
         }
       }
       if (k == 2) captureReferences(d,e,body.value("captures",J::array()));
+      // A correction of a rejected, never-accepted chain replaces that chain.
+      std::optional<Supersession> superseded;
+      if (!create && !resolve && !stale)
+        superseded = supersedeBlocked(d, hs[0]);
+      if (superseded)
+        parents = superseded->parents;
       auto v = version(s, e, k, body, parents);
       if (m == "RestorePrompt")
         v["promptRestoration"] = true;
       persist(d, v, prompt, !stale, !stale);
       outbox(d, v,
-             create    ? "MUTATION_KIND_CREATE"
+             superseded ? mutationKind(parents)
+             : create    ? "MUTATION_KIND_CREATE"
              : resolve ? "MUTATION_KIND_RESOLVE"
-                       : "MUTATION_KIND_SAVE");
+                       : "MUTATION_KIND_SAVE",
+             superseded ? superseded->position : 0);
       changed(d, e);
       if (k == 2 && body["proposal"] != "PROPOSAL_PENDING")
         cancelNotification(d, e);
+      for (auto &other : otherIds)
+        writeOtherTask(d, s, other, *nodes[other]);
     }
     J r = {{"result", result(d, e)}};
+    J affectedVersionIds = J::array();
+    if ((m == "CreateTask" || m == "SaveTask") && !otherIds.empty()) {
+      r["affected"] = J::array();
+      for (auto &other : otherIds) {
+        r["affected"].push_back(result(d, other));
+        affectedVersionIds.push_back(r["affected"].back()["version"]["versionId"]);
+      }
+    }
     if (!repoResult.is_null())
       r["repository"] = repoResult;
     if (stale) {
@@ -1449,18 +2280,31 @@ struct Store::Impl {
       r["_error"] = {{"reason", "ERROR_REASON_STALE_VERSION"},
                      {"currentHeadIds", h}};
     }
+    // The durable receipt keeps the IDs of the affected versions, not their
+    // content: deleting an affected task erases its versions, and the receipt
+    // of the call that changed it must not keep returning its snapshot.
+    J saved = r;
+    if (!affectedVersionIds.empty()) {
+      saved.erase("affected");
+      saved["affectedVersionIds"] = affectedVersionIds;
+    }
     d.run("INSERT INTO receipts VALUES(?,?,?,?,?)",
-          {m, rid, fingerprint, e, r.dump()});
+          {m, rid, fingerprint, e, saved.dump()});
     return r;
   }
-  std::pair<size_t, size_t> page(const J &q, const std::string &s,
-                                 const std::string &m) {
+  static int pageSize(const J &q) {
     auto p = q.value("page", J::object());
     fields(p, {"size", "cursor"});
     int size = p.value("size", 100);
     if (size == 0)
       size = 100;
     require(size > 0 && size <= 1000);
+    return size;
+  }
+  std::pair<size_t, size_t> page(const J &q, const std::string &s,
+                                 const std::string &m) {
+    auto p = q.value("page", J::object());
+    int size = pageSize(q);
     auto cursor = str(p, "cursor");
     size_t offset = 0;
     if (!cursor.empty()) {
@@ -1489,6 +2333,273 @@ struct Store::Impl {
       cursor = std::to_string(off + size) + ":" + hash(s + m + key.dump());
     }
     return J{{field, result}, {"nextCursor", cursor}};
+  }
+  // ListTasks: existing search/progress/proposal filters AND with the planning
+  // filter; one sort key; keyset pagination whose cursor encodes the last sort
+  // tuple and task ID so concatenated pages equal the unpaged order.
+  J listTasks(Db &d, const std::string &s, const J &q) {
+    fields(q, {"page", "repositoryId", "progress", "proposal", "search",
+               "filter", "sortKey", "sortDirection"});
+    auto wanted = str(q, "repositoryId"), search = fold(str(q, "search"));
+    std::set<std::string> pg, pr;
+    for (auto &v : q.value("progress", J::array()))
+      pg.insert(enumValue(J{{"v", v}}, "v", "PROGRESS_", progresses));
+    for (auto &v : q.value("proposal", J::array()))
+      pr.insert(enumValue(J{{"v", v}}, "v", "PROPOSAL_", proposals));
+    const J filter = q.value("filter", J::object());
+    require(filter.is_object(), "Invalid task filter.");
+    fields(filter, {"priorities", "includeUnassignedPriority", "types",
+                    "includeUnassignedType", "labelIds", "includeUnlabeled",
+                    "startDate", "dueDate", "storyPoints", "milestoneIds",
+                    "includeNoMilestone", "cycleIds", "includeNoCycle",
+                    "relationships", "includeNoRelationships"});
+    auto flag = [&](const J &j, const char *key) {
+      if (!j.contains(key) || j[key].is_null())
+        return false;
+      require(j[key].is_boolean(), "Invalid task filter.");
+      return j[key].get<bool>();
+    };
+    auto enums = [&](const char *key, const std::string &prefix,
+                     const std::vector<std::string> &values) {
+      std::vector<int> out;
+      if (filter.contains(key)) {
+        require(filter[key].is_array(), "Invalid task filter.");
+        for (auto &v : filter[key])
+          out.push_back(optionalEnum(J{{"v", v}}, "v", prefix, values));
+      }
+      return out;
+    };
+    auto priorityFilter = enums("priorities", "TASK_PRIORITY_", priorities);
+    auto typeFilter = enums("types", "TASK_TYPE_", taskTypes);
+    auto relationshipFilter = enums("relationships", "RELATIONSHIP_KIND_", relationshipKinds);
+    auto labelFilter = idSet(filter, "labelIds");
+    auto milestoneFilter = idSet(filter, "milestoneIds");
+    auto cycleFilter = idSet(filter, "cycleIds");
+    struct Range { bool present = false, from = false, to = false, unassigned = false; std::string lo, hi; };
+    auto dateRange = [&](const char *key) {
+      Range r;
+      if (!filter.contains(key) || filter[key].is_null())
+        return r;
+      const J &j = filter[key];
+      fields(j, {"from", "to", "includeUnassigned"});
+      r.unassigned = flag(j, "includeUnassigned");
+      if (j.contains("from") && !j["from"].is_null()) { r.from = true; r.lo = dateField(j, "from"); }
+      if (j.contains("to") && !j["to"].is_null()) { r.to = true; r.hi = dateField(j, "to"); }
+      require(!r.from || !r.to || r.lo <= r.hi, "A date range must not end before it starts.");
+      r.present = r.from || r.to || r.unassigned;
+      return r;
+    };
+    auto inDates = [](const Range &r, const J &t, const char *key) {
+      if (!r.present)
+        return true;
+      if (!t.contains(key))
+        return r.unassigned;
+      if (!r.from && !r.to)
+        return false;
+      auto value = t[key].get<std::string>();
+      return (!r.from || value >= r.lo) && (!r.to || value <= r.hi);
+    };
+    auto startRange = dateRange("startDate"), dueRange = dateRange("dueDate");
+    struct Points { bool present = false, min = false, max = false, unassigned = false; uint64_t lo = 0, hi = 0; } points;
+    if (filter.contains("storyPoints") && !filter["storyPoints"].is_null()) {
+      const J &j = filter["storyPoints"];
+      fields(j, {"min", "max", "includeUnassigned"});
+      points.unassigned = flag(j, "includeUnassigned");
+      if (j.contains("min") && !j["min"].is_null()) { points.min = true; points.lo = storyPoints(j["min"]); }
+      if (j.contains("max") && !j["max"].is_null()) { points.max = true; points.hi = storyPoints(j["max"]); }
+      require(!points.min || !points.max || points.lo <= points.hi, "A points range must not end before it starts.");
+      points.present = points.min || points.max || points.unassigned;
+    }
+    const bool prioritiesOn = !priorityFilter.empty() || flag(filter, "includeUnassignedPriority"),
+               typesOn = !typeFilter.empty() || flag(filter, "includeUnassignedType");
+    const bool unlabeled = flag(filter, "includeUnlabeled"),
+               noMilestone = flag(filter, "includeNoMilestone"),
+               noCycle = flag(filter, "includeNoCycle"),
+               noRelationships = flag(filter, "includeNoRelationships");
+    const bool unassignedPriority = flag(filter, "includeUnassignedPriority"),
+               unassignedType = flag(filter, "includeUnassignedType");
+    const int sortKey = optionalEnum(q, "sortKey", "TASK_SORT_KEY_", sortKeys);
+    const int direction = optionalEnum(q, "sortDirection", "SORT_DIRECTION_", sortDirections);
+    const bool descending = direction == 2;
+    // `task` is the body of `item` with its references normalized against the
+    // live entities of the task's repository; `item` itself stays untouched.
+    struct Row { std::string id; J item; SortValue value; J task; std::string repo; };
+    std::vector<Row> rows;
+    std::map<std::string, std::string> taskRepos;
+    for (auto &r : d.run("SELECT id FROM entities WHERE kind=2 AND deleted=0 ORDER BY id")) {
+      Row row{r[0], result(d, r[0]), {}, {}, {}};
+      row.task = row.item["version"]["task"];
+      row.repo = mapped(d, str(row.task, "repositoryId"));
+      taskRepos[row.id] = row.repo;
+      rows.push_back(std::move(row));
+    }
+    // Cleanup after a deletion or move skips a conflicted task, so its accepted
+    // body can keep a reference to an entity that no longer exists (or that
+    // lives in another repository). Such a reference is not an assignment:
+    // ignore it for filters, sort keys and the derived relationship views.
+    std::map<std::string, bool> liveItems;
+    auto liveItem = [&](const std::string &itemId, int kind, const std::string &repo) {
+      const auto key = std::to_string(kind) + itemId + "@" + repo;
+      auto it = liveItems.find(key);
+      if (it == liveItems.end()) {
+        auto h = heads(d, itemId);
+        bool live = !h.empty() && !h[0].value("deleted", false) &&
+                    h[0]["kind"] == kindName(kind) && h[0].contains(bodyKey(kind)) &&
+                    mapped(d, str(h[0][bodyKey(kind)], "repositoryId")) == repo;
+        it = liveItems.emplace(key, live).first;
+      }
+      return it->second;
+    };
+    auto liveTask = [&](const std::string &taskId, const std::string &repo) {
+      auto it = taskRepos.find(taskId);
+      return it != taskRepos.end() && it->second == repo;
+    };
+    std::set<std::string> parents, blockers, relatedBack;
+    for (auto &row : rows) {
+      J &t = row.task;
+      auto keep = [&](const char *key, const std::function<bool(const std::string &)> &live) {
+        if (!t.contains(key))
+          return;
+        if (t[key].is_string()) {
+          if (!live(t[key].get<std::string>()))
+            t.erase(key);
+          return;
+        }
+        std::vector<std::string> kept;
+        for (auto &x : list(t, key))
+          if (live(x))
+            kept.push_back(x);
+        putSet(t, key, kept);
+      };
+      keep("labelIds", [&](const std::string &x) { return liveItem(x, kLabel, row.repo); });
+      keep("milestoneId", [&](const std::string &x) { return liveItem(x, kMilestone, row.repo); });
+      keep("cycleId", [&](const std::string &x) { return liveItem(x, kCycle, row.repo); });
+      for (auto key : {"parentTaskId", "duplicateOfTaskId", "dependsOnTaskIds", "relatedTaskIds"})
+        keep(key, [&](const std::string &x) { return liveTask(x, row.repo); });
+    }
+    for (auto &row : rows) {
+      const J &t = row.task;
+      if (t.contains("parentTaskId")) parents.insert(str(t, "parentTaskId"));
+      for (auto &x : list(t, "dependsOnTaskIds")) blockers.insert(x);
+      for (auto &x : list(t, "relatedTaskIds")) if (x != row.id) relatedBack.insert(x);
+    }
+    std::map<std::string, std::string> milestoneNames, cycleStarts;
+    auto milestoneName = [&](const std::string &mid) {
+      auto it = milestoneNames.find(mid);
+      if (it == milestoneNames.end()) {
+        auto h = heads(d, mid);
+        std::string name;
+        if (!h.empty() && h[0].contains("milestone")) name = lowerSimple(str(h[0]["milestone"], "name"));
+        it = milestoneNames.emplace(mid, name).first;
+      }
+      return it->second;
+    };
+    auto cycleStart = [&](const std::string &cid) {
+      auto it = cycleStarts.find(cid);
+      if (it == cycleStarts.end()) {
+        auto h = heads(d, cid);
+        std::string start;
+        if (!h.empty() && h[0].contains("cycle")) start = str(h[0]["cycle"], "startDate");
+        it = cycleStarts.emplace(cid, start).first;
+      }
+      return it->second;
+    };
+    std::vector<Row> matched;
+    for (auto &row : rows) {
+      const J &t = row.task;
+      if (!wanted.empty() && row.repo != mapped(d, wanted)) continue;
+      if (!pg.empty() && !pg.count(str(t, "progress"))) continue;
+      if (!pr.empty() && !pr.count(str(t, "proposal"))) continue;
+      if (!search.empty() && fold(str(t, "title")).find(search) == std::string::npos &&
+          fold(str(t, "description")).find(search) == std::string::npos) continue;
+      const int priority = int(std::find(priorities.begin(), priorities.end(), str(t, "priority")) - priorities.begin()) + 1;
+      const bool hasPriority = t.contains("priority");
+      if (prioritiesOn && !(hasPriority ? std::find(priorityFilter.begin(), priorityFilter.end(), priority) != priorityFilter.end() : unassignedPriority)) continue;
+      const int type = int(std::find(taskTypes.begin(), taskTypes.end(), str(t, "type")) - taskTypes.begin()) + 1;
+      const bool hasType = t.contains("type");
+      if (typesOn && !(hasType ? std::find(typeFilter.begin(), typeFilter.end(), type) != typeFilter.end() : unassignedType)) continue;
+      if (!labelFilter.empty() || unlabeled) {
+        auto own = list(t, "labelIds");
+        bool any = std::any_of(own.begin(), own.end(), [&](const std::string &l) {
+          return std::binary_search(labelFilter.begin(), labelFilter.end(), l); });
+        if (!any && !(unlabeled && own.empty())) continue;
+      }
+      if (!inDates(startRange, t, "startDate") || !inDates(dueRange, t, "dueDate")) continue;
+      if (points.present) {
+        if (!t.contains("storyPoints")) { if (!points.unassigned) continue; }
+        else if (!points.min && !points.max) continue;
+        else {
+          auto value = t["storyPoints"].get<uint64_t>();
+          if ((points.min && value < points.lo) || (points.max && value > points.hi)) continue;
+        }
+      }
+      if (!milestoneFilter.empty() || noMilestone) {
+        bool ok = t.contains("milestoneId")
+            ? std::binary_search(milestoneFilter.begin(), milestoneFilter.end(), str(t, "milestoneId")) : noMilestone;
+        if (!ok) continue;
+      }
+      if (!cycleFilter.empty() || noCycle) {
+        bool ok = t.contains("cycleId")
+            ? std::binary_search(cycleFilter.begin(), cycleFilter.end(), str(t, "cycleId")) : noCycle;
+        if (!ok) continue;
+      }
+      if (!relationshipFilter.empty() || noRelationships) {
+        std::set<int> kinds;
+        if (t.contains("parentTaskId")) kinds.insert(1);
+        if (parents.count(row.id)) kinds.insert(2);
+        if (t.contains("dependsOnTaskIds")) kinds.insert(3);
+        if (blockers.count(row.id)) kinds.insert(4);
+        if (t.contains("relatedTaskIds") || relatedBack.count(row.id)) kinds.insert(5);
+        if (t.contains("duplicateOfTaskId")) kinds.insert(6);
+        bool any = std::any_of(relationshipFilter.begin(), relationshipFilter.end(), [&](int k) { return kinds.count(k) > 0; });
+        if (!any && !(noRelationships && kinds.empty())) continue;
+      }
+      SortValue sv;
+      switch (sortKey) {
+      case 1: sv = {hasPriority, hasPriority ? priority : 0, ""}; break;
+      case 2: sv = {hasType, hasType ? type : 0, ""}; break;
+      case 3: if (t.contains("startDate")) sv = {true, 0, str(t, "startDate")}; break;
+      case 4: if (t.contains("dueDate")) sv = {true, 0, str(t, "dueDate")}; break;
+      case 5: if (t.contains("storyPoints")) sv = {true, int64_t(t["storyPoints"].get<uint64_t>()), ""}; break;
+      case 6: if (t.contains("milestoneId")) sv = {true, 0, milestoneName(str(t, "milestoneId"))}; break;
+      case 7: if (t.contains("cycleId")) sv = {true, 0, cycleStart(str(t, "cycleId"))}; break;
+      default: break;
+      }
+      row.value = sv;
+      matched.push_back(row);
+    }
+    std::sort(matched.begin(), matched.end(), [&](const Row &a, const Row &b) {
+      return compareTuples(a.value, b.value, a.id, b.id, descending) < 0; });
+    // Keyset cursor: scoped to this account space, method and query.
+    J scope = q;
+    scope.erase("page");
+    const auto scoped = hash(s + "ListTasks" + scope.dump());
+    const auto cursor = str(q.value("page", J::object()), "cursor");
+    SortValue after; std::string afterId; bool resume = false;
+    if (!cursor.empty()) {
+      auto pos = cursor.find(':');
+      require(pos != std::string::npos && cursor.substr(0, pos) == scoped, "Invalid page cursor.");
+      J key = parse(hexDecode(cursor.substr(pos + 1)));
+      require(key.is_object() && key.contains("i") && key["i"].is_string(), "Invalid page cursor.");
+      after = {key.value("a", false), key.value("n", int64_t(0)), key.value("t", "")};
+      afterId = key["i"].get<std::string>();
+      resume = true;
+    }
+    const size_t size = size_t(pageSize(q));
+    J items = J::array();
+    std::string next;
+    const Row *last = nullptr;
+    size_t remaining = 0;
+    for (auto &row : matched) {
+      if (resume && compareTuples(row.value, after, row.id, afterId, descending) <= 0)
+        continue;
+      if (items.size() < size) { items.push_back(row.item); last = &row; }
+      else { remaining = 1; break; }
+    }
+    if (remaining && last)
+      next = scoped + ":" + hexEncode(J{{"a", last->value.assigned}, {"n", last->value.number},
+                                        {"t", last->value.text}, {"i", last->id}}.dump());
+    return J{{"items", items}, {"nextCursor", next}};
   }
   J read(Db &d, const std::string &s, const std::string &m, const J &q) {
     if (m == "GetAttachment") {
@@ -1541,35 +2652,46 @@ struct Store::Impl {
         }
       return paginated(all, q, s, m, "versions");
     }
-    if (m == "ListTasks" || m == "ListRepositories") {
+    if (m == "ListTasks")
+      return listTasks(d, s, q);
+    if (m == "ListRepositories") {
       fields(q, {"page", "repositoryId", "progress", "proposal", "search"});
       J all = J::array();
-      auto wanted = str(q, "repositoryId"), search = fold(str(q, "search"));
-      std::set<std::string> pg, pr;
-      for (auto &v : q.value("progress", J::array()))
-        pg.insert(enumValue(J{{"v", v}}, "v", "PROGRESS_", progresses));
-      for (auto &v : q.value("proposal", J::array()))
-        pr.insert(enumValue(J{{"v", v}}, "v", "PROPOSAL_", proposals));
-      for (auto &r : d.run(
-               "SELECT id FROM entities WHERE kind=? AND deleted=0 ORDER BY id",
-               {m == "ListTasks" ? "2" : "1"})) {
-        if (m == "ListRepositories" && mapped(d, r[0]) != r[0])
+      for (auto &r : d.run("SELECT id FROM entities WHERE kind=1 AND deleted=0 "
+                           "ORDER BY id")) {
+        if (mapped(d, r[0]) != r[0])
           continue;
+        all.push_back(result(d, r[0]));
+      }
+      return paginated(all, q, s, m);
+    }
+    if (m == "GetPlanningItem") {
+      fields(q, {"id"});
+      auto e = str(q, "id");
+      id(e);
+      auto r = result(d, e);
+      require(isPlanningKind(versionKind(r["version"])));
+      return J{{"result", r}};
+    }
+    if (m == "ListPlanningItems") {
+      fields(q, {"page", "repositoryId", "kind"});
+      int kind = optionalEnum(q, "kind", "ENTITY_KIND_",
+                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK",
+                               "ENTITY_KIND_URL_CONNECTION", "ENTITY_KIND_LABEL",
+                               "ENTITY_KIND_MILESTONE", "ENTITY_KIND_CYCLE"});
+      require(kind == 0 || isPlanningKind(kind),
+              "Only label, milestone and cycle kinds can be listed.");
+      auto wanted = str(q, "repositoryId");
+      if (!wanted.empty())
+        id(wanted);
+      J all = J::array();
+      for (auto &r : d.run("SELECT id,repository_id FROM entities WHERE kind IN "
+                           "(4,5,6) AND deleted=0 ORDER BY id")) {
         auto item = result(d, r[0]);
-        if (m == "ListTasks") {
-          auto t = item["version"]["task"];
-          if (!wanted.empty() &&
-              mapped(d, str(t, "repositoryId")) != mapped(d, wanted))
-            continue;
-          if (!pg.empty() && !pg.count(str(t, "progress")))
-            continue;
-          if (!pr.empty() && !pr.count(str(t, "proposal")))
-            continue;
-          if (!search.empty() &&
-              fold(str(t, "title")).find(search) == std::string::npos &&
-              fold(str(t, "description")).find(search) == std::string::npos)
-            continue;
-        }
+        if (kind && versionKind(item["version"]) != kind)
+          continue;
+        if (!wanted.empty() && mapped(d, r[1]) != mapped(d, wanted))
+          continue;
         all.push_back(item);
       }
       return paginated(all, q, s, m);
@@ -1637,6 +2759,32 @@ struct Store::Impl {
     }
     return r;
   }
+  // Text kept with a rejected outbox item. A server constraint rejection keeps
+  // the local version blocked as CONSTRAINT_VIOLATION:<VIOLATION>.
+  static std::string rejectionReason(const J &error) {
+    static const std::vector<std::string> reasons = {
+        "INVALID_INPUT", "NOT_FOUND", "STALE_VERSION", "CONFLICT_READ_ONLY",
+        "STALE_RESOLUTION", "REQUEST_ID_REUSED", "DELETED", "UNSUPPORTED_FORMAT",
+        "STORAGE_BUSY", "STORAGE_FULL", "ONLINE_REQUIRED", "UNAUTHENTICATED",
+        "FORBIDDEN", "DEPENDENCY_UNAVAILABLE", "ITEM_TOO_LARGE", "RATE_LIMITED",
+        "STALE_EPOCH", "LEASE_INVALID", "CONSTRAINT_VIOLATION"};
+    std::string reason = "ERROR_REASON_UNSPECIFIED";
+    if (error.contains("reason") && error["reason"].is_number_integer()) {
+      auto n = error["reason"].get<int64_t>();
+      if (n >= 1 && n <= int64_t(reasons.size()))
+        reason = "ERROR_REASON_" + reasons[size_t(n - 1)];
+    } else
+      reason = str(error, "reason", reason);
+    if (reason != "ERROR_REASON_CONSTRAINT_VIOLATION")
+      return reason;
+    std::string name = "UNSPECIFIED";
+    if (error.contains("violation") && !error["violation"].is_null()) {
+      int n = optionalEnum(error, "violation", "CONSTRAINT_VIOLATION_", constraintViolations);
+      if (n)
+        name = constraintViolations[n - 1].substr(sizeof("CONSTRAINT_VIOLATION_") - 1);
+    }
+    return "CONSTRAINT_VIOLATION:" + name;
+  }
   void lease(Db &d, const std::string &owner) {
     if (meta(d, "sync_owner") != owner ||
         std::stoll(meta(d, "sync_owner_expires_at_us", "0")) <= now())
@@ -1677,12 +2825,16 @@ struct Store::Impl {
                 {r[0]});
     changed(d, e, 2);
   }
+  // Readers accept envelope formats 1, 2 and 3; absent planning fields mean
+  // unassigned. Planning data and kinds require format 3, captures format 2.
   void validateVersion(Db &d, const J &v) {
-    if (v.value("formatVersion", 0) != 1 && v.value("formatVersion", 0) != 2)
+    const int format = v.value("formatVersion", 0);
+    if (format < 1 || format > 3)
       fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
     fields(v, {"formatVersion", "entityId", "kind", "versionId",
                "parentVersionIds", "createdAt", "origin", "deleted",
-               "promptRestoration", "task", "repository", "urlConnection"});
+               "promptRestoration", "task", "repository", "urlConnection",
+               "label", "milestone", "cycle"});
     parseTimestamp(str(v, "createdAt"));
     auto o = v.value("origin", J::object());
     fields(o, {"kind", "deviceId", "deviceName", "accountId"});
@@ -1692,8 +2844,8 @@ struct Store::Impl {
       id(str(o, "deviceId"));
     id(str(v, "entityId"));
     id(str(v, "versionId"));
-    require(v.value("kind", "") == "ENTITY_KIND_REPOSITORY" ||
-            v.value("kind", "") == "ENTITY_KIND_TASK" || v.value("kind", "") == "ENTITY_KIND_URL_CONNECTION");
+    const int kind = kindNumber(v.value("kind", J()));
+    require(kind != 0);
     auto ps = v.value("parentVersionIds", J::array());
     require(ps.is_array());
     std::string prev;
@@ -1711,22 +2863,27 @@ struct Store::Impl {
               "Parent belongs to another entity.");
     }
     if (v.value("promptRestoration", false))
-      require(v.value("kind", "") == "ENTITY_KIND_TASK" &&
-                  !v.value("deleted", false),
+      require(kind == kTask && !v.value("deleted", false),
               "Restoration marker requires a live task.");
-    require(v.value("formatVersion",0) == 2 || (v["kind"] != "ENTITY_KIND_URL_CONNECTION" && (!v.contains("task") || v["task"].value("captures",J::array()).empty())), "Capture entities require format 2.");
-    if (v.value("deleted", false)) {
-      require(!v.contains("task") && !v.contains("repository") && !v.contains("urlConnection"));
+    require(format >= 2 || (kind != kUrlConnection && (!v.contains("task") || v["task"].value("captures",J::array()).empty())), "Capture entities require format 2.");
+    require(format == 3 || (!isPlanningKind(kind) && (!v.contains("task") || !hasPlanningFields(v["task"]))), "Planning data requires format 3.");
+    // Exactly the body matching the kind may be present; tombstones have none.
+    for (int other = kRepository; other <= kCycle; ++other)
+      if (v.contains(bodyKey(other)))
+        require(!v.value("deleted", false) && other == kind,
+                "The entity body does not match its kind.");
+    if (v.value("deleted", false))
       return;
-    }
-    if (v["kind"] == "ENTITY_KIND_URL_CONNECTION") {
-      require(!v.contains("task") && !v.contains("repository"));
+    require(v.contains(bodyKey(kind)), "An entity body is required.");
+    if (kind == kUrlConnection) {
       connectionBody(d,str(v,"entityId"),v.at("urlConnection"),false);
-    } else if (v["kind"] == "ENTITY_KIND_TASK") {
-      require(!v.contains("repository") && !v.contains("urlConnection"));
+    } else if (kind == kTask) {
       taskBody(d, v.at("task"));
+    } else if (isPlanningKind(kind)) {
+      // Shape only: uniqueness and ownership were validated where the version
+      // was written and are authoritative on the server.
+      planningShape(kind, v.at(bodyKey(kind)));
     } else {
-      require(!v.contains("task") && !v.contains("urlConnection"));
       auto b = v.at("repository");
       fields(b, {"normalizedUrl", "displayName"});
       require(normalizeURL("https://" + str(b, "normalizedUrl")) ==
@@ -1768,7 +2925,8 @@ struct Store::Impl {
     for (auto v : incoming) {
       if (v.contains("kind"))
         v["kind"] = enumValue(v, "kind", "ENTITY_KIND_",
-                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK", "ENTITY_KIND_URL_CONNECTION"});
+                              {"ENTITY_KIND_REPOSITORY", "ENTITY_KIND_TASK", "ENTITY_KIND_URL_CONNECTION",
+                               "ENTITY_KIND_LABEL", "ENTITY_KIND_MILESTONE", "ENTITY_KIND_CYCLE"});
       if (v.contains("origin"))
         v["origin"]["kind"] = enumValue(
             v["origin"], "kind", "ORIGIN_KIND_",
@@ -1778,8 +2936,19 @@ struct Store::Impl {
             enumValue(v["task"], "progress", "PROGRESS_", progresses);
         v["task"]["proposal"] =
             enumValue(v["task"], "proposal", "PROPOSAL_", proposals);
+        // Planning enums arrive by name or number; UNSPECIFIED means unassigned.
+        auto planningEnum = [&](const char *key, const char *prefix,
+                                const std::vector<std::string> &values) {
+          int n = optionalEnum(v["task"], key, prefix, values);
+          if (n)
+            v["task"][key] = values[n - 1];
+          else
+            v["task"].erase(key);
+        };
+        planningEnum("priority", "TASK_PRIORITY_", priorities);
+        planningEnum("type", "TASK_TYPE_", taskTypes);
       }
-      if (v.value("formatVersion", 0) != 1 && v.value("formatVersion", 0) != 2)
+      if (v.value("formatVersion", 0) < 1 || v.value("formatVersion", 0) > 3)
         fail("UNSUPPORTED_FORMAT", "Update Lane to read this entity version.");
       auto e = str(v, "entityId");
       auto old = heads(d, e);
@@ -1790,8 +2959,9 @@ struct Store::Impl {
         tombstone(d, v, false);
         continue;
       }
-      if (v.contains("task") || v.contains("urlConnection")) {
-        auto repo = mapped(d, str(v.at(v.contains("task") ? "task" : "urlConnection"), "repositoryId"));
+      int incomingKind = kindNumber(v.value("kind", J()));
+      if (incomingKind >= kTask && v.contains(bodyKey(incomingKind))) {
+        auto repo = mapped(d, str(v.at(bodyKey(incomingKind)), "repositoryId"));
         auto rh = heads(d, repo);
         if (!rh.empty() && rh[0].value("deleted", false)) {
           // A historical version can still reference the former repository.
@@ -1801,8 +2971,7 @@ struct Store::Impl {
           if (!currentRepository.empty() && mapped(d, currentRepository) != repo)
             continue;
           J dead = v;
-          dead.erase("task");
-          dead.erase("urlConnection");
+          dead.erase(bodyKey(incomingKind));
           dead.erase("promptRestoration");
           dead["deleted"] = true;
           dead["versionId"] = uuid();
@@ -1878,9 +3047,9 @@ struct Store::Impl {
       auto hs = heads(d, e);
       if (hs.size() == 1) {
         auto only = hs[0];
-        int k = only["kind"] == "ENTITY_KIND_REPOSITORY" ? 1 : only["kind"] == "ENTITY_KIND_URL_CONNECTION" ? 3 : 2;
+        int k = versionKind(only);
         d.run("UPDATE entities SET repository_id=?,normalized_url=? WHERE id=?",
-              {k != 1 ? mapped(d, str(only[k == 3 ? "urlConnection" : "task"], "repositoryId")) : "",
+              {k != 1 ? mapped(d, str(only[bodyKey(k)], "repositoryId")) : "",
                k == 1 ? str(only["repository"], "normalizedUrl") : "", e});
       }
       if (v.contains("task")) {
@@ -1912,7 +3081,7 @@ struct Store::Impl {
       d.run("INSERT INTO repository_mappings VALUES(?,?) ON CONFLICT(local_id) "
             "DO UPDATE SET canonical_id=excluded.canonical_id",
             {local, canonical});
-      d.run("UPDATE entities SET repository_id=? WHERE kind IN (2,3) AND "
+      d.run("UPDATE entities SET repository_id=? WHERE kind IN (2,3,4,5,6) AND "
             "repository_id=?",
             {canonical, local}); // Immutable envelopes and fingerprints keep
                                  // their original references.
@@ -1931,7 +3100,7 @@ std::string Store::open(std::string text) {
     impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "spaceId"});
-    if (q.value("formatVersion", 0) != 2)
+    if (q.value("formatVersion", 0) != 3)
       fail("UNSUPPORTED_FORMAT", "Update Lane to use this storage format.");
     auto s = str(q, "spaceId");
     if (s.empty())
@@ -1941,50 +3110,20 @@ std::string Store::open(std::string text) {
     auto seq = sequence(d);
     return success({{"spaceId", s},
                     {"deviceId", impl_->device()},
-                    {"schemaVersion", 2},
-                    {"formatVersion", 2},
+                    {"schemaVersion", 3},
+                    {"formatVersion", 3},
                     {"sequence", seq}},
                    seq);
   });
 }
-std::string Store::migrate(std::string s) {
-  return protect([&] {
+std::string Store::reset(std::string s) {
+  auto started = now();
+  auto response = protect([&] {
     impl_->ready();
-    impl_->registered(s);
-    auto slot = impl_->spaces.find(s);
-    if (slot != impl_->spaces.end()) {
-      if (slot->second.handles > 0)
-        fail("STORAGE_BUSY", "Close this space before migrating it.");
-      impl_->spaces.erase(slot);
-    }
-    LifetimeLock lifetime(impl_->root / "locks" / (s + ".handles.lock"), true);
-    impl_->registered(s);
-    auto path = impl_->root / "spaces" / s / "lane.sqlite";
-    if (!fs::is_regular_file(path))
-      fail("NOT_FOUND", "Existing space database not found.");
-    Db d(path);
-    // Rebuild the referenced entity table without changing immutable history.
-    // SQLite requires foreign_keys=OFF outside the schema transaction.
-    d.exec("PRAGMA foreign_keys=OFF; PRAGMA synchronous=FULL;");
-    d.exec("BEGIN EXCLUSIVE");
-    try {
-      auto schema = d.one("PRAGMA user_version");
-      if (d.one("PRAGMA application_id") != std::to_string(kApp) ||
-          (schema != "1" && schema != "2") ||
-          meta(d, "format_version") != schema || meta(d, "space_id") != s)
-        fail("UNSUPPORTED_FORMAT", "No supported migration for this database.");
-      if (schema == "1")
-        d.exec(kMigration2);
-      require(d.run("PRAGMA foreign_key_check").empty(),
-              "Migration found invalid foreign keys.");
-      d.exec("COMMIT");
-      return success({{"spaceId", s}, {"schemaVersion", 2},
-                      {"formatVersion", 2}, {"migrated", schema == "1"}});
-    } catch (...) {
-      sqlite3_exec(d.p, "ROLLBACK", nullptr, nullptr, nullptr);
-      throw;
-    }
+    return impl_->resetData(s);
   });
+  writeLog(impl_->root, "ResetDevelopmentData", parse(response), now() - started);
+  return response;
 }
 std::string Store::close(std::string s) {
   return protect([&] {
@@ -2019,6 +3158,9 @@ std::string Store::poll() {
         auto &slot = impl_->spaces.at(s);
         if (slot.handles == 0 && !impl_->enabled(s))
           continue;
+        impl_->db(s); // Reopen after a development reset released the handles.
+        if (!slot.observer)
+          continue;
         compatibility(*slot.observer);
         auto seq = sequence(*slot.observer);
         if (seq != slot.seen) {
@@ -2043,6 +3185,13 @@ std::string Store::invoke(std::string m, std::string text) {
       fields(request, {});
       return impl_->removeData(s);
     }
+    if (m == "ResetDevelopmentData") {
+      // Works without an open handle so an unsupported store can be replaced.
+      fields(request, {"confirmed"});
+      require(request.value("confirmed", J()) == J(true),
+              "Confirm the development data reset.");
+      return impl_->resetData(s.empty() ? impl_->active() : s);
+    }
     if (m == "DisconnectSync" &&
         enumValue(
             request, "retention", "LOCAL_RETENTION_",
@@ -2060,8 +3209,10 @@ std::string Store::invoke(std::string m, std::string text) {
         "CreateRepository", "SaveRepository", "DeleteRepository",
         "CreateTask",       "SaveTask",       "SetProgress",
         "SetProposal",      "RestorePrompt",  "DeleteTask",
-        "ResolveConflict", "CreateCaptureTask", "CreateURLConnection", "SaveURLConnection", "DeleteURLConnection"};
+        "ResolveConflict", "CreateCaptureTask", "CreateURLConnection", "SaveURLConnection", "DeleteURLConnection",
+        "CreatePlanningItem", "SavePlanningItem", "DeletePlanningItem"};
     static const std::set<std::string> reads = {"GetAttachment", "ListURLConnections", "GetRepository",
+                                                "GetPlanningItem", "ListPlanningItems",
                                                 "GetTask",
                                                 "ListRepositories",
                                                 "ListTasks",
@@ -2094,6 +3245,17 @@ std::string Store::invoke(std::string m, std::string text) {
       auto seq = sequence(d);
       tx.commit();
       return success(r, seq);
+    }
+    if (m == "RetryBlockedItems") {
+      // App action equivalent of `lane sync run --retry-blocked`: rejected
+      // items return to the pending state with their original request IDs.
+      fields(q, {});
+      Tx tx(d);
+      compatibility(d);
+      d.run("UPDATE outbox SET state=1,error_reason=NULL WHERE state=2");
+      changed(d, "", 4);
+      tx.commit();
+      return success({{"completed", true}}, sequence(d));
     }
     if (m == "SetNotificationPreferences") {
       fields(q, {"enabled", "content"});
@@ -2253,7 +3415,8 @@ std::string Store::invoke(std::string m, std::string text) {
     }
     fail("INVALID_INPUT", "Unknown Lane method.");
   });
-  writeLog(impl_->root, "Invoke", parse(response), now() - started);
+  writeLog(impl_->root, m == "ResetDevelopmentData" ? m : "Invoke", parse(response),
+           now() - started);
   return response;
 }
 std::string Store::approveAccount(std::string text, bool merge) {
@@ -2361,7 +3524,9 @@ std::string Store::approveAccount(std::string text, bool merge) {
       Tx t(d);
       // Reapproval provides credentials, not permission to overwrite retained
       // generation identity. Probe the old epoch before pushing anything.
-      if (meta(d, "account_epoch").empty())
+      // A space waiting for reconnect (after an epoch change or a development
+      // reset) must confirm explicitly even when it has no retained epoch.
+      if (meta(d, "account_epoch").empty() && meta(d, "reconnect_required", "0") != "1")
         setMeta(d, "account_epoch", str(q, "epoch"));
       else if (meta(d, "account_epoch") != str(q, "epoch"))
         setMeta(d, "sync_error_reason", "ERROR_REASON_STALE_EPOCH");
@@ -2416,10 +3581,10 @@ std::string Store::pendingSync(std::string s, std::string owner) {
     bool epochReady = meta(d, "approved_epoch", meta(d, "account_epoch")) ==
                           meta(d, "account_epoch") &&
                       meta(d, "reconnect_required", "0") != "1";
-    for (auto &r : d.run("SELECT request_json FROM outbox ORDER BY "
-                         "created_at_us,request_id"))
-      if (epochReady)
-        mutations.push_back(parse(r[0]));
+    // Blocked (rejected) items are never re-sent implicitly; the user corrects
+    // them and retries explicitly (RetryBlockedItems).
+    if (epochReady)
+      mutations = impl_->uploadBatch(d);
     J attachments = J::array();
     if (epochReady) {
       for (auto &row : d.run("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE a.synchronized=0 AND a.png_base64 IS NOT NULL AND e.deleted=0 ORDER BY a.id")) {
@@ -2429,7 +3594,7 @@ std::string Store::pendingSync(std::string s, std::string owner) {
           {"png",row[6]}});
       }
     }
-    J r = {{"formatVersion", 2},
+    J r = {{"formatVersion", 3},
            {"epoch", meta(d, "account_epoch")},
            {"deviceId", impl_->device()},
            {"mutations", mutations},
@@ -2495,7 +3660,7 @@ std::string Store::applySync(std::string s, std::string text) {
     impl_->ready();
     auto q = canonical(parse(text));
     fields(q, {"formatVersion", "epoch", "owner", "push", "pull"});
-    if (q.value("formatVersion", 0) != 2)
+    if (q.value("formatVersion", 0) != 3)
       fail("UNSUPPORTED_FORMAT",
            "Update Lane before synchronization can continue.");
     auto &d = impl_->db(s);
@@ -2514,9 +3679,9 @@ std::string Store::applySync(std::string s, std::string text) {
         if (pending.empty())
           continue;
         if (r.contains("error") &&
-            str(r["error"], "reason") != "ERROR_REASON_UNSPECIFIED") {
+            Impl::rejectionReason(r["error"]) != "ERROR_REASON_UNSPECIFIED") {
           d.run("UPDATE outbox SET state=2,error_reason=? WHERE request_id=?",
-                {str(r["error"], "reason"), rid});
+                {Impl::rejectionReason(r["error"]), rid});
         } else {
           if (r.contains("result"))
             impl_->applyEntity(d, r["result"]);
@@ -2734,9 +3899,32 @@ std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
             "Local data changed during approval. Confirm again.");
     if (meta(d, "account_epoch") != epoch) {
       d.exec("DELETE FROM outbox; UPDATE attachments SET synchronized=0;");
+      // Only versions reachable from a current head are uploaded. A rejected
+      // version that an ordinary edit superseded stays in local history but is
+      // neither a head nor an ancestor of one.
+      std::set<std::string> reachable;
+      std::map<std::string, J> stored;
+      for (auto &r : d.run("SELECT version_id,envelope_json FROM versions"))
+        stored[r[0]] = parse(r[1]).value("parentVersionIds", J::array());
+      std::vector<std::string> frontier;
+      for (auto &r : d.run("SELECT version_id FROM heads"))
+        if (reachable.insert(r[0]).second)
+          frontier.push_back(r[0]);
+      while (!frontier.empty()) {
+        auto version = frontier.back();
+        frontier.pop_back();
+        auto it = stored.find(version);
+        if (it == stored.end())
+          continue;
+        for (auto &parent : it->second)
+          if (parent.is_string() && reachable.insert(parent.get<std::string>()).second)
+            frontier.push_back(parent.get<std::string>());
+      }
       for (auto &r : d.run("SELECT envelope_json FROM versions ORDER BY "
                            "created_at_us,version_id")) {
         auto v = parse(r[0]);
+        if (!reachable.count(str(v, "versionId")))
+          continue;
         auto parents = v.value("parentVersionIds", J::array());
         impl_->outbox(d, v,
                       v.value("deleted", false) ? "MUTATION_KIND_DELETE"

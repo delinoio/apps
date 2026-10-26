@@ -99,55 +99,31 @@ void capture_sync_and_import() {
   auto get=J{{"taskId",v["entityId"]},{"attachmentId",image["capture"]["attachmentId"]}};
   require(f.call("GetAttachment",get)["state"]=="ATTACHMENT_STATE_WAITING_FOR_SYNC","sync inserts manifest");
   auto changed=v;changed["versionId"]=uuid();changed["parentVersionIds"]=J::array({v["versionId"]});changed["task"]["captures"][0]["width"]=2;
-  auto raw=f.store.applySync(f.space,J{{"formatVersion",2},{"epoch",remote.epoch},{"owner",remote.owner},{"pull",{{"changes",J::array({J{{"sequence","2"},{"entity",{{"version",changed}}}}})}}}}.dump());
+  auto raw=f.store.applySync(f.space,J{{"formatVersion",3},{"epoch",remote.epoch},{"owner",remote.owner},{"pull",{{"changes",J::array({J{{"sequence","2"},{"entity",{{"version",changed}}}}})}}}}.dump());
   error(J::parse(raw),"INVALID_INPUT");
   success(f.store.cacheAttachment(f.space,v["entityId"],image["capture"]["attachmentId"],image["png"]));
   require(f.call("GetAttachment",get)["png"]==image["png"],"synced cache available");
   Fixture local;auto seed=local.task();auto q=captureRequest(local,seed["task"]["repositoryId"]);
   local.call("CreateCaptureTask",q);
   auto account=uuid();success(local.store.approveAccount(J{{"issuer","https://identity.example.test"},{"accountId",account},{"tenantId",uuid()},{"epoch",uuid()}}.dump(),true));
-  local.space=success(local.store.open(R"({"formatVersion":2,"spaceId":""})"))["spaceId"];
+  local.space=success(local.store.open(R"({"formatVersion":3,"spaceId":""})"))["spaceId"];
   require(local.call("GetAttachment",{{"taskId",q["id"]},{"attachmentId",q["images"][0]["capture"]["attachmentId"]}})["png"]==q["images"][0]["png"],"standalone import copies bytes");
 }
+// Pre-release exception: no migration exists. Format 1 and 2 envelopes stay
+// readable, and empty repeated defaults never change request identity.
 void capture_legacy_empty_defaults() {
   Fixture f; auto task=f.task();
   auto request=J{{"meta",f.meta()},{"id",task["entityId"]},{"expectedVersionId",task["versionId"]},{"task",task["task"]}};
   request["task"]["title"]="Legacy save";
   auto saved=f.call("SaveTask",request)["result"]["version"];
-  std::string receipts,versions,outbox;
-  {
-    Sql db(f.database());
-    // Reconstruct the actual schema 1 table contract. Existing receipt hashes
-    // were computed with the old SaveTask fields (no captures field).
-    db.exec("PRAGMA foreign_keys=OFF; BEGIN EXCLUSIVE; DROP TABLE attachments; DROP TABLE attachment_identities;"
-      "CREATE TABLE entities_old(id TEXT PRIMARY KEY,kind INTEGER NOT NULL CHECK(kind IN (1,2)),repository_id TEXT,normalized_url TEXT,deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1)));"
-      "INSERT INTO entities_old SELECT * FROM entities; DROP TABLE entities; ALTER TABLE entities_old RENAME TO entities;"
-      "CREATE UNIQUE INDEX repository_url ON entities(normalized_url) WHERE kind=1 AND deleted=0 AND normalized_url IS NOT NULL;"
-      "UPDATE versions SET envelope_json=json_set(envelope_json,'$.formatVersion',1);"
-      "UPDATE receipts SET result_json=json_set(result_json,'$.result.version.formatVersion',1);"
-      "UPDATE outbox SET request_json=json_set(request_json,'$.version.formatVersion',1);"
-      "UPDATE store_meta SET value='1' WHERE key='format_version'; PRAGMA user_version=1; COMMIT;");
-    receipts=db.scalar("SELECT group_concat(fingerprint || result_json,'|') FROM receipts");
-    versions=db.scalar("SELECT group_concat(envelope_json,'|') FROM versions");
-    outbox=db.scalar("SELECT group_concat(request_json,'|') FROM outbox");
-  }
-  success(f.store.close(f.space));
-  success(f.store.migrate(f.space));
-  success(f.store.open(J{{"formatVersion",2},{"spaceId",f.space}}.dump()));
-  {
-    Sql db(f.database());
-    require(receipts==db.scalar("SELECT group_concat(fingerprint || result_json,'|') FROM receipts"),"migration preserves receipt bytes");
-    require(versions==db.scalar("SELECT group_concat(envelope_json,'|') FROM versions"),"migration preserves envelope bytes");
-    require(outbox==db.scalar("SELECT group_concat(request_json,'|') FROM outbox"),"migration preserves outbox bytes");
-  }
   request["task"]["captures"]=J::array();
   require(f.call("SaveTask",request)["result"]["result"]=="RESULT_KIND_REPLAYED","format 1 receipt replays with empty repeated defaults");
   auto epoch=uuid(),owner=uuid();
   success(f.store.approveAccount(J{{"issuer","https://identity.example.test"},{"accountId",uuid()},{"tenantId",uuid()},{"epoch",epoch}}.dump(),true));
-  auto accountSpace=success(f.store.open(R"({"formatVersion":2,"spaceId":""})"))["spaceId"].get<std::string>();
+  auto accountSpace=success(f.store.open(R"({"formatVersion":3,"spaceId":""})"))["spaceId"].get<std::string>();
   success(f.store.acquireSync(accountSpace,owner));
-  saved["formatVersion"]=1;saved["task"]["captures"]=J::array();
-  auto response=J{{"formatVersion",2},{"epoch",epoch},{"owner",owner},{"pull",{{"changes",J::array({J{{"sequence","1"},{"entity",{{"version",saved}}}}})}}}};
+  saved["task"]["captures"]=J::array();
+  auto response=J{{"formatVersion",3},{"epoch",epoch},{"owner",owner},{"pull",{{"changes",J::array({J{{"sequence","1"},{"entity",{{"version",saved}}}}})}}}};
   success(f.store.applySync(accountSpace,response.dump()));
   require(f.call("ListHistory",{{"id",task["entityId"]}})["versions"].size()==2,"default-only import does not create a new version");
 }
@@ -230,7 +206,7 @@ void moved_capture_and_rule_import_retained_history() {
   auto taskHistory = f.history(moved), ruleHistory = f.history(movedRule);
   success(f.store.approveAccount(J{{"issuer","https://identity.example.test"},{"accountId",uuid()},
       {"tenantId",uuid()},{"epoch",uuid()}}.dump(),true));
-  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})"))["spaceId"];
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})"))["spaceId"];
   require(f.get(request["id"]) == moved,"import preserves moved task head");
   require(f.history(moved) == taskHistory,"import preserves immutable history under deleted former repository");
   require(f.history(movedRule) == ruleHistory,"import preserves moved URL rule history");
@@ -257,7 +233,7 @@ void attachment_identity_survives_deletion_and_import() {
   }
   success(f.store.approveAccount(J{{"issuer","https://identity.example.test"},{"accountId",uuid()},
       {"tenantId",uuid()},{"epoch",uuid()}}.dump(),true));
-  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})"))["spaceId"];
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})"))["spaceId"];
   reuse["meta"] = f.meta();
   error(f.raw("CreateCaptureTask",reuse),"INVALID_INPUT");
   Sql db(f.database());
@@ -270,7 +246,7 @@ void attachment_identity_survives_deletion_and_import() {
   incoming["entityId"] = uuid(); incoming["versionId"] = uuid();
   incoming["parentVersionIds"] = J::array();
   incoming["task"]["captures"] = J::array({request["images"][0]["capture"]});
-  auto response = J{{"formatVersion",2},{"epoch",epoch},{"owner",owner},
+  auto response = J{{"formatVersion",3},{"epoch",epoch},{"owner",owner},
       {"pull",{{"changes",J::array({J{{"sequence","1"},{"entity",{{"version",incoming}}}}})}}}};
   error(J::parse(f.store.applySync(f.space,response.dump())),"INVALID_INPUT");
   require(db.scalar("SELECT count(*) FROM attachments") == "0","pending sync cannot reassign a deleted attachment identity");

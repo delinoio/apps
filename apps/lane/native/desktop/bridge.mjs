@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 const methods = Object.freeze({
-  LaneStore: Object.freeze({ open: 1, invoke: 2, close: 1, migrate: 1 }),
+  LaneStore: Object.freeze({ open: 1, invoke: 2, close: 1 }),
   LaneHost: Object.freeze({
     realqa: 1,
     update: 1,

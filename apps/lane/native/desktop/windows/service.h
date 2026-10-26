@@ -5,7 +5,9 @@
 #include "logging.h"
 #include "serial_worker.h"
 #include "../../store/lane_store.h"
+#include <map>
 #include <set>
+#include <vector>
 #include <atomic>
 
 namespace lane::windows {
@@ -60,7 +62,6 @@ class Service {
           }
         }
         active_generation_ = generation;
-        if (method == "migrate") return store_->migrate(args.at(0));
         if (method == "open") {
           auto response = store_->open(args.at(0));
           auto envelope = Parse(response);
@@ -84,6 +85,15 @@ class Service {
         try { input = Parse(args.at(1)); }
         catch (...) { return Failure("ERROR_REASON_INVALID_INPUT", "The native request must be a JSON object."); }
         routed_space_ = Text(input, L"spaceId");
+        std::vector<std::string> released_host_handles;
+        if (operation == "ResetDevelopmentData") {
+          // The explicit development reset needs the exclusive space lease: stop
+          // the supervised `lane sync run` helper first. The store still fails
+          // with STORAGE_BUSY while any other process holds a handle.
+          CancelPending();
+          if (!routed_space_.empty()) supervisor_->Stop(routed_space_);
+          released_host_handles = ReleaseHostHandles(routed_space_);
+        }
         if (operation == "DeleteAccountData") {
           auto request = input.GetNamedObject(L"request");
           if (request.HasKey(L"reauthProof") || request.HasKey(L"reauth_proof"))
@@ -99,6 +109,8 @@ class Service {
           input.Insert(L"request", request);
         }
         auto response = store_->invoke(operation, Dump(input));
+        // Restore the host subscriptions whether the reset succeeded or was refused.
+        for (const auto& space : released_host_handles) OpenBackground(space);
         if (operation == "RemoveDeviceData" || operation == "DisconnectSync") {
           if (Parse(response).GetNamedBoolean(L"ok", false)) {
             supervisor_->Stop(routed_space_);
@@ -154,10 +166,11 @@ class Service {
           // The helper validates state/PKCE and updates registry routing using
           // its credential store. Never copy its tokens into NAPI or events.
           PendingAccountSpace({});
-          auto opened = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
+          auto opened = Parse(store_->open(R"({"formatVersion":3,"spaceId":""})"));
           if (opened.GetNamedBoolean(L"ok", false)) {
             const auto space = Text(opened.GetNamedObject(L"response"), L"spaceId");
             watched_.insert(space);
+            ++host_handles_[space];
             auto selected = opened.GetNamedObject(L"response");
             Json event; Set(event, L"spaceId", space); Set(event, L"sequence", Text(selected, L"sequence"));
             actions_.event("lane.storeChanged", Dump(event));
@@ -280,13 +293,32 @@ class Service {
       if (!result.GetNamedBoolean(L"ok", false)) throw std::runtime_error("Cannot disconnect the sync helper");
     };
     store_->setHostHooks(std::move(hooks));
-    auto initial = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
-    if (initial.GetNamedBoolean(L"ok", false)) watched_.insert(Text(initial.GetNamedObject(L"response"), L"spaceId"));
+    auto initial = Parse(store_->open(R"({"formatVersion":3,"spaceId":""})"));
+    if (initial.GetNamedBoolean(L"ok", false)) {
+      const auto space = Text(initial.GetNamedObject(L"response"), L"spaceId");
+      watched_.insert(space);
+      ++host_handles_[space];
+    }
   }
   void OpenBackground(const std::string& space) {
     Json request; Set(request, L"spaceId", space);
-    request.Insert(L"formatVersion", Value::CreateNumberValue(2));
-    store_->open(Dump(request));
+    request.Insert(L"formatVersion", Value::CreateNumberValue(3));
+    if (Parse(store_->open(Dump(request))).GetNamedBoolean(L"ok", false)) ++host_handles_[space];
+  }
+  // The store refuses a development reset with a retryable STORAGE_BUSY while
+  // any handle of the space is open in this process. Release only the handles
+  // this host opened for itself (the initial open and the background
+  // subscriptions); a renderer-owned view handle and other processes keep
+  // their protection. Returns the spaces whose subscription must be restored.
+  std::vector<std::string> ReleaseHostHandles(const std::string& target) {
+    std::vector<std::string> released;
+    for (auto it = host_handles_.begin(); it != host_handles_.end();) {
+      if (!target.empty() && it->first != target) { ++it; continue; }
+      for (int i = 0; i < it->second; ++i) store_->close(it->first);
+      released.push_back(it->first);
+      it = host_handles_.erase(it);
+    }
+    return released;
   }
   void Tick() {
     try {
@@ -343,6 +375,8 @@ class Service {
   HostActions actions_;
   bool apartment_ = false, observer_failed_ = false;
   std::set<std::string> watched_;
+  // Handles this host opened for its own subscriptions, per space.
+  std::map<std::string, int> host_handles_;
   std::unique_ptr<lane::Store> store_;
   std::unique_ptr<SyncSupervisor> supervisor_;
   std::unique_ptr<SerialWorker> worker_;
