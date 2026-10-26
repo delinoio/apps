@@ -249,6 +249,17 @@ counts without exporting PNG bytes, signed URLs or capture metadata. Restore
 provider connectivity and valid bucket credentials to drain pending work; do not
 purge pending rows as a recovery shortcut.
 
+### Remote MCP capture and URL connection inputs
+
+The eight `CaptureService` tools, `lane_save_task` and `lane_resolve_conflict`
+advertise and accept the canonical format-2 ProtoJSON inputs: capture requests,
+`CapturedImage`, `CaptureReference` (with `byteSize` as a decimal string),
+`URLConnection`, `Task.captures` (including an empty array), `ENTITY_KIND_URL_CONNECTION`
+by name or number 3, and `EntityVersion.urlConnection`. The advertised schema and
+runtime validation both reject unknown fields, unknown enum values, malformed
+bytes, any client-supplied `origin` and every pair of `EntityVersion` body members.
+Typed decoding and backend dispatch are unchanged.
+
 ### Disposable S3 integration fixture
 
 The affected Ubuntu Lane server integration step runs

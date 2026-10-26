@@ -2255,6 +2255,7 @@ dependencies = [
  "hex",
  "hmac",
  "httpdate",
+ "jsonschema",
  "jsonwebtoken",
  "png",
  "rand 0.9.5",
