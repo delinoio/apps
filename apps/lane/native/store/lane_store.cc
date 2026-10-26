@@ -1915,6 +1915,27 @@ struct Store::Impl {
       // store the response wrapper; preserve both durable formats on replay.
       if (r.contains("result") && r["result"].is_string())
         r = J{{"result", r}};
+      // Affected tasks replay from their stored versions, so a receipt never
+      // retains content of a task that was deleted after the original call. A
+      // version erased by that deletion is skipped.
+      std::vector<std::string> affectedIds;
+      if (r.contains("affectedVersionIds"))
+        affectedIds = r["affectedVersionIds"].get<std::vector<std::string>>();
+      for (auto &embedded : r.value("affected", J::array()))
+        if (embedded.contains("version"))
+          affectedIds.push_back(str(embedded["version"], "versionId"));
+      r.erase("affectedVersionIds");
+      r.erase("affected");
+      if (!affectedIds.empty()) {
+        r["affected"] = J::array();
+        for (auto &versionId : affectedIds) {
+          auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?", {versionId});
+          if (!raw.empty())
+            r["affected"].push_back({{"result", "RESULT_KIND_REPLAYED"}, {"version", parse(raw)}, {"alternatives", J::array()}});
+        }
+        if (r["affected"].empty())
+          r.erase("affected");
+      }
       auto kind = r["result"].value("result", "");
       if (kind == "RESULT_KIND_CONFLICT") {
         J ids = J::array();
@@ -2158,10 +2179,13 @@ struct Store::Impl {
         writeOtherTask(d, s, other, *nodes[other]);
     }
     J r = {{"result", result(d, e)}};
+    J affectedVersionIds = J::array();
     if ((m == "CreateTask" || m == "SaveTask") && !otherIds.empty()) {
       r["affected"] = J::array();
-      for (auto &other : otherIds)
+      for (auto &other : otherIds) {
         r["affected"].push_back(result(d, other));
+        affectedVersionIds.push_back(r["affected"].back()["version"]["versionId"]);
+      }
     }
     if (!repoResult.is_null())
       r["repository"] = repoResult;
@@ -2172,8 +2196,16 @@ struct Store::Impl {
       r["_error"] = {{"reason", "ERROR_REASON_STALE_VERSION"},
                      {"currentHeadIds", h}};
     }
+    // The durable receipt keeps the IDs of the affected versions, not their
+    // content: deleting an affected task erases its versions, and the receipt
+    // of the call that changed it must not keep returning its snapshot.
+    J saved = r;
+    if (!affectedVersionIds.empty()) {
+      saved.erase("affected");
+      saved["affectedVersionIds"] = affectedVersionIds;
+    }
     d.run("INSERT INTO receipts VALUES(?,?,?,?,?)",
-          {m, rid, fingerprint, e, r.dump()});
+          {m, rid, fingerprint, e, saved.dump()});
     return r;
   }
   static int pageSize(const J &q) {

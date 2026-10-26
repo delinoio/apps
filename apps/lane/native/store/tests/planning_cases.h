@@ -497,3 +497,28 @@ void planning_stale_specialized_mutations_are_validated() {
   error(f.raw("SetProgress", {{"meta", f.meta()}, {"id", other.at("entityId")}, {"expectedVersionId", other.at("versionId")}, {"progress", "PROGRESS_DONE"}}), "STALE_VERSION");
   require(f.call("GetTask", {{"id", other.at("entityId")}}).at("result").at("alternatives").size() == 2, "a valid stale edit is kept as an alternative");
 }
+void planning_deleted_affected_task_is_redacted_from_receipts() {
+  Fixture f; auto repo = repository_for(f); const auto repo_id = repo.at("entityId").get<std::string>();
+  auto a = planned_task(f, repo_id);
+  auto b = planned_task(f, repo_id, {{"description", "SecretDescription"}, {"prompt", "SecretPrompt"}});
+  const auto b_id = b.at("entityId").get<std::string>();
+  // Saving A changes B through a relationship edit, so B is an affected task of A's call.
+  auto body = a.at("task"); body["title"] = "Parent";
+  const J request = {{"meta", f.meta()}, {"id", a.at("entityId")}, {"expectedVersionId", a.at("versionId")}, {"task", body},
+      {"relationshipEdits", {{"addSubtaskIds", J::array({b_id})}}}};
+  auto first = f.call("SaveTask", request);
+  require(first.at("affected").size() == 1 && first.at("affected")[0].at("version").at("task").at("prompt") == "SecretPrompt", "affected task is returned");
+  auto replay = f.call("SaveTask", request);
+  require(replay.at("result").at("result") == "RESULT_KIND_REPLAYED" && replay.at("affected").size() == 1 &&
+          replay.at("affected")[0].at("version").at("entityId") == b_id, "replay returns the affected task while it exists");
+  f.call("DeleteTask", {{"meta", f.meta()}, {"id", b_id}});
+  {
+    Sql db(f.database());
+    for (const auto* query : {"SELECT count(*) FROM receipts WHERE result_json LIKE '%SecretPrompt%' OR result_json LIKE '%SecretDescription%'",
+                              "SELECT count(*) FROM versions WHERE envelope_json LIKE '%SecretPrompt%' OR envelope_json LIKE '%SecretDescription%'"})
+      require(db.scalar(query) == "0", "deleted affected content survives nowhere");
+  }
+  auto after = f.raw("SaveTask", request);
+  require(after.at("ok").get<bool>() && after.dump().find("Secret") == std::string::npos, "replay never returns deleted content");
+  require(!after.at("response").contains("affected") && after.at("response").at("result").at("result") == "RESULT_KIND_REPLAYED", "replay keeps the primary result");
+}
