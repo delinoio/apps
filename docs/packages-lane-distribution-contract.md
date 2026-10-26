@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The shared Delino release publishes downloadable binary archives and a complete npm archive; npm registry publication remains separate.
+`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The shared Delino release publishes downloadable binary archives and a lightweight npm launcher and six platform npm archives; npm registry publication remains separate.
 
 ## Runtime and Language
 
@@ -39,14 +39,14 @@ Native distributions retain the existing SDK, embedded production-bundle and lic
 Every validated `delino@vMAJOR.MINOR.PATCH` release builds all six CLI targets and
 macOS Intel/Apple Silicon plus Windows x64 desktop archives through the
 [Lane binary publication procedure](repository-workflow-contract.md#lane-binary-publication).
-The GitHub Release includes direct CLI archives, a complete `@delinoio/lane` npm
-archive, desktop application archives, checksums and source/platform metadata.
+The GitHub Release includes direct CLI archives, the lightweight `@delinoio/lane` npm
+launcher and all six optional platform npm archives, desktop application archives, checksums and source/platform metadata.
 Lane CLI/npm package versions remain independent of the Delino tag version.
 Desktop packages embed the matching verified CLI and notices. macOS packages are
 ad-hoc signed; Windows packages are unsigned portable archives. No signing
 identity, npm registry credential or store upload is required for this workflow.
 
-Publication requires all targets before upload. Existing published assets must
+Assembly verifies each platform package directly before installation, including its OS/CPU metadata, source revision, executable checksum and notices. It does not add platform binaries to the launcher archive. Publication requires all targets before upload. Existing published assets must
 match byte-for-byte on retry; a mismatch fails without replacing the asset.
 Windows ARM64 CLI is cross-built; host smoke checks execute only native targets.
 These release builds do not establish native installation or GUI acceptance.

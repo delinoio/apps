@@ -18,6 +18,7 @@ import yaml from "js-yaml";
 import { assemble, publish, releaseIdentity } from "./lane.mjs";
 import {
   platforms,
+  platformPackage,
   verifiedExecutable,
 } from "../../packages/lane/bin/verify.mjs";
 
@@ -53,51 +54,73 @@ function fixture(t, options = {}) {
     };
     write(
       resolve(pkg, "package.json"),
-      JSON.stringify({ name: "@delinoio/lane", version }),
+      JSON.stringify({
+        name: "@delinoio/lane",
+        version,
+        optionalDependencies: Object.fromEntries(
+          platforms.map((key) => [platformPackage(key).name, version]),
+        ),
+      }),
     );
     for (const name of ["LICENSE", "NOTICE"])
       write(resolve(pkg, name), `${name} fixture\n`);
-    write(
-      resolve(pkg, "THIRD_PARTY_NOTICES/modules.json"),
-      JSON.stringify([
-        { module: host, version: "1.0.0", source: "fixture", license: "MIT" },
-      ]),
-    );
     for (const target of targets.filter(
       (target) => target !== options.missing,
     )) {
       const name = target.startsWith("windows") ? "lane.exe" : "lane";
-      const path = `artifacts/lane-${target}/${name}`;
+      const platformRoot = resolve(
+        directory,
+        "sources",
+        host,
+        target,
+        "package",
+      );
+      const info = platformPackage(target);
       const bytes = `synthetic ${target} executable; not native acceptance\n`;
       const entry = {
         platform: target,
         version,
-        path,
+        path: name,
         size: Buffer.byteLength(bytes),
         sha256: digest(bytes),
       };
       write(
-        resolve(pkg, path),
+        resolve(platformRoot, "package.json"),
+        JSON.stringify({
+          name: info.name,
+          version,
+          os: [info.os],
+          cpu: [info.cpu],
+        }),
+      );
+      write(
+        resolve(platformRoot, name),
         options.corrupt === target ? "corrupted" : bytes,
       );
       write(
-        resolve(pkg, `artifacts/lane-${target}/manifest.json`),
-        JSON.stringify({
-          ...entry,
-          path: name,
-          sourceRevision: identity.revision,
-        }),
+        resolve(platformRoot, "manifest.json"),
+        JSON.stringify({ ...entry, sourceRevision: identity.revision }),
       );
-      for (const notice of [
-        "LICENSE",
-        "NOTICE",
-        "THIRD_PARTY_NOTICES/modules.json",
-      ])
+      for (const notice of ["LICENSE", "NOTICE"])
         write(
-          resolve(pkg, `artifacts/lane-${target}`, notice),
+          resolve(platformRoot, notice),
           readFileSync(resolve(pkg, notice)),
         );
+      write(
+        resolve(platformRoot, "THIRD_PARTY_NOTICES/modules.json"),
+        JSON.stringify([
+          { module: host, version: "1.0.0", source: "fixture", license: "MIT" },
+        ]),
+      );
       manifest.artifacts[target] = entry;
+      mkdirSync(candidate, { recursive: true });
+      execFileSync("tar", [
+        "-czf",
+        resolve(candidate, `delinoio-lane-${target}-${version}.tgz`),
+        "-C",
+        resolve(platformRoot, ".."),
+        "package",
+      ]);
     }
     write(resolve(pkg, "manifest.json"), JSON.stringify(manifest));
     mkdirSync(candidate, { recursive: true });
@@ -134,10 +157,10 @@ function fixture(t, options = {}) {
   return { inputs, destination: resolve(directory, "release"), directory };
 }
 
-test("complete assembly preserves all six verified executables and combines notices", (t) => {
+test("complete assembly keeps a lightweight launcher and six verified platform packages", (t) => {
   const f = fixture(t);
   assemble(f.inputs, f.destination, identity);
-  assert.equal(readdirSync(f.destination).length, 12);
+  assert.equal(readdirSync(f.destination).length, 18);
   const extracted = resolve(f.directory, "installed");
   mkdirSync(extracted);
   execFileSync("tar", [
@@ -147,16 +170,36 @@ test("complete assembly preserves all six verified executables and combines noti
     extracted,
   ]);
   const pkg = resolve(extracted, "package");
-  for (const platform of platforms)
+  assert.deepEqual(readdirSync(pkg).sort(), [
+    "LICENSE",
+    "NOTICE",
+    "manifest.json",
+    "package.json",
+  ]);
+  for (const platform of platforms) {
+    const destination = resolve(
+      pkg,
+      "node_modules/@delinoio",
+      `lane-${platform}`,
+    );
+    mkdirSync(destination, { recursive: true });
+    execFileSync("tar", [
+      "-xzf",
+      resolve(f.destination, `delinoio-lane-${platform}-${version}.tgz`),
+      "--strip-components=1",
+      "-C",
+      destination,
+    ]);
     assert.match(
       readFileSync(verifiedExecutable(pkg, platform), "utf8"),
       /synthetic/,
     );
-  assert.equal(
-    JSON.parse(readFileSync(resolve(pkg, "THIRD_PARTY_NOTICES/modules.json")))
-      .length,
-    5,
-  );
+    assert.ok(
+      JSON.parse(
+        readFileSync(resolve(destination, "THIRD_PARTY_NOTICES/modules.json")),
+      ).length,
+    );
+  }
   const sums = readFileSync(resolve(f.destination, "SHA256SUMS"), "utf8")
     .trim()
     .split("\n");
@@ -276,7 +319,7 @@ test(
     assert.equal(retried.status, 0, retried.stderr);
     state = JSON.parse(readFileSync(f.state));
     assert.equal(state.creates, 1);
-    assert.equal(state.assets.length, 12);
+    assert.equal(state.assets.length, 18);
     assert.equal(state.draft, false);
     assert.equal(
       f.invoke().status,

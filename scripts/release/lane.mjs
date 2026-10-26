@@ -5,20 +5,22 @@ import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   platforms,
   platformKey,
-  verifiedExecutable,
+  platformPackage,
 } from "../../packages/lane/bin/verify.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -46,6 +48,52 @@ function checksums(directory, files) {
   );
 }
 
+// Release candidates are not installed npm dependencies. Verify each unpacked
+// platform archive directly, then let runtime installation retain host selection.
+export function verifiedPlatformCandidate(
+  directory,
+  manifest,
+  platform,
+  identity,
+) {
+  const info = platformPackage(platform);
+  const metadata = json(resolve(directory, "package.json"));
+  assert.equal(metadata.name, info.name);
+  assert.equal(metadata.version, manifest.version);
+  assert.deepEqual(metadata.os, [info.os]);
+  assert.deepEqual(metadata.cpu, [info.cpu]);
+  const entry = manifest.artifacts[platform];
+  const name = platform.startsWith("windows-") ? "lane.exe" : "lane";
+  assert.equal(entry.path, name);
+  assert.equal(entry.version, manifest.version);
+  assert.equal(entry.platform, platform);
+  assert.equal(manifest.sourceRevision, identity.revision);
+  assert.equal(manifest.launcherRevision, identity.revision);
+  assert.deepEqual(json(resolve(directory, "manifest.json")), {
+    ...entry,
+    sourceRevision: identity.revision,
+  });
+  const file = resolve(directory, name);
+  assert.ok(
+    lstatSync(file).isFile() &&
+      realpathSync(file).startsWith(`${realpathSync(directory)}${sep}`),
+    "candidate executable must be a regular packaged file",
+  );
+  const bytes = readFileSync(file);
+  if (bytes.length !== entry.size || sha256(file) !== entry.sha256)
+    throw new Error(`checksum mismatch for ${platform}`);
+  for (const notice of [
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES/modules.json",
+  ])
+    assert.ok(
+      existsSync(resolve(directory, notice)),
+      `missing platform notice: ${notice}`,
+    );
+  return file;
+}
+
 export function packageDesktop(destination, identity = releaseIdentity()) {
   const platform = platformKey();
   assert.ok(desktopPlatforms.includes(platform));
@@ -64,7 +112,14 @@ export function packageDesktop(destination, identity = releaseIdentity()) {
   const helper = resolve(resources, "helpers", mac ? "lane" : "lane.exe");
   assert.equal(
     sha256(helper),
-    sha256(verifiedExecutable(source, platform)),
+    sha256(
+      verifiedPlatformCandidate(
+        resolve(root, "packages/lane/dist/platforms", `lane-${platform}`),
+        json(resolve(source, "manifest.json")),
+        platform,
+        identity,
+      ),
+    ),
     "desktop must embed the matching verified CLI",
   );
   for (const path of [
@@ -120,7 +175,6 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
   try {
     const stage = resolve(temporary, "package");
     const seen = new Set();
-    const modules = new Map();
     let combined;
     const files = [];
     const desktops = new Map();
@@ -151,17 +205,12 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
         json(resolve(pkg, "package.json")).version,
         combined.version,
       );
-      for (const entry of json(
-        resolve(pkg, "THIRD_PARTY_NOTICES/modules.json"),
-      )) {
-        const key = `${entry.module}@${entry.version}`;
-        if (modules.has(key)) assert.deepEqual(modules.get(key), entry);
-        modules.set(key, entry);
-      }
-      cpSync(
-        resolve(pkg, "THIRD_PARTY_NOTICES"),
-        resolve(stage, "THIRD_PARTY_NOTICES"),
-        { recursive: true },
+      assert.equal(manifest.schemaVersion, 1);
+      assert.deepEqual(
+        json(resolve(pkg, "package.json")).optionalDependencies,
+        Object.fromEntries(
+          platforms.map((key) => [platformPackage(key).name, manifest.version]),
+        ),
       );
       for (const platform of Object.keys(manifest.artifacts)) {
         assert.ok(
@@ -169,31 +218,32 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
           "unexpected or duplicate target",
         );
         seen.add(platform);
-        verifiedExecutable(pkg, platform);
         const artifact = `lane-${platform}`;
-        const metadata = json(
-          resolve(pkg, "artifacts", artifact, "manifest.json"),
-        );
-        assert.equal(metadata.sourceRevision, identity.revision);
-        assert.equal(metadata.sha256, manifest.artifacts[platform].sha256);
-        for (const notice of [
-          "LICENSE",
-          "NOTICE",
-          "THIRD_PARTY_NOTICES/modules.json",
-        ])
-          assert.ok(existsSync(resolve(pkg, "artifacts", artifact, notice)));
+        const npmArchive = `delinoio-${artifact}-${combined.version}.tgz`;
+        const platformStage = resolve(extracted, artifact);
+        mkdirSync(platformStage);
+        run("tar", [
+          "-xzf",
+          resolve(candidate, npmArchive),
+          "-C",
+          platformStage,
+        ]);
+        const platformRoot = resolve(platformStage, "package");
+        verifiedPlatformCandidate(platformRoot, manifest, platform, identity);
         cpSync(
-          resolve(pkg, "artifacts", artifact),
-          resolve(stage, "artifacts", artifact),
-          { recursive: true },
+          resolve(candidate, npmArchive),
+          resolve(destination, npmArchive),
         );
+        files.push(npmArchive);
+        const direct = resolve(extracted, "direct");
+        cpSync(platformRoot, resolve(direct, artifact), { recursive: true });
         combined.artifacts[platform] = manifest.artifacts[platform];
         const archive = `${artifact}-${combined.version}.tar.gz`;
         run("tar", [
           "-czf",
           resolve(destination, archive),
           "-C",
-          resolve(stage, "artifacts"),
+          direct,
           artifact,
         ]);
         files.push(archive);
@@ -238,16 +288,6 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
     writeFileSync(
       resolve(stage, "manifest.json"),
       JSON.stringify(combined, null, 2) + "\n",
-    );
-    writeFileSync(
-      resolve(stage, "THIRD_PARTY_NOTICES/modules.json"),
-      JSON.stringify(
-        [...modules.values()].sort((a, b) =>
-          `${a.module}@${a.version}`.localeCompare(`${b.module}@${b.version}`),
-        ),
-        null,
-        2,
-      ) + "\n",
     );
     run(
       "npm",
@@ -315,6 +355,9 @@ export function publish(directory, identity = releaseIdentity()) {
     [
       ...platforms.map(
         (platform) => `lane-${platform}-${record.cliVersion}.tar.gz`,
+      ),
+      ...platforms.map(
+        (platform) => `delinoio-lane-${platform}-${record.cliVersion}.tgz`,
       ),
       ...desktopPlatforms.map(
         (platform) =>

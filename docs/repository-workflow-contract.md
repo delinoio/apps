@@ -287,7 +287,7 @@ Host candidates travel as tar archives so artifact storage does not discard
 executable modes or symlinks. Assembly rejects missing/duplicate targets, mixed
 source revisions, version mismatches and corrupted executable or desktop bytes.
 It requires all six CLI targets and all three desktop archives before preparing
-the complete npm archive, direct CLI archives, `lane-release.json` and
+the lightweight npm launcher and six platform npm archives, direct CLI archives, `lane-release.json` and
 `SHA256SUMS`. CLI/npm versions remain those committed in Lane, independent of
 the Delino release version; desktop archive names carry the Delino tag version.
 
