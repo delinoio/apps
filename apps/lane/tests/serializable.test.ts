@@ -9,7 +9,7 @@ import {
   TaskSchema,
   SetProgressRequestSchema,
   EntityVersionSchema,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { toUI, fromUI } from "../src/serializable.ts";
 import { progressOptions } from "../src/model.ts";
 test("uint64 larger than MAX_SAFE_INTEGER remains exact through UI and schema restoration", () => {

@@ -7,7 +7,7 @@ Android/iOS, and macOS/Windows hosts.
 
 ## Project ID
 
-`lynx-ui`. The npm workspace is `@delino/lynx-ui`.
+`lynx-ui`. The npm workspace is `@packages/lynx-ui`.
 
 ## Domain Ownership Map
 
@@ -26,7 +26,7 @@ Read [Lynx UI foundation](packages-lynx-ui-contract.md). TypeScript and ReactLyn
 are the language/runtime exception because these components render Lynx UI.
 Source exports are compiled by the consumer's ReactLynx build plugin. This package
 has no service, storage, deployment or React DOM dependency. Existing React DOM
-applications retain `@delino/ui`; adopting Lynx is a separate application change.
+applications retain `@packages/ui`; adopting Lynx is a separate application change.
 
 ## Change Policy
 

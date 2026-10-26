@@ -1,2 +1,2 @@
 // SPDX-License-Identifier: Apache-2.0
-export { default } from "@delino/ui/postcss";
+export { default } from "@packages/ui/postcss";

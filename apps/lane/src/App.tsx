@@ -6,7 +6,7 @@ import {
   Progress,
   Proposal,
   type EntityResult as ProtoEntityResult,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { newId, type LaneAdapter } from "./adapter";
 import { getAdapter, listenHost, type OpenRoute } from "./runtime";
 import { Button, Choices, Field, Notice, Dialog } from "./components";

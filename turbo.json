@@ -30,7 +30,7 @@
     "test": {
       "cache": false
     },
-    "@delinoio/delcore-api#dev": {
+    "@servers/delcore-api#dev": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
@@ -81,7 +81,7 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "@delinoio/delitools-api#dev": {
+    "@servers/delitools-api#dev": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
@@ -110,7 +110,7 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "@delinoio/devbase-api#dev": {
+    "@servers/devbase-api#dev": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
@@ -145,7 +145,7 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "@delinoio/git-tracker-api#dev": {
+    "@servers/git-tracker-api#dev": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
@@ -205,7 +205,7 @@
         "NO_COLOR"
       ]
     },
-    "@delinoio/perfine-api#dev": {
+    "@servers/perfine-api#dev": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
@@ -241,7 +241,7 @@
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
       ]
     },
-    "lane-api#dev": {
+    "@servers/lane-api#dev": {
       "cache": false,
       "persistent": true,
       "dependsOn": ["//#server-build"],

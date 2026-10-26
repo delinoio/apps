@@ -6,7 +6,7 @@ Provide a console and the API services of DevBase. The first API service is a fr
 
 ## Project ID
 
-`devbase`. The npm workspace is `devbase`.
+`devbase`. The npm workspace is `@apps/devbase`.
 
 ## Domain Ownership Map
 

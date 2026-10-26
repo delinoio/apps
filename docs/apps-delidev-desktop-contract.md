@@ -12,7 +12,7 @@ Keep the `io.delino.delidev` application identifier, React/Rsbuild frontend, pin
 
 There is no CLI, server, Worker, mobile application, RPC schema, API client, sidecar, tray, widget, notification, account access, updater or product data migration. The shell does not inspect or erase previous user data or credentials. CEF infrastructure processes are part of rendering, not product Workers.
 
-Shared UI primitives and PostCSS configuration are available through `@delino/ui`; follow [the shared UI contract](packages-ui-foundation.md). The initial root remains empty.
+Shared UI primitives and PostCSS configuration are available through `@packages/ui`; follow [the shared UI contract](packages-ui-foundation.md). The initial root remains empty.
 
 ## Development
 

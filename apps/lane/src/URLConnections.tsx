@@ -6,7 +6,7 @@ import {
   ResultKind,
   type EntityResult,
   type EntityVersion,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
 import { meta, newId, type LaneAdapter, type LocalStatus } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";

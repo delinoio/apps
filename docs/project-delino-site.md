@@ -6,7 +6,7 @@ Provide the Delino company and product website, centered on software that helps 
 
 ## Project ID
 
-`delino-site`. The npm workspace is `delino-site`.
+`delino-site`. The npm workspace is `@apps/delino-site`.
 
 ## Domain Ownership Map
 

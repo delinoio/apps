@@ -9,7 +9,7 @@ import {
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
   type Task as ProtoTask,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 export const progressOptions = [
   [Progress.TODO, "To do"],
   [Progress.IN_PROGRESS, "In progress"],
