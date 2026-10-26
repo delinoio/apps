@@ -9,6 +9,44 @@ export interface RepositoryDraft {
   name: string;
 }
 
+// Builds the editable raw URL for a stored normalized `host[:port]/path` identifier.
+//
+// An identifier carries no transport, while raw-URL normalization removes the default port
+// of the transport that it names (HTTPS 443, SSH 22). An explicit `:443` can therefore only
+// come from a nondefault SSH port, and an HTTPS URL would turn it into the portless
+// identifier of a different repository. Every other explicit port, including `:22`, is kept
+// by HTTPS normalization. The result feeds the existing raw-URL API; no transport is stored.
+export function repositoryEditUrl(normalizedUrl: string): string {
+  const authority = normalizedUrl.split("/", 1)[0];
+  const colon = authority.lastIndexOf(":");
+  const explicitHttpsDefaultPort =
+    colon >= 0 &&
+    !authority.includes("]") &&
+    authority.slice(colon + 1) === "443";
+  return explicitHttpsDefaultPort
+    ? `ssh://git@${normalizedUrl}`
+    : `https://${normalizedUrl}`;
+}
+
+// The draft for editing an existing repository version. Its URL round-trips to the same
+// normalized identifier when only the display name changes.
+export function repositoryDraft(version: {
+  entityId: string;
+  versionId: string;
+  body: { case?: string; value?: unknown };
+}): RepositoryDraft {
+  const repository =
+    version.body.case === "repository"
+      ? (version.body.value as { normalizedUrl: string; displayName?: string })
+      : undefined;
+  return {
+    id: version.entityId,
+    base: version.versionId,
+    url: repository ? repositoryEditUrl(repository.normalizedUrl) : "",
+    name: repository?.displayName || "",
+  };
+}
+
 export enum RepositorySaveOutcome {
   // The mutation was applied or replayed.
   Saved = "saved",
