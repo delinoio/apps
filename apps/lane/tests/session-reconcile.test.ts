@@ -279,6 +279,37 @@ test("the newest session response wins when an obsolete one is released last", a
   h.lane.stop();
 });
 
+test("a session response released after Disconnect cannot reinstall the signed-out session", async () => {
+  const h = harness();
+  await h.lane.start();
+  await tick();
+  h.holdSessions(true);
+  const pending = h.lane.reconcile();
+  await tick();
+  assert.equal(h.heldSessionCount(), 1);
+  // Disconnect bypasses the reconciliation guard, so it completes while the
+  // focus-triggered /auth/session read is still pending.
+  assert.deepEqual(await h.lane.invoke("local", "DisconnectSync", {}), {
+    completed: true,
+  });
+  assert.equal(h.sessions.at(-1), undefined);
+  h.events.length = 0;
+  h.calls.length = 0;
+  h.releaseSession(0);
+  await pending;
+  await tick();
+  assert.deepEqual(h.events, []);
+  assert.equal(h.sessions.at(-1), undefined);
+  await assert.rejects(list(h), /Sign in to Lane/);
+  await assert.rejects(create(h), /Sign in to Lane/);
+  assert.deepEqual(h.business(), []);
+  // A reconciliation started after the Disconnect still installs normally.
+  h.holdSessions(false);
+  await h.lane.reconcile();
+  assert.equal(h.sessions.at(-1)?.account_id, "account-a");
+  h.lane.stop();
+});
+
 test("an identical session keeps in-flight reads and the deletion target", async () => {
   const h = harness();
   await h.lane.start();

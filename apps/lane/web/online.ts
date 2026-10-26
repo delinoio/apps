@@ -221,6 +221,13 @@ export class OnlineLane {
     }
   }
   private endSession() {
+    // Ending the session (sign-in gate, Disconnect, data deletion) also ends any
+    // reconciliation still waiting on /auth/session. Its response predates this
+    // transition, so it must not reinstall the identity that was just removed. The
+    // pending run is detached from `reconciling` because a superseded run returns
+    // that promise and would otherwise wait on itself.
+    ++this.reconcileSeq;
+    this.reconciling = undefined;
     this.stop();
     this.session = undefined;
     this.unavailable = false;
