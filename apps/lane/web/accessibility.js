@@ -5,6 +5,9 @@ export function installAccessibility(view) {
   let previousDialog;
   let previousApp;
   let restoreFocus;
+  // Dialog fields can take focus before the mutation observer runs, so remember
+  // the last control outside any dialog as the focus-return target.
+  let lastOutside;
   let previousSettingsTarget;
   let previousCommand;
   const pendingAnnouncements = new WeakSet();
@@ -64,6 +67,7 @@ export function installAccessibility(view) {
         );
       }
       // Toggle chips and collapsible regions expose their state to screen readers.
+      // The web runtime removes aria-*="false", so only the active state is observable.
       for (const [source, aria] of [
         ["data-pressed", "aria-pressed"],
         ["data-expanded", "aria-expanded"],
@@ -131,7 +135,10 @@ export function installAccessibility(view) {
     const dialog = dialogs[dialogs.length - 1];
     if (dialog !== previousDialog) {
       if (dialog) {
-        if (!previousDialog) restoreFocus = root.activeElement;
+        if (!previousDialog)
+          restoreFocus = lastOutside?.isConnected
+            ? lastOutside
+            : root.activeElement;
         dialog.setAttribute("role", "dialog");
         dialog.setAttribute("aria-modal", "true");
         queueMicrotask(() => focus(focusables(dialog)[0]));
@@ -287,6 +294,25 @@ export function installAccessibility(view) {
           event.stopImmediatePropagation();
           view.sendGlobalEvent("lane.commandKey", [{ key: event.key }]);
         }
+      },
+      true,
+    );
+    root.addEventListener("focusin", (event) => {
+      const target = event.composedPath()[0];
+      if (target instanceof Element && !target.closest(".dialog"))
+        lastOutside = target.closest("x-view.button") || target;
+    });
+    // Activation (pointer or keyboard) names the trigger precisely, even when the
+    // button is not the element that received focus.
+    root.addEventListener(
+      "click",
+      (event) => {
+        const trigger = event
+          .composedPath()
+          .find(
+            (node) => node instanceof Element && node.matches("x-view.button"),
+          );
+        if (trigger && !trigger.closest(".dialog")) lastOutside = trigger;
       },
       true,
     );

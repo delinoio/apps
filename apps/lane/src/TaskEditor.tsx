@@ -131,12 +131,21 @@ export function TaskEditor({
       repositories.map((r) => [r.version!.entityId, repositoryName(r.version)]),
     ),
   );
-  const edit = (patch: Partial<Draft["task"]>) =>
+  const edit = (patch: Partial<Draft["task"]>) => {
+    // Input controls can echo an unchanged value; that must not mark the draft dirty.
+    const task = draft.task as Record<string, unknown>;
+    if (
+      Object.entries(patch).every(
+        ([key, value]) => JSON.stringify(task[key]) === JSON.stringify(value),
+      )
+    )
+      return;
     setDraft({
       ...draft,
       task: createUITask({ ...draft.task, ...patch }),
       dirty: true,
     });
+  };
   // Repository-owned values belong to one repository: clear them on a change and
   // restore the saved values when the original repository is selected again.
   const changeRepository = (repositoryId: string) => {
@@ -466,6 +475,7 @@ export function TaskEditor({
           planning={planning}
           pointsText={pointsText}
           setPointsText={(value) => {
+            if (value === pointsText) return;
             setPointsText(value);
             setDraft({ ...draft, dirty: true });
           }}

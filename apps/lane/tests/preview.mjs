@@ -4,6 +4,10 @@ import { bridgeModule, withUpdateFixture } from "./update-preview.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
+import {
+  createPlanningState,
+  handle as handlePlanning,
+} from "./planning-mock.mjs";
 const port = Number(process.env.LANE_PREVIEW_PORT || 46400);
 const root = process.env.LANE_PREVIEW_ROOT
   ? resolve(process.env.LANE_PREVIEW_ROOT)
@@ -56,6 +60,11 @@ const result = (v) => ({
   version: v,
   alternatives: [],
 });
+// LANE_PREVIEW_SCENARIO=planning serves task planning fixtures and records requests.
+const planning =
+  process.env.LANE_PREVIEW_SCENARIO === "planning"
+    ? createPlanningState(task, repo)
+    : undefined;
 let emptyList = false;
 let failSave = false;
 let history = [task];
@@ -94,6 +103,23 @@ createServer(async (req, res) => {
       res.end("{}");
       return;
     }
+    if (planning && url.pathname === "/test/requests") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(planning.requests));
+      return;
+    }
+    if (planning && url.pathname === "/test/reset-requests") {
+      planning.requests.length = 0;
+      res.end("{}");
+      return;
+    }
+    if (planning && url.pathname === "/test/plan") {
+      const body = JSON.parse(url.searchParams.get("body") || "{}");
+      if (body.failNext) planning.failNext = body.failNext;
+      if (body.delayMs !== undefined) planning.delayMs = body.delayMs;
+      res.end("{}");
+      return;
+    }
     if (url.pathname === "/auth/session") {
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -111,6 +137,18 @@ createServer(async (req, res) => {
       const input = body ? JSON.parse(body) : {};
       const method = url.pathname.split("/").at(-1);
       let response = {};
+      if (
+        planning &&
+        /\/lane\.v1\.(LaneService|PlanningService)\//.test(url.pathname)
+      ) {
+        const handled = await handlePlanning(planning, method, input);
+        if (handled) {
+          res.statusCode = handled.status ?? 200;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(handled.body));
+          return;
+        }
+      }
       switch (method) {
         case "GetAttachment":
           if (captureState === "denied") {

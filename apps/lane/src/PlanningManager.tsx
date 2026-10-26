@@ -181,7 +181,7 @@ export function PlanningManager({
         </view>
         <Button onClick={back}>Back to repositories</Button>
       </view>
-      <view className="row wrap">
+      <view className="row wrap planning-tabs">
         {planningKinds.map(([k, title]) => (
           <Button
             key={k}
@@ -205,9 +205,11 @@ export function PlanningManager({
       )}
       <view className="planning-manager">
         <view className="planning-list">
-          <Button primary onClick={() => start()}>
-            {`New ${noun[kind]}`}
-          </Button>
+          <view className="row">
+            <Button primary onClick={() => start()}>
+              {`New ${noun[kind]}`}
+            </Button>
+          </view>
           {planning.status === "loading" && <text>Loading…</text>}
           {planning.status === "ready" && list.length === 0 && (
             <view className="empty">
