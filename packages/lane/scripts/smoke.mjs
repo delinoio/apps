@@ -148,13 +148,13 @@ try {
     );
     assert.ok(lstatSync(binary).isFile());
     assert.deepEqual(readFileSync(binary), readFileSync(executable));
-    const manifest = JSON.parse(
+    const archiveManifest = JSON.parse(
       readFileSync(resolve(extracted, `lane-${key}`, "manifest.json")),
     );
-    assert.equal(manifest.version, version);
-    assert.equal(manifest.platform, key);
+    assert.equal(archiveManifest.version, version);
+    assert.equal(archiveManifest.platform, key);
     assert.equal(
-      manifest.path,
+      archiveManifest.path,
       key.startsWith("windows") ? "lane.exe" : "lane",
     );
   }
