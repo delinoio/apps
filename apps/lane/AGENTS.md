@@ -13,3 +13,4 @@
 
 - Desktop RealQA validation and relay installation follow [desktop capture packaging](../../docs/apps-lane-foundation.md#desktop-capture-packaging-and-local-validation). Use explicit native-testing builds and scratch roots for capture/store and installer probes. Keep fixture extension IDs separate from actual installed/published IDs; never record fixture registration as Chrome publication or Windows runtime acceptance.
 - Windows desktop builds use the app build launcher to resolve the pinned Windows App SDK. Keep MSVC, CMake and the Windows SDK on the host; supply all four documented SDK override paths together when using an external SDK. Preserve SDK licenses and notices in the application package.
+- Follow [desktop update release preparation](../../docs/apps-lane-foundation.md#desktop-update-release-preparation) for update candidates. Keep release keys outside the checkout and record fixture, packaging and native update acceptance separately.

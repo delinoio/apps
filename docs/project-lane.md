@@ -46,6 +46,12 @@ Skills that help agents use Lane will be distributed through [delinoio/lane-skil
 
 ## Cross-Domain Invariants
 
+Desktop automatic updates belong to the existing desktop host and app-local
+packaging helpers. They consume signed, target-specific GitHub Releases under
+`lane-desktop@v<version>` and install after native shutdown. See the
+[application contract](apps-lane-foundation.md#desktop-automatic-updates) for
+verification, release preparation and first-install prerequisites.
+
 Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx and Rspeedy for the shared client, Lynx SDKs for mobile, and Lynxtron for desktop. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Rust and server code uses Rust.
 
 Native hosts and Rust CLI share the specified SQLite format on desktop. They implement the same versioned domain rules and run the same fixture vectors. Native business logic runs in the host, not in ReactLynx. Web reads/writes the server only, without an offline mutation queue or independent browser database. PostgreSQL owns server state; local SQLite owns standalone work and durable pending synchronization changes.

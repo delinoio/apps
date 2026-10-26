@@ -61,6 +61,103 @@ Web output is a static Cloudflare Pages candidate. Upload `apps/lane/dist` after
 building from the root with `pnpm --filter lane build`. The product domain is `lane.delino.io`. This contract does not provision an account,
 release workflow, signing identity or store registration.
 
+### Desktop automatic updates
+
+Lynxtron does not expose Electron's `autoUpdater`. The desktop main process owns
+an independent updater; the renderer cannot select a feed, verification key,
+download URL or installation path. Updates use public GitHub Releases in
+`delinoio/apps` with tags `lane-desktop@vMAJOR.MINOR.PATCH`. Other projects'
+releases, drafts, prereleases, equal versions and older versions are ignored.
+Discovery examines the most recent 100 repository releases and chooses the
+highest matching stable version. Publish a new Lane release before its previous
+release falls outside this discovery window. No GitHub token or Lane account
+is required on the client.
+
+An update-enabled build requires `LANE_URL_SCHEME=lane` and
+`LANE_DESKTOP_UPDATE_PUBLIC_KEY`, a base64-encoded Ed25519 public key in DER/SPKI
+format. The package embeds this public key and its `darwin-arm64`, `darwin-x64`,
+`win32-arm64` or `win32-x64` target. Missing keys disable updates. Invalid keys,
+development schemes and native-testing builds reject update-enabled packaging.
+The source application version owns the packaged version and macOS bundle
+versions; the Lynxtron runtime version does not select Lane updates.
+
+Check on startup and every six hours while the background host runs. Permit
+one check/download at a time. Each target supplies `update-<target>.json` with
+base64 `payload` and `signature` fields. Verify the Ed25519 signature over the
+decoded payload bytes before trusting its JSON. Schema `1` binds `version`,
+`target`, the exact release asset `url`, `sha256` and byte `size`. The ZIP asset is
+`Lane-<version>-<target>.zip` under the same immutable release tag. Stream the
+download, enforce the signed size (at most 2 GiB) and SHA-256, and extract only
+after both match. Metadata reads are bounded to 1 MiB and requests time out
+after two minutes.
+
+Stage beside the installed application so replacement stays on the same
+filesystem. Require a writable installation parent and reject a symlink app
+root. Never elevate privileges. Preserve the `Lane.app` root on macOS and
+`application` root on Windows inside each archive. Verify the extracted package
+name, version, scheme, production flag, public key, target and executable.
+macOS also runs `codesign --verify --deep --strict` before accepting a candidate.
+Signing the update manifest does not replace platform signing or notarization.
+
+After a complete candidate is ready, leave the running application unchanged.
+Explicit Quit first stops RealQA and the native synchronization service. Only
+successful shutdown schedules a detached OS helper, which waits up to two
+minutes for the host process to exit before replacing the app. Closing the last
+window does not install an update. The new version runs on the next launch;
+the updater does not force a restart or discard an open editor. Windows uses
+PowerShell `Expand-Archive` and directory moves; macOS uses `ditto` and directory
+moves. The helper retains the old app until replacement succeeds and restores
+it if the second move fails. Native data, SQLite databases and Chrome
+registration stay outside the replaced application.
+
+Network, signature, checksum, package and extraction failures leave the installed
+app available and retry on the next scheduled check or launch. Structured
+`lane_update_*` logs contain event names and platform only. Read-only installs
+disable updates. A helper timeout, interrupted process or power loss may leave a
+`.lane-update-*` sibling directory. Helper failures and timeouts write a structured
+`result.json` there. With Lane stopped, inspect that directory. If the original
+installation is missing, restore its `previous` directory to the
+original path before launching. Remove abandoned staging only after confirming
+that no updater helper is running. Automatic recovery from power loss and
+rollback after a successfully installed version starts are separate work.
+
+#### Desktop update release preparation
+
+Maintain one external Ed25519 release key; embed its public half in every
+compatible build. Keep the private key file outside the checkout and development
+Infisical configuration. Key rotation requires a separate installer/trust
+transition because candidates must retain the installed verification key.
+
+1. Set the intended stable version in `apps/lane/package.json`. Build each target
+   on its matching macOS or Windows host with `LANE_URL_SCHEME=lane`,
+   `LANE_DESKTOP_UPDATE_PUBLIC_KEY` and `pnpm build:desktop` from `apps/lane`.
+   Leave `LANE_NATIVE_TESTING` unset. Preserve bundled CLI helpers and notices.
+2. Apply the distribution's platform signing and, on macOS, notarization and
+   stapling to the final application before archiving. Local builds remain
+   ad-hoc signed; they do not establish trusted distribution.
+3. Set `LANE_DESKTOP_UPDATE_PRIVATE_KEY_FILE` to the external PEM/PKCS8 Ed25519
+   private key file. Run `pnpm package:desktop:update "<application>" "<output>"`
+   from `apps/lane` on the matching host/architecture. The command verifies the
+   packaged public key, creates the ZIP and signed target manifest, and refuses
+   existing output files. It does not publish a release.
+4. Collect all four target archives and manifests for one source revision and
+   version. Create an immutable `lane-desktop@v<version>` tag and a draft GitHub
+   Release with `gh`. Upload all eight files, verify the artifacts and perform
+   native package installation acceptance before publishing the draft. Never
+   publish a partial target set or replace assets in an already published
+   release. This manual procedure adds no macOS CI runner or release workflow.
+5. Test a previous installed production package against the new release on each
+   platform/architecture. Verify download, signature failure, offline retry,
+   shutdown, replacement, next launch, local data retention and Chrome relay
+   behavior. Record commands, source revisions and results in release/PR
+   evidence. Fixture tests and local packaging do not establish these outcomes.
+
+The first update-enabled application must be installed through the existing
+installation procedure. Applications built without an embedded update key
+cannot acquire this capability through an update check. Public-key configuration,
+real signing credentials, GitHub release publication and native acceptance are
+maintainer prerequisites.
+
 ### Approved UI composition
 
 Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.

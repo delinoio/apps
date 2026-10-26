@@ -4,6 +4,22 @@ Commit only non-sensitive configuration, immutable tool versions and safe servic
 
 Release preparation uses repository Actions variable `DELINO_RELEASE_BOT_CLIENT_ID` and secret `DELINO_RELEASE_BOT_PRIVATE_KEY` for the GitHub App installed on `delinoio/apps`. DevBase and DeliTools each use their `<project>-production` environment with secret `CLOUDFLARE_API_TOKEN` and variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`. Delino Site and Delino Docs share `delino-site-production`, which owns secret `CLOUDFLARE_API_TOKEN`, variable `CLOUDFLARE_ACCOUNT_ID`, and separate variables `CLOUDFLARE_PAGES_PROJECT_SITE` and `CLOUDFLARE_PAGES_PROJECT_DOCS` for their Pages projects. The `delino` release also uses `delino-site-production` variables `CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER`, `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_LOGTO_APP_ID` (public values only). Its DevBase deployment uses the existing `devbase-production` environment and must be permitted there for `delino@v*` tags. Server image publication uses the workflow `GITHUB_TOKEN` and needs no stored credential. Server runtime configuration and secrets stay with the operator's deployment target, never in Git or workflow files. Configure environment approvals, allowed main/tag refs, Pages production branches and domains outside Git. See the [workflow contract](repository-workflow-contract.md#project-release-preparation) for permissions and release procedures. Mobile release credentials remain in their existing protected environment.
 
+## Lane desktop update signing
+
+Lane desktop release builds read `LANE_DESKTOP_UPDATE_PUBLIC_KEY`, a public
+base64 DER/SPKI Ed25519 verification key. Packaging embeds it with the target
+platform and architecture only when `LANE_URL_SCHEME=lane` and native testing is
+disabled. Builds without this setting do not check for updates.
+
+`LANE_DESKTOP_UPDATE_PRIVATE_KEY_FILE` selects an external PEM/PKCS8 Ed25519
+private key file for `pnpm package:desktop:update`. Keep the file and its contents
+outside Git, app resources, frontend variables, development Infisical settings
+and logs. It must match the public key in the prepared app. Do not pass private
+key contents as CLI arguments. Clients use public GitHub release assets without
+tokens. Platform signing/notarization credentials remain separate external
+release inputs. See [desktop updates](apps-lane-foundation.md#desktop-automatic-updates)
+for the manual release procedure and acceptance boundaries.
+
 ## Local development injection
 
 Install the [Infisical CLI](https://infisical.com/docs/cli/overview), run `infisical login`, then run `infisical init` from the repository root to connect the checkout to the development project. Current CLI versions create `.infisical.yaml`; older versions create `.infisical.json`. Keep both root project configuration files local and uncommitted. The CLI still reads the deprecated JSON format and, starting with version 0.44.3, also creates a YAML file when it reads JSON. See the [project configuration reference](https://infisical.com/docs/cli/project-config). Each checkout needs its own project configuration; authentication stays in the CLI's local credential store.

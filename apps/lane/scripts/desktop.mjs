@@ -23,6 +23,7 @@ import {
   removeNativeMessaging,
 } from "../../lane-chrome-extension/scripts/native-registration.mjs";
 import { ensureRuntime } from "@lynx-js/lynxtron/runtime-manager";
+import { desktopUpdateConfig } from "../native/desktop/update-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -61,6 +62,17 @@ try {
       ? join(app, "Contents/Resources/app")
       : join(app, "resources/app");
   if (action === "build") {
+    const version = JSON.parse(
+      readFileSync(join(root, "package.json"), "utf8"),
+    ).version;
+    const updates = desktopUpdateConfig({
+      publicKey: process.env.LANE_DESKTOP_UPDATE_PUBLIC_KEY,
+      scheme,
+      testing: process.env.LANE_NATIVE_TESTING === "1",
+      version,
+      platform: process.platform,
+      arch: process.arch,
+    });
     const runtime = await ensureRuntime({
       variant: "devtool",
       allowFetch: false,
@@ -147,7 +159,8 @@ try {
       join(resources, "package.json"),
       JSON.stringify({
         name: "lane",
-        version: "0.1.0",
+        version,
+        ...(updates ? { updates } : {}),
         type: "module",
         main: "main.mjs",
         scheme,
@@ -228,6 +241,8 @@ try {
         CFBundleIdentifier: "io.delino.lane",
         CFBundleName: "Lane",
         CFBundleDisplayName: "Lane",
+        CFBundleShortVersionString: version,
+        CFBundleVersion: version,
         CFBundleIconFile: "Lane.icns",
         LaneURLScheme: scheme,
         CFBundleURLTypes: [

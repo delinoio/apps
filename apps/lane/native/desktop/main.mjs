@@ -16,10 +16,19 @@ import { RealQA } from "./realqa.mjs";
 import { connectChrome } from "./realqa-chrome.mjs";
 import { homedir } from "node:os";
 import { realQASmoke } from "./realqa-smoke.mjs";
+import { DesktopUpdater } from "./updater.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { scheme, chromeExtensionIds = [] } = require("./package.json");
+const config = require("./package.json");
+const { scheme, chromeExtensionIds = [] } = config;
+const updater = new DesktopUpdater({
+  config,
+  installed:
+    process.platform === "darwin"
+      ? join(resources, "../../..")
+      : join(resources, "../.."),
+});
 const native = require("./lane_host.node");
 let window, windowSession, tray, poller, composer, realqa;
 let captureWindows = [];
@@ -241,6 +250,7 @@ app.on("before-quit", (event) => {
       realqa?.originals.clear();
       composer?.destroy();
       log("lane_stopped");
+      updater.installOnExit();
       app.quit();
     })
     .catch(() => {
@@ -368,6 +378,7 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
       for (const url of [...pendingURLs.splice(0), ...process.argv])
         activateURL(url);
       log("lane_started");
+      void updater.start();
       if (
         native.testing &&
         process.env.LANE_NATIVE_TEST_ROOT &&
