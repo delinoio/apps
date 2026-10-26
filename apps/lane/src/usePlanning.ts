@@ -25,21 +25,32 @@ export interface PlanningState {
   error: string;
   retry: () => void;
 }
-/** Loads every repository's labels, milestones and cycles; reloads on store changes. */
+/**
+ * Loads every repository's labels, milestones and cycles; reloads on store changes.
+ * `space` identifies the active data space: cached items are valid only for the space
+ * that loaded them, so a switch never exposes another space's names, even after a
+ * failed reload. A refresh within the same space keeps the previous items meanwhile.
+ */
 export function usePlanning(
   adapter: LaneAdapter | undefined,
   revision: number,
+  space: string,
 ): PlanningState {
   const [state, setState] = useState<{
+    space: string;
     items: PlanningItem[];
     status: LoadStatus;
     error: string;
-  }>({ items: [], status: "loading", error: "" });
+  }>({ space, items: [], status: "loading", error: "" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!adapter) return;
     let active = true;
-    setState((s) => ({ ...s, status: s.items.length ? s.status : "loading" }));
+    setState((s) =>
+      s.space === space
+        ? { ...s, status: s.items.length ? s.status : "loading" }
+        : { space, items: [], status: "loading", error: "" },
+    );
     void (async () => {
       try {
         const results: EntityResult[] = [];
@@ -54,6 +65,7 @@ export function usePlanning(
         } while (cursor);
         if (active)
           setState({
+            space,
             items: planningItems(results),
             status: "ready",
             error: "",
@@ -61,7 +73,8 @@ export function usePlanning(
       } catch (e) {
         if (active)
           setState((s) => ({
-            items: s.items,
+            space,
+            items: s.space === space ? s.items : [],
             status: "error",
             error: describeError(e),
           }));
@@ -70,8 +83,15 @@ export function usePlanning(
     return () => {
       active = false;
     };
-  }, [adapter, revision, attempt]);
-  return { ...state, retry: () => setAttempt((v) => v + 1) };
+  }, [adapter, revision, attempt, space]);
+  // Never expose items cached for a previous data space while the new one loads.
+  const current = state.space === space;
+  return {
+    items: current ? state.items : [],
+    status: current ? state.status : "loading",
+    error: current ? state.error : "",
+    retry: () => setAttempt((v) => v + 1),
+  };
 }
 
 export interface TaskOptions {

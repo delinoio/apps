@@ -105,7 +105,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [discard, setDiscard] = useState<() => void>();
   const [pendingCount, setPendingCount] = useState(0);
   const queryGeneration = useRef(0);
-  const planning = usePlanning(adapter, revision);
+  // Identifies the open data space; native route and reset switches change it.
+  const planning = usePlanning(
+    adapter,
+    revision,
+    adapter ? `${adapter.spaceId ?? ""}#${spaceRevision}` : "",
+  );
   const currentDraft = useRef(draft);
   currentDraft.current = draft;
   const refresh = () => setRevision((v) => v + 1);

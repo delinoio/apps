@@ -118,6 +118,50 @@ try {
   // Repository-qualified selections in the all-repository list: same-name labels stay distinct.
   assert.equal(await button("Labels: apps / Backend").count(), 1);
   assert.equal(await button("Labels: docs / Backend").count(), 1);
+  // A data-space switch must not expose the previous space's planning names while the
+  // new space loads or after loading fails; retry restores the options.
+  const openSpace = (spaceId) =>
+    page
+      .locator("lynx-view")
+      .evaluate(
+        (view, spaceId) =>
+          view.sendGlobalEvent("lane.openRoute", [{ kind: "open", spaceId }]),
+        spaceId,
+      );
+  let releasePlanning;
+  const held = new Promise((resolve) => (releasePlanning = resolve));
+  const holdPlanning = async (route) => {
+    await held;
+    await route.continue();
+  };
+  await page.route(
+    "**/lane.v1.PlanningService/ListPlanningItems",
+    holdPlanning,
+  );
+  await openSpace("other-space");
+  await text("Loading filter options…").waitFor();
+  assert.equal(await button("Labels: apps / Backend").count(), 0);
+  assert.equal(await button("Labels: docs / Backend").count(), 0);
+  releasePlanning();
+  await button("Labels: apps / Backend").waitFor();
+  await page.unroute(
+    "**/lane.v1.PlanningService/ListPlanningItems",
+    holdPlanning,
+  );
+  const failPlanning = (route) => route.abort();
+  await page.route(
+    "**/lane.v1.PlanningService/ListPlanningItems",
+    failPlanning,
+  );
+  await openSpace("third-space");
+  await text("Could not load labels, milestones and cycles.", false).waitFor();
+  assert.equal(await button("Labels: apps / Backend").count(), 0);
+  await page.unroute(
+    "**/lane.v1.PlanningService/ListPlanningItems",
+    failPlanning,
+  );
+  await button("Retry loading options").click();
+  await button("Labels: apps / Backend").waitFor();
   for (const field of [
     "Priority",
     "Type",
