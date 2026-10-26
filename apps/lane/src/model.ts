@@ -45,6 +45,28 @@ export function heads(result: EntityResult): EntityVersion[] {
     ).values(),
   ];
 }
+// Sorted, unique head version IDs: the precondition a conflict resolution is bound to.
+export function headIds(result?: EntityResult): string[] {
+  return result
+    ? [...new Set(heads(result).map((v) => v.versionId))].sort()
+    : [];
+}
+// Head sets are compared as sets, so a reordering never invalidates a reviewed resolution.
+export function sameHeadSet(a: readonly string[], b: readonly string[]) {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+}
+// A resolution session is current only while the task still has the conflicting heads
+// that the user reviewed; any other head set requires a fresh explicit review.
+export function resolutionStale(
+  reviewed: readonly string[] | undefined,
+  current?: EntityResult,
+): boolean {
+  if (!reviewed) return false;
+  const live = headIds(current);
+  return live.length < 2 || !sameHeadSet(reviewed, live);
+}
 export function conflicted(result?: EntityResult): boolean {
   return (
     !!result &&
