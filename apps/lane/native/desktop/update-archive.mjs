@@ -16,7 +16,13 @@ function safeName(value, root) {
   const parts = value.replace(/\/$/, "").split("/");
   if (
     parts.some(
-      (part) => !part || part === "." || part === ".." || part.includes(":"),
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        /[. ]$/.test(part) ||
+        /[:*?"<>|]/.test(part) ||
+        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
     ) ||
     parts[0] !== root
   )

@@ -202,6 +202,20 @@ for (const [name, edit] of [
     },
   ],
   [
+    "Windows trailing-space traversal",
+    (h: Buffer) => {
+      h.fill(0, 0, 100);
+      h.write("Lane.app/.. /outside", 0);
+    },
+  ],
+  [
+    "Windows device path",
+    (h: Buffer) => {
+      h.fill(0, 0, 100);
+      h.write("Lane.app/NUL.txt", 0);
+    },
+  ],
+  [
     "absolute path",
     (h: Buffer) => {
       h.fill(0, 0, 100);
