@@ -16,7 +16,8 @@ Individual users, their approved MCP clients/devices, webhook senders, and deplo
 
 ### Routes and deployment boundary
 
-- `https://lane.api.delino.io/lane.v1.LaneService/<Method>`: typed repository/task/history operations.
+- `https://lane.api.delino.io/lane.v1.LaneService/<Method>`: typed repository/task/history operations, including planning fields, relationships, filters and sorts.
+- `.../lane.v1.PlanningService/<Method>`: typed repository label, milestone and cycle operations.
 - `.../lane.v1.SyncService/<Method>`: version negotiation, push/pull and live invalidations.
 - `.../lane.v1.AccountService/<Method>`: devices, connection approvals, notification registration and Lane account-data deletion.
 - `.../lane.v1.WebhookService/<Method>`: receiver/event/processing management.
@@ -104,6 +105,22 @@ CompleteEvent validates the active token, nondeleted event/repository, authoriza
 
 Deleting an event or its repository invalidates its lease; completion afterward cannot create tasks. Receiver deletion alone does not invalidate leases. Reopening a completed event changes its state to PENDING, preserves prior processing records/task links, and allows a new lease. An old completion replay returns its original outcome without completing the new processing round. Tasks moved later retain IDs and event links; the event stays in its original repository.
 
+### Task planning operations
+
+The server implements the planning behavior of the [protocol contract](protos-lane-v1-contract.md): extended task create/save/list, relationship edits with affected tasks, `PlanningService`, cleanup on moves and deletions, and list filtering and sorting with stable pagination. Remote MCP and webhook `CompleteEvent` task creation call the same domain transaction layer as Connect, so they enforce the same limits, ownership and graph rules.
+
+- Validate in the write transaction: lock the account's affected entity rows and take a per-account advisory lock for graph and name checks, then re-read current heads. Check that every label, milestone, cycle and relationship endpoint is a live entity of the task's repository and account (`CROSS_REPOSITORY` when it belongs to another repository, `REFERENCE_NOT_FOUND` when missing or deleted); reject self-links and parent, dependency and duplicate-of cycles (using the union of every head's references for a conflicted task); enforce the 100-label limit, date order, story-point range, and case-insensitive trimmed name uniqueness per repository and kind among live items. Return `CONSTRAINT_VIOLATION` with the named violation (Connect `failed_precondition`, not retryable) and roll back the whole operation.
+- Moves, task deletion and planning-item deletion write the required cleanup versions for other tasks in the same transaction with the actor's origin, increase the account change sequence once per committed transaction, and leave no partial cleanup, history, receipt or push work on failure. Deleting a planning item erases its history content and keeps only identity references in tasks.
+- Planning items are whole-item conflict units resolved through `ResolveConflict` (conflict kinds `label`, `milestone`, `cycle`). History for tasks and planning items uses `ListHistory`.
+- Filtering and sorting run against the account's current accepted heads in the database with a keyset cursor over the sort tuple and task ID; the result must equal the in-memory reference ordering in the shared fixtures. A cursor is bound to its account, filter and sort.
+- Request-ID receipts and fingerprints use the shared canonical definition with sorted set fields, so retries never duplicate entities, relationships or history.
+- Remote MCP adds `lane_get_planning_item`, `lane_list_planning_items`, `lane_create_planning_item`, `lane_save_planning_item` and `lane_delete_planning_item` and extends the task tool schemas with the planning fields, filters, sorts and relationship edits. The tool list keeps the same shape as the local MCP.
+- Planning requires no feature flag, entitlement, paid-plan check, metering, external integration or new credential. Existing input and request-rate limits apply to planning items and tasks.
+
+### Synchronization constraint rejection
+
+`PushChanges` validates every pushed task and planning version with the rules above against the **accepted server state**, in the item's own transaction. A violation returns that item's `SyncResult.error` with `reason=CONSTRAINT_VIOLATION`, the named `violation`, `entity_id` and `retryable=false`, without stopping other items. Rejected items are not written, not published and not rolled back later; accepted server state is never altered by a rejection. Rejection counts appear in the existing per-item rejection metrics and logs by category only. The client keeps the rejected local version for correction and explicit retry (`lane sync run --retry-blocked` or the application action); a corrected version arrives as a new immutable version with a new request ID. Ordinary stale-version conflicts and deletion precedence are unchanged.
+
 ### Synchronization and push
 
 Use the envelope, typed operations and whole-entity conflicts in the [protocol contract](protos-lane-v1-contract.md). Allocate account-scoped monotonic change sequences in committed transactions. Publish live invalidations only after commit. Replays, deletion cascades, sync merges and account clearing must be transactional and account-isolated. Remote MCP operates directly on PostgreSQL when all devices are off.
@@ -126,7 +143,11 @@ APNs sends background priority-5 payloads `{"aps":{"content-available":1},"type"
 
 PostgreSQL holds account-scoped repositories, immutable versions, conflict heads, minimal tombstones, durable request/event/completion identities, changes, devices, grants, reauthentication challenges, receivers, event leases/processing records and pending push deliveries. Keys include account ID; no global URL deduplication. Preserve all prompts/history/events until explicit owning deletion. Operational log expiry is not content retention or receipt expiry. Do not reuse the existing 24-hour dedupe cleanup for Lane's durable replay identities.
 
-Apply explicit forward migrations outside startup. Startup verifies schema compatibility and configuration, then refuses unsupported schemas. Roll back a binary only if it supports the current schema; otherwise recover with a corrected forward release. No down migrations are required. Encrypt server storage and transport; encrypted retrievable webhook keys are distinct from hashed grant/lease credentials. E2EE is not required.
+Apply explicit forward migrations outside startup. The planning migration (`00007_planning.sql`) extends the `lane_entities.kind` constraint to the values 1 through 6 (adding label, milestone and cycle) and adds lookup indexes for planning items by account and repository and for task planning lookups. It rewrites no immutable envelope or replay fingerprint. Startup verifies schema compatibility and configuration, then refuses unsupported schemas. Roll back a binary only if it supports the current schema; otherwise recover with a corrected forward release. No down migrations are required. Encrypt server storage and transport; encrypted retrievable webhook keys are distinct from hashed grant/lease credentials. E2EE is not required.
+
+### Development data reset
+
+Lane is not deployed, and existing development data may be discarded. The planning schema change therefore ships no data-preserving migration, no compatibility with earlier-format data and no support for older clients or binaries. The server verifies its schema at startup and refuses to run against an incompatible one; it never resets implicitly. To recover a local development database, stop the API, run the root `pnpm dev:db:reset` (see the [repository workflow](repository-workflow-contract.md#lane-development-and-validation)), which deletes the disposable Compose volumes, restarts them and applies all migrations explicitly, and then restart the API. Reset only disposable local databases, never shared or production data, and do not run it merely to validate a change. Clients whose local data predates the format reset their own stores with the explicit local procedure in the [local-store contract](apps-lane-local-store-contract.md#development-data-reset) and reconnect. There is no rollback to an incompatible binary and no down migration.
 
 ## Security
 
@@ -134,7 +155,7 @@ Scope every lookup, cursor, history parent, idempotency key and lease to the cur
 
 ## Logging
 
-Use `tracing`, correlation IDs and structured operation/result/duration metadata. Server logs expire after 30 days. Metrics include request/error counts, duration histograms excluding long-lived connection lifetime, DB/service probes, pending sync failures and push queue age/attempt results. Keep account/resource IDs out of high-cardinality metric labels; dashboards and alerts reveal no content.
+Use `tracing`, correlation IDs and structured operation/result/duration metadata. Planning operations and constraint rejections log the operation, correlation ID, result category (including the violation name) and duration, never task content, label/milestone/cycle names or descriptions, or relationship titles. Server logs expire after 30 days. Metrics include request/error counts, duration histograms excluding long-lived connection lifetime, DB/service probes, pending sync failures and push queue age/attempt results. Keep account/resource IDs out of high-cardinality metric labels; dashboards and alerts reveal no content.
 
 Supply Prometheus rules, dashboards and Alertmanager email routing. Initial thresholds are configurable operational triggers, **not SLOs**:
 
@@ -144,13 +165,13 @@ Supply Prometheus rules, dashboards and Alertmanager email routing. Initial thre
 - Resolve API/push alerts after the triggering condition clears continuously for ten minutes. Insufficient samples alone do not prove recovery. An empty push queue clears its age condition.
 - Email once on firing, hourly while active and once on recovery. Operators configure transport/recipients; Lane does not integrate a separate email provider.
 
-Operator assets must include startup/configuration, explicit migration, compatible rollback/fix-forward, DB/service outage recovery, auth/sync backlog and per-item rejection handling, webhook signature/key/lease troubleshooting, push retry/expiry/provider failures, and alert firing/recovery tests. User guides cover connection failures, retained local input, conflicts, revoked devices and unsupported notifications. No separate diagnostic/support product is added.
+Operator assets must include startup/configuration, explicit migration, compatible rollback/fix-forward, DB/service outage recovery, auth/sync backlog and per-item rejection handling, webhook signature/key/lease troubleshooting, push retry/expiry/provider failures, and alert firing/recovery tests. User guides cover connection failures, rejected synchronization items with correction and explicit retry, the development reset, retained local input, conflicts, revoked devices and unsupported notifications. No separate diagnostic/support product is added.
 
 ## Build and Test
 
 Run applicable root Rust checks plus server workspace format/clippy/tests, protocol checks, disposable PostgreSQL integration and affected OCI builds. Mock Logto, Delcore, APNs, FCM, Web Push and email transport. Include full pagination/internal-user mapping, audience separation, paid=false plus ACTIVE gating, dependency error mapping, account isolation and revoke-during-operation/subscription tests.
 
-Required exact boundary vectors include signature timestamps ±300/±301 s, changed-body signatures, immediate key rotation, duplicate/deleted event intake, expiry at exactly lease deadline, renewal just before/at expiry, release and stale completion, zero/multiple task completion with rollback, identical response-loss retries after completion/reopen/deletion, repository/receiver deletion distinctions, and stale account epochs. Test every shared version/conflict/deletion vector through all adapters.
+Planning tests use disposable PostgreSQL and cover each validation and violation code, concurrent writes racing on names, cycles and references (including delete versus assign), cleanup atomicity and rollback, history redaction after deletion, filter/sort/cursor equivalence with the shared vectors, constraint-rejected pushes with accepted state preserved and corrected retry, replay after response loss, account isolation and authorization revocation. Required exact boundary vectors include signature timestamps ±300/±301 s, changed-body signatures, immediate key rotation, duplicate/deleted event intake, expiry at exactly lease deadline, renewal just before/at expiry, release and stale completion, zero/multiple task completion with rollback, identical response-loss retries after completion/reopen/deletion, repository/receiver deletion distinctions, and stale account epochs. Test every shared version/conflict/deletion vector through all adapters.
 
 For push use a fake clock: transient failures schedule 30/120/600/1800/3600-second delays, sixth retry is absent, Retry-After longer than expiry produces no send, permanent failure stops, and accepted/rejected/deleted proposals cancel pending delivery. Test notification origin/device dedupe, permission denial, generic content and unsupported environments. Validate alert sample thresholds, continuous-duration/recovery behavior and hourly repeat configuration with rule tests.
 
@@ -187,7 +208,7 @@ Apply the forward capture migration explicitly. It adds URL-connection entities,
 account-scoped immutable attachment manifests, temporary uploads and a durable
 object-deletion queue. Existing immutable envelopes and replay fingerprints are
 not rewritten. A server binary that predates this migration fails schema checks.
-Format 2 synchronization refuses format 1 transport clients.
+Synchronization uses the current format 3 and refuses transport clients of any other format.
 
 Configure `LANE_R2_ENDPOINT`, `LANE_R2_BUCKET`, `LANE_R2_ACCESS_KEY_ID` and
 `LANE_R2_SECRET_ACCESS_KEY` with a private R2 bucket and a bucket-scoped S3 token.
