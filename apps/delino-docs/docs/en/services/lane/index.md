@@ -7,7 +7,7 @@ Lane does not execute agents, call AI providers, fetch repository contents, or v
 The native application targets macOS, Windows, iOS, and Android. Linux uses the CLI, local MCP, or the web app. The CLI targets macOS, Windows, and Linux. Platform build and installation validation is separate from publication: these guides do not announce a released package, app-store listing, or live deployment.
 
 - [Installation](./installation) describes reviewed CLI artifacts and npm installation.
-- [User guide](./user-guide) covers tasks, prompts, synchronization, deletion, and notifications.
+- [User guide](./user-guide) covers tasks, task planning (priority, type, labels, dates, story points, milestones, cycles, relationships, filters, and sorting), prompts, synchronization, deletion, and notifications.
 - [Connect an agent](./mcp) explains local and remote MCP.
 - [Troubleshooting](./troubleshooting) explains failures and recovery.
 

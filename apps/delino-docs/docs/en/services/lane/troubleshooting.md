@@ -14,11 +14,17 @@ If the server or its authorization dependency is unavailable, retry later with t
 
 For an unsupported local format, install a compatible application version. Do not erase or initialize the store as empty. An unsupported sync format requires an update but does not justify discarding pending changes.
 
-## An existing data space needs an upgrade
+## Planning changes are rejected
 
-Follow the [local-data upgrade procedure](./installation#upgrade-existing-local-data). Update all Lane clients that access the space, save your work, and stop other Lane windows, CLI/MCP writers, and background synchronization processes. Use the native app's explicit **Migrate existing space** action, or quit Lane and run `lane data migrate --space <existing-space-id>` with the existing space's UUID.
+A validation error names the field: a name that is empty or longer than 100 characters, a duplicate name in the same repository and item kind, a color that is not `#RRGGBB`, more than 100 labels on a task, a start date after the due date or a cycle ending before it starts, a story point value outside 0 to 2147483647, a label, milestone, cycle or related task from another repository, a missing or deleted reference, a link to the task itself, or a parent, dependency or duplicate cycle. Correct the input and save again. Nothing was changed by the rejected save, and your input stays on screen.
 
-If migration reports that the space is in use, stop the remaining clients and retry. A failed migration preserves the existing data; it does not create an empty replacement. If the format is still unsupported, use a compatible Lane release. Do not delete the store or discard pending changes. Older versions cannot reopen an upgraded space.
+If an item is blocked after synchronization with `CONSTRAINT_VIOLATION:<VIOLATION>`, the server found that changes from several devices conflict, for example two parents or a combined dependency cycle. The server keeps what it had already accepted, and your local version stays on the device. Run `lane sync status` to list the blocked items, correct the local data with an ordinary edit (read the current version first and use a new request ID), then run `lane sync run --retry-blocked`. Do not delete the data to hide the rejection.
+
+A move or deletion removes references to the moved or deleted item from other tasks and keeps those tasks. If a task seems to have lost a label, milestone, cycle, or link, check the item's history; the removal appears as a new version of the task. A planning list that looks incomplete may have an active filter. Open **Filters** and clear it, or check whether a filter needs its **Unassigned** choice.
+
+## Unsupported local format and development reset
+
+`UNSUPPORTED_FORMAT` means the local space was written in a format that this Lane version does not read, for example development data from before task planning. Lane does not change it. If a newer compatible Lane version exists, install that version. For disposable development data only, you can run the explicit [development data reset](./user-guide#development-data-reset), which discards that space's local data. It is not a repair for synchronization, conflicts, or other errors, and agents must not run it unless you ask. If it fails with `STORAGE_BUSY`, quit the app and stop other Lane commands and `sync run`, then run it again.
 
 ## Conflicting versions
 

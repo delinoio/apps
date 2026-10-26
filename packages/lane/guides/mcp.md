@@ -35,11 +35,25 @@ List approved connections in Lane settings or with `lane --remote connection lis
 
 ## Management and safe retries
 
-MCP exposes repository and task creation, reading, editing and deletion; progress changes; proposal acceptance/rejection; task moves; history and prompt restoration; conflict comparison/resolution; and applicable connection, device, notification, receiver and event operations. Tools use names such as `lane_create_task`, `lane_resolve_conflict`, and `lane_complete_event`. Read the tool's input schema and online-only description before calling it.
+MCP exposes repository and task creation, reading, editing and deletion; task planning fields, relationships, filters and sorting; repository label, milestone and cycle management; progress changes; proposal acceptance/rejection; task moves; history and prompt restoration; conflict comparison/resolution; and applicable connection, device, notification, receiver and event operations. Tools use names such as `lane_create_task`, `lane_resolve_conflict`, and `lane_complete_event`. Read the tool's input schema and online-only description before calling it.
 
 Use stable request IDs for retries. Retry the same request ID with the same content. Read current versions before edits; conflicts require the full expected head set and explicit resolution. A replay after deletion reports a deleted result and must not recreate the object. The adapter records the actual MCP origin; agents must not invent a display identity.
 
 Task, repository, and event deletion calls confirm their target. Account-wide deletion also requires the user's explicit account confirmation and fresh browser reauthentication. An agent cannot fabricate that proof.
+
+## Task planning through MCP
+
+Task tools accept and return priority, type, labels, start and due dates, story points, milestone, cycle and relationships, and the task list tool accepts the planning filters and one sort key with a direction. Edit with care: `lane_save_task` replaces the entire task snapshot and does not merge omitted fields from the stored task, so a call that omits existing labels, dates, story points, milestone, cycle or relationships clears them. Read the task with `lane_get_task`, copy it, change only the fields you intend to change and submit every other field unchanged with the expected version. Only `lane task edit` in the CLI preserves omitted fields. Repository labels, milestones and cycles use five typed tools in both local and remote MCP:
+
+- `lane_list_planning_items` and `lane_get_planning_item` read items, optionally for one repository and one kind (label, milestone or cycle).
+- `lane_create_planning_item` and `lane_save_planning_item` create and update an item. An update needs the current expected version, and an item's kind and repository cannot change.
+- `lane_delete_planning_item` deletes an item. The call confirms its target, detaches the item from tasks and keeps those tasks.
+
+Read item and task history with the existing history tool; there is no restore tool for planning metadata. Conflicts on planning items use the existing conflict tools with the label, milestone or cycle kind. Planning rules, such as same-repository references, unique names, date order and cycle-free relationships, apply to MCP exactly as to the app and CLI. A rejected change returns `CONSTRAINT_VIOLATION` with a named violation; correct the input before retrying with a new request ID.
+
+When synchronization has blocked an item after a server-side constraint violation, `lane_get_local_status` lists the item and its `CONSTRAINT_VIOLATION:<VIOLATION>` reason. Correct the local data with a normal edit, then ask the user to run `lane sync run --retry-blocked`, or run it when the user has asked you to manage synchronization.
+
+No MCP tool resets development data. If a tool reports `UNSUPPORTED_FORMAT`, tell the user and let them decide whether to use the explicit [development data reset](user-guide.md#development-data-reset) command. Never run it on your own initiative.
 
 ## Process webhook events
 
