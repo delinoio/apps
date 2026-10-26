@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -22,7 +23,10 @@ import {
 } from "./desktop-windows-sdk.mjs";
 
 function fixture(context) {
-  const root = mkdtempSync(join(tmpdir(), "lane-sdk-test-"));
+  // Resolve host-level temporary-directory aliases (for example macOS /var ->
+  // /private/var) so the SDK cache link checks only see links that a test
+  // deliberately creates underneath this canonical root.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-sdk-test-")));
   context.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }

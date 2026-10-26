@@ -30,6 +30,27 @@ int wmain(int count, wchar_t** args) {
   assert(lane::windows::UUID(Text(error.GetNamedObject(L"error"), L"correlationId")));
   auto exact = Parse(R"({"sequence":"18446744073709551615","permission":"NOTIFICATION_PERMISSION_DENIED"})");
   assert(Text(Parse(Dump(exact)), L"sequence") == "18446744073709551615");
+  // Regression evidence for the original DisconnectSync failure: the two-argument
+  // GetNamedString overload throws for a present numeric value, so Text() must not
+  // read the numeric retention that Settings sends.
+  auto numeric = Parse(R"({"retention":2})");
+  bool numeric_text_threw = false;
+  try { (void)Text(numeric, L"retention"); } catch (const winrt::hresult_error&) { numeric_text_threw = true; }
+  assert(numeric_text_threw);
+  const auto retention = [](const char* request) { return RetentionChoice(Parse(request)); };
+  assert(retention(R"({"retention":1})") == LocalRetention::KeepLocal);
+  assert(retention(R"({"retention":2})") == LocalRetention::RemoveLocal);
+  assert(retention(R"({"retention":"LOCAL_RETENTION_KEEP_LOCAL"})") == LocalRetention::KeepLocal);
+  assert(retention(R"({"retention":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::RemoveLocal);
+  for (const auto* invalid : {"{}", R"({"retention":0})", R"({"retention":3})", R"({"retention":"INVALID"})",
+                              R"({"retention":true})", R"({"retention":null})", R"({"retention":[2]})",
+                              R"({"retention":{"value":2}})"})
+    assert(retention(invalid) == LocalRetention::Unspecified);
+  const auto input = [](const char* value) { return RetentionChoiceOfInput(Parse(value)); };
+  assert(input(R"({"spaceId":"s","request":{"retention":2}})") == LocalRetention::RemoveLocal);
+  assert(input(R"({"spaceId":"s","request":{"retention":1}})") == LocalRetention::KeepLocal);
+  assert(input(R"({"spaceId":"s","request":"LOCAL_RETENTION_REMOVE_LOCAL"})") == LocalRetention::Unspecified);
+  assert(input(R"({"spaceId":"s"})") == LocalRetention::Unspecified);
   wchar_t path[32768];
   const auto length = GetModuleFileNameW(nullptr, path, 32768);
   assert(length && length < 32768);
