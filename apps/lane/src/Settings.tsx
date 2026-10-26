@@ -22,6 +22,7 @@ import {
   type ReconnectTarget,
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
+import { AppUpdates } from "./AppUpdates";
 import { SettingsSection } from "./AppNavigation";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
@@ -75,7 +76,9 @@ export function Settings({
   const [connections, setConnections] = useState<Connection[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const busy = operationBusy || updateBusy;
   const [confirm, setConfirm] = useState<
     null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
@@ -204,6 +207,11 @@ export function Settings({
       data-settings-target={target ? `${target.section}:${target.request}` : ""}
     >
       <text className="heading">Settings</text>
+      <AppUpdates
+        settingsDirty={() => prefsDirty.current}
+        settingsBusy={operationBusy}
+        onBusyChange={setUpdateBusy}
+      />
       <Button onClick={() => void run(load)}>Refresh settings</Button>
       {error && <Notice>{error}</Notice>}
       {message && <Notice>{message}</Notice>}
@@ -301,6 +309,7 @@ export function Settings({
         {prefs && (
           <>
             <Choices
+              disabled={busy}
               label="Enable notifications"
               value={prefs.enabled ? "on" : "off"}
               options={[
@@ -313,6 +322,7 @@ export function Settings({
               }}
             />
             <Choices
+              disabled={busy}
               label="Notification content"
               value={
                 Number(prefs.content) ||
@@ -501,6 +511,7 @@ export function Settings({
                 space.
               </Notice>
               <Choices
+                disabled={busy}
                 label="Local data"
                 value={retention}
                 options={[

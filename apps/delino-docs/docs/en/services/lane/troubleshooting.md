@@ -52,3 +52,16 @@ On iOS, background notification wakes are controlled by the OS and are not guara
 - **Screen recording denied:** follow Lane's OS settings guidance, enable capture access, and retry. Your current draft remains open.
 - **Attachment waiting for synchronization:** keep the source device connected until its saved image uploads. The local task is already saved. Retry failed synchronization without creating a duplicate task.
 - **Save failed:** keep the composer open, correct the reported cause, and retry Save. Discard closes the unsaved draft and releases its images.
+
+## Desktop update failed
+
+Keep your existing Lane installation and local data. Check your internet
+connection, available disk space and permission to write to the installation
+folder, then select **Retry update** in **Settings → App updates**. GitHub may
+temporarily limit update checks; wait before retrying a rate-limit error.
+
+Finish or close open RealQA captures and save notification changes before
+retrying. Close other Lane windows and Chrome capture sessions if installation
+cannot replace files. If the new app cannot start, Lane attempts to restore the
+previous app and shows the error when it reopens. A checksum or package-identity
+error requires a fresh verified download; do not bypass verification.

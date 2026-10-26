@@ -61,6 +61,16 @@ try {
       ? join(app, "Contents/Resources/app")
       : join(app, "resources/app");
   if (action === "build") {
+    if (
+      process.env.LANE_RELEASE_TAG &&
+      (!/^delino@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(
+        process.env.LANE_RELEASE_TAG,
+      ) ||
+        !/^[a-f0-9]{40}$/.test(process.env.LANE_SOURCE_REVISION || ""))
+    )
+      throw new Error(
+        "Desktop release builds require a valid tag and source revision.",
+      );
     const runtime = await ensureRuntime({
       variant: "devtool",
       allowFetch: false,
@@ -151,6 +161,8 @@ try {
         type: "module",
         main: "main.mjs",
         scheme,
+        releaseTag: process.env.LANE_RELEASE_TAG || "",
+        sourceRevision: process.env.LANE_SOURCE_REVISION || "",
         testing: process.env.LANE_NATIVE_TESTING === "1",
         chromeExtensionIds: (process.env.LANE_CHROME_EXTENSION_IDS || "")
           .split(",")
@@ -158,6 +170,15 @@ try {
           .filter(Boolean),
       }),
     );
+    await build({
+      absWorkingDir: root,
+      entryPoints: ["native/desktop/update-install.mjs"],
+      outfile: join(resources, "update-install.mjs"),
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "node22",
+    });
     for (const file of ["main.lynx.bundle", "LICENSE", "NOTICE"])
       cpSync(join(root, "dist", file), join(resources, file));
     cpSync(join(root, "dist/licenses"), join(resources, "licenses/bundle"), {

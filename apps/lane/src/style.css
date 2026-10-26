@@ -628,3 +628,18 @@ text {
 .image-editor {
   padding: 12px 24px 24px;
 }
+
+.app-updates {
+  padding: 24px;
+}
+.update-progress {
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background-color: #e4e8ef;
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 6px;
+  background-color: #075aff;
+}

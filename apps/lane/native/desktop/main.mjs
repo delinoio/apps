@@ -9,9 +9,10 @@ import {
   lynxBridge,
 } from "@lynx-js/lynxtron";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { control, WindowSession, unavailable } from "./bridge.mjs";
+import { DesktopUpdater } from "./updater.mjs";
 import { RealQA } from "./realqa.mjs";
 import { connectChrome } from "./realqa-chrome.mjs";
 import { homedir } from "node:os";
@@ -19,9 +20,10 @@ import { realQASmoke } from "./realqa-smoke.mjs";
 
 const resources = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { scheme, chromeExtensionIds = [] } = require("./package.json");
+const config = require("./package.json");
+const { scheme, chromeExtensionIds = [] } = config;
 const native = require("./lane_host.node");
-let window, windowSession, tray, poller, composer, realqa;
+let window, windowSession, tray, poller, composer, realqa, updater;
 let captureWindows = [];
 const pendingRealQA = [];
 const emitRealQA = (name, value) => {
@@ -42,6 +44,26 @@ const facade = (kind) => ({
   host: {
     ...native.host,
     realqa: (raw, reply) => void realqa.invoke(raw, kind).then(reply),
+    update: (action, reply) => {
+      if (
+        kind !== "main" ||
+        !updater ||
+        !["status", "start", "cancel"].includes(action)
+      ) {
+        reply(unavailable);
+        return;
+      }
+      const operation =
+        action === "start"
+          ? updater.start()
+          : action === "cancel"
+            ? Promise.resolve(updater.cancel()).then(() => updater.status())
+            : updater.status();
+      void operation.then(
+        (response) => reply(JSON.stringify({ ok: true, response })),
+        () => reply(unavailable),
+      );
+    },
   },
 });
 function showComposer() {
@@ -131,6 +153,7 @@ function showWindow() {
   });
   window.on("focus", () => runControl("resume"));
   window.on("closed", () => {
+    updater?.cancel();
     session.retire();
     if (window === owner) {
       window = undefined;
@@ -139,7 +162,10 @@ function showWindow() {
     }
   });
   window.on("--lynx-error", () => log("lane_template_failed"));
-  window.once("ready-to-show", () => log("lane_template_loaded"));
+  window.once("ready-to-show", () => {
+    log("lane_template_loaded");
+    void updater?.healthy();
+  });
   if (!window.loadFile(join(resources, "main.lynx.bundle")))
     throw new Error("The embedded Lane template could not be loaded.");
   window.show();
@@ -231,9 +257,11 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (stopping) return;
   stopping = true;
+  updater?.cancel();
   // Keep event pumping active while native workers finish their UI callbacks.
   Promise.resolve(realqa?.stop())
     .then(() => control(native, "stop"))
+    .then(() => updater?.commitInstall())
     .then(() => {
       clearInterval(poller);
       tray?.destroy();
@@ -245,6 +273,7 @@ app.on("before-quit", (event) => {
     })
     .catch(() => {
       stopping = false;
+      if (updater?.state.phase === "installing") void updater.abortInstall();
       failed();
     });
 });
@@ -260,6 +289,19 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
     .whenReady()
     .then(async () => {
       native.configure(resources, scheme);
+      updater = new DesktopUpdater({
+        resources,
+        install: resolve(
+          resources,
+          process.platform === "darwin" ? "../../.." : "../..",
+        ),
+        stateDirectory: app.getPath("userData"),
+        config,
+        restart: () => app.quit(),
+        canRestart: () =>
+          !realqa?.draft && !stopping && !!window && !window.isDestroyed(),
+        log: (event) => console.info(JSON.stringify(event)),
+      });
       const dataRoot =
         native.testing && process.env.LANE_NATIVE_TEST_ROOT
           ? process.env.LANE_NATIVE_TEST_ROOT
