@@ -1,22 +1,6 @@
 name: Release
 on:
   workflow_dispatch:
-    inputs:
-      revision:
-        description: Existing release commit to recover; empty prepares pending changesets
-        type: string
-      mobile_build_number:
-        description: Required for a DeliTools app changeset; new store build number (1..9999)
-        type: string
-      mobile_platform:
-        description: DeliTools mobile platforms
-        type: choice
-        options: [all, android, ios]
-        default: all
-      mobile_publish:
-        description: Upload DeliTools to internal testing and TestFlight
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -31,12 +15,6 @@ jobs:
       revision: ${{ steps.source.outputs.revision }}
       components: ${{ steps.source.outputs.components }}
       servers: ${{ steps.source.outputs.servers }}
-      options: ${{ steps.source.outputs.options }}
-    env:
-      RELEASE_REVISION: ${{ inputs.revision }}
-      MOBILE_BUILD_NUMBER: ${{ inputs.mobile_build_number }}
-      MOBILE_PLATFORM: ${{ inputs.mobile_platform }}
-      MOBILE_PUBLISH: ${{ inputs.mobile_publish }}
     steps:
       - name: Create release bot token
         id: bot
@@ -112,5 +90,4 @@ jobs:
     with:
       revision: ${{ needs.prepare.outputs.revision }}
       component: ${{ toJSON(matrix.component) }}
-      options: ${{ needs.prepare.outputs.options }}
     secrets: inherit

@@ -8,9 +8,6 @@ on:
       component:
         required: true
         type: string
-      options:
-        required: true
-        type: string
 permissions:
   contents: read
 jobs:
@@ -72,9 +69,9 @@ jobs:
     uses: ./.github/workflows/deploy-delitools-mobile.yml
     with:
       revision: ${{ inputs.revision }}
-      build_number: ${{ fromJSON(inputs.options).mobileBuildNumber }}
-      platform: ${{ fromJSON(inputs.options).mobilePlatform }}
-      publish: ${{ fromJSON(inputs.options).mobilePublish }}
+      build_number: ${{ format('{0}', github.run_number) }}
+      platform: all
+      publish: false
     secrets: inherit
   complete:
     needs: [status, web, lane, perfine, mobile]

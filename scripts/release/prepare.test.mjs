@@ -52,7 +52,7 @@ function fixture(t) {
   };
   return { root, repo, remote, options };
 }
-test("one commit consumes changesets, pushes main without tags, and reruns reuse exact source", (t) => {
+test("one commit consumes changesets and pushes the exact deployment source without tags", (t) => {
   const { repo, remote, options } = fixture(t);
   const result = prepare(options);
   assert.equal(git(remote, "rev-parse", "main"), result.revision);
@@ -62,16 +62,6 @@ test("one commit consumes changesets, pushes main without tags, and reruns reuse
   assert.equal(
     JSON.parse(readFileSync(join(repo, "apps/devbase/package.json"))).version,
     "1.1.0",
-  );
-  assert.deepEqual(prepare(options), result);
-  writeFileSync(join(repo, "later"), "new main");
-  git(repo, "add", "later");
-  git(repo, "commit", "-m", "later");
-  git(repo, "push", "origin", "main");
-  assert.deepEqual(prepare(options), result);
-  assert.deepEqual(
-    prepare({ ...options, runId: "124", recovery: result.revision }),
-    result,
   );
 });
 test("remote main race refuses release without any remote tag or release commit", (t) => {
@@ -90,25 +80,17 @@ test("remote main race refuses release without any remote tag or release commit"
   assert.equal(git(remote, "tag", "--list"), "");
   assert.equal(git(repo, "status", "--porcelain"), "");
 });
-test("invalid recovery and unsupported mobile options fail before changeset consumption", (t) => {
-  const { options, repo } = fixture(t);
-  assert.throws(() => prepare({ ...options, recovery: "main" }));
-  assert.equal(git(repo, "status", "--porcelain"), "");
-});
-
-test("recovery rejects a newer release of overlapping targets", (t) => {
-  const { options, repo } = fixture(t);
-  const first = prepare(options);
-  writeFileSync(
-    join(repo, ".changeset/fixture.md"),
-    '---\n"@apps/devbase": patch\n---\nNext\n',
-  );
-  git(repo, "add", ".changeset/fixture.md");
-  git(repo, "commit", "-m", "next changeset");
-  git(repo, "push", "origin", "main");
-  prepare({ ...options, runId: "124" });
+test("no pending changesets fails without creating a release commit", (t) => {
+  const { options, repo, remote } = fixture(t);
+  const before = git(remote, "rev-parse", "main");
   assert.throws(
-    () => prepare({ ...options, runId: "125", recovery: first.revision }),
-    /newer release supersedes/,
+    () =>
+      prepare({
+        ...options,
+        loadRecords: () => ({ records: [], inventory: {} }),
+      }),
+    /No pending changesets/,
   );
+  assert.equal(git(remote, "rev-parse", "main"), before);
+  assert.equal(git(repo, "status", "--porcelain"), "");
 });
