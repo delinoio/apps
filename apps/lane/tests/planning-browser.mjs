@@ -249,6 +249,38 @@ try {
   await settle();
   assert.equal(await text("Fields combine with AND", false).count(), 0);
 
+  // A failed "Load more tasks" from an obsolete query must not replace the current results.
+  let failMore;
+  const moreFailed = new Promise((resolve) => (failMore = resolve));
+  const paged = async (route) => {
+    const input = route.request().postDataJSON();
+    if (input?.proposal?.length) return route.continue();
+    if (input?.page?.cursor === "obsolete-page") {
+      await moreFailed;
+      return route.abort();
+    }
+    const response = await route.fetch();
+    const body = await response.json();
+    if (!input?.search) body.nextCursor = "obsolete-page";
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/lane.v1.LaneService/ListTasks", paged);
+  await box("Search title or description").fill("x");
+  await box("Search title or description").fill("");
+  await button("Load more tasks").click();
+  await box("Search title or description").fill("guide");
+  await text("Write onboarding guide").first().waitFor();
+  failMore();
+  await settle();
+  assert.equal(
+    await text("Tasks could not be loaded").count(),
+    0,
+    "an obsolete pagination failure does not replace the current results",
+  );
+  await text("Write onboarding guide").first().waitFor();
+  await page.unroute("**/lane.v1.LaneService/ListTasks", paged);
+  await box("Search title or description").fill("");
+
   // ---- Task editor: properties, relationships, validation, retained drafts ------
   await openTask("Improve empty states");
   await heading("Relationships").waitFor();

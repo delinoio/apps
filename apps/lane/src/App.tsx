@@ -790,7 +790,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                             setCursor(r.nextCursor);
                                           }
                                         },
-                                        (e) => setListError(describeError(e)),
+                                        (e) => {
+                                          // An obsolete query's failure must not replace current results.
+                                          if (
+                                            generation ===
+                                            queryGeneration.current
+                                          )
+                                            setListError(describeError(e));
+                                        },
                                       );
                                   }}
                                 >
