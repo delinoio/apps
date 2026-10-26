@@ -1592,6 +1592,38 @@ async fn stale_save_is_validated_without_applying_discarded_relationship_edits()
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn saving_either_endpoint_removes_a_one_directional_pushed_related_link() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    // A synchronized write stores the link on B only; A has no backlink.
+    f.push(mutation(pushed_task(
+        TASK_B,
+        &id(),
+        &[],
+        task_fields("B", REPO, json!({"relatedTaskIds":[TASK]})),
+        3,
+    )))
+    .await
+    .unwrap();
+    let bodies = f.task_bodies().await;
+    assert!(bodies[TASK].get("relatedTaskIds").is_none());
+    assert_eq!(bodies[TASK_B]["relatedTaskIds"], json!([TASK]));
+    // Saving A without the relation clears it on B as well.
+    let a1 = f.accepted(TASK).await;
+    let saved = f
+        .call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":a1,"task":task_fields("Title", REPO, json!({}))}))
+        .await
+        .unwrap();
+    assert_eq!(saved["affected"].as_array().unwrap().len(), 1);
+    assert_eq!(saved["affected"][0]["version"]["entityId"], TASK_B);
+    let bodies = f.task_bodies().await;
+    assert!(bodies[TASK_B].get("relatedTaskIds").is_none());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn list_ignores_references_retained_by_conflicted_tasks_after_deletion() {
     let mut f = Fixture::new().await;
     f.repo(REPO, "https://example.com/repo").await;

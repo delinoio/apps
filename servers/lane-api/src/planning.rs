@@ -766,9 +766,24 @@ impl Snapshot {
             .collect();
         // Related links are stored on both endpoints.
         let new_related = strings(&body, "relatedTaskIds");
-        let previous_related = previous
+        let mut previous_related = previous
             .map(|p| strings(&p.bodies[0], "relatedTaskIds"))
             .unwrap_or_default();
+        // A synchronized write stores one direction only, so another task can relate to this
+        // one without a stored backlink. The relationship views show it on both endpoints, so
+        // a save from either endpoint must be able to remove it.
+        previous_related.extend(
+            self.tasks
+                .iter()
+                .filter(|(other, s)| {
+                    other.as_str() != id
+                        && s.repo == repo
+                        && s.bodies
+                            .iter()
+                            .any(|b| strings(b, "relatedTaskIds").iter().any(|r| r == id))
+                })
+                .map(|(other, _)| other.clone()),
+        );
         for related in sorted_unique(
             previous_related
                 .into_iter()
@@ -2214,6 +2229,46 @@ mod tests {
             .write_task(B, "r1", alternative, &edits, Mode::Save, true)
             .unwrap();
         assert!(write.others[A].get("parentTaskId").is_none());
+    }
+    #[test]
+    fn saving_a_task_removes_one_directional_incoming_related_links() {
+        const A: &str = "019c0000-0000-7000-8000-000000000001";
+        const B: &str = "019c0000-0000-7000-8000-000000000002";
+        let mut snapshot = Snapshot::default();
+        // B was pushed with a link to A; A has no stored backlink.
+        for (id, extra) in [(A, json!({})), (B, json!({"relatedTaskIds":[A]}))] {
+            snapshot.tasks.insert(
+                id.into(),
+                TaskState {
+                    repo: "r1".into(),
+                    bodies: vec![plain_task("r1", extra)],
+                },
+            );
+        }
+        let none = Edits::default();
+        let write = snapshot
+            .write_task(
+                A,
+                "r1",
+                plain_task("r1", json!({})),
+                &none,
+                Mode::Save,
+                true,
+            )
+            .unwrap();
+        assert!(write.others[B].get("relatedTaskIds").is_none());
+        // Keeping the link writes the backlink so both endpoints store it.
+        let kept = snapshot
+            .write_task(
+                A,
+                "r1",
+                plain_task("r1", json!({"relatedTaskIds":[B]})),
+                &none,
+                Mode::Save,
+                true,
+            )
+            .unwrap();
+        assert!(kept.others.is_empty());
     }
     #[test]
     fn violations_round_trip_through_the_error_detail() {
