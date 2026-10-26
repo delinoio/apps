@@ -24,7 +24,7 @@ import {
   verifiedExecutable,
 } from "../../packages/lane/bin/verify.mjs";
 
-const identity = { tag: "delino@v1.2.3", revision: "a".repeat(40) };
+const identity = { tag: "lane@v1.2.3", revision: "a".repeat(40) };
 const version = "0.1.0";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function write(path, bytes) {
@@ -294,11 +294,10 @@ const file = process.env.LANE_FAKE_GITHUB;
 const state = JSON.parse(fs.readFileSync(file));
 const save = () => fs.writeFileSync(file, JSON.stringify(state));
 if (args[0] === 'api') {
-  if (!state.exists) { process.stderr.write('gh: Not Found (HTTP 404)'); process.exit(1); }
-  process.stdout.write(JSON.stringify(state));
+  process.stdout.write(JSON.stringify([state.exists ? [state] : []]));
 } else if (args[1] === 'create') {
   if (state.exists) process.exit(2);
-  state.exists = true; state.creates++; save();
+  state.exists = true; state.tag_name = args[2]; state.target_commitish = args[args.indexOf('--target') + 1]; state.creates++; save();
 } else if (args[1] === 'upload') {
   if (state.failOnce && state.assets.length === 11) {
     state.failOnce = false; save(); process.stderr.write('fixture upload failure'); process.exit(1);
@@ -358,7 +357,11 @@ test(
     state = JSON.parse(readFileSync(f.state));
     assert.equal(state.creates, 1);
     assert.equal(state.assets.length, 18);
-    assert.equal(state.draft, false);
+    assert.equal(
+      state.draft,
+      true,
+      "component completion publishes the draft after other deployments",
+    );
     assert.equal(
       f.invoke().status,
       0,
@@ -415,17 +418,10 @@ test("binary release is gated by validated source, complete assembly and protect
         "utf8",
       ),
     );
-  const shared = read("release-delino");
-  assert.equal(shared.jobs.binaries.needs, "source");
-  assert.equal(
-    shared.jobs.binaries.uses,
-    "./.github/workflows/release-lane.yml",
-  );
-  assert.equal(
-    shared.jobs.binaries.with.revision,
-    "${{ needs.source.outputs.revision }}",
-  );
-  const workflow = read("release-lane");
+  const shared = read("deploy-component");
+  assert.equal(shared.jobs.lane.uses, "./.github/workflows/deploy-lane.yml");
+  assert.equal(shared.jobs.lane.with.revision, "${{ inputs.revision }}");
+  const workflow = read("deploy-lane");
   assert.deepEqual(Object.keys(workflow.on), ["workflow_call"]);
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.jobs.build.strategy["fail-fast"], false);
@@ -449,7 +445,7 @@ test("binary release is gated by validated source, complete assembly and protect
   assert.equal(workflow.jobs.publish.needs, "assemble");
   assert.equal(workflow.jobs.publish.environment, "delino-site-production");
   assert.deepEqual(workflow.jobs.publish.permissions, { contents: "write" });
-  assert.match(workflow.jobs.build.if, /refs\/tags\/delino@v/);
+  assert.match(workflow.jobs.build.if, /refs\/heads\/main/);
   assert.match(workflow.jobs.build.if, /refs\/heads\/main/);
   for (const job of Object.values(workflow.jobs)) {
     const checkout = job.steps.find((step) =>

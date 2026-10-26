@@ -61,15 +61,14 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:ios` for an unsigned simulator build. Open the generated
   workspace for device development and signing.
 
-Web output is static Cloudflare Pages content. The shared `release-delino.yml`
-workflow builds `apps/lane/dist` and deploys it from each immutable
-`delino@vMAJOR.MINOR.PATCH` tag to `lane.delino.io`. Lane keeps its independent
+Web output is static Cloudflare Pages content. The shared `release.yml`
+workflow builds `apps/lane/dist` when selected by changesets and deploys the release commit to `lane.delino.io`. Lane keeps its independent
 package version. The deployment uses the `delino-site-production` environment,
 its shared Cloudflare credentials and `CLOUDFLARE_PAGES_PROJECT_LANE` variable,
-with the `release-lane` concurrency group. Builds use the default public API
+with the `release-web-lane` concurrency group. Builds use the default public API
 origin `https://lane.api.delino.io`. Follow the
 [web publication procedure](repository-workflow-contract.md#web-publication)
-for account setup and retrying an existing tag. Account provisioning, native
+for account setup and retrying an existing release commit. The `lane@vMAJOR.MINOR.PATCH` tag records successful component completion. Account provisioning, native
 signing and store registration remain separate.
 
 ### Approved UI composition
@@ -79,9 +78,9 @@ Use desktop navigation/list/detail and mobile list/detail pages. Use English, a 
 ### Desktop app updates
 
 Settings begins with an `App updates` card on macOS and Windows. Show the
-installed Delino release tag separately from Lane's independent package version.
+installed Lane release tag separately from Lane's independent package version.
 One `Update Lane` action checks public GitHub Releases, downloads the newest
-stable Delino release for the current desktop architecture, verifies it, installs
+stable Lane release for the current desktop architecture, verifies it, installs
 it and restarts Lane. The action explains the restart before activation. No
 account, synchronization connection, external browser or global CLI is required.
 Checks run only on explicit activation. Ignore draft/prerelease/unrelated tags;
@@ -316,7 +315,7 @@ All relationship endpoints must be live tasks in the same repository and the sam
 
 ### Planning history
 
-- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive before/after values from consecutive versions.
+- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive each version's before/after values from that version and its declared parent, never from a chronologically neighboring version that may belong to another branch. A zero-parent version is a creation with absent before values. While a declared parent is not yet loaded, the history card keeps its time and origin and shows no field delta; it compares once the parent is loaded. A resolution with several parents keeps its metadata and shows no single-baseline delta.
 - Do not add metadata-version restoration. Only the existing prompt restoration remains.
 - Retention and deletion follow the existing rules. Deleting an owning entity removes its historical content. Never retain deleted content by copying it into another entity's history; tasks keep only identity references to labels, milestones, cycles and other tasks, so deleting an item erases its name and description everywhere. Surviving tasks keep their own history.
 
@@ -411,6 +410,7 @@ Lane has not been deployed, and existing development data may be discarded. This
 - Provide in-app pending-proposal indications and counts. Only a **new proposal created through MCP** triggers an OS notification. App/CLI changes do not trigger notifications. No task-progress or decision-item notifications.
 - Without synchronization, use local notifications for local MCP proposals. With synchronization, notify other eligible devices through server push. Deduplicate by proposal ID/device ID so the origin device does not receive the same proposal notification twice.
 - Request OS notification permission only when the user enables notifications in settings. Configure enablement and content per device. Default content shows repository name and task title; users can select a generic notice instead.
+- Notification preference choices and Save stay disabled while any Settings operation is pending, so input made during a save cannot be replaced by the acknowledged values. On success adopt only the acknowledged submitted values and keep later edits dirty until the next explicit Save; on failure keep the submitted values, dirty state and error for an explicit retry. A load never overwrites a dirty draft.
 - Direct provider integration: APNs for Apple, FCM for Android, and Web Push for web. **Windows remote WNS delivery is deferred**; Windows supports running/background-client synchronization and local notifications. Do not add WNS package-registration requirements to this version.
 - Unsupported remote-push environments, including Android without required Google Play services, can still use Lane. Explain the limitation and retain in-app indications and available local notifications.
 - Persist pending push deliveries. After an initial transient failure, retry at intervals of 30 seconds, 2 minutes, 10 minutes, 30 minutes, and 60 minutes, at most five retries. Expire delivery two hours after creation. Respect provider Retry-After; do not retry earlier or beyond expiry. Stop on permanent failure. Cancel unsent notifications if the proposal is accepted, rejected, or deleted.
@@ -473,6 +473,8 @@ Affected frontend CI runs on Ubuntu. Native compilation, launch, resizing,
 lifecycle, signing, installation and store submission need separate platform
 validation. No macOS runner is added to PR, main-push or affected manual CI.
 Remove generated `dist` after validation.
+
+Settings render tests bundle the real Settings screen with a Node ReactLynx stand-in and a scripted adapter. They cover notification Choices and Save staying disabled for the whole pending Settings operation, blocked tap and Enter/Space activation, acknowledged-value adoption, retained draft and error on rejected saves, and the dirty-draft guard on loads. They are bundle-level checks, not browser or native acceptance.
 
 Required product tests cover all task/proposal transitions, optional prompts, explicit-save history, prompt restore as a new version, task moves, repository normalization and conflicts, safe Markdown, and input retention on errors. Task planning tests cover title-only creation; setting and clearing every field in every adapter; name, color, label-limit, date and story-point boundaries; same-name items across repositories and kinds; relationship self-link, cycle and multiple-parent rejection with unchanged progress; moves and each deletion kind with detached references, surviving tasks and history redaction; filter AND/OR/unassigned combinations, sort directions, unassigned-last, task-ID ties and page boundaries; restart persistence without a server; rejected synchronization with correction and explicit retry; response-loss replay and request-ID reuse; transaction rollback without partial cleanup; structured logs without user content; and the explicit development reset with active-handle coordination. Test keyboard operation, screen readers, visible focus, non-color states, text enlargement, the 900-pixel and 360-pixel layouts, loading/empty/error states and Escape handling on every released GUI platform.
 

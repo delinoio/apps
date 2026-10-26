@@ -33,7 +33,7 @@ import {
   conflicted,
   headIds,
   heads,
-  historyChanges,
+  historyEntryChanges,
   progressOptions,
   proposalOptions,
   repositoryName,
@@ -585,7 +585,7 @@ export function TaskEditor({
           title={prompts ? "Prompt versions" : "Task history"}
           onClose={() => setHistory(null)}
         >
-          {history.map((version, index) => (
+          {history.map((version) => (
             <view className="card" key={version.versionId}>
               <text className="label">
                 {version.createdAt
@@ -629,7 +629,7 @@ export function TaskEditor({
                   </Button>
                 </>
               ) : (
-                historyChanges(history[index - 1], version, lookup).map((c) => (
+                historyEntryChanges(history, version, lookup).map((c) => (
                   <view key={c.field}>
                     <text className="label">{c.field}</text>
                     <text text-selection>Before: {c.before}</text>

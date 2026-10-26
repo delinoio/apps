@@ -449,6 +449,30 @@ pub(crate) async fn validate_body(
     }
     Ok(())
 }
+/// Prompt-history membership of a task version, shared by the interactive and sync write paths so
+/// equivalent version graphs classify identically.
+///
+/// A version is a member when it is an explicit prompt restoration, or when its normalized prompt
+/// or ordered captures differ from any of its parent snapshots. A version without parents is a
+/// member when it carries a prompt. Prompt absence and the empty prompt are distinct; omitted,
+/// null and empty capture arrays are equal.
+pub(crate) fn prompt_version(restoration: bool, parents: &[Value], task: &Value) -> bool {
+    fn prompt(task: &Value) -> Option<&Value> {
+        task.get("prompt").filter(|v| !v.is_null())
+    }
+    fn captures(task: &Value) -> Option<&Value> {
+        task.get("captures")
+            .filter(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
+    }
+    restoration
+        || if parents.is_empty() {
+            prompt(task).is_some()
+        } else {
+            parents.iter().any(|old| {
+                prompt(&old["task"]) != prompt(task) || captures(&old["task"]) != captures(task)
+            })
+        }
+}
 pub(crate) async fn insert_version(
     db: &mut PgConnection,
     account: &str,
@@ -1030,7 +1054,6 @@ pub async fn dispatch(
         } else {
             let e = existing.ok_or_else(|| fault(2, "entity not found"))?;
             let hs = heads(db, &p.account_id, &entity_id).await?;
-            let current = stored_version(db, &p.account_id, &entity_id, &e.accepted).await?;
             let resolving = method == "ResolveConflict";
             if !resolving && hs.len() != 1 {
                 return Err(fault(4, "conflicted entity is read-only"));
@@ -1178,10 +1201,18 @@ pub async fn dispatch(
             let mut v = version(&entity_id, e.kind, &parents, Some(body), p);
             v["promptRestoration"] = json!(method == "RestorePrompt");
             validate_body(db, &p.account_id, &entity_id, e.kind, &v).await?;
-            let prompt = method == "RestorePrompt"
-                || (e.kind == TASK
-                    && (current["task"].get("prompt") != v["task"].get("prompt")
-                        || current["task"].get("captures") != v["task"].get("captures")));
+            // Membership is a property of the version graph: compare with the submitted parent
+            // snapshots, never with the accepted head, which a stale save or a resolution need
+            // not have as its parent.
+            let prompt = if e.kind == TASK {
+                let mut snapshots = Vec::with_capacity(parents.len());
+                for parent in &parents {
+                    snapshots.push(stored_version(db, &p.account_id, &entity_id, parent).await?);
+                }
+                prompt_version(method == "RestorePrompt", &snapshots, &v["task"])
+            } else {
+                false
+            };
             insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
             if resolving || parents == hs {
                 sqlx::query("DELETE FROM lane_heads WHERE account_id=$1 AND entity_id=$2")

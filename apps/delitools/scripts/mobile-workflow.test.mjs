@@ -9,14 +9,14 @@ import yaml from "js-yaml";
 const root = new URL("../../../", import.meta.url);
 const workflow = yaml.load(
   readFileSync(
-    new URL(".github/workflows/release-delitools-mobile.yml", root),
+    new URL(".github/workflows/deploy-delitools-mobile.yml", root),
     "utf8",
   ),
 );
 
 test("DeliTools release is main-only, serialized and uses protected test-channel uploads", () => {
-  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
-  assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_call"]);
+  assert.equal(workflow.on.workflow_call.inputs.publish.default, false);
   assert.equal(
     workflow.jobs.preflight.if,
     "${{ github.ref == 'refs/heads/main' }}",

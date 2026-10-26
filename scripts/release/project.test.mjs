@@ -1,417 +1,176 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import yaml from "js-yaml";
-import {
-  Bump,
-  Project,
-  bumpVersion,
-  prepareRelease,
-  releaseTag,
-  validateWebSource,
-  validateReleaseSource,
-  versionChanges,
-} from "./project.mjs";
-
-const root = new URL("../../", import.meta.url);
-const read = (file) => readFileSync(new URL(file, root), "utf8");
-const git = (cwd, ...args) =>
-  execFileSync("git", args, {
-    cwd,
+import { bumpVersion } from "./project.mjs";
+import { makePlan } from "./plan.mjs";
+import { synchronizeVersions } from "./versions.mjs";
+const read = (file) =>
+  readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+const inventory = JSON.parse(
+  execFileSync("go", ["run", "./tools/changeset", "packages"], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  }),
+);
+const plan = (packages, versions) =>
+  makePlan([{ id: "fixture", packages }], inventory, read, versions);
 
-test("stable bumps reset lower components and reject malformed or overflowing versions", () => {
-  assert.equal(bumpVersion("1.2.3", Bump.Patch), "1.2.4");
-  assert.equal(bumpVersion("1.2.3", Bump.Minor), "1.3.0");
-  assert.equal(bumpVersion("1.2.3", Bump.Major), "2.0.0");
-  for (const version of ["01.2.3", "1.2.3-beta.1", "1.2", "2147483647.0.0"]) {
-    assert.throws(() => bumpVersion(version, Bump.Major));
-  }
-  assert.throws(() => bumpVersion("1.2.3", "next"));
-  assert.throws(() => versionChanges("delidev", Bump.Patch, read));
+test("SemVer bumps reset lower components and reject overflow", () => {
+  assert.equal(bumpVersion("1.2.3", "patch"), "1.2.4");
+  assert.equal(bumpVersion("1.2.3", "minor"), "1.3.0");
+  assert.equal(bumpVersion("1.2.3", "major"), "2.0.0");
+  for (const version of ["01.2.3", "1.2.3-beta", "1.2", "2147483647.0.0"])
+    assert.throws(() => bumpVersion(version, "major"));
 });
-
-for (const project of Object.values(Project)) {
-  test(`${project} changes only its synchronized source versions`, () => {
-    const plan = versionChanges(project, Bump.Patch, read);
-    const app = project === Project.Delino ? "delino-site" : project;
-    assert.equal(
-      JSON.parse(plan.changes[`apps/${app}/package.json`]).version,
-      plan.version,
-    );
-    const native = project === Project.Delitools;
-    assert.equal(
-      Object.keys(plan.changes).length,
-      native ? 4 : project === Project.Delino ? 2 : 1,
-    );
-    if (native) {
-      assert.equal(
-        JSON.parse(plan.changes[`apps/${app}/src-tauri/tauri.conf.json`])
-          .version,
-        plan.version,
-      );
-      const entry = "delitools-shell";
-      assert.equal(
-        plan.changes["Cargo.lock"].replace(
-          `name = "${entry}"\nversion = "${plan.version}"`,
-          `name = "${entry}"\nversion = "${plan.previous}"`,
-        ),
-        read("Cargo.lock"),
-      );
-      assert.throws(
-        () =>
-          versionChanges(project, Bump.Patch, (file) =>
-            file.endsWith("tauri.conf.json")
-              ? read(file).replace(
-                  `"version": "${plan.previous}"`,
-                  '"version": "9.9.9"',
-                )
-              : read(file),
-          ),
-        /versions disagree/u,
-      );
-    }
-    assert.equal(plan.tag, `${project}@v${plan.version}`);
-    assert.equal(releaseTag(project, plan.version), plan.tag);
-  });
-}
-
-function fixture(t) {
-  const directory = mkdtempSync(join(tmpdir(), "apps-release-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const remote = join(directory, "remote.git");
-  const checkout = join(directory, "checkout");
-  git(directory, "init", "--bare", "--initial-branch=main", remote);
-  git(directory, "clone", remote, checkout);
-  git(checkout, "config", "user.name", "Release Fixture");
-  git(checkout, "config", "user.email", "release@example.invalid");
-  const files = new Set(["Cargo.lock"]);
-  for (const project of Object.values(Project)) {
-    Object.keys(versionChanges(project, Bump.Patch, read).changes).forEach(
-      (file) => files.add(file),
-    );
-  }
-  for (const file of files) {
-    mkdirSync(dirname(join(checkout, file)), { recursive: true });
-    writeFileSync(join(checkout, file), read(file));
-  }
-  git(checkout, "add", ".");
-  git(checkout, "commit", "-m", "Initial fixture");
-  git(checkout, "push", "origin", "main");
-  return {
-    directory: checkout,
-    remote,
-    project: Project.Devbase,
-    bump: Bump.Patch,
-    runId: "12345",
-  };
-}
-
-test("an atomic release can resume after main advances without another version bump", (t) => {
-  const options = fixture(t);
-  const result = prepareRelease(options);
-  assert.equal(result.resumed, false);
-  assert.equal(
-    git(options.remote, "rev-parse", "refs/heads/main"),
-    result.revision,
-  );
-  assert.equal(
-    git(options.remote, "rev-parse", `refs/tags/${result.tag}`),
-    result.revision,
-  );
-  writeFileSync(
-    join(options.directory, "unrelated.txt"),
-    "Unrelated main change\n",
-  );
-  git(options.directory, "add", "unrelated.txt");
-  git(options.directory, "commit", "-m", "Advance main");
-  git(options.directory, "push", "origin", "main");
-  assert.deepEqual(prepareRelease(options), { ...result, resumed: true });
-  assert.throws(
-    () => prepareRelease({ ...options, bump: Bump.Minor }),
-    /inputs changed/u,
-  );
-  assert.throws(
-    () => prepareRelease({ ...options, project: Project.Delitools }),
-    /inputs changed/u,
-  );
-  git(options.directory, "tag", "--delete", result.tag);
-  git(options.directory, "tag", result.tag);
-  assert.throws(() => prepareRelease(options));
-});
-
-test("a rejected atomic push leaves remote main and tags unchanged", (t) => {
-  const options = fixture(t);
-  const initial = git(options.remote, "rev-parse", "main");
-  const hook = join(options.remote, "hooks", "pre-receive");
-  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
-  chmodSync(hook, 0o755);
-  assert.throws(() => prepareRelease(options));
-  assert.equal(git(options.remote, "rev-parse", "main"), initial);
-  assert.equal(git(options.remote, "tag", "--list"), "");
-});
-
-test("workflow run IDs do not match a longer run ID prefix", (t) => {
-  const options = fixture(t);
-  git(
-    options.directory,
-    "commit",
-    "--allow-empty",
-    "-m",
-    "Unrelated run",
-    "-m",
-    "Release-Run: 123456",
-  );
-  git(options.directory, "push", "origin", "main");
-  assert.equal(prepareRelease(options).resumed, false);
-});
-
-for (const project of [Project.Delino, Project.Delitools]) {
-  test(`${project} can resume all committed version updates`, (t) => {
-    const options = { ...fixture(t), project };
-    const result = prepareRelease(options);
-    assert.deepEqual(prepareRelease(options), { ...result, resumed: true });
-  });
-}
-
-for (const project of [Project.Devbase, Project.Delino]) {
-  test(`${project} source validation rejects branch names, wrong versions and tags outside main`, (t) => {
-    const options = { ...fixture(t), project };
-    const validate = validateReleaseSource;
-    const result = prepareRelease(options);
-    // Recovery must resolve the original tagged source even after main advances.
-    git(options.directory, "commit", "--allow-empty", "-m", "Advance main");
-    git(options.directory, "push", "origin", "main");
-    assert.deepEqual(validate(options.directory, project, result.tag), {
-      project: result.project,
-      version: result.version,
-      tag: result.tag,
-      revision: result.revision,
-    });
-    for (const tag of [
-      "main",
-      "--all",
-      `${project}@v1.2.3;touch unsafe`,
-      `${project}-v1.2.3`,
-      "other@v1.2.3",
-    ]) {
-      assert.throws(
-        () => validate(options.directory, project, tag),
-        /Invalid release tag/u,
-      );
-    }
-    git(options.directory, "tag", `${project}@v9.9.9`);
-    git(options.directory, "push", "origin", `refs/tags/${project}@v9.9.9`);
-    assert.throws(
-      () => validate(options.directory, project, `${project}@v9.9.9`),
-      /Tag and source version disagree/u,
-    );
-    git(options.directory, "checkout", "-b", "unmerged");
-    const app = project === Project.Delino ? "delino-site" : project;
-    const file = `apps/${app}/package.json`;
-    const manifest = JSON.parse(
-      readFileSync(join(options.directory, file), "utf8"),
-    );
-    manifest.version = "9.8.7";
-    writeFileSync(join(options.directory, file), JSON.stringify(manifest));
-    git(options.directory, "add", ".");
-    git(options.directory, "commit", "-m", "Unmerged source");
-    git(options.directory, "tag", `${project}@v9.8.7`);
-    git(options.directory, "push", "origin", `refs/tags/${project}@v9.8.7`);
-    assert.throws(() =>
-      validate(options.directory, project, `${project}@v9.8.7`),
-    );
-  });
-}
-
-test("web workflows validate main ancestry before allocating protected deployment jobs", () => {
-  const release = yaml.load(read(".github/workflows/release-project.yml"));
+test("DevBase release includes server prerequisites without bumping another app", () => {
+  const result = plan({ "@apps/devbase": "minor" });
+  assert.deepEqual(result.servers, ["delcore-api", "devbase-api"]);
+  assert.deepEqual(Object.keys(result.changes), ["apps/devbase/package.json"]);
   assert.deepEqual(
-    release.on.workflow_dispatch.inputs.project.options,
-    Object.values(Project),
+    result.components.map((c) => c.component),
+    ["devbase"],
   );
-  assert.equal(release.concurrency["cancel-in-progress"], false);
-  for (const project of [Project.Devbase, Project.Delino, Project.Delitools]) {
-    const workflow = yaml.load(
-      read(`.github/workflows/release-${project}.yml`),
-    );
-    assert.deepEqual(workflow.on.push.tags, [`${project}@v*`]);
-    assert.equal(workflow.jobs.source.environment, undefined);
-    const job = workflow.jobs.deploy;
-    assert.deepEqual(job.needs, "source");
-    if (project === Project.Delino) {
-      assert.deepEqual(job.strategy.matrix.include, [
-        {
-          app: "delino-site",
-          environment: "delino-site-production",
-          concurrency_group: "release-delino-site",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_SITE",
-        },
-        {
-          app: "delino-docs",
-          environment: "delino-site-production",
-          concurrency_group: "release-delino-docs",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_DOCS",
-        },
-        {
-          app: "devbase",
-          environment: "devbase-production",
-          concurrency_group: "release-devbase",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT",
-        },
-        {
-          app: "git-tracker",
-          environment: "delino-site-production",
-          concurrency_group: "release-git-tracker",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER",
-        },
-        {
-          app: "lane",
-          environment: "delino-site-production",
-          concurrency_group: "release-lane",
-          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_LANE",
-        },
-      ]);
-      assert.equal(job.environment, "${{ matrix.environment }}");
-      assert.deepEqual(job.concurrency, {
-        group: "${{ matrix.concurrency_group }}",
-        "cancel-in-progress": false,
-      });
-      // DevBase must share the owning workflow's gate and concurrency group.
-      const devbase = yaml.load(read(".github/workflows/release-devbase.yml"));
-      const owned = job.strategy.matrix.include.find(
-        (entry) => entry.app === "devbase",
-      );
-      assert.equal(owned.environment, devbase.jobs.deploy.environment);
-      assert.equal(owned.concurrency_group, devbase.concurrency.group);
-      assert.equal(job.strategy["fail-fast"], false);
-      const configuration = job.steps.find(
-        (step) => step.name === "Validate deployment configuration",
-      );
+});
+test("Docs and site versions are independent despite their shared delino tag", () => {
+  const result = plan({ "@apps/delino-docs": "minor" }, { delino: "9.0.0" });
+  assert.deepEqual(Object.keys(result.changes), [
+    "apps/delino-docs/package.json",
+  ]);
+  assert.deepEqual(result.components[0].apps, ["delino-docs"]);
+  assert.equal(result.components[0].tag, "delino@v9.1.0");
+  assert.equal(
+    JSON.parse(result.changes["apps/delino-docs/package.json"]).version,
+    bumpVersion(
+      JSON.parse(read("apps/delino-docs/package.json")).version,
+      "minor",
+    ),
+  );
+});
+test("Server-only and none releases do not bump or deploy frontends", () => {
+  const result = plan({ "@servers/lane-api": "none" });
+  assert.deepEqual(result.changes, {});
+  assert.deepEqual(result.components[0].apps, []);
+  assert.equal(result.components[0].binaries, false);
+  assert.deepEqual(result.servers, ["delcore-api", "lane-api"]);
+});
+test("Shared dependencies redeploy consuming apps without version inflation", () => {
+  const result = plan({ "@packages/ui": "patch" });
+  assert.deepEqual(Object.keys(result.changes), ["packages/ui/package.json"]);
+  assert.ok(result.components.flatMap((c) => c.apps).includes("devbase"));
+});
+test("Combined changes select both frontend and independent server changes", () => {
+  const result = plan({
+    "@apps/devbase": "patch",
+    "@servers/delitools-api": "minor",
+  });
+  assert.deepEqual(result.servers, [
+    "delcore-api",
+    "delitools-api",
+    "devbase-api",
+  ]);
+  assert.deepEqual(
+    result.components.map((c) => c.component),
+    ["delitools", "devbase"],
+  );
+});
+test("Highest bump wins once per package and consumes all records", () => {
+  const result = makePlan(
+    [
+      { id: "one", packages: { "@apps/devbase": "patch" } },
+      { id: "two", packages: { "@apps/devbase": "major" } },
+    ],
+    inventory,
+    read,
+  );
+  assert.equal(
+    JSON.parse(result.changes["apps/devbase/package.json"]).version,
+    bumpVersion(JSON.parse(read("apps/devbase/package.json")).version, "major"),
+  );
+  assert.deepEqual(result.records, ["one", "two"]);
+});
+test("Native mirrors and independent frontend versions remain consistent", () => {
+  for (const name of ["@apps/delitools", "@delinoio/lane", "perfine"]) {
+    const result = plan({ [name]: "minor" });
+    synchronizeVersions(result.changes, read, result.components);
+    assert.ok(result.changes["Cargo.lock"]);
+    if (name === "@apps/delitools")
       assert.equal(
-        configuration.env.CLOUDFLARE_PAGES_PROJECT,
-        "${{ vars[matrix.pages_project_variable] }}",
+        JSON.parse(result.changes["apps/delitools/src-tauri/tauri.conf.json"])
+          .version,
+        JSON.parse(result.changes["apps/delitools/package.json"]).version,
       );
-      const upload = job.steps.find((step) =>
-        step.uses?.startsWith("cloudflare/wrangler-action@"),
-      );
-      assert.match(
-        upload.with.command,
-        /--project-name=\$\{\{ vars\[matrix\.pages_project_variable\] \}\}/u,
-      );
+    if (name === "@delinoio/lane")
+      assert.equal(result.changes["apps/lane/package.json"], undefined);
+    if (name === "perfine")
       assert.equal(
-        job.steps.find((step) => step.run === "pnpm build")[
-          "working-directory"
-        ],
-        "apps/${{ matrix.app }}",
+        JSON.parse(result.changes["packages/perfine/package.json"]).version,
+        result.components[0].version,
       );
-    } else {
-      assert.equal(job.environment, `${project}-production`);
-    }
-    assert.equal(job.steps[0].with.ref, "${{ needs.source.outputs.revision }}");
-    const upload = job.steps.findIndex((step) =>
-      step.uses?.startsWith("actions/upload-artifact@"),
-    );
-    const deploy = job.steps.findIndex((step) =>
-      step.uses?.startsWith("cloudflare/wrangler-action@"),
-    );
-    assert.ok(upload >= 0 && upload < deploy);
-    assert.match(job.steps[deploy].with.command, /--branch=main/u);
-    assert.equal(job.steps.at(-1).if, "always()");
   }
 });
+test("Internal notes never enter public release notes", () => {
+  const result = makePlan(
+    [
+      {
+        id: "one",
+        packages: { "@apps/devbase": "none" },
+        summary: "private engineering context",
+        public: "User note",
+      },
+    ],
+    inventory,
+    read,
+  );
+  assert.deepEqual(result.publicNotes, [
+    { packages: ["@apps/devbase"], note: "User note" },
+  ]);
+});
+test("Release graph enforces image publication, mock dependency order, and per-component success", () => {
+  const workflow = (name) => yaml.load(read(`.github/workflows/${name}.yml`));
+  const release = workflow("release"),
+    component = workflow("deploy-component"),
+    servers = workflow("deploy-servers");
+  assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+  assert.deepEqual(release.jobs.servers.needs, ["prepare", "images"]);
+  assert.deepEqual(release.jobs.components.needs, ["prepare", "servers"]);
+  assert.equal(release.jobs.components.strategy["fail-fast"], false);
+  assert.equal(servers.jobs.dependents.needs, "delcore");
+  assert.deepEqual(component.jobs.complete.needs, [
+    "status",
+    "web",
+    "lane",
+    "perfine",
+    "mobile",
+  ]);
+  assert.match(component.jobs.complete.if, /needs.web.result == 'success'/);
+  assert.match(component.jobs.complete.if, /cancelled/);
+  for (const name of [
+    "deploy-component",
+    "deploy-web",
+    "deploy-images",
+    "deploy-servers",
+    "deploy-lane",
+    "deploy-perfine",
+    "deploy-delitools-mobile",
+  ])
+    assert.deepEqual(Object.keys(workflow(name).on), ["workflow_call"]);
+  const images = workflow("deploy-images").jobs.images;
+  assert.equal(images.strategy["max-parallel"], undefined);
+  assert.equal(images.permissions.packages, "write");
+  assert.equal(workflow("deploy-web").jobs.deploy.permissions, undefined);
+});
 
-test("Delino releases publish server images with narrowly scoped package access", () => {
-  const workflow = yaml.load(read(".github/workflows/release-delino.yml"));
-  const { jobs } = workflow;
-  assert.equal(jobs.source.environment, undefined);
-  assert.equal(workflow.permissions.packages, undefined);
-  assert.deepEqual(jobs.images.permissions, {
-    contents: "read",
-    packages: "write",
-  });
-  assert.equal(jobs.images.needs, "source");
-  assert.equal(jobs.images.environment, undefined);
-  assert.deepEqual(jobs.images.strategy.matrix.server, [
+test("shared protocol records include Rust server consumers outside the npm graph", () => {
+  const result = plan({ "@repo/protos": "patch" });
+  assert.deepEqual(result.servers, [
     "delcore-api",
     "delitools-api",
     "devbase-api",
     "git-tracker-api",
     "lane-api",
+    "perfine-api",
   ]);
-  assert.equal(
-    jobs.images.steps[0].with.ref,
-    "${{ needs.source.outputs.revision }}",
-  );
-});
-
-test("Delino preparation synchronizes both apps even when their versions differ", () => {
-  const plan = versionChanges(Project.Delino, Bump.Minor, (file) => {
-    if (file !== "apps/delino-docs/package.json") return read(file);
-    const manifest = JSON.parse(read(file));
-    manifest.version = "9.9.9";
-    return JSON.stringify(manifest, null, 2) + "\n";
-  });
-  assert.equal(
-    plan.version,
-    bumpVersion(
-      JSON.parse(read("apps/delino-site/package.json")).version,
-      Bump.Minor,
-    ),
-  );
-  assert.deepEqual(Object.keys(plan.changes).sort(), [
-    "apps/delino-docs/package.json",
-    "apps/delino-site/package.json",
-  ]);
-  for (const content of Object.values(plan.changes)) {
-    assert.equal(JSON.parse(content).version, plan.version);
-  }
-});
-
-test("Delino source validation checks the docs version at the immutable tag", (t) => {
-  const options = { ...fixture(t), project: Project.Delino };
-  const result = prepareRelease(options);
-  const file = join(options.directory, "apps/delino-docs/package.json");
-  const manifest = JSON.parse(readFileSync(file, "utf8"));
-  manifest.version = "9.9.9";
-  writeFileSync(file, JSON.stringify(manifest));
-  git(options.directory, "add", ".");
-  git(options.directory, "commit", "-m", "Diverge docs version");
-  const tag = `delino@v${result.version}`;
-  git(options.directory, "tag", "--delete", tag);
-  git(options.directory, "tag", tag);
-  git(
-    options.directory,
-    "push",
-    "--force",
-    "origin",
-    "main",
-    `refs/tags/${tag}`,
-  );
-  assert.throws(
-    () => validateWebSource(options.directory, Project.Delino, tag),
-    /Tag and source version disagree/u,
-  );
-  assert.throws(
-    () =>
-      validateWebSource(
-        options.directory,
-        Project.Delino,
-        `delino-site@v${result.version}`,
-      ),
-    /Invalid release tag/u,
-  );
+  assert.deepEqual(Object.keys(result.changes), ["protos/package.json"]);
 });

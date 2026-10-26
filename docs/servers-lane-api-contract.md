@@ -39,9 +39,19 @@ CLI login and remote MCP approval use browser Logto authorization code flow with
 
 Device and MCP grant revocation checks run under the same account transaction lock as each data operation. A revocation that commits first blocks that operation; an earlier committed operation can complete. Subscriptions recheck authorization/revocation before publishing invalidations and terminate on revocation. Do not rely on token expiry or a process-local approval cache. List individually approved connections and devices with last synchronization times; disconnecting cannot erase an offline device's existing data.
 
+`Device.last_sync_at` is the PostgreSQL server time (`clock_timestamp()`) of the device's last successful data synchronization. It is null until the first qualifying success and is never backfilled. The server writes it only for the authenticated `(account, device)` pair from the principal, never from a request body or version origin, in the same authorized account-locked transaction that commits the work. A rolled-back transaction or a failed commit therefore leaves the previous value, and a revocation that commits first blocks both the operation and its timestamp write. The following qualify:
+
+- every successful `PullChanges`, including an empty pull, a paginated pull and the deletion-directive pull of a newly approved session;
+- a validated empty `PushChanges` batch;
+- each `PushChanges` item whose own transaction commits, including accepted, replayed and retained-conflict results.
+
+A rejected item, an all-rejected batch, a stale epoch, an invalid format, cursor or device binding, an authorization failure and a storage failure never qualify. A mixed batch advances the time for its committed items only and keeps the per-item transaction model. `GetSyncInfo`, `WatchChanges` initialization and ticks, approval, login and every other API or MCP call do not qualify because they do not establish a data exchange. Clearing account data resets the retained old device rows to null. `ListDevices` returns the stored instant through the existing field.
+
 ### Browser and native authorization adapter
 
 `GET /oauth/authorize` accepts authorization-code parameters, an exact registered redirect, S256 PKCE and a UUID v7 `device_id` when the installation already has one. Preserve that device identity through token issuance. `POST /oauth/token` accepts form-encoded code or refresh grants; `POST /oauth/revoke` revokes the bound session. Operator-required `LANE_OAUTH_CLIENTS` binds each client to its redirects, display name, origin kind and API or MCP resource. Browser approval shows full-account consent for MCP. Revalidate registration before callback, consent and token issuance.
+
+Browser approval for native and MCP clients is an API-hosted page and form (`POST /oauth/consent`) served from `LANE_PUBLIC_URL`, which is a different origin from `WEB_ORIGIN` when the web client is hosted separately. The HTTP policy admits a present `Origin` only when it equals `WEB_ORIGIN`, with one exception: the exact `LANE_PUBLIC_URL` origin is admitted for `POST /oauth/consent` alone. That exception grants no credentialed CORS response access; `Access-Control-Allow-*` headers remain exclusive to `WEB_ORIGIN` and absent-Origin requests. The opaque `null` Origin, hostile origins and the API origin on every other method, path, Connect route, `/mcp` and authenticated web mutation stay rejected with 403 before any handler runs, so a rejected request never consumes a consent token. The consent page sends `Referrer-Policy: strict-origin` (never `no-referrer`, which makes browsers serialize the form POST Origin as `null`) so the callback path, authorization code and query never appear in Referer, and keeps `form-action 'self'` in its CSP. Cookie binding, one-use and expiry checks, registration revalidation, account authorization and PKCE are unchanged. Approval redirects to the registered redirect with `code` and `state`; cancellation redirects with `error=access_denied` and `state` and issues no code.
 
 Web uses `/auth/login?return_to=...`, `/auth/callback`, `/auth/session`, `/auth/refresh` and `/auth/logout`. The session cookie is Secure, HttpOnly and SameSite=Lax; mutations additionally require the configured Origin and `X-Lane-CSRF`. Session JSON uses snake_case identity fields, `csrf_token`, and `notification_preferences` with `enabled` and numeric `content` (1 detail, 2 generic). `/auth/push-config` exposes only the public VAPID `public_key`, or null when disabled. Web return URLs must be configured exactly. Reauthentication returns only `reauth_challenge` to the saved return URL; authenticated `/auth/reauth/proof` redeems it for the one-use proof.
 
@@ -175,6 +185,8 @@ Planning tests use disposable PostgreSQL and cover each validation and violation
 
 For push use a fake clock: transient failures schedule 30/120/600/1800/3600-second delays, sixth retry is absent, Retry-After longer than expiry produces no send, permanent failure stops, and accepted/rejected/deleted proposals cancel pending delivery. Test notification origin/device dedupe, permission denial, generic content and unsupported environments. Validate alert sample thresholds, continuous-duration/recovery behavior and hourly repeat configuration with rule tests.
 
+Origin-policy and consent tests drive the assembled HTTP router with distinct `LANE_PUBLIC_URL` and `WEB_ORIGIN` values, mocked Logto/Delcore and disposable PostgreSQL, using a browser fixture that parses the rendered form and derives `Origin`/`Referer` from its Referrer-Policy. Cover approve and cancel, hostile and `null` Origins without token consumption, wrong or missing cookie or token, expiry, replay, PKCE redemption, API-origin rejection on Connect, `/mcp` and web mutation routes, and unchanged frontend CORS. These fixtures do not establish real-browser behavior; whether a given browser applies CSP `form-action` to the post-submit redirect target of the consent POST is a separate browser check.
+
 External Logto/push/email account/device delivery, production deployment and store publication are not required acceptance claims. Server tests do not establish native build/install/behavior acceptance.
 
 ## Dependencies and Integrations
@@ -248,6 +260,17 @@ and completed uploads. Failed provider work remains in the queue. Inspect queue
 counts without exporting PNG bytes, signed URLs or capture metadata. Restore
 provider connectivity and valid bucket credentials to drain pending work; do not
 purge pending rows as a recovery shortcut.
+
+### Remote MCP capture and URL connection inputs
+
+The eight `CaptureService` tools, `lane_save_task` and `lane_resolve_conflict`
+advertise and accept the canonical format-2 ProtoJSON inputs: capture requests,
+`CapturedImage`, `CaptureReference` (with `byteSize` as a decimal string),
+`URLConnection`, `Task.captures` (including an empty array), `ENTITY_KIND_URL_CONNECTION`
+by name or number 3, and `EntityVersion.urlConnection`. The advertised schema and
+runtime validation both reject unknown fields, unknown enum values, malformed
+bytes, any client-supplied `origin` and every pair of `EntityVersion` body members.
+Typed decoding and backend dispatch are unchanged.
 
 ### Disposable S3 integration fixture
 

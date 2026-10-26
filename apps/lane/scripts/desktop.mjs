@@ -63,7 +63,7 @@ try {
   if (action === "build") {
     if (
       process.env.LANE_RELEASE_TAG &&
-      (!/^delino@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(
+      (!/^lane@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(
         process.env.LANE_RELEASE_TAG,
       ) ||
         !/^[a-f0-9]{40}$/.test(process.env.LANE_SOURCE_REVISION || ""))

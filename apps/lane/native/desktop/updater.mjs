@@ -19,7 +19,7 @@ import { extractUpdate } from "./update-archive.mjs";
 import { executablePath, writeResult } from "./update-files.mjs";
 
 const api = "https://api.github.com/repos/delinoio/apps";
-const tagPattern = /^delino@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const tagPattern = /^lane@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export function compareReleases(a, b) {
   const left = tagPattern.exec(a),
     right = tagPattern.exec(b);
@@ -38,7 +38,7 @@ export function selectRelease(releases, installed, platform) {
     .sort((a, b) => compareReleases(b.tag_name, a.tag_name))[0];
   if (!latest) throw new Error("No Lane desktop release is available yet.");
   if (compareReleases(latest.tag_name, installed) <= 0) return undefined;
-  const archive = `lane-desktop-${platform}-${latest.tag_name.replace("delino@", "")}.tar.gz`;
+  const archive = `lane-desktop-${platform}-${latest.tag_name.replace("lane@", "")}.tar.gz`;
   const asset = (name) => {
     const matches = latest.assets?.filter((a) => a.name === name);
     if (
