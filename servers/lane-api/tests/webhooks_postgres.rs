@@ -62,6 +62,10 @@ impl Fixture {
             .execute(&mut db)
             .await
             .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/00007_planning.sql"))
+            .execute(&mut db)
+            .await
+            .unwrap();
         let principal = Principal {
             account_id: id(),
             tenant_id: id(),
@@ -298,6 +302,58 @@ async fn completion_is_atomic_and_replay_survives_reopen_and_deletion() {
             .unwrap(),
         2
     );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn completion_tasks_follow_the_planning_rules_and_roll_back_together() {
+    let mut f = Fixture::new().await;
+    let label = id();
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.principal.account_id)
+        .await
+        .unwrap();
+    entities::dispatch(&mut tx,&f.principal,"CreatePlanningItem",&json!({"meta":{"requestId":id()},"id":label,"item":{"label":{"repositoryId":f.repository,"name":"Triage","color":"#00ff00"}}}),usize::MAX).await.unwrap();
+    tx.commit().await.unwrap();
+    let event = f.event().await;
+    let token = f.claim(&event).await;
+    let mut q = mutation(&event);
+    q["leaseToken"] = json!(token);
+    let mut first = task(&f.repository, "first");
+    first["labelIds"] = json!([label]);
+    first["priority"] = json!("TASK_PRIORITY_HIGH");
+    let mut second = task(&f.repository, "second");
+    second["parentTaskId"] = first["id"].clone();
+    // A later task that violates a rule rolls back the whole completion, earlier tasks included.
+    let mut bad = task(&f.repository, "bad");
+    bad["labelIds"] = json!([id()]);
+    q["tasks"] = json!([first, second, bad]);
+    let rejected = f.call("CompleteEvent", &q).await.unwrap_err();
+    assert_eq!(
+        lane_api::planning::violation_of(&rejected).map(|v| v.name()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    let tasks: i64 = sqlx::query_scalar("SELECT count(*) FROM lane_entities WHERE kind=2")
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+    assert_eq!(tasks, 0);
+    q["tasks"] = json!([q["tasks"][0], q["tasks"][1]]);
+    let completed = f.call("CompleteEvent", &q).await.unwrap();
+    assert_eq!(
+        completed["tasks"][0]["version"]["task"]["labelIds"],
+        json!([label])
+    );
+    assert_eq!(
+        completed["tasks"][0]["version"]["task"]["priority"],
+        "TASK_PRIORITY_HIGH"
+    );
+    assert_eq!(
+        completed["tasks"][1]["version"]["task"]["parentTaskId"],
+        first["id"]
+    );
+    assert_eq!(f.call("CompleteEvent", &q).await.unwrap(), completed);
     f.close().await;
 }
 

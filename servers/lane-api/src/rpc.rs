@@ -208,7 +208,10 @@ impl Server {
                     if crate::canonical_id(request_id) {
                         sqlx::query("INSERT INTO lane_sync_rejections(account_id,request_id,reason) VALUES($1,$2,$3) ON CONFLICT(account_id,request_id) DO UPDATE SET reason=EXCLUDED.reason").bind(&p.account_id).bind(request_id).bind(error.reason).execute(&self.db).await?;
                     }
-                    results.push(json!({"requestId":item["meta"]["requestId"],"error":crate::error::detail(&error, &crate::id(), string(&item["version"], "entityId"), vec![])}));
+                    let correlation = crate::id();
+                    // Category only: never the rejected item's text, names or relationships.
+                    tracing::warn!(correlation_id=%correlation,operation="PushChanges",result=%crate::planning::category(&error),retryable=matches!(error.code, connectrpc::ErrorCode::Unavailable | connectrpc::ErrorCode::ResourceExhausted),"Lane synchronization item rejected");
+                    results.push(json!({"requestId":item["meta"]["requestId"],"error":crate::error::detail(&error, &correlation, string(&item["version"], "entityId"), vec![])}));
                 }
             }
         }
