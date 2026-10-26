@@ -1,5 +1,5 @@
 {
-  "name": "@delinoio/git-tracker-api",
+  "name": "@servers/git-tracker-api",
   "version": "0.1.0",
   "private": true,
   "license": "FSL-1.1-ALv2",

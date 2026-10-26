@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Use Protobuf package `lane.v1`, Go package `github.com/delinoio/apps/protos/lane/v1`, Connect-Go package `lanev1connect`, and TypeScript exports from `@delino/protos`. Generate server Rust through `servers/crates/delino-protos` and CLI Rust descriptors through `cmds/lane/build.rs`; do not check in generated Rust or duplicate schemas. Use typed messages and enums, not an arbitrary JSON command API. JSON below means the standard ProtoJSON representation of the named message, except the explicit webhook JSON object.
+Use Protobuf package `lane.v1`, Go package `github.com/delinoio/apps/protos/lane/v1`, Connect-Go package `lanev1connect`, and TypeScript exports from `@repo/protos`. Generate server Rust through `servers/crates/delino-protos` and CLI Rust descriptors through `cmds/lane/build.rs`; do not check in generated Rust or duplicate schemas. Use typed messages and enums, not an arbitrary JSON command API. JSON below means the standard ProtoJSON representation of the named message, except the explicit webhook JSON object.
 
 ## Users and Operators
 

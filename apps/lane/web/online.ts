@@ -17,7 +17,7 @@ import {
   PushProvider,
   NotificationContent,
   DataDeletionMode,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 export interface Session {
   account_id: string;
   device_id: string;

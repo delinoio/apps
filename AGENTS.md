@@ -112,6 +112,8 @@ Use the [documentation catalog](docs/README.md) for the complete list of reposit
 
 ## Naming Rules
 
+- Name private npm workspaces by repository path (`@apps/<name>`, `@servers/<name>`, `@packages/<name>`, `@actions/<name>` and `@examples/<name>`). Use `@repo/protos` for the top-level protocol workspace. Preserve the root package and public distribution names; follow [workspace naming](docs/repository-workflow-contract.md#npm-workspace-names).
+
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
 - Use `project-` prefix for project index docs.
 - Use domain prefixes (`apps-`, `cmds-`, `servers-`, `crates-`, `protos-`, `packages-`) for domain contract docs.

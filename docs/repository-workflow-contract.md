@@ -24,6 +24,18 @@ npx skills add lynx-community/skills --skill '*' --agent codex --yes
 
 The commands fetch the current upstream skills. Review content and lockfile changes before committing updates. Imported skills retain their upstream license metadata and available license files; see the [license contract](repository-license-contract.md). The shared formatter excludes `.agents/skills/` to preserve imported content.
 
+## npm workspace names
+
+Private workspace packages use their repository path as a scoped npm name:
+`apps/<name>` becomes `@apps/<name>`, `servers/<name>` becomes
+`@servers/<name>`, and the same rule applies to `packages/`, `actions/` and
+`examples/`. The top-level `protos/` workspace uses `@repo/protos`. The root
+package keeps `delino-apps`. Public distributions keep their supported registry
+names, including `@delinoio/lane` and `perfine`. Package imports, dependency keys,
+pnpm filters, Turbo task keys and pending changesets use the owning npm name.
+Directory names, Rust crate names, executable names and service routes retain
+their existing identities.
+
 ## Worktree dependency sharing
 
 Root `pnpm-workspace.yaml` sets `virtualStoreType: global` so worktrees share installed package contents through pnpm's global virtual store. Each worktree retains its own `node_modules` links and dependency versions selected by its lockfile.
@@ -40,7 +52,7 @@ The root `server-build` script invokes `servers/scripts/build-rust.mjs`, the onl
 
 The shared build declares server Rust source, Cargo manifests and lockfile, SQL, protocol source and the build helper as inputs. The server build has no root client-crate inputs. API task inputs include their package manifest and shared launch helpers. Turbo does not watch these inputs or automatically rebuild or restart APIs. Stop and rerun `pnpm dev` after server changes, including catalog YAML edits; frontend HMR continues through each frontend's own watcher.
 
-A failed shared build blocks dependent API startup while independent frontend tasks continue to run. A failed application task does not stop other tasks whose dependencies succeeded. Turbo reports task failures and returns a nonzero exit code when the run finishes. Failed tasks do not restart automatically; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@delinoio/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
+A failed shared build blocks dependent API startup while independent frontend tasks continue to run. A failed application task does not stop other tasks whose dependencies succeeded. Turbo reports task failures and returns a nonzero exit code when the run finishes. Failed tasks do not restart automatically; correct the failure and rerun `pnpm dev`. Stop development with `Ctrl+C`; the databases remain running. Use `pnpm dev --ui=stream` for streaming logs, or `pnpm dev --filter=@servers/delcore-api` to select one API. Extra root `dev` arguments go to `turbo run`. Service-local development retains its existing entry points. Each frontend and API `dev` script registers its own Portless route after Infisical injection. The root launcher prepares the databases once, then Turbo owns task execution and dependency ordering.
 
 ## Local development databases
 
@@ -149,7 +161,7 @@ For server-to-server calls from Git Tracker to local Delcore, set `DELCORE_URL` 
 
 ## Validation
 
-The `shared-ui` job validates both `@delino/ui` and `@delino/lynx-ui` on Ubuntu.
+The `shared-ui` job validates both `@packages/ui` and `@packages/lynx-ui` on Ubuntu.
 Lynx UI source and owning contract changes select this job without selecting
 unrelated application or server checks. The Lynx gallery builds web and native
 bundles; these builds do not establish native host acceptance. Remove its

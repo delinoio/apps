@@ -1,5 +1,5 @@
-import { Button } from "@delino/ui/components/button";
-import { Card } from "@delino/ui/components/card";
+import { Button } from "@packages/ui/components/button";
+import { Card } from "@packages/ui/components/card";
 import type source from "../i18n/messages/en.json";
 
 function CommitIllustration() {

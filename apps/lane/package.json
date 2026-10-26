@@ -1,5 +1,5 @@
 {
-  "name": "lane",
+  "name": "@apps/lane",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
@@ -22,7 +22,7 @@
     "@bufbuild/protobuf": "2.16.0",
     "@connectrpc/connect": "2.2.0",
     "@connectrpc/connect-web": "2.2.0",
-    "@delino/protos": "workspace:*",
+    "@repo/protos": "workspace:*",
     "@lynx-js/react": "0.129.0",
     "@lynx-js/web-core": "0.26.5",
     "markdown-it": "14.3.3",

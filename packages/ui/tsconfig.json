@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@delino/ui/*": ["./src/*"]
+      "@packages/ui/*": ["./src/*"]
     }
   },
   "include": ["src", "tests/**/*.tsx", "rstest.config.ts"]

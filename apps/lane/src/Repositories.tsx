@@ -6,7 +6,7 @@ import {
   ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { type LaneAdapter, meta, newId } from "./adapter";
 import { Button, Dialog, Field, Notice } from "./components";
 import { conflicted, heads, repositoryName } from "./model";

@@ -1,5 +1,5 @@
 {
-  "name": "delino-docs",
+  "name": "@apps/delino-docs",
   "version": "0.1.7",
   "private": true,
   "license": "Apache-2.0",
@@ -24,7 +24,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@delino/ui": "workspace:*",
+    "@packages/ui": "workspace:*",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   }

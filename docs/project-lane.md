@@ -6,7 +6,7 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 ## Project ID
 
-`lane`. The app workspace is `lane`; the application identifier remains `io.delino.lane`. The CLI installer is `@delinoio/lane`.
+`lane`. The app workspace is `@apps/lane`; the application identifier remains `io.delino.lane`. The CLI installer is `@delinoio/lane`.
 
 ## Domain Ownership Map
 
