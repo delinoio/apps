@@ -1,10 +1,13 @@
 name: Release Perfine
 run-name: Prepare Perfine ${{ inputs.tag }} (publish=${{ inputs.publish }})
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
+      revision:
+        required: true
+        type: string
       tag:
-        description: Exact vX.Y.Z; existing perfine@vX.Y.Z source tag must belong to main
+        description: Exact vX.Y.Z from the committed release plan
         required: true
         type: string
       publish:
@@ -36,6 +39,7 @@ jobs:
       - id: source
         env:
           PERFINE_RELEASE_TAG: ${{ inputs.tag }}
+          PERFINE_SOURCE_COMMIT: ${{ inputs.revision }}
         run: node "packages/perfine/scripts/release.mjs" source
   build:
     needs: source
@@ -230,13 +234,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.PERFINE_NPM_TOKEN }}
           PERFINE_APPROVE_RELEASE: "true"
         run: node "packages/perfine/scripts/release-set.mjs" publish-npm "packages/perfine/dist/release"
-      - name: Publish standalone release and verified Action record
+      - name: Stage standalone assets for component completion
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.source.outputs.version }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          gh release create "perfine@$RELEASE_TAG" --repo delinoio/apps --verify-tag --title "Perfine $RELEASE_TAG" --notes-file "packages/perfine/dist/release/action-release.json" "packages/perfine/dist/release/"*.tar.gz "packages/perfine/dist/release/"*.tgz "packages/perfine/dist/release/SHA256SUMS" "packages/perfine/dist/release/release-set.json" "packages/perfine/dist/release/action-release.json"
+          RELEASE_TAG: perfine@${{ inputs.tag }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+          RELEASE_DIRECTORY: packages/perfine/dist/release
+        run: node "scripts/release/assets.mjs"
       - name: Record verified Action SHA
         env:
           ACTION_COMMIT: ${{ steps.action.outputs.action-commit }}

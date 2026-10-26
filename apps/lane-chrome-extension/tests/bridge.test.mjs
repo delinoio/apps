@@ -349,3 +349,168 @@ test(
     await selection;
   },
 );
+
+const until = async (condition) => {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("TIMEOUT");
+};
+// Records what an observer reading the bridge would see at each notification.
+function observed() {
+  const state = { bridge: undefined, snapshots: [], approvals: 0 };
+  state.onStatus = () =>
+    state.snapshots.push(
+      state.bridge.listConnections().map((item) => item.connected),
+    );
+  state.connected = (index = state.snapshots.length - 1) =>
+    state.snapshots[index]?.some(Boolean) === true;
+  return state;
+}
+
+test("authenticated reconnect notifies observers once without a new approval", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lane-chrome-reconnect-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const seen = observed();
+  seen.bridge = await createChromeBridge({
+    dataRoot: root,
+    extensionIds: [extensionId],
+    requestApproval: async () => {
+      seen.approvals += 1;
+      return true;
+    },
+    acceptCapture: async () => {},
+    onStatus: seen.onStatus,
+  });
+  t.after(() => seen.bridge.close());
+  const first = await client(root);
+  first.send({ type: "connect", profileName: "Work" });
+  const granted = await first.next();
+  assert.equal(granted.ok, true);
+  assert.equal(seen.approvals, 1);
+  assert.equal(seen.snapshots.length, 1, "fresh approval notifies once");
+  assert.equal(seen.connected(), true);
+  first.socket.end();
+  await until(() => seen.snapshots.length === 2 && !seen.connected());
+  const before = seen.snapshots.length;
+
+  const second = await client(root);
+  second.send({ type: "connect", profileName: "Work", token: granted.token });
+  const accepted = await second.next();
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.token, granted.token, "token is unchanged");
+  assert.equal(seen.approvals, 1, "no new approval prompt");
+  assert.equal(seen.snapshots.length, before + 1, "exactly one notification");
+  assert.equal(seen.connected(), true, "observer reads connected state");
+  assert.equal(seen.bridge.listConnections()[0].connected, true);
+  // A later authenticated status request does not add a notification.
+  second.send({ type: "status", token: granted.token });
+  assert.equal((await second.next()).ok, true);
+  assert.equal(seen.snapshots.length, before + 1);
+  second.socket.destroy();
+});
+
+test("authenticated reconnect after a bridge restart notifies connected without approval", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lane-chrome-restart-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let bridge = await createChromeBridge({
+    dataRoot: root,
+    extensionIds: [extensionId],
+    requestApproval: async () => true,
+    acceptCapture: async () => {},
+  });
+  const first = await client(root);
+  first.send({ type: "connect", profileName: "Work" });
+  const { token } = await first.next();
+  first.socket.destroy();
+  await bridge.close();
+
+  const seen = observed();
+  seen.bridge = bridge = await createChromeBridge({
+    dataRoot: root,
+    extensionIds: [extensionId],
+    requestApproval: async () => {
+      seen.approvals += 1;
+      throw Error("must reuse approval");
+    },
+    acceptCapture: async () => {},
+    onStatus: seen.onStatus,
+  });
+  t.after(() => bridge.close());
+  assert.deepEqual(seen.snapshots, []);
+  assert.equal(bridge.listConnections()[0].connected, false);
+  const second = await client(root);
+  second.send({ type: "connect", profileName: "Work", token });
+  const accepted = await second.next();
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.token, token);
+  assert.equal(seen.approvals, 0);
+  assert.equal(seen.snapshots.length, 1);
+  assert.equal(seen.connected(), true);
+  second.socket.destroy();
+});
+
+test("rejected, invalid and revoked credentials never connect or bypass approval", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lane-chrome-unauthorized-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const seen = observed();
+  let approve = false;
+  seen.bridge = await createChromeBridge({
+    dataRoot: root,
+    extensionIds: [extensionId],
+    requestApproval: async () => {
+      seen.approvals += 1;
+      return approve;
+    },
+    acceptCapture: async () => {},
+    onStatus: seen.onStatus,
+  });
+  t.after(() => seen.bridge.close());
+  const anyConnected = () =>
+    seen.snapshots.some((value) => value.some(Boolean));
+
+  const rejected = await client(root);
+  rejected.send({ type: "connect", profileName: "Work" });
+  assert.equal((await rejected.next()).reason, "APPROVAL_REQUIRED");
+  assert.equal(seen.approvals, 1);
+  assert.equal(anyConnected(), false, "rejected approval never connects");
+  assert.deepEqual(seen.bridge.listConnections(), []);
+
+  approve = true;
+  const granted = await client(root);
+  granted.send({ type: "connect", profileName: "Work" });
+  const { token } = await granted.next();
+  granted.socket.destroy();
+  await until(() => !seen.connected());
+  approve = false;
+  const approvals = seen.approvals;
+
+  const invalid = await client(root);
+  invalid.send({ type: "connect", profileName: "Work", token: "wrong" });
+  assert.equal((await invalid.next()).reason, "APPROVAL_REQUIRED");
+  assert.equal(
+    seen.approvals,
+    approvals + 1,
+    "invalid token asks for approval",
+  );
+  assert.equal(seen.bridge.listConnections()[0].connected, false);
+  assert.equal(seen.connected(), false);
+
+  await seen.bridge.revoke(profileId);
+  const afterRevoke = seen.snapshots.length;
+  const revoked = await client(root);
+  revoked.send({ type: "connect", profileName: "Work", token });
+  assert.equal((await revoked.next()).reason, "APPROVAL_REQUIRED");
+  assert.equal(
+    seen.approvals,
+    approvals + 2,
+    "revoked token asks for approval",
+  );
+  assert.deepEqual(seen.bridge.listConnections(), []);
+  assert.equal(
+    seen.snapshots.slice(afterRevoke).some((value) => value.some(Boolean)),
+    false,
+  );
+  for (const socket of [rejected, invalid, revoked]) socket.socket.destroy();
+});

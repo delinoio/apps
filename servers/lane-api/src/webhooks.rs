@@ -22,8 +22,25 @@ use sqlx::{PgConnection, Row, postgres::PgRow};
 #[derive(Clone)]
 pub struct WebhookConfig {
     encryption_key: [u8; 32],
+    /// Complete public intake base without a trailing slash. The receiver ID is appended as the
+    /// final path segment. See `intake_base` for how the configured URL maps to this value.
     pub base_url: String,
     pub max_webhook_bytes: usize,
+}
+/// Internal route that serves webhook intake. It is mounted by the HTTP adapter.
+const INTAKE_ROUTE: &str = "/webhooks";
+/// Map the configured URL to the complete public intake base.
+///
+/// An empty or root path means the value is an API origin, so the internal intake route is
+/// appended. Any explicit non-root path is the complete public intake base and is kept as
+/// configured; a custom path therefore needs an operator-managed rewrite to the internal route.
+fn intake_base(url: &url::Url, configured: &str) -> String {
+    let configured = configured.trim_end_matches('/');
+    if url.path().trim_matches('/').is_empty() {
+        format!("{configured}{INTAKE_ROUTE}")
+    } else {
+        configured.into()
+    }
 }
 impl WebhookConfig {
     pub fn new(key: &str, base_url: &str, max_webhook_bytes: usize) -> Result<Self> {
@@ -48,7 +65,7 @@ impl WebhookConfig {
         }
         Ok(Self {
             encryption_key: key,
-            base_url: base_url.trim_end_matches('/').into(),
+            base_url: intake_base(&url, base_url),
             max_webhook_bytes,
         })
     }
@@ -63,6 +80,10 @@ impl WebhookConfig {
                 .parse()
                 .map_err(|_| Fault::invalid("invalid MAX_WEBHOOK_BYTES"))?,
         )
+    }
+    /// Public intake endpoint returned for a receiver.
+    pub fn endpoint(&self, receiver: &str) -> String {
+        format!("{}/{receiver}", self.base_url)
     }
     fn encrypt(&self, account: &str, receiver: &str, key: &[u8]) -> Result<Vec<u8>> {
         let cipher =
@@ -155,8 +176,19 @@ async fn clock(db: &mut PgConnection) -> Result<DateTime<Utc>> {
         .fetch_one(db)
         .await?)
 }
+/// Projected repository of a stored webhook row. Rows read through `receiver_row`, `event_row`
+/// or the list queries carry the account-scoped canonical ID in `canonical_repository_id`, so
+/// historical rows that retain a synchronized local alias project the canonical repository
+/// without rewriting the stored value. Rows from `RETURNING *` were written canonical.
+fn repository_of(row: &PgRow) -> String {
+    row.try_get("canonical_repository_id")
+        .unwrap_or_else(|_| row.get("repository_id"))
+}
+/// Webhook rows joined to the account-local repository mapping.
+const RECEIVER_PROJECTION: &str = "SELECT t.*,COALESCE(m.canonical_id,t.repository_id) AS canonical_repository_id FROM lane_webhook_receivers t LEFT JOIN lane_repository_mappings m ON m.account_id=t.account_id AND m.local_id=t.repository_id";
+const EVENT_PROJECTION: &str = "SELECT t.*,COALESCE(m.canonical_id,t.repository_id) AS canonical_repository_id FROM lane_webhook_events t LEFT JOIN lane_repository_mappings m ON m.account_id=t.account_id AND m.local_id=t.repository_id";
 fn receiver(row: &PgRow) -> Value {
-    json!({"id":row.get::<String,_>("id"),"repositoryId":row.get::<String,_>("repository_id"),
+    json!({"id":row.get::<String,_>("id"),"repositoryId":repository_of(row),
         "name":row.get::<String,_>("name"),"revision":row.get::<i64,_>("revision").to_string(),
         "deleted":row.get::<Option<String>,_>("deletion_version_id").is_some()})
 }
@@ -165,7 +197,7 @@ fn event(row: &PgRow) -> Value {
     let mut data = data.unwrap_or_else(|| json!({}));
     data["id"] = json!(row.get::<String, _>("id"));
     data["receiverId"] = json!(row.get::<String, _>("receiver_id"));
-    data["repositoryId"] = json!(row.get::<String, _>("repository_id"));
+    data["repositoryId"] = json!(repository_of(row));
     data["senderEventId"] = json!(row.get::<String, _>("sender_event_id"));
     data["state"] = json!(format!("EVENT_STATE_{}", row.get::<String, _>("state")));
     data["revision"] = json!(row.get::<i64, _>("revision").to_string());
@@ -175,24 +207,22 @@ fn deletion(kind: &str, id: &str, version: &str) -> Value {
     json!({"kind":format!("ENTITY_KIND_OR_REMOTE_KIND_{kind}"),"id":id,"deletionVersionId":version})
 }
 async fn receiver_row(db: &mut PgConnection, account: &str, id: &str) -> Result<PgRow> {
-    Ok(
-        sqlx::query(
-            "SELECT * FROM lane_webhook_receivers WHERE account_id=$1 AND id=$2 FOR UPDATE",
-        )
-        .bind(account)
-        .bind(id)
-        .fetch_one(db)
-        .await?,
-    )
+    Ok(sqlx::query(&format!(
+        "{RECEIVER_PROJECTION} WHERE t.account_id=$1 AND t.id=$2 FOR UPDATE OF t"
+    ))
+    .bind(account)
+    .bind(id)
+    .fetch_one(db)
+    .await?)
 }
 async fn event_row(db: &mut PgConnection, account: &str, id: &str) -> Result<PgRow> {
-    Ok(
-        sqlx::query("SELECT * FROM lane_webhook_events WHERE account_id=$1 AND id=$2 FOR UPDATE")
-            .bind(account)
-            .bind(id)
-            .fetch_one(db)
-            .await?,
-    )
+    Ok(sqlx::query(&format!(
+        "{EVENT_PROJECTION} WHERE t.account_id=$1 AND t.id=$2 FOR UPDATE OF t"
+    ))
+    .bind(account)
+    .bind(id)
+    .fetch_one(db)
+    .await?)
 }
 fn live_event(row: &PgRow) -> Result<()> {
     if row.get::<String, _>("state") == "DELETED" {
@@ -201,15 +231,13 @@ fn live_event(row: &PgRow) -> Result<()> {
         Ok(())
     }
 }
-async fn live_repository(db: &mut PgConnection, p: &Principal, repository: &str) -> Result<()> {
-    let result = crate::entities::dispatch(
-        db,
-        p,
-        "GetRepository",
-        &json!({"id":repository}),
-        usize::MAX,
-    )
-    .await?;
+/// Resolve a repository spelling through the account-local mapping and require it to be live.
+/// Returns the canonical repository ID that webhook rows must retain.
+async fn live_repository(db: &mut PgConnection, p: &Principal, repository: &str) -> Result<String> {
+    let canonical = crate::entities::canonical_repository(db, &p.account_id, repository).await?;
+    let result =
+        crate::entities::dispatch(db, p, "GetRepository", &json!({"id":canonical}), usize::MAX)
+            .await?;
     if result["result"]["version"]["deleted"]
         .as_bool()
         .unwrap_or(false)
@@ -217,7 +245,7 @@ async fn live_repository(db: &mut PgConnection, p: &Principal, repository: &str)
     {
         Err(deleted("repository is deleted"))
     } else {
-        Ok(())
+        Ok(canonical)
     }
 }
 
@@ -308,8 +336,7 @@ pub async fn dispatch_with_config(
     }
     let response = match method {
         "CreateReceiver" => {
-            let repository = identity(q, "repositoryId")?;
-            live_repository(db, p, repository).await?;
+            let repository = live_repository(db, p, identity(q, "repositoryId")?).await?;
             let config =
                 config.ok_or_else(|| Fault::precondition("webhook configuration missing"))?;
             let key = random_secret();
@@ -318,7 +345,7 @@ pub async fn dispatch_with_config(
                 .bind(&p.account_id).bind(resource).bind(repository).bind(string(q,"name")).bind(encrypted).fetch_one(&mut *db).await?;
             let receiver = receiver(&row);
             crate::entities::change(db, &p.account_id, &json!({"receiver":receiver})).await?;
-            json!({"receiver":receiver,"secret":URL_SAFE_NO_PAD.encode(key),"endpoint":format!("{}/{}",config.base_url,resource)})
+            json!({"receiver":receiver,"secret":URL_SAFE_NO_PAD.encode(key),"endpoint":config.endpoint(resource)})
         }
         "SaveReceiver" | "RotateReceiverKey" => {
             let row = receiver_row(db, &p.account_id, resource).await?;
@@ -340,8 +367,7 @@ pub async fn dispatch_with_config(
                     .bind(&p.account_id).bind(resource).bind(encrypted).execute(&mut *db).await?;
                 Some(URL_SAFE_NO_PAD.encode(key))
             } else {
-                let repository = identity(q, "repositoryId")?;
-                live_repository(db, p, repository).await?;
+                let repository = live_repository(db, p, identity(q, "repositoryId")?).await?;
                 sqlx::query("UPDATE lane_webhook_receivers SET repository_id=$3,name=$4,revision=revision+1 WHERE account_id=$1 AND id=$2")
                     .bind(&p.account_id).bind(resource).bind(repository).bind(string(q,"name")).execute(&mut *db).await?;
                 None
@@ -513,7 +539,18 @@ async fn complete(
 async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> Result<Value> {
     let size = q["page"]["size"].as_u64().unwrap_or(0);
     let size = if size == 0 { 100 } else { size.min(1000) };
-    let repo = q["repositoryId"].as_str();
+    // The filter and cursor scope use the account's canonical repository, so an alias and its
+    // canonical ID select the same rows and share cursors. Rows retaining either spelling match.
+    let repo = match q["repositoryId"].as_str() {
+        Some(raw) => Some(crate::entities::canonical_repository(db, &p.account_id, raw).await?),
+        None => None,
+    };
+    let repository_filter = match &repo {
+        Some(canonical) => {
+            Some(crate::entities::repository_identities(db, &p.account_id, canonical).await?)
+        }
+        None => None,
+    };
     let mut states = Vec::<String>::new();
     if let Some(values) = q["states"].as_array() {
         for value in values {
@@ -548,11 +585,11 @@ async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> 
         identity(&value, "id")?.to_owned()
     };
     let rows = if method == "ListReceivers" {
-        sqlx::query("SELECT * FROM lane_webhook_receivers WHERE account_id=$1 AND id>$2 AND ($3::text IS NULL OR repository_id=$3) AND deletion_version_id IS NULL ORDER BY id LIMIT $4")
-            .bind(&p.account_id).bind(&after).bind(repo).bind(size as i64+1).fetch_all(db).await?
+        sqlx::query(&format!("{RECEIVER_PROJECTION} WHERE t.account_id=$1 AND t.id>$2 AND ($3::text[] IS NULL OR t.repository_id=ANY($3)) AND t.deletion_version_id IS NULL ORDER BY t.id LIMIT $4"))
+            .bind(&p.account_id).bind(&after).bind(&repository_filter).bind(size as i64+1).fetch_all(db).await?
     } else {
-        sqlx::query("SELECT * FROM lane_webhook_events WHERE account_id=$1 AND id>$2 AND ($3::text IS NULL OR repository_id=$3) AND state<>'DELETED' AND (cardinality($5::text[])=0 OR state=ANY($5)) ORDER BY id LIMIT $4")
-            .bind(&p.account_id).bind(&after).bind(repo).bind(size as i64+1).bind(states).fetch_all(db).await?
+        sqlx::query(&format!("{EVENT_PROJECTION} WHERE t.account_id=$1 AND t.id>$2 AND ($3::text[] IS NULL OR t.repository_id=ANY($3)) AND t.state<>'DELETED' AND (cardinality($5::text[])=0 OR t.state=ANY($5)) ORDER BY t.id LIMIT $4"))
+            .bind(&p.account_id).bind(&after).bind(&repository_filter).bind(size as i64+1).bind(states).fetch_all(db).await?
     };
     let next = if rows.len() > size as usize {
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(
@@ -632,22 +669,116 @@ async fn redact_resource(
     Ok(())
 }
 /// Called by repository deletion in the same account-locked transaction.
+///
+/// Receivers are selected by their current owner and events by their original owner, each
+/// independently and across every spelling (canonical ID and synchronized aliases) of the
+/// repository. Receiver reassignment therefore affects only future events: a receiver that now
+/// belongs to another repository survives, while its older events here are erased.
 pub async fn delete_repository(
     db: &mut PgConnection,
     account: &str,
     repository: &str,
 ) -> Result<()> {
-    let receivers:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_webhook_receivers WHERE account_id=$1 AND repository_id=$2 AND deletion_version_id IS NULL")
-        .bind(account).bind(repository).fetch_all(&mut *db).await?;
+    let canonical = crate::entities::canonical_repository(db, account, repository).await?;
+    let identities = crate::entities::repository_identities(db, account, &canonical).await?;
+    let receivers:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_webhook_receivers WHERE account_id=$1 AND repository_id=ANY($2) AND deletion_version_id IS NULL ORDER BY id")
+        .bind(account).bind(&identities).fetch_all(&mut *db).await?;
     for id in receivers {
         delete_receiver(db, account, &id).await?;
     }
-    let events:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_webhook_events WHERE account_id=$1 AND repository_id=$2 AND state<>'DELETED'")
-        .bind(account).bind(repository).fetch_all(&mut *db).await?;
+    let events:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_webhook_events WHERE account_id=$1 AND repository_id=ANY($2) AND state<>'DELETED' ORDER BY id")
+        .bind(account).bind(&identities).fetch_all(&mut *db).await?;
     for id in events {
         delete_event(db, account, &id).await?;
     }
     Ok(())
+}
+
+/// Number of accounts examined per round of the compatibility cleanup. Each account still runs in
+/// its own transaction; the page only bounds how many candidates one query returns.
+const CLEANUP_ACCOUNT_PAGE: i64 = 100;
+/// Receivers or events whose own repository reference resolves to a deleted canonical repository.
+const ORPHANED_RECEIVERS: &str = "FROM lane_webhook_receivers t LEFT JOIN lane_repository_mappings m ON m.account_id=t.account_id AND m.local_id=t.repository_id JOIN lane_entities e ON e.account_id=t.account_id AND e.id=COALESCE(m.canonical_id,t.repository_id) AND e.kind=1 AND e.deleted WHERE t.deletion_version_id IS NULL";
+const ORPHANED_EVENTS: &str = "FROM lane_webhook_events t LEFT JOIN lane_repository_mappings m ON m.account_id=t.account_id AND m.local_id=t.repository_id JOIN lane_entities e ON e.account_id=t.account_id AND e.id=COALESCE(m.canonical_id,t.repository_id) AND e.kind=1 AND e.deleted WHERE t.state<>'DELETED'";
+
+/// Outcome of one compatibility cleanup run.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CleanupReport {
+    pub accounts: usize,
+    pub receivers: usize,
+    pub events: usize,
+}
+
+/// Compatibility cleanup for webhook resources that outlived their deleted repository.
+///
+/// Before repository aliases were resolved, a receiver created through a synchronized alias kept
+/// the alias ID, so deleting the canonical repository missed it and the events it received.
+/// This erases every receiver and event whose own repository reference (after account-scoped
+/// mapping resolution) is an already deleted repository, using the same per-resource deletion
+/// semantics as `delete_repository`. Receivers and events moved to or retained under a live
+/// repository are untouched.
+///
+/// Each affected account is processed in one transaction under its account lock, so a failure
+/// rolls back that account's cleanup and the run can simply be repeated; accounts already
+/// cleaned are not candidates again. Repeating the run is a no-op: tombstone IDs, revisions and
+/// deletion changes are only written for resources that are not yet deleted.
+///
+/// Invocation: `lane-api migrate` runs this after the SQL migrations commit. Remove the step once
+/// every deployment has run it; see the Lane API contract.
+pub async fn cleanup_deleted_repository_resources(db: &sqlx::PgPool) -> Result<CleanupReport> {
+    let mut report = CleanupReport::default();
+    let mut after = String::new();
+    loop {
+        let accounts: Vec<String> = sqlx::query_scalar(&format!(
+            "SELECT account_id FROM (SELECT t.account_id {ORPHANED_RECEIVERS} UNION ALL SELECT t.account_id {ORPHANED_EVENTS}) c WHERE account_id>$1 GROUP BY account_id ORDER BY account_id LIMIT $2"
+        ))
+        .bind(&after)
+        .bind(CLEANUP_ACCOUNT_PAGE)
+        .fetch_all(db)
+        .await?;
+        let Some(last) = accounts.last().cloned() else {
+            break;
+        };
+        for account in accounts {
+            let mut tx = db.begin().await?;
+            account_lock(&mut tx, &account).await?;
+            let (receivers, events) = cleanup_account(&mut tx, &account).await?;
+            tx.commit().await?;
+            tracing::info!(
+                category = "webhook_cleanup",
+                receivers,
+                events,
+                "erased webhook resources of deleted repositories"
+            );
+            report.accounts += 1;
+            report.receivers += receivers;
+            report.events += events;
+        }
+        after = last;
+    }
+    Ok(report)
+}
+/// The caller holds the account lock and owns commit/rollback.
+async fn cleanup_account(db: &mut PgConnection, account: &str) -> Result<(usize, usize)> {
+    let receivers: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT t.id {ORPHANED_RECEIVERS} AND t.account_id=$1 ORDER BY t.id"
+    ))
+    .bind(account)
+    .fetch_all(&mut *db)
+    .await?;
+    for id in &receivers {
+        delete_receiver(db, account, id).await?;
+    }
+    let events: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT t.id {ORPHANED_EVENTS} AND t.account_id=$1 ORDER BY t.id"
+    ))
+    .bind(account)
+    .fetch_all(&mut *db)
+    .await?;
+    for id in &events {
+        delete_event(db, account, id).await?;
+    }
+    Ok((receivers.len(), events.len()))
 }
 /// Account deletion runs before account epoch rotation; the caller removes account changes.
 pub async fn delete_account(db: &mut PgConnection, account: &str) -> Result<()> {
@@ -742,8 +873,8 @@ pub async fn intake(
         device_name: String::new(),
         origin_kind: "ORIGIN_KIND_UNSPECIFIED".into(),
     };
-    let repository: String = row.get("repository_id");
-    live_repository(db, &p, &repository).await?;
+    // The event keeps the canonical repository even when the receiver retains a historical alias.
+    let repository = live_repository(db, &p, &row.get::<String, _>("repository_id")).await?;
     let event_id = id();
     let data =
         json!({"eventType":event_type,"occurredAt":stamp(occurred),"payload":content["payload"]});
@@ -852,6 +983,63 @@ pub fn unique_json(raw: &[u8]) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn config(base: &str) -> Result<WebhookConfig> {
+        WebhookConfig::new(&URL_SAFE_NO_PAD.encode([7; 32]), base, 1024)
+    }
+    #[test]
+    fn origin_bases_append_the_intake_route_once() {
+        let id = "01900000-0000-7000-8000-000000000010";
+        for base in [
+            "https://lane.api.delino.io",
+            "https://lane.api.delino.io/",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:8080/",
+        ] {
+            let endpoint = config(base).unwrap().endpoint(id);
+            assert_eq!(
+                endpoint,
+                format!("{}/webhooks/{id}", base.trim_end_matches('/'))
+            );
+        }
+    }
+    #[test]
+    fn explicit_paths_are_the_complete_intake_base() {
+        let id = "01900000-0000-7000-8000-000000000010";
+        for (base, expected) in [
+            (
+                "https://lane.example/webhooks",
+                "https://lane.example/webhooks",
+            ),
+            (
+                "https://lane.example/webhooks/",
+                "https://lane.example/webhooks",
+            ),
+            ("https://lane.example/hooks", "https://lane.example/hooks"),
+            ("https://lane.example/hooks/", "https://lane.example/hooks"),
+            ("https://lane.example/a/b/", "https://lane.example/a/b"),
+        ] {
+            assert_eq!(
+                config(base).unwrap().endpoint(id),
+                format!("{expected}/{id}")
+            );
+        }
+    }
+    #[test]
+    fn base_url_validation_is_unchanged() {
+        for base in [
+            "https://user@lane.example",
+            "https://user:pass@lane.example/webhooks",
+            "https://lane.example/webhooks?x=1",
+            "https://lane.example/#fragment",
+            "http://lane.example",
+            "ftp://lane.example",
+            "lane.example",
+        ] {
+            assert!(config(base).is_err(), "{base} must stay invalid");
+        }
+        assert!(config("http://localhost:8080").is_ok());
+        assert!(config("http://[::1]:8080/").is_ok());
+    }
     #[test]
     fn shared_signature_vectors() {
         let fixtures: Value = serde_json::from_str(include_str!(

@@ -25,7 +25,15 @@
     delete globalThis.__laneRealQASelector;
   }
   globalThis.__laneRealQASelector = cleanup;
+  // Page JavaScript shares this DOM and can dispatch synthetic events into the
+  // capture-phase listeners below. Only genuine user input (isTrusted === true)
+  // may select or capture; anything else is ignored before any side effect so
+  // the session stays intact for the user's next real action.
+  function trusted(e) {
+    return e.isTrusted === true;
+  }
   function move(e) {
+    if (!trusted(e)) return;
     selected = e.target;
     highlight();
   }
@@ -39,6 +47,7 @@
     });
   }
   function key(e) {
+    if (!trusted(e)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -96,6 +105,7 @@
     return parts.join(" > ");
   }
   async function click(e) {
+    if (!trusted(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     await capture(e.target);

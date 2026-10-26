@@ -10,6 +10,8 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 ## Domain Ownership Map
 
+The main-only `.github/workflows/release.yml` selects Lane web and binary publication from changesets and calls reusable deployment workflows. Follow the [release procedure](repository-workflow-contract.md#project-release-preparation) for commit identity, independent success tags and recovery.
+
 Existing paths retain their build ownership:
 
 - `apps/lane/src`: shared ReactLynx application.

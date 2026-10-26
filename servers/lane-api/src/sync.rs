@@ -407,12 +407,11 @@ pub async fn push_item(
                 }
                 e::validate_body(db, &p.account_id, &entity_id, kind, &v).await?;
                 let prompt = kind == TASK
-                    && (v["promptRestoration"] == true
-                        || parent_versions.is_empty() && v["task"].get("prompt").is_some()
-                        || parent_versions.iter().any(|old| {
-                            old["task"].get("prompt") != v["task"].get("prompt")
-                                || old["task"].get("captures") != v["task"].get("captures")
-                        }));
+                    && e::prompt_version(
+                        v["promptRestoration"] == true,
+                        &parent_versions,
+                        &v["task"],
+                    );
                 e::insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
                 let same_repository = kind == REPOSITORY
                     && action == "CREATE"
