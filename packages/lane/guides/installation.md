@@ -38,3 +38,7 @@ The CLI defaults to local data, including after login. Only an explicit `--remot
 Default output is human-readable. `--json` returns a structured result or error; it never includes terminal colors. Use `NO_COLOR` or `--color=never` to disable colors in human output. Exit status 0 means success, 1 means an operation failed, and 2 means the invocation was invalid.
 
 Native desktop packages include their matching background synchronization helper. They do not depend on a globally installed npm package. Development builds use `lane-dev://` and distribution builds use `lane://` for login callbacks, opening Lane, and repository/task links. Use links supplied by Lane; do not substitute one build channel's callback scheme for another.
+
+## Existing development data
+
+Lane has not been released, and earlier development data is not migrated to the task planning format. A local space in an unsupported format is refused with `UNSUPPORTED_FORMAT`; Lane never resets it silently and does not create an empty replacement on its own. For disposable development data, the explicit [development data reset](user-guide.md#development-data-reset) discards one local space and creates an empty one. Agents must not run it unless the user asks.
