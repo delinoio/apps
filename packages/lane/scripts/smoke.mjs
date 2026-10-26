@@ -8,11 +8,18 @@ import {
   rmSync,
   mkdirSync,
   lstatSync,
+  readdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifiedExecutable, platformKey, platforms } from "../bin/verify.mjs";
+import {
+  verifiedExecutable,
+  platformKey,
+  platforms,
+  platformPackage,
+} from "../bin/verify.mjs";
+import { installCandidate } from "./packed-install.mjs";
 const source = fileURLToPath(new URL("../", import.meta.url));
 const { version } = JSON.parse(readFileSync(resolve(source, "package.json")));
 const temporary = mkdtempSync(resolve(tmpdir(), "lane-packed-"));
@@ -27,7 +34,10 @@ try {
   );
   const expectedArchives = new Set(
     selectedPlatforms
-      .map((key) => `lane-${key}-${version}.tar.gz`)
+      .flatMap((key) => [
+        `lane-${key}-${version}.tar.gz`,
+        `delinoio-lane-${key}-${version}.tgz`,
+      ])
       .concat(`delinoio-lane-${version}.tgz`),
   );
   const sums = readFileSync(resolve(source, "dist/SHA256SUMS"), "utf8")
@@ -46,23 +56,68 @@ try {
     );
   }
   assert.equal(expectedArchives.size, 0, "missing archive checksum");
-  execFileSync(
-    "npm",
-    [
-      "install",
-      "--offline",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--prefix",
-      temporary,
-      resolve(source, "dist", `delinoio-lane-${version}.tgz`),
-    ],
-    { stdio: "inherit" },
+  await installCandidate({
+    dist: resolve(source, "dist"),
+    version,
+    keys: selectedPlatforms,
+    prefix: temporary,
+  });
+  assert.deepEqual(
+    readdirSync(resolve(temporary, "node_modules/@delinoio")).sort(),
+    ["lane", `lane-${platformKey()}`].sort(),
+  );
+  const launcherEntries = execFileSync(
+    "tar",
+    ["-tzf", resolve(source, "dist", `delinoio-lane-${version}.tgz`)],
+    { encoding: "utf8" },
+  );
+  assert.doesNotMatch(
+    launcherEntries,
+    /artifacts\/|package\/lane(?:\.exe)?\n|THIRD_PARTY_NOTICES/,
   );
   const installed = resolve(temporary, "node_modules/@delinoio/lane");
   for (const key of selectedPlatforms) {
-    const executable = verifiedExecutable(installed, key);
+    const executable = resolve(
+      source,
+      "dist/platforms",
+      `lane-${key}`,
+      key.startsWith("windows") ? "lane.exe" : "lane",
+    );
+    const info = platformPackage(key);
+    const metadata = JSON.parse(
+      readFileSync(
+        resolve(source, "dist/platforms", `lane-${key}`, "package.json"),
+      ),
+    );
+    assert.equal(metadata.name, info.name);
+    assert.equal(metadata.version, version);
+    assert.deepEqual(metadata.os, [info.os]);
+    assert.deepEqual(metadata.cpu, [info.cpu]);
+    const entry = manifest.artifacts[key];
+    const bytes = readFileSync(executable);
+    assert.equal(entry.size, bytes.length);
+    assert.equal(
+      entry.sha256,
+      createHash("sha256").update(bytes).digest("hex"),
+    );
+    const packedPlatform = resolve(temporary, `packed-${key}`);
+    mkdirSync(packedPlatform);
+    execFileSync("tar", [
+      "-xzf",
+      resolve(source, "dist", `delinoio-lane-${key}-${version}.tgz`),
+      "-C",
+      packedPlatform,
+    ]);
+    assert.deepEqual(
+      readFileSync(resolve(packedPlatform, "package", entry.path)),
+      bytes,
+    );
+    for (const notice of [
+      "LICENSE",
+      "NOTICE",
+      "THIRD_PARTY_NOTICES/modules.json",
+    ])
+      assert.ok(lstatSync(resolve(packedPlatform, "package", notice)).isFile());
     const archive = resolve(source, "dist", `lane-${key}-${version}.tar.gz`);
     const entries = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
       .trim()

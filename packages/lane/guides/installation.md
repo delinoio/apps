@@ -12,7 +12,9 @@ lane --version
 lane --help
 ```
 
-To review an unpublished npm archive, install the supplied `delinoio-lane-0.1.0.tgz` from its local path instead. The package contains platform executables. On each invocation, the launcher checks the package version, platform, artifact manifest, byte length, and SHA-256 checksum before execution. It does not download a mutable latest executable. Unsupported platforms, missing artifacts, or mismatches stop with an installation error.
+The launcher uses exact-version optional dependencies. npm installs only the native package matching your OS and CPU. Keep optional dependencies enabled; do not use `--omit=optional` or `--no-optional`.
+
+To review unpublished candidates, obtain both `delinoio-lane-0.1.0.tgz` and the matching `delinoio-lane-<os>-<arch>-0.1.0.tgz`. Install both local paths together with `npm install -g --offline <launcher-archive> <platform-archive>`. The launcher archive contains no native binaries; each platform archive contains one executable and its licenses. On each invocation, the launcher checks the launcher and native package versions, OS/CPU metadata, artifact manifest, byte length, and SHA-256 checksum before execution. It does not download a mutable latest executable. Unsupported platforms, missing artifacts, or mismatches stop with an installation error.
 
 The launcher forwards command arguments, standard input/output/error, process signals, and the child exit status. It stores no user data in the installation directory.
 
