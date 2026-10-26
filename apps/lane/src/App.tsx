@@ -65,6 +65,9 @@ import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
   const [realqaDirty, setRealqaDirty] = useState(false);
+  // Unsaved label, milestone or cycle input in the repository planning manager.
+  const [planningDirty, setPlanningDirty] = useState(false);
+  const [planningEpoch, setPlanningEpoch] = useState(0);
   const [miniApp, setMiniApp] = useState(MiniApp.Lane);
   const previousApp = useRef(MiniApp.Lane);
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
@@ -301,7 +304,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const lookup = lookupOf(planning.items, new Map(), repositoryNames);
   const activeFilters = activeFilterCount(filter);
   const navigate = (fn: () => void) => {
-    if (draft?.dirty || realqaDirty) setDiscard(() => fn);
+    const proceed = () => {
+      if (planningDirty) {
+        // Remount the manager so confirmed discards also apply when the page stays the same.
+        setPlanningDirty(false);
+        setPlanningEpoch((v) => v + 1);
+      }
+      fn();
+    };
+    if (draft?.dirty || realqaDirty || planningDirty) setDiscard(() => proceed);
     else fn();
   };
   const selectApp = (app: MiniApp) => {
@@ -818,6 +829,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     scroll-orientation="vertical"
                   >
                     <Repositories
+                      key={planningEpoch}
+                      dirty={setPlanningDirty}
                       adapter={adapter}
                       items={repositories}
                       planning={planning}

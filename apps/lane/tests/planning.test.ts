@@ -26,6 +26,7 @@ import {
   planningItemChanges,
   planningItemOf,
   planningBody,
+  planningInputChanged,
   blankPlanningInput,
   pruneFilter,
   relationshipEdits,
@@ -442,6 +443,20 @@ test("rejected synchronization reasons are explained and omitted ProtoJSON defau
       $typeName: "lane.v1.EntityResult",
       version: sparse,
     } as never)!.completed,
+    false,
+  );
+});
+
+test("planning editor input counts as unsaved only when a field differs", () => {
+  const initial = blankPlanningInput();
+  assert.equal(planningInputChanged(initial, { ...initial }), false);
+  assert.equal(planningInputChanged(initial, { ...initial, name: "A" }), true);
+  assert.equal(
+    planningInputChanged(initial, { ...initial, completed: true }),
+    true,
+  );
+  assert.equal(
+    planningInputChanged(initial, { ...initial, description: "" }),
     false,
   );
 });

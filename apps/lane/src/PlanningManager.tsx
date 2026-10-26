@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useRef, useState } from "@lynx-js/react";
+import { useEffect, useRef, useState } from "@lynx-js/react";
 import type { UI } from "./serializable";
 import {
   LaneService,
@@ -18,6 +18,7 @@ import {
   hasErrors,
   itemsOf,
   planningBody,
+  planningInputChanged,
   planningInputOf,
   planningItemChanges,
   planningItemOf,
@@ -34,6 +35,8 @@ interface Editing {
   id: string;
   base?: string;
   input: PlanningInput;
+  // Input at selection or last successful save; differences are unsaved edits.
+  initial: PlanningInput;
 }
 const noun: Record<PlanningKind, string> = {
   [PlanningKind.Label]: "label",
@@ -52,12 +55,14 @@ export function PlanningManager({
   repository,
   planning,
   refresh,
+  dirty,
   back,
 }: {
   adapter: LaneAdapter;
   repository: EntityResult;
   planning: PlanningState;
   refresh: () => void;
+  dirty: (value: boolean) => void;
   back: () => void;
 }) {
   const repositoryId = repository.version!.entityId;
@@ -70,6 +75,7 @@ export function PlanningManager({
   const [history, setHistory] = useState<EntityVersion[] | null>(null);
   const [historyCursor, setHistoryCursor] = useState("");
   const [conflict, setConflict] = useState<EntityResult>();
+  const [discard, setDiscard] = useState<() => void>();
   const lock = useRef(false);
   // Keep the request ID across an unchanged retry, including response loss.
   const attempt = useRef<{ key: string; requestId: string } | undefined>(
@@ -102,15 +108,30 @@ export function PlanningManager({
       setBusy(false);
     }
   };
-  const start = (item?: PlanningItem) => {
-    setAttempted(false);
-    setError("");
-    setEditing(
-      item
-        ? { id: item.id, base: item.versionId, input: planningInputOf(item) }
-        : { id: newId(), input: blankPlanningInput() },
-    );
+  const unsaved =
+    !!editing && planningInputChanged(editing.initial, editing.input);
+  // Report unsaved input to the app so page and app navigation ask first.
+  useEffect(() => {
+    dirty(unsaved);
+    return () => dirty(false);
+  }, [unsaved, dirty]);
+  // Every action that replaces or closes the editor asks before dropping unsaved input.
+  const guard = (action: () => void) => {
+    if (unsaved) setDiscard(() => action);
+    else action();
   };
+  const start = (item?: PlanningItem) =>
+    guard(() => {
+      setAttempted(false);
+      setError("");
+      const input = item ? planningInputOf(item) : blankPlanningInput();
+      setEditing({
+        id: item ? item.id : newId(),
+        base: item?.versionId,
+        input,
+        initial: input,
+      });
+    });
   const patch = (changes: Partial<PlanningInput>) =>
     editing &&
     setEditing({ ...editing, input: { ...editing.input, ...changes } });
@@ -154,6 +175,7 @@ export function PlanningManager({
       setEditing({
         ...editing,
         base: response.result.version?.versionId,
+        initial: editing.input,
       });
     });
   const loadHistory = async (more = false) => {
@@ -179,7 +201,7 @@ export function PlanningManager({
             identity.
           </text>
         </view>
-        <Button onClick={back}>Back to repositories</Button>
+        <Button onClick={() => guard(back)}>Back to repositories</Button>
       </view>
       <view className="row wrap planning-tabs">
         {planningKinds.map(([k, title]) => (
@@ -187,11 +209,13 @@ export function PlanningManager({
             key={k}
             pressed={k === kind}
             label={`${title} tab`}
-            onClick={() => {
-              setKind(k);
-              setEditing(undefined);
-              setError("");
-            }}
+            onClick={() =>
+              guard(() => {
+                setKind(k);
+                setEditing(undefined);
+                setError("");
+              })
+            }
           >
             {`${title} (${itemsOf(planning.items, k, repositoryId).length})`}
           </Button>
@@ -377,12 +401,34 @@ export function PlanningManager({
                     </Button>
                   </>
                 )}
-                <Button onClick={() => setEditing(undefined)}>Close</Button>
+                <Button onClick={() => guard(() => setEditing(undefined))}>
+                  Close
+                </Button>
               </view>
             </view>
           )}
         </view>
       </view>
+      {discard && (
+        <Dialog
+          title="Discard unsaved changes?"
+          onClose={() => setDiscard(undefined)}
+        >
+          <Notice>Your edits have not been saved.</Notice>
+          <Button
+            onClick={() => {
+              const action = discard;
+              setDiscard(undefined);
+              action();
+            }}
+          >
+            Discard changes
+          </Button>
+          <Button primary onClick={() => setDiscard(undefined)}>
+            Keep editing
+          </Button>
+        </Dialog>
+      )}
       {deleting && editing && (
         <Dialog
           title={`Delete ${noun[kind]}?`}

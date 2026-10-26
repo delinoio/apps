@@ -309,6 +309,14 @@ export function planningInputOf(item: PlanningItem): PlanningInput {
     endDate: item.endDate,
   };
 }
+// True when the editor input differs from the input it started from or last saved.
+export const planningInputChanged = (
+  initial: PlanningInput,
+  input: PlanningInput,
+) =>
+  (Object.keys(initial) as (keyof PlanningInput)[]).some(
+    (key) => initial[key] !== input[key],
+  );
 export type PlanningErrors = Partial<Record<keyof PlanningInput, string>>;
 export function validatePlanningInput(
   kind: PlanningKind,

@@ -473,6 +473,35 @@ try {
   await saveButton().click();
   await text("The end date must be on or after the start date.").waitFor();
 
+  // Unsaved planning input asks before Settings, tab changes, item selection or Back.
+  await button("Settings").first().click();
+  await text("Discard unsaved changes?").waitFor();
+  await page.keyboard.press("Escape");
+  await text("Discard unsaved changes?").waitFor({ state: "detached" });
+  assert.equal(await box("Name").inputValue(), "Sprint 2");
+  await button("Labels tab").click();
+  await text("Discard unsaved changes?").waitFor();
+  await button("Keep editing").click();
+  assert.equal(await box("Name").inputValue(), "Sprint 2");
+  await button("Back to repositories").click();
+  await text("Discard unsaved changes?").waitFor();
+  await button("Keep editing").click();
+  await text("Discard unsaved changes?").waitFor({ state: "detached" });
+  await button("Close").click();
+  await text("Discard unsaved changes?").waitFor();
+  await button("Discard changes").click();
+  await text("Select an item to edit it, or create a new one.").waitFor();
+  // Clean editors never prompt, and discarding in Settings navigation proceeds.
+  await button("Labels tab").click();
+  await button("Edit label Backend").click();
+  await button("Back to repositories").click();
+  assert.equal(await text("Discard unsaved changes?").count(), 0);
+  await button("Labels, milestones and cycles").first().click();
+  await button("Edit label Backend").click();
+  await box("Name").fill("Backend 2");
+  await button("Settings").first().click();
+  await button("Discard changes").click();
+
   // Development reset is native only.
   await button("Settings").first().click();
   await text("Online account", true).first().waitFor();

@@ -18,12 +18,14 @@ export function Repositories({
   planning,
   refresh,
   select,
+  dirty,
 }: {
   adapter: LaneAdapter;
   items: EntityResult[];
   planning: PlanningState;
   refresh: () => void;
   select: (id: string) => void;
+  dirty: (value: boolean) => void;
 }) {
   const [detail, setDetail] = useState("");
   const [editing, setEditing] = useState<{
@@ -61,6 +63,7 @@ export function Repositories({
         repository={detailRepository}
         planning={planning}
         refresh={refresh}
+        dirty={dirty}
         back={() => setDetail("")}
       />
     );
