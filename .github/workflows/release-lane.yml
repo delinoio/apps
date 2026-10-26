@@ -95,10 +95,6 @@ jobs:
           pnpm --filter @delinoio/lane test
           pnpm --filter @delinoio/lane build "${arguments[@]}"
           pnpm --filter @delinoio/lane smoke
-      - name: Prepare pinned Windows App SDK and C++/WinRT projections
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/release/lane-windows-sdk.ps1
       - name: Build desktop with the matching packaged synchronization helper
         if: matrix.desktop
         run: |

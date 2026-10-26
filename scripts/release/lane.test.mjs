@@ -392,6 +392,21 @@ test("binary release is gated by validated source, complete assembly and protect
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.jobs.build.strategy["fail-fast"], false);
   assert.equal(workflow.jobs.build.strategy.matrix.include.length, 5);
+  const buildSteps = workflow.jobs.build.steps;
+  assert.ok(
+    !buildSteps.some((step) => step.run?.includes("lane-windows-sdk.ps1")),
+  );
+  assert.ok(
+    !Object.keys(workflow.jobs.build.env).some((key) =>
+      key.startsWith("LANE_WINDOWS_APP_SDK_"),
+    ),
+  );
+  const desktop = buildSteps.find(
+    (step) =>
+      step.name ===
+      "Build desktop with the matching packaged synchronization helper",
+  );
+  assert.match(desktop.run, /pnpm --dir "apps\/lane" build:desktop/);
   assert.equal(workflow.jobs.assemble.needs, "build");
   assert.equal(workflow.jobs.publish.needs, "assemble");
   assert.equal(workflow.jobs.publish.environment, "delino-site-production");

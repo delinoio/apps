@@ -277,8 +277,10 @@ The two macOS runners and Windows x64 runner also build the desktop archive with
 `LANE_URL_SCHEME=lane`, the production bundle, native host, Chrome relay and
 matching verified CLI synchronization helper. macOS archives retain framework
 symlinks and ad-hoc signatures; Windows is an unsigned portable application
-archive. Windows SDK preparation downloads checksum-pinned Microsoft Windows App
-SDK and C++/WinRT packages and generates projections from the official metadata.
+archive. The owning desktop build launcher prepares its pinned Windows App SDK
+and C++/WinRT packages and generates both Windows OS and App SDK projections.
+The release workflow leaves the SDK override variables unset so that this
+automatic preparation remains active.
 Windows ARM64 GUI, formal installers, signing/notarization and mobile store
 publication are separate. The macOS runner exception applies only to this owning
 release workflow, never PR, main-push or affected manual CI.
