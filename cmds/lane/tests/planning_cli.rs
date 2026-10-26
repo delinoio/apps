@@ -984,6 +984,69 @@ fn planning_item_conflicts_list_get_and_resolve_by_kind() {
 }
 
 #[test]
+fn conflicted_planning_items_stay_readable_and_deletable_by_kind() {
+    let mut h = Harness::new();
+    let repo = h.repository("https://example.com/conflicted-access");
+    let label = h.ok(&[
+        "label",
+        "create",
+        "--repository-id",
+        &repo,
+        "--name",
+        "A",
+        "--color",
+        "#111111",
+    ]);
+    let version = label["result"]["version"].clone();
+    let id = strv(&version, "entityId").to_owned();
+    let edit = |name: &'static str| {
+        [
+            "label",
+            "edit",
+            "ID",
+            "--expected-version",
+            "VERSION",
+            "--name",
+            name,
+        ]
+    };
+    for (name, code) in [("B", 0), ("C", 1)] {
+        let mut args = edit(name);
+        args[2] = &id;
+        args[4] = strv(&version, "versionId");
+        let (got, _) = h.run(&args);
+        assert_eq!(got, code, "{name}");
+    }
+    // Reading, history and deletion find the item through its alternatives.
+    let got = h.ok(&["label", "get", &id]);
+    assert_eq!(got["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert_eq!(
+        got["result"]["alternatives"].as_array().map(Vec::len),
+        Some(2)
+    );
+    let history = h.ok(&["label", "history", &id]);
+    assert_eq!(history["versions"].as_array().map(Vec::len), Some(3));
+    // The kind check still applies to a conflicted item, and it cannot be edited.
+    assert_eq!(
+        h.fail(&["milestone", "get", &id], 1)["reason"],
+        "ERROR_REASON_NOT_FOUND"
+    );
+    let mut args = edit("D");
+    args[2] = &id;
+    args[4] = strv(&version, "versionId");
+    assert_eq!(
+        h.fail(&args, 2)["reason"],
+        "ERROR_REASON_CONFLICT_READ_ONLY"
+    );
+    let deleted = h.ok(&["label", "delete", &id]);
+    assert_eq!(deleted["result"]["result"], "RESULT_KIND_DELETED");
+    assert_eq!(
+        h.ok(&["label", "get", &id])["result"]["result"],
+        "RESULT_KIND_DELETED"
+    );
+}
+
+#[test]
 fn typed_request_json_items_are_preserved_and_overridden_by_flags() {
     let mut h = Harness::new();
     let repo = h.repository("https://example.com/request-json");

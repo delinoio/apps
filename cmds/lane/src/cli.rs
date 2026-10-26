@@ -260,10 +260,23 @@ fn execute(
                 }
                 *code = 1;
                 let read = dispatcher.invoke(opt, "GetPlanningItem", json!({"id":q["id"]}))?;
-                if read["result"]["version"]["kind"] != kind {
+                // A conflicted item has no single version; every alternative shares its kind.
+                let read_kind = if read["result"]["version"].is_object() {
+                    &read["result"]["version"]["kind"]
+                } else {
+                    &read["result"]["alternatives"][0]["kind"]
+                };
+                if read_kind != kind {
                     return Err(Failure::new("NOT_FOUND", "Planning item does not exist."));
                 }
                 *code = 2;
+                if method == "SavePlanningItem" && !read["result"]["version"].is_object() {
+                    // Only resolution or permanent deletion can change a conflicted item.
+                    return Err(Failure::new(
+                        "CONFLICT_READ_ONLY",
+                        "Resolve the conflict before editing.",
+                    ));
+                }
                 if method == "SavePlanningItem" {
                     let base = &read["result"]["version"][group.as_str()];
                     if !base.is_object() {
