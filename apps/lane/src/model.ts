@@ -133,3 +133,29 @@ type Task = UI<ProtoTask>;
 export function createUITask(value: UI<ProtoTask>): UI<ProtoTask> {
   return toUI(fromUI(TaskSchema, value));
 }
+// Maps the Prompt presence choice to the next prompt. Choosing Include prompt
+// while a prompt is already present is an identity selection and must keep the
+// exact Markdown; only absence initializes to a present empty prompt. Choosing
+// No prompt intentionally removes presence.
+export function promptForPresence(
+  current: string | undefined,
+  choice: string,
+): string | undefined {
+  return choice === "present" ? (current ?? "") : undefined;
+}
+// Applies a patch to the draft task and marks it dirty. A patch that echoes the
+// current values returns the same draft so unchanged input never dirties it.
+export function editDraft(draft: Draft, patch: Partial<Task>): Draft {
+  const task = draft.task as Record<string, unknown>;
+  if (
+    Object.entries(patch).every(
+      ([key, value]) => JSON.stringify(task[key]) === JSON.stringify(value),
+    )
+  )
+    return draft;
+  return {
+    ...draft,
+    task: createUITask({ ...draft.task, ...patch }),
+    dirty: true,
+  };
+}
