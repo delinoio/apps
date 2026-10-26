@@ -677,6 +677,7 @@ void unsupported_schema() {
 #include "capture_cases.h"
 #include "shared_fixture_runner.h"
 #include "planning_fixture_runner.h"
+#include "planning_cases.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
 #include "shared_sync_runner.h"
@@ -726,6 +727,16 @@ int main(int argc, char** argv) {
     {"lifetime lock removal retry", lifetime_lock_removal_retry},
     {"restart marked cleanup", restart_marked_cleanup},
     {"deferred registry compatibility failure", deferred_registry_compatibility_failure},
+    {"planning lifecycle and restart", planning_lifecycle_and_restart},
+    {"planning conflicts and resolution", planning_conflicts_and_resolution},
+    {"planning deletion redaction and cascade", planning_deletion_redaction_and_cascade},
+    {"planning cleanup rollback", planning_cleanup_rolls_back_atomically},
+    {"conflicted tasks block cleanup", planning_conflicted_tasks_block_cleanup},
+    {"planning sync rejection and retry", planning_sync_rejection_and_retry},
+    {"planning envelope formats", planning_envelope_formats},
+    {"unsupported store and reset", unsupported_store_and_reset},
+    {"development reset coordination", development_reset_coordination},
+    {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {

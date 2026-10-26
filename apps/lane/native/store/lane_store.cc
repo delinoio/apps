@@ -2389,10 +2389,19 @@ struct Store::Impl {
   // Text kept with a rejected outbox item. A server constraint rejection keeps
   // the local version blocked as CONSTRAINT_VIOLATION:<VIOLATION>.
   static std::string rejectionReason(const J &error) {
-    auto reason = error.contains("reason") && error["reason"].is_number_integer()
-                      ? (error["reason"] == 19 ? std::string("ERROR_REASON_CONSTRAINT_VIOLATION")
-                                               : std::string("ERROR_REASON_UNSPECIFIED"))
-                      : str(error, "reason");
+    static const std::vector<std::string> reasons = {
+        "INVALID_INPUT", "NOT_FOUND", "STALE_VERSION", "CONFLICT_READ_ONLY",
+        "STALE_RESOLUTION", "REQUEST_ID_REUSED", "DELETED", "UNSUPPORTED_FORMAT",
+        "STORAGE_BUSY", "STORAGE_FULL", "ONLINE_REQUIRED", "UNAUTHENTICATED",
+        "FORBIDDEN", "DEPENDENCY_UNAVAILABLE", "ITEM_TOO_LARGE", "RATE_LIMITED",
+        "STALE_EPOCH", "LEASE_INVALID", "CONSTRAINT_VIOLATION"};
+    std::string reason = "ERROR_REASON_UNSPECIFIED";
+    if (error.contains("reason") && error["reason"].is_number_integer()) {
+      auto n = error["reason"].get<int64_t>();
+      if (n >= 1 && n <= int64_t(reasons.size()))
+        reason = "ERROR_REASON_" + reasons[size_t(n - 1)];
+    } else
+      reason = str(error, "reason", reason);
     if (reason != "ERROR_REASON_CONSTRAINT_VIOLATION")
       return reason;
     std::string name = "UNSPECIFIED";
@@ -3299,7 +3308,7 @@ std::string Store::applySync(std::string s, std::string text) {
         if (pending.empty())
           continue;
         if (r.contains("error") &&
-            str(r["error"], "reason") != "ERROR_REASON_UNSPECIFIED") {
+            Impl::rejectionReason(r["error"]) != "ERROR_REASON_UNSPECIFIED") {
           d.run("UPDATE outbox SET state=2,error_reason=? WHERE request_id=?",
                 {Impl::rejectionReason(r["error"]), rid});
         } else {
