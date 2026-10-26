@@ -49,6 +49,8 @@ std::string Failure(NSString* reason, NSString* message) {
   NSMutableSet<NSString*>* _spaces;
   NSMutableArray<NSDictionary*>* _routes;
   NSString* _currentSpace;
+  // The space whose handle this host opened for itself in ensureStore.
+  NSString* _hostSpace;
   NSString* _authorizationSpace;
   NSDictionary* _reauthentication;
   std::string _claimant;
@@ -162,6 +164,7 @@ std::string Failure(NSString* reason, NSString* message) {
   NSDictionary* opened = Parse(_store->open(R"({"formatVersion":3,"spaceId":""})"));
   if ([opened[@"ok"] boolValue]) {
     _currentSpace = opened[@"response"][@"spaceId"];
+    _hostSpace = _currentSpace;
     [_spaces addObject:_currentSpace];
   }
 }
@@ -247,17 +250,30 @@ std::string Failure(NSString* reason, NSString* message) {
           if (host->_currentSpace && ![host->_currentSpace isEqual:route[@"spaceId"]]) [host cancelReauthentication:nil];
           if (args.at(0) == "DisconnectSync" || args.at(0) == "RemoveDeviceData" || args.at(0) == "ConnectSync")
             [host cancelReauthentication:nil];
+          NSString* releasedHostSpace = nil;
           if (args.at(0) == "ResetDevelopmentData") {
             // The explicit development reset needs the exclusive space lease:
-            // stop this host's `lane sync run` helper first. The store still
-            // fails with STORAGE_BUSY while any other process holds a handle.
+            // stop this host's `lane sync run` helper and release the handle
+            // the host opened for itself first. The store still fails with
+            // STORAGE_BUSY while a renderer view or another process holds one.
             [host cancelReauthentication:nil];
             NSString* target = route[@"spaceId"];
             if ([target isKindOfClass:NSString.class] && target.length) [host stopWorker:target];
             else for (NSString* space in [host->_workers.allKeys copy]) [host stopWorker:space];
+            BOOL targeted = [target isKindOfClass:NSString.class] && target.length;
+            if (host->_hostSpace && (!targeted || [host->_hostSpace isEqual:target])) {
+              host->_store->close(host->_hostSpace.UTF8String);
+              releasedHostSpace = host->_hostSpace;
+              host->_hostSpace = nil;
+            }
           }
           host->_currentSpace = route[@"spaceId"];
           response = host->_store->invoke(args.at(0), args.at(1));
+          if (releasedHostSpace) {
+            // Restore the host's own handle whether the reset succeeded or was refused.
+            NSDictionary* reopened = Parse(host->_store->open(JSON(@{@"formatVersion":@3,@"spaceId":releasedHostSpace})));
+            if ([reopened[@"ok"] boolValue]) host->_hostSpace = releasedHostSpace;
+          }
         }
         [host tick];
       } catch (...) { response = Failure(@"ERROR_REASON_DEPENDENCY_UNAVAILABLE", @"Native service is unavailable. Local data is retained."); }
