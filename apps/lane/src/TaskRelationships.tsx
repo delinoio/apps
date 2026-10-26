@@ -48,6 +48,9 @@ function TaskPicker({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
+  // Titles need not be unique, so refining the search cannot always separate
+  // matches: let the user reveal further results page by page.
+  const [shown, setShown] = useState(MAX_RESULTS);
   const needle = query.trim().toLowerCase();
   const matches = options
     .filter(
@@ -61,7 +64,10 @@ function TaskPicker({
       <Field
         label={`Search tasks for ${title}`}
         value={query}
-        onChange={setQuery}
+        onChange={(value) => {
+          setQuery(value);
+          setShown(MAX_RESULTS);
+        }}
         disabled={disabled}
         focus
       />
@@ -72,7 +78,7 @@ function TaskPicker({
             : "No matching tasks in this repository."}
         </text>
       ) : (
-        matches.slice(0, MAX_RESULTS).map((m) => (
+        matches.slice(0, shown).map((m) => (
           <Button
             key={m.id}
             label={`Add ${m.title} to ${title}`}
@@ -83,10 +89,15 @@ function TaskPicker({
           </Button>
         ))
       )}
-      {matches.length > MAX_RESULTS && (
-        <text className="muted">
-          {matches.length - MAX_RESULTS} more tasks match; refine the search.
-        </text>
+      {matches.length > shown && (
+        <>
+          <text className="muted">
+            {matches.length - shown} more tasks match.
+          </text>
+          <Button onClick={() => setShown(shown + MAX_RESULTS)}>
+            Show more matching tasks
+          </Button>
+        </>
       )}
       <Button onClick={onClose}>Cancel adding</Button>
     </view>

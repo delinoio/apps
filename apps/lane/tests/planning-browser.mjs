@@ -549,6 +549,41 @@ try {
   await page.keyboard.press("Escape");
   await plan({ conflictTask: "" });
 
+  // Task titles need not be unique: matches beyond the first page of results stay reachable.
+  const twins = async (route) => {
+    const input = route.request().postDataJSON();
+    if (!input?.repositoryId || input.proposal?.length) return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    const source = body.items?.[0];
+    for (let n = 0; source && n < 10; n++)
+      body.items.push({
+        ...source,
+        version: {
+          ...source.version,
+          entityId: `019a196d-0000-7000-8000-${String(900 + n).padStart(12, "0")}`,
+          task: { ...source.version.task, title: "Twin task" },
+        },
+      });
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/lane.v1.LaneService/ListTasks", twins);
+  await openTask("Only a title");
+  await button("Add related task").click();
+  await box("Search tasks for Related").fill("twin");
+  const twin = button("Add Twin task to Related");
+  await twin.first().waitFor();
+  await settle();
+  assert.equal(await twin.count(), 8, "the first page lists eight matches");
+  await button("Show more matching tasks").waitFor();
+  await text("2 more tasks match.").waitFor();
+  await button("Show more matching tasks").focus();
+  await page.keyboard.press("Enter");
+  await settle();
+  assert.equal(await twin.count(), 10, "Show more reveals every match");
+  assert.equal(await button("Show more matching tasks").count(), 0);
+  await page.unroute("**/lane.v1.LaneService/ListTasks", twins);
+
   // ---- Repository planning management ------------------------------------------
   await button("Repositories").click();
   await button("Labels, milestones and cycles").first().click();
