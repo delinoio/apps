@@ -839,3 +839,82 @@ fn operation_logs_record_duration_and_no_planning_content() {
     );
     assert!(!text.contains("Confidential") && !text.contains("confidential"));
 }
+
+#[test]
+fn planning_item_conflicts_list_get_and_resolve_by_kind() {
+    let mut h = Harness::new();
+    let repo = h.repository("https://example.com/conflicts");
+    let label = h.ok(&[
+        "label",
+        "create",
+        "--repository-id",
+        &repo,
+        "--name",
+        "A",
+        "--color",
+        "#111111",
+    ]);
+    let version = label["result"]["version"].clone();
+    let id = strv(&version, "entityId").to_owned();
+    h.ok(&[
+        "label",
+        "edit",
+        &id,
+        "--expected-version",
+        strv(&version, "versionId"),
+        "--name",
+        "B",
+    ]);
+    // A second edit from the same base is preserved as an alternative.
+    assert_eq!(
+        h.fail(
+            &[
+                "label",
+                "edit",
+                &id,
+                "--expected-version",
+                strv(&version, "versionId"),
+                "--name",
+                "C"
+            ],
+            1
+        )["reason"],
+        "ERROR_REASON_STALE_VERSION"
+    );
+    let listed = h.ok(&["conflict", "list", "--kind", "label"]);
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+    assert!(
+        h.ok(&["conflict", "list", "--kind", "milestone"])["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        h.ok(&["conflict", "list"])["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let got = h.ok(&["conflict", "get", &id, "--kind", "label"]);
+    let alternatives = got["result"]["alternatives"].as_array().unwrap();
+    assert_eq!(alternatives.len(), 2);
+    let mut heads: Vec<&str> = alternatives.iter().map(|a| strv(a, "versionId")).collect();
+    heads.sort_unstable();
+    let resolved = json!({"formatVersion":3,"entityId":id,"kind":"ENTITY_KIND_LABEL",
+        "label":{"repositoryId":repo,"name":"Final","color":"#222222"}})
+    .to_string();
+    let mut args = vec!["conflict", "resolve", id.as_str()];
+    for head in &heads {
+        args.extend(["--expected-head", head]);
+    }
+    args.extend(["--resolved-json", resolved.as_str()]);
+    let result = h.ok(&args);
+    assert_eq!(result["result"]["version"]["label"]["name"], "Final");
+    assert!(
+        h.ok(&["conflict", "list", "--kind", "label"])["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

@@ -578,7 +578,7 @@ fn development_reset_recreates_an_empty_store_for_the_same_space() {
         let other = store.select_account("issuer", &id(), "tenant").unwrap();
         let other_repo = repository(&other, "https://example.com/other");
         task(&other, &other_repo, "Stays", &json!({}));
-        (store.space, store.device.clone(), other.space)
+        (store.space, store.device, other.space)
     };
     let lock = dir
         .path()
@@ -703,4 +703,93 @@ fn normalization_of_stored_planning_bodies_is_stable() {
         norm("PlanningBody", &json!({"milestone":a["milestone"]}))["milestone"]["repositoryId"],
         repo
     );
+}
+
+#[test]
+fn pulled_planning_versions_and_tombstones_apply_and_old_formats_are_refused() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/pull");
+    let version = |entity: &str, kind: &str, body_field: &str, body: Value, format: u32| {
+        json!({"formatVersion":format,"entityId":entity,"versionId":id(),"kind":kind,
+            "parentVersionIds":[],"createdAt":"2026-04-01T00:00:00.000000Z",
+            "origin":{"kind":"ORIGIN_KIND_APP","deviceId":id(),"deviceName":"Other"},
+            body_field:body})
+    };
+    let label_id = id();
+    let label = version(
+        &label_id,
+        "ENTITY_KIND_LABEL",
+        "label",
+        json!({"repositoryId":repo,"name":"Pulled","color":"#ABCDEF"}),
+        3,
+    );
+    let task_id = id();
+    let task = version(
+        &task_id,
+        "ENTITY_KIND_TASK",
+        "task",
+        json!({"repositoryId":repo,"title":"Pulled task","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR","labelIds":[label_id],"priority":"TASK_PRIORITY_LOW"}),
+        3,
+    );
+    store
+        .with(true, |c| {
+            store::sync::apply(c, &json!({"version":label}))?;
+            store::sync::apply(c, &json!({"version":task}))?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        store
+            .invoke("GetPlanningItem", &json!({"id":label_id}))
+            .unwrap()["result"]["version"]["label"]["name"],
+        "Pulled"
+    );
+    assert_eq!(
+        current(&store, &task_id)["task"]["labelIds"],
+        json!([label_id])
+    );
+    assert_eq!(
+        store
+            .invoke(
+                "ListTasks",
+                &json!({"filter":{"labelIds":[label_id]},"page":{}})
+            )
+            .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // A server tombstone removes the item and its history.
+    let tombstone = json!({"formatVersion":3,"entityId":label_id,"versionId":id(),"kind":"ENTITY_KIND_LABEL","deleted":true});
+    store
+        .with(true, |c| {
+            store::sync::apply(c, &json!({"version":tombstone}))
+        })
+        .unwrap();
+    assert_eq!(
+        store
+            .invoke("GetPlanningItem", &json!({"id":label_id}))
+            .unwrap()["result"]["result"],
+        "RESULT_KIND_DELETED"
+    );
+    // Planning data cannot hide in an earlier envelope format; other formats are refused.
+    let mut old = version(
+        &id(),
+        "ENTITY_KIND_LABEL",
+        "label",
+        json!({"repositoryId":repo,"name":"Old","color":"#000000"}),
+        2,
+    );
+    assert!(store::sync::validate(&old).is_err());
+    old["formatVersion"] = 4.into();
+    assert_eq!(
+        store::sync::validate(&old).unwrap_err().reason,
+        "ERROR_REASON_UNSUPPORTED_FORMAT"
+    );
+    let mut task_v2 = task;
+    task_v2["formatVersion"] = 2.into();
+    assert!(store::sync::validate(&task_v2).is_err());
+    task_v2["task"] = json!({"repositoryId":repo,"title":"Plain","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
+    assert!(store::sync::validate(&task_v2).is_ok());
 }
