@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Captures } from "./Captures";
 import type { UI } from "./serializable";
-import { useState } from "@lynx-js/react";
+import { useEffect, useRef, useState } from "@lynx-js/react";
 import { create } from "@bufbuild/protobuf";
 import {
   LaneService,
@@ -13,6 +13,20 @@ import {
 } from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
+import { TaskProperties } from "./TaskProperties";
+import { TaskRelationships } from "./TaskRelationships";
+import {
+  deriveRelations,
+  describeError,
+  hasErrors,
+  lookupOf,
+  parsePoints,
+  relationshipEdits,
+  taskMetadata,
+  unionRelated,
+  validateTaskPlanning,
+} from "./planning";
+import { useTaskOptions, type PlanningState } from "./usePlanning";
 import {
   createUITask,
   conflicted,
@@ -31,6 +45,9 @@ export function TaskEditor({
   setDraft,
   current,
   repositories,
+  planning,
+  revision,
+  openTask,
   onSaved,
   onClose,
 }: {
@@ -39,6 +56,10 @@ export function TaskEditor({
   setDraft: (draft: Draft) => void;
   current?: EntityResult;
   repositories: EntityResult[];
+  planning: PlanningState;
+  revision: number;
+  // Opens a related task through the shared unsaved-change confirmation.
+  openTask: (id: string) => void;
   onSaved: (r?: EntityResult) => void;
   onClose: () => void;
 }) {
@@ -56,24 +77,108 @@ export function TaskEditor({
   // Preserve the request across an unchanged retry, including response loss.
   const [attempt, setAttempt] = useState<{ key: string; requestId: string }>();
   const readOnly = conflicted(current) || draft.deleted;
+  // Story points stay text so a rejected value such as "1.5" is retained and explained.
+  const pointsOf = (value?: number) =>
+    value === undefined ? "" : String(value);
+  const [pointsText, setPointsText] = useState(
+    pointsOf(draft.task.storyPoints),
+  );
+  const [attempted, setAttempted] = useState(false);
+  // Guards double submission before React re-renders the disabled state.
+  const submitting = useRef(false);
+  useEffect(() => {
+    setPointsText(pointsOf(draft.task.storyPoints));
+  }, [draft.id, draft.base]);
+  const options = useTaskOptions(adapter, draft.task.repositoryId, revision);
+  const moved =
+    !!draft.base &&
+    !!draft.baseTask &&
+    draft.task.repositoryId !== draft.baseTask.repositoryId;
+  useEffect(() => {
+    if (
+      draft.relations ||
+      options.status !== "ready" ||
+      !draft.task.repositoryId
+    )
+      return;
+    const related = unionRelated(
+      draft.id,
+      draft.task.relatedTaskIds,
+      options.tasks,
+    );
+    const same = related.join() === draft.task.relatedTaskIds.join();
+    // Related is symmetric: adopt the union of both stored sides as the saved state.
+    setDraft({
+      ...draft,
+      task: same
+        ? draft.task
+        : createUITask({ ...draft.task, relatedTaskIds: related }),
+      baseTask:
+        same || !draft.baseTask
+          ? draft.baseTask
+          : { ...draft.baseTask, relatedTaskIds: related },
+      relations: deriveRelations(draft.id, options.tasks),
+    });
+  }, [draft.relations, options.status, options.tasks, draft.task.repositoryId]);
+  const fieldErrors = attempted
+    ? validateTaskPlanning(draft.task, pointsText)
+    : {};
+  const titles = new Map(options.tasks.map((t) => [t.id, t.title]));
+  const lookup = lookupOf(
+    planning.items,
+    titles,
+    new Map(
+      repositories.map((r) => [r.version!.entityId, repositoryName(r.version)]),
+    ),
+  );
   const edit = (patch: Partial<Draft["task"]>) =>
     setDraft({
       ...draft,
       task: createUITask({ ...draft.task, ...patch }),
       dirty: true,
     });
+  // Repository-owned values belong to one repository: clear them on a change and
+  // restore the saved values when the original repository is selected again.
+  const changeRepository = (repositoryId: string) => {
+    const base = draft.baseTask;
+    const owned =
+      base && repositoryId === base.repositoryId
+        ? {
+            labelIds: base.labelIds,
+            milestoneId: base.milestoneId,
+            cycleId: base.cycleId,
+            parentTaskId: base.parentTaskId,
+            dependsOnTaskIds: base.dependsOnTaskIds,
+            relatedTaskIds: base.relatedTaskIds,
+            duplicateOfTaskId: base.duplicateOfTaskId,
+          }
+        : {
+            labelIds: [],
+            milestoneId: undefined,
+            cycleId: undefined,
+            parentTaskId: undefined,
+            dependsOnTaskIds: [],
+            relatedTaskIds: [],
+            duplicateOfTaskId: undefined,
+          };
+    setDraft({
+      ...draft,
+      task: createUITask({ ...draft.task, ...owned, repositoryId }),
+      relations: undefined,
+      dirty: true,
+    });
+  };
   const run = async (action: () => Promise<void>) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     try {
       await action();
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "The operation failed. Retry explicitly.",
-      );
+      setError(describeError(e));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -82,9 +187,17 @@ export function TaskEditor({
       if (!draft.task.title.trim()) throw new Error("Enter a title.");
       if (!draft.task.repositoryId && !repositoryUrl.trim())
         throw new Error("Choose a repository or enter its URL.");
+      setAttempted(true);
+      if (hasErrors(validateTaskPlanning(draft.task, pointsText)))
+        throw new Error("Fix the fields marked above, then Save again.");
+      const points = parsePoints(pointsText) as number | undefined;
+      const task = createUITask({ ...draft.task, storyPoints: points });
+      // A move clears links and the host removes incoming references itself.
+      const edits = moved ? undefined : relationshipEdits(draft.relations);
       const key = JSON.stringify({
         base: draft.base,
-        task: draft.task,
+        task,
+        edits,
         repositoryUrl,
       });
       const requestId = attempt?.key === key ? attempt.requestId : newId();
@@ -94,7 +207,8 @@ export function TaskEditor({
             meta: { requestId },
             id: draft.id,
             expectedVersionId: draft.base,
-            task: draft.task,
+            task,
+            relationshipEdits: edits,
           })
         : await adapter.call(LaneService.method.createTask, {
             meta: { requestId },
@@ -109,6 +223,19 @@ export function TaskEditor({
             prompt: draft.task.prompt,
             progress: draft.task.progress,
             proposal: draft.task.proposal,
+            priority: task.priority,
+            type: task.type,
+            labelIds: task.labelIds,
+            startDate: task.startDate,
+            dueDate: task.dueDate,
+            storyPoints: task.storyPoints,
+            milestoneId: task.milestoneId,
+            cycleId: task.cycleId,
+            parentTaskId: task.parentTaskId,
+            dependsOnTaskIds: task.dependsOnTaskIds,
+            relatedTaskIds: task.relatedTaskIds,
+            duplicateOfTaskId: task.duplicateOfTaskId,
+            relationshipEdits: edits,
           });
       if (!reply.result)
         throw new Error(
@@ -120,6 +247,9 @@ export function TaskEditor({
           "Both versions were preserved. Compare and resolve the conflict.",
         );
       }
+      // Refresh the same-repository options first so the new draft derives its
+      // Subtasks and Blocks from the saved state, including affected tasks.
+      await options.reload().catch(() => undefined);
       onSaved(reply.result);
     });
   const loadHistory = async (onlyPrompts: boolean, more = false) => {
@@ -240,7 +370,7 @@ export function TaskEditor({
                   [r.version!.entityId, repositoryName(r.version)] as const,
               ),
           ]}
-          onChange={(repositoryId) => edit({ repositoryId })}
+          onChange={changeRepository}
           disabled={busy || readOnly}
         />
         {!draft.base && !draft.task.repositoryId && (
@@ -329,6 +459,29 @@ export function TaskEditor({
             captures={draft.task.captures}
           />
         )}
+        <TaskProperties
+          draft={draft}
+          edit={edit}
+          disabled={busy || readOnly}
+          planning={planning}
+          pointsText={pointsText}
+          setPointsText={(value) => {
+            setPointsText(value);
+            setDraft({ ...draft, dirty: true });
+          }}
+          errors={fieldErrors}
+          moved={moved}
+        />
+        <TaskRelationships
+          draft={draft}
+          setDraft={setDraft}
+          edit={edit}
+          disabled={busy || readOnly}
+          options={options}
+          ownId={draft.id}
+          moved={moved}
+          openTask={openTask}
+        />
         {error && <Notice>{error} Your input is retained.</Notice>}
       </scroll-view>
       <view className="toolbar row wrap">
@@ -373,6 +526,7 @@ export function TaskEditor({
         >
           <Notice>
             This removes the task, prompt and all history. There is no recovery.
+            Other tasks keep existing and lose their links to this task.
           </Notice>
           <Button
             disabled={busy}
@@ -441,7 +595,7 @@ export function TaskEditor({
                   </Button>
                 </>
               ) : (
-                historyChanges(history[index - 1], version).map((c) => (
+                historyChanges(history[index - 1], version, lookup).map((c) => (
                   <view key={c.field}>
                     <text className="label">{c.field}</text>
                     <text text-selection>Before: {c.before}</text>
@@ -512,6 +666,9 @@ export function TaskEditor({
                   )?.version,
                 )}
               </text>
+              {taskOf(v) && (
+                <PlanningSummary task={taskOf(v)!} lookup={lookup} />
+              )}
               <Button
                 primary={resolution?.versionId === v.versionId}
                 onClick={() => setResolution(v)}
@@ -686,6 +843,27 @@ export function TaskEditor({
         </Dialog>
       )}
     </view>
+  );
+}
+
+function PlanningSummary({
+  task,
+  lookup,
+}: {
+  task: NonNullable<ReturnType<typeof taskOf>>;
+  lookup: ReturnType<typeof lookupOf>;
+}) {
+  const meta = taskMetadata(task, lookup, false);
+  return (
+    <>
+      <text text-selection>
+        Planning: {meta.summary.join(" · ") || "No planning values"}
+      </text>
+      <text text-selection>Labels: {meta.labels.join(", ") || "None"}</text>
+      <text text-selection>
+        Links: {meta.relationships.join(" · ") || "None"}
+      </text>
+    </>
   );
 }
 

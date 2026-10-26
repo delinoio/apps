@@ -51,7 +51,7 @@ if(moduleName==='bridge') {
  if(method==='close')return JSON.stringify({ok:true,response:{}});
  const wrapper=JSON.parse(args[1]);storeCalls.push({method:args[0],spaceId:wrapper.spaceId});const input=wrapper.request;let response={};
  if(args[0]==='GetLocalStatus')response={syncEnabled:false,pendingItemCount:'0',connected:false};
- else if(args[0]==='ListURLConnections')response={items:[]};
+ else if(args[0]==='ListURLConnections'||args[0]==='ListPlanningItems')response={items:[]};
  else if(args[0]==='CreateCaptureTask') {attempts.push(input);if(failOnce){failOnce=false;return JSON.stringify({ok:false,error:{reason:'STORAGE_FULL',message:'Synthetic storage failure'}});}savedCount++;response={result:{result:'RESULT_KIND_APPLIED',version:{entityId:input.id,versionId:fixtureId,kind:'ENTITY_KIND_TASK',task:{repositoryId:input.repositoryId,title:input.title}}}};}
  else response=await online.invoke('lane.v1.LaneService',args[0],input);
  return JSON.stringify({ok:true,response});

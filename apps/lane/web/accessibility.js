@@ -63,6 +63,14 @@ export function installAccessibility(view) {
           String(button.classList.contains("selected")),
         );
       }
+      // Toggle chips and collapsible regions expose their state to screen readers.
+      for (const [source, aria] of [
+        ["data-pressed", "aria-pressed"],
+        ["data-expanded", "aria-expanded"],
+      ]) {
+        const state = button.getAttribute(source);
+        if (state !== null) button.setAttribute(aria, state);
+      }
       button.tabIndex = disabled ? -1 : 0;
       if (!wired.has(button)) {
         wired.add(button);
@@ -104,7 +112,16 @@ export function installAccessibility(view) {
         target.disabled =
           field.hasAttribute("disabled") &&
           field.getAttribute("disabled") !== "false";
+        target.setAttribute(
+          "aria-invalid",
+          String(
+            field.closest(".field")?.getAttribute("data-invalid") === "true",
+          ),
+        );
       }
+    }
+    for (const message of root.querySelectorAll(".validation")) {
+      message.setAttribute("role", "alert");
     }
     for (const notice of root.querySelectorAll(".notice")) {
       notice.setAttribute("role", "status");
@@ -224,6 +241,9 @@ export function installAccessibility(view) {
         "accessibility-value",
         "data-app",
         "data-settings-target",
+        "data-pressed",
+        "data-expanded",
+        "data-invalid",
         "disabled",
       ],
     });
