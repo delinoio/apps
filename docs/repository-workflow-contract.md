@@ -304,6 +304,10 @@ It requires all six CLI targets and all three desktop archives before preparing
 the lightweight npm launcher and six platform npm archives, direct CLI archives, `lane-release.json` and
 `SHA256SUMS`. CLI/npm versions remain those committed in Lane, independent of
 the Delino release version; desktop archive names carry the Delino tag version.
+Desktop packages also embed the exact release tag and source revision for
+in-app update comparison and candidate verification. Desktop packaging rejects
+a missing installer or mismatched embedded release identity. Follow the
+[desktop update contract](apps-lane-foundation.md#desktop-app-updates).
 
 The publication job uses `delino-site-production` and is the only Lane binary job
 with `contents: write`. It creates a draft GitHub Release on the existing Delino

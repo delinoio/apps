@@ -76,6 +76,63 @@ signing and store registration remain separate.
 
 Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
 
+### Desktop app updates
+
+Settings begins with an `App updates` card on macOS and Windows. Show the
+installed Delino release tag separately from Lane's independent package version.
+One `Update Lane` action checks public GitHub Releases, downloads the newest
+stable Delino release for the current desktop architecture, verifies it, installs
+it and restarts Lane. The action explains the restart before activation. No
+account, synchronization connection, external browser or global CLI is required.
+Checks run only on explicit activation. Ignore draft/prerelease/unrelated tags;
+compare numeric release components and never downgrade. Search the latest 100
+GitHub releases; absence of a supported release is an actionable error rather
+than a claim that Lane is current.
+
+Use the existing white/gray cards, English text and blue action. Show checking,
+download percentage, verification and installation states in the same card.
+Disable repeated activation during an operation, show `Lane is up to date.`
+when appropriate, and offer `Retry update` after failure. Retain readable,
+wrapping text, keyboard activation, visible focus and accessible status/progress
+labels. Mobile and web do not show the desktop updater. Development and
+native-testing packages show an unavailable explanation and cannot self-update.
+
+Protect unsaved task edits through existing Settings navigation confirmation.
+Require notification edits to be saved before updating; disable other Settings
+mutations while updating. An open RealQA capture draft blocks installation.
+Leaving Settings or closing its window cancels before installation, so later
+edits cannot be lost to a delayed restart. Normal explicit Quit during download
+also cancels installation. The native service must stop successfully before an
+installer receives permission to replace files.
+
+The desktop main process owns the update operation. The renderer can only read
+status, start or cancel; it cannot choose a URL, filesystem path, version or
+executable. Official builds embed the validated `LANE_RELEASE_TAG` and
+`LANE_SOURCE_REVISION`. Download only this repository's matching desktop archive
+and `SHA256SUMS` over HTTPS. Enforce byte limits, exact download size, checksum
+and embedded release identity. Checksums provide transport/artifact integrity;
+they do not add publisher signing or notarization to the existing distributions.
+Reject unsafe archive paths, links outside the bundle, hard links, device files
+and ambiguous sparse payloads. Preserve executable modes and internal macOS
+framework symlinks. Discard validated AppleDouble metadata records.
+
+Stage beside the installed app so replacement uses same-volume renames. Copy the
+existing bundled standalone Node relay runtime, its license and the installer
+outside the app before quitting; no system Node prerequisite is introduced.
+The installer waits for the old host to exit and an explicit shutdown marker,
+retains the previous app until a replacement window acknowledges startup, and
+restores/reopens it after installation or startup failure. Update results survive
+restart and appear in Settings. Retain a rollback bundle if restoration cannot
+finish; do not delete it during staging cleanup. Never replace local databases,
+credentials, preferences or external CLI installations. Store migration remains
+an explicit, separate operation. A non-writable installation reports failure
+without requesting elevation or changing its location.
+
+Validate release selection, transport and archive rejection, cancellation,
+shutdown permission, successful swap/startup and rollback with disposable
+fixtures. Record real macOS and Windows upgrade/restart acceptance separately
+from these fixtures and native packaging builds.
+
 ### Navigation command menu
 
 Provide a navigation command menu with `Cmd+K` on macOS and `Ctrl+K` on

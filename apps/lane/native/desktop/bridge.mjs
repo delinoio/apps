@@ -3,6 +3,7 @@ const methods = Object.freeze({
   LaneStore: Object.freeze({ open: 1, invoke: 2, close: 1, migrate: 1 }),
   LaneHost: Object.freeze({
     realqa: 1,
+    update: 1,
     copyText: 1,
     openURL: 1,
     cancelReauthentication: 1,

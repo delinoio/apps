@@ -62,3 +62,21 @@ RealQA capture runs inside the Lane desktop app. Its Chrome extension connects t
 A Chrome Web Store listing is not yet claimed by this guide. Until a reviewed listing is available, maintainers can supply a review build for **Load unpacked** in `chrome://extensions`. The exact extension ID must be registered by the matching Lane installation. An unpacked review build is not evidence of Chrome Web Store publication. Never use an arbitrary extension ID or grant access to an unrelated extension.
 
 After installation, open Lane and approve each normal Chrome profile on that device. See [Chrome element capture](./user-guide#chrome-element-capture). Removing the extension stops its access; disconnect the profile in Lane to remove its stored approval as well. Lane removal unregisters its Native Messaging component. Windows signed installation and runtime acceptance remain separate from build validation.
+
+## Update the desktop app
+
+In an official macOS or Windows desktop release, open **Settings** and select
+**Update Lane** under **App updates**. Lane checks for a newer stable release,
+downloads and verifies it, then installs it and restarts. The card shows the
+installed release, progress, and any error. No account is required.
+
+Save notification changes and finish or close any open RealQA capture first.
+Leaving Settings or closing the window cancels installation before restart.
+Your local data and preferences stay in place. If installation or startup fails,
+Lane attempts to restore and reopen the previous app. Select **Retry update**
+after correcting the reported cause.
+
+Development and test builds cannot update themselves. For older releases that
+have no **App updates** card, download a current desktop release manually first.
+Desktop updates do not update a separately installed Lane CLI. Data migrations
+remain explicit; follow the local-data upgrade procedure above when required.
