@@ -61,15 +61,14 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:ios` for an unsigned simulator build. Open the generated
   workspace for device development and signing.
 
-Web output is static Cloudflare Pages content. The shared `release-delino.yml`
-workflow builds `apps/lane/dist` and deploys it from each immutable
-`delino@vMAJOR.MINOR.PATCH` tag to `lane.delino.io`. Lane keeps its independent
+Web output is static Cloudflare Pages content. The shared `release.yml`
+workflow builds `apps/lane/dist` when selected by changesets and deploys the release commit to `lane.delino.io`. Lane keeps its independent
 package version. The deployment uses the `delino-site-production` environment,
 its shared Cloudflare credentials and `CLOUDFLARE_PAGES_PROJECT_LANE` variable,
-with the `release-lane` concurrency group. Builds use the default public API
+with the `release-web-lane` concurrency group. Builds use the default public API
 origin `https://lane.api.delino.io`. Follow the
 [web publication procedure](repository-workflow-contract.md#web-publication)
-for account setup and retrying an existing tag. Account provisioning, native
+for account setup and retrying an existing release commit. The `lane@vMAJOR.MINOR.PATCH` tag records successful component completion. Account provisioning, native
 signing and store registration remain separate.
 
 ### Approved UI composition
@@ -79,9 +78,9 @@ Use desktop navigation/list/detail and mobile list/detail pages. Use English, a 
 ### Desktop app updates
 
 Settings begins with an `App updates` card on macOS and Windows. Show the
-installed Delino release tag separately from Lane's independent package version.
+installed Lane release tag separately from Lane's independent package version.
 One `Update Lane` action checks public GitHub Releases, downloads the newest
-stable Delino release for the current desktop architecture, verifies it, installs
+stable Lane release for the current desktop architecture, verifies it, installs
 it and restarts Lane. The action explains the restart before activation. No
 account, synchronization connection, external browser or global CLI is required.
 Checks run only on explicit activation. Ignore draft/prerelease/unrelated tags;
@@ -269,6 +268,8 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - The task editor Prompt presence control keeps absent, present-empty and nonempty prompts distinct. Selecting Include prompt while a prompt is present, including after unsaved edits, keeps its exact Markdown and does not dirty the draft; selecting it from absence creates a present empty prompt; No prompt intentionally removes presence. Presence changes preserve captures, other fields and the draft base, and the control stays disabled while busy, conflicted or deleted.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
 - If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
+- The repository editor locks its URL and name fields while its own save is pending, so input cannot be accepted and then discarded by that save. A save completes only into the editor that submitted it: closing an editor, or opening another one (including the same repository again), starts a new lifetime, and a late response from an earlier lifetime refreshes lists but never closes, changes or reports an error into the newer editor. An unchanged retry of a failed repository save, including after a lost response, reuses the original request ID, entity ID and base so the server replays the original outcome. Changed URL or display name, a different operation or base, and a new editor session use a fresh request ID.
+- The repository editor pre-fills the URL of an existing repository so that saving only the display name submits the same normalized identifier: it builds an `ssh://git@` URL for an identifier with an explicit `:443` port, which can only come from a nondefault SSH port, and an `https://` URL for every other identifier. This uses the existing raw-URL API and stores no transport. An explicit URL edit follows the normal transport-aware normalization, rename and uniqueness rules. The native store validates a stored normalized repository identifier (conflict resolution, accepted pull and push results, standalone merge) without assigning a transport, so no explicit port is stripped and malformed or noncanonical identifiers are still rejected.
 
 ### Task planning metadata
 
@@ -317,7 +318,7 @@ All relationship endpoints must be live tasks in the same repository and the sam
 
 ### Planning history
 
-- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive before/after values from consecutive versions.
+- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive each version's before/after values from that version and its declared parent, never from a chronologically neighboring version that may belong to another branch. A zero-parent version is a creation with absent before values. While a declared parent is not yet loaded, the history card keeps its time and origin and shows no field delta; it compares once the parent is loaded. A resolution with several parents keeps its metadata and shows no single-baseline delta.
 - Do not add metadata-version restoration. Only the existing prompt restoration remains.
 - Retention and deletion follow the existing rules. Deleting an owning entity removes its historical content. Never retain deleted content by copying it into another entity's history; tasks keep only identity references to labels, milestones, cycles and other tasks, so deleting an item erases its name and description everywhere. Surviving tasks keep their own history.
 

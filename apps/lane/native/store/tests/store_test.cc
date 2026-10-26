@@ -713,6 +713,7 @@ void unsupported_schema() {
 #include "planning_cases.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
+#include "repository_identifier_cases.h"
 #include "shared_sync_runner.h"
 #include "epoch_lifecycle.h"
 #include "lifetime_locks.h"
@@ -781,6 +782,10 @@ int main(int argc, char** argv) {
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
     {"conflicted heads, union cycles and cursor scope", planning_conflict_union_cycle_and_cursor_scope},
     {"reset account reconnect flow", reset_account_space_reconnect_flow},
+    {"repository identifier resolution and editing", repository_identifier_resolution_and_editing},
+    {"repository identifier name-only save with counterpart", repository_identifier_name_only_save_with_counterpart},
+    {"repository identifier sync, import and merge", repository_identifier_sync_import_and_merge},
+    {"malformed repository identifier pull rolls back", repository_identifier_malformed_pull_rolls_back},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Bundles the real TaskEditor and shared components for Node tests, replacing
-// only the ReactLynx runtime and the host-bound runtime module. A small Host
-// component owns the draft state the application shell normally provides.
+// Bundles the real Task editor and shared components for Node tests, replacing
+// only the ReactLynx runtime and the host-bound runtime module. The bundle
+// exposes the bare TaskEditor and a small Host component that owns the draft
+// state the application shell normally provides.
 import { build, type Plugin } from "esbuild";
 import { fileURLToPath } from "node:url";
 import type { HostNode } from "./lynx-react.ts";
@@ -10,6 +11,7 @@ const lane = fileURLToPath(new URL("../..", import.meta.url));
 const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 
 export interface TaskEditorBundle {
+  TaskEditor: (props: any) => unknown;
   Host: (props: any) => unknown;
   runtime: typeof import("./lynx-react.ts");
   captured: { draft?: any };
@@ -42,6 +44,7 @@ export async function loadTaskEditor(): Promise<TaskEditorBundle> {
     stdin: {
       contents: `import { useState } from "@lynx-js/react";
 import { TaskEditor } from "./src/TaskEditor.tsx";
+export { TaskEditor };
 export * as runtime from "./tests/harness/lynx-react.ts";
 export const captured = {};
 export function Host(props) {

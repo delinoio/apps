@@ -95,6 +95,41 @@ export function receiveExternal(draft: Draft, result: EntityResult): Draft {
   // Explicit editor lifetime: incoming reads never replace current-screen input.
   return { ...draft, external: true };
 }
+export type HistoryBaseline =
+  | { kind: "creation" }
+  | { kind: "parent"; version: EntityVersion }
+  | { kind: "pending" }
+  | { kind: "merge" };
+/**
+ * Selects the snapshot a history entry is compared with. The list is chronological
+ * and includes retained alternatives, so neighbouring positions say nothing about
+ * ancestry: only the entry's declared parent is a valid baseline.
+ */
+export function historyBaseline(
+  history: readonly EntityVersion[],
+  version: EntityVersion,
+): HistoryBaseline {
+  const parents = version.parentVersionIds || [];
+  if (parents.length === 0) return { kind: "creation" };
+  // A resolution has several parents and therefore no single before snapshot.
+  if (parents.length > 1) return { kind: "merge" };
+  const parent = history.find((entry) => entry.versionId === parents[0]);
+  // The parent may be on a page that is not loaded yet; never guess a baseline.
+  return parent ? { kind: "parent", version: parent } : { kind: "pending" };
+}
+/** Field changes of one history entry against its declared parent, if comparable. */
+export function historyEntryChanges(
+  history: readonly EntityVersion[],
+  version: EntityVersion,
+  lookup?: Lookup,
+): { field: string; before: string; after: string }[] {
+  const baseline = historyBaseline(history, version);
+  if (baseline.kind === "creation")
+    return historyChanges(undefined, version, lookup);
+  if (baseline.kind === "parent")
+    return historyChanges(baseline.version, version, lookup);
+  return [];
+}
 export function historyChanges(
   before: EntityVersion | undefined,
   after: EntityVersion,
