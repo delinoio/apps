@@ -204,6 +204,26 @@ void SelectionMismatch(World& w) {
   Check(calls.back()["expectedSpace"] == w.spaces[1] && calls.back()["request"]["endpoint"] == "deadbeef", "Final call registers the token for its own space");
 }
 
+// A verified reconnection invalidates an attempt that was already outstanding, so a late
+// authentication failure from before the reconnection cannot block registration again.
+void ReconnectDuringAttempt(World& w) {
+  w.Seed({{true,true}}); w.Start();
+  w.Set("fail", "auth"); w.Set("delay", "2");
+  [w.runtime registerPushToken:Token({0xde,0xad,0xbe,0xef})];
+  for (int i = 0; i < 200 && w.Calls().empty(); ++i) usleep(25000);
+  Check(w.Calls().size() == 1, "First attempt is in flight");
+  w.Clear("fail"); w.Clear("delay");
+  w.Set("space", w.spaces[0]);
+  [w.runtime handleURL:[NSURL URLWithString:@"lane-dev://auth/callback?code=fixture&state=fixture"]];
+  // The pre-reconnection attempt fails with authentication after the reset.
+  w.WaitForCalls(2);
+  w.Quiet();
+  Check(w.Calls().size() == 2, "Registration continues after the late failure");
+  w.ExpectCall(1, "deadbeef", 0);
+  w.Advance(1000); w.Quiet();
+  Check(w.Calls().size() == 2, "No call after success");
+}
+
 void HealthyCounterfactual(World& w) {
   w.Seed({{true,true}}); w.Start();
   w.Quiet(0.6);
@@ -343,6 +363,7 @@ int main(int argc, char** argv) {
       else if (name == "transient-failure") TransientFailure(world);
       else if (name == "authentication-failure") AuthenticationFailure(world);
       else if (name == "selection-mismatch") SelectionMismatch(world);
+      else if (name == "reconnect-during-attempt") ReconnectDuringAttempt(world);
       else if (name == "healthy-counterfactual") HealthyCounterfactual(world);
       else if (name == "token-change") TokenChange(world);
       else if (name == "in-flight-supersession") InFlightSupersession(world);

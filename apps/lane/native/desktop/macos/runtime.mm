@@ -513,8 +513,14 @@ std::string Failure(NSString* reason, NSString* message) {
 }
 - (NSDate*)now { return _clock ? _clock() : [NSDate date]; }
 - (void)resetPushRetry:(NSString*)space {
-  [_pushStates[space] removeObjectForKey:@"retryAfter"];
-  [_pushStates[space] removeObjectForKey:@"blocked"];
+  NSMutableDictionary* state = _pushStates[space];
+  [state removeObjectForKey:@"retryAfter"];
+  [state removeObjectForKey:@"blocked"];
+  // Discard an outstanding attempt's identity: finishPush ignores a result whose
+  // identity no longer matches, so a late authentication failure from before this
+  // reconnection cannot block the space again. The space stays in _pushInFlight
+  // until that call returns, and the next observation registers afresh.
+  [state removeObjectForKey:@"attempt"]; [state removeObjectForKey:@"attemptToken"]; [state removeObjectForKey:@"attemptDevice"];
 }
 // Brings one space's APNs registration in line with the latest token. Runs on
 // _queue from tick with that space's current status. A space registers only
