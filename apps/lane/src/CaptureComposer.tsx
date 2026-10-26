@@ -4,7 +4,7 @@ import {
   CaptureService,
   ResultKind,
   type EntityResult,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
 import { newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Field, Notice } from "./components";

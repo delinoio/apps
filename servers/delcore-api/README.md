@@ -123,7 +123,7 @@ cargo test --locked --manifest-path servers/Cargo.toml -p delcore-api -- --ignor
 pnpm proto:lint
 pnpm proto:generate
 node protos/scripts/check-breaking.mjs "<comparison-revision>"
-pnpm --filter @delinoio/delcore-api ci:oci
+pnpm --filter @servers/delcore-api ci:oci
 docker build -f "servers/delcore-api/Dockerfile" -t delcore-api:local .
 ```
 

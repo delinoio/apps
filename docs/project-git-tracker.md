@@ -19,7 +19,7 @@ Track numeric measurements for Git commits and identify regressions without repo
 - `servers/git-tracker-api`: Rust API, PostgreSQL persistence, background maintenance and OCI packaging.
 - `apps/git-tracker`: Web application.
 - `actions/git-tracker`: Official GitHub Action.
-- `protos/package.json`: Internal `@delino/protos` workspace for generated TypeScript exports and runtime dependencies.
+- `protos/package.json`: Internal `@repo/protos` workspace for generated TypeScript exports and runtime dependencies.
 - `protos/gittracker/v1`: Connect schema and generated Go and TypeScript bindings.
 
 Stored executions use the current protobuf JSON representation without a retired Go storage adapter. Client and protocol directories own their interfaces; `servers/git-tracker-api` owns the Rust runtime, migrations and persistence in this repository.

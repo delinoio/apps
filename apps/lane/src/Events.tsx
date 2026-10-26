@@ -8,7 +8,7 @@ import {
   type WebhookEvent as ProtoWebhookEvent,
   type ProcessingRecord as ProtoProcessingRecord,
   type EntityResult as ProtoEntityResult,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
 import { repositoryName } from "./model";

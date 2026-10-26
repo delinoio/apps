@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lynx-ui` owns the Apache-2.0 `@delino/lynx-ui` workspace. Read the
+`packages/lynx-ui` owns the Apache-2.0 `@packages/lynx-ui` workspace. Read the
 [project index](project-lynx-ui.md). The package supports ReactLynx consumers on
 Lynx for Web, mobile Lynx hosts and desktop Clay hosts. Native hosts must register
 the input element and provide keyboard/focus capabilities for keyboard users.
@@ -24,7 +24,7 @@ maintainers register native input elements and validate platform capabilities.
 Export Button, Text, Stack, Card, Badge, Separator, Field, Input, Checkbox, Switch,
 Tabs, Alert, Progress and Dialog, with explicit enum variants. All visible labels,
 validation messages, loading labels and accessibility values come from the app.
-Import `@delino/lynx-ui/styles.css` once and wrap content in `UIProvider`.
+Import `@packages/lynx-ui/styles.css` once and wrap content in `UIProvider`.
 Light and dark themes use semantic neutral colors, red errors, 10px corners,
 16/24px spacing and at least 44px interactive targets. Apps own theme selection
 and persistence. Tokens can be overridden without changing component source.
@@ -53,13 +53,13 @@ The component gallery must compile both `.lynx.bundle` and `.web.bundle` output.
 
 ### Consumer setup
 
-Add `@delino/lynx-ui: workspace:*` to a Lynx app's dependencies. Use full-package
-imports or component subpaths such as `@delino/lynx-ui/components/button`.
+Add `@packages/lynx-ui: workspace:*` to a Lynx app's dependencies. Use full-package
+imports or component subpaths such as `@packages/lynx-ui/components/button`.
 
 ```tsx
 import { useState } from "@lynx-js/react";
-import { Field, Input, UIProvider } from "@delino/lynx-ui";
-import "@delino/lynx-ui/styles.css";
+import { Field, Input, UIProvider } from "@packages/lynx-ui";
+import "@packages/lynx-ui/styles.css";
 
 export function NameForm() {
   const [name, setName] = useState("");
@@ -100,12 +100,12 @@ third-party focusable children require a separate host integration.
 
 ### Web host bridge
 
-In the browser host, import `installWebSupport` from `@delino/lynx-ui/web`.
+In the browser host, import `installWebSupport` from `@packages/lynx-ui/web`.
 Install it on the view's open shadow root before setting the bundle URL:
 
 ```ts
 import "@lynx-js/web-core/client";
-import { installWebSupport } from "@delino/lynx-ui/web";
+import { installWebSupport } from "@packages/lynx-ui/web";
 
 await customElements.whenDefined("lynx-view");
 const view = document.createElement("lynx-view");

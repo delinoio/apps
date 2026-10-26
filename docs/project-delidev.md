@@ -6,7 +6,7 @@ Keep an executable desktop shell with an empty native window. Existing product f
 
 ## Project ID
 
-`delidev`. The desktop package and executable are `delidev-desktop`.
+`delidev`. The npm workspace is `@apps/delidev`; the native executable is `delidev-desktop`.
 
 ## Domain Ownership Map
 

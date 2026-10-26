@@ -163,7 +163,7 @@ cargo build --locked --manifest-path servers/Cargo.toml -p delitools-api
 
 Normal startup never migrates. `serve` validates configuration, checks schema versions and digests, takes the PostgreSQL session lock `41840002` so only one process owns API execution and usage delivery, then listens. It stops if the lock session is lost. Root `pnpm dev` builds the server workspace once and starts this API through its Portless route on port 46322; service-local `pnpm dev` runs the already built binary.
 
-The OCI image is built from the repository root with `docker build -f servers/delitools-api/Dockerfile .` (`pnpm --filter @delinoio/delitools-api ci:oci`). It contains the Rust executable and the server and protocol license notices, runs as a non-root user and exposes port 46322.
+The OCI image is built from the repository root with `docker build -f servers/delitools-api/Dockerfile .` (`pnpm --filter @servers/delitools-api ci:oci`). It contains the Rust executable and the server and protocol license notices, runs as a non-root user and exposes port 46322.
 
 ### Backup, update and fix-forward
 
@@ -201,7 +201,7 @@ cargo fmt --manifest-path servers/Cargo.toml --all --check
 cargo clippy --locked --manifest-path servers/Cargo.toml -p delitools-api --all-targets -- -D warnings
 cargo test --locked --manifest-path servers/Cargo.toml -p delitools-api
 TEST_DATABASE_URL=postgres://... cargo test --locked --manifest-path servers/Cargo.toml -p delitools-api --test postgres -- --ignored
-pnpm --filter @delinoio/delitools-api ci:oci
+pnpm --filter @servers/delitools-api ci:oci
 ```
 
 The mocked-service tests (`tests/service.rs`) start loopback mocks of Delcore, Logto and the Gateway and call the real HTTP surface. The PostgreSQL tests (`tests/postgres.rs`) create and drop an isolated schema per test in the database named by `TEST_DATABASE_URL`; use a dedicated disposable database. These checks use mocks and do not establish live Gateway, Logto or Delcore account acceptance.

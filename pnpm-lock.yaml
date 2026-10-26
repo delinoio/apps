@@ -242,7 +242,7 @@ importers:
 
   apps/delidev:
     dependencies:
-      '@delino/ui':
+      '@packages/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -270,7 +270,7 @@ importers:
 
   apps/delino-docs:
     dependencies:
-      '@delino/ui':
+      '@packages/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -295,7 +295,7 @@ importers:
 
   apps/delino-site:
     dependencies:
-      '@delino/ui':
+      '@packages/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -326,7 +326,7 @@ importers:
 
   apps/delitools:
     dependencies:
-      '@delino/ui':
+      '@packages/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -354,7 +354,7 @@ importers:
 
   apps/devbase:
     dependencies:
-      '@delino/ui':
+      '@packages/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -394,12 +394,12 @@ importers:
       '@connectrpc/connect-web':
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@delino/protos':
-        specifier: workspace:*
-        version: link:../../protos
       '@logto/react':
         specifier: 4.1.1
         version: 4.1.1(react@19.2.8)
+      '@repo/protos':
+        specifier: workspace:*
+        version: link:../../protos
       '@tanstack/react-query':
         specifier: 5.101.4
         version: 5.101.4(react@19.2.8)
@@ -437,15 +437,15 @@ importers:
       '@connectrpc/connect-web':
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@delino/protos':
-        specifier: workspace:*
-        version: link:../../protos
       '@lynx-js/react':
         specifier: 0.129.0
         version: 0.129.0(@lynx-js/types@4.3.0)(@types/react@19.2.14)
       '@lynx-js/web-core':
         specifier: 0.26.5
         version: 0.26.5(tslib@2.8.1)
+      '@repo/protos':
+        specifier: workspace:*
+        version: link:../../protos
       markdown-it:
         specifier: 14.3.3
         version: 14.3.3
@@ -500,7 +500,7 @@ importers:
       '@connectrpc/connect-web':
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@delino/protos':
+      '@repo/protos':
         specifier: workspace:*
         version: link:../../protos
     devDependencies:

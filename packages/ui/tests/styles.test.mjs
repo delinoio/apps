@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import postcss from "postcss";
-import config from "@delino/ui/postcss";
+import config from "@packages/ui/postcss";
 
 test("consumer CSS imports generate package utilities, themes and animations", async () => {
   const from = fileURLToPath(
@@ -31,7 +31,7 @@ test("app stylesheet resolves the public import from outside the package", async
     new URL("../../../apps/devbase/src/ui-smoke.css", import.meta.url),
   );
   const result = await postcss(config.plugins).process(
-    '@import "@delino/ui/styles.css"; @source inline("p-13");',
+    '@import "@packages/ui/styles.css"; @source inline("p-13");',
     { from },
   );
   assert.ok(result.css.includes(".bg-primary"));

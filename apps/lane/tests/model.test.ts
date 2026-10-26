@@ -9,7 +9,7 @@ import {
   Progress,
   Proposal,
   ResultKind,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import {
   draftFor,
   receiveExternal,
