@@ -147,38 +147,42 @@ test("the updater bridge exposes only listed actions through the main host facad
   assert.deepEqual(calls, ["start"]);
 });
 
-test("tar extraction preserves executable modes, PAX long paths and internal framework symlinks", async (t) => {
-  const root = await scratch(t),
-    source = join(root, "source"),
-    archive = join(root, "update.tar.gz"),
-    destination = join(root, "extracted");
-  const framework = "Lane.app/Contents/Frameworks/Test.framework";
-  await write(join(source, framework, "Versions/A/engine"), "runtime", 0o755);
-  await symlink("A", join(source, framework, "Versions/Current"));
-  await symlink("Versions/Current/engine", join(source, framework, "engine"));
-  const long = `Lane.app/Contents/Resources/${"very-long-path-".repeat(12)}/asset`;
-  await write(join(source, long), "asset");
-  execFileSync("tar", [
-    "--format=pax",
-    "-czf",
-    archive,
-    "-C",
-    source,
-    "Lane.app",
-  ]);
-  await mkdir(destination);
-  await extractUpdate(archive, destination, "Lane.app");
-  assert.equal(
-    await readFile(join(destination, framework, "engine"), "utf8"),
-    "runtime",
-  );
-  assert.equal(
-    (await stat(join(destination, framework, "Versions/A/engine"))).mode &
-      0o777,
-    0o755,
-  );
-  assert.equal(await readFile(join(destination, long), "utf8"), "asset");
-});
+test(
+  "tar extraction preserves executable modes, PAX long paths and internal framework symlinks",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      source = join(root, "source"),
+      archive = join(root, "update.tar.gz"),
+      destination = join(root, "extracted");
+    const framework = "Lane.app/Contents/Frameworks/Test.framework";
+    await write(join(source, framework, "Versions/A/engine"), "runtime", 0o755);
+    await symlink("A", join(source, framework, "Versions/Current"));
+    await symlink("Versions/Current/engine", join(source, framework, "engine"));
+    const long = `Lane.app/Contents/Resources/${"very-long-path-".repeat(12)}/asset`;
+    await write(join(source, long), "asset");
+    execFileSync("tar", [
+      "--format=pax",
+      "-czf",
+      archive,
+      "-C",
+      source,
+      "Lane.app",
+    ]);
+    await mkdir(destination);
+    await extractUpdate(archive, destination, "Lane.app");
+    assert.equal(
+      await readFile(join(destination, framework, "engine"), "utf8"),
+      "runtime",
+    );
+    assert.equal(
+      (await stat(join(destination, framework, "Versions/A/engine"))).mode &
+        0o777,
+      0o755,
+    );
+    assert.equal(await readFile(join(destination, long), "utf8"), "asset");
+  },
+);
 
 function rewriteHeader(bytes: Buffer, edit: (header: Buffer) => void) {
   const tar = gunzipSync(bytes),

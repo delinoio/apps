@@ -417,6 +417,7 @@ export class DesktopUpdater {
     await writeFile(jobFile, JSON.stringify(job), { mode: 0o600 });
     const child = spawn(runtime, [script, jobFile], {
       detached: true,
+      windowsHide: true,
       stdio: "ignore",
       cwd: this.stage,
       env: { ...process.env, NODE_OPTIONS: "", NODE_PATH: "" },

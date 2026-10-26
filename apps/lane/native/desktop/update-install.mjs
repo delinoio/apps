@@ -10,6 +10,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function launchApp(app, platform) {
   const child = spawn(executablePath(app, platform), [], {
     detached: true,
+    windowsHide: true,
     stdio: "ignore",
     cwd: app,
     // A copied Node runtime runs this installer; never inherit a Node-only
