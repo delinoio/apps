@@ -5,6 +5,33 @@ use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult, Servic
 use delino_protocol::lane::v1::*;
 use serde_json::{Value, json};
 
+/// Record a successful synchronization contact for the authenticated device.
+///
+/// The caller holds the account advisory lock in the transaction that also carries the successful
+/// pull or push-item work and has reauthorized the principal, so the timestamp commits atomically
+/// with that work and is skipped when the work rolls back. The device identity comes from the
+/// principal, never from the request body or a version origin. The time is the database server
+/// clock so every Lane instance reports one consistent source.
+async fn record_sync_contact(tx: &mut sqlx::PgConnection, p: &crate::Principal) -> Result<()> {
+    let updated =
+        sqlx::query("UPDATE lane_devices SET last_sync_at=clock_timestamp() WHERE account_id=$1 AND id=$2 AND disconnected_at IS NULL")
+            .bind(&p.account_id)
+            .bind(&p.device_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    if updated != 1 {
+        // authorize() just proved this device is connected under the same lock, so this is an invariant breach.
+        tracing::error!(
+            operation = "RecordSyncContact",
+            rows = updated,
+            "authorized device row is unavailable"
+        );
+        return Err(Fault::unauthenticated());
+    }
+    Ok(())
+}
+
 impl Server {
     pub async fn authenticate_mcp(&self, headers: &HeaderMap) -> Result<crate::Principal> {
         let p = self
@@ -71,6 +98,7 @@ impl Server {
                 ));
             }
             if let Some(out) = crate::control::deletion_pull(&mut tx, &principal, &q).await? {
+                record_sync_contact(&mut tx, &principal).await?;
                 tx.commit().await?;
                 return Ok(out);
             }
@@ -117,6 +145,9 @@ impl Server {
             }
             _ => return Err(Fault::invalid("unknown service")),
         };
+        if service == "SyncService" && method == "PullChanges" {
+            record_sync_contact(&mut tx, &principal).await?;
+        }
         tx.commit().await?;
         Ok(output)
     }
@@ -168,6 +199,7 @@ impl Server {
             if string(q, "deviceId") != p.device_id || p.device_id.is_empty() {
                 return Err(Fault::denied());
             }
+            record_sync_contact(&mut tx, p).await?;
             tx.commit().await?;
             return Ok(json!({"results":[],"repositoryMappings":[]}));
         }
@@ -194,6 +226,7 @@ impl Server {
                     .bind(string(&item["meta"], "requestId"))
                     .execute(&mut *tx)
                     .await?;
+                    record_sync_contact(&mut tx, p).await?;
                     tx.commit().await?;
                     if let Some(items) = out["results"].as_array() {
                         results.extend(items.iter().cloned());

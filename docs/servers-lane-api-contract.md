@@ -39,6 +39,14 @@ CLI login and remote MCP approval use browser Logto authorization code flow with
 
 Device and MCP grant revocation checks run under the same account transaction lock as each data operation. A revocation that commits first blocks that operation; an earlier committed operation can complete. Subscriptions recheck authorization/revocation before publishing invalidations and terminate on revocation. Do not rely on token expiry or a process-local approval cache. List individually approved connections and devices with last synchronization times; disconnecting cannot erase an offline device's existing data.
 
+`Device.last_sync_at` is the PostgreSQL server time (`clock_timestamp()`) of the device's last successful data synchronization. It is null until the first qualifying success and is never backfilled. The server writes it only for the authenticated `(account, device)` pair from the principal, never from a request body or version origin, in the same authorized account-locked transaction that commits the work. A rolled-back transaction or a failed commit therefore leaves the previous value, and a revocation that commits first blocks both the operation and its timestamp write. The following qualify:
+
+- every successful `PullChanges`, including an empty pull, a paginated pull and the deletion-directive pull of a newly approved session;
+- a validated empty `PushChanges` batch;
+- each `PushChanges` item whose own transaction commits, including accepted, replayed and retained-conflict results.
+
+A rejected item, an all-rejected batch, a stale epoch, an invalid format, cursor or device binding, an authorization failure and a storage failure never qualify. A mixed batch advances the time for its committed items only and keeps the per-item transaction model. `GetSyncInfo`, `WatchChanges` initialization and ticks, approval, login and every other API or MCP call do not qualify because they do not establish a data exchange. Clearing account data resets the retained old device rows to null. `ListDevices` returns the stored instant through the existing field.
+
 ### Browser and native authorization adapter
 
 `GET /oauth/authorize` accepts authorization-code parameters, an exact registered redirect, S256 PKCE and a UUID v7 `device_id` when the installation already has one. Preserve that device identity through token issuance. `POST /oauth/token` accepts form-encoded code or refresh grants; `POST /oauth/revoke` revokes the bound session. Operator-required `LANE_OAUTH_CLIENTS` binds each client to its redirects, display name, origin kind and API or MCP resource. Browser approval shows full-account consent for MCP. Revalidate registration before callback, consent and token issuance.
