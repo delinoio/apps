@@ -7,7 +7,7 @@ import sys
 import tempfile
 
 SCENARIOS = [
-    "retained-account", "transient-failure", "authentication-failure", "healthy-counterfactual",
+    "retained-account", "transient-failure", "authentication-failure", "selection-mismatch", "healthy-counterfactual",
     "token-change", "in-flight-supersession", "disconnect-before-retry", "disable-before-retry",
     "remove-before-retry", "stop-before-retry", "account-isolation",
 ]

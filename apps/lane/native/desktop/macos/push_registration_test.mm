@@ -79,6 +79,11 @@ struct World {
     while (std::getline(in, line)) if (!line.empty()) calls.push_back(J::parse(line));
     return calls;
   }
+  size_t CallsFor(int account) {
+    size_t count = 0;
+    for (auto& call : Calls()) if (call["expectedSpace"] == spaces[account]) ++count;
+    return count;
+  }
   std::vector<std::string> Workers() {
     std::vector<std::string> workers; std::ifstream in(control + "/workers"); std::string line;
     while (std::getline(in, line)) workers.push_back(line);
@@ -171,6 +176,32 @@ void AuthenticationFailure(World& w) {
   [w.runtime handleURL:[NSURL URLWithString:@"lane-dev://auth/callback?code=fixture&state=fixture"]];
   w.WaitForCalls(2);
   w.ExpectCall(1, "deadbeef", 0);
+}
+
+// The helper rejects a space that is not the registry's active selection with FORBIDDEN
+// before any RPC. That is not an authentication failure: the space keeps retrying on the
+// delay and registers once it becomes the active selection, with no reconnection event.
+void SelectionMismatch(World& w) {
+  w.Seed({{true,true},{true,true}}); w.Start();
+  w.Set("active", w.spaces[0]);
+  [w.runtime registerPushToken:Token({0xde,0xad,0xbe,0xef})];
+  w.WaitForCalls(2);
+  w.Quiet();
+  Check(w.CallsFor(0) == 1 && w.CallsFor(1) == 1, "The active space registers and the other is rejected once");
+  w.Advance(31);
+  for (int i = 0; i < 200 && w.CallsFor(1) < 2; ++i) { w.Status(0); usleep(25000); }
+  w.Quiet();
+  Check(w.CallsFor(1) == 2, "A selection mismatch retries on the delay instead of blocking");
+  Check(w.CallsFor(0) == 1, "The registered active space is not repeated");
+  w.Set("active", w.spaces[1]);
+  w.Advance(31);
+  for (int i = 0; i < 200 && w.CallsFor(1) < 3; ++i) { w.Status(0); usleep(25000); }
+  w.Quiet();
+  Check(w.CallsFor(1) == 3, "The space registers once it becomes the active selection");
+  w.Advance(1000); w.Quiet();
+  Check(w.CallsFor(0) == 1 && w.CallsFor(1) == 3, "No repeat after success");
+  auto calls = w.Calls();
+  Check(calls.back()["expectedSpace"] == w.spaces[1] && calls.back()["request"]["endpoint"] == "deadbeef", "Final call registers the token for its own space");
 }
 
 void HealthyCounterfactual(World& w) {
@@ -311,6 +342,7 @@ int main(int argc, char** argv) {
       if (name == "retained-account") RetainedAccount(world);
       else if (name == "transient-failure") TransientFailure(world);
       else if (name == "authentication-failure") AuthenticationFailure(world);
+      else if (name == "selection-mismatch") SelectionMismatch(world);
       else if (name == "healthy-counterfactual") HealthyCounterfactual(world);
       else if (name == "token-change") TokenChange(world);
       else if (name == "in-flight-supersession") InFlightSupersession(world);

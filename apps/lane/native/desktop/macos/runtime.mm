@@ -549,7 +549,11 @@ std::string Failure(NSString* reason, NSString* message) {
         registered = YES;
       } catch (const HelperFailure& failure) {
         NSString* reason = Parse(failure.envelope)[@"error"][@"reason"];
-        authentication = [@[@"ERROR_REASON_UNAUTHENTICATED",@"ERROR_REASON_FORBIDDEN",@"ERROR_REASON_STALE_EPOCH"] containsObject:reason ?: @""];
+        // FORBIDDEN is deliberately not an authentication failure. The helper also
+        // answers it, before any RPC, for a space that is not the registry's active
+        // selection, and a selection change is not a reconnection event, so blocking
+        // would strand that space. It retries on the delay instead.
+        authentication = [@[@"ERROR_REASON_UNAUTHENTICATED",@"ERROR_REASON_STALE_EPOCH"] containsObject:reason ?: @""];
       } catch (...) {}
     } @catch (NSException*) {}
     dispatch_async(self->_queue, ^{ [self finishPush:space attempt:attempt registered:registered authentication:authentication]; });

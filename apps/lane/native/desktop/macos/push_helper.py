@@ -6,6 +6,9 @@ LANE_PUSH_TEST_CONTROL names a scratch directory shared with the test:
   fail   - optional; "auth" answers RegisterPush with UNAUTHENTICATED, any other
            text with DEPENDENCY_UNAVAILABLE. The mode is read when the call starts.
   delay  - optional seconds to hold a RegisterPush call open after recording it.
+  active - optional space ID standing in for the registry's active selection. A
+           RegisterPush call pinned to any other space answers FORBIDDEN, as the
+           real helper does before dispatching its RPC.
   space  - the space ID the next `sync callback` reports as reconnected.
   calls  - appended JSON lines, one per RegisterPush call.
   workers - appended space IDs, one per `sync run` start.
@@ -41,8 +44,12 @@ if "rpc" in args and option("rpc") == "RegisterPush":
     with open(control / "calls", "a") as calls:
         calls.write(json.dumps({"expectedSpace": option("--expected-space"), "request": body}) + "\n")
     time.sleep(float(read("delay", "0")))
+    active = read("active")
+    if active and active != option("--expected-space"):
+        mode = "forbidden"
     if mode:
-        reason = "ERROR_REASON_UNAUTHENTICATED" if mode == "auth" else "ERROR_REASON_DEPENDENCY_UNAVAILABLE"
+        reason = {"auth": "ERROR_REASON_UNAUTHENTICATED", "forbidden": "ERROR_REASON_FORBIDDEN"}.get(
+            mode, "ERROR_REASON_DEPENDENCY_UNAVAILABLE")
         print(json.dumps({"ok": False, "error": {"reason": reason, "message": "synthetic", "retryable": False}}))
         sys.exit(1)
 elif "callback" in args:
