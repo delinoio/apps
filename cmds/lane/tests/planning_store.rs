@@ -961,3 +961,192 @@ fn corrected_task_uploads_after_the_label_it_was_corrected_with() {
         .unwrap();
     assert_eq!(batch(&store), expected);
 }
+
+/// Produce a conflicted task A whose second head moves it to `target`, and return the head IDs.
+fn stale_move(store: &Store, a_version: &Value, target: &str) -> Vec<String> {
+    let a_id = strv(a_version, "entityId").to_owned();
+    let mut renamed = a_version["task"].clone();
+    renamed["title"] = "A2".into();
+    call(
+        store,
+        "SaveTask",
+        &json!({"id":a_id,"expectedVersionId":a_version["versionId"],"task":renamed}),
+    )
+    .unwrap();
+    let mut moved = a_version["task"].clone();
+    moved["repositoryId"] = target.into();
+    let error = call(
+        store,
+        "SaveTask",
+        &json!({"id":a_id,"expectedVersionId":a_version["versionId"],"task":moved}),
+    )
+    .unwrap_err();
+    assert_eq!(error.reason, "ERROR_REASON_STALE_VERSION");
+    let heads = store.invoke("GetTask", &json!({"id":a_id})).unwrap();
+    let mut ids: Vec<String> = heads["result"]["alternatives"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| strv(h, "versionId").to_owned())
+        .collect();
+    ids.sort();
+    assert_eq!(ids.len(), 2);
+    ids
+}
+
+fn resolve_move(
+    store: &Store,
+    a_id: &str,
+    heads: &[String],
+    body: &Value,
+) -> lane::error::Result<Value> {
+    call(
+        store,
+        "ResolveConflict",
+        &json!({"id":a_id,"expectedHeadIds":heads,"resolved":{
+            "formatVersion":3,"entityId":a_id,"kind":"ENTITY_KIND_TASK","task":body}}),
+    )
+}
+
+#[test]
+fn resolving_a_conflicted_move_cleans_incoming_references_of_the_previous_repository() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/resolve-move-from");
+    let target = repository(&store, "https://example.com/resolve-move-to");
+    let label = planning(&store, &repo, "label", "Old");
+    let a = task(
+        &store,
+        &repo,
+        "A",
+        &json!({"priority":"TASK_PRIORITY_LOW","labelIds":[label["entityId"]],"prompt":"keep"}),
+    );
+    let a_version = a["result"]["version"].clone();
+    let a_id = strv(&a_version, "entityId").to_owned();
+    let child = task(&store, &repo, "Child", &json!({"parentTaskId":a_id}));
+    let blocked = task(
+        &store,
+        &repo,
+        "Blocked",
+        &json!({"dependsOnTaskIds":[a_id]}),
+    );
+    let peer = task(&store, &repo, "Peer", &json!({"relatedTaskIds":[a_id]}));
+    let original = task(&store, &repo, "Dup", &json!({"duplicateOfTaskId":a_id}));
+    let ids: Vec<String> = [&child, &blocked, &peer, &original]
+        .iter()
+        .map(|t| strv(&t["result"]["version"], "entityId").to_owned())
+        .collect();
+    // The symmetric related link gave A a new version.
+    let a_version = current(&store, &a_id);
+    let heads = stale_move(&store, &a_version, &target);
+    // Preserving the alternative never edits the tasks that reference A.
+    assert_eq!(current(&store, &ids[0])["task"]["parentTaskId"], a_id);
+    // The resolution that names references in the new repository is a move: they are discarded.
+    let mut resolved = a_version["task"].clone();
+    resolved["repositoryId"] = target.clone().into();
+    resolved["relatedTaskIds"] = json!([ids[2]]);
+    let ok = resolve_move(&store, &a_id, &heads, &resolved).unwrap();
+    let after = &ok["result"]["version"]["task"];
+    assert_eq!(after["repositoryId"], target);
+    for field in ["labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+        assert_eq!(after[field], json!([]), "{field}");
+    }
+    for field in [
+        "parentTaskId",
+        "duplicateOfTaskId",
+        "milestoneId",
+        "cycleId",
+    ] {
+        assert!(after[field].is_null(), "{field}");
+    }
+    assert_eq!(after["priority"], "TASK_PRIORITY_LOW");
+    assert_eq!(after["prompt"], "keep");
+    assert_eq!(ok["affected"].as_array().map_or(0, Vec::len), 4);
+    assert!(current(&store, &ids[0])["task"]["parentTaskId"].is_null());
+    assert_eq!(
+        current(&store, &ids[1])["task"]["dependsOnTaskIds"],
+        json!([])
+    );
+    assert_eq!(
+        current(&store, &ids[2])["task"]["relatedTaskIds"],
+        json!([])
+    );
+    assert!(current(&store, &ids[3])["task"]["duplicateOfTaskId"].is_null());
+    // The label stays in its repository and the moved task is projected in the new one.
+    assert_eq!(
+        count(
+            &store,
+            &format!(
+                "SELECT count(*) FROM entities WHERE id='{a_id}' AND repository_id='{target}'"
+            )
+        ),
+        1
+    );
+}
+
+#[test]
+fn resolving_in_the_accepted_repository_keeps_the_resolved_references() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/resolve-keep-from");
+    let target = repository(&store, "https://example.com/resolve-keep-to");
+    let a = task(&store, &repo, "A", &json!({}));
+    let a_version = a["result"]["version"].clone();
+    let a_id = strv(&a_version, "entityId").to_owned();
+    let child = task(&store, &repo, "Child", &json!({"parentTaskId":a_id}));
+    let child_id = strv(&child["result"]["version"], "entityId").to_owned();
+    let heads = stale_move(&store, &a_version, &target);
+    let mut resolved = a_version["task"].clone();
+    resolved["dependsOnTaskIds"] = json!([child_id]);
+    let ok = resolve_move(&store, &a_id, &heads, &resolved).unwrap();
+    assert_eq!(
+        ok["result"]["version"]["task"]["dependsOnTaskIds"],
+        json!([child_id])
+    );
+    assert_eq!(current(&store, &child_id)["task"]["parentTaskId"], a_id);
+}
+
+#[test]
+fn failed_move_resolution_leaves_no_partial_cleanup() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/resolve-atomic-from");
+    let target = repository(&store, "https://example.com/resolve-atomic-to");
+    let a = task(&store, &repo, "A", &json!({}));
+    let a_version = a["result"]["version"].clone();
+    let a_id = strv(&a_version, "entityId").to_owned();
+    let child = task(&store, &repo, "Child", &json!({"parentTaskId":a_id}));
+    let child_id = strv(&child["result"]["version"], "entityId").to_owned();
+    // A conflicted task that references A cannot be cleaned up, so the resolution fails.
+    let blocked = task(&store, &repo, "Blocked", &json!({"parentTaskId":a_id}));
+    let blocked_version = blocked["result"]["version"].clone();
+    let blocked_id = strv(&blocked_version, "entityId").to_owned();
+    let heads = stale_move(&store, &a_version, &target);
+    let mut renamed = blocked_version["task"].clone();
+    renamed["title"] = "Blocked2".into();
+    call(
+        &store,
+        "SaveTask",
+        &json!({"id":blocked_id,"expectedVersionId":blocked_version["versionId"],"task":renamed}),
+    )
+    .unwrap();
+    let mut stale = blocked_version["task"].clone();
+    stale["title"] = "Blocked3".into();
+    call(
+        &store,
+        "SaveTask",
+        &json!({"id":blocked_id,"expectedVersionId":blocked_version["versionId"],"task":stale}),
+    )
+    .unwrap_err();
+    let versions = count(&store, "SELECT count(*) FROM versions");
+    let outbox = count(&store, "SELECT count(*) FROM outbox");
+    let mut resolved = a_version["task"].clone();
+    resolved["repositoryId"] = target.into();
+    let error = resolve_move(&store, &a_id, &heads, &resolved).unwrap_err();
+    assert_eq!(error.reason, "ERROR_REASON_CONFLICT_READ_ONLY");
+    assert_eq!(count(&store, "SELECT count(*) FROM versions"), versions);
+    assert_eq!(count(&store, "SELECT count(*) FROM outbox"), outbox);
+    assert_eq!(current(&store, &child_id)["task"]["parentTaskId"], a_id);
+    let still = store.invoke("GetTask", &json!({"id":a_id})).unwrap();
+    assert_eq!(
+        still["result"]["alternatives"].as_array().map(Vec::len),
+        Some(2)
+    );
+}

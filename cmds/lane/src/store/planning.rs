@@ -425,27 +425,46 @@ pub(super) fn write_task(
     id: &str,
     mut t: Value,
     edits: &Value,
-    previous: Option<&Value>,
+    previous: &[&Value],
+    resolving: bool,
     stale: bool,
 ) -> Result<TaskWrite> {
     let no_edits = Value::Null;
     let edits = if stale { &no_edits } else { edits };
     let repository = live_repository(c, strv(&t, "repositoryId"))?;
-    if let Some(prev) = previous {
-        let prev_repository = mapped(c, strv(prev, "repositoryId"))?;
-        if prev_repository != repository {
-            // A move discards the references sent with it, clears the stored ones and removes
-            // every other task's reference to the moved task.
-            clear_references(&mut t);
-            validate_task_fields(c, &mut t, &repository)?;
-            if stale {
-                // The alternative is stored without removing other tasks' references.
-                return Ok(TaskWrite {
-                    primary: t,
-                    others: BTreeMap::new(),
-                });
-            }
-            let mut work = load_repository(c, &prev_repository)?;
+    // Repositories the task leaves. A save names the repository of its single parent head. A
+    // resolution leaves the repository the entity is projected in, where other tasks still
+    // reference it, plus the repository of every resolved-away head; it is a move only when the
+    // projection differs from the resolved repository, so keeping the accepted repository keeps
+    // the resolved references.
+    let mut sources = BTreeSet::new();
+    let projected = if resolving {
+        entity_info(c, id)?.and_then(|(_, projected, _)| projected)
+    } else {
+        None
+    };
+    if !resolving || projected.as_ref().is_some_and(|p| *p != repository) {
+        sources.extend(projected);
+        for prev in previous {
+            sources.insert(mapped(c, strv(prev, "repositoryId"))?);
+        }
+        sources.remove(&repository);
+    }
+    if !sources.is_empty() {
+        // A move discards the references sent with it, clears the stored ones and removes
+        // every other task's reference to the moved task.
+        clear_references(&mut t);
+        validate_task_fields(c, &mut t, &repository)?;
+        if stale {
+            // The alternative is stored without removing other tasks' references.
+            return Ok(TaskWrite {
+                primary: t,
+                others: BTreeMap::new(),
+            });
+        }
+        let mut others = BTreeMap::new();
+        for source in &sources {
+            let mut work = load_repository(c, source)?;
             work.remove(id);
             let before = work.clone();
             for heads in work.values_mut() {
@@ -453,9 +472,9 @@ pub(super) fn write_task(
                     remove_task_reference(h, id);
                 }
             }
-            let others = changed_others(&work, &before, id)?;
-            return Ok(TaskWrite { primary: t, others });
+            others.extend(changed_others(&work, &before, id)?);
         }
+        return Ok(TaskWrite { primary: t, others });
     }
     validate_task_fields(c, &mut t, &repository)?;
     let mut work = load_repository(c, &repository)?;

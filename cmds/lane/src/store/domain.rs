@@ -622,8 +622,13 @@ validate_task(c,&v["task"])?;
 self.validate_capture_references(c,&id,&v["task"]["captures"])?;
 prompt|=h.iter().any(|old|old["task"].get("prompt")!=v["task"].get("prompt") || old["task"].get("captures")!=v["task"].get("captures"));
 if matches!(method,"CreateTask"|"SaveTask"|"ResolveConflict"){
-let previous=(method=="SaveTask"&&h.len()==1).then(||&h[0]["task"]);
-let written=planning::write_task(c,&id,v["task"].clone(),&q["relationshipEdits"],previous,conflict)?;
+// A save names its single parent head; a resolution names every resolved-away head.
+let previous:Vec<&Value>=match method{
+"SaveTask" if h.len()==1=>vec![&h[0]["task"]],
+"ResolveConflict"=>h.iter().map(|head|&head["task"]).filter(|task|task.is_object()).collect(),
+_=>vec![],
+};
+let written=planning::write_task(c,&id,v["task"].clone(),&q["relationshipEdits"],&previous,method=="ResolveConflict",conflict)?;
 v["task"]=written.primary;
 // A stale save is preserved as an alternative and never edits other tasks.
 others=written.others;
