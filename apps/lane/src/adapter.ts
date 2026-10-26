@@ -199,10 +199,13 @@ export class NativeAdapter implements LaneAdapter {
   }
   async resetUnopened() {
     // The host resolves the empty space ID to the registry's active space.
-    await new Promise<void>((resolve, reject) =>
+    await this.resetSpace("");
+  }
+  private resetSpace(spaceId: string) {
+    return new Promise<void>((resolve, reject) =>
       this.module.invoke(
         "ResetDevelopmentData",
-        JSON.stringify({ spaceId: "", request: { confirmed: true } }),
+        JSON.stringify({ spaceId, request: { confirmed: true } }),
         (raw) => {
           try {
             decodeReply(raw);
@@ -213,6 +216,27 @@ export class NativeAdapter implements LaneAdapter {
         },
       ),
     );
+  }
+  // The host refuses a development reset with a retryable STORAGE_BUSY while
+  // any handle of the space is open, including this window's own. Close the
+  // handle first; callers reopen the space after a successful reset, and a
+  // refused reset restores the handle so the window keeps working.
+  private async resetOpen() {
+    const open = this.info;
+    if (!open) throw new Error("The local store is not open.");
+    this.info = undefined;
+    this.deletion = undefined;
+    ++this.generation;
+    await new Promise<void>((resolve) =>
+      this.module.close(open.spaceId, () => resolve()),
+    );
+    try {
+      await this.resetSpace(open.spaceId);
+    } catch (reset) {
+      await this.open(open.spaceId);
+      throw reset;
+    }
+    return { completed: true };
   }
   private async invoke<T>(method: string, request: unknown): Promise<T> {
     if (!this.info) throw new Error("The local store is not open.");
@@ -270,6 +294,8 @@ export class NativeAdapter implements LaneAdapter {
     method: K,
     input: LocalOperations[K][0],
   ): Promise<LocalOperations[K][1]> {
+    if (method === "ResetDevelopmentData")
+      return this.resetOpen() as Promise<LocalOperations[K][1]>;
     return this.invoke(method, input);
   }
   cancelDeletion() {

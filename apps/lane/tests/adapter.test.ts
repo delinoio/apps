@@ -282,17 +282,48 @@ test("an earlier store format is refused with reset guidance and never migrated"
     /not open/,
   );
 });
-test("development reset is an explicit local operation that carries the confirmation flag", async () => {
+test("development reset closes this window's handle first, carries the confirmation flag and restores the handle when refused", async () => {
   const h = harness();
+  const order: string[] = [];
+  const close = h.module.close.bind(h.module);
+  const open = h.module.open.bind(h.module);
+  const invoke = h.module.invoke.bind(h.module);
+  h.module.close = (space, cb) => {
+    order.push(`close:${space}`);
+    close(space, cb);
+  };
+  h.module.open = (request, cb) => {
+    order.push("open");
+    open(request, cb);
+  };
   await h.adapter.open();
   const result = await h.adapter.local("ResetDevelopmentData", {
     confirmed: true,
   });
-  assert.deepEqual(result, { items: [], nextCursor: "" });
+  assert.deepEqual(result, { completed: true });
+  assert.deepEqual(order, ["open", "close:space"]);
   assert.deepEqual(h.calls.at(-1), {
     method: "ResetDevelopmentData",
     request: { spaceId: "space", request: { confirmed: true } },
   });
+  // After a successful reset the caller reopens the space; nothing is cached.
+  assert.equal(h.adapter.spaceId, undefined);
+  await h.adapter.open("space");
+  // A refused reset (another process holds a handle) reopens this window's handle.
+  h.module.invoke = (method, json, cb) => {
+    if (method !== "ResetDevelopmentData") return invoke(method, json, cb);
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  };
+  order.length = 0;
+  await assert.rejects(
+    h.adapter.local("ResetDevelopmentData", { confirmed: true }),
+    /Close other Lane windows/,
+  );
+  assert.deepEqual(order, ["close:space", "open"]);
+  assert.equal(h.adapter.spaceId, "space");
 });
 test("constraint violations keep their named code through the bridge error", () => {
   assert.throws(
