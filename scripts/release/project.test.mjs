@@ -133,6 +133,13 @@ test("Release graph enforces image publication, mock dependency order, and per-c
     component = workflow("deploy-component"),
     servers = workflow("deploy-servers");
   assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+  assert.equal(release.on.workflow_dispatch, null);
+  assert.equal(
+    component.jobs.mobile.with.build_number,
+    "${{ format('{0}', github.run_number) }}",
+  );
+  assert.equal(component.jobs.mobile.with.platform, "all");
+  assert.equal(component.jobs.mobile.with.publish, false);
   assert.deepEqual(release.jobs.servers.needs, ["prepare", "images"]);
   assert.deepEqual(release.jobs.components.needs, ["prepare", "servers"]);
   assert.equal(release.jobs.components.strategy["fail-fast"], false);
