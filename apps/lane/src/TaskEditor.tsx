@@ -12,6 +12,7 @@ import {
   type EntityVersion as ProtoEntityVersion,
 } from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
+import { RequestAttempt, SpecializedAction } from "./requestAttempt";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
 import { TaskProperties } from "./TaskProperties";
 import { TaskRelationships } from "./TaskRelationships";
@@ -92,6 +93,10 @@ export function TaskEditor({
   const resolutionStaleNow = resolutionStale(reviewedHeads, current);
   // Preserve the request across an unchanged retry, including response loss.
   const [attempt, setAttempt] = useState<{ key: string; requestId: string }>();
+  // Proposal decisions and prompt restorations keep their request identity across
+  // a rejected reply and a clean-draft refresh, so an unchanged retry replays the
+  // committed action. The instance lives as long as this editor stays mounted.
+  const [actions] = useState(() => new RequestAttempt(newId));
   const readOnly = conflicted(current) || draft.deleted;
   // Story points stay text so a rejected value such as "1.5" is retained and explained.
   const pointsOf = (value?: number) =>
@@ -333,14 +338,20 @@ export function TaskEditor({
                 disabled={busy || readOnly || draft.dirty}
                 onClick={() =>
                   void run(async (completion) => {
-                    const r = await adapter.call(
-                      LaneService.method.setProposal,
+                    const r = await actions.submit(
                       {
-                        meta: meta(),
+                        action: SpecializedAction.SetProposal,
                         id: draft.id,
                         expectedVersionId: draft.base,
                         proposal: Proposal.REJECTED,
                       },
+                      (requestId) =>
+                        adapter.call(LaneService.method.setProposal, {
+                          meta: { requestId },
+                          id: draft.id,
+                          expectedVersionId: draft.base,
+                          proposal: Proposal.REJECTED,
+                        }),
                     );
                     completion.saved(r.result);
                   })
@@ -353,14 +364,20 @@ export function TaskEditor({
                 disabled={busy || readOnly || draft.dirty}
                 onClick={() =>
                   void run(async (completion) => {
-                    const r = await adapter.call(
-                      LaneService.method.setProposal,
+                    const r = await actions.submit(
                       {
-                        meta: meta(),
+                        action: SpecializedAction.SetProposal,
                         id: draft.id,
                         expectedVersionId: draft.base,
                         proposal: Proposal.ACCEPTED,
                       },
+                      (requestId) =>
+                        adapter.call(LaneService.method.setProposal, {
+                          meta: { requestId },
+                          id: draft.id,
+                          expectedVersionId: draft.base,
+                          proposal: Proposal.ACCEPTED,
+                        }),
                     );
                     completion.saved(r.result);
                   })
@@ -611,14 +628,20 @@ export function TaskEditor({
                     disabled={busy || readOnly || draft.dirty}
                     onClick={() =>
                       void run(async (completion) => {
-                        const r = await adapter.call(
-                          LaneService.method.restorePrompt,
+                        const r = await actions.submit(
                           {
-                            meta: meta(),
+                            action: SpecializedAction.RestorePrompt,
                             id: draft.id,
                             expectedVersionId: draft.base,
                             sourceVersionId: version.versionId,
                           },
+                          (requestId) =>
+                            adapter.call(LaneService.method.restorePrompt, {
+                              meta: { requestId },
+                              id: draft.id,
+                              expectedVersionId: draft.base,
+                              sourceVersionId: version.versionId,
+                            }),
                         );
                         setHistory(null);
                         completion.saved(r.result);
