@@ -274,6 +274,17 @@ try {
   await button("Add original task").click();
   await button("Add Plan the launch to Duplicate of").click();
 
+  // Selecting the current repository again keeps every draft change and relationship.
+  await page
+    .locator(".editor")
+    .getByRole("button", { name: "apps", exact: true })
+    .click();
+  await settle();
+  assert.equal(await pressed("Type: Bug"), true);
+  await button("Change parent").waitFor();
+  await button("Remove Plan the launch from Parent").waitFor();
+  assert.equal(await box("Story points (whole number)").inputValue(), "0");
+
   // Constraint violation: explained in text, draft and request retained.
   await clearRequests();
   await plan({

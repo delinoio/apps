@@ -150,6 +150,8 @@ export function TaskEditor({
   // Repository-owned values belong to one repository: clear them on a change and
   // restore the saved values when the original repository is selected again.
   const changeRepository = (repositoryId: string) => {
+    // Selecting the current repository again is not a move: keep every draft edit.
+    if (repositoryId === draft.task.repositoryId) return;
     const base = draft.baseTask;
     const owned =
       base && repositoryId === base.repositoryId
