@@ -43,7 +43,7 @@ Task, repository, and event deletion calls confirm their target. Account-wide de
 
 ## Task planning through MCP
 
-Task tools accept and return priority, type, labels, start and due dates, story points, milestone, cycle and relationships, and the task list tool accepts the planning filters and one sort key with a direction. Repository labels, milestones and cycles use five typed tools in both local and remote MCP:
+Task tools accept and return priority, type, labels, start and due dates, story points, milestone, cycle and relationships, and the task list tool accepts the planning filters and one sort key with a direction. Edit with care: `lane_save_task` replaces the entire task snapshot and does not merge omitted fields from the stored task, so a call that omits existing labels, dates, story points, milestone, cycle or relationships clears them. Read the task with `lane_get_task`, copy it, change only the fields you intend to change and submit every other field unchanged with the expected version. Only `lane task edit` in the CLI preserves omitted fields. Repository labels, milestones and cycles use five typed tools in both local and remote MCP:
 
 - `lane_list_planning_items` and `lane_get_planning_item` read items, optionally for one repository and one kind (label, milestone or cycle).
 - `lane_create_planning_item` and `lane_save_planning_item` create and update an item. An update needs the current expected version, and an item's kind and repository cannot change.

@@ -159,6 +159,34 @@ test("MCP guide lists the typed planning tools and reset boundary", () => {
   assert.ok(guides.mcp.includes("CONSTRAINT_VIOLATION"));
 });
 
+test("guidance limits omission-preserving edits to the CLI and warns MCP callers", () => {
+  // lane_save_task replaces the whole task snapshot; omitted fields are cleared.
+  assert.match(
+    skill,
+    /`lane task edit`[^.]*omitted option leaves that field unchanged/,
+  );
+  assert.match(skill, /`lane_save_task` replaces the whole task snapshot/);
+  assert.doesNotMatch(skill, /Edits that omit a field leave it unchanged/);
+  for (const text of [skill, guides.mcp]) {
+    assert.ok(
+      text.includes("lane_get_task"),
+      "must tell MCP callers to read the task first",
+    );
+    assert.match(text, /omit/);
+    assert.match(text, /clear/);
+  }
+  assert.match(
+    guides.mcp,
+    /`lane_save_task` replaces the entire task snapshot/,
+  );
+  assert.match(
+    guides.mcp,
+    /Only `lane task edit` in the CLI preserves omitted fields/,
+  );
+  assert.match(guides.userGuide, /applies to the CLI only/);
+  assert.ok(guides.userGuide.includes("lane_save_task"));
+});
+
 test("troubleshooting and installation guides explain rejection and reset", () => {
   assert.ok(guides.troubleshooting.includes("--retry-blocked"));
   assert.ok(guides.troubleshooting.includes("CONSTRAINT_VIOLATION"));

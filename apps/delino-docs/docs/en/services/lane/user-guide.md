@@ -22,7 +22,7 @@ If another process or device changes an open editor, Lane retains your unsaved i
 
 ## Plan tasks
 
-Every planning field is optional. A title alone still creates a task, and an unset field is shown as unassigned. In the app, open a task and use **Properties** and **Relationships**. Changes stay in the draft until **Save** succeeds. In the CLI, `task create` and `task edit` accept the options below; omitting an option leaves it unchanged on edit, and `none` or a `--clear-*` option clears it.
+Every planning field is optional. A title alone still creates a task, and an unset field is shown as unassigned. In the app, open a task and use **Properties** and **Relationships**. Changes stay in the draft until **Save** succeeds. In the CLI, `task create` and `task edit` accept the options below; omitting an option leaves it unchanged on edit, and `none` or a `--clear-*` option clears it. This applies to the CLI only: the MCP `lane_save_task` tool replaces the whole task, so an MCP client must copy the current task and keep every field it does not change (see [Task planning through MCP](./mcp#task-planning-through-mcp)).
 
 | Field        | Values and CLI option                                                                                                                                           |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
