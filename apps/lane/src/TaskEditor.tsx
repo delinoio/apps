@@ -24,7 +24,7 @@ import {
   relationshipEdits,
   taskMetadata,
   taskRelationshipLines,
-  unionRelated,
+  mergeStoredRelated,
   validateTaskPlanning,
 } from "./planning";
 import { useTaskOptions, type PlanningState } from "./usePlanning";
@@ -102,22 +102,29 @@ export function TaskEditor({
       !draft.task.repositoryId
     )
       return;
-    const related = unionRelated(
+    // Removals made before the options loaded are edits against the saved state, so the
+    // stored references of other tasks must not bring those links back.
+    const own = draft.task.relatedTaskIds;
+    const merged = mergeStoredRelated(
       draft.id,
-      draft.task.relatedTaskIds,
+      draft.baseTask && !moved ? draft.baseTask.relatedTaskIds : own,
+      own,
       options.tasks,
     );
-    const same = related.join() === draft.task.relatedTaskIds.join();
+    const same = merged.related.join() === own.join();
+    const baseSame =
+      !draft.baseTask ||
+      merged.base.join() === draft.baseTask.relatedTaskIds.join();
     // Related is symmetric: adopt the union of both stored sides as the saved state.
     setDraft({
       ...draft,
       task: same
         ? draft.task
-        : createUITask({ ...draft.task, relatedTaskIds: related }),
+        : createUITask({ ...draft.task, relatedTaskIds: merged.related }),
       baseTask:
-        same || !draft.baseTask
+        baseSame || !draft.baseTask
           ? draft.baseTask
-          : { ...draft.baseTask, relatedTaskIds: related },
+          : { ...draft.baseTask, relatedTaskIds: merged.base },
       relations: deriveRelations(draft.id, options.tasks),
     });
   }, [draft.relations, options.status, options.tasks, draft.task.repositoryId]);

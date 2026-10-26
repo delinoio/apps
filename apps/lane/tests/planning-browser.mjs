@@ -415,6 +415,45 @@ try {
   // The picker stays open after the save; restore the link for the following checks.
   await button("Add Write onboarding guide to Related").click();
 
+  // A Related link removed before the repository tasks finish loading stays removed when
+  // the other task's stored symmetric reference arrives.
+  await saveButton().click();
+  await settle(700);
+  assert.deepEqual((await last("SaveTask")).task.relatedTaskIds, [ids.taskB]);
+  let releaseTasks;
+  const heldTasks = new Promise((resolve) => (releaseTasks = resolve));
+  const storedReference = async (route) => {
+    const input = route.request().postDataJSON();
+    if (!input?.repositoryId || input.proposal?.length) return route.continue();
+    await heldTasks;
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const item of body.items ?? [])
+      if (item.version?.entityId === ids.taskB)
+        item.version.task.relatedTaskIds = [ids.taskA];
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/lane.v1.LaneService/ListTasks", storedReference);
+  await openTask("Improve empty states");
+  await button("Remove (unavailable task) from Related").click();
+  releaseTasks();
+  await text("Loading tasks of this repository…").waitFor({
+    state: "detached",
+  });
+  await settle();
+  assert.equal(
+    await button("Remove Write onboarding guide from Related").count(),
+    0,
+    "a removal before loading is not undone by the stored reference",
+  );
+  await page.unroute("**/lane.v1.LaneService/ListTasks", storedReference);
+  await clearRequests();
+  await saveButton().click();
+  await settle(700);
+  assert.deepEqual((await last("SaveTask")).task.relatedTaskIds ?? [], []);
+  await button("Add related task").click();
+  await button("Add Write onboarding guide to Related").click();
+
   // Removing a link and Open: unsaved changes ask before leaving.
   await button("Remove Plan the launch from Parent").click();
   await button("Open Write onboarding guide").first().click();

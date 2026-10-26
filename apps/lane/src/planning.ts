@@ -675,6 +675,26 @@ export function unionRelated(taskId: string, own: string[], tasks: TaskRef[]) {
       .map((t) => t.id),
   ]);
 }
+/**
+ * Adopts the other tasks' stored Related references once they load. `saved` is the
+ * task's own stored list and `edited` its draft list: a link the user already removed
+ * before loading stays removed, while links only the other side stored are added.
+ * `base` is the symmetric saved state, so a pending removal still counts as an edit.
+ */
+export function mergeStoredRelated(
+  taskId: string,
+  saved: string[],
+  edited: string[],
+  tasks: TaskRef[],
+) {
+  const removed = saved.filter((id) => !edited.includes(id));
+  return {
+    base: unionRelated(taskId, saved, tasks),
+    related: unionRelated(taskId, edited, tasks).filter(
+      (id) => !removed.includes(id),
+    ),
+  };
+}
 export function relationshipEdits(relations?: Relations) {
   if (!relations) return undefined;
   const added = (next: string[], base: string[]) =>

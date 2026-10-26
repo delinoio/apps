@@ -34,6 +34,7 @@ import {
   taskRelationshipLines,
   toTaskFilter,
   unionRelated,
+  mergeStoredRelated,
   validDate,
   validatePlanningInput,
   validateTaskPlanning,
@@ -213,6 +214,25 @@ test("subtasks and blocks are derived inverse views and produce minimal atomic e
   assert.deepEqual(relations.subtasks, ["child"]);
   assert.deepEqual(relations.blocks, ["waiting"]);
   assert.deepEqual(unionRelated("me", ["x"], tasks), ["peer", "x"]);
+  // Loading the peers' stored references adopts them into the saved state ...
+  assert.deepEqual(mergeStoredRelated("me", ["x"], ["x"], tasks), {
+    base: ["peer", "x"],
+    related: ["peer", "x"],
+  });
+  // ... but never brings back a link the user removed before they loaded.
+  assert.deepEqual(mergeStoredRelated("me", ["peer", "x"], ["x"], tasks), {
+    base: ["peer", "x"],
+    related: ["x"],
+  });
+  assert.deepEqual(mergeStoredRelated("me", ["peer"], [], tasks), {
+    base: ["peer"],
+    related: [],
+  });
+  // An unsaved addition is kept as an edit, not absorbed into the saved state.
+  assert.deepEqual(mergeStoredRelated("me", [], ["new"], tasks), {
+    base: ["peer"],
+    related: ["new", "peer"],
+  });
   assert.equal(relationshipEdits(relations), undefined);
   assert.deepEqual(
     relationshipEdits({
