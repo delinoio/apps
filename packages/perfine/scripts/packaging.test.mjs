@@ -196,16 +196,16 @@ test("no moving tags, placeholder SHAs, wrong architecture, or tracked dist in r
 });
 test("release pipeline is manual, opt-in, protected and separates build from publication", () => {
   const text = readFileSync(
-    join(root, ".github/workflows/release-perfine.yml"),
+    join(root, ".github/workflows/deploy-perfine.yml"),
     "utf8",
   );
-  assert.match(text, /workflow_dispatch:/);
+  assert.match(text, /workflow_call:/);
   assert.doesNotMatch(text, /^  (push|pull_request):/m);
   assert.match(text, /default: false/);
   assert.match(text, /environment: perfine-production/);
   assert.match(text, /if: inputs.publish/);
   assert.doesNotMatch(text, /--force|--clobber/);
-  for (const path of [".github/workflows/release-perfine.yml"]) {
+  for (const path of [".github/workflows/deploy-perfine.yml"]) {
     const workflow = readFileSync(join(root, path), "utf8");
     assert.match(workflow, /node "packages\/perfine\/scripts\/smoke.mjs"/);
     assert.match(
@@ -218,7 +218,7 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
 test("Ubuntu distribution jobs provision protoc and well-known includes before Cargo", () => {
   const yaml = require("js-yaml");
   for (const [path, job] of [
-    [".github/workflows/release-perfine.yml", "build"],
+    [".github/workflows/deploy-perfine.yml", "build"],
   ]) {
     const steps = yaml.load(readFileSync(join(root, path), "utf8")).jobs[job]
       .steps;
@@ -311,7 +311,7 @@ test("all platform archives use matching metadata and identical npm entry bytes"
 test("entry publication requires every exact platform version first", () => {
   const yaml = require("js-yaml");
   const workflow = yaml.load(
-    readFileSync(join(root, ".github/workflows/release-perfine.yml"), "utf8"),
+    readFileSync(join(root, ".github/workflows/deploy-perfine.yml"), "utf8"),
   );
   if (workflow.jobs.publish.needs.includes("prepare-set")) {
     assert.ok(

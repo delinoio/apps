@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The shared Delino release publishes downloadable binary archives and a lightweight npm launcher and six platform npm archives; npm registry publication remains separate.
+`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The Lane release publishes downloadable binary archives and a lightweight npm launcher and six platform npm archives; npm registry publication remains separate.
 
 ## Runtime and Language
 
@@ -36,12 +36,12 @@ Native distributions retain the existing SDK, embedded production-bundle and lic
 
 ## Tag-based binary distribution
 
-Every validated `delino@vMAJOR.MINOR.PATCH` release builds all six CLI targets and
+Every changeset-selected Lane app or CLI release builds all six CLI targets and
 macOS Intel/Apple Silicon plus Windows x64 desktop archives through the
 [Lane binary publication procedure](repository-workflow-contract.md#lane-binary-publication).
 The GitHub Release includes direct CLI archives, the lightweight `@delinoio/lane` npm
 launcher and all six optional platform npm archives, desktop application archives, checksums and source/platform metadata.
-Lane CLI/npm package versions remain independent of the Delino tag version.
+Lane CLI/npm package versions remain independent of the Lane release tag version.
 Desktop packages embed the matching verified CLI and notices. macOS packages are
 ad-hoc signed; Windows packages are unsigned portable archives. No signing
 identity, npm registry credential or store upload is required for this workflow.
