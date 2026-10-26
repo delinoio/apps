@@ -549,6 +549,172 @@ try {
   await page.keyboard.press("Escape");
   await plan({ conflictTask: "" });
 
+  // A conflict resolution stays bound to the head set that the user reviewed.
+  {
+    const head = (n, title) => ({
+      versionId: `019a196d-0000-7000-8000-0000000091${n}`,
+      title,
+    });
+    const [h1, h2, r, s1] = [
+      head("01", "Head one"),
+      head("02", "Head two"),
+      head("03", "Head three"),
+      head("04", "Head four"),
+    ];
+    const invalidate = () =>
+      page
+        .locator("lynx-view")
+        .evaluate((view) => view.sendGlobalEvent("lane.onlineChanged", [{}]));
+    const resolver = () =>
+      page.getByRole("dialog", { name: "Resolve whole-task conflict" });
+    const resolveField = (label) =>
+      resolver().getByRole("textbox", {
+        name: new RegExp(`^${label}(\\.|$)`),
+      });
+    const resolveButton = () =>
+      resolver().getByRole("button", { name: "Save resolution", exact: true });
+    const resolveRequests = async () => sent("ResolveConflict");
+    const reopen = async () => {
+      await page.keyboard.press("Escape");
+      await resolver().waitFor({ state: "hidden" });
+    };
+
+    // Unchanged heads, including a reordered identical set, permit the edited resolution.
+    await plan({ conflictTask: ids.taskB, heads: [h1, h2] });
+    await button("All tasks").click();
+    await button("Offline edit").click();
+    await button("Compare conflict").click();
+    await resolver().waitFor();
+    await resolveField("Resolved title").fill("Reordered resolution");
+    await plan({ heads: [h2, h1] });
+    await invalidate();
+    await settle(500);
+    await resolveButton().waitFor();
+    assert.equal(await resolveButton().getAttribute("aria-disabled"), null);
+    await clearRequests();
+    await resolveButton().click();
+    await resolver().waitFor({ state: "hidden" });
+    const accepted = await resolveRequests();
+    assert.equal(accepted.length, 1);
+    assert.deepEqual(
+      accepted[0].expectedHeadIds,
+      [h1, h2].map((h) => h.versionId).sort(),
+    );
+    assert.equal(accepted[0].resolved.task.title, "Reordered resolution");
+
+    // Heads that change after selection block the retained body, even when current refreshes.
+    await plan({ heads: [h1, h2] });
+    await invalidate();
+    await settle(500);
+    await button("Compare conflict").click();
+    await resolver().waitFor();
+    await resolveField("Resolved title").fill("Local resolution");
+    await resolveField("Resolved description").fill("Local description");
+    await plan({ heads: [r] });
+    await invalidate();
+    // The single-head interval keeps the edits inspectable but never submittable.
+    await text("The conflict was resolved elsewhere", false).waitFor();
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Local resolution",
+    );
+    assert.equal(await resolveButton().getAttribute("aria-disabled"), "true");
+    await plan({ heads: [r, s1] });
+    await invalidate();
+    await text(
+      "The task changed after you started this resolution",
+      false,
+    ).waitFor();
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Local resolution",
+    );
+    assert.equal(
+      await resolveField("Resolved description").inputValue(),
+      "Local description",
+    );
+    assert.equal(await resolveButton().getAttribute("aria-disabled"), "true");
+    for (const use of await resolver()
+      .getByRole("button", { name: "Use this version", exact: true })
+      .all())
+      assert.equal(await use.getAttribute("aria-disabled"), "true");
+    await clearRequests();
+    await resolveButton().click({ force: true });
+    await settle();
+    assert.equal((await resolveRequests()).length, 0);
+
+    // Closing and reopening does not rebind the retained body to the newer heads.
+    await reopen();
+    await button("Compare conflict").click();
+    await resolver().waitFor();
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Local resolution",
+    );
+    assert.equal(await resolveButton().getAttribute("aria-disabled"), "true");
+
+    // An explicit review starts a fresh session that can reuse the retained text.
+    await resolver()
+      .getByRole("button", { name: "Review current versions", exact: true })
+      .click();
+    assert.equal(await resolveButton().getAttribute("aria-disabled"), "true");
+    await resolver()
+      .getByRole("button", { name: "Use retained resolution", exact: true })
+      .click();
+    await resolveField("Resolved title").waitFor();
+    await settle();
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Local resolution",
+    );
+    await clearRequests();
+    await resolveButton().click();
+    await resolver().waitFor({ state: "hidden" });
+    const fresh = await resolveRequests();
+    assert.equal(fresh.length, 1);
+    assert.deepEqual(
+      fresh[0].expectedHeadIds,
+      [r, s1].map((h) => h.versionId).sort(),
+    );
+    assert.equal(fresh[0].resolved.task.title, "Local resolution");
+
+    // A server change after the last client read is rejected for the pinned old set and
+    // the client keeps its input until the refresh marks the session stale.
+    await plan({ heads: [h1, h2] });
+    await invalidate();
+    await settle(500);
+    await button("Compare conflict").click();
+    await resolver().waitFor();
+    await resolveField("Resolved title").fill("Pinned resolution");
+    await plan({ heads: [r, s1] });
+    await clearRequests();
+    await resolveButton().click();
+    await resolver()
+      .getByText("The conflict changed since it was read.", { exact: false })
+      .waitFor();
+    const pinned = await resolveRequests();
+    assert.equal(pinned.length, 1);
+    assert.deepEqual(
+      pinned[0].expectedHeadIds,
+      [h1, h2].map((h) => h.versionId).sort(),
+    );
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Pinned resolution",
+    );
+    await invalidate();
+    await text(
+      "The task changed after you started this resolution",
+      false,
+    ).waitFor();
+    assert.equal(
+      await resolveField("Resolved title").inputValue(),
+      "Pinned resolution",
+    );
+    await page.keyboard.press("Escape");
+    await plan({ conflictTask: "", heads: undefined });
+  }
+
   // Task titles need not be unique: matches beyond the first page of results stay reachable.
   const twins = async (route) => {
     const input = route.request().postDataJSON();

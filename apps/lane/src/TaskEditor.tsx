@@ -31,11 +31,13 @@ import { useTaskOptions, type PlanningState } from "./usePlanning";
 import {
   createUITask,
   conflicted,
+  headIds,
   heads,
   historyChanges,
   progressOptions,
   proposalOptions,
   repositoryName,
+  resolutionStale,
   taskOf,
   type Draft,
 } from "./model";
@@ -75,6 +77,13 @@ export function TaskEditor({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resolve, setResolve] = useState(false);
   const [resolution, setResolution] = useState<EntityVersion>();
+  // Head set the user reviewed when the resolution session began. The resolution is
+  // always submitted against this snapshot, never against a later refreshed `current`.
+  const [reviewedHeads, setReviewedHeads] = useState<string[]>();
+  // An edited resolution from an earlier session whose heads changed; kept for
+  // inspection and explicit reuse after the current versions are reviewed again.
+  const [retained, setRetained] = useState<EntityVersion>();
+  const resolutionStaleNow = resolutionStale(reviewedHeads, current);
   // Preserve the request across an unchanged retry, including response loss.
   const [attempt, setAttempt] = useState<{ key: string; requestId: string }>();
   const readOnly = conflicted(current) || draft.deleted;
@@ -527,7 +536,12 @@ export function TaskEditor({
         {conflicted(current) && (
           <Button
             onClick={() => {
-              setResolution(heads(current!)[0]);
+              // Reopening keeps an existing session; a stale one stays blocked until
+              // the user explicitly reviews the current versions.
+              if (!reviewedHeads) {
+                setReviewedHeads(headIds(current));
+                setResolution(heads(current!)[0]);
+              }
               setResolve(true);
             }}
           >
@@ -639,9 +653,49 @@ export function TaskEditor({
         >
           <Notice>
             Compare every field. Select a complete version, optionally edit it,
-            then save a new resolution. A stale resolution requires refreshing
-            first.
+            then save a new resolution. A resolution is saved only against the
+            versions you reviewed.
           </Notice>
+          {resolutionStaleNow && (
+            <Notice>
+              {headIds(current).length < 2
+                ? "The conflict was resolved elsewhere, so this resolution can no longer be saved. Your edits are kept below for reference."
+                : "The task changed after you started this resolution, so it can no longer be saved. Your edits are kept below. Review the current versions to start a new resolution."}
+            </Notice>
+          )}
+          {resolutionStaleNow && headIds(current).length > 1 && (
+            <Button
+              primary
+              disabled={busy}
+              onClick={() => {
+                if (resolution) setRetained(resolution);
+                setResolution(undefined);
+                setReviewedHeads(headIds(current));
+              }}
+            >
+              Review current versions
+            </Button>
+          )}
+          {!resolutionStaleNow && retained && taskOf(retained) && (
+            <view className="card">
+              <text>Retained resolution from an earlier review</text>
+              <text text-selection>Title: {taskOf(retained)?.title}</text>
+              <text text-selection>
+                Description: {taskOf(retained)?.description}
+              </text>
+              <text text-selection>
+                Prompt:{" "}
+                {taskOf(retained)?.prompt === undefined
+                  ? "Not set"
+                  : taskOf(retained)?.prompt === ""
+                    ? "Empty"
+                    : taskOf(retained)?.prompt}
+              </text>
+              <Button onClick={() => setResolution(retained)}>
+                Use retained resolution
+              </Button>
+            </view>
+          )}
           {heads(current).map((v) => (
             <view className="card" key={v.versionId}>
               <text>
@@ -691,6 +745,7 @@ export function TaskEditor({
               )}
               <Button
                 primary={resolution?.versionId === v.versionId}
+                disabled={resolutionStaleNow}
                 onClick={() => setResolution(v)}
               >
                 Use this version
@@ -834,25 +889,32 @@ export function TaskEditor({
           )}
           <Button
             primary
-            disabled={busy || !resolution}
+            disabled={
+              busy || !resolution || !reviewedHeads || resolutionStaleNow
+            }
             onClick={() =>
               void run(async () => {
+                if (!reviewedHeads || resolutionStale(reviewedHeads, current))
+                  throw new Error(
+                    "The task changed after you started this resolution. Review the current versions before saving.",
+                  );
                 const r = await adapter.call(
                   LaneService.method.resolveConflict,
                   {
                     meta: meta(),
                     id: draft.id,
-                    expectedHeadIds: heads(current)
-                      .map((v) => v.versionId)
-                      .sort(),
+                    expectedHeadIds: reviewedHeads,
                     resolved: resolution,
                   },
                 );
                 if (!r.result || r.result.result === ResultKind.CONFLICT)
                   throw new Error(
-                    "The conflict changed. Your resolution is retained. Close this dialog and refresh before resolving again.",
+                    "The conflict changed. Your resolution is retained. Review the current versions before resolving again.",
                   );
                 setResolve(false);
+                setReviewedHeads(undefined);
+                setRetained(undefined);
+                setResolution(undefined);
                 onSaved(r.result);
               })
             }
