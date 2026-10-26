@@ -95,6 +95,41 @@ export function receiveExternal(draft: Draft, result: EntityResult): Draft {
   // Explicit editor lifetime: incoming reads never replace current-screen input.
   return { ...draft, external: true };
 }
+export type HistoryBaseline =
+  | { kind: "creation" }
+  | { kind: "parent"; version: EntityVersion }
+  | { kind: "pending" }
+  | { kind: "merge" };
+/**
+ * Selects the snapshot a history entry is compared with. The list is chronological
+ * and includes retained alternatives, so neighbouring positions say nothing about
+ * ancestry: only the entry's declared parent is a valid baseline.
+ */
+export function historyBaseline(
+  history: readonly EntityVersion[],
+  version: EntityVersion,
+): HistoryBaseline {
+  const parents = version.parentVersionIds || [];
+  if (parents.length === 0) return { kind: "creation" };
+  // A resolution has several parents and therefore no single before snapshot.
+  if (parents.length > 1) return { kind: "merge" };
+  const parent = history.find((entry) => entry.versionId === parents[0]);
+  // The parent may be on a page that is not loaded yet; never guess a baseline.
+  return parent ? { kind: "parent", version: parent } : { kind: "pending" };
+}
+/** Field changes of one history entry against its declared parent, if comparable. */
+export function historyEntryChanges(
+  history: readonly EntityVersion[],
+  version: EntityVersion,
+  lookup?: Lookup,
+): { field: string; before: string; after: string }[] {
+  const baseline = historyBaseline(history, version);
+  if (baseline.kind === "creation")
+    return historyChanges(undefined, version, lookup);
+  if (baseline.kind === "parent")
+    return historyChanges(baseline.version, version, lookup);
+  return [];
+}
 export function historyChanges(
   before: EntityVersion | undefined,
   after: EntityVersion,
@@ -132,4 +167,30 @@ type EntityVersion = UI<ProtoEntityVersion>;
 type Task = UI<ProtoTask>;
 export function createUITask(value: UI<ProtoTask>): UI<ProtoTask> {
   return toUI(fromUI(TaskSchema, value));
+}
+// Maps the Prompt presence choice to the next prompt. Choosing Include prompt
+// while a prompt is already present is an identity selection and must keep the
+// exact Markdown; only absence initializes to a present empty prompt. Choosing
+// No prompt intentionally removes presence.
+export function promptForPresence(
+  current: string | undefined,
+  choice: string,
+): string | undefined {
+  return choice === "present" ? (current ?? "") : undefined;
+}
+// Applies a patch to the draft task and marks it dirty. A patch that echoes the
+// current values returns the same draft so unchanged input never dirties it.
+export function editDraft(draft: Draft, patch: Partial<Task>): Draft {
+  const task = draft.task as Record<string, unknown>;
+  if (
+    Object.entries(patch).every(
+      ([key, value]) => JSON.stringify(task[key]) === JSON.stringify(value),
+    )
+  )
+    return draft;
+  return {
+    ...draft,
+    task: createUITask({ ...draft.task, ...patch }),
+    dirty: true,
+  };
 }

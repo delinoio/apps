@@ -1054,7 +1054,10 @@ async fn callback(
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response.headers_mut().insert(
             header::REFERRER_POLICY,
-            HeaderValue::from_static("no-referrer"),
+            // Origin-only: the same-origin consent POST keeps a serializable API Origin
+            // (`no-referrer` would make browsers send `Origin: null`), while the callback path
+            // and query never appear in Referer.
+            HeaderValue::from_static("strict-origin"),
         );
         response
     } else {
@@ -2005,6 +2008,516 @@ SWa6SCqGYyxWx3gNrhl069h8P2zMhX5WKLrOwiNGwCHc0xVxIsdq2G49
         );
         assert!(a.authenticate(&headers).await.is_err());
         assert!(!m.calls.lock().unwrap().is_empty());
+        pool.close().await;
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        admin.close().await;
+    }
+
+    // ---- Assembled-router Origin policy and API-hosted consent (issue: consent through Origin policy) ----
+    const API_ORIGIN: &str = "https://lane.api.example.test";
+    const WEB_ORIGIN: &str = "https://lane.example.test";
+    const CLI_REDIRECT: &str = "http://127.0.0.1:46326/callback";
+
+    /// The complete production router, built from the fixture Auth with distinct API and web origins.
+    fn assembled_router(pool: PgPool, auth: Auth) -> Router {
+        let server = Arc::new(crate::Server {
+            db: pool.clone(),
+            auth: Arc::new(auth),
+            config: Arc::new(crate::config::Config {
+                listen: "127.0.0.1:0".into(),
+                public_url: API_ORIGIN.into(),
+                web_origin: WEB_ORIGIN.into(),
+                metrics_token: "synthetic-metrics-token-at-least-32-characters".into(),
+                max_item_bytes: 4096,
+                max_webhook_bytes: 4096,
+                requests_per_minute: 1000,
+                webhook_requests_per_minute: 1000,
+            }),
+            metrics: Arc::default(),
+            push: Arc::new(crate::push::Push::from_env(pool).unwrap()),
+            webhooks: Arc::new(
+                crate::webhooks::WebhookConfig::new(
+                    &URL_SAFE_NO_PAD.encode([7; 32]),
+                    "https://lane.api.example.test/hooks",
+                    1024,
+                )
+                .unwrap(),
+            ),
+        });
+        crate::http::router(server)
+    }
+    fn http_request(
+        method: &str,
+        uri: &str,
+        headers: &[(&str, &str)],
+        body: Option<String>,
+    ) -> axum::http::Request<axum::body::Body> {
+        let mut builder = axum::http::Request::builder().method(method).uri(uri);
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder
+            .body(axum::body::Body::from(body.unwrap_or_default()))
+            .unwrap()
+    }
+    async fn send(app: &Router, request: axum::http::Request<axum::body::Body>) -> Response {
+        use tower::ServiceExt;
+        app.clone().oneshot(request).await.unwrap()
+    }
+    async fn text(response: Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn router_origin_policy_keeps_api_origin_out_of_every_route_but_consent_post() {
+        let (authority, _, url) = mock_authority().await;
+        // The pool is never used: every request below is answered by the Origin policy itself.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        let app = assembled_router(pool.clone(), fixture_auth(pool, authority, &url));
+        let api = [("origin", API_ORIGIN)];
+        for (method, uri) in [
+            ("POST", "/lane.v1.LaneService/ListTasks"),
+            ("POST", "/lane.v1.SyncService/GetSyncInfo"),
+            ("POST", "/mcp"),
+            ("OPTIONS", "/mcp"),
+            ("POST", "/auth/refresh"),
+            ("POST", "/auth/logout"),
+            ("POST", "/oauth/token"),
+            ("POST", "/oauth/revoke"),
+            ("GET", "/auth/session"),
+            ("GET", "/health/live"),
+            // The exception is exact in method and path.
+            ("GET", "/oauth/consent"),
+            ("OPTIONS", "/oauth/consent"),
+            ("PUT", "/oauth/consent"),
+            ("POST", "/oauth/consent/"),
+            ("POST", "/oauth/consent/extra"),
+        ] {
+            let response = send(&app, http_request(method, uri, &api, None)).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
+            assert!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .is_none(),
+                "{method} {uri}"
+            );
+        }
+        // Hostile and opaque origins are rejected everywhere, including the consent POST.
+        for origin in [
+            "https://attacker.example",
+            "null",
+            "https://lane.api.example.test.attacker.example",
+        ] {
+            for uri in ["/oauth/consent", "/mcp", "/auth/refresh"] {
+                let response =
+                    send(&app, http_request("POST", uri, &[("origin", origin)], None)).await;
+                assert_eq!(response.status(), StatusCode::FORBIDDEN, "{origin} {uri}");
+            }
+        }
+        // Configured frontend CORS stays credentialed for the web origin only.
+        let response = send(
+            &app,
+            http_request("OPTIONS", "/oauth/consent", &[("origin", WEB_ORIGIN)], None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        assert_eq!(
+            response.headers()["access-control-allow-credentials"],
+            "true"
+        );
+        let response = send(
+            &app,
+            http_request("GET", "/health/live", &[("origin", WEB_ORIGIN)], None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        // Absent-Origin clients keep their previous behavior.
+        let response = send(&app, http_request("GET", "/health/live", &[], None)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            WEB_ORIGIN
+        );
+        let response = send(&app, http_request("OPTIONS", "/mcp", &[], None)).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    /// Minimal browser fixture for the rendered consent page. It parses the form, derives the
+    /// `Origin` and `Referer` headers from the page's Referrer-Policy as Fetch specifies for a
+    /// same-origin form POST navigation, and submits the pressed button. It is not a real browser.
+    struct ConsentPage {
+        url: String,
+        policy: String,
+        csp: String,
+        html: String,
+        cookie: String,
+    }
+    impl ConsentPage {
+        fn tag_attribute(tag: &str, name: &str) -> Option<String> {
+            Some(
+                tag.split(&format!("{name}=\""))
+                    .nth(1)?
+                    .split('"')
+                    .next()?
+                    .to_owned(),
+            )
+        }
+        fn hidden_consent_token(&self) -> String {
+            self.html
+                .split('<')
+                .filter(|tag| tag.starts_with("input "))
+                .find(|tag| Self::tag_attribute(tag, "name").as_deref() == Some("consent"))
+                .and_then(|tag| Self::tag_attribute(tag, "value"))
+                .expect("hidden consent input")
+        }
+        fn submit_with(
+            &self,
+            decision: &str,
+            cookie: Option<&str>,
+            token: Option<&str>,
+        ) -> axum::http::Request<axum::body::Body> {
+            let tags: Vec<&str> = self.html.split('<').collect();
+            let form = tags
+                .iter()
+                .find(|tag| tag.starts_with("form "))
+                .expect("form");
+            assert_eq!(Self::tag_attribute(form, "method").as_deref(), Some("post"));
+            let action = Self::tag_attribute(form, "action").unwrap();
+            assert!(
+                tags.iter().filter(|tag| tag.starts_with("button ")).any(
+                    |tag| Self::tag_attribute(tag, "name").as_deref() == Some("decision")
+                        && Self::tag_attribute(tag, "value").as_deref() == Some(decision)
+                ),
+                "the rendered page must contain a {decision} button"
+            );
+            let mut body = url::form_urlencoded::Serializer::new(String::new());
+            if let Some(token) = token {
+                body.append_pair("consent", token);
+            }
+            body.append_pair("decision", decision);
+            let page = Url::parse(&self.url).unwrap();
+            let origin = page.origin().ascii_serialization();
+            let (origin_header, referer) = match self.policy.as_str() {
+                // Fetch serializes the Origin of a non-GET navigation as `null` for no-referrer.
+                "no-referrer" => ("null".to_owned(), None),
+                "strict-origin" | "origin" | "same-origin" | "strict-origin-when-cross-origin" => {
+                    // Origin-only policies strip path and query from Referer.
+                    (origin.clone(), Some(format!("{origin}/")))
+                }
+                other => panic!("unsupported fixture referrer policy {other}"),
+            };
+            let mut builder = axum::http::Request::builder()
+                .method("POST")
+                .uri(page.join(&action).unwrap().path())
+                .header("origin", origin_header)
+                .header("content-type", "application/x-www-form-urlencoded");
+            if let Some(referer) = referer {
+                builder = builder.header("referer", referer);
+            }
+            if let Some(cookie) = cookie {
+                builder = builder.header("cookie", cookie);
+            }
+            builder.body(axum::body::Body::from(body.finish())).unwrap()
+        }
+        fn submit(&self, decision: &str) -> axum::http::Request<axum::body::Body> {
+            self.submit_with(
+                decision,
+                Some(&self.cookie),
+                Some(&self.hidden_consent_token()),
+            )
+        }
+    }
+
+    /// Authorize, log in through the mocked identity provider and render the consent page.
+    async fn consent_page(
+        app: &Router,
+        m: &Mock,
+        issuer: &str,
+        account: &str,
+        tenant: &str,
+        verifier: &str,
+        state: &str,
+    ) -> ConsentPage {
+        let authorize = format!(
+            "/oauth/authorize?{}",
+            url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("client_id", "lane-cli")
+                .append_pair("response_type", "code")
+                .append_pair("code_challenge", &pkce(verifier))
+                .append_pair("code_challenge_method", "S256")
+                .append_pair("state", state)
+                .append_pair("redirect_uri", CLI_REDIRECT)
+                .finish()
+        );
+        let start = send(app, http_request("GET", &authorize, &[], None)).await;
+        assert!(start.status().is_redirection(), "{}", start.status());
+        let cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let location = Url::parse(start.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        let query: HashMap<String, String> = location
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        let claims = json!({"iss":issuer,"aud":"browser","sub":"logto-subject","exp":Utc::now().timestamp()+60,"nonce":query["nonce"]});
+        *m.oidc_tokens.lock().unwrap() = json!({"id_token":sign_claims(claims),"access_token":sign_claims(json!({"iss":issuer,"aud":"delcore","sub":"logto-subject","exp":Utc::now().timestamp()+60}))});
+        *m.pages.lock().unwrap() = vec![
+            json!({"userId":account,"tenants":[{"id":tenant,"ownerId":account,"personal":true}]}),
+        ];
+        let callback_uri = format!(
+            "/auth/callback?{}",
+            url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("state", &query["state"])
+                .append_pair("code", "logto-code")
+                .finish()
+        );
+        let page = send(
+            app,
+            http_request("GET", &callback_uri, &[("cookie", &cookie)], None),
+        )
+        .await;
+        assert_eq!(page.status(), StatusCode::OK);
+        let header_text =
+            |name: header::HeaderName| page.headers()[name].to_str().unwrap().to_owned();
+        let policy = header_text(header::REFERRER_POLICY);
+        let csp = header_text(header::CONTENT_SECURITY_POLICY);
+        ConsentPage {
+            url: format!("{API_ORIGIN}{callback_uri}"),
+            policy,
+            csp,
+            html: text(page).await,
+            cookie,
+        }
+    }
+    async fn grant_counts(pool: &PgPool) -> (i64, i64, i64) {
+        let count = |sql: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        };
+        (
+            count("SELECT count(*) FROM lane_auth_codes").await,
+            count("SELECT count(*) FROM lane_sessions").await,
+            count("SELECT count(*) FROM lane_auth_consents WHERE consumed_at IS NULL").await,
+        )
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable TEST_DATABASE_URL; uses an isolated schema and mocked identity/authorization providers"]
+    async fn postgres_assembled_router_completes_api_hosted_consent_with_distinct_origins() {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+        let admin = PgPool::connect(&url).await.unwrap();
+        let schema = format!("lane_consent_{}", id().replace('-', ""));
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let search = schema.clone();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .after_connect(move |c, _| {
+                let search = search.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO {search}"))
+                        .execute(c)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::raw_sql(concat!(
+            include_str!("../migrations/00001_auth.sql"),
+            "\n",
+            include_str!("../migrations/00004_push.sql")
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (authority, m, issuer) = mock_authority().await;
+        let app = assembled_router(pool.clone(), fixture_auth(pool.clone(), authority, &issuer));
+        let (account, tenant) = (id(), id());
+
+        // Approve: hostile and opaque origins and a wrong browser binding never consume the token.
+        let verifier = random_token();
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &verifier,
+            "approve-state",
+        )
+        .await;
+        // The page restricts form submission and exposes only its origin through Referer.
+        assert_eq!(page.policy, "strict-origin");
+        assert!(page.csp.contains("form-action 'self'"), "{}", page.csp);
+        assert!(page.url.contains("code=logto-code"));
+        let token = page.hidden_consent_token();
+        let before = grant_counts(&pool).await;
+        assert_eq!(before, (0, 0, 1));
+        for origin in ["https://attacker.example", "null"] {
+            let mut request = page.submit("approve");
+            request
+                .headers_mut()
+                .insert("origin", HeaderValue::from_static(origin));
+            assert_eq!(
+                send(&app, request).await.status(),
+                StatusCode::FORBIDDEN,
+                "{origin}"
+            );
+            assert_eq!(
+                grant_counts(&pool).await,
+                before,
+                "{origin} must not consume consent"
+            );
+        }
+        // The fixture derives the emitted Origin and Referer from the page headers.
+        let request = page.submit("approve");
+        assert_eq!(request.headers()["origin"], API_ORIGIN);
+        assert_eq!(request.headers()["referer"], format!("{API_ORIGIN}/"));
+        for secret in ["code=", "state=", "/auth/callback", "logto-code"] {
+            assert!(
+                !request.headers()["referer"]
+                    .to_str()
+                    .unwrap()
+                    .contains(secret)
+            );
+        }
+        // Binding failures at the permitted Origin fail without a grant or consumption.
+        for (label, cookie, consent) in [
+            ("missing cookie", None, Some(token.as_str())),
+            (
+                "wrong cookie",
+                Some("__Host-lane_flow=wrong"),
+                Some(token.as_str()),
+            ),
+            ("missing token", Some(page.cookie.as_str()), None),
+            ("wrong token", Some(page.cookie.as_str()), Some("wrong")),
+        ] {
+            let response = send(&app, page.submit_with("approve", cookie, consent)).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{label}");
+            assert_eq!(grant_counts(&pool).await, before, "{label}");
+        }
+        let response = send(&app, page.submit("approve")).await;
+        assert!(response.status().is_redirection(), "{}", response.status());
+        assert!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .is_none()
+        );
+        let redirect = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert!(redirect.as_str().starts_with(CLI_REDIRECT));
+        let query: HashMap<String, String> = redirect
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(query["state"], "approve-state");
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+        // Replay of the consumed token fails and issues nothing.
+        let replay = send(&app, page.submit("approve")).await;
+        assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+        // The code redeems once with the original verifier only.
+        let exchange = |verifier: String| {
+            http_request(
+                "POST",
+                "/oauth/token",
+                &[("content-type", "application/x-www-form-urlencoded")],
+                Some(
+                    url::form_urlencoded::Serializer::new(String::new())
+                        .append_pair("grant_type", "authorization_code")
+                        .append_pair("client_id", "lane-cli")
+                        .append_pair("redirect_uri", CLI_REDIRECT)
+                        .append_pair("code", &query["code"])
+                        .append_pair("code_verifier", &verifier)
+                        .finish(),
+                ),
+            )
+        };
+        assert!(
+            !send(&app, exchange(random_token()))
+                .await
+                .status()
+                .is_success()
+        );
+        let redeemed = send(&app, exchange(verifier.clone())).await;
+        assert_eq!(redeemed.status(), StatusCode::OK);
+        assert!(!send(&app, exchange(verifier)).await.status().is_success());
+
+        // Cancel: the registered redirect carries access_denied and the original state; no grant.
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &random_token(),
+            "deny-state",
+        )
+        .await;
+        let before = grant_counts(&pool).await;
+        assert_eq!(before, (1, 1, 1));
+        let response = send(&app, page.submit("deny")).await;
+        assert!(response.status().is_redirection(), "{}", response.status());
+        let redirect = Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+        assert!(redirect.as_str().starts_with(CLI_REDIRECT));
+        let query: HashMap<String, String> = redirect
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(query["error"], "access_denied");
+        assert_eq!(query["state"], "deny-state");
+        assert!(!query.contains_key("code"));
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+
+        // Expired consent fails without a grant.
+        let page = consent_page(
+            &app,
+            &m,
+            &issuer,
+            &account,
+            &tenant,
+            &random_token(),
+            "expired-state",
+        )
+        .await;
+        sqlx::query("UPDATE lane_auth_consents SET expires_at=clock_timestamp()-interval '1 second' WHERE consumed_at IS NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let response = send(&app, page.submit("approve")).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(grant_counts(&pool).await, (1, 1, 0));
+
         pool.close().await;
         sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
             .execute(&admin)

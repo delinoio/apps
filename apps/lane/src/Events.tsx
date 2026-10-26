@@ -47,6 +47,12 @@ export function Events({
     id: string;
   }>();
   const [busy, setBusy] = useState(false);
+  // Tracks only the receiver editor's own save. It is separate from the shared
+  // `busy` flag so unrelated reloads never lock the receiver fields while the
+  // user is typing. The ref closes the window before the next render disables
+  // the controls.
+  const [savingReceiver, setSavingReceiver] = useState(false);
+  const savingReceiverRef = useRef(false);
   const [error, setError] = useState("");
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -216,7 +222,11 @@ export function Events({
           <Field
             label="Receiver name"
             value={editing.name}
-            onChange={(name) => setEditing({ ...editing, name })}
+            disabled={savingReceiver}
+            onChange={(name) => {
+              if (savingReceiverRef.current) return;
+              setEditing({ ...editing, name });
+            }}
             focus
           />
           <Choices
@@ -225,9 +235,11 @@ export function Events({
             options={repositories.map(
               (r) => [r.version!.entityId, repositoryName(r.version)] as const,
             )}
-            onChange={(repositoryId) =>
-              setEditing({ ...editing, repositoryId })
-            }
+            disabled={savingReceiver}
+            onChange={(repositoryId) => {
+              if (savingReceiverRef.current) return;
+              setEditing({ ...editing, repositoryId });
+            }}
           />
           <Notice>
             Changing the repository applies only to future events. Existing
@@ -236,33 +248,49 @@ export function Events({
           {error && <Notice>{error}</Notice>}
           <Button
             primary
-            disabled={busy || !editing.repositoryId || !editing.name.trim()}
-            onClick={() =>
+            disabled={
+              busy ||
+              savingReceiver ||
+              !editing.repositoryId ||
+              !editing.name.trim()
+            }
+            onClick={() => {
+              if (savingReceiverRef.current) return;
+              savingReceiverRef.current = true;
+              setSavingReceiver(true);
               void run(async () => {
-                if (editing.revision !== undefined)
-                  await adapter.call(WebhookService.method.saveReceiver, {
-                    meta: meta(),
-                    id: editing.id,
-                    expectedRevision: editing.revision,
-                    repositoryId: editing.repositoryId,
-                    name: editing.name,
-                  });
-                else {
-                  const r = await adapter.call(
-                    WebhookService.method.createReceiver,
-                    {
+                // The lock covers the mutation only. A rejected mutation
+                // keeps the submitted draft editable for an explicit retry;
+                // the follow-up reload does not hold the new editor state.
+                try {
+                  if (editing.revision !== undefined)
+                    await adapter.call(WebhookService.method.saveReceiver, {
                       meta: meta(),
                       id: editing.id,
+                      expectedRevision: editing.revision,
                       repositoryId: editing.repositoryId,
                       name: editing.name,
-                    },
-                  );
-                  setSecret({ secret: r.secret, endpoint: r.endpoint });
+                    });
+                  else {
+                    const r = await adapter.call(
+                      WebhookService.method.createReceiver,
+                      {
+                        meta: meta(),
+                        id: editing.id,
+                        repositoryId: editing.repositoryId,
+                        name: editing.name,
+                      },
+                    );
+                    setSecret({ secret: r.secret, endpoint: r.endpoint });
+                  }
+                  setEditing(undefined);
+                } finally {
+                  savingReceiverRef.current = false;
+                  setSavingReceiver(false);
                 }
-                setEditing(undefined);
                 await load();
-              })
-            }
+              });
+            }}
           >
             Save
           </Button>

@@ -4,7 +4,9 @@
 Requires LANE_TEST_DATABASE_URL, psql, and an already-built LANE_TEST_BINARY.
 The database must be disposable and dedicated to this test.
 """
+import base64
 import hashlib
+import hmac
 import json
 import os
 import socket
@@ -63,10 +65,15 @@ def sql(statement):
     subprocess.run(["psql", DB, "-v", "ON_ERROR_STOP=1", "-q", "-c", statement], check=True, stdout=subprocess.DEVNULL)
 
 
-def call(path, body=None, token=TOKEN, headers=None):
+def query(statement):
+    result = subprocess.run(["psql", DB, "-v", "ON_ERROR_STOP=1", "-q", "-At", "-c", statement], check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def call(path, body=None, token=TOKEN, headers=None, base=None):
     h = {"authorization": "Bearer " + token, "content-type": "application/json", "connect-protocol-version": "1"}
     h.update(headers or {})
-    request = urllib.request.Request(api + path, data=None if body is None else json.dumps(body).encode(), headers=h)
+    request = urllib.request.Request((base or api) + path, data=None if body is None else json.dumps(body).encode(), headers=h)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             data = response.read()
@@ -99,6 +106,69 @@ env = dict(os.environ, DATABASE_URL=DB, LISTEN=f"127.0.0.1:{port}", LANE_PUBLIC_
            LANE_WEBHOOK_ENCRYPTION_KEY="CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg", LANE_WEBHOOK_BASE_URL=api,
            LANE_R2_ENDPOINT=mock_url, LANE_R2_BUCKET="fixture", LANE_R2_ACCESS_KEY_ID="fixture-access", LANE_R2_SECRET_ACCESS_KEY="fixture-secret",
            LANE_APNS_ENABLED="false", LANE_FCM_ENABLED="false", LANE_WEB_PUSH_ENABLED="false")
+WEBHOOK_BODY = b'{"id":"c04-event-1","type":"test","occurredAt":"2026-10-25T00:00:00Z","payload":{}}'
+
+
+def deliver(url, secret, body=WEBHOOK_BODY, valid=True):
+    """POST a signed webhook to exactly the supplied URL and return status and decoded JSON."""
+    timestamp = str(int(time.time()))
+    key = base64.urlsafe_b64decode(secret + "=" * (-len(secret) % 4))
+    digest = hmac.new(key, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    if not valid:
+        digest = "0" * 64
+    request = urllib.request.Request(url, data=body, method="POST", headers={"content-type": "application/json", "lane-timestamp": timestamp, "lane-signature": "v1=" + digest})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        data = error.read()
+        return error.code, json.loads(data) if data and "json" in error.headers.get("content-type", "") else data.decode()
+
+
+def webhook_scenario(label, base, expected_prefix, rewrite=None):
+    """Create a receiver through Connect, then POST to the returned endpoint through the real router.
+
+    `base` is the Connect origin of the server under test, whose LANE_WEBHOOK_BASE_URL is that
+    origin plus a suffix, and `expected_prefix` is the intake base the endpoint must use.
+    `rewrite` maps the returned path to the internal route, standing in for an operator proxy.
+    """
+    receiver = identity()
+    created = call("/lane.v1.WebhookService/CreateReceiver", {"meta": {"requestId": identity()}, "id": receiver, "repositoryId": repository, "name": label}, base=base)
+    assert created[0] == 200, (label, created)
+    endpoint, secret = created[1]["endpoint"], created[1]["secret"]
+    assert endpoint == f"{base}{expected_prefix}/{receiver}", (label, endpoint)
+    assert endpoint.count("/webhooks/") <= 1, endpoint
+    target = endpoint if rewrite is None else endpoint.replace(rewrite[0], rewrite[1], 1)
+    rejected = deliver(target, secret, valid=False)
+    assert rejected[0] == 401, (label, rejected)
+    assert query(f"SELECT count(*) FROM lane_webhook_events WHERE receiver_id='{receiver}'") == "0"
+    accepted = deliver(target, secret)
+    assert accepted[0] == 200 and not accepted[1].get("alreadyReceived"), (label, accepted)
+    rows = query(f"SELECT id, state, repository_id FROM lane_webhook_events WHERE receiver_id='{receiver}'").splitlines()
+    assert len(rows) == 1 and rows[0].split("|")[1:] == ["PENDING", repository], (label, rows)
+    retried = deliver(target, secret)
+    assert retried[0] == 200 and retried[1]["alreadyReceived"] is True and retried[1]["id"] == accepted[1]["id"], (label, retried)
+    assert query(f"SELECT count(*) FROM lane_webhook_events WHERE receiver_id='{receiver}'") == "1"
+
+
+def start_server(suffix):
+    """Start another server on the same disposable database with a different webhook base URL."""
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        extra_port = listener.getsockname()[1]
+    extra = f"http://127.0.0.1:{extra_port}"
+    extra_log = log.with_name(f"{log.stem}-{extra_port}{log.suffix}").open("w")
+    extra_process = subprocess.Popen([BINARY, "serve"], env=dict(env, LISTEN=f"127.0.0.1:{extra_port}", LANE_WEBHOOK_BASE_URL=extra + suffix), stdout=extra_log, stderr=extra_log)
+    for _ in range(100):
+        assert extra_process.poll() is None, "extra server exited during startup; inspect fixture log"
+        try:
+            if call("/health/ready", base=extra)[0] == 200:
+                return extra_process, extra, extra_log
+        except OSError:
+            time.sleep(0.05)
+    raise AssertionError("extra server readiness timeout")
+
+
 subprocess.run([BINARY, "migrate"], env=env, check=True, stdout=subprocess.DEVNULL)
 subprocess.run([BINARY, "check-schema"], env=env, check=True, stdout=subprocess.DEVNULL)
 sql(f"INSERT INTO lane_accounts VALUES('{ACCOUNT}','{TENANT}','{EPOCH}'); INSERT INTO lane_devices(account_id,id,name) VALUES('{ACCOUNT}','{DEVICE}','fixture');")
@@ -127,6 +197,22 @@ with log.open("w") as output:
         first = call("/lane.v1.LaneService/CreateRepository", request)
         assert first[0] == 200, first
         assert call("/lane.v1.LaneService/CreateRepository", request)[1]["result"]["version"]["versionId"] == first[1]["result"]["version"]["versionId"]
+        # Webhook endpoints: the documented origin-only base must yield a reachable endpoint, and
+        # each explicit base keeps its configured path. Requests go through the real HTTP router.
+        webhook_scenario("origin", api, "/webhooks")
+        for label, suffix, prefix, rewrite in [
+            ("origin slash", "/", "/webhooks", None),
+            ("explicit webhooks", "/webhooks", "/webhooks", None),
+            ("explicit webhooks slash", "/webhooks/", "/webhooks", None),
+            ("custom hooks", "/hooks/", "/hooks", ("/hooks/", "/webhooks/")),
+        ]:
+            extra_process, extra_api, extra_log = start_server(suffix)
+            try:
+                webhook_scenario(label, extra_api, prefix, rewrite)
+            finally:
+                extra_process.terminate()
+                extra_process.wait(timeout=15)
+                extra_log.close()
         task = identity()
         created = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": task, "repository": {"id": repository}, "title": "fixture"})
         assert created[0] == 200, created

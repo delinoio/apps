@@ -322,16 +322,32 @@ export class NativeAdapter implements LaneAdapter {
   }
 
   subscribe(listener: () => void) {
+    // Every subscription tracks the newest sequence it has accepted. Sharing
+    // one counter would let the first callback consume an event on behalf of
+    // all other subscribers. The baseline is rebased from the open store the
+    // first time an event arrives after the store generation changes, which
+    // covers registration before open(), reopening and data-space switches.
+    let observed: { generation: number; sequence: bigint } | undefined;
     const changed = (event: { spaceId?: string; sequence?: string }) => {
+      const info = this.info;
       if (
-        event.spaceId === this.info?.spaceId &&
-        event.sequence &&
-        /^\d+$/.test(event.sequence) &&
-        BigInt(event.sequence) > BigInt(this.info?.sequence || "0")
-      ) {
-        if (this.info && event.sequence) this.info.sequence = event.sequence;
-        listener();
-      }
+        !info ||
+        event.spaceId !== info.spaceId ||
+        !event.sequence ||
+        !/^\d+$/.test(event.sequence)
+      )
+        return;
+      if (!observed || observed.generation !== this.generation)
+        observed = {
+          generation: this.generation,
+          sequence: BigInt(
+            /^\d+$/.test(info.sequence || "") ? info.sequence : "0",
+          ),
+        };
+      const sequence = BigInt(event.sequence);
+      if (sequence <= observed.sequence) return;
+      observed.sequence = sequence;
+      listener();
     };
     this.events.addListener("lane.storeChanged", changed);
     return () => this.events.removeListener("lane.storeChanged", changed);

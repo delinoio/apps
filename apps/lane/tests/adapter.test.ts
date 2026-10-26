@@ -373,3 +373,163 @@ test("blocked synchronization items are retried through the local operation", as
     request: { spaceId: "space", request: {} },
   });
 });
+
+// An event source that retains every callback, like the real host bridge, so
+// fanout to several subscribers is observable.
+function fanoutHarness(openSequence: Record<string, string> = {}) {
+  const callbacks = new Set<
+    (event: { spaceId?: string; sequence?: string }) => void
+  >();
+  const module: LaneStoreModule = {
+    open(request, cb) {
+      const spaceId = JSON.parse(request).spaceId || "S";
+      cb(
+        JSON.stringify({
+          ok: true,
+          response: {
+            spaceId,
+            deviceId: "device",
+            formatVersion: 3,
+            schemaVersion: 3,
+            sequence: openSequence[spaceId] ?? "0",
+          },
+        }),
+      );
+    },
+    invoke(_method, _json, cb) {
+      cb(JSON.stringify({ ok: true, response: {} }));
+    },
+    close(_space, callback) {
+      callback({ ok: true, response: { completed: true } });
+    },
+  };
+  const events: EventSource = {
+    addListener(_name, cb) {
+      callbacks.add(cb);
+    },
+    removeListener(_name, cb) {
+      callbacks.delete(cb);
+    },
+  };
+  return {
+    adapter: new NativeAdapter(module, events),
+    callbacks,
+    emit: (spaceId: string | undefined, sequence: string | undefined) => {
+      for (const cb of [...callbacks]) cb({ spaceId, sequence });
+    },
+  };
+}
+
+test("every subscriber receives each newer event once regardless of registration order", async () => {
+  for (const openAfter of [0, 1, 2, 3]) {
+    const h = fanoutHarness();
+    const counts = [0, 0, 0];
+    const stops: (() => void)[] = [];
+    // Register `openAfter` subscribers before open() and the rest after it.
+    const register = (i: number) =>
+      stops.push(h.adapter.subscribe(() => counts[i]++));
+    for (let i = 0; i < openAfter; i++) register(i);
+    await h.adapter.open();
+    for (let i = openAfter; i < 3; i++) register(i);
+    h.emit("S", "1");
+    h.emit("S", "1");
+    h.emit("S", "2");
+    assert.deepEqual(counts, [2, 2, 2], `registered before open: ${openAfter}`);
+    stops.forEach((stop) => stop());
+    assert.equal(h.callbacks.size, 0);
+  }
+});
+
+test("registration order does not change which subscriber is notified", async () => {
+  const h = fanoutHarness();
+  await h.adapter.open();
+  const order: string[] = [];
+  const stopC = h.adapter.subscribe(() => order.push("C"));
+  const stopB = h.adapter.subscribe(() => order.push("B"));
+  const stopA = h.adapter.subscribe(() => order.push("A"));
+  h.emit("S", "1");
+  assert.deepEqual(order, ["C", "B", "A"]);
+  stopA();
+  stopB();
+  stopC();
+});
+
+test("duplicate, older, malformed and other-space events notify no subscriber", async () => {
+  const h = fanoutHarness({ S: "5" });
+  await h.adapter.open();
+  const counts = [0, 0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  h.emit("other", "9");
+  h.emit(undefined, "9");
+  h.emit("S", undefined);
+  h.emit("S", "");
+  h.emit("S", "bad");
+  h.emit("S", "-9");
+  h.emit("S", "9.5");
+  h.emit("S", "5");
+  h.emit("S", "4");
+  assert.deepEqual(counts, [0, 0, 0]);
+  h.emit("S", "9007199254740992");
+  h.emit("S", "9007199254740993");
+  h.emit("S", "9007199254740992");
+  assert.deepEqual(counts, [2, 2, 2]);
+  stops.forEach((stop) => stop());
+});
+
+test("unsubscribing one listener leaves the others active and removes its handler", async () => {
+  const h = fanoutHarness();
+  await h.adapter.open();
+  const counts = [0, 0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  assert.equal(h.callbacks.size, 3);
+  stops[0]();
+  assert.equal(h.callbacks.size, 2);
+  h.emit("S", "1");
+  assert.deepEqual(counts, [0, 1, 1]);
+  stops[1]();
+  stops[2]();
+  assert.equal(h.callbacks.size, 0);
+  h.emit("S", "2");
+  assert.deepEqual(counts, [0, 1, 1]);
+});
+
+test("switching data spaces and reopening rebase every subscriber without leaking old events", async () => {
+  const h = fanoutHarness({ S: "100", T: "0" });
+  await h.adapter.open("S");
+  const counts = [0, 0];
+  const stops = counts.map((_, i) => h.adapter.subscribe(() => counts[i]++));
+  h.emit("S", "101");
+  assert.deepEqual(counts, [1, 1]);
+  await h.adapter.open("T");
+  // An old event of the previous space and a stale high sequence stay silent.
+  h.emit("S", "102");
+  assert.deepEqual(counts, [1, 1]);
+  h.emit("T", "1");
+  assert.deepEqual(counts, [2, 2]);
+  h.emit("T", "1");
+  assert.deepEqual(counts, [2, 2]);
+  // Closing ignores events until reopened; a reopened store starts again from
+  // its own sequence, so a lower sequence from the earlier generation is new.
+  h.adapter.close();
+  h.emit("T", "2");
+  assert.deepEqual(counts, [2, 2]);
+  await h.adapter.open("T");
+  h.emit("T", "1");
+  assert.deepEqual(counts, [3, 3]);
+  stops.forEach((stop) => stop());
+  assert.equal(h.callbacks.size, 0);
+});
+
+test("a subscriber registered while closed starts observing once the store opens", async () => {
+  const h = fanoutHarness({ S: "7" });
+  let count = 0;
+  const stop = h.adapter.subscribe(() => count++);
+  h.emit("S", "8");
+  assert.equal(count, 0);
+  await h.adapter.open("S");
+  h.emit("S", "7");
+  assert.equal(count, 0);
+  h.emit("S", "8");
+  assert.equal(count, 1);
+  stop();
+});

@@ -575,3 +575,567 @@ async fn planning_tools_accept_typed_fields_filters_and_edits_and_reject_the_res
         assert!(!tool["inputSchema"].to_string().contains("\"origin\""));
     }
 }
+
+// ---- Format-2 capture and URL connection inputs ----
+
+const T: &str = "01900000-0000-7000-8000-000000000001";
+const A: &str = "01900000-0000-7000-8000-000000000002";
+const R: &str = "01900000-0000-7000-8000-000000000003";
+const V: &str = "01900000-0000-7000-8000-000000000004";
+const PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+fn camel(name: &str) -> String {
+    let mut out = String::new();
+    let mut upper = false;
+    for c in name.chars() {
+        if c == '_' {
+            upper = true;
+        } else if upper {
+            out.push(c.to_ascii_uppercase());
+            upper = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+/// Canonical ProtoJSON field names of a oneof-free message in `lane.proto`.
+fn proto_fields(message: &str) -> Vec<String> {
+    let proto = include_str!("../../../protos/lane/v1/lane.proto");
+    let header = format!("message {message} {{");
+    let start = proto.find(&header).unwrap_or_else(|| panic!("{message}"));
+    let mut names = Vec::new();
+    for line in proto[start + header.len()..].lines().skip(1) {
+        let line = line.split("//").next().unwrap().trim();
+        if line.starts_with('}') {
+            break;
+        }
+        let Some((declaration, _)) = line.split_once('=') else {
+            continue;
+        };
+        names.push(camel(declaration.split_whitespace().last().unwrap()));
+    }
+    names.sort();
+    names
+}
+fn property_names(schema: &Value) -> Vec<String> {
+    let mut names = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+async fn tool_schemas(app: Router) -> Value {
+    let (_, _, listed) = send(app, rpc("tools/list", json!({}))).await;
+    listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| (tool["name"].clone(), tool["inputSchema"].clone()))
+        .fold(json!({}), |mut all, (name, schema)| {
+            all[name.as_str().unwrap()] = schema;
+            all
+        })
+}
+fn advertised_accepts(schemas: &Value, name: &str, arguments: &Value) -> bool {
+    jsonschema::draft202012::new(&schemas[name])
+        .unwrap()
+        .is_valid(arguments)
+}
+async fn call(app: &Router, name: &str, arguments: &Value) -> Value {
+    send(
+        app.clone(),
+        rpc("tools/call", json!({"name":name, "arguments":arguments})),
+    )
+    .await
+    .2
+}
+fn capture_reference(sha256: &str, byte_size: usize) -> Value {
+    json!({"attachmentId":A, "width":1, "height":1, "sha256":sha256,
+        "byteSize":byte_size.to_string(), "pageUrl":"https://example.com/app/page",
+        "pageTitle":"Example page", "cssSelector":"main > img.hero"})
+}
+fn png_fixture() -> (String, usize) {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use sha2::{Digest, Sha256};
+    let bytes = STANDARD.decode(PNG_BASE64).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    (hex::encode(Sha256::digest(&bytes)), bytes.len())
+}
+fn version_fixture(kind: Value, body: (&str, Value)) -> Value {
+    let mut version = json!({"formatVersion":2, "entityId":T, "kind":kind, "versionId":V,
+        "parentVersionIds":[R, A], "createdAt":"2026-01-02T03:04:05Z", "deleted":false});
+    version[body.0] = body.1;
+    version
+}
+
+#[tokio::test]
+async fn capture_tools_advertise_exact_proto_derived_request_properties() {
+    let (app, _) = setup();
+    let schemas = tool_schemas(app).await;
+    for (tool, request) in [
+        (
+            "lane_begin_attachment_upload",
+            "BeginAttachmentUploadRequest",
+        ),
+        (
+            "lane_complete_attachment_upload",
+            "CompleteAttachmentUploadRequest",
+        ),
+        ("lane_create_capture_task", "CreateCaptureTaskRequest"),
+        ("lane_get_attachment", "GetAttachmentRequest"),
+        ("lane_list_url_connections", "ListURLConnectionsRequest"),
+        ("lane_create_url_connection", "CreateURLConnectionRequest"),
+        ("lane_save_url_connection", "SaveURLConnectionRequest"),
+        ("lane_delete_url_connection", "DeleteURLConnectionRequest"),
+    ] {
+        assert_eq!(
+            property_names(&schemas[tool]),
+            proto_fields(request),
+            "{tool}"
+        );
+        assert_eq!(schemas[tool]["additionalProperties"], false, "{tool}");
+    }
+    let images = &schemas["lane_create_capture_task"]["properties"]["images"];
+    assert_eq!(images["type"], "array");
+    assert_eq!(
+        property_names(&images["items"]),
+        proto_fields("CapturedImage")
+    );
+    let capture = &images["items"]["properties"]["capture"];
+    assert_eq!(property_names(capture), proto_fields("CaptureReference"));
+    assert_eq!(capture["properties"]["byteSize"]["type"], "string");
+    assert_eq!(
+        images["items"]["properties"]["png"]["contentEncoding"],
+        "base64"
+    );
+    assert_eq!(
+        property_names(&schemas["lane_create_url_connection"]["properties"]["connection"]),
+        proto_fields("URLConnection")
+    );
+    for tool in ["lane_save_task", "lane_resolve_conflict"] {
+        let task = if tool == "lane_save_task" {
+            &schemas[tool]["properties"]["task"]
+        } else {
+            &schemas[tool]["properties"]["resolved"]["properties"]["task"]
+        };
+        assert_eq!(task["properties"]["captures"]["items"], *capture, "{tool}");
+    }
+    // Every proto field of EntityVersion except the server-owned origin is advertised.
+    let resolved = &schemas["lane_resolve_conflict"]["properties"]["resolved"];
+    for field in ["urlConnection", "kind", "task", "repository"] {
+        assert!(resolved["properties"].get(field).is_some(), "{field}");
+    }
+    assert!(resolved["properties"].get("origin").is_none());
+    assert!(
+        resolved["properties"]["kind"]["oneOf"][0]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("ENTITY_KIND_URL_CONNECTION"))
+    );
+    assert!(
+        resolved["properties"]["kind"]["oneOf"][1]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(3))
+    );
+}
+
+#[tokio::test]
+async fn nonempty_capture_service_inputs_reach_the_backend_with_decoded_values() {
+    let (app, backend) = setup();
+    let schemas = tool_schemas(app.clone()).await;
+    let (sha256, size) = png_fixture();
+    let image = json!({"capture":capture_reference(&sha256, size), "png":PNG_BASE64});
+    let connection = json!({"prefix":"https://example.com/app/", "repositoryId":A});
+    let vectors = [
+        (
+            "BeginAttachmentUpload",
+            "lane_begin_attachment_upload",
+            json!({"taskId":T, "attachmentId":A, "epoch":V}),
+        ),
+        (
+            "CompleteAttachmentUpload",
+            "lane_complete_attachment_upload",
+            json!({"taskId":T, "attachmentId":A, "uploadId":R, "epoch":V}),
+        ),
+        (
+            "CreateCaptureTask",
+            "lane_create_capture_task",
+            json!({"meta":{"requestId":R}, "id":T, "repositoryId":A, "title":"Capture",
+                "description":"Body", "images":[image]}),
+        ),
+        (
+            "GetAttachment",
+            "lane_get_attachment",
+            json!({"taskId":T, "attachmentId":A}),
+        ),
+        (
+            "ListURLConnections",
+            "lane_list_url_connections",
+            json!({"page":{"size":1, "cursor":"c"}}),
+        ),
+        (
+            "CreateURLConnection",
+            "lane_create_url_connection",
+            json!({"meta":{"requestId":R}, "id":T, "connection":connection}),
+        ),
+        (
+            "SaveURLConnection",
+            "lane_save_url_connection",
+            json!({"meta":{"requestId":R}, "id":T, "expectedVersionId":V, "connection":connection}),
+        ),
+        (
+            "DeleteURLConnection",
+            "lane_delete_url_connection",
+            json!({"meta":{"requestId":R}, "id":T}),
+        ),
+    ];
+    for (method, name, arguments) in vectors {
+        assert!(advertised_accepts(&schemas, name, &arguments), "{name}");
+        let before = backend.calls.lock().unwrap().len();
+        let result = call(&app, name, &arguments).await;
+        assert_eq!(result["result"]["isError"], false, "{name}: {result}");
+        let calls = backend.calls.lock().unwrap();
+        assert_eq!(calls.len(), before + 1, "{name}");
+        let seen = calls.last().unwrap();
+        assert_eq!(seen.0, "lane.v1.CaptureService", "{name}");
+        assert_eq!(seen.1, method, "{name}");
+        assert_eq!(seen.2, arguments, "{name}");
+    }
+    // The nonempty image keeps every capture field, including optional browser
+    // metadata and the uint64 decimal-string byte size, and the PNG bytes.
+    let calls = backend.calls.lock().unwrap();
+    let created = &calls.iter().find(|c| c.1 == "CreateCaptureTask").unwrap().2;
+    let capture = &created["images"][0]["capture"];
+    assert_eq!(capture["attachmentId"], A);
+    assert_eq!(capture["width"], 1);
+    assert_eq!(capture["height"], 1);
+    assert_eq!(capture["sha256"], sha256);
+    assert_eq!(capture["byteSize"], size.to_string());
+    assert_eq!(capture["pageUrl"], "https://example.com/app/page");
+    assert_eq!(capture["pageTitle"], "Example page");
+    assert_eq!(capture["cssSelector"], "main > img.hero");
+    assert_eq!(created["images"][0]["png"], PNG_BASE64);
+}
+
+#[tokio::test]
+async fn optional_capture_metadata_may_be_absent_or_empty() {
+    let (app, backend) = setup();
+    let minimal = json!({"attachmentId":A, "width":1, "height":1, "sha256":"00", "byteSize":"5"});
+    let empty = json!({"attachmentId":A, "width":1, "height":1, "sha256":"00", "byteSize":"18446744073709551615",
+        "pageUrl":"", "pageTitle":"", "cssSelector":""});
+    for capture in [minimal, empty] {
+        let arguments = json!({"images":[{"capture":capture, "png":""}]});
+        let result = call(&app, "lane_create_capture_task", &arguments).await;
+        assert_eq!(result["result"]["isError"], false, "{result}");
+        // Absent optional strings stay absent and present empty strings stay present.
+        let seen = backend.calls.lock().unwrap().last().unwrap().2.clone();
+        for key in ["pageUrl", "pageTitle", "cssSelector"] {
+            assert_eq!(
+                seen["images"][0]["capture"].get(key),
+                arguments["images"][0]["capture"].get(key),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            seen["images"][0]["capture"]["byteSize"],
+            arguments["images"][0]["capture"]["byteSize"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn task_captures_are_accepted_by_save_task_and_conflict_resolution() {
+    let (app, backend) = setup();
+    let schemas = tool_schemas(app.clone()).await;
+    let (sha256, size) = png_fixture();
+    let reference = capture_reference(&sha256, size);
+    for captures in [json!([reference.clone()]), json!([])] {
+        let task = json!({"repositoryId":A, "title":"T", "captures":captures});
+        let resolved = version_fixture(json!("ENTITY_KIND_TASK"), ("task", task.clone()));
+        for (name, arguments) in [
+            (
+                "lane_save_task",
+                json!({"id":T, "expectedVersionId":V, "task":task}),
+            ),
+            (
+                "lane_resolve_conflict",
+                json!({"id":T, "expectedHeadIds":[V], "resolved":resolved}),
+            ),
+        ] {
+            assert!(advertised_accepts(&schemas, name, &arguments), "{name}");
+            let result = call(&app, name, &arguments).await;
+            assert_eq!(result["result"]["isError"], false, "{name}: {result}");
+            let seen = backend.calls.lock().unwrap().last().unwrap().clone();
+            assert_eq!(seen.0, "lane.v1.LaneService");
+            let task = if name == "lane_save_task" {
+                &seen.2["task"]
+            } else {
+                &seen.2["resolved"]["task"]
+            };
+            if captures.as_array().unwrap().is_empty() {
+                assert!(
+                    task.get("captures")
+                        .is_none_or(|c| c.as_array().unwrap().is_empty()),
+                    "{name}: {task}"
+                );
+            } else {
+                assert_eq!(task["captures"], captures, "{name}");
+            }
+        }
+    }
+    // Tasks that omit captures stay valid.
+    let result = call(&app, "lane_save_task", &json!({"task":{"title":"T"}})).await;
+    assert_eq!(result["result"]["isError"], false);
+}
+
+#[tokio::test]
+async fn url_connection_conflict_resolution_accepts_kind_name_and_number() {
+    let (app, backend) = setup();
+    let schemas = tool_schemas(app.clone()).await;
+    for kind in [json!("ENTITY_KIND_URL_CONNECTION"), json!(3)] {
+        let resolved = version_fixture(
+            kind,
+            (
+                "urlConnection",
+                json!({"prefix":"https://example.com/app/", "repositoryId":A}),
+            ),
+        );
+        let arguments = json!({"id":T, "expectedHeadIds":[V, R], "resolved":resolved});
+        assert!(advertised_accepts(
+            &schemas,
+            "lane_resolve_conflict",
+            &arguments
+        ));
+        let result = call(&app, "lane_resolve_conflict", &arguments).await;
+        assert_eq!(result["result"]["isError"], false, "{result}");
+        let seen = backend.calls.lock().unwrap().last().unwrap().clone();
+        assert_eq!(
+            (seen.0.as_str(), seen.1.as_str()),
+            ("lane.v1.LaneService", "ResolveConflict")
+        );
+        let resolved = &seen.2["resolved"];
+        assert_eq!(resolved["formatVersion"], 2);
+        assert_eq!(resolved["entityId"], T);
+        assert_eq!(resolved["versionId"], V);
+        assert_eq!(resolved["parentVersionIds"], json!([R, A]));
+        assert_eq!(resolved["createdAt"], "2026-01-02T03:04:05Z");
+        assert_eq!(
+            resolved["urlConnection"],
+            json!({"prefix":"https://example.com/app/", "repositoryId":A})
+        );
+        assert!(
+            resolved["kind"] == "ENTITY_KIND_URL_CONNECTION" || resolved["kind"] == 3,
+            "{resolved}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn entity_version_body_members_are_mutually_exclusive_in_schema_and_runtime() {
+    let (app, backend) = setup();
+    let schemas = tool_schemas(app.clone()).await;
+    let bodies = [
+        ("repository", json!({"normalizedUrl":"example.com/a"})),
+        ("task", json!({"title":"T"})),
+        ("urlConnection", json!({"prefix":"https://example.com/"})),
+        ("label", json!({"name":"L"})),
+        ("milestone", json!({"name":"M"})),
+        ("cycle", json!({"name":"C"})),
+    ];
+    // Each single body is valid; every pair, and every group of three or more, is not.
+    let mut groups = 0;
+    for mask in 1_u32..(1 << bodies.len()) {
+        let mut resolved = json!({"formatVersion":2, "entityId":T});
+        let mut members = 0;
+        for (index, (key, body)) in bodies.iter().enumerate() {
+            if mask & (1 << index) != 0 {
+                resolved[*key] = body.clone();
+                members += 1;
+            }
+        }
+        let arguments = json!({"resolved":resolved});
+        let before = backend.calls.lock().unwrap().len();
+        let result = call(&app, "lane_resolve_conflict", &arguments).await;
+        let schema_valid = advertised_accepts(&schemas, "lane_resolve_conflict", &arguments);
+        if members == 1 {
+            assert_eq!(result["result"]["isError"], false, "{arguments}: {result}");
+            assert!(schema_valid, "{arguments}");
+            assert_eq!(backend.calls.lock().unwrap().len(), before + 1);
+        } else {
+            assert_eq!(result["error"]["code"], -32602, "{arguments}: {result}");
+            assert!(!schema_valid, "advertised schema accepts {arguments}");
+            assert_eq!(backend.calls.lock().unwrap().len(), before);
+        }
+        groups += 1;
+    }
+    assert_eq!(groups, 63);
+    // The absent oneof stays valid in both layers.
+    let none = json!({"resolved":{"formatVersion":2}});
+    assert!(advertised_accepts(&schemas, "lane_resolve_conflict", &none));
+    assert_eq!(
+        call(&app, "lane_resolve_conflict", &none).await["result"]["isError"],
+        false
+    );
+    // The three format-2 bodies named by the capture contract.
+    for (first, second, third) in [("repository", "task", "urlConnection")] {
+        let all = json!({"resolved":{first:{}, second:{}, third:{}}});
+        assert!(!advertised_accepts(&schemas, "lane_resolve_conflict", &all));
+        assert_eq!(
+            call(&app, "lane_resolve_conflict", &all).await["error"]["code"],
+            -32602
+        );
+    }
+}
+
+#[tokio::test]
+async fn capture_and_url_connection_inputs_reject_invalid_values_before_dispatch() {
+    let (app, backend) = setup();
+    let schemas = tool_schemas(app.clone()).await;
+    let (sha256, size) = png_fixture();
+    let reference = capture_reference(&sha256, size);
+    let image = json!({"capture":reference, "png":PNG_BASE64});
+    let with = |mut base: Value, key: &str, value: Value| {
+        base[key] = value;
+        base
+    };
+    // (tool, arguments, whether the advertised schema must also reject it)
+    let cases = vec![
+        // Unknown fields at the request, connection, image and capture levels.
+        (
+            "lane_get_attachment",
+            json!({"taskId":T, "unknown":1}),
+            true,
+        ),
+        (
+            "lane_create_url_connection",
+            json!({"connection":{"prefix":"p", "unknown":1}}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[with(image.clone(), "unknown", json!(1))]}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "unknown", json!(1))}]}),
+            true,
+        ),
+        (
+            "lane_save_task",
+            json!({"task":{"captures":[with(reference.clone(), "unknown", json!(1))]}}),
+            true,
+        ),
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"task":{"captures":[with(reference.clone(), "unknown", json!(1))]}}}),
+            true,
+        ),
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"urlConnection":{"unknown":1}}}),
+            true,
+        ),
+        // Server-owned Origin through meta or resolved, at every nesting level.
+        (
+            "lane_create_url_connection",
+            json!({"meta":{"requestId":R, "origin":{"kind":"ORIGIN_KIND_MCP"}}}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"meta":{"origin":{"kind":"ORIGIN_KIND_APP"}}}),
+            true,
+        ),
+        (
+            "lane_save_url_connection",
+            json!({"meta":{"origin":{}}}),
+            true,
+        ),
+        (
+            "lane_delete_url_connection",
+            json!({"meta":{"origin":{}}}),
+            true,
+        ),
+        ("lane_create_capture_task", json!({"origin":{}}), true),
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"kind":3, "origin":{"kind":"ORIGIN_KIND_APP"}, "urlConnection":{}}}),
+            true,
+        ),
+        // Unknown enum names and numbers.
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"kind":"ENTITY_KIND_NOPE"}}),
+            true,
+        ),
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"kind":7}}),
+            true,
+        ),
+        // Wrong scalar shapes, including a numeric byteSize and out-of-range values.
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "byteSize", json!(1))}]}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "byteSize", json!("01"))}]}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "byteSize", json!("18446744073709551616"))}]}),
+            // The pattern cannot express the uint64 maximum; runtime validation does.
+            false,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "width", json!(4294967296_u64))}]}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"capture":with(reference.clone(), "pageUrl", json!(5))}]}),
+            true,
+        ),
+        (
+            "lane_create_capture_task",
+            json!({"images":{"capture":reference}}),
+            true,
+        ),
+        ("lane_save_task", json!({"task":{"captures":{}}}), true),
+        (
+            "lane_list_url_connections",
+            json!({"page":{"size":-1}}),
+            true,
+        ),
+        // Malformed base64 passes the structural schema and fails typed decoding.
+        (
+            "lane_create_capture_task",
+            json!({"images":[{"png":"%%%not base64"}]}),
+            false,
+        ),
+    ];
+    for (name, arguments, schema_rejects) in cases {
+        let result = call(&app, name, &arguments).await;
+        assert_eq!(
+            result["error"]["code"], -32602,
+            "{name}: {arguments}: {result}"
+        );
+        if schema_rejects {
+            assert!(
+                !advertised_accepts(&schemas, name, &arguments),
+                "advertised schema accepts {name}: {arguments}"
+            );
+        }
+    }
+    assert!(backend.calls.lock().unwrap().is_empty());
+}

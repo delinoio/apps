@@ -1,6 +1,6 @@
 # Install Lane
 
-The CLI is named `lane`. The npm package is `@delinoio/lane`. The shared Delino release publishes CLI and desktop archives on [GitHub Releases](https://github.com/delinoio/apps/releases). Each `delino@vMAJOR.MINOR.PATCH` release includes checksums and the source revision. The CLI/npm version can differ from the Delino tag version. The downloadable npm archive does not establish npm registry publication. macOS desktop archives are ad-hoc signed; Windows x64 desktop archives are unsigned and portable. Formal signing/notarization and store publication remain separate.
+The CLI is named `lane`. The npm package is `@delinoio/lane`. The Lane release publishes CLI and desktop archives on [GitHub Releases](https://github.com/delinoio/apps/releases). Each `lane@vMAJOR.MINOR.PATCH` release includes checksums and the source revision. The CLI/npm version can differ from the Lane release tag version. The downloadable npm archive does not establish npm registry publication. macOS desktop archives are ad-hoc signed; Windows x64 desktop archives are unsigned and portable. Formal signing/notarization and store publication remain separate.
 
 ## npm
 

@@ -14,6 +14,8 @@ import {
   draftFor,
   receiveExternal,
   historyChanges,
+  historyBaseline,
+  historyEntryChanges,
   heads,
   conflicted,
 } from "../src/model.ts";
@@ -88,4 +90,24 @@ test("whole-task conflict includes every unique head", () => {
     heads(r).map((h) => h.versionId),
     ["a", "b"],
   );
+});
+test("history baselines follow declared parents", () => {
+  const entry = (id: string, parents: string[]) =>
+    create(EntityVersionSchema, {
+      ...version(id, id),
+      versionId: id,
+      parentVersionIds: parents,
+    });
+  const a = entry("a", []);
+  const b = entry("b", ["a"]);
+  const c = entry("c", ["a"]);
+  const r = entry("r", ["b", "c"]);
+  const loaded = [b, c];
+  assert.equal(historyBaseline(loaded, a).kind, "creation");
+  assert.equal(historyBaseline(loaded, c).kind, "pending");
+  assert.equal(historyBaseline([a, b, c], c).kind, "parent");
+  assert.equal(historyBaseline([a, b, c], r).kind, "merge");
+  assert.deepEqual(historyEntryChanges(loaded, c), []);
+  assert.deepEqual(historyEntryChanges([a, b, c, r], r), []);
+  assert.deepEqual(historyEntryChanges([a, b, c], c), historyChanges(a, c));
 });

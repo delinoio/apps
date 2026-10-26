@@ -623,6 +623,27 @@ std::string normalizeURL(std::string s) {
   fold(decoded);
   return host + (port.empty() ? "" : ":" + port) + "/" + decoded;
 }
+// Normalize an already normalized `host[:port]/path` repository identifier.
+// The identifier carries no transport, so no transport default may be stripped
+// from it: normalizeURL() removes port 443 for HTTPS but keeps it for SSH, and
+// keeps port 22 for HTTPS. Treat an explicit :443 as SSH and every other
+// identifier as HTTPS so that an explicit port is never removed. A synthetic
+// terminal ".git" is appended because normalization removes one, and a
+// normalized path may itself end in ".git".
+std::string normalizeIdentifier(const std::string &identifier) {
+  // The synthetic ".git" below would otherwise hide a trailing slash that
+  // normalization strips, accepting a noncanonical identifier.
+  require(identifier.find("://") == std::string::npos &&
+              (identifier.empty() || identifier.back() != '/'),
+          "Invalid repository identifier.");
+  auto authority = identifier.substr(0, identifier.find('/'));
+  auto colon = authority.rfind(':');
+  bool explicit443 = colon != std::string::npos &&
+                     authority.find(']') == std::string::npos &&
+                     authority.substr(colon + 1) == "443";
+  return normalizeURL(std::string(explicit443 ? "ssh" : "https") + "://" +
+                      identifier + ".git");
+}
 J canonical(J j) {
   if (j.is_object()) {
     J r = J::object();
@@ -2152,7 +2173,7 @@ struct Store::Impl {
           body = resolved.at("repository");
           fields(body, {"normalizedUrl", "displayName"});
           require(str(body, "normalizedUrl") ==
-                  normalizeURL("https://" + str(body, "normalizedUrl")));
+                  normalizeIdentifier(str(body, "normalizedUrl")));
           uniqueURL(d, str(body, "normalizedUrl"), e);
         } else {
           body = taskBody(d, resolved.at("task"));
@@ -2886,7 +2907,7 @@ struct Store::Impl {
     } else {
       auto b = v.at("repository");
       fields(b, {"normalizedUrl", "displayName"});
-      require(normalizeURL("https://" + str(b, "normalizedUrl")) ==
+      require(normalizeIdentifier(str(b, "normalizedUrl")) ==
               str(b, "normalizedUrl"));
     }
   }

@@ -1,0 +1,114 @@
+name: Deploy one component and record success
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      component:
+        required: true
+        type: string
+      options:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    outputs:
+      tagged: ${{ steps.status.outputs.tagged }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Check this component success tag
+        id: status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+          RELEASE_COMPONENT: ${{ fromJSON(inputs.component).component }}
+        run: node "scripts/release/complete.mjs" status
+  web:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && toJSON(fromJSON(inputs.component).apps) != '[]'
+    uses: ./.github/workflows/deploy-web.yml
+    with:
+      revision: ${{ inputs.revision }}
+      version: ${{ fromJSON(inputs.component).version }}
+      apps: ${{ toJSON(fromJSON(inputs.component).apps) }}
+    secrets: inherit
+  lane:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'lane' && fromJSON(inputs.component).binaries
+    permissions:
+      contents: write
+    uses: ./.github/workflows/deploy-lane.yml
+    with:
+      revision: ${{ inputs.revision }}
+      tag: ${{ fromJSON(inputs.component).tag }}
+    secrets: inherit
+  perfine:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).component == 'perfine' && fromJSON(inputs.component).binaries
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/deploy-perfine.yml
+    with:
+      revision: ${{ inputs.revision }}
+      tag: v${{ fromJSON(inputs.component).version }}
+      publish: true
+    secrets: inherit
+  mobile:
+    needs: status
+    if: needs.status.outputs.tagged != 'true' && fromJSON(inputs.component).mobile
+    uses: ./.github/workflows/deploy-delitools-mobile.yml
+    with:
+      revision: ${{ inputs.revision }}
+      build_number: ${{ fromJSON(inputs.options).mobileBuildNumber }}
+      platform: ${{ fromJSON(inputs.options).mobilePlatform }}
+      publish: ${{ fromJSON(inputs.options).mobilePublish }}
+    secrets: inherit
+  complete:
+    needs: [status, web, lane, perfine, mobile]
+    if: >-
+      ${{ !cancelled() && needs.status.result == 'success' &&
+      (needs.status.outputs.tagged == 'true' ||
+      ((toJSON(fromJSON(inputs.component).apps) == '[]' || needs.web.result == 'success') &&
+      (!fromJSON(inputs.component).binaries || (fromJSON(inputs.component).component == 'lane' && needs.lane.result == 'success') || (fromJSON(inputs.component).component == 'perfine' && needs.perfine.result == 'success')) &&
+      (!fromJSON(inputs.component).mobile || needs.mobile.result == 'success'))) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Create release bot token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: apps
+          permission-contents: write
+      - name: Tag only this successful component
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+          RELEASE_COMPONENT: ${{ fromJSON(inputs.component).component }}
+        run: node "scripts/release/complete.mjs"

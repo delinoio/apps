@@ -278,8 +278,23 @@ const PLANNING_KEYS: [&str; 12] = [
     "relatedTaskIds",
     "duplicateOfTaskId",
 ];
+/// Validate an already normalized `host[:port]/path` repository identifier.
+///
+/// The identifier carries no transport, so no transport default may be stripped from it.
+/// `normalize_url` removes port 443 for HTTPS but keeps it for SSH, and keeps port 22 for HTTPS.
+/// Validate an explicit port 443 as SSH and every other identifier as HTTPS so that no explicit
+/// port is ever removed. A synthetic terminal `.git` is appended because normalization removes
+/// one, and a normalized path may itself end in `.git`.
+fn normalized_repository_identifier(identifier: &str) -> Result<String> {
+    let authority = identifier.split('/').next().unwrap_or_default();
+    let explicit_443 = authority
+        .rsplit_once(':')
+        .is_some_and(|(_, port)| port.parse::<u16>() == Ok(443));
+    let scheme = if explicit_443 { "ssh" } else { "https" };
+    normalize_url(&format!("{scheme}://{identifier}.git"))
+}
 pub(crate) fn repository_body(v: &Value) -> Result<Value> {
-    let normalized = normalize_url(&format!("https://{}.git", string(v, "normalizedUrl")))?;
+    let normalized = normalized_repository_identifier(string(v, "normalizedUrl"))?;
     let mut b = json!({"normalizedUrl":normalized});
     if let Some(name) = v.get("displayName").filter(|v| !v.is_null()) {
         if !name.is_string() {
@@ -342,6 +357,25 @@ pub(crate) async fn canonical_repository(
     .fetch_optional(db)
     .await?
     .unwrap_or_else(|| repository.to_owned()))
+}
+/// Every spelling of one repository inside an account: the canonical ID first, then each local
+/// alias mapped to it. Alias-owned rows and canonical-owned rows are the same repository.
+pub(crate) async fn repository_identities(
+    db: &mut PgConnection,
+    account: &str,
+    canonical: &str,
+) -> Result<Vec<String>> {
+    let mut identities = vec![canonical.to_owned()];
+    identities.extend(
+        sqlx::query_scalar::<_, String>(
+            "SELECT local_id FROM lane_repository_mappings WHERE account_id=$1 AND canonical_id=$2 ORDER BY local_id",
+        )
+        .bind(account)
+        .bind(canonical)
+        .fetch_all(db)
+        .await?,
+    );
+    Ok(identities)
 }
 pub async fn require_repository(
     db: &mut PgConnection,
@@ -448,6 +482,30 @@ pub(crate) async fn validate_body(
         }
     }
     Ok(())
+}
+/// Prompt-history membership of a task version, shared by the interactive and sync write paths so
+/// equivalent version graphs classify identically.
+///
+/// A version is a member when it is an explicit prompt restoration, or when its normalized prompt
+/// or ordered captures differ from any of its parent snapshots. A version without parents is a
+/// member when it carries a prompt. Prompt absence and the empty prompt are distinct; omitted,
+/// null and empty capture arrays are equal.
+pub(crate) fn prompt_version(restoration: bool, parents: &[Value], task: &Value) -> bool {
+    fn prompt(task: &Value) -> Option<&Value> {
+        task.get("prompt").filter(|v| !v.is_null())
+    }
+    fn captures(task: &Value) -> Option<&Value> {
+        task.get("captures")
+            .filter(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
+    }
+    restoration
+        || if parents.is_empty() {
+            prompt(task).is_some()
+        } else {
+            parents.iter().any(|old| {
+                prompt(&old["task"]) != prompt(task) || captures(&old["task"]) != captures(task)
+            })
+        }
 }
 pub(crate) async fn insert_version(
     db: &mut PgConnection,
@@ -1030,7 +1088,6 @@ pub async fn dispatch(
         } else {
             let e = existing.ok_or_else(|| fault(2, "entity not found"))?;
             let hs = heads(db, &p.account_id, &entity_id).await?;
-            let current = stored_version(db, &p.account_id, &entity_id, &e.accepted).await?;
             let resolving = method == "ResolveConflict";
             if !resolving && hs.len() != 1 {
                 return Err(fault(4, "conflicted entity is read-only"));
@@ -1178,10 +1235,18 @@ pub async fn dispatch(
             let mut v = version(&entity_id, e.kind, &parents, Some(body), p);
             v["promptRestoration"] = json!(method == "RestorePrompt");
             validate_body(db, &p.account_id, &entity_id, e.kind, &v).await?;
-            let prompt = method == "RestorePrompt"
-                || (e.kind == TASK
-                    && (current["task"].get("prompt") != v["task"].get("prompt")
-                        || current["task"].get("captures") != v["task"].get("captures")));
+            // Membership is a property of the version graph: compare with the submitted parent
+            // snapshots, never with the accepted head, which a stale save or a resolution need
+            // not have as its parent.
+            let prompt = if e.kind == TASK {
+                let mut snapshots = Vec::with_capacity(parents.len());
+                for parent in &parents {
+                    snapshots.push(stored_version(db, &p.account_id, &entity_id, parent).await?);
+                }
+                prompt_version(method == "RestorePrompt", &snapshots, &v["task"])
+            } else {
+                false
+            };
             insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
             if resolving || parents == hs {
                 sqlx::query("DELETE FROM lane_heads WHERE account_id=$1 AND entity_id=$2")
@@ -1261,5 +1326,62 @@ mod tests {
     fn normalized_repository_body_does_not_strip_another_suffix() {
         let v = json!({"normalizedUrl":"example.com/a.git"});
         assert_eq!(repository_body(&v).unwrap(), v);
+    }
+    #[test]
+    fn normalized_repository_body_preserves_explicit_ports() {
+        for url in [
+            "example.com:443/a/b",
+            "example.com:22/a/b",
+            "example.com:2222/a/b",
+            "example.com:8443/a/b",
+            "example.com/a/b",
+            "example.com:443/a/b.git",
+            "example.com/Mixed/Case",
+            "[::1]:443/a/b",
+        ] {
+            let v = json!({"normalizedUrl":url});
+            assert_eq!(repository_body(&v).unwrap(), v, "{url}");
+            let named = json!({"normalizedUrl":url,"displayName":"Name"});
+            assert_eq!(repository_body(&named).unwrap(), named, "{url}");
+        }
+    }
+    #[test]
+    fn raw_input_normalization_removes_only_transport_defaults() {
+        for (raw, expected) in [
+            ("ssh://git@example.com:443/a/b.git", "example.com:443/a/b"),
+            ("git@example.com:a/b.git", "example.com/a/b"),
+            ("ssh://git@example.com:22/a/b.git", "example.com/a/b"),
+            ("https://example.com:443/a/b.git", "example.com/a/b"),
+            ("ssh://git@example.com:2222/a/b", "example.com:2222/a/b"),
+            ("https://example.com:22/a/b", "example.com:22/a/b"),
+            ("https://example.com:8443/a/b", "example.com:8443/a/b"),
+        ] {
+            assert_eq!(normalize_url(raw).unwrap(), expected, "{raw}");
+            let v = json!({"normalizedUrl":expected});
+            assert_eq!(repository_body(&v).unwrap(), v, "{raw}");
+        }
+    }
+    #[test]
+    fn normalized_repository_body_rejects_malformed_identifiers() {
+        for url in [
+            "",
+            "example.com",
+            "example.com/",
+            "/a/b",
+            "example.com/a/../b",
+            "example.com/a/./b",
+            "example.com:443/a/%2Fb",
+            "example.com:443/a/%5Cb",
+            "example.com:443/a?x=1",
+            "example.com:443/a#frag",
+            "example.com:443\\a",
+            "example.com:443/a/%zz",
+            "example.com:abc/a/b",
+        ] {
+            assert!(
+                repository_body(&json!({"normalizedUrl":url})).is_err(),
+                "{url:?}"
+            );
+        }
     }
 }

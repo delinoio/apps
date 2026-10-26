@@ -86,7 +86,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   );
   const [repositories, setRepositories] = useState<EntityResult[]>([]);
   const [tasks, setTasks] = useState<EntityResult[]>([]);
-  const [cursor, setCursor] = useState("");
+  const [cursor, setCursorState] = useState("");
+  // Mirrors `cursor` synchronously so a continuation never starts from a
+  // cursor that an earlier page has already consumed.
+  const cursorRef = useRef("");
+  const setCursor = (next: string) => {
+    cursorRef.current = next;
+    setCursorState(next);
+  };
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
@@ -105,6 +113,17 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [discard, setDiscard] = useState<() => void>();
   const [pendingCount, setPendingCount] = useState(0);
   const queryGeneration = useRef(0);
+  // Owner of the single in-flight "Load more tasks" request. A continuation
+  // may publish its page and release the lock only while it is still the
+  // owner, so a settled, superseded or stale completion cannot append twice,
+  // roll the cursor back or free a newer request's lock.
+  const continuation = useRef<object | undefined>(undefined);
+  // Starts a new query generation and drops continuation ownership with it.
+  const advanceQueryGeneration = () => {
+    continuation.current = undefined;
+    setLoadingMore(false);
+    return ++queryGeneration.current;
+  };
   // Identifies the open data space; native route and reset switches change it.
   const planning = usePlanning(
     adapter,
@@ -251,7 +270,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   });
   useEffect(() => {
     if (!adapter || miniApp !== MiniApp.Lane) return;
-    const generation = ++queryGeneration.current;
+    const generation = advanceQueryGeneration();
     setError("");
     setListError("");
     if (filterInvalid) {
@@ -387,7 +406,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       void (async () => {
         try {
           if (route.spaceId) {
-            ++queryGeneration.current;
+            advanceQueryGeneration();
             setTasks([]);
             setRepositories([]);
             setDraft(undefined);
@@ -694,7 +713,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                 </Notice>
                               ) : loading ? (
                                 <text>Loading…</text>
-                              ) : listError ? (
+                              ) : listError && tasks.length === 0 ? (
                                 <view className="empty">
                                   <text className="heading">
                                     Tasks could not be loaded
@@ -771,34 +790,55 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                   );
                                 })
                               )}
+                              {/* A failed continuation keeps the loaded rows and shows its error here; the first page failing still uses the full error view above. */}
+                              {listError && tasks.length > 0 && (
+                                <Notice>{listError}</Notice>
+                              )}
                               {!loading && tasks.length > 0 && cursor && (
                                 <Button
+                                  disabled={loadingMore}
                                   onClick={() => {
+                                    // Reserve synchronously: repeated taps or
+                                    // Enter/Space presses can arrive before
+                                    // React re-renders the disabled state.
+                                    if (
+                                      continuation.current ||
+                                      !cursorRef.current
+                                    )
+                                      return;
+                                    const owner = {};
                                     const generation = queryGeneration.current;
+                                    continuation.current = owner;
+                                    setLoadingMore(true);
+                                    setListError("");
+                                    const owns = () =>
+                                      continuation.current === owner &&
+                                      generation === queryGeneration.current;
                                     void adapter
                                       .call(
                                         LaneService.method.listTasks,
-                                        listRequest(cursor),
+                                        listRequest(cursorRef.current),
                                       )
                                       .then(
                                         (r) => {
-                                          if (
-                                            generation ===
-                                            queryGeneration.current
-                                          ) {
+                                          if (owns()) {
                                             setTasks((t) => [...t, ...r.items]);
                                             setCursor(r.nextCursor);
                                           }
                                         },
                                         (e) => {
                                           // An obsolete query's failure must not replace current results.
-                                          if (
-                                            generation ===
-                                            queryGeneration.current
-                                          )
+                                          if (owns())
                                             setListError(describeError(e));
                                         },
-                                      );
+                                      )
+                                      .finally(() => {
+                                        // Only the owner releases the lock, on success and failure.
+                                        if (continuation.current === owner) {
+                                          continuation.current = undefined;
+                                          setLoadingMore(false);
+                                        }
+                                      });
                                   }}
                                 >
                                   Load more tasks

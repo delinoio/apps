@@ -190,8 +190,11 @@ only for the behavior specified here; Pace remains outside this scope.
 
 `apps/lane-chrome-extension/src` owns a Manifest V3 extension with `activeTab`,
 `scripting`, `nativeMessaging`, and `storage` permissions. Incognito is disabled.
-The selector runs in Chrome's isolated world. It sends a selected visible rectangle
-and literal metadata to the extension worker. The worker captures the active tab,
+The selector runs in Chrome's isolated world. It accepts only genuine user input
+(`isTrusted === true`) for pointer selection, Tab traversal, Enter capture, click
+capture and Escape cancellation; page-dispatched events share the DOM but are
+ignored before any side effect so the session stays intact. It sends a selected
+visible rectangle and literal metadata to the extension worker. The worker captures the active tab,
 crops the selected rectangle in memory using the screenshot's pixel dimensions,
 and sends only that PNG to Lane. Lane validates and appends it to the existing
 composer; the extension cannot save a task. A DOM shortcut without an active tab
@@ -199,6 +202,27 @@ grant explains that the user must first click the extension on that page.
 In-app DOM actions focus the last connected approved Chrome profile and select
 its last-focused active tab. Only that profile receives an activation request.
 DOM shortcuts retain the foreground Chrome check and do not activate a browser.
+Chrome hides a tab's URL until the extension has access to it, and the extension
+requests neither the `tabs` nor host permissions. A native selection request whose
+active normal tab has an omitted or empty URL therefore returns `PERMISSION_REQUIRED`
+and the click-extension guidance, without status requests, activation, injection or
+capture. Only a known restricted URL, a file URL, a Web Store URL, an incognito tab
+or a missing tab is `UNSUPPORTED_PAGE`. The Web Store exclusion compares the parsed
+HTTPS hostname and path: `chromewebstore.google.com`, and `chrome.google.com` with
+the path `/webstore` or `/webstore/...`, are excluded regardless of query or
+fragment. Hostname lookalikes and sibling paths such as `/webstorefront` are
+ordinary pages.
+
+The extension service worker is a module worker and must not use top-level `await`:
+Chromium rejects asynchronous module graphs for service workers. It restricts
+`chrome.storage.local` to trusted extension contexts by starting that setting at
+module evaluation without awaiting it, registers every message, command and
+tab-removal listener synchronously, and makes every credential read or write,
+native message, screenshot and selector injection wait for the setting to succeed.
+If the setting fails, the worker logs the failure once, replies or shows a status
+with a reload remedy, and performs no protected work until Chrome restarts the
+worker. Node fixtures and a static top-level-await check cover this ordering; they
+do not replace loading the unpacked build in Chrome and restarting its worker.
 
 The desktop `chrome-bridge.mjs` owns profile approval and token-hash persistence.
 `chrome-native-host.mjs` is a Chrome-launched stdio relay to an already running
@@ -206,7 +230,12 @@ Lane Unix socket or Windows named pipe. It never starts Lane or serves HTTP.
 The endpoint uses a per-run secret; runtime files and Unix sockets use owner-only
 permissions. Stored profile approvals are device-local and are not synchronized.
 Revocation invalidates credentials and closes matching connections. The OS-user
-boundary applies to the desktop bridge and its state.
+boundary applies to the desktop bridge and its state. Every transition of a profile
+to connected, including an authenticated `connect` on a new socket for an already
+approved profile, sends one status notification after the connection is assigned, so
+the adapter raises `lane.realqa.changed` and a mounted settings view refreshes
+without a status poll or another user action. Reconnection stays an extension action
+and never bypasses approval.
 
 The existing Lane installer bundles the relay with a private runtime or standalone
 executable and registers exact extension origins through the extension's
