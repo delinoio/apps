@@ -567,3 +567,22 @@ test("a notification preference save started for A is retired when B is installe
     },
   );
 });
+
+test("an explicit connection retry invalidates retained queries after the session is confirmed", async () => {
+  const h = harness();
+  await h.lane.start();
+  await tick();
+  h.sessionMode("network");
+  await assert.rejects(h.lane.resume(), /network down/);
+  h.events.length = 0;
+  // A failed retry confirms nothing, so nothing is invalidated.
+  await assert.rejects(h.lane.start(), /network down/);
+  assert.deepEqual(h.events, []);
+  // The successful retry reloads views that kept a failed-loading state.
+  h.sessionMode("ok");
+  await h.lane.start();
+  assert.equal(h.events.at(-1), "invalidate");
+  assert.equal(h.events.filter((e) => e === "invalidate").length, 1);
+  await list(h);
+  h.lane.stop();
+});

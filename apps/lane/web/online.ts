@@ -140,8 +140,14 @@ export class OnlineLane {
       );
     return response.status === 204 ? {} : response.json();
   }
+  // Initial connection and the explicit retry control. A reconciliation that
+  // failed transiently rejected in-flight reads and their views kept the error,
+  // and the same-account host does not reload the view, so a confirmed session
+  // also invalidates retained queries, as resume() does. A same-account watch
+  // restart cannot be relied on to notify an account with no changes.
   async start() {
     await this.reconcile();
+    if (this.session && !this.unavailable) this.options.invalidate();
   }
   // Reads GET /auth/session and installs the newest accepted identity. Concurrent
   // calls are serialized by recency: only the most recently started request may
