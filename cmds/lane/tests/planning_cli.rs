@@ -883,11 +883,9 @@ fn planning_item_conflicts_list_get_and_resolve_by_kind() {
     );
     let listed = h.ok(&["conflict", "list", "--kind", "label"]);
     assert_eq!(listed["items"].as_array().unwrap().len(), 1);
-    assert!(
-        h.ok(&["conflict", "list", "--kind", "milestone"])["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        h.ok(&["conflict", "list", "--kind", "milestone"])["items"],
+        json!([])
     );
     assert_eq!(
         h.ok(&["conflict", "list"])["items"]
@@ -911,10 +909,8 @@ fn planning_item_conflicts_list_get_and_resolve_by_kind() {
     args.extend(["--resolved-json", resolved.as_str()]);
     let result = h.ok(&args);
     assert_eq!(result["result"]["version"]["label"]["name"], "Final");
-    assert!(
-        h.ok(&["conflict", "list", "--kind", "label"])["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        h.ok(&["conflict", "list", "--kind", "label"])["items"],
+        json!([])
     );
 }
