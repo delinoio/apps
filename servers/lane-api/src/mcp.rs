@@ -388,6 +388,63 @@ macro_rules! field {
 }
 fn fields(message: &str) -> &'static [Field] {
     match message {
+        "BeginAttachmentUploadRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+            field!("epoch", "string", false),
+        ],
+        "CompleteAttachmentUploadRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+            field!("uploadId", "string", false),
+            field!("epoch", "string", false),
+        ],
+        "CreateCaptureTaskRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("repositoryId", "string", false),
+            field!("title", "string", false),
+            field!("description", "string", false),
+            field!("images", "CapturedImage", true),
+        ],
+        "GetAttachmentRequest" => &[
+            field!("taskId", "string", false),
+            field!("attachmentId", "string", false),
+        ],
+        "ListURLConnectionsRequest" => &[field!("page", "Page", false)],
+        "CreateURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("connection", "URLConnection", false),
+        ],
+        "SaveURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+            field!("expectedVersionId", "string", false),
+            field!("connection", "URLConnection", false),
+        ],
+        "DeleteURLConnectionRequest" => &[
+            field!("meta", "MutationMeta", false),
+            field!("id", "string", false),
+        ],
+        "CapturedImage" => &[
+            field!("capture", "CaptureReference", false),
+            field!("png", "bytes", false),
+        ],
+        "CaptureReference" => &[
+            field!("attachmentId", "string", false),
+            field!("width", "uint32", false),
+            field!("height", "uint32", false),
+            field!("sha256", "string", false),
+            field!("byteSize", "uint64", false),
+            field!("pageUrl", "string", false),
+            field!("pageTitle", "string", false),
+            field!("cssSelector", "string", false),
+        ],
+        "URLConnection" => &[
+            field!("prefix", "string", false),
+            field!("repositoryId", "string", false),
+        ],
         "BeginDataDeletionRequest" => &[
             field!("meta", "MutationMeta", false),
             field!("mode", "DataDeletionMode", false),
@@ -474,6 +531,7 @@ fn fields(message: &str) -> &'static [Field] {
             field!("deleted", "bool", false),
             field!("repository", "Repository", false),
             field!("task", "Task", false),
+            field!("urlConnection", "URLConnection", false),
             field!("label", "Label", false),
             field!("milestone", "Milestone", false),
             field!("cycle", "Cycle", false),
@@ -687,6 +745,7 @@ fn fields(message: &str) -> &'static [Field] {
             field!("prompt", "string", false),
             field!("progress", "Progress", false),
             field!("proposal", "Proposal", false),
+            field!("captures", "CaptureReference", true),
             field!("priority", "TaskPriority", false),
             field!("type", "TaskType", false),
             field!("labelIds", "string", true),
@@ -798,7 +857,14 @@ fn enum_values(kind: &str) -> Option<&'static [&'static str]> {
 fn oneof(message: &str) -> &[&str] {
     match message {
         "RepositoryTarget" => &["id", "url"],
-        "EntityVersion" => &["repository", "task", "label", "milestone", "cycle"],
+        "EntityVersion" => &[
+            "repository",
+            "task",
+            "urlConnection",
+            "label",
+            "milestone",
+            "cycle",
+        ],
         "PlanningBody" => &["label", "milestone", "cycle"],
         _ => &[],
     }
@@ -835,8 +901,20 @@ fn schema(kind: &str) -> Value {
             let choices = oneof(kind);
             if !choices.is_empty() {
                 // Protobuf permits an absent oneof. Business validation decides
-                // whether a particular command requires a selected member.
-                result["not"] = json!({"required":choices});
+                // whether a particular command requires a selected member. Every
+                // pair is excluded separately: one `not` over all members would
+                // advertise invalid pairs as valid, while runtime validation
+                // rejects any two members.
+                let pairs = choices
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, first)| {
+                        choices[index + 1..]
+                            .iter()
+                            .map(move |second| json!({"not":{"required":[first, second]}}))
+                    })
+                    .collect::<Vec<_>>();
+                result["allOf"] = Value::Array(pairs);
             }
             result
         }
