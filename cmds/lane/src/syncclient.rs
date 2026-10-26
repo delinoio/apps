@@ -224,8 +224,10 @@ fn dependency_order(rows: &[Pending]) -> Vec<usize> {
     }
     order
 }
-/// Select the next upload batch in causal order: stored (creation) order, adjusted so a
-/// version follows the pending creations it references. A pending version is held back while
+/// Select the next upload batch in causal order.
+///
+/// The stored (creation) order is adjusted so a version follows the pending creations it
+/// references. A pending version is held back while
 /// an earlier version of the same entity is blocked, because the server never accepted its
 /// parent, and while it references an entity whose creation is blocked or itself held back.
 /// Both resume after the blocked item is retried or corrected, so dependent pushes never

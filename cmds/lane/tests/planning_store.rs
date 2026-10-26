@@ -942,7 +942,7 @@ fn corrected_task_uploads_after_the_label_it_was_corrected_with() {
             .map(|m| strv(&m["version"], "entityId").to_owned())
             .collect()
     };
-    let expected = vec![repo.clone(), label_id.clone(), task_id.clone()];
+    let expected = vec![repo, label_id, task_id.clone()];
     assert_eq!(
         batch(&store),
         expected,
