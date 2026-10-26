@@ -55,7 +55,11 @@ import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
 import { savedCaptureRoute } from "./captures-model";
 import { CommandPalette } from "./CommandPalette";
-import { EditorLifetime, readTaskOwned } from "./editorLifetime";
+import {
+  beginEditorCompletion,
+  EditorLifetime,
+  readTaskOwned,
+} from "./editorLifetime";
 import {
   destinations,
   DestinationKind,
@@ -333,11 +337,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   );
   const lookup = lookupOf(planning.items, new Map(), repositoryNames);
   const activeFilters = activeFilterCount(filter);
-  const navigate = (fn: () => void) => {
+  // `retainsEditor` marks a transition that only starts a task read: the current
+  // editor stays on screen until that read publishes a task, so it keeps the right
+  // to apply the completion of a mutation it submitted if the read fails.
+  const navigate = (fn: () => void, retainsEditor = false) => {
     const proceed = () => {
       // An accepted transition supersedes earlier reads; a pending discard prompt
       // or its cancellation does not.
-      editorLifetime.supersede();
+      if (retainsEditor) editorLifetime.supersedeReads();
+      else editorLifetime.supersede();
       if (planningDirty) {
         // Remount the manager so confirmed discards also apply when the page stays the same.
         setPlanningDirty(false);
@@ -421,6 +429,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             advanceQueryGeneration();
             setTasks([]);
             setRepositories([]);
+            editorLifetime.replaceEditor();
             setDraft(undefined);
             setCurrent(undefined);
             await adapter.open(route.spaceId);
@@ -433,6 +442,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           else if (route.kind === "repository" && route.id) {
             setRepository(route.id);
             setPage("Tasks");
+            editorLifetime.replaceEditor();
             setDraft(undefined);
           }
         } catch (e) {
@@ -443,7 +453,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           );
         }
       })();
-    });
+      // A task route only starts a read and keeps the editor until it publishes;
+      // the branches above that clear the editor replace it explicitly.
+    }, true);
   }, [pendingRoute, adapter]);
   const saved = (result?: EntityResult) => {
     if (result && taskOf(result.version)) {
@@ -452,6 +464,18 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     }
     refresh();
   };
+  // A mutation submitted by the editor on screen applies its result to that editor
+  // only while the editor is still the one shown; otherwise it just refreshes reads.
+  const beginCompletion = () =>
+    beginEditorCompletion<EntityResult>(editorLifetime, {
+      saved,
+      refresh,
+      close: () =>
+        navigate(() => {
+          setDraft(undefined);
+          setCurrent(undefined);
+        }),
+    });
   if (realqa.state?.window === "composer")
     return (
       <CaptureComposer
@@ -770,7 +794,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                               void openTask(
                                                 r.version!.entityId,
                                               );
-                                            })
+                                            }, true)
                                           }
                                         >
                                           {t.title}
@@ -874,9 +898,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                         openTask={(id) =>
                           navigate(() => {
                             void openTask(id);
-                          })
+                          }, true)
                         }
-                        onSaved={saved}
+                        beginCompletion={beginCompletion}
                         onClose={() =>
                           navigate(() => {
                             setDraft(undefined);

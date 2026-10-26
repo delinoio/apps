@@ -84,8 +84,26 @@ const taskOpen =
         ]),
         hold: false,
         held: [],
+        // holdSave holds SaveTask replies; saves records every request.
+        holdSave: false,
+        // Tasks whose saved head has a concurrent alternative version.
+        conflicts: new Map(),
+        saves: [],
+        saveCount: 0,
       }
     : undefined;
+// Records one SaveTask or SetProposal request of the task-open scenario and, while
+// saves are held, waits until /test/save-hold releases it with a mode.
+const settleSave = async (entry) => {
+  taskOpen.saves.push(entry);
+  if (!taskOpen.holdSave) return "ok";
+  return new Promise((release) => {
+    entry.release = (m) => {
+      entry.done = true;
+      release(m);
+    };
+  });
+};
 // Switchable API principal and request log for the session reconciliation checks.
 // The log records only paths and CSRF headers, never request content.
 const principals = {
@@ -129,6 +147,15 @@ const eventsFixture = {
   holdDetails: false,
   heldDetails: [],
 };
+// Task-open results keep serving a conflict once a held save has produced one.
+const openResult = (v) =>
+  taskOpen?.conflicts.has(v.entityId)
+    ? {
+        result: "RESULT_KIND_CONFLICT",
+        version: v,
+        alternatives: [taskOpen.conflicts.get(v.entityId)],
+      }
+    : result(v);
 let emptyList = false;
 let failSave = false;
 let history = [task];
@@ -208,6 +235,37 @@ createServer(async (req, res) => {
     if (url.pathname === "/test/events-requests") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(eventsFixture.requests));
+      return;
+    }
+    if (taskOpen && url.pathname === "/test/save-hold") {
+      // hold=1 holds later SaveTask replies; release=<index>:<ok|fail|empty|conflict> answers
+      // one held reply; the reply lists every SaveTask request received so far.
+      const q = url.searchParams;
+      if (q.has("hold")) taskOpen.holdSave = q.get("hold") === "1";
+      if (q.has("reset")) {
+        // Restores the conflicts and proposals that held saves produced.
+        taskOpen.conflicts.clear();
+        for (const [id, t] of taskOpen.tasks)
+          taskOpen.tasks.set(id, {
+            ...t,
+            task: { ...t.task, proposal: "PROPOSAL_PENDING" },
+          });
+      }
+      if (q.has("release")) {
+        const [index, mode] = q.get("release").split(":");
+        taskOpen.saves[Number(index)].release(mode);
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify(
+          taskOpen.saves.map((e) => ({
+            id: e.id,
+            requestId: e.requestId,
+            title: e.title,
+            done: e.done,
+          })),
+        ),
+      );
       return;
     }
     if (url.pathname === "/test/fail-save") {
@@ -339,7 +397,7 @@ createServer(async (req, res) => {
             items: emptyList
               ? []
               : taskOpen
-                ? [...taskOpen.tasks.values()].map(result)
+                ? [...taskOpen.tasks.values()].map(openResult)
                 : [result(task)],
           };
           break;
@@ -365,15 +423,47 @@ createServer(async (req, res) => {
                 res.statusCode = 503;
                 response = { code: "unavailable", message: "Read failed" };
               } else
-                response = mode === "empty" ? {} : { result: result(served) };
+                response =
+                  mode === "empty" ? {} : { result: openResult(served) };
               break;
             }
-            response = { result: result(served) };
+            response = { result: openResult(served) };
             break;
           }
           response = { result: result(task) };
           break;
         case "SaveTask":
+          if (taskOpen) {
+            const entry = {
+              id: input.id,
+              requestId: input.meta?.requestId,
+              title: input.task?.title,
+              done: false,
+            };
+            const mode = await settleSave(entry);
+            if (mode === "fail") {
+              res.statusCode = 503;
+              response = { code: "unavailable", message: "Save failed" };
+              break;
+            }
+            if (mode === "empty") break;
+            const served = taskOpen.tasks.get(input.id);
+            const saved = {
+              ...served,
+              versionId: `019a196d-0000-7000-8000-0000000001${String(++taskOpen.saveCount).padStart(2, "0")}`,
+              task: input.task,
+            };
+            taskOpen.tasks.set(input.id, saved);
+            if (mode === "conflict")
+              // The head is preserved next to a concurrent alternative version.
+              taskOpen.conflicts.set(input.id, {
+                ...saved,
+                versionId: "019a196d-0000-7000-8000-0000000001ff",
+                task: { ...saved.task, title: "Concurrent title" },
+              });
+            response = { result: openResult(saved) };
+            break;
+          }
           if (failSave) {
             res.statusCode = 503;
             response = {
@@ -389,6 +479,33 @@ createServer(async (req, res) => {
           };
           history.push(task);
           response = { result: result(task) };
+          break;
+        case "SetProposal":
+          if (taskOpen) {
+            // A proposal change is answered like a task save: held and released
+            // through /test/save-hold, then served as the task's next version.
+            const served = taskOpen.tasks.get(input.id);
+            const entry = {
+              id: input.id,
+              requestId: input.meta?.requestId,
+              title: served.task.title,
+              done: false,
+            };
+            const mode = await settleSave(entry);
+            if (mode === "fail") {
+              res.statusCode = 503;
+              response = { code: "unavailable", message: "Proposal failed" };
+              break;
+            }
+            if (mode === "empty") break;
+            const changed = {
+              ...served,
+              versionId: `019a196d-0000-7000-8000-0000000001${String(++taskOpen.saveCount).padStart(2, "0")}`,
+              task: { ...served.task, proposal: input.proposal },
+            };
+            taskOpen.tasks.set(input.id, changed);
+            response = { result: openResult(changed) };
+          }
           break;
         case "CreateTask":
           task = {

@@ -44,6 +44,7 @@ import {
   type Draft,
 } from "./model";
 import { hostAction } from "./runtime";
+import type { EditorCompletion } from "./editorLifetime";
 export function TaskEditor({
   adapter,
   draft,
@@ -53,7 +54,7 @@ export function TaskEditor({
   planning,
   revision,
   openTask,
-  onSaved,
+  beginCompletion,
   onClose,
 }: {
   adapter: LaneAdapter;
@@ -65,7 +66,10 @@ export function TaskEditor({
   revision: number;
   // Opens a related task through the shared unsaved-change confirmation.
   openTask: (id: string) => void;
-  onSaved: (r?: EntityResult) => void;
+  // Binds a mutation to the editor lifetime that submits it. Every mutation result
+  // goes through the returned completion so a late result from an ended editor
+  // cannot replace, clean, reopen or close another editor.
+  beginCompletion: () => EditorCompletion<EntityResult>;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState("Description");
@@ -188,13 +192,15 @@ export function TaskEditor({
       dirty: true,
     });
   };
-  const run = async (action: () => Promise<void>) => {
+  const run = async (
+    action: (completion: EditorCompletion<EntityResult>) => Promise<void>,
+  ) => {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
     setError("");
     try {
-      await action();
+      await action(beginCompletion());
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -203,7 +209,7 @@ export function TaskEditor({
     }
   };
   const save = () =>
-    run(async () => {
+    run(async (completion) => {
       if (!draft.task.title.trim()) throw new Error("Enter a title.");
       if (!draft.task.repositoryId && !repositoryUrl.trim())
         throw new Error("Choose a repository or enter its URL.");
@@ -262,7 +268,7 @@ export function TaskEditor({
           "The server returned no task. Your input is retained; refresh before retrying.",
         );
       if (reply.result.result === ResultKind.CONFLICT) {
-        onSaved(reply.result);
+        completion.saved(reply.result);
         throw new Error(
           "Both versions were preserved. Compare and resolve the conflict.",
         );
@@ -270,7 +276,7 @@ export function TaskEditor({
       // Refresh the same-repository options first so the new draft derives its
       // Subtasks and Blocks from the saved state, including affected tasks.
       await options.reload().catch(() => undefined);
-      onSaved(reply.result);
+      completion.saved(reply.result);
     });
   const loadHistory = async (onlyPrompts: boolean, more = false) => {
     const r = await adapter.call(LaneService.method.listHistory, {
@@ -326,7 +332,7 @@ export function TaskEditor({
               <Button
                 disabled={busy || readOnly || draft.dirty}
                 onClick={() =>
-                  void run(async () => {
+                  void run(async (completion) => {
                     const r = await adapter.call(
                       LaneService.method.setProposal,
                       {
@@ -336,7 +342,7 @@ export function TaskEditor({
                         proposal: Proposal.REJECTED,
                       },
                     );
-                    onSaved(r.result);
+                    completion.saved(r.result);
                   })
                 }
               >
@@ -346,7 +352,7 @@ export function TaskEditor({
                 primary
                 disabled={busy || readOnly || draft.dirty}
                 onClick={() =>
-                  void run(async () => {
+                  void run(async (completion) => {
                     const r = await adapter.call(
                       LaneService.method.setProposal,
                       {
@@ -356,7 +362,7 @@ export function TaskEditor({
                         proposal: Proposal.ACCEPTED,
                       },
                     );
-                    onSaved(r.result);
+                    completion.saved(r.result);
                   })
                 }
               >
@@ -559,14 +565,14 @@ export function TaskEditor({
           <Button
             disabled={busy}
             onClick={() =>
-              void run(async () => {
+              void run(async (completion) => {
                 await adapter.call(LaneService.method.deleteTask, {
                   meta: meta(),
                   id: draft.id,
                 });
                 setConfirmDelete(false);
-                onSaved();
-                onClose();
+                completion.saved();
+                completion.close();
               })
             }
           >
@@ -604,7 +610,7 @@ export function TaskEditor({
                   <Button
                     disabled={busy || readOnly || draft.dirty}
                     onClick={() =>
-                      void run(async () => {
+                      void run(async (completion) => {
                         const r = await adapter.call(
                           LaneService.method.restorePrompt,
                           {
@@ -615,7 +621,7 @@ export function TaskEditor({
                           },
                         );
                         setHistory(null);
-                        onSaved(r.result);
+                        completion.saved(r.result);
                       })
                     }
                   >
@@ -887,7 +893,7 @@ export function TaskEditor({
               busy || !resolution || !reviewedHeads || resolutionStaleNow
             }
             onClick={() =>
-              void run(async () => {
+              void run(async (completion) => {
                 if (!reviewedHeads || resolutionStale(reviewedHeads, current))
                   throw new Error(
                     "The task changed after you started this resolution. Review the current versions before saving.",
@@ -909,7 +915,7 @@ export function TaskEditor({
                 setReviewedHeads(undefined);
                 setRetained(undefined);
                 setResolution(undefined);
-                onSaved(r.result);
+                completion.saved(r.result);
               })
             }
           >
