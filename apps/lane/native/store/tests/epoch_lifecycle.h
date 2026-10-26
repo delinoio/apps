@@ -4,18 +4,18 @@ void epoch_reapproval_lifecycle() {
   const auto account = uuid(), tenant = uuid(), old_epoch = uuid(), new_epoch = uuid(), owner = uuid();
   auto approved = identity(account, tenant, old_epoch);
   success(f.store.approveAccount(approved.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
   success(f.store.acquireSync(f.space, owner));
   auto task = f.task(); Sql db(f.database());
   // Acknowledge the initial versions, so confirming a new generation must
   // rebuild transport work from history rather than retaining an old outbox.
   while (db.scalar("SELECT count(*) FROM outbox") != "0") {
     auto mutation = J::parse(db.scalar("SELECT request_json FROM outbox ORDER BY created_at_us,request_id LIMIT 1"));
-    success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", old_epoch}, {"owner", owner},
+    success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", old_epoch}, {"owner", owner},
         {"push", {{"results", J::array({J{{"requestId", mutation.at("meta").at("requestId")},
             {"result", {{"result", "RESULT_KIND_APPLIED"}, {"version", mutation.at("version")}}}}})}}}}.dump()));
   }
-  success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", old_epoch}, {"owner", owner},
+  success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", old_epoch}, {"owner", owner},
       {"pull", {{"changes", J::array()}, {"nextCursor", "old-generation-cursor"}}}}.dump()));
   const auto retained = durable_snapshot(db);
   approved["epoch"] = new_epoch;
@@ -56,7 +56,7 @@ void epoch_reapproval_lifecycle() {
       {"senderEventId", "epoch-probe-event"}, {"eventType", "test"}, {"occurredAt", "2026-01-01T00:00:00Z"},
       {"payload", J::object()}, {"state", "EVENT_STATE_PENDING"}, {"revision", "1"}};
   success(f.store.acquireSync(f.space, owner));
-  success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", old_epoch}, {"owner", owner},
+  success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", old_epoch}, {"owner", owner},
       {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"event", event}}})}, {"nextCursor", "old-generation-probe"}}}}.dump()));
   require(!J::parse(f.store.confirmSyncEpoch(f.space, new_epoch)).value("ok", true), "remote cache change invalidates captured content sequence");
   require(success(f.store.pendingSync(f.space, owner)).at("mutations").empty(), "unconfirmed retained edits remain withheld from upload");
@@ -76,7 +76,7 @@ void exact_account_space_lookup() {
   const auto a = uuid(), b = uuid();
   auto approve = [&](const std::string& account) {
     success(f.store.approveAccount(identity(account, uuid(), uuid()).dump(), false));
-    return success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId").get<std::string>();
+    return success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId").get<std::string>();
   };
   const auto first = approve(a), other = approve(b), second = approve(a);
   auto lookup = [&](const std::string& account) {

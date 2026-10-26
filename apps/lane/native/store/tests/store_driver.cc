@@ -13,11 +13,11 @@ int main(int argc, char **argv) {
       auto m = q.value("method", "");
       std::string out;
       if (m == "open")
-        out = store.open(q.value("request", nlohmann::json{{"formatVersion", 2},
+        out = store.open(q.value("request", nlohmann::json{{"formatVersion", 3},
                                                            {"spaceId", ""}})
                              .dump());
-      else if (m == "migrate")
-        out = store.migrate(q.at("spaceId"));
+      else if (m == "reset")
+        out = store.reset(q.at("spaceId"));
       else if (m == "approveAccount")
         out = store.approveAccount(q.at("request").dump(), q.value("merge",false));
       else if (m == "acquireSync")
