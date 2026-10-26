@@ -902,6 +902,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     <Events
                       adapter={adapter}
                       repositories={repositories}
+                      revision={revision}
                       openTask={(id) => {
                         void openTask(id);
                       }}

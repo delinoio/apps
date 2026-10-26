@@ -299,3 +299,153 @@ test("a disposed loader never publishes", async () => {
   assert.equal(h.calls.length, 2);
   assert.equal(h.view(), before);
 });
+
+// An invalidation reloads the unchanged active query through reload(), the same
+// call the Events effect makes when App's revision changes.
+test("invalidation reload keeps rows visible, then replaces the first page and cursor", async () => {
+  const h = harness();
+  const first = h.loader.reload(A);
+  h.calls[0].resolve(page("old-receiver"));
+  await tick();
+  h.calls[1].resolve(page("old-event", "old-next"));
+  await first;
+  const more = h.loader.loadMore(A);
+  h.calls[2].resolve({ items: ["old-event-2"], nextCursor: "old-next-2" });
+  await more;
+  assert.deepEqual(names(h.view().events), ["old-event", "old-event-2"]);
+
+  const invalidated = h.loader.reload(A);
+  // Same query: rows stay on screen while the first page is reread, but the
+  // old continuation is gone and the reread starts from the first page.
+  assert.deepEqual(names(h.view().events), ["old-event", "old-event-2"]);
+  assert.equal(h.view().cursor, "");
+  assert.equal(h.view().loading, true);
+  assert.equal(h.calls[3].kind, "receivers");
+  assert.equal(h.calls[3].input.repositoryId, "A");
+  assert.equal(h.calls[3].input.page.cursor, "");
+  h.calls[3].resolve(page("new-receiver"));
+  await tick();
+  assert.equal(h.calls[4].kind, "events");
+  assert.equal(h.calls[4].input.page.cursor, "");
+  assert.deepEqual(h.calls[4].input.states, [EventState.PENDING]);
+  h.calls[4].resolve(page("new-event", "new-next"));
+  await invalidated;
+  const v = h.view();
+  assert.deepEqual(names(v.receivers), ["new-receiver"]);
+  assert.deepEqual(names(v.events), ["new-event"]);
+  assert.equal(v.cursor, "new-next");
+  assert.equal(v.cursorKey, eventsQueryKey(A));
+  assert.equal(v.loading, false);
+
+  // The next continuation uses the refreshed cursor and appends once.
+  const next = h.loader.loadMore(A);
+  assert.equal(h.calls[5].input.page.cursor, "new-next");
+  h.calls[5].resolve(page("new-event-2"));
+  await next;
+  assert.deepEqual(names(h.view().events), ["new-event", "new-event-2"]);
+  assert.equal(h.view().cursor, "");
+  assert.equal(h.calls.length, 6);
+});
+
+test("invalidation supersedes an old load and a held old response or error is ignored", async () => {
+  for (const settle of ["resolve", "reject"] as const) {
+    const h = harness();
+    const old = h.loader.reload(A);
+    const invalidated = h.loader.reload(A);
+    h.calls[1].resolve(page("new-receiver"));
+    await tick();
+    h.calls[2].resolve(page("new-event"));
+    await invalidated;
+    // Release the old load last.
+    if (settle === "resolve") h.calls[0].resolve(page("old-receiver"));
+    else h.calls[0].reject(new Error("old failed"));
+    await old;
+    const v = h.view();
+    assert.deepEqual(names(v.receivers), ["new-receiver"]);
+    assert.deepEqual(names(v.events), ["new-event"]);
+    assert.equal(v.error, "");
+    assert.equal(v.loading, false);
+    assert.equal(h.calls.length, 3);
+  }
+});
+
+test("invalidation supersedes an in-flight continuation without duplicate rows", async () => {
+  const h = harness();
+  const first = h.loader.reload(A);
+  h.calls[0].resolve(page("receiver"));
+  await tick();
+  h.calls[1].resolve(page("event-1", "next"));
+  await first;
+  const more = h.loader.loadMore(A);
+  const invalidated = h.loader.reload(A);
+  h.calls[3].resolve(page("receiver"));
+  await tick();
+  h.calls[4].resolve(page("event-1", "fresh-next"));
+  await invalidated;
+  // The held continuation fails last and also must not show an error.
+  h.calls[2].reject(new Error("continuation failed"));
+  await more;
+  assert.deepEqual(names(h.view().events), ["event-1"]);
+  assert.equal(h.view().cursor, "fresh-next");
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().loadingMore, false);
+});
+
+test("invalidation after a filter change rereads only the latest filter", async () => {
+  const h = harness();
+  const a = h.loader.reload(A);
+  const b = h.loader.reload(B);
+  const invalidated = h.loader.reload(B);
+  assert.deepEqual(
+    h.calls.map((c) => c.input.repositoryId),
+    ["A", "B", "B"],
+  );
+  h.calls[2].resolve(page("B-receiver-new"));
+  await tick();
+  h.calls[3].resolve(page("B-event-new"));
+  await invalidated;
+  h.calls[1].resolve(page("B-receiver-old"));
+  await tick();
+  h.calls[0].resolve(page("A-receiver"));
+  await Promise.all([a, b]);
+  assert.deepEqual(names(h.view().receivers), ["B-receiver-new"]);
+  assert.deepEqual(names(h.view().events), ["B-event-new"]);
+});
+
+test("a failed invalidation reload is visible and an explicit retry recovers it", async () => {
+  const h = harness();
+  const first = h.loader.reload(A);
+  h.calls[0].resolve(page("receiver"));
+  await tick();
+  h.calls[1].resolve(page("event-1"));
+  await first;
+  const invalidated = h.loader.reload(A);
+  h.calls[2].reject(new Error("notification load failed"));
+  await invalidated;
+  assert.equal(h.view().error, "notification load failed");
+  assert.equal(h.view().loading, false);
+  // The previous rows remain; manual refresh retries and clears the error.
+  assert.deepEqual(names(h.view().events), ["event-1"]);
+  const retry = h.loader.refresh();
+  assert.equal(h.view().error, "");
+  h.calls[3].resolve(page("receiver-2"));
+  await tick();
+  h.calls[4].resolve(page("event-2"));
+  await retry;
+  assert.equal(h.view().error, "");
+  assert.deepEqual(names(h.view().events), ["event-2"]);
+});
+
+test("an invalidation after dispose or adapter replacement publishes nothing", async () => {
+  const h = harness();
+  const first = h.loader.reload(A);
+  h.calls[0].resolve(page("receiver"));
+  await tick();
+  h.calls[1].resolve(page("event"));
+  await first;
+  const before = h.view();
+  h.loader.dispose();
+  await h.loader.reload(A);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.view(), before);
+});
