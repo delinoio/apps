@@ -55,7 +55,11 @@ import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
 import { savedCaptureRoute } from "./captures-model";
 import { CommandPalette } from "./CommandPalette";
-import { EditorLifetime, readTaskOwned } from "./editorLifetime";
+import {
+  beginEditorCompletion,
+  EditorLifetime,
+  readTaskOwned,
+} from "./editorLifetime";
 import {
   destinations,
   DestinationKind,
@@ -452,6 +456,18 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     }
     refresh();
   };
+  // A mutation submitted by the editor on screen applies its result to that editor
+  // only while the editor is still the one shown; otherwise it just refreshes reads.
+  const beginCompletion = () =>
+    beginEditorCompletion<EntityResult>(editorLifetime, {
+      saved,
+      refresh,
+      close: () =>
+        navigate(() => {
+          setDraft(undefined);
+          setCurrent(undefined);
+        }),
+    });
   if (realqa.state?.window === "composer")
     return (
       <CaptureComposer
@@ -876,7 +892,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                             void openTask(id);
                           })
                         }
-                        onSaved={saved}
+                        beginCompletion={beginCompletion}
                         onClose={() =>
                           navigate(() => {
                             setDraft(undefined);

@@ -5,23 +5,81 @@
 // late response is dropped instead of replacing a newer draft, reopening a closed
 // editor or pulling the user back from another page. Ownership is a counter
 // rather than a task ID: reopening the same task starts a distinct lifetime.
+//
+// Mutations submitted from an editor follow the same rule through a separate
+// editor counter: it advances only when the editor shown to the user is replaced
+// or closed, so a read that fails or returns nothing never strands a save that was
+// submitted by the editor that is still on screen.
 export class EditorLifetime {
   private generation = 0;
+  private editor = 0;
 
   // Starts a new lifetime for a read and supersedes every earlier one.
   begin(): number {
     return ++this.generation;
   }
 
-  // Invalidates pending reads without starting a new one. Call it when a
-  // transition is accepted, never while a discard prompt is still undecided.
+  // Invalidates pending reads and mutation completions without starting a new
+  // read. Call it when a transition is accepted, never while a discard prompt is
+  // still undecided.
   supersede(): void {
     ++this.generation;
+    ++this.editor;
   }
 
   owns(token: number): boolean {
     return token === this.generation;
   }
+
+  // Marks the editor on screen as replaced by another one (for example a read
+  // that publishes a task). Completions started by the previous editor are dropped.
+  replaceEditor(): void {
+    ++this.editor;
+  }
+
+  // Captures the editor that is on screen now, for a mutation about to start.
+  editorToken(): number {
+    return this.editor;
+  }
+
+  ownsEditor(token: number): boolean {
+    return token === this.editor;
+  }
+}
+
+export interface EditorCompletionSink<T> {
+  // Applies a result to the editor and refreshes dependent read data.
+  saved(result?: T): void;
+  // Refreshes dependent read data only. It never touches the editor state.
+  refresh(): void;
+  // Closes the editor after a completed deletion.
+  close(): void;
+}
+
+export interface EditorCompletion<T> {
+  saved(result?: T): void;
+  close(): void;
+}
+
+// Binds the completion of one editor mutation to the editor that submitted it.
+// While that editor is still on screen the result is applied normally. Once it was
+// closed, discarded or replaced (even by a new editor for the same task), the
+// submitted server mutation is not rolled back; it only refreshes read data and
+// must not replace, clean, reopen or close another editor.
+export function beginEditorCompletion<T>(
+  lifetime: EditorLifetime,
+  sink: EditorCompletionSink<T>,
+): EditorCompletion<T> {
+  const token = lifetime.editorToken();
+  return {
+    saved: (result) => {
+      if (lifetime.ownsEditor(token)) sink.saved(result);
+      else sink.refresh();
+    },
+    close: () => {
+      if (lifetime.ownsEditor(token)) sink.close();
+    },
+  };
 }
 
 export interface TaskReadSink<T> {
@@ -41,7 +99,12 @@ export async function readTaskOwned<T>(
   try {
     const r = await read();
     if (!lifetime.owns(token)) return;
-    if (r.result) sink.opened(r.result);
+    if (r.result) {
+      // Publishing replaces the editor on screen, so earlier editors lose their
+      // right to apply mutation completions.
+      lifetime.replaceEditor();
+      sink.opened(r.result);
+    }
   } catch (e) {
     if (lifetime.owns(token)) sink.failed(e);
   }

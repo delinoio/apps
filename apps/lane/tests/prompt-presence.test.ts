@@ -213,7 +213,7 @@ async function open(
     planning: { items: [], status: "ready", error: "", retry: () => {} },
     revision: 0,
     openTask: () => {},
-    onSaved: () => {},
+    beginCompletion: () => ({ saved: () => {}, close: () => {} }),
     onClose: () => {},
   };
   const view = bundle.runtime.mount(bundle.Host, props);

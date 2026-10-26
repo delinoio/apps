@@ -124,7 +124,7 @@ async function open(head: Version, pages: Record<string, Page>) {
     planning: { items: [], status: "ready", error: "", retry: () => {} },
     revision: 0,
     openTask: () => {},
-    onSaved: () => {},
+    beginCompletion: () => ({ saved: () => {}, close: () => {} }),
     onClose: () => {},
   });
   await view.settle();
