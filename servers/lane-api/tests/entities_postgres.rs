@@ -1856,6 +1856,18 @@ async fn pushed_versions_are_validated_against_accepted_state_and_rejections_cha
     );
     assert_eq!(f.push(mutation(old_item)).await.unwrap_err().reason, 8);
     assert_eq!(f.footprint().await, before);
+    // A child whose parent version was never accepted (a rejected chain) is a retryable
+    // missing-parent error, not a constraint violation, even when it also breaks a rule.
+    let orphan = pushed_task(
+        TASK,
+        &id(),
+        &[&id()],
+        task_fields("A", REPO, json!({"parentTaskId":TASK_B})),
+        3,
+    );
+    let missing = f.push(mutation(orphan)).await.unwrap_err();
+    assert_eq!((missing.reason, violation_name(&missing)), (9, None));
+    assert_eq!(f.footprint().await, before);
     // A format 2 task without planning fields is still accepted.
     f.push(mutation(pushed_task(
         TASK_C,
