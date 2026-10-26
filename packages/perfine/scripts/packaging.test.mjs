@@ -11,7 +11,7 @@ import {
   cpSync,
   realpathSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -25,9 +25,16 @@ import {
   nativeBinary,
 } from "./build.mjs";
 import { exactTag, verifyTree, inventory } from "./release.mjs";
+import { bumpVersion } from "../../../scripts/release/project.mjs";
+import { synchronizeVersions } from "../../../scripts/release/versions.mjs";
 const require = createRequire(import.meta.url);
+const releaseVersion = JSON.parse(
+  readFileSync(join(root, "packages/perfine/package.json")),
+).version;
+const releaseTag = `v${releaseVersion}`;
+const mismatchedVersion = bumpVersion(releaseVersion, "patch");
 const sourceCommit = "a".repeat(40);
-function fixture(t, target = "x86_64-unknown-linux-gnu") {
+function fixture(t, target = "x86_64-unknown-linux-gnu", preparedVersion) {
   const temp = realpathSync(mkdtempSync(join(tmpdir(), "perfine-pack-test-")));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const bytes = Buffer.alloc(128);
@@ -57,12 +64,39 @@ function fixture(t, target = "x86_64-unknown-linux-gnu") {
   const notices = join(temp, "notices");
   writeFileSync(notices, "Fixture only. No native or provider acceptance.\n");
   const output = join(temp, "release");
+  let repositoryRoot = root;
+  if (preparedVersion) {
+    repositoryRoot = join(temp, "source");
+    const changes = synchronizeVersions(
+      {},
+      (file) => readFileSync(join(root, file), "utf8"),
+      [{ component: "perfine", binaries: true, version: preparedVersion }],
+    );
+    for (const file of [
+      "LICENSE",
+      "NOTICE",
+      "packages/perfine/bin",
+      "packages/perfine/README.md",
+      "actions/perfine/action.cjs",
+      "actions/perfine/action.yml",
+      "actions/perfine/README.md",
+      "actions/perfine/ACTION_NOTICES",
+    ]) {
+      mkdirSync(dirname(join(repositoryRoot, file)), { recursive: true });
+      cpSync(join(root, file), join(repositoryRoot, file), { recursive: true });
+    }
+    writeFileSync(
+      join(repositoryRoot, "packages/perfine/package.json"),
+      changes["packages/perfine/package.json"],
+    );
+  }
   stage({
+    repositoryRoot,
     binary,
     notices,
     output,
     sourceCommit,
-    releaseVersion: "0.1.0",
+    releaseVersion: preparedVersion ?? releaseVersion,
     target,
   });
   return { temp, output, binary };
@@ -73,14 +107,14 @@ test("actual npm tarball and standalone archive contain exact binary, checksums,
   mkdirSync(extract);
   execFileSync("tar", [
     "-xzf",
-    join(output, "perfine-0.1.0.tgz"),
+    join(output, `perfine-${releaseVersion}.tgz`),
     "-C",
     extract,
   ]);
   const pkg = join(extract, "package");
   const metadata = JSON.parse(readFileSync(join(pkg, "package.json")));
   assert.equal(metadata.name, "perfine");
-  assert.equal(metadata.version, "0.1.0");
+  assert.equal(metadata.version, releaseVersion);
   assert.equal(metadata.scripts, undefined);
   assert.equal(metadata.bin.perfine, "bin/perfine.cjs");
   for (const file of [
@@ -103,7 +137,7 @@ test("actual npm tarball and standalone archive contain exact binary, checksums,
   mkdirSync(standalone);
   execFileSync("tar", [
     "-xzf",
-    join(output, "perfine-v0.1.0-linux-x86_64.tar.gz"),
+    join(output, `perfine-v${releaseVersion}-linux-x86_64.tar.gz`),
     "-C",
     standalone,
   ]);
@@ -143,15 +177,15 @@ test("real distribution Git commit is verified against exact version, source and
   );
   const sha = git("rev-parse", "HEAD");
   assert.equal(
-    verifyTree(action, sha, "v0.1.0", sourceCommit).actionCommit,
+    verifyTree(action, sha, releaseTag, sourceCommit).actionCommit,
     sha,
   );
   assert.throws(
-    () => verifyTree(action, sha, "v0.1.1", sourceCommit),
+    () => verifyTree(action, sha, `v${mismatchedVersion}`, sourceCommit),
     /provenance/,
   );
   assert.throws(
-    () => verifyTree(action, sha, "v0.1.0", "b".repeat(40)),
+    () => verifyTree(action, sha, releaseTag, "b".repeat(40)),
     /provenance/,
   );
   writeFileSync(join(action, "runtime/perfine"), "tampered");
@@ -168,7 +202,8 @@ test("real distribution Git commit is verified against exact version, source and
     "tamper",
   );
   assert.throws(
-    () => verifyTree(action, git("rev-parse", "HEAD"), "v0.1.0", sourceCommit),
+    () =>
+      verifyTree(action, git("rev-parse", "HEAD"), releaseTag, sourceCommit),
     /checksum/,
   );
 });
@@ -245,7 +280,7 @@ test("all platform archives use matching metadata and identical npm entry bytes"
   for (const target of Object.keys(targets)) {
     const { output, binary } = fixture(t, target);
     const info = targetInfo(target);
-    const bytes = readFileSync(join(output, "perfine-0.1.0.tgz"));
+    const bytes = readFileSync(join(output, `perfine-${releaseVersion}.tgz`));
     if (entry) assert.deepEqual(bytes, entry);
     else entry = bytes;
     const manifest = JSON.parse(
@@ -270,7 +305,7 @@ test("all platform archives use matching metadata and identical npm entry bytes"
       join(installed, "runtime", info.executable),
     );
     for (const [field, value] of [
-      ["version", "0.2.0"],
+      ["version", mismatchedVersion],
       ["name", "other"],
       ["os", ["other"]],
       ["cpu", ["other"]],
@@ -340,3 +375,23 @@ test("entry publication requires every exact platform version first", () => {
     publish.run.indexOf("npm view") < publish.run.indexOf("npm publish"),
   );
 });
+
+// Exercise the manifest produced by release preparation without changing source.
+for (const bump of ["patch", "minor", "major"]) {
+  test(`packaging accepts the prepared Perfine ${bump} version`, (t) => {
+    const version = bumpVersion(releaseVersion, bump);
+    const { output } = fixture(t, "x86_64-unknown-linux-gnu", version);
+    const manifest = JSON.parse(readFileSync(join(output, "npm/package.json")));
+    assert.equal(manifest.version, version);
+    assert.deepEqual(
+      Object.values(manifest.optionalDependencies),
+      Object.keys(targets).map(() => version),
+    );
+    assert.ok(readFileSync(join(output, `perfine-${version}.tgz`)).length);
+    assert.equal(
+      JSON.parse(readFileSync(join(output, "standalone/provenance.json")))
+        .version,
+      version,
+    );
+  });
+}
