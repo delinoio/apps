@@ -307,20 +307,23 @@ export class OnlineLane {
             applicationServerKey: key,
           });
         }
-        if (subscription) {
-          const json = subscription.toJSON();
-          await createClient(AccountService, this.transport).registerPush({
-            meta: { requestId: uuid() },
-            deviceId: this.session.device_id,
-            provider: PushProvider.WEB_PUSH,
-            endpoint: subscription.endpoint,
-            publicKey: decodeBase64(json.keys?.p256dh || ""),
-            authSecret: decodeBase64(json.keys?.auth || ""),
-            enabled,
-            content,
-          });
-          if (!enabled) await subscription.unsubscribe();
-        }
+        // The server owns per-device preferences, so every save is acknowledged
+        // by RegisterPush even when this browser has no push subscription. A
+        // disabled registration needs no endpoint or keys; the server validates
+        // those fields only when enabled. The adapter state below is installed
+        // only after this call resolves, and a failure is surfaced without retry.
+        const json = subscription?.toJSON();
+        await createClient(AccountService, this.transport).registerPush({
+          meta: { requestId: uuid() },
+          deviceId: this.session.device_id,
+          provider: PushProvider.WEB_PUSH,
+          endpoint: subscription?.endpoint ?? "",
+          publicKey: decodeBase64(json?.keys?.p256dh || ""),
+          authSecret: decodeBase64(json?.keys?.auth || ""),
+          enabled,
+          content,
+        });
+        if (!enabled && subscription) await subscription.unsubscribe();
         this.notificationEnabled = enabled;
         this.notificationContent = content;
         return this.local("GetNotificationPreferences", {});
