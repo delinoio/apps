@@ -119,7 +119,10 @@ try {
     await control(`title=${idA}:Task A newer`);
     await button(page, "Task B").click();
     await waitHeld(n + 2);
-    await button(page, "Task A newer").click();
+    // The preview sends no change notification for the title edit, so the list label
+    // updates only when the sync watch reconnects and invalidates the list. That timing
+    // is not deterministic: accept the label before or after the refresh.
+    await page.getByRole("button", { name: /^Task A( newer)?$/ }).click();
     await waitHeld(n + 3);
     await release(n + 2);
     await field(page, "Title").waitFor();
