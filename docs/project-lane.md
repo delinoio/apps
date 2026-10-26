@@ -10,6 +10,8 @@ Provide repository-scoped task and prompt management for individuals and their e
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 Existing paths retain their build ownership:
 
 - `apps/lane/src`: shared ReactLynx application.

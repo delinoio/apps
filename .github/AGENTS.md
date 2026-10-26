@@ -9,7 +9,7 @@
 - Resolve affected project selection before runner allocation. Keep macOS and iOS runners out of PR, main-push and affected manual CI; retain the separate owning mobile release gates. The separate main-only manual Perfine release workflow and the Lane binary release called by validated Delino tag/main recovery runs may use macOS runners for their owning distribution gates only; follow the release sections of the repository workflow contract.
 - Preserve main-only mobile dispatch, the protected release environment, and opt-in test-channel uploads.
 - Keep Delino web publication in the shared release workflow and shared production environment; follow the application membership and environment ownership in the repository workflow contract.
-- Follow the release preparation and project publication procedures in the repository workflow contract when changing release automation.
+- Use the main-only changeset release entry point and reusable publication jobs. Preserve immutable-tag recovery and the separate native/distribution gates; follow the release procedures in the repository workflow contract.
 
 ## Owning contracts
 

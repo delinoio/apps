@@ -205,6 +205,8 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 
 ## Changeset procedure
 
+- `.release/manifest.json` is owned by release preparation. Follow the [release procedure](docs/repository-workflow-contract.md#project-release-preparation) for main-only changeset consumption, exact-source publication and retries.
+
 - Record component behavior changes and validate pending records according to the [changeset contract](docs/repository-changeset-contract.md). Use owning npm package names and keep public notes separate from internal summaries.
 - `tools/changeset/` owns the Go CLI; `.changeset/` owns pending records. Run its Go tests and vet check when changing the CLI.
 - Write public changelog notes for the affected product's end users. Describe observable behavior, benefits or required user actions. Keep repository tooling, changeset mechanics, CI, refactoring and implementation details in the internal summary unless they are part of the product's supported public interface or workflow. Omit the public block when there is no user-visible change; do not rephrase internal work as a public feature.

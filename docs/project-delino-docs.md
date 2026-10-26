@@ -10,12 +10,14 @@ Provide one public documentation app for multiple Delino services at `https://do
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 - `apps/delino-docs`: independently built public documentation app.
 - `apps/delino-docs/theme`: default-theme extensions, including the service selector in the sidebar.
 - `apps/delino-docs/services.ts`: service identifiers and labels shared by navigation configuration and the service selector.
 - `apps/delino-docs/docs`: curated public pages grouped by language. `en` owns source Markdown; other language directories own translated pages.
 - `apps/delino-docs/i18n`: language registry, navigation/theme text catalogs and source fingerprints.
-- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-site`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-delino.yml`: legacy `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages recovery with `delino-site`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Independent changeset version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 

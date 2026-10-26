@@ -1,0 +1,74 @@
+name: Publish selected server image
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      server:
+        required: true
+        type: string
+      image_tag:
+        description: Existing stable version tag for legacy recovery; empty uses the source SHA
+        required: false
+        default: ""
+        type: string
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: release-image-${{ inputs.server }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          lfs: true
+          persist-credentials: false
+      - name: Sign in to GitHub Container Registry
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Build and publish the immutable server image
+        env:
+          SERVER: ${{ inputs.server }}
+          REVISION: ${{ inputs.revision }}
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          LEGACY_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
+          case "$SERVER" in
+            delcore-api|devbase-api|git-tracker-api|delitools-api|lane-api|perfine-api) ;;
+            *) echo 'Unknown server release target' >&2; exit 1 ;;
+          esac
+          version=$(jq -er .version "servers/${SERVER}/package.json")
+          tag="sha-${REVISION}"
+          if test -n "$LEGACY_IMAGE_TAG"; then
+            [[ "$LEGACY_IMAGE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            tag="$LEGACY_IMAGE_TAG"
+            version="$LEGACY_IMAGE_TAG"
+          fi
+          image="ghcr.io/${OWNER}/${SERVER}:${tag}"
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "Reusing the published image for this source revision"
+          else
+            docker build \
+              --file "servers/${SERVER}/Dockerfile" \
+              --label "org.opencontainers.image.source=https://github.com/${REPOSITORY}" \
+              --label "org.opencontainers.image.version=${version}" \
+              --label "org.opencontainers.image.revision=${REVISION}" \
+              --label "org.opencontainers.image.licenses=FSL-1.1-ALv2" \
+              --tag "$image" .
+            docker push "$image"
+          fi
+          printf 'Image: %s\nSource revision: %s\n' "$image" "$REVISION" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign out of GitHub Container Registry
+        if: always()
+        run: docker logout ghcr.io

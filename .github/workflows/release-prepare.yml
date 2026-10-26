@@ -1,36 +1,26 @@
-name: Release Project
-run-name: Release ${{ inputs.project }} (${{ inputs.bump }})
-
+name: Prepare changeset release
 on:
-  workflow_dispatch:
-    inputs:
-      project:
-        description: Project to version and tag
-        required: true
-        type: choice
-        options: [devbase, delino, delitools]
-      bump:
-        description: Stable SemVer increment
-        required: true
-        type: choice
-        default: patch
-        options: [patch, minor, major]
-
+  workflow_call:
+    outputs:
+      revision:
+        value: ${{ jobs.prepare.outputs.revision }}
+      core:
+        value: ${{ jobs.prepare.outputs.core }}
+      servers:
+        value: ${{ jobs.prepare.outputs.servers }}
+      web:
+        value: ${{ jobs.prepare.outputs.web }}
 permissions:
   contents: read
-
-concurrency:
-  group: release-project
-  cancel-in-progress: false
-
 jobs:
   prepare:
-    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      RELEASE_PROJECT: ${{ inputs.project }}
-      RELEASE_BUMP: ${{ inputs.bump }}
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      core: ${{ steps.source.outputs.core }}
+      servers: ${{ steps.source.outputs.servers }}
+      web: ${{ steps.source.outputs.web }}
     steps:
       - name: Create release bot token
         id: bot
@@ -45,7 +35,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          # The bot token lets tag pushes trigger the owning release workflow.
+          # The bot token allows the release commit to start ordinary main CI.
           # Checkout removes its persisted credential in the post-job cleanup.
           token: ${{ steps.bot.outputs.token }}
           persist-credentials: true
@@ -63,6 +53,9 @@ jobs:
           id=$(gh api "users/$login" --jq .id)
           git config user.name "$login"
           git config user.email "$id+$login@users.noreply.github.com"
-      - name: Commit and atomically push the selected version and tag
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Consume changesets and push the release commit
         id: source
-        run: node "scripts/release/project.mjs" prepare
+        run: node "scripts/release/changesets.mjs"

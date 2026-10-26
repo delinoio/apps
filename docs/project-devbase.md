@@ -10,6 +10,8 @@ Provide a console and the API services of DevBase. The first API service is a fr
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 - `servers/crates/delino-protos`: FSL-1.1-ALv2 Rust protocol crate that generates bindings from the owning schemas at Cargo build time.
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
@@ -20,7 +22,7 @@ Provide a console and the API services of DevBase. The first API service is a fr
 - `servers/devbase-api`: independent Rust API server for projects, project API keys and end users, with PostgreSQL migrations, maintenance jobs and OCI packaging.
 - `protos/devbase/v1`: Connect schema, generated Go and TypeScript messages and Connect-Go bindings.
 - `examples/devbase-client` and `examples/devbase-client-ts`: Go and TypeScript consumer examples.
-- `.github/workflows/release-devbase.yml`: tagged Cloudflare Pages publication. The `delino` release also deploys this application and publishes the `devbase-api` image. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-devbase.yml`: legacy tagged Cloudflare Pages recovery. The changeset release independently versions this application and publishes the required API images first. Independent changeset version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 The API directory contains Rust source and tests plus canonical SQL migrations. The retired Go implementation and Air configuration are removed; generated Go protocol bindings and Go consumer examples remain supported.
 

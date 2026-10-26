@@ -1,0 +1,62 @@
+name: Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-project
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/release-prepare.yml
+    secrets: inherit
+  core:
+    needs: prepare
+    if: needs.prepare.outputs.core == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release-server.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      server: delcore-api
+  servers:
+    needs: [prepare, core]
+    if: >-
+      always() && !cancelled() && needs.prepare.result == 'success' &&
+      ((needs.prepare.outputs.core == 'true' && needs.core.result == 'success') ||
+       (needs.prepare.outputs.core == 'false' && needs.core.result == 'skipped')) &&
+      needs.prepare.outputs.servers != '[]'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        server: ${{ fromJSON(needs.prepare.outputs.servers) }}
+    uses: ./.github/workflows/release-server.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      server: ${{ matrix.server }}
+  web:
+    needs: [prepare, core, servers]
+    if: >-
+      always() && !cancelled() && needs.prepare.result == 'success' &&
+      ((needs.prepare.outputs.core == 'true' && needs.core.result == 'success') ||
+       (needs.prepare.outputs.core == 'false' && needs.core.result == 'skipped')) &&
+      ((needs.prepare.outputs.servers != '[]' && needs.servers.result == 'success') ||
+       (needs.prepare.outputs.servers == '[]' && needs.servers.result == 'skipped')) &&
+      needs.prepare.outputs.web != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.web) }}
+    uses: ./.github/workflows/release-web.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      app: ${{ matrix.app }}
+      environment: ${{ matrix.environment }}
+      pages_project_variable: ${{ matrix.pages_project_variable }}
+      concurrency_group: ${{ matrix.concurrency_group }}
+    secrets: inherit

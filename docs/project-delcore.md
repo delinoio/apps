@@ -14,12 +14,14 @@ The official API server base URL is `https://delcore.api.delino.io`.
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
 - `servers/scripts/dev-api.mjs`: shared Rust API development launcher.
 - `protos/scripts/`: shared Buf entry resolution and protocol breaking checks.
 
-- `servers/delcore-api`: one Rust API and background worker process, migrations and OCI packaging. The `delino` release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
+- `servers/delcore-api`: one Rust API and background worker process, migrations and OCI packaging. The changeset release publishes its image; see the [workflow contract](repository-workflow-contract.md#server-image-publication).
 - `servers/delcore-api/catalog`: split-file development catalog examples; the server contract owns the file format and startup behavior.
 - `protos/delcore/v1`: Connect schemas, generated Go and TypeScript messages and Connect bindings.
 - Registered consumer services such as DeliTools (`servers/delitools-api`, `protos/delitools/v1`) use Delcore only through its Connect API. Delcore stays service-neutral and holds no consumer-specific runtime or protocol logic.

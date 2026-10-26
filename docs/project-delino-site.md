@@ -10,8 +10,10 @@ Provide the Delino company and product website, centered on software that helps 
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 - `apps/delino-site`: independently built web application served at `https://delino.io`.
-- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-docs`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release-delino.yml`: legacy `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages recovery with `delino-docs`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Independent changeset version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 

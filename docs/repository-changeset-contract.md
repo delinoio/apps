@@ -13,8 +13,8 @@ YAML frontmatter maps package names to release types, followed by a Markdown bod
 The Go CLI parses and validates this format itself. It does not depend on the
 upstream Changesets parser or CLI. It records intent and previews notes; it does
 not bump versions, expand dependency releases, publish artifacts, edit public
-documentation, or consume or delete records. Existing release workflows remain
-independent.
+documentation, or consume or delete records. The changeset-driven release workflow consumes validated records separately; see
+the [release procedure](repository-workflow-contract.md#project-release-preparation).
 
 ## Record format
 
@@ -53,8 +53,8 @@ reserved markers in `--summary` and `--public` arguments to prevent ambiguous bl
 
 The entire Markdown body remains in Git. Public selection is performed by this Go
 CLI, not by the Changesets file format itself. Do not publish the unfiltered body
-or store secrets in it. A future publication process must retain this selection
-rule; deployment and changelog publication remain outside this tool's scope.
+or store secrets in it. Release preparation retains this selection rule in its committed manifest;
+deployment and changelog publication remain outside this Go tool's scope.
 
 Invalid YAML, duplicate package keys, unknown package names, invalid release types,
 malformed public blocks, symlinks and unexpected files fail validation. `README.md`

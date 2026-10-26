@@ -10,6 +10,8 @@ Track numeric measurements for Git commits and identify regressions without repo
 
 ## Domain Ownership Map
 
+- `.github/workflows/release.yml` and reusable release jobs: changeset-selected web and server image publication; see the [release contract](repository-workflow-contract.md#project-release-preparation).
+
 - `servers/crates/delino-protos`: FSL-1.1-ALv2 Rust protocol crate that generates bindings from the owning schemas at Cargo build time.
 - `servers/Cargo.toml` and `servers/crates/`: independent server Rust workspace and shared server modules for incremental ports; see the [server Rust workspace contract](servers-rust-workspace-contract.md).
 
