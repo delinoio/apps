@@ -41,7 +41,11 @@ Native builds embed the local production bundle and do not fetch remote template
   rendering and invalidates pending reauthentication without stopping enabled
   synchronization; explicit Quit awaits native shutdown. Each build refreshes
   application resources even when the native module does not relink.
-  Local macOS packages use ad-hoc signing; release signing remains separate.
+  Local macOS packages use ad-hoc signing. The shared Delino tag release also
+  publishes macOS Intel/Apple Silicon and Windows x64 desktop archives with the
+  matching CLI synchronization helper. macOS archives are ad-hoc signed; Windows
+  archives are unsigned and portable. Formal signing/notarization and installers
+  remain separate. Follow [binary publication](repository-workflow-contract.md#lane-binary-publication).
   `LANE_URL_SCHEME=lane` selects distribution links; the default is `lane-dev`.
   The optional `LANE_SYNC_HELPER` is a matching packaged CLI executable with
   adjacent `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES`. Otherwise the build uses

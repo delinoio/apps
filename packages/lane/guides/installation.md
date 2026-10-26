@@ -1,6 +1,6 @@
 # Install Lane
 
-The CLI is named `lane`. The npm package is `@delinoio/lane`. Release artifacts are prepared for review; the commands below describe installation when the matching artifact is available. They do not establish that a public npm version or a signed native app has been published.
+The CLI is named `lane`. The npm package is `@delinoio/lane`. The shared Delino release publishes CLI and desktop archives on [GitHub Releases](https://github.com/delinoio/apps/releases). Each `delino@vMAJOR.MINOR.PATCH` release includes checksums and the source revision. The CLI/npm version can differ from the Delino tag version. The downloadable npm archive does not establish npm registry publication. macOS desktop archives are ad-hoc signed; Windows x64 desktop archives are unsigned and portable. Formal signing/notarization and store publication remain separate.
 
 ## npm
 
@@ -20,7 +20,7 @@ The launcher forwards command arguments, standard input/output/error, process si
 
 Select the archive for your OS and CPU: `lane-darwin-amd64`, `lane-darwin-arm64`, `lane-linux-amd64`, `lane-linux-arm64`, `lane-windows-amd64`, or `lane-windows-arm64`. The archive name includes its version. Windows contains `lane.exe`; other targets contain `lane`.
 
-Obtain the archive from your trusted distributor. Extract it into a new directory. Verify the executable against `SHA256SUMS`, and check that `manifest.json` names the expected platform and version. For example, use `sha256sum -c SHA256SUMS` on Linux or `shasum -a 256 -c SHA256SUMS` on macOS. On Windows, compare `Get-FileHash .\lane.exe -Algorithm SHA256` with the manifest. A checksum detects corruption; trust still depends on the source of the archive and manifest.
+Download the matching archive and `SHA256SUMS` from the same Delino GitHub Release. Verify the archive checksum before extraction. Extract it into a new directory. Verify the executable against `SHA256SUMS`, and check that `manifest.json` names the expected platform and version. For example, use `sha256sum -c SHA256SUMS` on Linux or `shasum -a 256 -c SHA256SUMS` on macOS. On Windows, compare `Get-FileHash .\lane.exe -Algorithm SHA256` with the manifest. A checksum detects corruption; trust still depends on the source of the archive and manifest.
 
 Keep the included licenses and notices. Add the executable directory to your PATH, then run `lane --version` and `lane --help`. CLI architecture support does not imply matching native GUI architecture support.
 

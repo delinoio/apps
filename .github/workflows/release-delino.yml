@@ -43,6 +43,15 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: node "scripts/release/project.mjs" validate-web
 
+  binaries:
+    needs: source
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-lane.yml
+    with:
+      revision: ${{ needs.source.outputs.revision }}
+      tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
   images:
     needs: source
     runs-on: ubuntu-latest

@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. These distribution paths do not establish package publication.
+`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The shared Delino release publishes downloadable binary archives and a complete npm archive; npm registry publication remains separate.
 
 ## Runtime and Language
 
@@ -10,7 +10,7 @@ The installer is a small Node.js launcher/package; the product CLI is Rust. Foll
 
 ## Users and Operators
 
-Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal native distribution and production deployment remain follow-up operations.
+Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal signing/installer distribution and API runtime deployment remain follow-up operations.
 
 ## Agent Skills Distribution
 
@@ -33,6 +33,23 @@ Ship connection examples:
 User guides cover installation, repository registration/rename/moves, task/proposal management, prompt restore, conflicts, explicit Save and failure/input retention, login/sync/logout choices, device/connection management, all three deletion scopes, webhook settings/events and processing, per-device notifications and unsupported push environments. Describe `lane-dev://` versus `lane://` callback/open/repository/task links. No decision-item links are included. Public docs show supported behavior and stable public interfaces, not repository-internal contracts or operational secret paths.
 
 Native distributions retain the existing SDK, embedded production-bundle and license-notice contracts. A desktop package must make its matching `lane sync run` helper available to host supervision without assuming a globally installed npm package. Register deep-link routes by build channel; queue cold-launch routing until storage/UI listeners are ready. Formal signing/store setup is separate from unsigned build/install/behavior validation. Do not add WNS registration to Windows packaging.
+
+## Tag-based binary distribution
+
+Every validated `delino@vMAJOR.MINOR.PATCH` release builds all six CLI targets and
+macOS Intel/Apple Silicon plus Windows x64 desktop archives through the
+[Lane binary publication procedure](repository-workflow-contract.md#lane-binary-publication).
+The GitHub Release includes direct CLI archives, a complete `@delinoio/lane` npm
+archive, desktop application archives, checksums and source/platform metadata.
+Lane CLI/npm package versions remain independent of the Delino tag version.
+Desktop packages embed the matching verified CLI and notices. macOS packages are
+ad-hoc signed; Windows packages are unsigned portable archives. No signing
+identity, npm registry credential or store upload is required for this workflow.
+
+Publication requires all targets before upload. Existing published assets must
+match byte-for-byte on retry; a mismatch fails without replacing the asset.
+Windows ARM64 CLI is cross-built; host smoke checks execute only native targets.
+These release builds do not establish native installation or GUI acceptance.
 
 ## Desktop Chrome companion packaging
 

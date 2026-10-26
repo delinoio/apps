@@ -159,7 +159,7 @@ The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the sam
 
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
-CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the dedicated main-only manual Perfine release procedure below. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
+CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow, the dedicated main-only manual Perfine release procedure below and the Lane binary publication called by validated Delino tag/main recovery runs. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
 
 Mobile dispatch preserves signed build-only mode and opt-in Google Play internal/TestFlight uploads. Configure the protected environment described in the application contract before use. Release workflows do not establish store acceptance until run with real accounts.
 
@@ -263,6 +263,47 @@ A `delino@vMAJOR.MINOR.PATCH` release also publishes the five server images. The
 A release tag never moves, so a retry reuses an existing image tag instead of rebuilding it. Retry a failed run by dispatching `release-delino.yml` from `main` with the existing tag. The release does not deploy the images or run migrations; operators deploy them and apply migrations as the server contracts require. The Git Tracker migration is a one-time initial schema and is not repeatable. DeliTools provides fix-forward recovery only: it has no previous-image rollback or reverse migrations, and its operator procedures live in the [server contract](servers-delitools-api-contract.md#operator-procedures). Make the published GHCR packages readable by the deployment target, either public or with registry credentials held by that target.
 
 GHCR package creation and visibility have not been exercised against a real account. Record the first real release run as the platform acceptance evidence.
+
+## Lane binary publication
+
+`release-delino.yml` calls the reusable `release-lane.yml` after immutable tag/main
+ancestry validation. It builds CLI binaries for Linux amd64/arm64, macOS
+amd64/arm64 and Windows amd64/arm64 at the resolved source revision. Linux and
+macOS targets execute on matching architecture runners; Windows ARM64 is
+cross-built on the Windows x64 runner and is not executed there. Each host runs
+the package tests and the real packed CLI version/help/MCP smoke checks.
+
+The two macOS runners and Windows x64 runner also build the desktop archive with
+`LANE_URL_SCHEME=lane`, the production bundle, native host, Chrome relay and
+matching verified CLI synchronization helper. macOS archives retain framework
+symlinks and ad-hoc signatures; Windows is an unsigned portable application
+archive. Windows SDK preparation downloads checksum-pinned Microsoft Windows App
+SDK and C++/WinRT packages and generates projections from the official metadata.
+Windows ARM64 GUI, formal installers, signing/notarization and mobile store
+publication are separate. The macOS runner exception applies only to this owning
+release workflow, never PR, main-push or affected manual CI.
+
+Host candidates travel as tar archives so artifact storage does not discard
+executable modes or symlinks. Assembly rejects missing/duplicate targets, mixed
+source revisions, version mismatches and corrupted executable or desktop bytes.
+It requires all six CLI targets and all three desktop archives before preparing
+the complete npm archive, direct CLI archives, `lane-release.json` and
+`SHA256SUMS`. CLI/npm versions remain those committed in Lane, independent of
+the Delino release version; desktop archive names carry the Delino tag version.
+
+The publication job uses `delino-site-production` and is the only Lane binary job
+with `contents: write`. It creates a draft GitHub Release on the existing Delino
+tag, uploads all verified candidates and publishes the draft after successful
+uploads. No additional stored credential is required. The npm archive is a
+GitHub Release download; this workflow does not publish to the npm registry.
+Rerun failed jobs to reuse retained candidates after an upload failure. Existing
+assets are downloaded and checked byte-for-byte before reuse; never overwrite
+them. A rebuilt candidate that differs from a published asset fails and requires
+a new release tag. CLI smoke checks and desktop builds do not establish native
+installation, GUI behavior, provider delivery, account acceptance or formal
+signing/store acceptance. Record the source revision, commands and actual
+platform outcomes in the owning job logs and summaries. Generated `dist` and
+desktop build directories are removed even on failure.
 
 ## Native publication handoff
 
