@@ -40,7 +40,7 @@ struct WindowsRuntime : PlatformRuntime {
     notifications->Start(directory, [events = events](std::string payload) {
       try {
         auto value = Parse(payload);
-        if (Text(value, L"kind") != "task" || !UUID(Text(value, L"id")) || !UUID(Text(value, L"spaceId"))) return;
+        if (Text(value, L"kind") != "task" || !lane::windows::UUID(Text(value, L"id")) || !lane::windows::UUID(Text(value, L"spaceId"))) return;
         events->Push("lane.activate", "[]");
         events->Push("lane.openRoute", "[" + Dump(value) + "]");
       } catch (...) { Log("lane_notification_activation_failed"); }

@@ -1,0 +1,176 @@
+name: Release Lane binaries
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.repository == 'delinoio/apps' && (startsWith(github.ref, 'refs/tags/delino@v') || github.ref == 'refs/heads/main')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            runner: ubuntu-24.04
+            targets: x86_64-unknown-linux-gnu
+            desktop: false
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            targets: aarch64-unknown-linux-gnu
+            desktop: false
+          - platform: darwin-amd64
+            runner: macos-15-intel
+            targets: x86_64-apple-darwin
+            desktop: true
+          - platform: darwin-arm64
+            runner: macos-15
+            targets: aarch64-apple-darwin
+            desktop: true
+          - platform: windows-amd64
+            runner: windows-2025
+            targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+            desktop: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      LANE_RELEASE_TAG: ${{ inputs.tag }}
+      LANE_SOURCE_REVISION: ${{ inputs.revision }}
+      LANE_PLATFORM: ${{ matrix.platform }}
+      LANE_URL_SCHEME: lane
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          lfs: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - name: Install locked workspace and native build tools
+        env:
+          # Linux ARM64 has no GUI runtime; only native desktop hosts need it.
+          LYNXTRON_SKIP_DOWNLOAD: ${{ matrix.desktop && '0' || '1' }}
+        run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: ${{ matrix.targets }}
+      - name: Install Linux protocol compiler
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - name: Install macOS protocol compiler
+        if: runner.os == 'macOS'
+        run: |
+          brew install protobuf
+          echo "PROTOC_INCLUDE=$(brew --prefix protobuf)/include" >> "$GITHUB_ENV"
+      - name: Install Windows protocol compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install protoc --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { throw "Cannot install protoc" }
+          $compiler = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter protoc.exe | Select-Object -First 1
+          $descriptor = Get-ChildItem "$env:ChocolateyInstall/lib/protoc" -Recurse -Filter descriptor.proto | Select-Object -First 1
+          if (!$compiler -or !$descriptor) { throw "protoc or well-known includes missing" }
+          $include = Split-Path (Split-Path $descriptor.DirectoryName -Parent) -Parent
+          "PROTOC=$($compiler.FullName)" >> $env:GITHUB_ENV
+          "PROTOC_INCLUDE=$include" >> $env:GITHUB_ENV
+      - name: Package CLI archives and execute host smoke checks
+        run: |
+          set -euo pipefail
+          arguments=(--platform "$LANE_PLATFORM")
+          if [ "$RUNNER_OS" = Windows ]; then arguments+=(--platform windows-arm64); fi
+          pnpm --filter @delinoio/lane test
+          pnpm --filter @delinoio/lane build "${arguments[@]}"
+          pnpm --filter @delinoio/lane smoke
+      - name: Build desktop with the matching packaged synchronization helper
+        if: matrix.desktop
+        run: |
+          pnpm --dir "apps/lane" test
+          pnpm --dir "apps/lane" build:desktop
+          node "scripts/release/lane.mjs" desktop "packages/lane/dist/candidate"
+      - name: Preserve native candidates and evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "packages/lane/dist/candidate"
+          cp "packages/lane/dist/"*.tgz "packages/lane/dist/candidate/"
+          printf 'Source: %s\nHost CLI smoke: %s\nWindows ARM64 is cross-built, not executed. Desktop archives are unsigned/ad-hoc signed; native installation, GUI behavior, notifications, signing/notarization and store acceptance remain separate.\n' "$LANE_SOURCE_REVISION" "$LANE_PLATFORM" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lane-native-${{ matrix.platform }}
+          path: packages/lane/dist/candidate/
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: rm -rf "packages/lane/dist" "apps/lane/dist" "apps/lane/native/desktop/build"
+  assemble:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      LANE_RELEASE_TAG: ${{ inputs.tag }}
+      LANE_SOURCE_REVISION: ${{ inputs.revision }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: lane-native-*
+          path: packages/lane/dist/hosts
+      - name: Require six CLI targets and three desktop packages from the tagged revision
+        run: node "scripts/release/lane.mjs" assemble "packages/lane/dist/hosts" "packages/lane/dist/release"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lane-release-${{ inputs.revision }}
+          path: packages/lane/dist/release/
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: rm -rf "packages/lane/dist"
+  publish:
+    needs: assemble
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: delino-site-production
+    permissions:
+      contents: write
+    env:
+      LANE_RELEASE_TAG: ${{ inputs.tag }}
+      LANE_SOURCE_REVISION: ${{ inputs.revision }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: lane-release-${{ inputs.revision }}
+          path: packages/lane/dist/release/
+      - name: Publish immutable binaries on the existing Delino tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "scripts/release/lane.mjs" publish "packages/lane/dist/release"
+      - if: always()
+        run: rm -rf "packages/lane/dist"

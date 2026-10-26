@@ -15,6 +15,10 @@ import { build } from "esbuild";
 import { homedir } from "node:os";
 import { packageChromeRelay } from "./desktop-relay.mjs";
 import {
+  ensureWindowsAppSdk,
+  windowsAppSdkKeys,
+} from "./desktop-windows-sdk.mjs";
+import {
   installNativeMessaging,
   removeNativeMessaging,
 } from "../../lane-chrome-extension/scripts/native-registration.mjs";
@@ -31,6 +35,7 @@ function run(command, args) {
     cwd: root,
     stdio: "inherit",
     shell: false,
+    windowsHide: true,
   });
   if (result.error) throw result.error;
   if (result.status !== 0)
@@ -64,6 +69,10 @@ try {
       process.platform === "darwin"
         ? resolve(runtime.executablePath, "../../..")
         : dirname(runtime.executablePath);
+    const windowsSdk =
+      process.platform === "win32"
+        ? await ensureWindowsAppSdk({ output })
+        : undefined;
     // Clear only the generated application; retain incremental native compilation.
     rmSync(app, { recursive: true, force: true });
     cpSync(runtimeRoot, app, {
@@ -82,16 +91,12 @@ try {
       `-DLANE_NATIVE_TESTING=${process.env.LANE_NATIVE_TESTING === "1" ? "ON" : "OFF"}`,
     ];
     if (process.platform === "win32") {
+      options.push("-A", process.arch === "arm64" ? "ARM64" : "x64");
       options.push(
         `-DLANE_NODE_IMPORT_LIBRARY=${join(runtimeRoot, "lynxtron.dll.lib")}`,
       );
-      for (const key of [
-        "LANE_WINDOWS_APP_SDK_INCLUDE_DIR",
-        "LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR",
-        "LANE_WINDOWS_APP_SDK_BOOTSTRAP_DLL",
-        "LANE_WINDOWS_APP_SDK_LICENSE",
-      ])
-        if (process.env[key]) options.push(`-D${key}=${process.env[key]}`);
+      for (const key of windowsAppSdkKeys)
+        options.push(`-D${key}=${windowsSdk[key]}`);
     }
     run("cmake", options);
     run("cmake", [
@@ -125,6 +130,8 @@ try {
       cpSync(join(binaryRoot, "licenses"), join(resources, "licenses"), {
         recursive: true,
       });
+      for (const { path, name } of windowsSdk.notices ?? [])
+        cpSync(path, join(resources, "licenses/windows-app-sdk", name));
     }
     await build({
       absWorkingDir: root,

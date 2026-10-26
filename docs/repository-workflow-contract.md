@@ -159,7 +159,7 @@ The root `package.json` pins pnpm 12.14.0; the shared CI Node setup uses the sam
 
 Install with `pnpm install --frozen-lockfile`. Run `pnpm test` in each app, root `cargo test`, and `go test ./...`. Generate frontend `dist` before Rust validation, then remove generated `dist` directories. Native builds, device launches, account-backed integration and store acceptance are separate checks. Preserve source revision, commands, results and unperformed checks in commits and CI artifacts.
 
-CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow and the dedicated main-only manual Perfine release procedure below. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
+CI compares PRs with their base, pushes with the previous revision, and manual runs with the main merge base (or the parent on main). Manual validation remains affected-only. Ordinary CI runs on Ubuntu; macOS is restricted to the separate main-only mobile release workflow, the dedicated main-only manual Perfine release procedure below and the Lane binary publication called by validated Delino tag/main recovery runs. Protocol validation includes Go vet, unit tests, consumer example builds and the DevBase TypeScript example type check; the dedicated formatting job checks Go formatting. Real PostgreSQL integration runs for the affected services under `servers/`. Ordinary CI does not run server OCI tests or release image builds. The Perfine adapter gate builds a disposable test-tool image only. Protocol CI requires lint, format and regeneration freshness; it does not run FILE breaking comparisons.
 
 Mobile dispatch preserves signed build-only mode and opt-in Google Play internal/TestFlight uploads. Configure the protected environment described in the application contract before use. Release workflows do not establish store acceptance until run with real accounts.
 
@@ -246,23 +246,69 @@ DeliDev has no release entry because its owning desktop contract removes distrib
 
 ## Web publication
 
-The individual `.github/workflows/release-devbase.yml`, `release-delino.yml` and `release-delitools.yml` workflows publish the corresponding web applications. Each starts from its release tag. `release-delino.yml` publishes `delino-site`, `delino-docs`, `devbase` and `git-tracker` in parallel from the same `delino@vMAJOR.MINOR.PATCH` tag and source revision. Source validation checks the `delino-site` and `delino-docs` package versions; `devbase` and `git-tracker` keep their own independent versions and are built from the tagged revision. The `devbase` application is also published by its own `release-devbase.yml`, which remains available for web-only releases. The former `delino-site@v*` trigger is retired. To retry a deployment without another bump, dispatch the individual workflow from `main` with the existing tag. A source job checks the tag format, version and main ancestry using the trusted main helper before allocating the protected deployment job. Each deployment job checks out the resolved immutable source revision, hydrates LFS objects, installs the frozen workspace and runs the app's `pnpm test` to check types and build the static output. The `delino` release workflow runs only the app's `pnpm build`.
+The individual `.github/workflows/release-devbase.yml`, `release-delino.yml` and `release-delitools.yml` workflows publish the corresponding web applications. Each starts from its release tag. `release-delino.yml` publishes `delino-site`, `delino-docs`, `devbase`, `git-tracker` and `lane` in parallel from the same `delino@vMAJOR.MINOR.PATCH` tag and source revision. Source validation checks the `delino-site` and `delino-docs` package versions; `devbase`, `git-tracker` and `lane` keep their own independent versions and are built from the tagged revision. The `devbase` application is also published by its own `release-devbase.yml`, which remains available for web-only releases. The former `delino-site@v*` trigger is retired. To retry a deployment without another bump, dispatch the individual workflow from `main` with the existing tag. A source job checks the tag format, version and main ancestry using the trusted main helper before allocating the protected deployment job. Each deployment job checks out the resolved immutable source revision, hydrates LFS objects, installs the frozen workspace and runs the app's `pnpm test` to check types and build the static output. The `delino` release workflow runs only the app's `pnpm build`.
 
 The Delino deployment matrix keeps `fail-fast: false` so one app failure does not cancel the others. The Cloudflare uploads are not atomic; inspect every job and retry the existing tag if any fails.
 
 The Delino Wrangler action sets `pnpm_config_ignore_workspace_root_check=true` only for its deployment step because the pinned action installs its CLI with `pnpm add` at the workspace root without `--workspace-root`. pnpm 12 requires the `pnpm_config_` prefix for this setting. This exception allows that temporary CLI installation without changing the workspace-wide pnpm configuration. Remove it when the action supports explicit workspace-root installation. The workspace build-script allowlist permits `workerd`, which Wrangler installs during deployment.
 
-DevBase and DeliTools production deployments use the corresponding `<project>-production` GitHub environment with secret `CLOUDFLARE_API_TOKEN` and variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`. The `delino` release shares the `delino-site-production` environment among Delino Site, Delino Docs and Git Tracker with secret `CLOUDFLARE_API_TOKEN` and variable `CLOUDFLARE_ACCOUNT_ID`. Its `CLOUDFLARE_PAGES_PROJECT_SITE`, `CLOUDFLARE_PAGES_PROJECT_DOCS` and `CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER` variables select the marketing, documentation and Git Tracker Pages projects. The DevBase application in the same release deploys through its owning `devbase-production` environment and the `release-devbase` concurrency group, exactly like `release-devbase.yml`, so one reviewer gate and one serialized upload queue protect its Pages project. `devbase-production` must also permit `delino@v*` tags and main-dispatched recovery. Each matrix entry names its environment and concurrency group. The Git Tracker build also reads the public browser identifiers `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_LOGTO_APP_ID` from this environment. Without them the Git Tracker sign-in is not configured; the workflow does not validate them. These values are not secrets. The deployment matrix maps each application to its own variable for both configuration validation and upload. The token needs Cloudflare Pages edit permission for the owning account. Configure reviewers and deployment branch/tag restrictions to permit the owning project tags and main-dispatched recovery. `delino-site-production` must permit `delino@v*` tags and main-dispatched recovery. Create each Pages project with production branch `main` and bind its documented domain before publication. Disable automatic Git-based deployments if the Pages project already has Git integration, so source preparation does not also publish an untagged build.
+DevBase and DeliTools production deployments use the corresponding `<project>-production` GitHub environment with secret `CLOUDFLARE_API_TOKEN` and variables `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_PAGES_PROJECT`. The `delino` release shares the `delino-site-production` environment among Delino Site, Delino Docs, Git Tracker and Lane with secret `CLOUDFLARE_API_TOKEN` and variable `CLOUDFLARE_ACCOUNT_ID`. Its `CLOUDFLARE_PAGES_PROJECT_SITE`, `CLOUDFLARE_PAGES_PROJECT_DOCS`, `CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER` and `CLOUDFLARE_PAGES_PROJECT_LANE` variables select the marketing, documentation, Git Tracker and Lane Pages projects. The DevBase application in the same release deploys through its owning `devbase-production` environment and the `release-devbase` concurrency group, exactly like `release-devbase.yml`, so one reviewer gate and one serialized upload queue protect its Pages project. `devbase-production` must also permit `delino@v*` tags and main-dispatched recovery. Each matrix entry names its environment and concurrency group. The Git Tracker build also reads the public browser identifiers `PUBLIC_LOGTO_ENDPOINT` and `PUBLIC_LOGTO_APP_ID` from this environment. Without them the Git Tracker sign-in is not configured; the workflow does not validate them. These values are not secrets. Lane builds with its default public API origin `https://lane.api.delino.io`; no server credentials enter its web build. Its Pages project uses production branch `main` and domain `lane.delino.io`. The deployment matrix maps each application to its own variable for both configuration validation and upload. The token needs Cloudflare Pages edit permission for the owning account. Configure reviewers and deployment branch/tag restrictions to permit the owning project tags and main-dispatched recovery. `delino-site-production` must permit `delino@v*` tags and main-dispatched recovery. Create each Pages project with production branch `main` and bind its documented domain before publication. Disable automatic Git-based deployments if the Pages project already has Git integration, so source preparation does not also publish an untagged build.
 
 The workflow includes repository `LICENSE` and `NOTICE`, retains the exact candidate as an artifact before upload, and uses a pinned Wrangler action and CLI to upload to the Pages production branch. Each project serializes deployments without canceling an active release. Source revision and version appear in the run summary; command and upload outcomes remain in the owning job logs. Generated frontend `dist` is removed even after failure. A failed upload can be retried with the existing immutable tag. Actual Cloudflare deployment, domain routing and account configuration require a real platform run; local fixtures and builds do not establish those outcomes.
 
 ## Server image publication
 
-A `delino@vMAJOR.MINOR.PATCH` release also publishes the four server images. The `images` job runs after the shared source job, in parallel with the web publication. It builds `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api` and `servers/delitools-api` from their Dockerfiles at the tagged revision and publishes `ghcr.io/<owner>/<server>:<version>` with the repository's `GITHUB_TOKEN`. Only this job holds `packages: write`. The image labels carry the source repository, version, revision and server license.
+A `delino@vMAJOR.MINOR.PATCH` release also publishes the five server images. The `images` job runs after the shared source job, in parallel with the web publication. It builds `servers/delcore-api`, `servers/devbase-api`, `servers/git-tracker-api`, `servers/delitools-api` and `servers/lane-api` from their Dockerfiles at the tagged revision and publishes `ghcr.io/<owner>/<server>:<version>` with the repository's `GITHUB_TOKEN`. Only this job holds `packages: write`. The image labels carry the source repository, version, revision and server license.
 
 A release tag never moves, so a retry reuses an existing image tag instead of rebuilding it. Retry a failed run by dispatching `release-delino.yml` from `main` with the existing tag. The release does not deploy the images or run migrations; operators deploy them and apply migrations as the server contracts require. The Git Tracker migration is a one-time initial schema and is not repeatable. DeliTools provides fix-forward recovery only: it has no previous-image rollback or reverse migrations, and its operator procedures live in the [server contract](servers-delitools-api-contract.md#operator-procedures). Make the published GHCR packages readable by the deployment target, either public or with registry credentials held by that target.
 
 GHCR package creation and visibility have not been exercised against a real account. Record the first real release run as the platform acceptance evidence.
+
+## Lane binary publication
+
+`release-delino.yml` calls the reusable `release-lane.yml` after immutable tag/main
+ancestry validation. It builds CLI binaries for Linux amd64/arm64, macOS
+amd64/arm64 and Windows amd64/arm64 at the resolved source revision. Linux and
+macOS targets execute on matching architecture runners; Windows ARM64 is
+cross-built on the Windows x64 runner and is not executed there. Each host runs
+the package tests and the real packed CLI version/help/MCP smoke checks.
+
+The two macOS runners and Windows x64 runner also build the desktop archive with
+`LANE_URL_SCHEME=lane`, the production bundle, native host, Chrome relay and
+matching verified CLI synchronization helper. macOS archives retain framework
+symlinks and ad-hoc signatures; Windows is an unsigned portable application
+archive. The owning desktop build launcher prepares its pinned Windows App SDK
+and C++/WinRT packages and generates both Windows OS and App SDK projections.
+The release workflow leaves the SDK override variables unset so that this
+automatic preparation remains active.
+Windows ARM64 GUI, formal installers, signing/notarization and mobile store
+publication are separate. The macOS runner exception applies only to this owning
+release workflow, never PR, main-push or affected manual CI.
+
+Host candidates travel as tar archives so artifact storage does not discard
+executable modes or symlinks. Assembly rejects missing/duplicate targets, mixed
+source revisions, version mismatches and corrupted executable or desktop bytes.
+It requires all six CLI targets and all three desktop archives before preparing
+the lightweight npm launcher and six platform npm archives, direct CLI archives, `lane-release.json` and
+`SHA256SUMS`. CLI/npm versions remain those committed in Lane, independent of
+the Delino release version; desktop archive names carry the Delino tag version.
+
+The publication job uses `delino-site-production` and is the only Lane binary job
+with `contents: write`. It creates a draft GitHub Release on the existing Delino
+tag, uploads all verified candidates and publishes the draft after successful
+uploads. No additional stored credential is required. The npm archive is a
+GitHub Release download; this workflow does not publish to the npm registry.
+Direct CLI assembly uses sorted file entries, fixed ownership and timestamps,
+and a deterministic gzip header. Reassembling the same retained candidates
+produces byte-identical assets and checksums. Rerun failed jobs to reuse retained
+candidates after an upload failure. Existing
+assets are downloaded and checked byte-for-byte before reuse; never overwrite
+them. A rebuilt candidate that differs from a published asset fails and requires
+a new release tag. CLI smoke checks and desktop builds do not establish native
+installation, GUI behavior, provider delivery, account acceptance or formal
+signing/store acceptance. Record the source revision, commands and actual
+platform outcomes in the owning job logs and summaries. Generated `dist` and
+desktop build directories are removed even on failure.
 
 ## Native publication handoff
 

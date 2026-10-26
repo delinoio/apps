@@ -28,7 +28,7 @@ Additional component ownership:
 - `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
 - `protos/lane/v1`: canonical schemas, checked-in Go/TypeScript bindings and shared cross-language fixtures. Rust generation runs independently in `servers/crates/delino-protos` and `cmds/lane` Cargo output from the same canonical schema.
 - `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging and operator assets in the independent server workspace.
-- `packages/lane`: npm executable installer, common agent `SKILL.md`, installation and MCP connection guides.
+- `packages/lane`: npm executable launcher and generated platform-specific optional binary packages, common agent `SKILL.md`, installation and MCP connection guides.
 
 ## Domain Contract Documents
 
@@ -54,7 +54,7 @@ Connect is the business interface. Local Native Modules, CLI, stdio MCP, remote 
 
 Logto owns online identity. `lane-api` depends on Delcore Connect for personal-tenant authorization; it does not read Delcore tables or redefine tenants. Local use needs neither service. All repositories synchronize within one personal account; notification preferences remain per device. There are no teams, billing or feature flags; task planning metadata adds no flag, plan, role or entitlement.
 
-Web is served at `lane.delino.io`; API and remote MCP at `lane.api.delino.io`. Deployable artifacts are required, but deployment, real external-provider acceptance and formal/store publication are separate. Native build/install/behavior acceptance remains required; a shared bundle build is not native acceptance.
+Web is served at `lane.delino.io`; API and remote MCP at `lane.api.delino.io`. The shared `delino@vMAJOR.MINOR.PATCH` release deploys the web client to Cloudflare Pages and publishes the `lane-api` image to GHCR, and publishes six-target CLI archives, a lightweight npm launcher and six platform npm archives and macOS/Windows x64 desktop archives on GitHub Releases. Lane package versions remain independent. Follow the [release workflow contract](repository-workflow-contract.md#web-publication) for environment configuration and recovery. API runtime deployment, migrations, real external-provider acceptance and formal/store publication are separate. Native build/install/behavior acceptance remains required; a shared bundle build is not native acceptance.
 
 Repository-owned server files/distributions use FSL-1.1-ALv2. Other repository-owned files/distributions use Apache-2.0. Preserve upstream SDK notices. Keep protocol and runtime consumers in one repository and review.
 

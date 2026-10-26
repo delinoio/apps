@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import {
   TextEncoder as PolyEncoder,
   TextDecoder as PolyDecoder,
@@ -82,7 +83,7 @@ test("bootstrap precedes eager generated descriptors in an isolate without web e
     import {TaskSchema} from '@delino/protos/lane/v1/lane_pb';
     const task=create(TaskSchema,{title:'한국어 😀',description:'Unicode'});
     globalThis.result=fromBinary(TaskSchema,toBinary(TaskSchema,task)).title;`,
-      resolveDir: new URL("..", import.meta.url).pathname,
+      resolveDir: fileURLToPath(new URL("..", import.meta.url)),
     },
     bundle: true,
     write: false,

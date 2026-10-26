@@ -2,7 +2,7 @@
 
 ## Installation fails
 
-Check your OS, CPU, and package version. A missing artifact or checksum/version mismatch stops the launcher before execution. Reinstall the exact reviewed package from a trusted source; do not bypass verification. If the CLI's version differs from the archive manifest, stop and obtain a matching artifact.
+Check your OS, CPU, and package version. Keep npm optional dependencies enabled so the matching native package can be installed. If optional dependencies were omitted, reinstall the exact version with `npm install -g --include=optional @delinoio/lane@0.1.0`. A missing artifact or checksum/version mismatch stops the launcher before execution. Reinstall the exact reviewed package from a trusted source; do not bypass verification. If the CLI's version differs from the archive manifest, stop and obtain a matching artifact.
 
 ## Save or synchronization fails
 

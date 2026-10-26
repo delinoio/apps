@@ -41,7 +41,11 @@ Native builds embed the local production bundle and do not fetch remote template
   rendering and invalidates pending reauthentication without stopping enabled
   synchronization; explicit Quit awaits native shutdown. Each build refreshes
   application resources even when the native module does not relink.
-  Local macOS packages use ad-hoc signing; release signing remains separate.
+  Local macOS packages use ad-hoc signing. The shared Delino tag release also
+  publishes macOS Intel/Apple Silicon and Windows x64 desktop archives with the
+  matching CLI synchronization helper. macOS archives are ad-hoc signed; Windows
+  archives are unsigned and portable. Formal signing/notarization and installers
+  remain separate. Follow [binary publication](repository-workflow-contract.md#lane-binary-publication).
   `LANE_URL_SCHEME=lane` selects distribution links; the default is `lane-dev`.
   The optional `LANE_SYNC_HELPER` is a matching packaged CLI executable with
   adjacent `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES`. Otherwise the build uses
@@ -57,9 +61,16 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:ios` for an unsigned simulator build. Open the generated
   workspace for device development and signing.
 
-Web output is a static Cloudflare Pages candidate. Upload `apps/lane/dist` after
-building from the root with `pnpm --filter lane build`. The product domain is `lane.delino.io`. This contract does not provision an account,
-release workflow, signing identity or store registration.
+Web output is static Cloudflare Pages content. The shared `release-delino.yml`
+workflow builds `apps/lane/dist` and deploys it from each immutable
+`delino@vMAJOR.MINOR.PATCH` tag to `lane.delino.io`. Lane keeps its independent
+package version. The deployment uses the `delino-site-production` environment,
+its shared Cloudflare credentials and `CLOUDFLARE_PAGES_PROJECT_LANE` variable,
+with the `release-lane` concurrency group. Builds use the default public API
+origin `https://lane.api.delino.io`. Follow the
+[web publication procedure](repository-workflow-contract.md#web-publication)
+for account setup and retrying an existing tag. Account provisioning, native
+signing and store registration remain separate.
 
 ### Approved UI composition
 
@@ -410,6 +421,35 @@ Lynxtron or the Lane application. `LANE_CHROME_EXTENSION_IDS` supplies exact,
 comma-separated development or published extension IDs at build time. An empty
 value leaves Chrome registration and the connection service disabled; it does
 not produce a placeholder store listing.
+
+Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
+toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Install the frozen
+workspace from the root. On Windows, configure Git Bash as the pnpm script shell
+for the root shell-based hook installer. Run `pnpm build:desktop` from
+`apps/lane`; the launcher selects the architecture of the Node/Lynxtron runtime.
+It resolves pinned official NuGet Foundation `1.8.260803002`, Runtime
+`1.8.260921001` and C++/WinRT `2.0.250303.1` packages, verifies their archive
+SHA512 values, and generates AppNotifications/AppLifecycle and OS projections.
+The ignored `native/desktop/build/windows-app-sdk` cache records the package
+pins, Windows SDK metadata and generated file hashes. Incomplete or changed
+cache content is rebuilt; concurrent provisioning fails rather than sharing
+partially generated headers. Preserve the original SDK and generator licenses
+and notices in `resources/app/licenses/windows-app-sdk`.
+
+An external SDK remains supported through the four absolute paths
+`LANE_WINDOWS_APP_SDK_INCLUDE_DIR`, `LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR`,
+`LANE_WINDOWS_APP_SDK_BOOTSTRAP_DLL` and `LANE_WINDOWS_APP_SDK_LICENSE`.
+Set all four together or leave all four unset. The supplied bootstrap must
+match the build architecture and the supplied headers/projections. External
+SDK owners must retain any additional third-party notices with that SDK.
+
+Set `LANE_NATIVE_TESTING=1` before `pnpm build:desktop` to include the Windows
+policy, helper-transport and synthetic memory-renderer tests. Run
+`ctest --test-dir native/desktop/build/addon -C Release --output-on-failure`
+from `apps/lane`. The capture test checks all six tools, opacity, crop, invalid
+input, queue recovery and nested-selector shutdown without reading screen
+content. The platform test uses only synthetic helper traffic. These tests do
+not install Lane, register Chrome, or establish interactive runtime acceptance.
 
 From `apps/lane`, `node scripts/desktop.mjs install` installs the generated Lane
 application in the current user's application directory and registers the

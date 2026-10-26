@@ -194,6 +194,14 @@ Run the common protocol vectors in native and Rust CLI adapters. Test both write
 
 Run app-local `pnpm test` for frontend changes and the existing platform build commands. Native build/install/behavior gates apply separately to macOS, Windows, iOS and Android. Cross-compiling a CLI or compiling a Lynx bundle does not prove native behavior. Preserve existing CI exclusions for macOS PR/main/affected runs; store/provider acceptance is separate.
 
+The native CMake build verifies vendored dependency bytes against
+`native/store/dependencies.json`. Vendored text uses LF checkout bytes so
+Windows Git CRLF conversion cannot change those hashes; exact-path LFS rules
+retain their binary checkout behavior. MSVC compiles the store and its tests
+with UTF-8 source/execution encoding so Unicode validation does not depend on
+the host code page. Build the native store tests with `LANE_STORE_TESTS=ON`
+and run their CTest entry separately from the desktop renderer tests.
+
 ## Dependencies and Integrations
 
 Follow [protocol](protos-lane-v1-contract.md), [CLI](cmds-lane-cli-contract.md), [server](servers-lane-api-contract.md), and existing SDK notices. Store conformance fixtures with protocol source; host implementations must not invent incompatible columns or paths.
