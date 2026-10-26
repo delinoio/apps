@@ -830,3 +830,90 @@ async fn account_claimant_isolation_task_redaction_and_outer_rollback() {
     }
     f.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL via LANE_TEST_DATABASE_URL"]
+async fn create_receiver_endpoint_forms_and_legacy_receipt_replay() {
+    let mut f = Fixture::new().await;
+    let repository = f.repository.clone();
+    let origin = |base: &str| {
+        WebhookConfig::new(&URL_SAFE_NO_PAD.encode([8; 32]), base, 1024 * 1024).unwrap()
+    };
+    for (base, prefix) in [
+        ("https://lane.example", "https://lane.example/webhooks"),
+        ("https://lane.example/", "https://lane.example/webhooks"),
+        (
+            "https://lane.example/webhooks",
+            "https://lane.example/webhooks",
+        ),
+        (
+            "https://lane.example/webhooks/",
+            "https://lane.example/webhooks",
+        ),
+        ("https://lane.example/hooks/", "https://lane.example/hooks"),
+    ] {
+        f.config = origin(base);
+        let receiver = id();
+        let q = json!({"meta":{"requestId":id()},"id":receiver,"repositoryId":repository,"name":"form"});
+        let created = f.call("CreateReceiver", &q).await.unwrap();
+        assert_eq!(
+            created["endpoint"],
+            format!("{prefix}/{receiver}"),
+            "{base}"
+        );
+    }
+    // A receipt issued before the endpoint builder was corrected holds the old origin-relative
+    // URL. Replay returns the durable receipt unchanged and never creates another receiver or key.
+    f.config = origin("https://lane.example");
+    let receiver = id();
+    let q =
+        json!({"meta":{"requestId":id()},"id":receiver,"repositoryId":repository,"name":"legacy"});
+    let created = f.call("CreateReceiver", &q).await.unwrap();
+    let legacy = format!("https://lane.example/{receiver}");
+    sqlx::query("UPDATE lane_webhook_receipts SET response=jsonb_set(response,'{endpoint}',to_jsonb($1::text)) WHERE account_id=$2 AND method='CreateReceiver' AND request_id=$3")
+        .bind(&legacy)
+        .bind(&f.principal.account_id)
+        .bind(q["meta"]["requestId"].as_str().unwrap())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let key_query =
+        "SELECT encrypted_key FROM lane_webhook_receivers WHERE account_id=$1 AND id=$2";
+    let key_before: Vec<u8> = sqlx::query(key_query)
+        .bind(&f.principal.account_id)
+        .bind(&receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    let before: i64 =
+        sqlx::query("SELECT count(*) FROM lane_webhook_receivers WHERE account_id=$1")
+            .bind(&f.principal.account_id)
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap()
+            .get(0);
+    let replay = f.call("CreateReceiver", &q).await.unwrap();
+    // Replay never re-discloses the signing key (existing behavior); the receipt is otherwise
+    // unchanged, including the old endpoint.
+    let mut expected = created.clone();
+    expected["endpoint"] = json!(legacy);
+    expected.as_object_mut().unwrap().remove("secret");
+    assert_eq!(replay, expected);
+    let after: i64 = sqlx::query("SELECT count(*) FROM lane_webhook_receivers WHERE account_id=$1")
+        .bind(&f.principal.account_id)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(before, after);
+    let key_after: Vec<u8> = sqlx::query(key_query)
+        .bind(&f.principal.account_id)
+        .bind(&receiver)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(key_before, key_after);
+    f.close().await;
+}

@@ -22,7 +22,7 @@ Individual users, their approved MCP clients/devices, webhook senders, and deplo
 - `.../lane.v1.AccountService/<Method>`: devices, connection approvals, notification registration and Lane account-data deletion.
 - `.../lane.v1.WebhookService/<Method>`: receiver/event/processing management.
 - `https://lane.api.delino.io/mcp`: authenticated Streamable HTTP MCP over the same business layer.
-- `POST /webhooks/<receiver-id>`: signed Lane common-format intake.
+- `POST /webhooks/<receiver-id>`: signed Lane common-format intake. This is the only internal intake route.
 - `/health/live`, `/health/ready`, `/metrics`: process health, dependency readiness and operator-only metrics.
 
 Serve the static online web client at `lane.delino.io` through Cloudflare Pages. Restrict CORS to configured frontend origins; do not allow arbitrary credentialed origins. Configuration and runbooks must produce deployable artifacts, but runtime work does not authorize production deployment.
@@ -98,6 +98,8 @@ DELETE_EVERYWHERE clears server content/settings and propagates an account delet
 | ReleaseEventLease | `string id`, `string lease_token`, `string error_reason`                             | `WebhookEvent event`                                                               |
 | CompleteEvent     | `string id`, `string lease_token`, `repeated CreateTaskRequest tasks`                | `WebhookEvent event`, `ProcessingRecord processing`, `repeated EntityResult tasks` |
 | ReopenEvent       | `string id`, `uint64 expected_revision`                                              | `WebhookEvent event`                                                               |
+
+`LANE_WEBHOOK_BASE_URL` has two forms, and `CreateReceiver` returns `endpoint` as `<intake base>/<receiver-id>`. An empty or root path is an API origin: the intake base is `<origin>/webhooks`, so `https://lane.api.delino.io` and `https://lane.api.delino.io/` both yield `https://lane.api.delino.io/webhooks/<receiver-id>`. An explicit non-root path is the complete public intake base, kept as configured except for trailing slashes: `/webhooks` and `/webhooks/` yield one `/webhooks` prefix, and `/hooks` yields `/hooks/<receiver-id>`. A non-root path is not an implicit application mount prefix. The server mounts only `/webhooks/<receiver-id>`, so a path other than `/webhooks` requires an operator-managed rewrite to that route. URL validation is unchanged: HTTPS, or HTTP only for loopback hosts, with no credentials, query or fragment. Existing receivers, keys and stored `CreateReceiver` replay receipts are not rewritten; a receipt issued with an origin-relative endpoint (`<origin>/<receiver-id>`) is replayed unchanged, and its sender is corrected by inserting `/webhooks` before the receiver ID. Regression coverage creates a receiver through Connect and POSTs a signed event to the returned endpoint through the real HTTP router for each form.
 
 Intake body is UTF-8 JSON `{"id":"sender-event-id","type":"event-type","occurredAt":"RFC3339 UTC timestamp","payload":{}}`. Require nonempty ID/type, valid timestamp, JSON object payload and no duplicate JSON keys. Sender IDs/types are opaque strings, not GitHub-specific identifiers. Validate configured byte limits before allocating an unbounded body. Canonical parsed content uses RFC 8785 JSON for deduplication; timestamp normalizes to UTC microseconds. A fresh transport timestamp/signature is not new event content.
 
