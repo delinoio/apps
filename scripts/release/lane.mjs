@@ -12,11 +12,13 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import {
   platforms,
   platformKey,
@@ -46,6 +48,43 @@ function checksums(directory, files) {
       .map((name) => `${sha256(resolve(directory, name))}  ${name}\n`)
       .join(""),
   );
+}
+
+function directArchive(directory, artifact, destination) {
+  const files = [];
+  function visit(relative) {
+    for (const name of readdirSync(resolve(directory, relative)).sort()) {
+      const path = `${relative}/${name}`;
+      const file = resolve(directory, path);
+      const stat = lstatSync(file);
+      if (stat.isDirectory()) visit(path);
+      else {
+        assert.ok(stat.isFile(), "direct archives require regular files");
+        // cpSync assigns new mtimes. Freeze them before tar reads the files so
+        // reassembling identical candidates can reuse immutable published assets.
+        utimesSync(file, 0, 0);
+        files.push(path);
+      }
+    }
+  }
+  visit(artifact);
+  const tar = resolve(directory, `${artifact}.tar`);
+  const ownership =
+    process.platform === "darwin"
+      ? ["--uid", "0", "--gid", "0", "--uname", "root", "--gname", "root"]
+      : ["--owner=0", "--group=0", "--numeric-owner"];
+  // Enumerate only files in sorted order: implicit parent directories are
+  // recreated on extraction without capturing their fresh copy timestamps.
+  run(
+    "tar",
+    ["-cf", tar, "--format=ustar", ...ownership, "-C", directory, ...files],
+    {
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
+    },
+  );
+  // Node gzip fixes its header timestamp; do not depend on the host tar's gzip.
+  writeFileSync(destination, gzipSync(readFileSync(tar), { level: 9 }));
+  rmSync(tar);
 }
 
 // Release candidates are not installed npm dependencies. Verify each unpacked
@@ -239,13 +278,7 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
         cpSync(platformRoot, resolve(direct, artifact), { recursive: true });
         combined.artifacts[platform] = manifest.artifacts[platform];
         const archive = `${artifact}-${combined.version}.tar.gz`;
-        run("tar", [
-          "-czf",
-          resolve(destination, archive),
-          "-C",
-          direct,
-          artifact,
-        ]);
+        directArchive(direct, artifact, resolve(destination, archive));
         files.push(archive);
       }
       for (const name of readdirSync(candidate).filter((name) =>

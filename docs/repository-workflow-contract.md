@@ -298,7 +298,10 @@ with `contents: write`. It creates a draft GitHub Release on the existing Delino
 tag, uploads all verified candidates and publishes the draft after successful
 uploads. No additional stored credential is required. The npm archive is a
 GitHub Release download; this workflow does not publish to the npm registry.
-Rerun failed jobs to reuse retained candidates after an upload failure. Existing
+Direct CLI assembly uses sorted file entries, fixed ownership and timestamps,
+and a deterministic gzip header. Reassembling the same retained candidates
+produces byte-identical assets and checksums. Rerun failed jobs to reuse retained
+candidates after an upload failure. Existing
 assets are downloaded and checked byte-for-byte before reuse; never overwrite
 them. A rebuilt candidate that differs from a published asset fails and requires
 a new release tag. CLI smoke checks and desktop builds do not establish native

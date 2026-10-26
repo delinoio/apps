@@ -9,11 +9,13 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, resolve } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import yaml from "js-yaml";
 import { assemble, publish, releaseIdentity } from "./lane.mjs";
 import {
@@ -97,6 +99,7 @@ function fixture(t, options = {}) {
         resolve(platformRoot, name),
         options.corrupt === target ? "corrupted" : bytes,
       );
+      chmodSync(resolve(platformRoot, name), 0o755);
       write(
         resolve(platformRoot, "manifest.json"),
         JSON.stringify({ ...entry, sourceRevision: identity.revision }),
@@ -199,6 +202,24 @@ test("complete assembly keeps a lightweight launcher and six verified platform p
         readFileSync(resolve(destination, "THIRD_PARTY_NOTICES/modules.json")),
       ).length,
     );
+    const direct = resolve(f.directory, "direct", platform);
+    mkdirSync(direct, { recursive: true });
+    execFileSync("tar", [
+      "-xzf",
+      resolve(f.destination, `lane-${platform}-${version}.tar.gz`),
+      "-C",
+      direct,
+    ]);
+    assert.equal(
+      statSync(
+        resolve(
+          direct,
+          `lane-${platform}`,
+          platform.startsWith("windows-") ? "lane.exe" : "lane",
+        ),
+      ).mode & 0o777,
+      0o755,
+    );
   }
   const sums = readFileSync(resolve(f.destination, "SHA256SUMS"), "utf8")
     .trim()
@@ -207,6 +228,20 @@ test("complete assembly keeps a lightweight launcher and six verified platform p
     const [hash, name] = line.split("  ");
     assert.equal(digest(readFileSync(resolve(f.destination, name))), hash);
   }
+});
+
+test("reassembly of identical candidates produces byte-identical release files", async (t) => {
+  const f = fixture(t);
+  assemble(f.inputs, f.destination, identity);
+  await delay(1100);
+  const second = resolve(f.directory, "assembled-again");
+  assemble(f.inputs, second, identity);
+  for (const name of readdirSync(f.destination))
+    assert.deepEqual(
+      readFileSync(resolve(second, name)),
+      readFileSync(resolve(f.destination, name)),
+      name,
+    );
 });
 
 for (const [name, options, reason] of [
@@ -265,7 +300,7 @@ if (args[0] === 'api') {
   if (state.exists) process.exit(2);
   state.exists = true; state.creates++; save();
 } else if (args[1] === 'upload') {
-  if (state.failOnce && state.assets.length === 2) {
+  if (state.failOnce && state.assets.length === 11) {
     state.failOnce = false; save(); process.stderr.write('fixture upload failure'); process.exit(1);
   }
   const source = args.at(-1);
@@ -284,13 +319,13 @@ else process.exit(4);
   return {
     ...f,
     state,
-    invoke: () =>
+    invoke: (destination = f.destination) =>
       spawnSync(
         process.execPath,
         [
           new URL("./lane.mjs", import.meta.url).pathname,
           "publish",
-          f.destination,
+          destination,
         ],
         {
           encoding: "utf8",
@@ -307,15 +342,18 @@ else process.exit(4);
 }
 
 test(
-  "a partial upload retry reuses identical assets and publishes only after completion",
+  "a partial upload retry reassembles candidates and reuses immutable assets",
   { skip: process.platform === "win32" },
-  (t) => {
+  async (t) => {
     const f = publicationFixture(t);
     assert.notEqual(f.invoke().status, 0);
     let state = JSON.parse(readFileSync(f.state));
     assert.equal(state.draft, true);
-    assert.equal(state.assets.length, 2);
-    const retried = f.invoke();
+    assert.equal(state.assets.length, 11);
+    await delay(1100);
+    const reassembled = resolve(f.directory, "reassembled");
+    assemble(f.inputs, reassembled, identity);
+    const retried = f.invoke(reassembled);
     assert.equal(retried.status, 0, retried.stderr);
     state = JSON.parse(readFileSync(f.state));
     assert.equal(state.creates, 1);
@@ -343,7 +381,7 @@ test(
     const after = JSON.parse(readFileSync(f.state));
     assert.equal(after.draft, true);
     assert.equal(after.creates, 1);
-    assert.equal(after.assets.length, 2);
+    assert.equal(after.assets.length, 11);
   },
 );
 
