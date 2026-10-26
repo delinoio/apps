@@ -3,7 +3,7 @@ use crate::error::{Result, invalid};
 use prost_reflect::{
     DescriptorPool, DynamicMessage, MessageDescriptor, MethodDescriptor, SerializeOptions,
 };
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 #[must_use]
@@ -124,16 +124,47 @@ pub fn canonical(v: &Value) -> String {
 }
 #[must_use]
 pub fn fingerprint(v: &Value) -> String {
-    // ProtoJSON now emits this repeated field by default. Omit only its empty
-    // value for compatibility with immutable pre-RealQA request receipts.
+    // Fingerprints omit empty `captures` for compatibility with immutable pre-RealQA request
+    // receipts. The planning fields are normalized the same way so that requests written before
+    // the planning extension keep their fingerprints: implicit defaults (`TASK_PRIORITY_UNSPECIFIED`,
+    // `TASK_TYPE_UNSPECIFIED`, empty sets and an empty edit message) are omitted, explicitly present
+    // optionals (including story points 0) are kept, and set-valued fields are compared as sorted
+    // unique sets so reordering or repeating an ID never changes a request's identity.
+    const SETS: [&str; 7] = [
+        "labelIds",
+        "dependsOnTaskIds",
+        "relatedTaskIds",
+        "addSubtaskIds",
+        "removeSubtaskIds",
+        "addBlockedTaskIds",
+        "removeBlockedTaskIds",
+    ];
     fn compatible(v: &Value) -> Value {
         match v {
             Value::Object(m) => Value::Object(
                 m.iter()
-                    .filter(|(k, v)| {
-                        !(k.as_str() == "captures" && v.as_array().is_some_and(Vec::is_empty))
+                    .filter_map(|(k, v)| {
+                        let k = k.as_str();
+                        let empty_list = v.as_array().is_some_and(Vec::is_empty);
+                        if (k == "captures" || SETS.contains(&k)) && empty_list
+                            || (k == "priority" && v == "TASK_PRIORITY_UNSPECIFIED")
+                            || (k == "type" && v == "TASK_TYPE_UNSPECIFIED")
+                        {
+                            return None;
+                        }
+                        let mut value = compatible(v);
+                        if SETS.contains(&k)
+                            && let Some(items) = value.as_array_mut()
+                        {
+                            items.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+                            items.dedup();
+                        }
+                        if k == "relationshipEdits" && value.as_object().is_some_and(Map::is_empty)
+                        {
+                            return None;
+                        }
+                        Some((k.to_owned(), value))
                     })
-                    .map(|(k, v)| (k.clone(), compatible(v)))
                     .collect(),
             ),
             Value::Array(a) => Value::Array(a.iter().map(compatible).collect()),
