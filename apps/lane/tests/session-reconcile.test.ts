@@ -449,3 +449,121 @@ test("a failed save is attempted once and never queued or replayed", async () =>
   assert.equal(count(h, "CreateTask"), 2);
   h.lane.stop();
 });
+
+// Installs the browser APIs SetNotificationPreferences needs and restores them
+// afterwards. `prompt` controls when the permission request resolves.
+async function withPush(
+  prompt: () => Promise<string>,
+  body: (state: { prompts: number; unsubscribed: number }) => Promise<void>,
+) {
+  const state = { prompts: 0, unsubscribed: 0 };
+  const globals = globalThis as Record<string, unknown>;
+  const nav = navigator as unknown as Record<string, unknown>;
+  const saved = {
+    Notification: globals.Notification,
+    window: globals.window,
+    serviceWorker: nav.serviceWorker,
+  };
+  globals.Notification = {
+    permission: "default",
+    requestPermission: () => {
+      ++state.prompts;
+      return prompt();
+    },
+  };
+  globals.window = { PushManager: function PushManager() {} };
+  nav.serviceWorker = {
+    register: async () => ({
+      pushManager: {
+        getSubscription: async () => ({
+          endpoint: "https://push.test/endpoint",
+          toJSON: () => ({ keys: { p256dh: "AAAA", auth: "AAAA" } }),
+          unsubscribe: async () => {
+            ++state.unsubscribed;
+          },
+        }),
+      },
+    }),
+  };
+  try {
+    await body(state);
+  } finally {
+    globals.Notification = saved.Notification;
+    globals.window = saved.window;
+    nav.serviceWorker = saved.serviceWorker;
+  }
+}
+const savePreferences = (h: ReturnType<typeof harness>, enabled = true) =>
+  h.lane.invoke("local", "SetNotificationPreferences", { enabled, content: 2 });
+
+test("a notification preference save is refused while the session is reconciled or unconfirmed", async () => {
+  await withPush(
+    async () => "granted",
+    async (state) => {
+      const h = harness();
+      await h.lane.start();
+      await tick();
+      h.calls.length = 0;
+      // Never held or queued while the session is being confirmed.
+      h.holdSessions(true);
+      const resumed = h.lane.resume();
+      await tick();
+      await assert.rejects(
+        savePreferences(h),
+        /confirming your account session/,
+      );
+      h.releaseSession(0);
+      await resumed;
+      h.holdSessions(false);
+      // After a transient failure it stays blocked until an explicit retry.
+      h.sessionMode("network");
+      await assert.rejects(h.lane.resume(), /network down/);
+      await assert.rejects(savePreferences(h), /Retry explicitly/);
+      assert.equal(state.prompts, 0, "no permission prompt is opened");
+      assert.equal(count(h, "RegisterPush"), 0);
+      h.sessionMode("ok");
+      await h.lane.start();
+      await savePreferences(h);
+      assert.equal(count(h, "RegisterPush"), 1);
+      h.lane.stop();
+    },
+  );
+});
+
+test("a notification preference save started for A is retired when B is installed", async () => {
+  let grant!: (value: string) => void;
+  await withPush(
+    () => new Promise<string>((resolve) => (grant = resolve)),
+    async (state) => {
+      const h = harness();
+      await h.lane.start();
+      await tick();
+      h.calls.length = 0;
+      const saved = savePreferences(h).then(
+        () => "resolved",
+        (e: Error) => e.message,
+      );
+      await tick();
+      assert.equal(state.prompts, 1);
+      // Focus returns after the approval popup replaced the account.
+      h.switchTo("b");
+      await h.lane.resume();
+      grant("granted");
+      assert.match(await saved, /account changed/);
+      assert.equal(
+        count(h, "RegisterPush"),
+        0,
+        "the old save never registers a device for the new account",
+      );
+      assert.equal(state.unsubscribed, 0);
+      // B's preferences from the session stay installed.
+      const prefs = (await h.lane.invoke(
+        "local",
+        "GetNotificationPreferences",
+        {},
+      )) as { enabled: boolean; content: number };
+      assert.deepEqual([prefs.enabled, prefs.content], [false, 1]);
+      h.lane.stop();
+    },
+  );
+});

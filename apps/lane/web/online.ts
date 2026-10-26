@@ -353,6 +353,20 @@ export class OnlineLane {
       case "SetNotificationPreferences": {
         if (!this.session)
           throw new Error("Sign in before changing notifications.");
+        // A save binds to the account device registered for the current identity,
+        // so it follows the same reconciliation rules as other mutations: it is
+        // refused while the session is being confirmed or could not be confirmed,
+        // and it is never queued. The identity is captured here because the
+        // permission prompt and service worker work below can outlive a focus
+        // reconciliation that installs another account.
+        if (this.reconciling) throw new Error(SESSION_RECONCILING_MESSAGE);
+        if (this.unavailable) throw new Error(SESSION_UNAVAILABLE_MESSAGE);
+        const generation = this.generation;
+        const session = this.session;
+        const ensureCurrent = () => {
+          if (generation !== this.generation)
+            throw new Error(SESSION_CHANGED_MESSAGE);
+        };
         if (
           typeof Notification === "undefined" ||
           !("serviceWorker" in navigator) ||
@@ -366,17 +380,21 @@ export class OnlineLane {
         const permission = enabled
           ? await Notification.requestPermission()
           : Notification.permission;
+        ensureCurrent();
         if (enabled && permission !== "granted")
           throw new Error(
             "Notification permission was not granted. In-app indications remain available.",
           );
         const registration =
           await navigator.serviceWorker.register("./push-worker.js");
+        ensureCurrent();
         let subscription = await registration.pushManager.getSubscription();
+        ensureCurrent();
         if (enabled && !subscription) {
           const config = (await this.auth("/auth/push-config")) as {
             public_key?: string;
           };
+          ensureCurrent();
           if (!config.public_key)
             throw new Error(
               "Web Push is not configured. In-app indications remain available.",
@@ -390,11 +408,13 @@ export class OnlineLane {
             applicationServerKey: key,
           });
         }
+        // Nothing is sent for an identity that was replaced while this save waited.
+        ensureCurrent();
         if (subscription) {
           const json = subscription.toJSON();
           await createClient(AccountService, this.transport).registerPush({
             meta: { requestId: uuid() },
-            deviceId: this.session.device_id,
+            deviceId: session.device_id,
             provider: PushProvider.WEB_PUSH,
             endpoint: subscription.endpoint,
             publicKey: decodeBase64(json.keys?.p256dh || ""),
@@ -402,8 +422,12 @@ export class OnlineLane {
             enabled,
             content,
           });
+          // The response belongs to the earlier identity; it must not change the
+          // browser subscription or the preferences installed for the new one.
+          ensureCurrent();
           if (!enabled) await subscription.unsubscribe();
         }
+        ensureCurrent();
         this.notificationEnabled = enabled;
         this.notificationContent = content;
         return this.local("GetNotificationPreferences", {});
