@@ -358,6 +358,25 @@ pub(crate) async fn canonical_repository(
     .await?
     .unwrap_or_else(|| repository.to_owned()))
 }
+/// Every spelling of one repository inside an account: the canonical ID first, then each local
+/// alias mapped to it. Alias-owned rows and canonical-owned rows are the same repository.
+pub(crate) async fn repository_identities(
+    db: &mut PgConnection,
+    account: &str,
+    canonical: &str,
+) -> Result<Vec<String>> {
+    let mut identities = vec![canonical.to_owned()];
+    identities.extend(
+        sqlx::query_scalar::<_, String>(
+            "SELECT local_id FROM lane_repository_mappings WHERE account_id=$1 AND canonical_id=$2 ORDER BY local_id",
+        )
+        .bind(account)
+        .bind(canonical)
+        .fetch_all(db)
+        .await?,
+    );
+    Ok(identities)
+}
 pub async fn require_repository(
     db: &mut PgConnection,
     account: &str,

@@ -169,3 +169,78 @@ async fn complete_schema_deletion_directives_redaction_and_rollback() {
         .unwrap();
     admin.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires disposable LANE_TEST_DATABASE_URL"]
+async fn migrate_runs_the_webhook_cleanup_for_repositories_deleted_before_alias_resolution() {
+    let url = std::env::var("LANE_TEST_DATABASE_URL").unwrap();
+    let admin = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!("lane_cleanup_{}", id().replace('-', ""));
+    admin
+        .execute(format!("CREATE SCHEMA {schema}").as_str())
+        .await
+        .unwrap();
+    let search = schema.clone();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(move |conn, _| {
+            let query = format!("SET search_path TO {search}");
+            Box::pin(async move {
+                conn.execute(query.as_str()).await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    migration::migrate(&pool).await.unwrap();
+    // A receiver that kept a synchronized alias of a repository that was later deleted.
+    let (account, canonical, alias, receiver) = (id(), id(), id(), id());
+    sqlx::query("INSERT INTO lane_entities(account_id,id,kind,deleted,accepted_version_id) VALUES($1,$2,1,true,$3)")
+        .bind(&account)
+        .bind(&canonical)
+        .bind(id())
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO lane_repository_mappings(account_id,local_id,canonical_id) VALUES($1,$2,$3)",
+    )
+    .bind(&account)
+    .bind(&alias)
+    .bind(&canonical)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO lane_webhook_receivers(account_id,id,repository_id,name,encrypted_key) VALUES($1,$2,$3,'retained','\\x00')")
+        .bind(&account)
+        .bind(&receiver)
+        .bind(&alias)
+        .execute(&pool)
+        .await
+        .unwrap();
+    migration::migrate(&pool).await.unwrap();
+    let (name, key, deletion): (String, Option<Vec<u8>>, Option<String>) = sqlx::query_as(
+        "SELECT name,encrypted_key,deletion_version_id FROM lane_webhook_receivers WHERE id=$1",
+    )
+    .bind(&receiver)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(name, "");
+    assert!(key.is_none() && deletion.is_some());
+    migration::migrate(&pool).await.unwrap();
+    let again: (Option<String>, i64) = sqlx::query_as(
+        "SELECT deletion_version_id,revision FROM lane_webhook_receivers WHERE id=$1",
+    )
+    .bind(&receiver)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(again.0, deletion);
+    assert_eq!(again.1, 2);
+    pool.close().await;
+    admin
+        .execute(format!("DROP SCHEMA {schema} CASCADE").as_str())
+        .await
+        .unwrap();
+}
