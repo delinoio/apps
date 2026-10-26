@@ -450,6 +450,7 @@ pub fn group_kind(group: &str) -> Option<&'static str> {
     }
 }
 /// Fields supplied on the command line for one planning item, merged over the item body.
+///
 /// `base` is the current stored body for an edit and empty for a create. A typed `item`
 /// already present in the request (for example from `--request-json`) is the starting body;
 /// the stored body is used only when the request carries none. The returned body is also
