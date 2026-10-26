@@ -21,10 +21,14 @@ import { hostAction } from "./runtime";
 export function Events({
   adapter,
   repositories,
+  revision,
   openTask,
 }: {
   adapter: LaneAdapter;
   repositories: EntityResult[];
+  // Server-change invalidation counter owned by App. A new value rereads the
+  // first page of the active query; Events keeps its identity and local state.
+  revision: number;
   openTask: (id: string) => void;
 }) {
   const [view, setView] = useState<EventsView>(emptyEventsView);
@@ -81,9 +85,11 @@ export function Events({
       if (loader.current === owned) loader.current = undefined;
     };
   }, [adapter]);
+  // Reloading the same query keeps filters, rows and dialogs, restarts the
+  // first page and supersedes older loads and continuations.
   useEffect(() => {
     void loader.current?.reload({ repositoryId, state });
-  }, [adapter, repositoryId, state]);
+  }, [adapter, repositoryId, state, revision]);
   const load = async () => {
     await loader.current?.refresh();
   };

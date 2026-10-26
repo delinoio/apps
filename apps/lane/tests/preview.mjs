@@ -91,6 +91,17 @@ const principals = {
 let principal = "a";
 let sessionMode = "ok";
 let requestLog = [];
+// Events fixture served by ListReceivers/ListEvents. /test/events replaces it,
+// /test/events-requests returns the recorded read requests. An optional page
+// size makes ListEvents paginate with offset cursors, and a fail count makes
+// the next reads fail. All fields start empty so other scenarios are unaffected.
+const eventsFixture = {
+  receivers: [],
+  events: [],
+  pageSize: 0,
+  failReads: 0,
+  requests: [],
+};
 let emptyList = false;
 let failSave = false;
 let history = [task];
@@ -113,6 +124,18 @@ createServer(async (req, res) => {
     if (url.pathname === "/test/empty-list") {
       emptyList = url.searchParams.get("enabled") === "1";
       res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/events") {
+      const body = JSON.parse(url.searchParams.get("body") || "{}");
+      for (const key of ["receivers", "events", "pageSize", "failReads"])
+        if (key in body) eventsFixture[key] = body[key];
+      res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/events-requests") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(eventsFixture.requests));
       return;
     }
     if (url.pathname === "/test/fail-save") {
@@ -280,9 +303,38 @@ createServer(async (req, res) => {
           response = { items: [{ id: "test-connection", name: "Test agent" }] };
           break;
         case "ListReceivers":
-        case "ListEvents":
-          response = { items: [] };
+        case "ListEvents": {
+          eventsFixture.requests.push({ method, input });
+          if (eventsFixture.failReads > 0) {
+            eventsFixture.failReads--;
+            res.statusCode = 503;
+            response = {
+              code: "unavailable",
+              message: "Simulated read failure",
+            };
+            break;
+          }
+          const repositoryId = input.repositoryId;
+          const matches = (item) =>
+            !repositoryId || item.repositoryId === repositoryId;
+          if (method === "ListReceivers") {
+            response = { items: eventsFixture.receivers.filter(matches) };
+            break;
+          }
+          const states = input.states ?? [];
+          const items = eventsFixture.events.filter(
+            (item) =>
+              matches(item) && (!states.length || states.includes(item.state)),
+          );
+          const start = Number(input.page?.cursor || 0);
+          const size = eventsFixture.pageSize || items.length;
+          const end = start + size;
+          response = {
+            items: items.slice(start, end),
+            nextCursor: end < items.length ? String(end) : "",
+          };
           break;
+        }
       }
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(response));
