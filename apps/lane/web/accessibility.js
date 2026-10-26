@@ -5,6 +5,7 @@ export function installAccessibility(view) {
   let previousDialog;
   let previousApp;
   let restoreFocus;
+  let previousSettingsTarget;
   const wired = new WeakSet();
   const focusables = (root) =>
     [
@@ -117,6 +118,12 @@ export function installAccessibility(view) {
         // Select after the runtime finishes replacing the previous app's nodes.
         requestAnimationFrame(() => {
           if (app !== previousApp || previousDialog) return;
+          if (
+            root
+              .querySelector("[data-settings-target]")
+              ?.getAttribute("data-settings-target")
+          )
+            return;
           const heading =
             root.querySelector(
               ".workspace .coming-soon-title, .workspace .heading",
@@ -128,6 +135,25 @@ export function installAccessibility(view) {
         });
       }
       previousApp = app;
+    }
+    const settingsTarget = root
+      .querySelector("[data-settings-target]")
+      ?.getAttribute("data-settings-target");
+    if (settingsTarget !== previousSettingsTarget) {
+      previousSettingsTarget = settingsTarget;
+      if (settingsTarget)
+        requestAnimationFrame(() => {
+          if (previousDialog || settingsTarget !== previousSettingsTarget)
+            return;
+          const heading = root.querySelector(
+            `#settings-${settingsTarget.split(":")[0]}`,
+          );
+          if (heading) {
+            heading.setAttribute("tabindex", "-1");
+            heading.scrollIntoView({ block: "start" });
+            focus(heading);
+          }
+        });
     }
   };
   const attach = () => {
@@ -149,6 +175,7 @@ export function installAccessibility(view) {
         "accessibility-label",
         "accessibility-value",
         "data-app",
+        "data-settings-target",
         "disabled",
       ],
     });

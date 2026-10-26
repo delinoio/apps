@@ -31,6 +31,7 @@ import {
   ComingSoon,
   MiniApp,
   MiniAppNavigation,
+  SettingsSection,
 } from "./AppNavigation";
 import { RealQA, RealQADialogs } from "./RealQA";
 import { CaptureComposer } from "./CaptureComposer";
@@ -49,6 +50,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("Tasks");
+  const [settingsTarget, setSettingsTarget] = useState<{
+    section: SettingsSection;
+    request: number;
+  }>();
   const [repository, setRepository] = useState("");
   const [repositories, setRepositories] = useState<EntityResult[]>([]);
   const [tasks, setTasks] = useState<EntityResult[]>([]);
@@ -228,6 +233,19 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       setMiniApp(app);
     });
   };
+  const openSettings = (section: SettingsSection) => {
+    navigate(() => {
+      setDraft(undefined);
+      setCurrent(undefined);
+      setRealqaDirty(false);
+      setMiniApp(MiniApp.Lane);
+      setPage("Settings");
+      setSettingsTarget((previous) => ({
+        section,
+        request: (previous?.request ?? 0) + 1,
+      }));
+    });
+  };
   const openTask = async (id: string) => {
     if (!adapter) return;
     try {
@@ -300,7 +318,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       bindlayoutchange={(e) => setMobile(e.detail.width < 900)}
     >
       <view className="shell">
-        <AppRail selected={miniApp} select={selectApp} />
+        <AppRail
+          selected={miniApp}
+          select={selectApp}
+          openSettings={openSettings}
+        />
         <view className="app-content">
           {miniApp === MiniApp.Lane ? (
             <view className="navigation">
@@ -323,6 +345,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     primary={page === p}
                     onClick={() =>
                       navigate(() => {
+                        setSettingsTarget(undefined);
                         setPage(p);
                         setDraft(undefined);
                         setCurrent(undefined);
@@ -660,12 +683,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                 )}
                 {adapter && page === "Settings" && (
                   <scroll-view
+                    id="settings-scroll"
                     className="page-scroll"
                     scroll-orientation="vertical"
                   >
                     <Settings
                       key={spaceRevision}
                       adapter={adapter}
+                      target={settingsTarget}
                       onReset={() => {
                         setDraft(undefined);
                         setTasks([]);
