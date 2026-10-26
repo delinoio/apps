@@ -545,7 +545,14 @@ export function TaskEditor({
             >
               Prompt versions
             </Button>
-            <Button disabled={busy} onClick={() => setConfirmDelete(true)}>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                // An earlier save or action failure is not a deletion failure.
+                setError("");
+                setConfirmDelete(true);
+              }}
+            >
               Delete task
             </Button>
           </>
@@ -579,6 +586,9 @@ export function TaskEditor({
             This removes the task, prompt and all history. There is no recovery.
             Other tasks keep existing and lose their links to this task.
           </Notice>
+          {/* A rejected deletion leaves this dialog open; show the failure here, where the
+              user is acting, instead of only in the editor underneath. */}
+          {error && <Notice>{error}</Notice>}
           <Button
             disabled={busy}
             onClick={() =>

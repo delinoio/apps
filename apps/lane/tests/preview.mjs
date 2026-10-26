@@ -158,6 +158,8 @@ const openResult = (v) =>
     : result(v);
 let emptyList = false;
 let failSave = false;
+// /test/delete?mode=<ok|fail|denied> controls DeleteTask replies; state lists the requests.
+const deleteControl = { mode: "ok", requests: [] };
 let history = [task];
 createServer(async (req, res) => {
   try {
@@ -266,6 +268,14 @@ createServer(async (req, res) => {
           })),
         ),
       );
+      return;
+    }
+    if (url.pathname === "/test/delete") {
+      const mode = url.searchParams.get("mode");
+      if (mode) deleteControl.mode = mode;
+      if (url.searchParams.get("reset") === "1") deleteControl.requests = [];
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(deleteControl.requests));
       return;
     }
     if (url.pathname === "/test/fail-save") {
@@ -381,6 +391,22 @@ createServer(async (req, res) => {
                 : captureState === "deleted"
                   ? { state: "ATTACHMENT_STATE_DELETED" }
                   : { state: "ATTACHMENT_STATE_AVAILABLE", png: capturePNG };
+          break;
+        case "DeleteTask":
+          deleteControl.requests.push({ id: input.id });
+          if (deleteControl.mode === "fail") {
+            res.statusCode = 503;
+            response = {
+              code: "unavailable",
+              message: "Simulated deletion failure",
+            };
+          } else if (deleteControl.mode === "denied") {
+            res.statusCode = 403;
+            response = {
+              code: "permission_denied",
+              message: "Permission denied",
+            };
+          }
           break;
         case "GetSyncInfo":
           response = { formatVersion: 3, epoch: "test-epoch" };
