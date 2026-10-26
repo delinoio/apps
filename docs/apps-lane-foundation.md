@@ -61,15 +61,14 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:ios` for an unsigned simulator build. Open the generated
   workspace for device development and signing.
 
-Web output is static Cloudflare Pages content. The shared `release-delino.yml`
-workflow builds `apps/lane/dist` and deploys it from each immutable
-`delino@vMAJOR.MINOR.PATCH` tag to `lane.delino.io`. Lane keeps its independent
+Web output is static Cloudflare Pages content. The shared `release.yml`
+workflow builds `apps/lane/dist` when selected by changesets and deploys the release commit to `lane.delino.io`. Lane keeps its independent
 package version. The deployment uses the `delino-site-production` environment,
 its shared Cloudflare credentials and `CLOUDFLARE_PAGES_PROJECT_LANE` variable,
-with the `release-lane` concurrency group. Builds use the default public API
+with the `release-web-lane` concurrency group. Builds use the default public API
 origin `https://lane.api.delino.io`. Follow the
 [web publication procedure](repository-workflow-contract.md#web-publication)
-for account setup and retrying an existing tag. Account provisioning, native
+for account setup and retrying an existing release commit. The `lane@vMAJOR.MINOR.PATCH` tag records successful component completion. Account provisioning, native
 signing and store registration remain separate.
 
 ### Approved UI composition
@@ -79,9 +78,9 @@ Use desktop navigation/list/detail and mobile list/detail pages. Use English, a 
 ### Desktop app updates
 
 Settings begins with an `App updates` card on macOS and Windows. Show the
-installed Delino release tag separately from Lane's independent package version.
+installed Lane release tag separately from Lane's independent package version.
 One `Update Lane` action checks public GitHub Releases, downloads the newest
-stable Delino release for the current desktop architecture, verifies it, installs
+stable Lane release for the current desktop architecture, verifies it, installs
 it and restarts Lane. The action explains the restart before activation. No
 account, synchronization connection, external browser or global CLI is required.
 Checks run only on explicit activation. Ignore draft/prerelease/unrelated tags;
