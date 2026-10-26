@@ -2121,6 +2121,13 @@ struct Store::Impl {
           } else
             fail("INVALID_INPUT", "Unknown mutation.");
           body = taskBody(d, body);
+          // SetProgress, SetProposal and RestorePrompt copy the planning fields
+          // of the requested base. A stale base becomes a conflict alternative
+          // next to the current heads, so validate it like a stale save: no
+          // cascade and the union of every head's references.
+          if (stale && m != "SaveTask")
+            planTaskWrite(d, nodes, e, body, J::object(),
+                          mapped(d, str(hs[0]["task"], "repositoryId")), false);
           prompt = body.value("captures",J::array()) != old["task"].value("captures",J::array()) || m == "RestorePrompt" ||
                    body.contains("prompt") != old["task"].contains("prompt") ||
                    (body.contains("prompt") &&

@@ -459,3 +459,41 @@ void planning_stale_alternative_ignores_discarded_edits() {
       {"relationshipEdits", {{"removeBlockedTaskIds", J::array({b_id})}}}}), "STALE_VERSION");
   require(f.call("GetTask", {{"id", a_id}}).at("result").at("alternatives").size() == 2 && f.get(b_id) == b2, "alternative stored, other tasks untouched");
 }
+void planning_stale_specialized_mutations_are_validated() {
+  Fixture f; auto repo = repository_for(f); const auto repo_id = repo.at("entityId").get<std::string>();
+  auto label = planning_item(f, "label", {{"repositoryId", repo_id}, {"name", "Doomed"}, {"color", "#010203"}});
+  auto task = planned_task(f, repo_id, {{"labelIds", J::array({label.at("entityId")})}, {"proposal", "PROPOSAL_PENDING"}, {"prompt", "Original"}});
+  const auto task_id = task.at("entityId").get<std::string>();
+  // Deleting the label writes a cleanup version without the assignment.
+  f.call("DeletePlanningItem", {{"meta", f.meta()}, {"id", label.at("entityId")}});
+  require(!f.get(task_id).at("task").contains("labelIds"), "cleanup removed the assignment");
+  Sql db(f.database()); const auto before = counts(db);
+  const J stale_requests[] = {
+      {{"SetProgress"}, {{"progress", "PROGRESS_DONE"}}},
+      {{"SetProposal"}, {{"proposal", "PROPOSAL_ACCEPTED"}}},
+      {{"RestorePrompt"}, {{"sourceVersionId", task.at("versionId")}}}};
+  for (const auto& request : stale_requests) {
+    J body = request.at(1); body["meta"] = f.meta(); body["id"] = task_id; body["expectedVersionId"] = task.at("versionId");
+    auto rejected = f.raw(request.at(0).at(0), body);
+    error(rejected, "CONSTRAINT_VIOLATION");
+    require(rejected.at("error").at("violation") == "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND", request.at(0).at(0).get<std::string>() + " reports the deleted label");
+  }
+  require(counts(db) == before && f.call("GetTask", {{"id", task_id}}).at("result").at("result") == "RESULT_KIND_APPLIED",
+          "a rejected stale edit leaves no conflict alternative or write");
+  // A stale base whose restored dependency would close a cycle across the heads is refused too.
+  auto a = planned_task(f, repo_id); auto b = planned_task(f, repo_id);
+  const auto a_id = a.at("entityId").get<std::string>(), b_id = b.at("entityId").get<std::string>();
+  auto linked = a.at("task"); linked["dependsOnTaskIds"] = J::array({b_id});
+  auto a2 = f.save(a, linked);
+  auto cleared = linked; cleared.erase("dependsOnTaskIds");
+  f.save(a2, cleared);
+  auto reverse = b.at("task"); reverse["dependsOnTaskIds"] = J::array({a_id});
+  f.save(b, reverse);
+  auto cyclic = f.raw("SetProgress", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", a2.at("versionId")}, {"progress", "PROGRESS_DONE"}});
+  error(cyclic, "CONSTRAINT_VIOLATION");
+  require(cyclic.at("error").at("violation") == "CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE", "union of heads closes the dependency cycle");
+  // A valid stale edit is still preserved as an alternative.
+  auto other = planned_task(f, repo_id); auto newer = other.at("task"); newer["title"] = "Newer"; f.save(other, newer);
+  error(f.raw("SetProgress", {{"meta", f.meta()}, {"id", other.at("entityId")}, {"expectedVersionId", other.at("versionId")}, {"progress", "PROGRESS_DONE"}}), "STALE_VERSION");
+  require(f.call("GetTask", {{"id", other.at("entityId")}}).at("result").at("alternatives").size() == 2, "a valid stale edit is kept as an alternative");
+}
