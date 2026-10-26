@@ -20,7 +20,7 @@ The title is `DeliTools`; the application identifier is `io.delino.delitools`. D
 
 The shared frontend also runs as a standalone web application. Cloudflare Pages builds it from the repository root with `pnpm --filter @apps/delitools build` and publishes `apps/delitools/dist`. Include root `LICENSE` and `NOTICE` in web distributions. Domain binding and deployment require separate platform configuration. Billable tools use server-side delcore authorization and metering; the scaffold does not implement billing or API clients, and the DeliTools API server is not part of the application build or release.
 
-Web publication uses `.github/workflows/release-delitools.yml` and the `delitools-production` environment after shared release preparation. A DeliTools version tag deploys only the web build. Mobile distribution remains a separate main dispatch with its own build number and opt-in uploads. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
+Web publication uses `.github/workflows/release.yml` and the `delitools-production` environment after shared release preparation. The selected app release calls reusable web and mobile workflows at the same commit. Mobile distribution retains its own build number and opt-in uploads; the component tag follows successful completion. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
 
 ## Storage
 

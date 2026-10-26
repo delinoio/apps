@@ -32,8 +32,8 @@ import { desktopModules } from "../src/desktop.ts";
 import { invokeNative } from "../native/desktop/bridge.mjs";
 import { packArchive } from "../../../scripts/archive.mjs";
 
-const installed = "delino@v1.2.3",
-  next = "delino@v1.3.0";
+const installed = "lane@v1.2.3",
+  next = "lane@v1.3.0";
 const config = {
   name: "lane",
   scheme: "lane",
@@ -65,15 +65,15 @@ async function write(path: string, value: string | Buffer, mode?: number) {
 }
 
 test("release selection compares numeric versions and ignores drafts, prereleases and unrelated tags", () => {
-  assert.equal(compareReleases("delino@v1.10.0", "delino@v1.9.99"), 1);
-  assert.equal(compareReleases("delino@v1.2.3", installed), 0);
+  assert.equal(compareReleases("lane@v1.10.0", "lane@v1.9.99"), 1);
+  assert.equal(compareReleases("lane@v1.2.3", installed), 0);
   const candidate = release();
   assert.equal(
     selectRelease(
       [
         release("other@v9.0.0"),
-        { ...release("delino@v9.0.0"), draft: true },
-        { ...release("delino@v8.0.0"), prerelease: true },
+        { ...release("lane@v9.0.0"), draft: true },
+        { ...release("lane@v8.0.0"), prerelease: true },
         candidate,
       ],
       installed,
@@ -86,7 +86,7 @@ test("release selection compares numeric versions and ignores drafts, prerelease
     undefined,
   );
   assert.equal(
-    selectRelease([release("delino@v1.0.0")], installed, "darwin-arm64"),
+    selectRelease([release("lane@v1.0.0")], installed, "darwin-arm64"),
     undefined,
   );
   assert.throws(
@@ -365,7 +365,7 @@ test("one click downloads, verifies and prepares a matching release exactly once
 for (const [name, options, message] of [
   ["checksum mismatch", { checksum: "0".repeat(64) }, /checksum/],
   ["truncated download", { downloadSize: 99999 }, /incomplete/],
-  ["wrong release metadata", { tag: "delino@v9.0.0" }, /selected release/],
+  ["wrong release metadata", { tag: "lane@v9.0.0" }, /selected release/],
   ["network failure", { fail: true }, /connection/],
 ] as const) {
   test(`update failure preserves the installation: ${name}`, async (t) => {

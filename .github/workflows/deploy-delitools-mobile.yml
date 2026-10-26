@@ -1,13 +1,14 @@
 name: Release DeliTools Mobile
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
+      revision:
+        required: true
+        type: string
       platform:
         description: Mobile platform to build
-        required: true
-        type: choice
-        options: [all, android, ios]
+        type: string
         default: all
       build_number:
         description: Build number from 1 to 9999, greater than previous store uploads
@@ -15,9 +16,11 @@ on:
         type: string
       publish:
         description: Upload to Google Play internal testing and TestFlight
-        required: true
         type: boolean
         default: false
+
+env:
+  RELEASE_REVISION: ${{ inputs.revision }}
 
 permissions:
   contents: read
@@ -32,14 +35,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { persist-credentials: false }
+        with: { ref: "${{ inputs.revision }}", persist-credentials: false }
       - uses: ./.github/actions/setup-ci-node
       - name: Validate release identity
         env:
           DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
           node --input-type=module -e 'import { releaseConfig } from "./apps/delitools/scripts/mobile.mjs"; releaseConfig(process.env.DELITOOLS_BUILD_NUMBER)'
-          echo "Source revision: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source revision: $RELEASE_REVISION" >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @apps/delitools test
 
@@ -56,7 +59,12 @@ jobs:
       DELITOOLS_ANDROID_CERTIFICATE_SHA256: ${{ vars.DELITOOLS_ANDROID_CERTIFICATE_SHA256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { persist-credentials: false, lfs: true }
+        with:
+          {
+            ref: "${{ inputs.revision }}",
+            persist-credentials: false,
+            lfs: true,
+          }
       - uses: ./.github/actions/setup-ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
@@ -87,10 +95,10 @@ jobs:
           jarsigner -verify "mobile-artifacts/delitools-android.aab"
           node apps/delitools/scripts/verify-android-signing.mjs "mobile-artifacts/delitools-android.aab"
           cp LICENSE NOTICE mobile-artifacts/
-          printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+          printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$RELEASE_REVISION" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
       - uses: actions/upload-artifact@v7
         with:
-          name: delitools-android-${{ inputs.build_number }}-${{ github.sha }}
+          name: delitools-android-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/
           if-no-files-found: error
       - name: Upload to Google Play internal testing
@@ -115,7 +123,12 @@ jobs:
       APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { persist-credentials: false, lfs: true }
+        with:
+          {
+            ref: "${{ inputs.revision }}",
+            persist-credentials: false,
+            lfs: true,
+          }
       - uses: ./.github/actions/setup-ci-node
       - uses: dtolnay/rust-toolchain@v1
         with:
@@ -145,10 +158,10 @@ jobs:
           unzip -q "mobile-artifacts/delitools-ios.ipa" -d "$RUNNER_TEMP/delitools-ipa"
           codesign --verify --deep --strict "$RUNNER_TEMP/delitools-ipa/Payload/"*.app
           cp LICENSE NOTICE mobile-artifacts/
-          printf 'revision=%s\nbuild_number=%s\nplatform=ios\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+          printf 'revision=%s\nbuild_number=%s\nplatform=ios\n' "$RELEASE_REVISION" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
       - uses: actions/upload-artifact@v7
         with:
-          name: delitools-ios-${{ inputs.build_number }}-${{ github.sha }}
+          name: delitools-ios-${{ inputs.build_number }}-${{ inputs.revision }}
           path: mobile-artifacts/
           if-no-files-found: error
       - name: Upload to TestFlight

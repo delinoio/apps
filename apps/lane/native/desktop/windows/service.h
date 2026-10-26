@@ -114,8 +114,10 @@ class Service {
         if (operation == "RemoveDeviceData" || operation == "DisconnectSync") {
           if (Parse(response).GetNamedBoolean(L"ok", false)) {
             supervisor_->Stop(routed_space_);
+            // The store already committed. Classify the numeric or symbolic retention
+            // without a throwing string read so the completed response is preserved.
             if (operation == "RemoveDeviceData" ||
-                Text(input.GetNamedObject(L"request"), L"retention") == "LOCAL_RETENTION_REMOVE_LOCAL") watched_.erase(routed_space_);
+                RetentionChoiceOfInput(input) == LocalRetention::RemoveLocal) watched_.erase(routed_space_);
           }
         }
         Tick();

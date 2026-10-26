@@ -12,7 +12,7 @@ permissions:
   contents: read
 jobs:
   build:
-    if: github.repository == 'delinoio/apps' && (startsWith(github.ref, 'refs/tags/delino@v') || github.ref == 'refs/heads/main')
+    if: github.repository == 'delinoio/apps' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -168,7 +168,7 @@ jobs:
         with:
           name: lane-release-${{ inputs.revision }}
           path: packages/lane/dist/release/
-      - name: Publish immutable binaries on the existing Delino tag
+      - name: Publish immutable binaries on the planned Lane tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: node "scripts/release/lane.mjs" publish "packages/lane/dist/release"

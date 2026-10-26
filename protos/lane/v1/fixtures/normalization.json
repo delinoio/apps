@@ -119,6 +119,24 @@
       }
     },
     {
+      "id": "url-13",
+      "input": {
+        "url": "ssh://git@example.com:443/a/b.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com:443/a/b"
+      }
+    },
+    {
+      "id": "url-14",
+      "input": {
+        "url": "https://example.com:22/a/b.git"
+      },
+      "expected": {
+        "normalizedUrl": "example.com:22/a/b"
+      }
+    },
+    {
       "id": "invalid-url-0",
       "input": {
         "url": "https://example.com/a/../b"
