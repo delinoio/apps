@@ -4,15 +4,22 @@ use crate::{Fault, Principal, Result, canonical_id, hash, id, now, string};
 use connectrpc::ErrorCode;
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
-use unicode_casefold::UnicodeCaseFold;
 
 pub(crate) const REPOSITORY: i16 = 1;
 pub(crate) const TASK: i16 = 2;
 pub(crate) const URL_CONNECTION: i16 = 3;
+pub(crate) const LABEL: i16 = 4;
+pub(crate) const MILESTONE: i16 = 5;
+pub(crate) const CYCLE: i16 = 6;
+/// Envelope format written by this server.
+pub(crate) const FORMAT_VERSION: u64 = 3;
 pub(crate) fn body_key(kind: i16) -> &'static str {
     match kind {
         REPOSITORY => "repository",
         URL_CONNECTION => "urlConnection",
+        LABEL => "label",
+        MILESTONE => "milestone",
+        CYCLE => "cycle",
         _ => "task",
     }
 }
@@ -20,6 +27,9 @@ pub(crate) fn kind_name(kind: i16) -> &'static str {
     match kind {
         REPOSITORY => "ENTITY_KIND_REPOSITORY",
         URL_CONNECTION => "ENTITY_KIND_URL_CONNECTION",
+        LABEL => "ENTITY_KIND_LABEL",
+        MILESTONE => "ENTITY_KIND_MILESTONE",
+        CYCLE => "ENTITY_KIND_CYCLE",
         _ => "ENTITY_KIND_TASK",
     }
 }
@@ -185,7 +195,7 @@ pub(crate) fn set_ids(v: &Value) -> Result<Vec<String>> {
     ids.dedup();
     Ok(ids)
 }
-fn enum_value(value: &Value, names: &[&str], default: Option<&str>) -> Result<String> {
+pub(crate) fn enum_value(value: &Value, names: &[&str], default: Option<&str>) -> Result<String> {
     let selected = if value.is_null()
         || value.as_u64() == Some(0)
         || value.as_str().is_some_and(|v| v.ends_with("_UNSPECIFIED"))
@@ -204,14 +214,14 @@ fn enum_value(value: &Value, names: &[&str], default: Option<&str>) -> Result<St
     };
     Ok(selected.to_owned())
 }
-const PROGRESS: &[&str] = &[
+pub(crate) const PROGRESS: &[&str] = &[
     "PROGRESS_TODO",
     "PROGRESS_IN_PROGRESS",
     "PROGRESS_BLOCKED",
     "PROGRESS_DONE",
     "PROGRESS_CANCELED",
 ];
-const PROPOSAL: &[&str] = &[
+pub(crate) const PROPOSAL: &[&str] = &[
     "PROPOSAL_REGULAR",
     "PROPOSAL_PENDING",
     "PROPOSAL_ACCEPTED",
@@ -238,6 +248,7 @@ pub(crate) fn task_body(v: &Value, creation: bool) -> Result<Value> {
         return Err(fault(1, "creation permits regular or pending tasks"));
     }
     let mut body = json!({"repositoryId":repository,"title":title,"description":string(v,"description"),"progress":progress,"proposal":proposal});
+    crate::planning::task_planning_fields(v, body.as_object_mut().expect("task body"))?;
     if let Some(prompt) = v.get("prompt").filter(|v| !v.is_null()) {
         if !prompt.is_string() {
             return Err(fault(1, "prompt must be Markdown text"));
@@ -252,6 +263,21 @@ pub(crate) fn task_body(v: &Value, creation: bool) -> Result<Value> {
     }
     Ok(body)
 }
+/// Planning fields of a task body, in request field form.
+const PLANNING_KEYS: [&str; 12] = [
+    "priority",
+    "type",
+    "labelIds",
+    "startDate",
+    "dueDate",
+    "storyPoints",
+    "milestoneId",
+    "cycleId",
+    "parentTaskId",
+    "dependsOnTaskIds",
+    "relatedTaskIds",
+    "duplicateOfTaskId",
+];
 pub(crate) fn repository_body(v: &Value) -> Result<Value> {
     let normalized = normalize_url(&format!("https://{}.git", string(v, "normalizedUrl")))?;
     let mut b = json!({"normalizedUrl":normalized});
@@ -270,7 +296,7 @@ pub(crate) fn version(
     body: Option<Value>,
     p: &Principal,
 ) -> Value {
-    let mut v = json!({"formatVersion":2,"entityId":entity,"kind":kind_name(kind),"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none(),"promptRestoration":false});
+    let mut v = json!({"formatVersion":FORMAT_VERSION,"entityId":entity,"kind":kind_name(kind),"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none(),"promptRestoration":false});
     if let Some(body) = body {
         v[body_key(kind)] = body;
     }
@@ -281,6 +307,8 @@ pub(crate) struct Entity {
     pub kind: i16,
     pub deleted: bool,
     pub accepted: String,
+    /// Canonical repository of a task, URL connection or planning item.
+    pub repository: Option<String>,
 }
 pub(crate) async fn entity(
     db: &mut PgConnection,
@@ -288,7 +316,7 @@ pub(crate) async fn entity(
     entity: &str,
 ) -> Result<Option<Entity>> {
     let row = sqlx::query(
-        "SELECT kind,deleted,accepted_version_id FROM lane_entities WHERE account_id=$1 AND id=$2",
+        "SELECT kind,deleted,accepted_version_id,repository_id FROM lane_entities WHERE account_id=$1 AND id=$2",
     )
     .bind(account)
     .bind(entity)
@@ -298,6 +326,7 @@ pub(crate) async fn entity(
         kind: r.get("kind"),
         deleted: r.get("deleted"),
         accepted: r.get("accepted_version_id"),
+        repository: r.get("repository_id"),
     }))
 }
 pub(crate) async fn canonical_repository(
@@ -407,6 +436,8 @@ pub(crate) async fn validate_body(
         {
             return Err(fault(1, "repository URL is already registered"));
         }
+    } else if crate::planning::is_item(kind) {
+        crate::planning::validate_item(db, account, entity_id, kind, &v[body_key(kind)]).await?;
     } else {
         require_repository(db, account, string(&v[body_key(kind)], "repositoryId")).await?;
         if kind == URL_CONNECTION {
@@ -457,7 +488,7 @@ pub(crate) async fn project(
     kind: i16,
     v: &Value,
 ) -> Result<()> {
-    let repo = if kind == TASK || kind == URL_CONNECTION {
+    let repo = if kind != REPOSITORY {
         Some(canonical_repository(db, account, string(&v[body_key(kind)], "repositoryId")).await?)
     } else {
         None
@@ -524,12 +555,25 @@ pub(crate) async fn notify_creation(
 }
 
 /// Permanent deletion scrubs snapshots, receipts and prior change bodies in this transaction.
+/// Synchronized deletions apply the client's own cleanup versions and never cascade.
 pub(crate) async fn delete_entity(
     db: &mut PgConnection,
     p: &Principal,
     entity_id: &str,
     kind: i16,
     supplied: Option<Value>,
+) -> Result<Value> {
+    delete_entity_with(db, p, entity_id, kind, supplied, false).await
+}
+/// `cleanup` removes references to a deleted task or planning item from the other tasks of its
+/// repository (new versions with the actor's origin) before the tombstone is written.
+pub(crate) async fn delete_entity_with(
+    db: &mut PgConnection,
+    p: &Principal,
+    entity_id: &str,
+    kind: i16,
+    supplied: Option<Value>,
+    cleanup: bool,
 ) -> Result<Value> {
     if let Some(e) = entity(db, &p.account_id, entity_id).await? {
         if e.kind != kind {
@@ -538,9 +582,16 @@ pub(crate) async fn delete_entity(
         if e.deleted {
             return result(db, &p.account_id, entity_id).await;
         }
+        if cleanup
+            && (kind == TASK || crate::planning::is_item(kind))
+            && let Some(repository) = &e.repository
+        {
+            crate::planning::cleanup_before_delete(db, p, entity_id, kind, repository).await?;
+        }
     }
     if kind == REPOSITORY {
-        let tasks:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND repository_id=$2 AND kind IN (2,3) AND NOT deleted").bind(&p.account_id).bind(entity_id).fetch_all(&mut *db).await?;
+        // The whole repository goes, so no per-entity cleanup is needed.
+        let tasks:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND repository_id=$2 AND kind IN (2,3,4,5,6) AND NOT deleted").bind(&p.account_id).bind(entity_id).fetch_all(&mut *db).await?;
         for task in tasks {
             let child = entity(db, &p.account_id, &task).await?.unwrap();
             Box::pin(delete_entity(db, p, &task, child.kind, None)).await?;
@@ -553,8 +604,9 @@ pub(crate) async fn delete_entity(
     crate::capture::delete_task(db, &p.account_id, entity_id).await?;
     let mut tombstone = supplied.unwrap_or_else(|| version(entity_id, kind, &[], None, p));
     // Deletion keeps no old parent graph, device name or user content.
-    tombstone.as_object_mut().unwrap().remove("task");
-    tombstone.as_object_mut().unwrap().remove("repository");
+    for body in ["task", "repository", "label", "milestone", "cycle"] {
+        tombstone.as_object_mut().unwrap().remove(body);
+    }
     tombstone["parentVersionIds"] = json!([]);
     tombstone["origin"] = json!({});
     tombstone["deleted"] = json!(true);
@@ -575,6 +627,8 @@ pub(crate) async fn delete_entity(
     .await?;
     let deleted = result(db, &p.account_id, entity_id).await?;
     sqlx::query("UPDATE lane_entity_receipts SET response=jsonb_build_object('result',$3::jsonb) WHERE account_id=$1 AND entity_id=$2").bind(&p.account_id).bind(entity_id).bind(&deleted).execute(&mut *db).await?;
+    // Task receipts can also embed other tasks they changed. Redact the deleted entity there.
+    sqlx::query("UPDATE lane_entity_receipts SET response=jsonb_set(response,'{affected}',(SELECT coalesce(jsonb_agg(CASE WHEN item->'version'->>'entityId'=$2 THEN $3::jsonb ELSE item END),'[]'::jsonb) FROM jsonb_array_elements(response->'affected') item)) WHERE account_id=$1 AND jsonb_typeof(response->'affected')='array'").bind(&p.account_id).bind(entity_id).bind(&deleted).execute(&mut *db).await?;
     // A CreateTask receipt can embed a repository response. Redact that field too.
     sqlx::query("UPDATE lane_entity_receipts SET response=jsonb_set(response,'{repository}',$3) WHERE account_id=$1 AND response->'repository'->'version'->>'entityId'=$2").bind(&p.account_id).bind(entity_id).bind(&deleted).execute(&mut *db).await?;
     let aliases: Vec<String> = sqlx::query_scalar(
@@ -629,7 +683,31 @@ fn normalize_request(p: &Principal, method: &str, q: &Value) -> Result<Value> {
     if method == "CreateRepository" || method == "SaveRepository" {
         q["url"] = json!(normalize_url(string(&q, "url"))?);
     }
+    if matches!(method, "CreateTask" | "SaveTask") {
+        // Planning edits are canonical sets: sorted, unique and omitted when empty.
+        let edits = crate::planning::Edits::from_value(&q["relationshipEdits"])?;
+        if edits.is_empty() {
+            q.as_object_mut().unwrap().remove("relationshipEdits");
+        } else {
+            q["relationshipEdits"] = edits.to_value();
+        }
+    }
+    if matches!(method, "CreatePlanningItem" | "SavePlanningItem") {
+        let (kind, body) = crate::planning::planning_body(&q["item"])?;
+        q["item"] = json!({ body_key(kind): body });
+    }
     if method == "CreateTask" {
+        // Planning fields normalize exactly like a stored task body so a retry with the same
+        // content yields the same fingerprint however the transport spelled the sets.
+        let mut normalized = serde_json::Map::new();
+        crate::planning::task_planning_fields(&q, &mut normalized)?;
+        let object = q.as_object_mut().unwrap();
+        for key in PLANNING_KEYS {
+            match normalized.remove(key) {
+                Some(v) => object.insert(key.to_string(), v),
+                None => object.remove(key),
+            };
+        }
         if q["repository"].get("url").is_some() {
             q["repository"]["url"] = json!(normalize_url(string(&q["repository"], "url"))?);
         }
@@ -701,6 +779,11 @@ pub(crate) fn page_size(v: &Value) -> Result<usize> {
     Ok(if n == 0 { 100 } else { n as usize })
 }
 async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> Result<Value> {
+    match method {
+        "ListTasks" => return crate::planning::list_tasks(db, p, q).await,
+        "ListPlanningItems" => return crate::planning::list_items(db, p, q).await,
+        _ => {}
+    }
     let size = page_size(&q["page"]["size"])?;
     let mut scope_q = q.clone();
     if let Some(m) = scope_q.as_object_mut() {
@@ -747,54 +830,13 @@ async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> 
     }
     let kind = match method {
         "ListRepositories" => REPOSITORY,
-        "ListURLConnections" => URL_CONNECTION,
-        _ => TASK,
+        _ => URL_CONNECTION,
     };
     let ids:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND kind=$2 AND NOT deleted AND id>$3 ORDER BY id").bind(&p.account_id).bind(kind).bind(&after).fetch_all(&mut *db).await?;
     let mut items = Vec::new();
-    let repository = if let Some(r) = q["repositoryId"].as_str() {
-        Some(canonical_repository(db, &p.account_id, r).await?)
-    } else {
-        None
-    };
-    let search = string(q, "search").case_fold().collect::<String>();
     let mut last = String::new();
     for entity_id in ids {
         let r = result(db, &p.account_id, &entity_id).await?;
-        if kind == TASK {
-            let task = &r["version"]["task"];
-            if let Some(repo) = &repository
-                && canonical_repository(db, &p.account_id, string(task, "repositoryId")).await?
-                    != *repo
-            {
-                continue;
-            }
-            let mut matches = true;
-            for (field, names) in [("progress", PROGRESS), ("proposal", PROPOSAL)] {
-                if let Some(values) = q[field].as_array().filter(|v| !v.is_empty()) {
-                    let values = values
-                        .iter()
-                        .map(|v| enum_value(v, names, None))
-                        .collect::<Result<Vec<_>>>()?;
-                    if !values.iter().any(|v| v == string(task, field)) {
-                        matches = false;
-                    }
-                }
-            }
-            if !matches {
-                continue;
-            }
-            if !search.is_empty()
-                && !["title", "description"].iter().any(|f| {
-                    string(task, f)
-                        .case_fold()
-                        .collect::<String>()
-                        .contains(&search)
-                })
-            {
-                continue;
-            }
-        }
         if items.len() == size {
             let next = new_cursor(db, &p.account_id, &scope, &json!({"after":last})).await?;
             return Ok(json!({"items":items,"nextCursor":next}));
@@ -826,22 +868,25 @@ pub async fn dispatch(
 ) -> Result<Value> {
     if matches!(
         method,
-        "ListRepositories" | "ListTasks" | "ListHistory" | "ListURLConnections"
+        "ListRepositories"
+            | "ListTasks"
+            | "ListHistory"
+            | "ListURLConnections"
+            | "ListPlanningItems"
     ) {
         return list(db, p, method, q).await;
     }
-    if matches!(method, "GetRepository" | "GetTask") {
+    if matches!(method, "GetRepository" | "GetTask" | "GetPlanningItem") {
         let entity_id = canonical_repository(db, &p.account_id, string(q, "id")).await?;
         let e = entity(db, &p.account_id, &entity_id)
             .await?
             .ok_or_else(|| fault(2, "entity not found"))?;
-        if e.kind
-            != if method == "GetRepository" {
-                REPOSITORY
-            } else {
-                TASK
-            }
-        {
+        let wanted = match method {
+            "GetRepository" => e.kind == REPOSITORY,
+            "GetTask" => e.kind == TASK,
+            _ => crate::planning::is_item(e.kind),
+        };
+        if !wanted {
             return Err(fault(2, "entity not found"));
         }
         return Ok(json!({"result":result(db,&p.account_id,&entity_id).await?}));
@@ -861,6 +906,9 @@ pub async fn dispatch(
             | "CreateURLConnection"
             | "SaveURLConnection"
             | "DeleteURLConnection"
+            | "CreatePlanningItem"
+            | "SavePlanningItem"
+            | "DeletePlanningItem"
     ) {
         return Err(fault(1, "unknown Lane method"));
     }
@@ -886,35 +934,45 @@ pub async fn dispatch(
         .await?;
         return Ok(response);
     }
-    let response;
+    let mut response;
+    // Other tasks the write changes (relationship edits, related links, moves).
+    let mut cascade = std::collections::BTreeMap::new();
     if matches!(
         method,
-        "DeleteRepository" | "DeleteTask" | "DeleteURLConnection"
+        "DeleteRepository" | "DeleteTask" | "DeleteURLConnection" | "DeletePlanningItem"
     ) {
         let kind = match method {
             "DeleteRepository" => REPOSITORY,
             "DeleteURLConnection" => URL_CONNECTION,
+            "DeletePlanningItem" => match &existing {
+                Some(e) if crate::planning::is_item(e.kind) => e.kind,
+                _ => return Err(fault(2, "planning item not found")),
+            },
             _ => TASK,
         };
-        response = json!({"result":delete_entity(db,p,&entity_id,kind,None).await?});
+        response = json!({"result":delete_entity_with(db,p,&entity_id,kind,None,true).await?});
     } else {
         if canonical(&q)?.len() > max_item_bytes {
             return Err(fault(15, "item exceeds configured byte limit"));
         }
         if matches!(
             method,
-            "CreateRepository" | "CreateTask" | "CreateURLConnection"
+            "CreateRepository" | "CreateTask" | "CreateURLConnection" | "CreatePlanningItem"
         ) {
             if existing.is_some() {
                 return Err(fault(6, "entity ID is already in use"));
             }
+            let item_kind = crate::planning::planning_body(&q["item"]).map(|(k, _)| k);
             let kind = match method {
                 "CreateRepository" => REPOSITORY,
                 "CreateURLConnection" => URL_CONNECTION,
+                "CreatePlanningItem" => item_kind?,
                 _ => TASK,
             };
             let mut repo_result = None;
-            let body = if kind == URL_CONNECTION {
+            let body = if crate::planning::is_item(kind) {
+                q["item"][body_key(kind)].clone()
+            } else if kind == URL_CONNECTION {
                 q["connection"].clone()
             } else if kind == REPOSITORY {
                 let mut b = json!({"normalizedUrl":q["url"]});
@@ -944,7 +1002,23 @@ pub async fn dispatch(
                 repo_result = Some(result(db, &p.account_id, &repository).await?);
                 let mut task = q.clone();
                 task["repositoryId"] = json!(repository);
-                task_body(&task, true)?
+                let body = task_body(&task, true)?;
+                let edits = crate::planning::Edits::from_value(&q["relationshipEdits"])?;
+                let plan = crate::planning::plan_task(
+                    db,
+                    &p.account_id,
+                    crate::planning::TaskPlan {
+                        id: &entity_id,
+                        current_repo: None,
+                        body,
+                        edits: &edits,
+                        mode: crate::planning::Mode::Create,
+                        supersede: true,
+                    },
+                )
+                .await?;
+                cascade = plan.others;
+                plan.body
             };
             let v = version(&entity_id, kind, &[], Some(body), p);
             new_entity(db, p, &entity_id, kind, &v).await?;
@@ -975,8 +1049,12 @@ pub async fn dispatch(
             };
             if (method == "SaveRepository" && e.kind != REPOSITORY)
                 || (method == "SaveURLConnection" && e.kind != URL_CONNECTION)
+                || (method == "SavePlanningItem" && !crate::planning::is_item(e.kind))
                 || (!resolving
-                    && !matches!(method, "SaveRepository" | "SaveURLConnection")
+                    && !matches!(
+                        method,
+                        "SaveRepository" | "SaveURLConnection" | "SavePlanningItem"
+                    )
                     && e.kind != TASK)
             {
                 return Err(fault(1, "entity kind mismatch"));
@@ -985,13 +1063,22 @@ pub async fn dispatch(
                 if q["resolved"]["deleted"].as_bool() == Some(true) {
                     return Err(fault(1, "use deletion to delete an entity"));
                 }
-                if e.kind == URL_CONNECTION {
+                if crate::planning::is_item(e.kind) {
+                    crate::planning::item_body(e.kind, &q["resolved"][body_key(e.kind)])?
+                } else if e.kind == URL_CONNECTION {
                     crate::capture::rule_body(&q["resolved"]["urlConnection"])?
                 } else if e.kind == TASK {
                     task_body(&q["resolved"]["task"], false)?
                 } else {
                     repository_body(&q["resolved"]["repository"])?
                 }
+            } else if crate::planning::is_item(e.kind) {
+                // Kind and repository are immutable; validate_body checks the repository.
+                let (kind, body) = crate::planning::planning_body(&q["item"])?;
+                if kind != e.kind {
+                    return Err(fault(1, "a planning item's kind is immutable"));
+                }
+                body
             } else if e.kind == URL_CONNECTION {
                 q["connection"].clone()
             } else if e.kind == REPOSITORY {
@@ -1044,6 +1131,50 @@ pub async fn dispatch(
                 }
                 b
             };
+            let mut body = body;
+            if e.kind == TASK && matches!(method, "SaveTask" | "ResolveConflict") {
+                // A save that is not based on the only head becomes a conflict alternative: it
+                // is validated and preserved, but it changes no other task.
+                let supersede = resolving || parents == hs;
+                let edits = crate::planning::Edits::from_value(&q["relationshipEdits"])?;
+                let plan = crate::planning::plan_task(
+                    db,
+                    &p.account_id,
+                    crate::planning::TaskPlan {
+                        id: &entity_id,
+                        current_repo: e.repository.as_deref(),
+                        body,
+                        edits: &edits,
+                        mode: crate::planning::Mode::Save,
+                        supersede,
+                    },
+                )
+                .await?;
+                body = plan.body;
+                if supersede {
+                    cascade = plan.others;
+                }
+            } else if e.kind == TASK {
+                // SetProgress, SetProposal and RestorePrompt copy the planning fields of the
+                // submitted base snapshot. When that base is stale, the copy becomes a conflict
+                // alternative whose relationships may no longer be valid against the current
+                // heads (for example a dependency that would now close a cycle), so validate it
+                // like a synchronized version: no reinterpretation, no cascade, and the union of
+                // every head's references for the cycle checks.
+                crate::planning::plan_task(
+                    db,
+                    &p.account_id,
+                    crate::planning::TaskPlan {
+                        id: &entity_id,
+                        current_repo: e.repository.as_deref(),
+                        body: body.clone(),
+                        edits: &crate::planning::Edits::default(),
+                        mode: crate::planning::Mode::Push,
+                        supersede: parents == hs,
+                    },
+                )
+                .await?;
+            }
             let mut v = version(&entity_id, e.kind, &parents, Some(body), p);
             v["promptRestoration"] = json!(method == "RestorePrompt");
             validate_body(db, &p.account_id, &entity_id, e.kind, &v).await?;
@@ -1066,6 +1197,11 @@ pub async fn dispatch(
             add_head(db, &p.account_id, &entity_id, string(&v, "versionId")).await?;
             response = json!({"result":emit(db,&p.account_id,&entity_id).await?});
         }
+    }
+    if !cascade.is_empty() {
+        let affected = crate::planning::write_others(db, p, cascade).await?;
+        // The cascade can change the receipt of this very request, so write it afterwards.
+        response["affected"] = json!(affected);
     }
     save_receipt(
         db,

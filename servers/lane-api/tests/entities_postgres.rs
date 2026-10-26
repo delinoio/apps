@@ -34,6 +34,7 @@ impl Fixture {
             ("LANE_WEBHOOK_MIGRATION", "00003_webhooks.sql"),
             ("LANE_PUSH_MIGRATION", "00004_push.sql"),
             ("LANE_CAPTURE_MIGRATION", "00006_captures.sql"),
+            ("LANE_PLANNING_MIGRATION", "00007_planning.sql"),
         ] {
             let path = std::env::var(env)
                 .map(std::path::PathBuf::from)
@@ -88,7 +89,7 @@ impl Fixture {
     }
     async fn sync(&mut self, method: &str, mut q: Value, max: usize) -> Result<Value> {
         if q.get("formatVersion").is_none() {
-            q["formatVersion"] = json!(2);
+            q["formatVersion"] = json!(3);
         }
         if q.get("epoch").is_none() {
             q["epoch"] = json!(self.epoch);
@@ -651,7 +652,7 @@ async fn realqa_atomic_capture_history_move_ownership_and_deletion() {
     assert_eq!(f.count("lane_attachments").await, 0);
     assert_eq!(f.count("lane_entities").await, 2);
     let created = f.capture("CreateCaptureTask", q.clone()).await.unwrap();
-    assert_eq!(created["result"]["version"]["formatVersion"], 2);
+    assert_eq!(created["result"]["version"]["formatVersion"], 3);
     assert_eq!(created["result"]["version"]["task"]["prompt"], "Problem");
     assert_eq!(
         f.capture("CreateCaptureTask", q.clone()).await.unwrap()["result"]["result"],
@@ -763,7 +764,7 @@ async fn realqa_rule_conflicts_duplicates_cascade_and_sync_negotiation() {
     f.call("ResolveConflict",json!({"id":rule,"meta":{"requestId":id()},"expectedHeadIds":hs,"resolved":{"urlConnection":{"prefix":"https://example.com/c","repositoryId":repo}}})).await.unwrap();
     assert_eq!(
         f.sync("GetSyncInfo", json!({}), 1).await.unwrap()["formatVersion"],
-        2
+        3
     );
     assert_eq!(
         f.sync("PullChanges", json!({"formatVersion":1}), 1)
@@ -938,5 +939,1391 @@ async fn fresh_request_historical_replay_cannot_delete_moved_capture_or_url_rule
         .await
         .unwrap();
     assert_eq!(garbage, 0);
+    f.close().await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Planning: shared vectors executed against PostgreSQL, then targeted domain tests.
+// ---------------------------------------------------------------------------------------------
+use lane_api::planning::violation_of;
+use std::collections::BTreeMap;
+
+impl Fixture {
+    /// Accepted bodies of every live task.
+    async fn task_bodies(&mut self) -> BTreeMap<String, Value> {
+        let rows: Vec<(String, Value)> = sqlx::query_as("SELECT e.id,v.envelope->'task' FROM lane_entities e JOIN lane_versions v ON v.account_id=e.account_id AND v.entity_id=e.id AND v.version_id=e.accepted_version_id WHERE e.account_id=$1 AND e.kind=2 AND NOT e.deleted")
+            .bind(&self.p.account_id).fetch_all(&mut self.db).await.unwrap();
+        rows.into_iter().collect()
+    }
+    async fn accepted(&mut self, entity: &str) -> String {
+        sqlx::query_scalar(
+            "SELECT accepted_version_id FROM lane_entities WHERE account_id=$1 AND id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(entity)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    /// Run a mutation with the fixture's request, substituting the real expected version.
+    async fn run(&mut self, method: &str, mut request: Value) -> Result<Value> {
+        if request.get("expectedVersionId").is_some() {
+            let current = self.accepted(string(&request, "id")).await;
+            request["expectedVersionId"] = json!(current);
+        }
+        self.call(method, request).await
+    }
+    async fn planning(&mut self, entity: &str, item: Value) -> Result<Value> {
+        self.call(
+            "CreatePlanningItem",
+            json!({"meta":{"requestId":id()},"id":entity,"item":item}),
+        )
+        .await
+    }
+    async fn label(&mut self, entity: &str, repo: &str, name: &str) -> Value {
+        self.planning(
+            entity,
+            json!({"label":{"repositoryId":repo,"name":name,"color":"#aabbcc"}}),
+        )
+        .await
+        .unwrap()
+    }
+    /// Counts that must not move when an operation is rejected.
+    async fn footprint(&mut self) -> Vec<i64> {
+        let mut out = Vec::new();
+        for table in [
+            "lane_versions",
+            "lane_heads",
+            "lane_entities",
+            "lane_changes",
+            "lane_entity_receipts",
+            "lane_version_identities",
+        ] {
+            out.push(self.count(table).await);
+        }
+        out
+    }
+}
+
+/// Recreate a fixture state through the public operations so every row is real.
+async fn seed(f: &mut Fixture, state: &Value) {
+    let entities = state["entities"].as_array().unwrap();
+    let mut first_repo = String::new();
+    for e in entities {
+        if e["kind"] == "ENTITY_KIND_REPOSITORY" {
+            let url = format!(
+                "https://{}",
+                e["repository"]["normalizedUrl"].as_str().unwrap()
+            );
+            if first_repo.is_empty() {
+                first_repo = string(e, "entityId").to_owned();
+            }
+            f.repo(string(e, "entityId"), &url).await;
+        }
+    }
+    for e in entities {
+        let entity = string(e, "entityId");
+        match string(e, "kind") {
+            "ENTITY_KIND_LABEL" | "ENTITY_KIND_MILESTONE" | "ENTITY_KIND_CYCLE" => {
+                let key = match string(e, "kind") {
+                    "ENTITY_KIND_LABEL" => "label",
+                    "ENTITY_KIND_MILESTONE" => "milestone",
+                    _ => "cycle",
+                };
+                if e["deleted"] == true {
+                    f.label(entity, &first_repo, &format!("deleted {entity}"))
+                        .await;
+                    f.call(
+                        "DeletePlanningItem",
+                        json!({"meta":{"requestId":id()},"id":entity}),
+                    )
+                    .await
+                    .unwrap();
+                } else {
+                    f.planning(entity, json!({ key: e[key] })).await.unwrap();
+                }
+            }
+            "ENTITY_KIND_TASK" if e["deleted"] == true => {
+                f.call("CreateTask", json!({"meta":{"requestId":id()},"id":entity,"repository":{"id":first_repo},"title":"deleted"})).await.unwrap();
+            }
+            "ENTITY_KIND_TASK" => {
+                let body = &e["task"];
+                f.call("CreateTask", json!({"meta":{"requestId":id()},"id":entity,"repository":{"id":body["repositoryId"]},"title":body["title"],"description":body["description"],"progress":body["progress"],"proposal":body["proposal"]})).await.unwrap();
+            }
+            _ => {}
+        }
+    }
+    // Second pass: planning fields and relationships once every task exists.
+    for e in entities {
+        if e["kind"] == "ENTITY_KIND_TASK" && e["deleted"] != true {
+            let body = &e["task"];
+            let plain = [
+                "repositoryId",
+                "title",
+                "description",
+                "progress",
+                "proposal",
+            ];
+            if body
+                .as_object()
+                .unwrap()
+                .keys()
+                .any(|k| !plain.contains(&k.as_str()))
+            {
+                let entity = string(e, "entityId");
+                f.run("SaveTask", json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":"x","task":body})).await.unwrap();
+            }
+        }
+    }
+    for e in entities {
+        if e["kind"] == "ENTITY_KIND_TASK" && e["deleted"] == true {
+            f.call(
+                "DeleteTask",
+                json!({"meta":{"requestId":id()},"id":string(e,"entityId")}),
+            )
+            .await
+            .unwrap();
+        }
+    }
+}
+fn violation_name(f: &lane_api::Fault) -> Option<&'static str> {
+    violation_of(f).map(|v| v.name())
+}
+fn expect_rejection(expected: &Value, got: &lane_api::Fault, case: &str) {
+    let reason = match string(expected, "reason") {
+        "ERROR_REASON_INVALID_INPUT" => 1,
+        "ERROR_REASON_CONSTRAINT_VIOLATION" => 19,
+        other => panic!("unexpected reason {other}"),
+    };
+    assert_eq!(got.reason & 0xff, reason, "{case}: {got:?}");
+    assert_eq!(
+        violation_name(got),
+        expected.get("violation").and_then(Value::as_str),
+        "{case}"
+    );
+}
+fn affected_bodies(response: &Value) -> BTreeMap<String, Value> {
+    response["affected"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| {
+            (
+                string(&r["version"], "entityId").to_owned(),
+                r["version"]["task"].clone(),
+            )
+        })
+        .collect()
+}
+fn expected_bodies(list: &Value) -> BTreeMap<String, Value> {
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .map(|v| (string(v, "entityId").to_owned(), v["task"].clone()))
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn shared_planning_validation_and_graph_vectors_execute_database_domain() {
+    for suite in ["planning-validation", "planning-graph"] {
+        let doc = fixtures(suite);
+        for case in doc["cases"].as_array().unwrap() {
+            let name = format!("{suite}/{}", case["id"]);
+            let mut f = Fixture::new().await;
+            seed(&mut f, &doc["state"]).await;
+            let before = f.footprint().await;
+            let method = string(&case["input"], "method");
+            let response = f.run(method, case["input"]["request"].clone()).await;
+            let expected = &case["expected"];
+            if expected["outcome"] == "error" {
+                expect_rejection(expected, &response.unwrap_err(), &name);
+                // A rejected operation leaves no version, change, receipt or cleanup behind.
+                assert_eq!(f.footprint().await, before, "{name}: partial writes");
+            } else {
+                let response = response.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+                let version = &response["result"]["version"];
+                for key in ["task", "label", "milestone", "cycle"] {
+                    if expected["normalized"].get(key).is_some() {
+                        assert_eq!(version[key], expected["normalized"][key], "{name}");
+                    }
+                }
+                assert_eq!(version["formatVersion"], 3);
+                if let Some(list) = expected.get("affected") {
+                    assert_eq!(affected_bodies(&response), expected_bodies(list), "{name}");
+                    // Cascaded versions exist in the store with the caller's origin.
+                    for (task, body) in affected_bodies(&response) {
+                        assert_eq!(f.task_bodies().await[&task], body, "{name}");
+                    }
+                }
+            }
+            f.close().await;
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn shared_planning_cleanup_vectors_execute_database_domain() {
+    let doc = fixtures("planning-cleanup");
+    for case in doc["cases"].as_array().unwrap() {
+        let name = format!("cleanup/{}", case["id"]);
+        let mut f = Fixture::new().await;
+        seed(&mut f, &doc["state"]).await;
+        let before = f.task_bodies().await;
+        let method = string(&case["input"], "method");
+        let request = case["input"]["request"].clone();
+        let mut request = request;
+        request["meta"] = json!({"requestId":id()});
+        f.run(method, request.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let after = f.task_bodies().await;
+        let changed: BTreeMap<String, Value> = after
+            .iter()
+            .filter(|(k, v)| before.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        assert_eq!(
+            changed,
+            expected_bodies(&case["expected"]["changed"]),
+            "{name}"
+        );
+        for gone in case["expected"]["deleted"].as_array().unwrap() {
+            let deleted: bool = sqlx::query_scalar(
+                "SELECT deleted FROM lane_entities WHERE account_id=$1 AND id=$2",
+            )
+            .bind(&f.p.account_id)
+            .bind(gone.as_str().unwrap())
+            .fetch_one(&mut f.db)
+            .await
+            .unwrap();
+            assert!(deleted, "{name}");
+        }
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn shared_planning_list_vectors_execute_database_domain() {
+    let doc = fixtures("planning-list");
+    let mut f = Fixture::new().await;
+    seed(&mut f, &doc["dataset"]).await;
+    for case in doc["cases"].as_array().unwrap() {
+        let name = format!("list/{}", case["id"]);
+        let mut request = case["input"]["request"].clone();
+        let mut pages: Vec<Vec<String>> = Vec::new();
+        loop {
+            let page = f
+                .call("ListTasks", request.clone())
+                .await
+                .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            pages.push(
+                page["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| string(&r["version"], "entityId").to_owned())
+                    .collect(),
+            );
+            let next = string(&page, "nextCursor").to_owned();
+            if next.is_empty() {
+                break;
+            }
+            request["page"]["cursor"] = json!(next);
+        }
+        let want_pages: Vec<Vec<String>> = case["expected"]["pages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                p.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s.as_str().unwrap().to_owned())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(pages, want_pages, "{name}");
+    }
+    // A cursor is bound to its account, filter and sort.
+    let first = f
+        .call(
+            "ListTasks",
+            json!({"page":{"size":2},"sortKey":"TASK_SORT_KEY_PRIORITY"}),
+        )
+        .await
+        .unwrap();
+    let cursor = string(&first, "nextCursor").to_owned();
+    assert!(!cursor.is_empty());
+    for other in [
+        json!({"page":{"size":2,"cursor":cursor},"sortKey":"TASK_SORT_KEY_TYPE"}),
+        json!({"page":{"size":2,"cursor":cursor},"sortKey":"TASK_SORT_KEY_PRIORITY","sortDirection":"SORT_DIRECTION_DESCENDING"}),
+        json!({"page":{"size":2,"cursor":cursor},"sortKey":"TASK_SORT_KEY_PRIORITY","filter":{"includeUnlabeled":true}}),
+    ] {
+        assert_eq!(f.call("ListTasks", other).await.unwrap_err().reason, 1);
+    }
+    f.close().await;
+}
+
+const LABEL: &str = "019a0000-0000-7000-8000-0000000000a1";
+const MILESTONE: &str = "019a0000-0000-7000-8000-0000000000a2";
+const CYCLE: &str = "019a0000-0000-7000-8000-0000000000a3";
+const TASK_B: &str = "019a0000-0000-7000-8000-000000000004";
+const TASK_C: &str = "019a0000-0000-7000-8000-000000000005";
+
+fn task_fields(title: &str, repo: &str, extra: Value) -> Value {
+    let mut task = json!({"repositoryId":repo,"title":title,"description":"","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
+    for (k, v) in extra.as_object().into_iter().flatten() {
+        task[k] = v.clone();
+    }
+    task
+}
+impl Fixture {
+    async fn save_task(
+        &mut self,
+        entity: &str,
+        task: Value,
+        edits: Option<Value>,
+    ) -> Result<Value> {
+        let mut q =
+            json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":"x","task":task});
+        if let Some(edits) = edits {
+            q["relationshipEdits"] = edits;
+        }
+        self.run("SaveTask", q).await
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn planning_item_lifecycle_conflict_history_and_deletion_redaction() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let request = json!({"meta":{"requestId":id()},"id":LABEL,"item":{"label":{"repositoryId":REPO,"name":" SecretLabelName ","color":"#aabbcc","description":"SecretDescription"}}});
+    let created = f.call("CreatePlanningItem", request.clone()).await.unwrap();
+    let label = &created["result"]["version"]["label"];
+    assert_eq!(created["result"]["version"]["kind"], "ENTITY_KIND_LABEL");
+    assert_eq!(created["result"]["version"]["formatVersion"], 3);
+    assert_eq!(
+        (label["name"].as_str(), label["color"].as_str()),
+        (Some("SecretLabelName"), Some("#AABBCC"))
+    );
+    // Response-loss retry: same receipt, no new version; changed content is rejected.
+    let replay = f.call("CreatePlanningItem", request.clone()).await.unwrap();
+    assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+    assert_eq!(f.heads(LABEL).await.len(), 1);
+    let mut changed = request.clone();
+    changed["item"]["label"]["color"] = json!("#000000");
+    assert_eq!(
+        f.call("CreatePlanningItem", changed)
+            .await
+            .unwrap_err()
+            .reason,
+        6
+    );
+    // Wrong kind / unknown planning item.
+    assert_eq!(
+        f.call("GetTask", json!({"id":LABEL}))
+            .await
+            .unwrap_err()
+            .reason,
+        2
+    );
+    assert_eq!(
+        f.call("GetPlanningItem", json!({"id":REPO}))
+            .await
+            .unwrap_err()
+            .reason,
+        2
+    );
+    let got = f
+        .call("GetPlanningItem", json!({"id":LABEL}))
+        .await
+        .unwrap();
+    assert_eq!(got["result"]["version"]["label"]["name"], "SecretLabelName");
+
+    // Kind and repository are immutable; unchanged items save new versions with history.
+    let v1 = created["result"]["version"]["versionId"].clone();
+    let other_repo = "019a0000-0000-7000-8000-0000000000b1";
+    f.repo(other_repo, "https://example.com/other").await;
+    for item in [
+        json!({"label":{"repositoryId":other_repo,"name":"SecretLabelName","color":"#AABBCC"}}),
+        json!({"milestone":{"repositoryId":REPO,"name":"SecretLabelName"}}),
+    ] {
+        let r = f
+            .call(
+                "SavePlanningItem",
+                json!({"meta":{"requestId":id()},"id":LABEL,"expectedVersionId":v1,"item":item}),
+            )
+            .await;
+        assert_eq!(r.unwrap_err().reason, 1);
+    }
+    let saved = f.call("SavePlanningItem", json!({"meta":{"requestId":id()},"id":LABEL,"expectedVersionId":v1,"item":{"label":{"repositoryId":REPO,"name":"SecretLabelName","color":"#112233","description":"SecretDescription"}}})).await.unwrap();
+    assert_eq!(saved["result"]["version"]["label"]["color"], "#112233");
+    let history = f.call("ListHistory", json!({"id":LABEL})).await.unwrap();
+    assert_eq!(history["versions"].as_array().unwrap().len(), 2);
+
+    // A stale save is a whole-item conflict resolved through ResolveConflict.
+    let stale = f.call("SavePlanningItem", json!({"meta":{"requestId":id()},"id":LABEL,"expectedVersionId":v1,"item":{"label":{"repositoryId":REPO,"name":"SecretLabelName","color":"#445566"}}})).await.unwrap();
+    assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+    let blocked = f.run("SavePlanningItem", json!({"meta":{"requestId":id()},"id":LABEL,"expectedVersionId":"x","item":{"label":{"repositoryId":REPO,"name":"SecretLabelName","color":"#778899"}}})).await;
+    assert_eq!(blocked.unwrap_err().reason, 4);
+    let heads = f.heads(LABEL).await;
+    assert_eq!(heads.len(), 2);
+    let resolved = f.call("ResolveConflict", json!({"meta":{"requestId":id()},"id":LABEL,"expectedHeadIds":heads,"resolved":{"label":{"repositoryId":REPO,"name":"SecretLabelName","color":"#abcdef"}}})).await.unwrap();
+    assert_eq!(resolved["result"]["version"]["label"]["color"], "#ABCDEF");
+    assert_eq!(f.heads(LABEL).await.len(), 1);
+
+    // Assign it, then delete it: the task loses only the assignment and keeps no name.
+    f.task(TASK, REPO).await;
+    let tagged = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({"labelIds":[LABEL]})),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        tagged["result"]["version"]["task"]["labelIds"],
+        json!([LABEL])
+    );
+    let deleter = f.p.clone();
+    f.p.origin_kind = "ORIGIN_KIND_MCP".into();
+    f.p.device_name = "Deleting agent".into();
+    let deleted = f
+        .call(
+            "DeletePlanningItem",
+            json!({"meta":{"requestId":id()},"id":LABEL}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(deleted["result"]["result"], "RESULT_KIND_DELETED");
+    assert!(deleted["result"]["version"].get("label").is_none());
+    let t = f.call("GetTask", json!({"id":TASK})).await.unwrap();
+    assert!(t["result"]["version"]["task"].get("labelIds").is_none());
+    assert_eq!(t["result"]["version"]["origin"]["kind"], "ORIGIN_KIND_MCP");
+    f.p = deleter;
+    // The item's content is gone from versions, changes, receipts and every task history.
+    for table in ["lane_versions", "lane_changes", "lane_entity_receipts"] {
+        let column = if table == "lane_versions" {
+            "envelope"
+        } else if table == "lane_changes" {
+            "data"
+        } else {
+            "response"
+        };
+        let leaked: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE account_id=$1 AND ({column})::text LIKE '%SecretLabelName%' OR ({column})::text LIKE '%SecretDescription%'"))
+            .bind(&f.p.account_id).fetch_one(&mut f.db).await.unwrap();
+        assert_eq!(leaked, 0, "{table}");
+    }
+    let task_history = f.call("ListHistory", json!({"id":TASK})).await.unwrap();
+    assert!(!task_history.to_string().contains("SecretLabelName"));
+    assert_eq!(
+        f.call("ListHistory", json!({"id":LABEL})).await.unwrap()["versions"],
+        json!([])
+    );
+    // Replays after deletion report DELETED without content; the name is reusable.
+    let late = f.call("CreatePlanningItem", request).await.unwrap();
+    assert_eq!(late["result"]["result"], "RESULT_KIND_DELETED");
+    assert!(late["result"]["version"].get("label").is_none());
+    f.planning(
+        MILESTONE,
+        json!({"milestone":{"repositoryId":REPO,"name":"SecretLabelName"}}),
+    )
+    .await
+    .unwrap();
+    f.label(
+        "019a0000-0000-7000-8000-0000000000a9",
+        REPO,
+        "secretlabelname",
+    )
+    .await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn conflicted_tasks_are_read_only_for_cascades_and_rollback_is_complete() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    f.task(TASK_C, REPO).await;
+    let b0 = f.accepted(TASK_B).await;
+    for title in ["one", "two"] {
+        let r = f.call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b0,"task":task_fields(title, REPO, json!({}))})).await;
+        let _ = r; // the second stale save preserves a conflict alternative
+    }
+    assert!(f.heads(TASK_B).await.len() > 1);
+    let before = f.footprint().await;
+    // Edits that would rewrite a conflicted task fail the whole operation, including the
+    // primary write and the other affected task.
+    for edits in [
+        json!({"addSubtaskIds":[TASK_C, TASK_B]}),
+        json!({"addBlockedTaskIds":[TASK_C, TASK_B]}),
+    ] {
+        let r = f
+            .save_task(TASK, task_fields("Title", REPO, json!({})), Some(edits))
+            .await;
+        assert_eq!(r.unwrap_err().reason, 4);
+        assert_eq!(f.footprint().await, before);
+    }
+    let r = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({"relatedTaskIds":[TASK_B]})),
+            None,
+        )
+        .await;
+    assert_eq!(r.unwrap_err().reason, 4);
+    assert_eq!(f.footprint().await, before);
+    // The same edit without the conflicted task succeeds and reports the affected task.
+    let ok = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({})),
+            Some(json!({"addSubtaskIds":[TASK_C]})),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ok["affected"].as_array().unwrap().len(), 1);
+    assert_eq!(ok["affected"][0]["version"]["task"]["parentTaskId"], TASK);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_specialized_edits_are_validated_against_the_current_heads() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    // A depends on B, then drops that dependency, then B depends on A.
+    let with_dependency = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({"dependsOnTaskIds":[TASK_B]})),
+            None,
+        )
+        .await
+        .unwrap();
+    let stale = string(&with_dependency["result"]["version"], "versionId").to_owned();
+    f.save_task(TASK, task_fields("Title", REPO, json!({})), None)
+        .await
+        .unwrap();
+    f.save_task(
+        TASK_B,
+        task_fields("Title", REPO, json!({"dependsOnTaskIds":[TASK]})),
+        None,
+    )
+    .await
+    .unwrap();
+    let before = f.footprint().await;
+    // The copied stale A -> B edge would close a cycle across the current heads.
+    for (method, extra) in [
+        ("SetProgress", json!({"progress":"PROGRESS_DONE"})),
+        ("RestorePrompt", json!({"sourceVersionId":stale})),
+    ] {
+        let mut q = json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":stale});
+        for (k, v) in extra.as_object().unwrap() {
+            q[k] = v.clone();
+        }
+        let r = f.call(method, q).await.unwrap_err();
+        assert_eq!(r.reason & 0xff, 19, "{method}: {r:?}");
+        assert_eq!(
+            violation_name(&r),
+            Some("CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"),
+            "{method}"
+        );
+        assert_eq!(f.footprint().await, before, "{method}: partial writes");
+    }
+    // A stale edit that closes no cycle still becomes a conflict alternative.
+    f.task(TASK_C, REPO).await;
+    let c0 = f.accepted(TASK_C).await;
+    f.call("SetProgress", json!({"meta":{"requestId":id()},"id":TASK_C,"expectedVersionId":c0,"progress":"PROGRESS_DONE"})).await.unwrap();
+    let alternative = f
+        .call("SetProgress", json!({"meta":{"requestId":id()},"id":TASK_C,"expectedVersionId":c0,"progress":"PROGRESS_IN_PROGRESS"}))
+        .await
+        .unwrap();
+    assert_eq!(alternative["result"]["result"], "RESULT_KIND_CONFLICT");
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_save_is_validated_without_applying_discarded_relationship_edits() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    let b1 = f.accepted(TASK_B).await;
+    // B advances past the version the stale save is based on, then A becomes a child of B.
+    f.call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,"task":task_fields("Title two", REPO, json!({}))})).await.unwrap();
+    let a1 = f.accepted(TASK).await;
+    f.call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":a1,"task":task_fields("Title", REPO, json!({"parentTaskId":TASK_B}))})).await.unwrap();
+    let before = f.footprint().await;
+    // The edits would detach A, but a stale save never applies them, so A stays a child of B
+    // and the alternative that names A as B's parent closes a parent cycle.
+    let stale = json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,
+        "task":task_fields("Title three", REPO, json!({"parentTaskId":TASK})),
+        "relationshipEdits":{"removeSubtaskIds":[TASK]}});
+    let r = f.call("SaveTask", stale).await.unwrap_err();
+    assert_eq!(r.reason & 0xff, 19, "{r:?}");
+    assert_eq!(
+        violation_name(&r),
+        Some("CONSTRAINT_VIOLATION_PARENT_CYCLE")
+    );
+    assert_eq!(f.footprint().await, before, "partial writes");
+    // Without the cycle the stale save is preserved as an alternative and edits nothing else.
+    let stale = json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,
+        "task":task_fields("Title four", REPO, json!({})),
+        "relationshipEdits":{"removeSubtaskIds":[TASK]}});
+    let r = f.call("SaveTask", stale).await.unwrap();
+    assert_eq!(r["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(
+        r.get("affected")
+            .is_none_or(|a| a.as_array().is_some_and(Vec::is_empty))
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn saving_either_endpoint_removes_a_one_directional_pushed_related_link() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    // A synchronized write stores the link on B only; A has no backlink.
+    f.push(mutation(pushed_task(
+        TASK_B,
+        &id(),
+        &[],
+        task_fields("B", REPO, json!({"relatedTaskIds":[TASK]})),
+        3,
+    )))
+    .await
+    .unwrap();
+    let bodies = f.task_bodies().await;
+    assert!(bodies[TASK].get("relatedTaskIds").is_none());
+    assert_eq!(bodies[TASK_B]["relatedTaskIds"], json!([TASK]));
+    // Saving A without the relation clears it on B as well.
+    let a1 = f.accepted(TASK).await;
+    let saved = f
+        .call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":a1,"task":task_fields("Title", REPO, json!({}))}))
+        .await
+        .unwrap();
+    assert_eq!(saved["affected"].as_array().unwrap().len(), 1);
+    assert_eq!(saved["affected"][0]["version"]["entityId"], TASK_B);
+    let bodies = f.task_bodies().await;
+    assert!(bodies[TASK_B].get("relatedTaskIds").is_none());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn list_ignores_references_retained_by_conflicted_tasks_after_deletion() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.label(LABEL, REPO, "Doomed").await;
+    f.planning(
+        MILESTONE,
+        json!({"milestone":{"repositoryId":REPO,"name":"Doomed"}}),
+    )
+    .await
+    .unwrap();
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    let fields = || {
+        task_fields(
+            "Title",
+            REPO,
+            json!({"labelIds":[LABEL],"milestoneId":MILESTONE}),
+        )
+    };
+    let assigned = f.save_task(TASK, fields(), None).await.unwrap();
+    let base = string(&assigned["result"]["version"], "versionId").to_owned();
+    // Two saves from the same base: the second is a conflict alternative, so the task is
+    // conflicted and deletion cleanup deliberately leaves its accepted body untouched.
+    for title in ["one", "two"] {
+        let mut task = fields();
+        task["title"] = json!(title);
+        f.call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":base,"task":task}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(f.heads(TASK).await.len(), 2);
+    for item in [LABEL, MILESTONE] {
+        f.call(
+            "DeletePlanningItem",
+            json!({"meta":{"requestId":id()},"id":item}),
+        )
+        .await
+        .unwrap();
+    }
+    let accepted = f.task_bodies().await;
+    assert_eq!(accepted[TASK]["labelIds"], json!([LABEL]));
+    assert_eq!(accepted[TASK]["milestoneId"], MILESTONE);
+    let list = |filter: Value| json!({"page":{"size":10},"filter":filter});
+    let listed = |page: Value| -> Vec<String> {
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| string(&r["version"], "entityId").to_owned())
+            .collect()
+    };
+    for filter in [
+        json!({"labelIds":[LABEL]}),
+        json!({"milestoneIds":[MILESTONE]}),
+    ] {
+        let page = f.call("ListTasks", list(filter)).await.unwrap();
+        assert!(listed(page).is_empty());
+    }
+    for filter in [
+        json!({"includeUnlabeled":true}),
+        json!({"includeNoMilestone":true}),
+    ] {
+        let page = f.call("ListTasks", list(filter)).await.unwrap();
+        assert_eq!(listed(page), [TASK, TASK_B]);
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn repository_deletion_cascades_planning_items_and_account_clearing_covers_them() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let keep = "019a0000-0000-7000-8000-0000000000b1";
+    f.repo(keep, "https://example.com/keep").await;
+    f.label(LABEL, REPO, "L").await;
+    f.planning(
+        MILESTONE,
+        json!({"milestone":{"repositoryId":REPO,"name":"M"}}),
+    )
+    .await
+    .unwrap();
+    f.planning(CYCLE, json!({"cycle":{"repositoryId":REPO,"name":"C","startDate":"2026-01-01","endDate":"2026-01-02"}})).await.unwrap();
+    let survivor = "019a0000-0000-7000-8000-0000000000c1";
+    f.label(survivor, keep, "L").await;
+    f.task(TASK, REPO).await;
+    let listed = f.call("ListPlanningItems", json!({})).await.unwrap();
+    assert_eq!(listed["items"].as_array().unwrap().len(), 4);
+    f.call(
+        "DeleteRepository",
+        json!({"meta":{"requestId":id()},"id":REPO}),
+    )
+    .await
+    .unwrap();
+    for item in [LABEL, MILESTONE, CYCLE] {
+        let live: bool = sqlx::query_scalar(
+            "SELECT NOT deleted FROM lane_entities WHERE account_id=$1 AND id=$2",
+        )
+        .bind(&f.p.account_id)
+        .bind(item)
+        .fetch_one(&mut f.db)
+        .await
+        .unwrap();
+        assert!(!live, "{item}");
+        assert_eq!(
+            f.call("GetPlanningItem", json!({"id":item})).await.unwrap()["result"]["result"],
+            "RESULT_KIND_DELETED"
+        );
+    }
+    let listed = f.call("ListPlanningItems", json!({})).await.unwrap();
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["items"][0]["version"]["entityId"], survivor);
+    // Account clearing removes planning items and their versions.
+    // The auth and limit migrations are outside this fixture; clearing also touches their tables.
+    sqlx::raw_sql("CREATE TABLE IF NOT EXISTS lane_sync_rejections(account_id text,request_id text,reason int); CREATE TABLE IF NOT EXISTS lane_control_receipts(account_id text)").execute(&mut f.db).await.unwrap();
+    let mut tx = f.db.begin().await.unwrap();
+    lane_api::clear_account_content(&mut tx, &f.p.account_id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(f.count("lane_entities").await, 0);
+    assert_eq!(f.count("lane_versions").await, 0);
+    assert_eq!(f.count("lane_heads").await, 0);
+    f.close().await;
+}
+
+/// Run two operations on separate connections so the second queues on the account lock while
+/// the first is uncommitted. Returns both outcomes after the first commits.
+async fn raced(
+    f: &mut Fixture,
+    first: (&str, Value),
+    second: (&str, Value),
+) -> (Result<Value>, Result<Value>) {
+    let url = std::env::var("TEST_DATABASE_URL").unwrap();
+    let mut other = PgConnection::connect(&url).await.unwrap();
+    sqlx::query(&format!("SET search_path TO {}", f.schema))
+        .execute(&mut other)
+        .await
+        .unwrap();
+    let principal = f.p.clone();
+    let (method, request) = (second.0.to_owned(), second.1);
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &f.p.account_id).await.unwrap();
+    let a = entities::dispatch(&mut tx, &f.p, first.0, &first.1, usize::MAX).await;
+    let handle = tokio::spawn(async move {
+        let mut tx = other.begin().await.unwrap();
+        account_lock(&mut tx, &principal.account_id).await.unwrap();
+        let b = entities::dispatch(&mut tx, &principal, &method, &request, usize::MAX).await;
+        if b.is_ok() {
+            tx.commit().await.unwrap();
+        } else {
+            tx.rollback().await.unwrap();
+        }
+        b
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        !handle.is_finished(),
+        "the second writer must wait for the account lock"
+    );
+    if a.is_ok() {
+        tx.commit().await.unwrap();
+    } else {
+        tx.rollback().await.unwrap();
+    }
+    (a, handle.await.unwrap())
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn concurrent_writers_cannot_jointly_violate_name_cycle_or_reference_rules() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    // Two writers racing on one case-insensitive name.
+    let create = |entity: &str, name: &str| {
+        (
+            "CreatePlanningItem",
+            json!({"meta":{"requestId":id()},"id":entity,"item":{"label":{"repositoryId":REPO,"name":name,"color":"#000000"}}}),
+        )
+    };
+    let (a, b) = raced(
+        &mut f,
+        create(LABEL, "Dup"),
+        create("019a0000-0000-7000-8000-0000000000a8", "dup"),
+    )
+    .await;
+    assert!(a.is_ok());
+    assert_eq!(
+        violation_name(&b.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_DUPLICATE_NAME")
+    );
+    // Two writers that each add one half of a parent cycle.
+    let ta = f.accepted(TASK).await;
+    let tb = f.accepted(TASK_B).await;
+    let parent = |entity: &str, version: &str, parent: &str, repo: &str| {
+        (
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":version,"task":task_fields("Title", repo, json!({"parentTaskId":parent}))}),
+        )
+    };
+    let (a, b) = raced(
+        &mut f,
+        parent(TASK, &ta, TASK_B, REPO),
+        parent(TASK_B, &tb, TASK, REPO),
+    )
+    .await;
+    assert!(a.is_ok());
+    assert_eq!(
+        violation_name(&b.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_PARENT_CYCLE")
+    );
+    // Delete versus assign: the loser sees the winner's committed state.
+    let ta = f.accepted(TASK).await;
+    let assign = (
+        "SaveTask",
+        json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":ta,"task":task_fields("Title", REPO, json!({"labelIds":[LABEL],"parentTaskId":TASK_B}))}),
+    );
+    let delete = (
+        "DeletePlanningItem",
+        json!({"meta":{"requestId":id()},"id":LABEL}),
+    );
+    let (a, b) = raced(&mut f, delete.clone(), assign.clone()).await;
+    assert!(a.is_ok());
+    assert_eq!(
+        violation_name(&b.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    // Assign first, then delete: the committed assignment is cleaned up.
+    f.label(CYCLE, REPO, "Other").await;
+    let ta = f.accepted(TASK).await;
+    let assign = (
+        "SaveTask",
+        json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":ta,"task":task_fields("Title", REPO, json!({"labelIds":[CYCLE],"parentTaskId":TASK_B}))}),
+    );
+    let delete = (
+        "DeletePlanningItem",
+        json!({"meta":{"requestId":id()},"id":CYCLE}),
+    );
+    let (a, b) = raced(&mut f, assign, delete).await;
+    assert!(a.is_ok() && b.is_ok());
+    let body = &f.task_bodies().await[TASK];
+    assert!(body.get("labelIds").is_none());
+    assert_eq!(body["parentTaskId"], TASK_B);
+    f.close().await;
+}
+
+fn pushed_task(entity: &str, version: &str, parents: &[&str], task: Value, format: u64) -> Value {
+    json!({"formatVersion":format,"entityId":entity,"kind":"ENTITY_KIND_TASK","versionId":version,"parentVersionIds":parents,"createdAt":"2026-01-01T00:00:00.000000Z","origin":{"kind":"ORIGIN_KIND_CLI","deviceId":"019a0000-0000-7000-8000-000000000001","deviceName":"Fixture CLI","accountId":""},"deleted":false,"task":task})
+}
+fn pushed_item(
+    entity: &str,
+    version: &str,
+    kind: &str,
+    key: &str,
+    body: Value,
+    format: u64,
+) -> Value {
+    json!({"formatVersion":format,"entityId":entity,"kind":kind,"versionId":version,"parentVersionIds":[],"createdAt":"2026-01-01T00:00:00.000000Z","origin":{"kind":"ORIGIN_KIND_CLI","deviceId":"019a0000-0000-7000-8000-000000000001","deviceName":"Fixture CLI","accountId":""},"deleted":false,key:body})
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn pushed_versions_are_validated_against_accepted_state_and_rejections_change_nothing() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let other_repo = "019a0000-0000-7000-8000-0000000000b1";
+    f.repo(other_repo, "https://example.com/other").await;
+    let label = f
+        .push(mutation(pushed_item(
+            LABEL,
+            &id(),
+            "ENTITY_KIND_LABEL",
+            "label",
+            json!({"repositoryId":REPO,"name":"Docs","color":"#AABBCC"}),
+            3,
+        )))
+        .await
+        .unwrap();
+    assert_eq!(
+        label["results"][0]["result"]["version"]["kind"],
+        "ENTITY_KIND_LABEL"
+    );
+    let foreign = "019a0000-0000-7000-8000-0000000000b2";
+    f.push(mutation(pushed_item(
+        foreign,
+        &id(),
+        "ENTITY_KIND_LABEL",
+        "label",
+        json!({"repositoryId":other_repo,"name":"Docs","color":"#AABBCC"}),
+        3,
+    )))
+    .await
+    .unwrap();
+    let (v1, v2) = (id(), id());
+    f.push(mutation(pushed_task(
+        TASK,
+        &v1,
+        &[],
+        task_fields("A", REPO, json!({"labelIds":[LABEL]})),
+        3,
+    )))
+    .await
+    .unwrap();
+    f.push(mutation(pushed_task(
+        TASK_B,
+        &v2,
+        &[],
+        task_fields("B", REPO, json!({"parentTaskId":TASK})),
+        3,
+    )))
+    .await
+    .unwrap();
+    let before = f.footprint().await;
+
+    // Each constraint is a named, non-retryable violation that writes nothing.
+    let cases = [
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields("A", REPO, json!({"parentTaskId":TASK_B})),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_PARENT_CYCLE",
+        ),
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields("A", REPO, json!({"dependsOnTaskIds":[TASK]})),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_SELF_LINK",
+        ),
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields("A", REPO, json!({"labelIds":[foreign]})),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_CROSS_REPOSITORY",
+        ),
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields("A", REPO, json!({"milestoneId":MILESTONE})),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND",
+        ),
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields(
+                    "A",
+                    REPO,
+                    json!({"startDate":"2026-02-02","dueDate":"2026-02-01"}),
+                ),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_DATE_ORDER",
+        ),
+        (
+            pushed_task(
+                TASK,
+                &id(),
+                &[&v1],
+                task_fields("A", REPO, json!({"storyPoints":2147483648_u64})),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_FIELD_RANGE",
+        ),
+        (
+            pushed_item(
+                "019a0000-0000-7000-8000-0000000000b3",
+                &id(),
+                "ENTITY_KIND_LABEL",
+                "label",
+                json!({"repositoryId":REPO,"name":"docs","color":"#000000"}),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_DUPLICATE_NAME",
+        ),
+        (
+            pushed_item(
+                "019a0000-0000-7000-8000-0000000000b4",
+                &id(),
+                "ENTITY_KIND_CYCLE",
+                "cycle",
+                json!({"repositoryId":REPO,"name":"Sprint","startDate":"2026-02-02","endDate":"2026-02-01"}),
+                3,
+            ),
+            "CONSTRAINT_VIOLATION_DATE_ORDER",
+        ),
+    ];
+    for (version, expected) in cases {
+        let rejected = f.push(mutation(version)).await.unwrap_err();
+        assert_eq!(violation_name(&rejected), Some(expected));
+        assert_eq!(rejected.code, connectrpc::ErrorCode::FailedPrecondition);
+        assert_eq!(f.footprint().await, before, "{expected}");
+    }
+    // Planning data requires format 3.
+    let old = pushed_task(
+        TASK,
+        &id(),
+        &[&v1],
+        task_fields("A", REPO, json!({"priority":"TASK_PRIORITY_HIGH"})),
+        2,
+    );
+    assert_eq!(f.push(mutation(old)).await.unwrap_err().reason, 8);
+    let old_item = pushed_item(
+        "019a0000-0000-7000-8000-0000000000b5",
+        &id(),
+        "ENTITY_KIND_LABEL",
+        "label",
+        json!({"repositoryId":REPO,"name":"Old","color":"#000000"}),
+        2,
+    );
+    assert_eq!(f.push(mutation(old_item)).await.unwrap_err().reason, 8);
+    assert_eq!(f.footprint().await, before);
+    // A child whose parent version was never accepted (a rejected chain) is a retryable
+    // missing-parent error, not a constraint violation, even when it also breaks a rule.
+    let orphan = pushed_task(
+        TASK,
+        &id(),
+        &[&id()],
+        task_fields("A", REPO, json!({"parentTaskId":TASK_B})),
+        3,
+    );
+    let missing = f.push(mutation(orphan)).await.unwrap_err();
+    assert_eq!((missing.reason, violation_name(&missing)), (9, None));
+    assert_eq!(f.footprint().await, before);
+    // A format 2 task without planning fields is still accepted.
+    f.push(mutation(pushed_task(
+        TASK_C,
+        &id(),
+        &[],
+        task_fields("C", REPO, json!({})),
+        2,
+    )))
+    .await
+    .unwrap();
+
+    // The corrected version arrives as a new immutable version with a new request ID.
+    let corrected = pushed_task(
+        TASK,
+        &id(),
+        &[&v1],
+        task_fields(
+            "A",
+            REPO,
+            json!({"labelIds":[LABEL],"dependsOnTaskIds":[TASK_B]}),
+        ),
+        3,
+    );
+    let accepted = f.push(mutation(corrected)).await.unwrap();
+    assert_eq!(
+        accepted["results"][0]["result"]["result"],
+        "RESULT_KIND_APPLIED"
+    );
+    // A concurrent version of a task is validated with the union of references: B -> A would
+    // close a dependency cycle through A's accepted head.
+    let concurrent = pushed_task(
+        TASK_B,
+        &id(),
+        &[&v2],
+        task_fields(
+            "B",
+            REPO,
+            json!({"parentTaskId":TASK,"dependsOnTaskIds":[TASK]}),
+        ),
+        3,
+    );
+    assert_eq!(
+        violation_name(&f.push(mutation(concurrent)).await.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE")
+    );
+    // Pull exposes the planning entities.
+    let pulled = f
+        .sync("PullChanges", json!({"pageSize":100}), usize::MAX)
+        .await
+        .unwrap();
+    let kinds: Vec<&str> = pulled["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["entity"]["version"]["kind"].as_str())
+        .collect();
+    assert!(kinds.contains(&"ENTITY_KIND_LABEL") && kinds.contains(&"ENTITY_KIND_TASK"));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn task_planning_requests_are_idempotent_and_account_isolated() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.label(LABEL, REPO, "L").await;
+    let second = "019a0000-0000-7000-8000-0000000000d1";
+    f.label(second, REPO, "M").await;
+    let request = json!({"meta":{"requestId":id()},"id":TASK_B,"repository":{"id":REPO},"title":"New","priority":"TASK_PRIORITY_URGENT","type":"TASK_TYPE_BUG","storyPoints":0,"labelIds":[second,LABEL],"parentTaskId":TASK,"relationshipEdits":{"addBlockedTaskIds":[TASK]}});
+    let created = f.call("CreateTask", request.clone()).await.unwrap();
+    let body = &created["result"]["version"]["task"];
+    assert_eq!(body["storyPoints"], 0);
+    assert_eq!(
+        body["labelIds"],
+        json!(
+            [LABEL, second]
+                .iter()
+                .cloned()
+                .min()
+                .map(|_| {
+                    let mut v = vec![LABEL, second];
+                    v.sort();
+                    v
+                })
+                .unwrap()
+        )
+    );
+    assert_eq!(created["affected"][0]["version"]["entityId"], TASK);
+    let versions = f.count("lane_versions").await;
+    // Same request, set fields spelled in another order: replay, no duplicate entity or history.
+    let mut reordered = request.clone();
+    reordered["labelIds"] = json!([LABEL, second]);
+    reordered["relationshipEdits"]["addBlockedTaskIds"] = json!([TASK, TASK]);
+    let replay = f.call("CreateTask", reordered).await.unwrap();
+    assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+    assert_eq!(replay["affected"], created["affected"]);
+    assert_eq!(f.count("lane_versions").await, versions);
+    // Changed planning content under the same request ID is a reuse error.
+    let mut changed = request.clone();
+    changed["priority"] = json!("TASK_PRIORITY_LOW");
+    assert_eq!(f.call("CreateTask", changed).await.unwrap_err().reason, 6);
+    // Story points 0 differ from absent in the fingerprint.
+    let mut absent = request.clone();
+    absent.as_object_mut().unwrap().remove("storyPoints");
+    assert_eq!(f.call("CreateTask", absent).await.unwrap_err().reason, 6);
+    // Deleting an affected task redacts it inside the receipt that reported it.
+    f.call("DeleteTask", json!({"meta":{"requestId":id()},"id":TASK}))
+        .await
+        .unwrap();
+    let after = f.call("CreateTask", request.clone()).await.unwrap();
+    assert_eq!(after["affected"][0]["result"], "RESULT_KIND_DELETED");
+    assert!(after["affected"][0]["version"].get("task").is_none());
+    // The created task lost its parent link to the deleted task.
+    assert!(f.task_bodies().await[TASK_B].get("parentTaskId").is_none());
+    // Relationship edits never touch progress or proposal.
+    let child = f.call("GetTask", json!({"id":TASK_B})).await.unwrap();
+    assert_eq!(
+        child["result"]["version"]["task"]["progress"],
+        "PROGRESS_TODO"
+    );
+
+    // Another account cannot see or reference these entities.
+    let mut stranger = f.p.clone();
+    stranger.account_id = id();
+    stranger.tenant_id = id();
+    sqlx::query("INSERT INTO lane_accounts VALUES($1,$2,$3)")
+        .bind(&stranger.account_id)
+        .bind(&stranger.tenant_id)
+        .bind(id())
+        .execute(&mut f.db)
+        .await
+        .unwrap();
+    let theirs = "019a0000-0000-7000-8000-0000000000e1";
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &stranger.account_id).await.unwrap();
+    entities::dispatch(
+        &mut tx,
+        &stranger,
+        "CreateRepository",
+        &json!({"meta":{"requestId":id()},"id":theirs,"url":"https://example.com/theirs"}),
+        usize::MAX,
+    )
+    .await
+    .unwrap();
+    let probe = entities::dispatch(&mut tx, &stranger, "CreateTask", &json!({"meta":{"requestId":id()},"id":"019a0000-0000-7000-8000-0000000000e2","repository":{"id":theirs},"title":"x","labelIds":[LABEL],"parentTaskId":TASK}), usize::MAX).await;
+    assert_eq!(
+        violation_name(&probe.unwrap_err()),
+        Some("CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND")
+    );
+    tx.rollback().await.unwrap();
+    let mut tx = f.db.begin().await.unwrap();
+    account_lock(&mut tx, &stranger.account_id).await.unwrap();
+    assert_eq!(
+        entities::dispatch(
+            &mut tx,
+            &stranger,
+            "GetPlanningItem",
+            &json!({"id":LABEL}),
+            usize::MAX
+        )
+        .await
+        .unwrap_err()
+        .reason,
+        2
+    );
+    assert!(
+        entities::dispatch(
+            &mut tx,
+            &stranger,
+            "ListPlanningItems",
+            &json!({}),
+            usize::MAX
+        )
+        .await
+        .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    tx.rollback().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn planning_item_listing_filters_pages_and_rejects_invalid_kinds() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let other = "019a0000-0000-7000-8000-0000000000b1";
+    f.repo(other, "https://example.com/other").await;
+    f.label(LABEL, REPO, "L").await;
+    f.planning(
+        MILESTONE,
+        json!({"milestone":{"repositoryId":REPO,"name":"M","targetDate":"2026-05-01"}}),
+    )
+    .await
+    .unwrap();
+    f.planning(CYCLE, json!({"cycle":{"repositoryId":other,"name":"C","startDate":"2026-01-01","endDate":"2026-01-02"}})).await.unwrap();
+    assert_eq!(
+        f.call("ListPlanningItems", json!({"kind":"ENTITY_KIND_MILESTONE"}))
+            .await
+            .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        f.call("ListPlanningItems", json!({"repositoryId":REPO}))
+            .await
+            .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        f.call(
+            "ListPlanningItems",
+            json!({"repositoryId":other,"kind":"ENTITY_KIND_LABEL"})
+        )
+        .await
+        .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        f.call("ListPlanningItems", json!({"kind":"ENTITY_KIND_TASK"}))
+            .await
+            .unwrap_err()
+            .reason,
+        1
+    );
+    let mut seen = Vec::new();
+    let mut page = json!({"page":{"size":1}});
+    loop {
+        let r = f.call("ListPlanningItems", page.clone()).await.unwrap();
+        seen.extend(
+            r["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| string(&i["version"], "entityId").to_owned()),
+        );
+        if string(&r, "nextCursor").is_empty() {
+            break;
+        }
+        page["page"]["cursor"] = r["nextCursor"].clone();
+    }
+    let mut sorted = seen.clone();
+    sorted.sort();
+    assert_eq!(seen, sorted);
+    assert_eq!(seen.len(), 3);
     f.close().await;
 }

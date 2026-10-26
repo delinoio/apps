@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Sync calls never commit. The transport opens an authorized account-locked transaction per item.
-use crate::entities::{self as e, REPOSITORY, TASK, URL_CONNECTION, fault};
+use crate::entities::{
+    self as e, CYCLE, LABEL, MILESTONE, REPOSITORY, TASK, URL_CONNECTION, fault,
+};
 use crate::{Principal, Result, string};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
@@ -49,8 +51,10 @@ pub async fn validate_watch(
         .ok_or_else(|| fault(1, "invalid pull cursor"))
 }
 
+/// Version envelopes of formats 1, 2 and 3 are readable. Transport requests use format 3 only.
+const TRANSPORT_FORMAT: u64 = e::FORMAT_VERSION;
 fn normalize_version(v: &Value) -> Result<Value> {
-    if !matches!(v["formatVersion"].as_u64(), Some(1 | 2)) {
+    if !matches!(v["formatVersion"].as_u64(), Some(1..=3)) {
         return Err(fault(8, "unsupported synchronization format; update Lane"));
     }
     e::uuid(string(v, "entityId"))?;
@@ -59,13 +63,22 @@ fn normalize_version(v: &Value) -> Result<Value> {
         Some("ENTITY_KIND_REPOSITORY") => REPOSITORY,
         Some("ENTITY_KIND_TASK") => TASK,
         Some("ENTITY_KIND_URL_CONNECTION") => URL_CONNECTION,
+        Some("ENTITY_KIND_LABEL") => LABEL,
+        Some("ENTITY_KIND_MILESTONE") => MILESTONE,
+        Some("ENTITY_KIND_CYCLE") => CYCLE,
         _ => match v["kind"].as_i64() {
             Some(1) => REPOSITORY,
             Some(2) => TASK,
             Some(3) => URL_CONNECTION,
+            Some(4) => LABEL,
+            Some(5) => MILESTONE,
+            Some(6) => CYCLE,
             _ => return Err(fault(1, "invalid entity kind")),
         },
     };
+    if v["formatVersion"].as_u64() != Some(3) && crate::planning::is_item(kind) {
+        return Err(fault(8, "planning items require format 3"));
+    }
     if v["formatVersion"] == 1
         && (kind == URL_CONNECTION
             || v["task"]["captures"]
@@ -107,9 +120,16 @@ fn normalize_version(v: &Value) -> Result<Value> {
         ));
     }
     if deleted {
-        if v.get("repository").is_some()
-            || v.get("task").is_some()
-            || v.get("urlConnection").is_some()
+        if [
+            "repository",
+            "task",
+            "urlConnection",
+            "label",
+            "milestone",
+            "cycle",
+        ]
+        .iter()
+        .any(|body| v.get(body).is_some())
         {
             return Err(fault(1, "deleted versions cannot contain a body"));
         }
@@ -117,8 +137,15 @@ fn normalize_version(v: &Value) -> Result<Value> {
         out["repository"] = e::repository_body(&v["repository"])?;
     } else if kind == URL_CONNECTION {
         out["urlConnection"] = crate::capture::rule_body(&v["urlConnection"])?;
+    } else if crate::planning::is_item(kind) {
+        out[e::body_key(kind)] = crate::planning::item_body(kind, &v[e::body_key(kind)])?;
     } else {
         out["task"] = e::task_body(&v["task"], false)?;
+        if v["formatVersion"].as_u64() != Some(3)
+            && crate::planning::has_planning_fields(&out["task"])
+        {
+            return Err(fault(8, "planning fields require format 3"));
+        }
     }
     Ok(out)
 }
@@ -145,7 +172,7 @@ pub async fn push_item(
     q: &Value,
     max_item_bytes: usize,
 ) -> Result<Value> {
-    if q["formatVersion"].as_u64() != Some(2) {
+    if q["formatVersion"].as_u64() != Some(TRANSPORT_FORMAT) {
         return Err(fault(8, "unsupported synchronization format; update Lane"));
     }
     check_epoch(db, p, string(q, "epoch")).await?;
@@ -186,12 +213,13 @@ pub async fn push_item(
             ));
         }
     }
-    let kind = if v["kind"] == "ENTITY_KIND_REPOSITORY" {
-        REPOSITORY
-    } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
-        URL_CONNECTION
-    } else {
-        TASK
+    let kind = match string(&v, "kind") {
+        "ENTITY_KIND_REPOSITORY" => REPOSITORY,
+        "ENTITY_KIND_URL_CONNECTION" => URL_CONNECTION,
+        "ENTITY_KIND_LABEL" => LABEL,
+        "ENTITY_KIND_MILESTONE" => MILESTONE,
+        "ENTITY_KIND_CYCLE" => CYCLE,
+        _ => TASK,
     };
     let action = mutation_kind(&m["kind"])?;
     if v["promptRestoration"] == true && action != "SAVE" {
@@ -225,7 +253,7 @@ pub async fn push_item(
             return Err(fault(1, "deleted version requires delete mutation"));
         }
         // Parent repository deletion dominates even a delayed first upload of a task.
-        if kind == TASK || kind == URL_CONNECTION {
+        if kind != REPOSITORY {
             let repo = e::canonical_repository(
                 db,
                 &p.account_id,
@@ -316,6 +344,15 @@ pub async fn push_item(
                 }
                 if kind == TASK {
                     e::task_body(&v["task"], true)?;
+                    // Constraints are checked against the accepted server state, never rolled back.
+                    crate::planning::validate_pushed_task(
+                        db,
+                        &p.account_id,
+                        &entity_id,
+                        &v["task"],
+                        true,
+                    )
+                    .await?;
                 }
                 e::new_entity(db, p, &entity_id, kind, &v).await?;
                 response = e::emit(db, &p.account_id, &entity_id).await?;
@@ -354,6 +391,19 @@ pub async fn push_item(
                     {
                         return Err(fault(1, "invalid proposal transition"));
                     }
+                }
+                if kind == TASK {
+                    // A version that replaces every head is validated alone; a concurrent one
+                    // becomes another head, so graph checks use the union of references.
+                    let supersede = action == "RESOLVE" || parents == hs;
+                    crate::planning::validate_pushed_task(
+                        db,
+                        &p.account_id,
+                        &entity_id,
+                        &v["task"],
+                        supersede,
+                    )
+                    .await?;
                 }
                 e::validate_body(db, &p.account_id, &entity_id, kind, &v).await?;
                 let prompt = kind == TASK
@@ -466,11 +516,11 @@ pub async fn dispatch(
 ) -> Result<Value> {
     match method {
         "GetSyncInfo" => Ok(
-            json!({"formatVersion":2,"accountId":p.account_id,"tenantId":p.tenant_id,"epoch":epoch(db,p).await?,"maxItemBytes":max_item_bytes.to_string()}),
+            json!({"formatVersion":TRANSPORT_FORMAT,"accountId":p.account_id,"tenantId":p.tenant_id,"epoch":epoch(db,p).await?,"maxItemBytes":max_item_bytes.to_string()}),
         ),
         "PushChanges" => push_item(db, p, q, max_item_bytes).await,
         "PullChanges" => {
-            if q["formatVersion"].as_u64() != Some(2) {
+            if q["formatVersion"].as_u64() != Some(TRANSPORT_FORMAT) {
                 return Err(fault(8, "unsupported synchronization format; update Lane"));
             }
             pull(db, p, q).await

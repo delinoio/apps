@@ -262,10 +262,7 @@ async fn catalog_matches_all_canonical_management_methods_and_dispatches_typed_r
         if let Some(name) = line.strip_prefix("service ") {
             service = name.split_whitespace().next().unwrap();
         }
-        // Workaround: this layer adds the PlanningService schema before the server layer adds
-        // its tools. Scope: this catalog check only. Remove the PlanningService exclusion (and
-        // expect all RPCs) in the server layer that adds the planning MCP tools.
-        if service == "SyncService" || service == "PlanningService" {
+        if service == "SyncService" {
             continue;
         }
         if let Some(method) = line.strip_prefix("rpc ") {
@@ -273,7 +270,7 @@ async fn catalog_matches_all_canonical_management_methods_and_dispatches_typed_r
         }
     }
     assert_eq!(tools.len(), expected.len());
-    assert_eq!(tools.len(), 43);
+    assert_eq!(tools.len(), 48);
     for (service, method) in expected {
         let snake = method
             .chars()
@@ -422,5 +419,159 @@ async fn domain_errors_are_tool_results_but_revocation_is_http_401() {
             );
             assert!(value["result"]["structuredContent"]["error"]["correlationId"].is_string());
         }
+    }
+}
+
+#[tokio::test]
+async fn planning_tools_accept_typed_fields_filters_and_edits_and_reject_the_rest() {
+    let (app, backend) = setup();
+    let valid = [
+        (
+            "lane_create_task",
+            json!({"id":"a","priority":"TASK_PRIORITY_URGENT","type":3,"labelIds":["x"],"startDate":"2026-01-01","dueDate":"2026-01-02","storyPoints":0,"milestoneId":"m","cycleId":"c","parentTaskId":"p","dependsOnTaskIds":["d"],"relatedTaskIds":["r"],"duplicateOfTaskId":"o","relationshipEdits":{"addSubtaskIds":["s"],"removeBlockedTaskIds":["b"]}}),
+        ),
+        (
+            "lane_save_task",
+            json!({"id":"a","task":{"priority":"TASK_PRIORITY_LOW","storyPoints":4294967295_u64,"labelIds":[]},"relationshipEdits":{"removeSubtaskIds":["s"],"addBlockedTaskIds":["b"]}}),
+        ),
+        (
+            "lane_list_tasks",
+            json!({"filter":{"priorities":["TASK_PRIORITY_HIGH"],"includeUnassignedPriority":true,"types":["TASK_TYPE_BUG"],"labelIds":["l"],"includeUnlabeled":true,"startDate":{"from":"2026-01-01","includeUnassigned":true},"dueDate":{"to":"2026-12-31"},"storyPoints":{"min":0,"max":8},"milestoneIds":["m"],"includeNoMilestone":true,"cycleIds":["c"],"includeNoCycle":true,"relationships":["RELATIONSHIP_KIND_BLOCKS","RELATIONSHIP_KIND_SUBTASKS"],"includeNoRelationships":true},"sortKey":"TASK_SORT_KEY_MILESTONE_NAME","sortDirection":"SORT_DIRECTION_DESCENDING"}),
+        ),
+        (
+            "lane_create_planning_item",
+            json!({"id":"l","item":{"label":{"repositoryId":"r","name":"Docs","color":"#AABBCC","description":"d"}}}),
+        ),
+        (
+            "lane_save_planning_item",
+            json!({"id":"l","expectedVersionId":"v","item":{"milestone":{"repositoryId":"r","name":"M","targetDate":"2026-01-01","completed":true}}}),
+        ),
+        (
+            "lane_create_planning_item",
+            json!({"id":"l","item":{"cycle":{"repositoryId":"r","name":"C","startDate":"2026-01-01","endDate":"2026-01-02"}}}),
+        ),
+        (
+            "lane_list_planning_items",
+            json!({"repositoryId":"r","kind":"ENTITY_KIND_CYCLE"}),
+        ),
+        ("lane_get_planning_item", json!({"id":"l"})),
+        ("lane_delete_planning_item", json!({"id":"l"})),
+        (
+            "lane_resolve_conflict",
+            json!({"resolved":{"label":{"repositoryId":"r","name":"Docs","color":"#AABBCC"}}}),
+        ),
+    ];
+    for (name, args) in valid {
+        let (_, _, value) = send(
+            app.clone(),
+            rpc("tools/call", json!({"name":name, "arguments":args})),
+        )
+        .await;
+        assert_eq!(value["result"]["isError"], false, "{name}: {value}");
+        // The generated decoder round-trips the arguments, so the backend sees the same content.
+        let seen = backend.calls.lock().unwrap().last().unwrap().2.clone();
+        assert_eq!(seen["id"], args["id"], "{name}");
+    }
+    {
+        let list = backend.calls.lock().unwrap();
+        let filter = &list.iter().find(|c| c.1 == "ListTasks").unwrap().2;
+        assert_eq!(filter["sortKey"], "TASK_SORT_KEY_MILESTONE_NAME");
+        assert_eq!(filter["filter"]["storyPoints"]["min"], 0);
+    }
+    for (name, args) in [
+        ("lane_list_tasks", json!({"sortKey":"TASK_SORT_KEY_TYPO"})),
+        ("lane_list_tasks", json!({"filter":{"unknown":true}})),
+        (
+            "lane_list_tasks",
+            json!({"filter":{"startDate":{"from":1}}}),
+        ),
+        (
+            "lane_list_tasks",
+            json!({"filter":{"relationships":["PARENT"]}}),
+        ),
+        (
+            "lane_create_task",
+            json!({"priority":"TASK_PRIORITY_EXTREME"}),
+        ),
+        ("lane_create_task", json!({"storyPoints":-1})),
+        (
+            "lane_create_task",
+            json!({"relationshipEdits":{"addSubtaskIds":"x"}}),
+        ),
+        (
+            "lane_create_task",
+            json!({"relationshipEdits":{"origin":{}}}),
+        ),
+        (
+            "lane_create_planning_item",
+            json!({"item":{"label":{}, "cycle":{}}}),
+        ),
+        (
+            "lane_create_planning_item",
+            json!({"meta":{"origin":{"kind":"ORIGIN_KIND_APP"}}}),
+        ),
+        (
+            "lane_save_planning_item",
+            json!({"item":{"label":{"origin":{}}}}),
+        ),
+        (
+            "lane_list_planning_items",
+            json!({"kind":"ENTITY_KIND_NOPE"}),
+        ),
+    ] {
+        let calls = backend.calls.lock().unwrap().len();
+        let (_, _, value) = send(
+            app.clone(),
+            rpc("tools/call", json!({"name":name, "arguments":args})),
+        )
+        .await;
+        assert_eq!(value["error"]["code"], -32602, "{name}: {args}: {value}");
+        assert_eq!(backend.calls.lock().unwrap().len(), calls);
+    }
+    // The published schemas expose the planning fields and never an origin.
+    let (_, _, listed) = send(app, rpc("tools/list", json!({}))).await;
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    let schema =
+        |name: &str| tools.iter().find(|t| t["name"] == name).unwrap()["inputSchema"].clone();
+    let create = schema("lane_create_task");
+    for field in [
+        "priority",
+        "type",
+        "labelIds",
+        "startDate",
+        "dueDate",
+        "storyPoints",
+        "milestoneId",
+        "cycleId",
+        "parentTaskId",
+        "dependsOnTaskIds",
+        "relatedTaskIds",
+        "duplicateOfTaskId",
+        "relationshipEdits",
+    ] {
+        assert!(create["properties"].get(field).is_some(), "{field}");
+    }
+    assert!(
+        schema("lane_list_tasks")["properties"]
+            .get("filter")
+            .is_some()
+    );
+    assert!(
+        schema("lane_list_tasks")["properties"]
+            .get("sortKey")
+            .is_some()
+    );
+    assert!(
+        schema("lane_save_task")["properties"]
+            .get("relationshipEdits")
+            .is_some()
+    );
+    assert!(
+        schema("lane_create_planning_item")["properties"]["item"]["properties"]
+            .get("milestone")
+            .is_some()
+    );
+    for tool in tools {
+        assert!(!tool["inputSchema"].to_string().contains("\"origin\""));
     }
 }

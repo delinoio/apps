@@ -43,6 +43,7 @@ pub mod error;
 pub mod http;
 pub mod mcp;
 pub mod migration;
+pub mod planning;
 pub mod push;
 pub mod rpc;
 pub mod sync;
