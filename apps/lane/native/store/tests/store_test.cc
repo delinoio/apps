@@ -742,6 +742,7 @@ int main(int argc, char** argv) {
     {"uploads edge removals before additions", planning_uploads_edge_removals_before_dependent_additions},
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
+    {"reset rejects open handles of the same process", reset_rejects_open_handles_of_the_same_process},
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
     {"conflicted heads, union cycles and cursor scope", planning_conflict_union_cycle_and_cursor_scope},
     {"reset account reconnect flow", reset_account_space_reconnect_flow},

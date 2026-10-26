@@ -868,9 +868,15 @@ struct Store::Impl {
     id(s);
     compatibility(*registry, true);
     registered(s);
-    // Release this process's own handles; another process or a running sync
-    // worker keeps its shared lease and makes the exclusive wait fail.
     auto slot = spaces.find(s);
+    // An open local view handle in this process must make the reset retryable
+    // and change nothing. Releasing its connections would drop the shared
+    // lifetime lease and let the exclusive lock succeed underneath the view.
+    if (slot != spaces.end() && slot->second.handles > 0)
+      fail("STORAGE_BUSY", "Close this space's open handles before resetting it.");
+    // Release this process's own idle connections (for example a sync worker's
+    // slot); another process keeps its shared lease and makes the exclusive
+    // wait fail.
     if (slot != spaces.end()) {
       slot->second.observer.reset();
       slot->second.db.reset();

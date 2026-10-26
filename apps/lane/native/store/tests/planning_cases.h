@@ -283,6 +283,8 @@ void development_reset_coordination() {
   require(f.history(fresh).size() == 1, "new data after reset");
   // Account space: data is cleared, the binding is kept and reconnect is required.
   f.space = account_space;
+  success(f.store.close(account_space)); // Opened twice above: initial open and the isolation re-open.
+  error(f.raw("ResetDevelopmentData", {{"confirmed", true}}), "STORAGE_BUSY");
   success(f.store.close(account_space));
   require(f.call("ResetDevelopmentData", {{"confirmed", true}}).at("completed") == true, "account space reset");
   success(f.store.open(J{{"formatVersion", 3}, {"spaceId", account_space}}.dump()));
@@ -299,6 +301,27 @@ void development_reset_coordination() {
   lane::Store restarted(f.root.path.string());
   auto reopened = success(restarted.open(J{{"formatVersion", 3}, {"spaceId", standalone}}.dump()));
   require(reopened.at("schemaVersion") == 3 && reopened.at("sequence") != "0", "restart reads the reset standalone space with its new data");
+}
+void reset_rejects_open_handles_of_the_same_process() {
+  // A view in this very process still holds the space open: the reset must not
+  // release its connections and lease, replace the database or touch data.
+  Fixture f; auto task = f.task();
+  const auto before = f.get(task.at("entityId"));
+  error(f.raw("ResetDevelopmentData", {{"confirmed", true}}), "STORAGE_BUSY");
+  require(f.raw("ResetDevelopmentData", {{"confirmed", true}}).at("error").at("retryable") == true, "same-process busy reset is retryable");
+  error(J::parse(f.store.reset(f.space)), "STORAGE_BUSY");
+  require(f.get(task.at("entityId")) == before, "same-process busy reset keeps the data");
+  { Sql registry(f.root.path / "registry.sqlite"); require(registry.scalar("SELECT count(*) FROM registry_meta WHERE key LIKE 'reset:%'") == "0", "refused reset leaves no pending marker"); }
+  // The existing view keeps working and a lease still blocks a second process's reset.
+  { lane::Store other(f.root.path.string());
+    error(J::parse(other.reset(f.space)), "STORAGE_BUSY"); }
+  require(f.history(task).size() == 1, "existing view still operates on the original database");
+  // Every handle must close before the reset proceeds.
+  success(f.store.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
+  success(f.store.close(f.space));
+  error(f.raw("ResetDevelopmentData", {{"confirmed", true}}), "STORAGE_BUSY");
+  success(f.store.close(f.space));
+  require(f.call("ResetDevelopmentData", {{"confirmed", true}}).at("completed") == true, "reset after the last handle closes");
 }
 void interrupted_reset_is_repeatable() {
   Fixture f; f.task(); success(f.store.close(f.space));
