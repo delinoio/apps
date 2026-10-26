@@ -5,7 +5,7 @@ use super::{
     put_meta, rows, strv, valid_id,
 };
 use crate::protocol;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 fn array(v: &Value) -> &[Value] {
     v.as_array().map_or(&[], Vec::as_slice)
 }
@@ -491,25 +491,73 @@ pub fn ordered(c: &Connection) -> Result<Vec<Value>> {
     .iter()
     .map(|raw| serde_json::from_str::<Value>(raw))
     .collect::<std::result::Result<Vec<_>, _>>()?;
+    // Only versions reachable from a current head are uploaded. A rejected version that an
+    // ordinary edit superseded stays in local history but is neither head nor ancestor.
+    let mut reachable: HashSet<String> = rows(c, "SELECT version_id FROM heads", [])?
+        .into_iter()
+        .collect();
+    let parents: HashMap<String, Vec<String>> = pending
+        .iter()
+        .map(|v| {
+            (
+                strv(v, "versionId").to_owned(),
+                array(&v["parentVersionIds"])
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut frontier: Vec<String> = reachable.iter().cloned().collect();
+    while let Some(version) = frontier.pop() {
+        for parent in parents.get(&version).into_iter().flatten() {
+            if reachable.insert(parent.clone()) {
+                frontier.push(parent.clone());
+            }
+        }
+    }
+    pending.retain(|v| reachable.contains(strv(v, "versionId")));
     let mut out = vec![];
     let mut seen = HashSet::new();
+    // An entity must be emitted before the versions that refer to it (a task's labels and
+    // related tasks, a planning item's repository), even when a correction replaced the
+    // referenced entity's first version with a later one. The constraint is relaxed only if it
+    // would otherwise stall.
+    let entities: HashSet<String> = pending
+        .iter()
+        .map(|v| strv(v, "entityId").to_owned())
+        .collect();
+    let mut emitted = HashSet::new();
+    let mut relaxed = false;
     while !pending.is_empty() {
         let count = pending.len();
         let mut next = vec![];
         for v in pending {
-            if v["deleted"] == true
-                || array(&v["parentVersionIds"])
+            let entity = strv(&v, "entityId").to_owned();
+            let references_ready = relaxed
+                || v["deleted"] == true
+                || planning::referenced_ids(&v)
                     .iter()
-                    .all(|p| seen.contains(strv(&json!({"id":p}), "id")))
+                    .all(|r| *r == entity || !entities.contains(r) || emitted.contains(r));
+            if v["deleted"] == true
+                || (references_ready
+                    && array(&v["parentVersionIds"])
+                        .iter()
+                        .all(|p| seen.contains(strv(&json!({"id":p}), "id"))))
             {
                 seen.insert(strv(&v, "versionId").to_owned());
+                emitted.insert(entity);
                 out.push(v);
             } else {
                 next.push(v);
             }
         }
         if next.len() == count {
-            return Err(invalid("Incomplete version ancestry."));
+            if relaxed {
+                return Err(invalid("Incomplete version ancestry."));
+            }
+            relaxed = true;
         }
         pending = next;
     }

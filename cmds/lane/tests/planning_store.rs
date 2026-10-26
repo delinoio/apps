@@ -793,3 +793,71 @@ fn pulled_planning_versions_and_tombstones_apply_and_old_formats_are_refused() {
     task_v2["task"] = json!({"repositoryId":repo,"title":"Plain","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
     assert!(store::sync::validate(&task_v2).is_ok());
 }
+
+#[test]
+fn correcting_a_rejected_version_replaces_it_and_keeps_dependents_after_it() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/supersede");
+    let label = planning(&store, &repo, "label", "Dup");
+    let label_id = strv(&label, "entityId").to_owned();
+    let created = task(&store, &repo, "Uses label", &json!({"labelIds":[label_id]}));
+    let task_version = created["result"]["version"]["versionId"].clone();
+    store
+        .with(true, |c| {
+            c.execute(
+                "UPDATE outbox SET state=2,error_reason='CONSTRAINT_VIOLATION:DUPLICATE_NAME' WHERE entity_id=?",
+                [&label_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let renamed = call(
+        &store,
+        "SavePlanningItem",
+        &json!({"id":label_id,"expectedVersionId":label["versionId"],
+            "item":{"label":{"repositoryId":repo,"name":"Unique","color":"#112233"}}}),
+    )
+    .unwrap()["result"]["version"]
+        .clone();
+    assert_eq!(renamed["parentVersionIds"], json!([]));
+    // The rejected version stays in local history but is no longer pending; the corrected
+    // one takes its upload position, ahead of the task that references the label.
+    assert_eq!(
+        store
+            .invoke("ListHistory", &json!({"id":label_id,"page":{}}))
+            .unwrap()["versions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let queue: Vec<(String, i64, String)> = store
+        .with(false, |c| {
+            let mut stmt = c.prepare(
+                "SELECT entity_id,state,request_json FROM outbox ORDER BY created_at_us,rowid",
+            )?;
+            Ok(stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+        .unwrap();
+    let positions: Vec<&str> = queue.iter().map(|q| q.0.as_str()).collect();
+    assert_eq!(
+        positions[1..],
+        [
+            label_id.as_str(),
+            created["result"]["version"]["entityId"].as_str().unwrap()
+        ]
+    );
+    assert!(queue.iter().all(|q| q.1 == 1));
+    assert!(queue[1].2.contains("MUTATION_KIND_CREATE"));
+    // Rebuilding the upload order after a reconnect keeps referenced entities first.
+    let ordered = store.with(false, |c| store::sync::ordered(c)).unwrap();
+    let index = |version: &Value| {
+        ordered
+            .iter()
+            .position(|v| v["versionId"] == *version)
+            .unwrap()
+    };
+    assert!(index(&renamed["versionId"]) < index(&task_version));
+}
