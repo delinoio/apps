@@ -373,6 +373,80 @@ async fn stale_interactive_save_preserves_alternative_resolution_and_receipts() 
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn resolution_pinned_to_reviewed_heads_is_refused_after_a_newer_conflict_forms() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let base = f.task(TASK, REPO).await;
+    let first = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":base["versionId"],"progress":"PROGRESS_DONE"}),
+        )
+        .await
+        .unwrap();
+    let h1 = first["result"]["version"].clone();
+    let h2 = f
+        .call(
+            "SetProgress",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":base["versionId"],"progress":"PROGRESS_BLOCKED"}),
+        )
+        .await
+        .unwrap()["result"]["version"]
+        .clone();
+    let reviewed = f.heads(TASK).await;
+    assert_eq!(reviewed.len(), 2);
+    // Another client resolves H1/H2 into R, then a draft based on H1 forms a new conflict R/S.
+    let resolved = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedHeadIds":reviewed,"resolved":h2}),
+        )
+        .await
+        .unwrap();
+    let r = resolved["result"]["version"]["versionId"].clone();
+    f.call(
+        "SetProgress",
+        json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":h1["versionId"],"progress":"PROGRESS_IN_PROGRESS"}),
+    )
+    .await
+    .unwrap();
+    let newer = f.heads(TASK).await;
+    assert_eq!(newer.len(), 2);
+    assert!(newer.contains(&r.as_str().unwrap().to_string()));
+    let versions = f.count("lane_versions").await;
+    // The client still pins H1/H2: the server refuses it and creates nothing.
+    let stale = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedHeadIds":reviewed,"resolved":h2}),
+        )
+        .await;
+    assert_eq!(stale.unwrap_err().reason, 5);
+    assert_eq!(f.heads(TASK).await, newer);
+    assert_eq!(f.count("lane_versions").await, versions);
+    // After reviewing R/S, a fresh resolution binds to exactly those heads and keeps both parents.
+    let fresh = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedHeadIds":newer,"resolved":h2}),
+        )
+        .await
+        .unwrap();
+    let mut parents: Vec<String> = fresh["result"]["version"]["parentVersionIds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    parents.sort();
+    assert_eq!(parents, newer);
+    assert_eq!(f.heads(TASK).await.len(), 1);
+    assert_eq!(f.count("lane_versions").await, versions + 1);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn replay_redaction_mapping_move_and_stable_pull() {
     let mut f = Fixture::new().await;
     let remote = id();
