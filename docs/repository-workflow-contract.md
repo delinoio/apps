@@ -336,3 +336,12 @@ Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migr
 The [Lane project](project-lane.md) and [API contract](servers-lane-api-contract.md) own product scope and service configuration. Native build/install/behavior acceptance remains separate from frontend compilation and fixture checks.
 
 Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. Its existing integration step invokes `servers/lane-api/tests/integration_fixture.py` to supply a pinned disposable loopback S3 mock while running all Lane ignored tests. See the [server fixture procedure](servers-lane-api-contract.md#disposable-s3-integration-fixture) for prerequisites and cleanup. These checks do not add macOS runners, a full manual mode or production publication.
+
+## Pending changesets
+
+The [changeset contract](repository-changeset-contract.md) owns pending change
+records and the Go CLI under `scripts/changeset/`. Use npm package names for all
+component identities. Public changelog previews select explicitly authored public
+notes only. The unconditional formatting job validates records, runs CLI tests
+and vet, and checks Go formatting in this directory. Release preparation and
+record deletion remain separate from this workflow.

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "packages": {
+    "delino-apps": "minor"
+  },
+  "summary": "Add npm package-based change records, validation, and separate public changelog previews. Release automation and record consumption remain separate."
+}

@@ -279,7 +279,7 @@ test("all CI formatting checks belong to Check Formatting", () => {
     "pnpm format:check --all",
     "cargo fmt --all --check",
     "cargo fmt --manifest-path servers/Cargo.toml --all --check",
-    "node scripts/ci/check-go-format.mjs protos examples",
+    "node scripts/ci/check-go-format.mjs protos examples scripts/changeset",
     "pnpm exec buf format --diff --exit-code",
   ])
     assert.ok(commands.has(command), command);
