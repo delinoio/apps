@@ -1,0 +1,2295 @@
+{
+  "formatVersion": 1,
+  "description": "Relationship graph vectors. Check order: SELF_LINK, REFERENCE_NOT_FOUND, CROSS_REPOSITORY, then PARENT_CYCLE, DEPENDENCY_CYCLE, DUPLICATE_CYCLE on the graph after applying the task fields and relationshipEdits. add_subtask sets the child's parent; remove_subtask clears it only when it points at the edited task; add_blocked adds the edited task to the blocked task's depends_on; removals of absent links are no-ops. outcome=ok lists the stored body and every other task whose stored body changes, sorted by entity id (affected; related links are symmetric).",
+  "state": {
+    "entities": [
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000001",
+        "kind": "ENTITY_KIND_REPOSITORY",
+        "repository": {
+          "normalizedUrl": "github.com/acme/app"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000002",
+        "kind": "ENTITY_KIND_REPOSITORY",
+        "repository": {
+          "normalizedUrl": "github.com/acme/web"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000101",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 1",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "relatedTaskIds": [
+            "019b0000-0000-7000-8000-000000000106"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000102",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 2",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000101"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000103",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 3",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+          "dependsOnTaskIds": [
+            "019b0000-0000-7000-8000-000000000101"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000104",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 4",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "dependsOnTaskIds": [
+            "019b0000-0000-7000-8000-000000000103"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000105",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 5",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000104"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000106",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "title": "Task 6",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "relatedTaskIds": [
+            "019b0000-0000-7000-8000-000000000101"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000107",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000002",
+          "title": "Task 7 (other repository)",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000108",
+        "kind": "ENTITY_KIND_TASK",
+        "deleted": true
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "self-link-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009001",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "self-link-depends-on",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009002",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "self-link-related",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009003",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "self-link-duplicate-of",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009004",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000101"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "self-link-via-add-subtask-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009005",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "self-link-via-add-blocked-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009006",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_SELF_LINK"
+      }
+    },
+    {
+      "id": "parent-cycle-two-tasks",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009007",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_PARENT_CYCLE"
+      }
+    },
+    {
+      "id": "parent-cycle-three-tasks",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009008",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000103"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_PARENT_CYCLE"
+      }
+    },
+    {
+      "id": "parent-cycle-via-add-subtask-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009009",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000103",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_PARENT_CYCLE"
+      }
+    },
+    {
+      "id": "parent-cycle-edit-plus-field",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000103"
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_PARENT_CYCLE"
+      }
+    },
+    {
+      "id": "parent-valid-new-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000106",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 6",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000103"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 6",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000103"
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "parent-valid-reparent-to-grandparent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900c",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000103",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "parent-same-task-also-dependency-allowed",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900d",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000103",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "dependency-cycle-three-tasks",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900e",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000104"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"
+      }
+    },
+    {
+      "id": "dependency-cycle-two-tasks",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900f",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"
+      }
+    },
+    {
+      "id": "dependency-cycle-via-add-blocked-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009010",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000104",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          },
+          "relationshipEdits": {
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"
+      }
+    },
+    {
+      "id": "dependency-valid-diamond",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009011",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000104",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103",
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "dependency-sorted-and-deduplicated",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009012",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000102",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 2",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000106",
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000106",
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 2",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101",
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "duplicate-cycle-two-tasks",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009013",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000104",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000105"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_DUPLICATE_CYCLE"
+      }
+    },
+    {
+      "id": "duplicate-valid-chain",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009014",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000104",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 4",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106"
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "cross-repository-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009015",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000107"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "cross-repository-depends-on",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009016",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000107"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "cross-repository-related",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009017",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000107"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "cross-repository-duplicate-of",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009018",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000107"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "cross-repository-add-subtask-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009019",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000107"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "cross-repository-add-blocked-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000107"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    },
+    {
+      "id": "reference-missing-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-00000000dead"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-missing-depends-on",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901c",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-00000000dead"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-missing-related",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901d",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-00000000dead"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-deleted-duplicate-of",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901e",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000108"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-missing-add-subtask-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000901f",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-00000000dead"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-missing-add-blocked-edit",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009020",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000108"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "reference-repository-id-is-not-a-task",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009021",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ],
+            "parentTaskId": "019b0000-0000-7000-8000-000000000001"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_REFERENCE_NOT_FOUND"
+      }
+    },
+    {
+      "id": "related-added-on-both-sides",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009022",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106",
+              "019b0000-0000-7000-8000-000000000102",
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000102",
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000102",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 2",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000101"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "related-removed-from-both-sides",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009023",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": []
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR"
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000106",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 6",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "related-unchanged-touches-nothing",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009024",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "edit-add-subtask-sets-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009025",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000104"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 4",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "parentTaskId": "019b0000-0000-7000-8000-000000000101"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-add-subtask-reparents-existing-child",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009026",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000103",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 3",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000101"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-add-subtask-already-child-is-noop",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009027",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "edit-remove-subtask-clears-parent",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009028",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "removeSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000102",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 2",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-remove-subtask-of-other-parent-is-noop",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009029",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "removeSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "edit-add-blocked-adds-dependency",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          },
+          "relationshipEdits": {
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000105"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 1",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 5",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000104",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000101"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-remove-blocked-removes-dependency",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902b",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000103",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          },
+          "relationshipEdits": {
+            "removeBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000104"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 4",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-remove-blocked-when-not-dependent-is-noop",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902c",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000103",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          },
+          "relationshipEdits": {
+            "removeBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 3",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        },
+        "affected": []
+      }
+    },
+    {
+      "id": "edit-several-affected-sorted-by-id",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902d",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000106",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 6",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          },
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000105",
+              "019b0000-0000-7000-8000-000000000104"
+            ],
+            "addBlockedTaskIds": [
+              "019b0000-0000-7000-8000-000000000102"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "Task 6",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000102",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 2",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000106"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 4",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "parentTaskId": "019b0000-0000-7000-8000-000000000106"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 5",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000104",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000106"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "create-with-all-relationships-and-edit",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902e",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000109",
+          "repository": {
+            "id": "019b0000-0000-7000-8000-000000000001"
+          },
+          "title": "New task",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+          "dependsOnTaskIds": [
+            "019b0000-0000-7000-8000-000000000104",
+            "019b0000-0000-7000-8000-000000000102"
+          ],
+          "relatedTaskIds": [
+            "019b0000-0000-7000-8000-000000000105"
+          ],
+          "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000106"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "normalized": {
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "title": "New task",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000102",
+              "019b0000-0000-7000-8000-000000000104"
+            ],
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000105"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106"
+          }
+        },
+        "affected": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 5",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000104",
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000109"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000106",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "title": "Task 6",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000101"
+              ],
+              "parentTaskId": "019b0000-0000-7000-8000-000000000109"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "create-parent-cycle-through-edit",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000902f",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000109",
+          "repository": {
+            "id": "019b0000-0000-7000-8000-000000000001"
+          },
+          "title": "New task",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000103",
+          "relationshipEdits": {
+            "addSubtaskIds": [
+              "019b0000-0000-7000-8000-000000000101"
+            ]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_PARENT_CYCLE"
+      }
+    },
+    {
+      "id": "create-cross-repository-repository-target",
+      "input": {
+        "method": "CreateTask",
+        "request": {
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009030",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          },
+          "id": "019b0000-0000-7000-8000-000000000109",
+          "repository": {
+            "id": "019b0000-0000-7000-8000-000000000002"
+          },
+          "title": "New task",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000101"
+        }
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "ERROR_REASON_CONSTRAINT_VIOLATION",
+        "violation": "CONSTRAINT_VIOLATION_CROSS_REPOSITORY"
+      }
+    }
+  ]
+}

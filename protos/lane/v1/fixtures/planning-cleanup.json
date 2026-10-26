@@ -1,0 +1,1004 @@
+{
+  "formatVersion": 1,
+  "description": "Move/delete cleanup vectors. expected.changed lists the new stored body of every other entity written by the operation (and the moved task itself), sorted by entity id; expected.deleted lists tombstoned entity ids; all other entities are unchanged. A move (task.repositoryId differs from the stored repository) discards every reference field sent in the request and clears the stored ones; priority, type, dates, story points, prompt, captures and id are kept.",
+  "state": {
+    "entities": [
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000001",
+        "kind": "ENTITY_KIND_REPOSITORY",
+        "repository": {
+          "normalizedUrl": "github.com/acme/app"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000002",
+        "kind": "ENTITY_KIND_REPOSITORY",
+        "repository": {
+          "normalizedUrl": "github.com/acme/web"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000010",
+        "kind": "ENTITY_KIND_LABEL",
+        "label": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "name": "Backend",
+          "color": "#1D76DB"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000011",
+        "kind": "ENTITY_KIND_LABEL",
+        "label": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "name": "UI",
+          "color": "#1D76DB"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000012",
+        "kind": "ENTITY_KIND_LABEL",
+        "label": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000002",
+          "name": "Backend",
+          "color": "#1D76DB"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000030",
+        "kind": "ENTITY_KIND_MILESTONE",
+        "milestone": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "name": "Beta"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000031",
+        "kind": "ENTITY_KIND_MILESTONE",
+        "milestone": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000002",
+          "name": "Beta"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000050",
+        "kind": "ENTITY_KIND_CYCLE",
+        "cycle": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "name": "Sprint 1",
+          "startDate": "2026-01-05",
+          "endDate": "2026-01-18"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000051",
+        "kind": "ENTITY_KIND_CYCLE",
+        "cycle": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000002",
+          "name": "Sprint 1",
+          "startDate": "2026-01-05",
+          "endDate": "2026-01-18"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000101",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Subject",
+          "priority": "TASK_PRIORITY_HIGH",
+          "type": "TASK_TYPE_BUG",
+          "labelIds": [
+            "019b0000-0000-7000-8000-000000000010",
+            "019b0000-0000-7000-8000-000000000011"
+          ],
+          "startDate": "2026-01-10",
+          "dueDate": "2026-01-20",
+          "storyPoints": 0,
+          "milestoneId": "019b0000-0000-7000-8000-000000000030",
+          "cycleId": "019b0000-0000-7000-8000-000000000050",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+          "dependsOnTaskIds": [
+            "019b0000-0000-7000-8000-000000000103"
+          ],
+          "relatedTaskIds": [
+            "019b0000-0000-7000-8000-000000000105"
+          ],
+          "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+          "prompt": "Keep me"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000102",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Parent"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000103",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Dependency"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000104",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Child",
+          "parentTaskId": "019b0000-0000-7000-8000-000000000101",
+          "labelIds": [
+            "019b0000-0000-7000-8000-000000000010"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000105",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Related",
+          "relatedTaskIds": [
+            "019b0000-0000-7000-8000-000000000101"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000106",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Original"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000107",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Blocked",
+          "dependsOnTaskIds": [
+            "019b0000-0000-7000-8000-000000000101",
+            "019b0000-0000-7000-8000-000000000103"
+          ]
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000108",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Duplicate",
+          "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000101"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-000000000109",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000001",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Unrelated",
+          "labelIds": [
+            "019b0000-0000-7000-8000-000000000010"
+          ],
+          "milestoneId": "019b0000-0000-7000-8000-000000000030",
+          "cycleId": "019b0000-0000-7000-8000-000000000050"
+        }
+      },
+      {
+        "formatVersion": 3,
+        "entityId": "019b0000-0000-7000-8000-00000000010a",
+        "kind": "ENTITY_KIND_TASK",
+        "task": {
+          "repositoryId": "019b0000-0000-7000-8000-000000000002",
+          "description": "",
+          "progress": "PROGRESS_TODO",
+          "proposal": "PROPOSAL_REGULAR",
+          "title": "Other repository",
+          "labelIds": [
+            "019b0000-0000-7000-8000-000000000012"
+          ],
+          "milestoneId": "019b0000-0000-7000-8000-000000000031",
+          "cycleId": "019b0000-0000-7000-8000-000000000051"
+        }
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "move-task-clears-own-references-and-incoming-references",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000002",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "title": "Subject",
+            "priority": "TASK_PRIORITY_HIGH",
+            "type": "TASK_TYPE_BUG",
+            "labelIds": [
+              "019b0000-0000-7000-8000-000000000010",
+              "019b0000-0000-7000-8000-000000000011"
+            ],
+            "startDate": "2026-01-10",
+            "dueDate": "2026-01-20",
+            "storyPoints": 0,
+            "milestoneId": "019b0000-0000-7000-8000-000000000030",
+            "cycleId": "019b0000-0000-7000-8000-000000000050",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ],
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000105"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+            "prompt": "Keep me"
+          },
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009001",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000002",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "prompt": "Keep me"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Child",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Related"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000107",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Blocked",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000108",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Duplicate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "move-task-discards-references-sent-with-the-move",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000002",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "title": "Subject",
+            "priority": "TASK_PRIORITY_HIGH",
+            "type": "TASK_TYPE_BUG",
+            "labelIds": [
+              "019b0000-0000-7000-8000-000000000012"
+            ],
+            "startDate": "2026-01-10",
+            "dueDate": "2026-01-20",
+            "storyPoints": 0,
+            "milestoneId": "019b0000-0000-7000-8000-000000000031",
+            "cycleId": "019b0000-0000-7000-8000-000000000051",
+            "parentTaskId": "019b0000-0000-7000-8000-00000000010a",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-00000000010a"
+            ],
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-00000000010a"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-00000000010a",
+            "prompt": "Keep me"
+          },
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009002",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000002",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "prompt": "Keep me"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Child",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Related"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000107",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Blocked",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000108",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Duplicate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "save-in-same-repository-keeps-references",
+      "input": {
+        "method": "SaveTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "expectedVersionId": "019b0000-0000-7000-8000-000000008000",
+          "task": {
+            "repositoryId": "019b0000-0000-7000-8000-000000000001",
+            "description": "",
+            "progress": "PROGRESS_TODO",
+            "proposal": "PROPOSAL_REGULAR",
+            "title": "Renamed",
+            "priority": "TASK_PRIORITY_HIGH",
+            "type": "TASK_TYPE_BUG",
+            "labelIds": [
+              "019b0000-0000-7000-8000-000000000010",
+              "019b0000-0000-7000-8000-000000000011"
+            ],
+            "startDate": "2026-01-10",
+            "dueDate": "2026-01-20",
+            "storyPoints": 0,
+            "milestoneId": "019b0000-0000-7000-8000-000000000030",
+            "cycleId": "019b0000-0000-7000-8000-000000000050",
+            "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+            "dependsOnTaskIds": [
+              "019b0000-0000-7000-8000-000000000103"
+            ],
+            "relatedTaskIds": [
+              "019b0000-0000-7000-8000-000000000105"
+            ],
+            "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+            "prompt": "Keep me"
+          },
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009003",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Renamed",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010",
+                "019b0000-0000-7000-8000-000000000011"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "cycleId": "019b0000-0000-7000-8000-000000000050",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+              "prompt": "Keep me"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-task-removes-incoming-references",
+      "input": {
+        "method": "DeleteTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000101",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009004",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000101"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Child",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000105",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Related"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000107",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Blocked",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ]
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000108",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Duplicate"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-original-task-clears-duplicate-of",
+      "input": {
+        "method": "DeleteTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000106",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009005",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000106"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010",
+                "019b0000-0000-7000-8000-000000000011"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "cycleId": "019b0000-0000-7000-8000-000000000050",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "prompt": "Keep me"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-task-without-incoming-references",
+      "input": {
+        "method": "DeleteTask",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000109",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009006",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000109"
+        ],
+        "changed": []
+      }
+    },
+    {
+      "id": "delete-label-removes-assignment-only-in-its-repository",
+      "input": {
+        "method": "DeletePlanningItem",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000010",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009007",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000010"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000011"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "cycleId": "019b0000-0000-7000-8000-000000000050",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+              "prompt": "Keep me"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000104",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Child",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000101"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000109",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Unrelated",
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "cycleId": "019b0000-0000-7000-8000-000000000050"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-milestone-clears-task-milestones",
+      "input": {
+        "method": "DeletePlanningItem",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000030",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009008",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000030"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010",
+                "019b0000-0000-7000-8000-000000000011"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "cycleId": "019b0000-0000-7000-8000-000000000050",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+              "prompt": "Keep me"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000109",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Unrelated",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ],
+              "cycleId": "019b0000-0000-7000-8000-000000000050"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-cycle-clears-task-cycles",
+      "input": {
+        "method": "DeletePlanningItem",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000050",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-000000009009",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000050"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010",
+                "019b0000-0000-7000-8000-000000000011"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+              "prompt": "Keep me"
+            }
+          },
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000109",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Unrelated",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ],
+              "milestoneId": "019b0000-0000-7000-8000-000000000030"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "delete-label-keeps-other-labels-of-the-task",
+      "input": {
+        "method": "DeletePlanningItem",
+        "request": {
+          "id": "019b0000-0000-7000-8000-000000000011",
+          "meta": {
+            "requestId": "019b0000-0000-7000-8000-00000000900a",
+            "origin": {
+              "kind": "ORIGIN_KIND_CLI",
+              "deviceId": "019b0000-0000-7000-8000-000000000010",
+              "deviceName": "Fixture CLI",
+              "accountId": ""
+            }
+          }
+        }
+      },
+      "expected": {
+        "deleted": [
+          "019b0000-0000-7000-8000-000000000011"
+        ],
+        "changed": [
+          {
+            "entityId": "019b0000-0000-7000-8000-000000000101",
+            "kind": "ENTITY_KIND_TASK",
+            "task": {
+              "repositoryId": "019b0000-0000-7000-8000-000000000001",
+              "description": "",
+              "progress": "PROGRESS_TODO",
+              "proposal": "PROPOSAL_REGULAR",
+              "title": "Subject",
+              "priority": "TASK_PRIORITY_HIGH",
+              "type": "TASK_TYPE_BUG",
+              "labelIds": [
+                "019b0000-0000-7000-8000-000000000010"
+              ],
+              "startDate": "2026-01-10",
+              "dueDate": "2026-01-20",
+              "storyPoints": 0,
+              "milestoneId": "019b0000-0000-7000-8000-000000000030",
+              "cycleId": "019b0000-0000-7000-8000-000000000050",
+              "parentTaskId": "019b0000-0000-7000-8000-000000000102",
+              "dependsOnTaskIds": [
+                "019b0000-0000-7000-8000-000000000103"
+              ],
+              "relatedTaskIds": [
+                "019b0000-0000-7000-8000-000000000105"
+              ],
+              "duplicateOfTaskId": "019b0000-0000-7000-8000-000000000106",
+              "prompt": "Keep me"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
