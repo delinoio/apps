@@ -1,6 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
-import { HOST, safeMetadata, visibleRect, remedies } from "./protocol.js";
-await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+import {
+  HOST,
+  isSelectablePageUrl,
+  safeMetadata,
+  visibleRect,
+  remedies,
+} from "./protocol.js";
+// Chromium rejects service workers whose module graph uses top-level await, so the
+// trusted-context restriction is started here without awaiting it. Every handler is
+// registered synchronously below, and every operation that touches credentials,
+// native messaging, screenshots or selector injection first waits on `accessReady`.
+const accessReady = chrome.storage.local.setAccessLevel({
+  accessLevel: "TRUSTED_CONTEXTS",
+});
+// Handle the rejection on a side branch so a failed initialization is never reported
+// as an unhandled rejection. `accessReady` itself stays rejected, which keeps
+// protected work failing closed until Chrome restarts the worker.
+accessReady.catch((error) => {
+  console.error("lane-realqa: trusted-context storage initialization failed", {
+    reason: String(error?.message || error),
+  });
+});
+async function ensureAccess() {
+  try {
+    await accessReady;
+  } catch {
+    throw new Error("ACCESS_UNAVAILABLE");
+  }
+}
 let port,
   serial = 0;
 const pending = new Map(),
@@ -15,7 +42,9 @@ function connection() {
   port = chrome.runtime.connectNative(HOST);
   port.onMessage.addListener((message) => {
     if (message.type === "revoked") {
-      void chrome.storage.local.remove("token");
+      void ensureAccess()
+        .then(() => chrome.storage.local.remove("token"))
+        .catch(() => {});
       void showStatus(remedies.REVOKED);
       return;
     }
@@ -55,6 +84,7 @@ function connection() {
   return port;
 }
 async function identity() {
+  await ensureAccess();
   let value = await chrome.storage.local.get([
     "profileId",
     "profileName",
@@ -67,6 +97,7 @@ async function identity() {
   return value;
 }
 async function request(type, body = {}) {
+  await ensureAccess();
   const credentials = await identity();
   const p = connection(),
     id = String(++serial);
@@ -80,20 +111,19 @@ async function request(type, body = {}) {
   });
 }
 async function select({ activate = false } = {}) {
+  await ensureAccess();
   const [tab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
   });
   const win = tab && (await chrome.windows.get(tab.windowId));
-  if (
-    !tab ||
-    tab.incognito ||
-    !/^https?:\/\//.test(tab.url || "") ||
-    /^https:\/\/(chromewebstore.google.com|chrome.google.com\/webstore)/.test(
-      tab.url,
-    )
-  )
-    throw new Error("UNSUPPORTED_PAGE");
+  if (!tab || tab.incognito) throw new Error("UNSUPPORTED_PAGE");
+  // Without a grant for this tab Chrome hides tab.url, so an omitted or empty URL is
+  // unknown rather than restricted. Ask the user to click the extension and never
+  // inject, capture or activate Chrome for it.
+  if (tab.url === undefined || tab.url === null || tab.url === "")
+    throw new Error("PERMISSION_REQUIRED");
+  if (!isSelectablePageUrl(tab.url)) throw new Error("UNSUPPORTED_PAGE");
   await request("status");
   if (activate) {
     await chrome.windows.update(tab.windowId, {
@@ -218,6 +248,7 @@ async function capture(message, sender) {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   // Popup commands are accepted only from this extension, never from a page script.
   const operation = async () => {
+    await ensureAccess();
     if (message.type === "selection") return capture(message, sender);
     if (sender.tab || sender.id !== chrome.runtime.id)
       throw new Error("UNSUPPORTED_REQUEST");
