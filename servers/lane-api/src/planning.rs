@@ -670,6 +670,12 @@ impl Snapshot {
     /// Validate a task write and compute every other task body it changes. `supersede` is true
     /// when the new body replaces every current head of the task; otherwise the new body is one
     /// more head of a conflicted task and cycle checks use the union of references.
+    ///
+    /// A write that does not supersede is preserved as a conflict alternative and never edits
+    /// other tasks, so it is validated against exactly the graph that will be persisted: the
+    /// other tasks unchanged, the task with its existing heads plus the alternative. Its
+    /// relationship edits, symmetric related links and move cleanup are discarded rather than
+    /// applied during validation, because their cascades are discarded as well.
     pub fn write_task(
         &self,
         id: &str,
@@ -684,6 +690,10 @@ impl Snapshot {
             // A move discards the references sent with it and clears the stored ones.
             clear_references(&mut body);
             let mut others = BTreeMap::new();
+            if !supersede {
+                // The alternative is stored without removing other tasks' references.
+                return Ok(TaskWrite { body, others });
+            }
             for (other, state) in &self.tasks {
                 // A conflicted task has no single body to rewrite. Its dangling reference is
                 // ignored by readers and rejected when the conflict is resolved.
@@ -698,7 +708,11 @@ impl Snapshot {
         }
         self.validate_planning_refs(&body, repo)?;
         let no_edits = Edits::default();
-        let edits = if mode == Mode::Push { &no_edits } else { edits };
+        let edits = if mode == Mode::Push || !supersede {
+            &no_edits
+        } else {
+            edits
+        };
 
         let mut links: Vec<String> = Vec::new();
         links.extend(strings(&body, "dependsOnTaskIds"));
@@ -761,6 +775,10 @@ impl Snapshot {
                 .chain(new_related.iter().cloned())
                 .collect(),
         ) {
+            // Symmetric related links of an alternative are not written to the other tasks.
+            if !supersede {
+                break;
+            }
             if let Some(other) = work.get_mut(&related) {
                 let mut set = strings(&other.main, "relatedTaskIds");
                 set.retain(|s| s != id);
@@ -2152,6 +2170,50 @@ mod tests {
             evaluate(&query, &tasks, &lookups, None, usize::MAX).0,
             [A, B, FOREIGN_T]
         );
+    }
+    fn plain_task(repo: &str, extra: Value) -> Value {
+        let mut body = json!({"repositoryId":repo,"title":"t","description":"","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
+        for (k, v) in extra.as_object().unwrap() {
+            body[k] = v.clone();
+        }
+        body
+    }
+    #[test]
+    fn stale_alternatives_are_validated_without_applying_discarded_edits() {
+        const A: &str = "019c0000-0000-7000-8000-000000000001";
+        const B: &str = "019c0000-0000-7000-8000-000000000002";
+        let mut snapshot = Snapshot::default();
+        // A is already a child of B on the current heads.
+        snapshot.tasks.insert(
+            A.into(),
+            TaskState {
+                repo: "r1".into(),
+                bodies: vec![plain_task("r1", json!({"parentTaskId":B}))],
+            },
+        );
+        snapshot.tasks.insert(
+            B.into(),
+            TaskState {
+                repo: "r1".into(),
+                bodies: vec![plain_task("r1", json!({}))],
+            },
+        );
+        // The alternative makes B a child of A and tries to detach A from B.
+        let edits = Edits::from_value(&json!({"removeSubtaskIds":[A]})).unwrap();
+        let alternative = plain_task("r1", json!({"parentTaskId":A}));
+        let stale = snapshot
+            .write_task(B, "r1", alternative.clone(), &edits, Mode::Save, false)
+            .unwrap_err();
+        assert_eq!(
+            code(&stale),
+            (CONSTRAINT_REASON, Some(Violation::ParentCycle))
+        );
+        // The same write that supersedes the heads really detaches A, so it is accepted and
+        // reports the cascade.
+        let write = snapshot
+            .write_task(B, "r1", alternative, &edits, Mode::Save, true)
+            .unwrap();
+        assert!(write.others[A].get("parentTaskId").is_none());
     }
     #[test]
     fn violations_round_trip_through_the_error_detail() {

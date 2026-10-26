@@ -1554,6 +1554,44 @@ async fn stale_specialized_edits_are_validated_against_the_current_heads() {
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn stale_save_is_validated_without_applying_discarded_relationship_edits() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    let b1 = f.accepted(TASK_B).await;
+    // B advances past the version the stale save is based on, then A becomes a child of B.
+    f.call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,"task":task_fields("Title two", REPO, json!({}))})).await.unwrap();
+    let a1 = f.accepted(TASK).await;
+    f.call("SaveTask", json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":a1,"task":task_fields("Title", REPO, json!({"parentTaskId":TASK_B}))})).await.unwrap();
+    let before = f.footprint().await;
+    // The edits would detach A, but a stale save never applies them, so A stays a child of B
+    // and the alternative that names A as B's parent closes a parent cycle.
+    let stale = json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,
+        "task":task_fields("Title three", REPO, json!({"parentTaskId":TASK})),
+        "relationshipEdits":{"removeSubtaskIds":[TASK]}});
+    let r = f.call("SaveTask", stale).await.unwrap_err();
+    assert_eq!(r.reason & 0xff, 19, "{r:?}");
+    assert_eq!(
+        violation_name(&r),
+        Some("CONSTRAINT_VIOLATION_PARENT_CYCLE")
+    );
+    assert_eq!(f.footprint().await, before, "partial writes");
+    // Without the cycle the stale save is preserved as an alternative and edits nothing else.
+    let stale = json!({"meta":{"requestId":id()},"id":TASK_B,"expectedVersionId":b1,
+        "task":task_fields("Title four", REPO, json!({})),
+        "relationshipEdits":{"removeSubtaskIds":[TASK]}});
+    let r = f.call("SaveTask", stale).await.unwrap();
+    assert_eq!(r["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(
+        r.get("affected")
+            .is_none_or(|a| a.as_array().is_some_and(Vec::is_empty))
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn list_ignores_references_retained_by_conflicted_tasks_after_deletion() {
     let mut f = Fixture::new().await;
     f.repo(REPO, "https://example.com/repo").await;
