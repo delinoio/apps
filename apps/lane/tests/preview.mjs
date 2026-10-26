@@ -65,6 +65,27 @@ const planning =
   process.env.LANE_PREVIEW_SCENARIO === "planning"
     ? createPlanningState(task, repo)
     : undefined;
+// LANE_PREVIEW_SCENARIO=task-open serves two tasks and lets a test hold, order and
+// release GetTask replies to exercise superseded task-detail reads.
+const taskOpen =
+  process.env.LANE_PREVIEW_SCENARIO === "task-open"
+    ? {
+        tasks: new Map([
+          [task.entityId, { ...task, task: { ...task.task, title: "Task A" } }],
+          [
+            "019a196d-0000-7000-8000-000000000021",
+            {
+              ...task,
+              entityId: "019a196d-0000-7000-8000-000000000021",
+              versionId: "019a196d-0000-7000-8000-000000000022",
+              task: { ...task.task, title: "Task B", captures: [] },
+            },
+          ],
+        ]),
+        hold: false,
+        held: [],
+      }
+    : undefined;
 // Switchable API principal and request log for the session reconciliation checks.
 // The log records only paths and CSRF headers, never request content.
 const principals = {
@@ -130,6 +151,35 @@ createServer(async (req, res) => {
     if (url.pathname === "/test/empty-list") {
       emptyList = url.searchParams.get("enabled") === "1";
       res.end("{}");
+      return;
+    }
+    if (taskOpen && url.pathname === "/test/task-open") {
+      // hold=1 holds later GetTask replies; title=<id>:<text> edits a served task;
+      // release=<index>:<ok|fail|empty> answers one held reply; state lists replies.
+      const q = url.searchParams;
+      if (q.has("hold")) taskOpen.hold = q.get("hold") === "1";
+      if (q.has("title")) {
+        const [id, ...text] = q.get("title").split(":");
+        const t = taskOpen.tasks.get(id);
+        taskOpen.tasks.set(id, {
+          ...t,
+          task: { ...t.task, title: text.join(":") },
+        });
+      }
+      if (q.has("release")) {
+        const [index, mode] = q.get("release").split(":");
+        taskOpen.held[Number(index)].release(mode);
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify(
+          taskOpen.held.map((h) => ({
+            id: h.id,
+            title: h.title,
+            done: h.done,
+          })),
+        ),
+      );
       return;
     }
     if (url.pathname === "/test/events") {
@@ -285,9 +335,42 @@ createServer(async (req, res) => {
           response = { items: [result(repo)] };
           break;
         case "ListTasks":
-          response = { items: emptyList ? [] : [result(task)] };
+          response = {
+            items: emptyList
+              ? []
+              : taskOpen
+                ? [...taskOpen.tasks.values()].map(result)
+                : [result(task)],
+          };
           break;
         case "GetTask":
+          if (taskOpen) {
+            // The reply content is fixed when the request arrives, so a later edit
+            // to the served task makes an earlier held reply older.
+            const served = taskOpen.tasks.get(input.id);
+            if (taskOpen.hold) {
+              const entry = {
+                id: input.id,
+                title: served.task.title,
+                done: false,
+              };
+              const mode = await new Promise((release) => {
+                entry.release = (m) => {
+                  entry.done = true;
+                  release(m);
+                };
+                taskOpen.held.push(entry);
+              });
+              if (mode === "fail") {
+                res.statusCode = 503;
+                response = { code: "unavailable", message: "Read failed" };
+              } else
+                response = mode === "empty" ? {} : { result: result(served) };
+              break;
+            }
+            response = { result: result(served) };
+            break;
+          }
           response = { result: result(task) };
           break;
         case "SaveTask":
