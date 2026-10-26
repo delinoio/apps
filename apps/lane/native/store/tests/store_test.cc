@@ -740,6 +740,7 @@ int main(int argc, char** argv) {
     {"deleted affected task is redacted from receipts", planning_deleted_affected_task_is_redacted_from_receipts},
     {"list ignores dangling references", planning_list_ignores_dangling_references},
     {"uploads edge removals before additions", planning_uploads_edge_removals_before_dependent_additions},
+    {"save removes one-sided incoming related links", planning_save_removes_one_sided_incoming_related_links},
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
     {"reset rejects open handles of the same process", reset_rejects_open_handles_of_the_same_process},

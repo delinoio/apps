@@ -621,3 +621,39 @@ void planning_uploads_edge_removals_before_dependent_additions() {
   order = s.pending_versions();
   require(order == std::vector<std::string>{c.at("versionId"), dependent.at("versionId")}, "stored order is kept when no edge is removed");
 }
+void planning_save_removes_one_sided_incoming_related_links() {
+  Synced s; auto& f = s.f;
+  auto repo = repository_for(f); s.accept(repo);
+  auto a = planned_task(f, repo.at("entityId")); auto b = planned_task(f, repo.at("entityId")); s.accept(a); s.accept(b);
+  const auto a_id = a.at("entityId").get<std::string>(), b_id = b.at("entityId").get<std::string>();
+  // Synchronization supplies a one-sided link: B relates to A and A stores no backlink.
+  auto one_sided = [&](const J& head, const std::string& other) {
+    J remote = head;
+    remote["versionId"] = uuid(); remote["parentVersionIds"] = J::array({head.at("versionId")});
+    remote["createdAt"] = "2026-01-02T00:00:00Z";
+    remote["origin"] = {{"kind", "ORIGIN_KIND_CLI"}, {"deviceId", uuid()}, {"deviceName", "Remote"}, {"accountId", ""}};
+    remote["task"]["relatedTaskIds"] = J::array({other});
+    success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", s.epoch}, {"owner", s.owner},
+        {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {{"result", "RESULT_KIND_APPLIED"}, {"version", remote}}}}})},
+                  {"nextCursor", "c"}, {"hasMore", false}}}}.dump()));
+    return remote;
+  };
+  auto b1 = one_sided(b, a_id);
+  require(f.get(b_id).at("task").at("relatedTaskIds") == J::array({a_id}) && !f.get(a_id).at("task").contains("relatedTaskIds"), "one-sided link imported");
+  // Saving the endpoint that stores no link keeps the relationship and writes the missing backlink.
+  auto kept = f.call("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", f.get(a_id).at("versionId")},
+      {"task", [&] { auto t = f.get(a_id).at("task"); t["relatedTaskIds"] = J::array({b_id}); return t; }()}});
+  require(!kept.contains("affected") || kept.at("affected").empty(), "keeping the link leaves the stored side untouched");
+  require(f.get(b_id).at("task").at("relatedTaskIds") == J::array({a_id}) && f.get(a_id).at("task").at("relatedTaskIds") == J::array({b_id}), "kept link is stored on both sides");
+  // Clear it from A, then recreate the one-sided link and clear it from A without any stored outgoing link.
+  auto cleared = f.call("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", f.get(a_id).at("versionId")},
+      {"task", [&] { auto t = f.get(a_id).at("task"); t.erase("relatedTaskIds"); return t; }()}});
+  require(!f.get(b_id).at("task").contains("relatedTaskIds") && cleared.at("affected").size() == 1, "clearing removes the stored link");
+  one_sided(f.get(b_id), a_id);
+  require(!f.get(a_id).at("task").contains("relatedTaskIds") && f.get(b_id).at("task").contains("relatedTaskIds"), "one-sided link again");
+  auto removed = f.call("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", f.get(a_id).at("versionId")},
+      {"task", [&] { auto t = f.get(a_id).at("task"); t["title"] = "Retitled"; return t; }()}});
+  require(!f.get(b_id).at("task").contains("relatedTaskIds") && removed.at("affected").size() == 1 &&
+          removed.at("affected")[0].at("version").at("entityId") == b_id, "saving A without relatedTaskIds removes B's incoming link");
+  require(items(f.call("ListTasks", {{"filter", {{"relationships", J::array({"RELATIONSHIP_KIND_RELATED"})}}}})).empty(), "neither endpoint stays related");
+}

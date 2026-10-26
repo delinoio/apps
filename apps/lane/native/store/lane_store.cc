@@ -1857,6 +1857,26 @@ struct Store::Impl {
       for (auto &x : list(previous->orig, "relatedTaskIds"))
         related.push_back(x);
     if (others) {
+      // A synchronized write stores one direction only, so another task can
+      // relate to this one without a stored backlink. Views show the link on
+      // both endpoints, so a save from either endpoint must be able to remove
+      // it: include every live same-repository task with a head that names
+      // this task (the server's write_task() does the same).
+      for (auto &x : mentioning(d, taskId)) {
+        if (x == taskId)
+          continue;
+        auto *n = taskNode(d, nodes, x);
+        if (!n || n->repo != repo)
+          continue;
+        auto names = [&](const J &t) {
+          auto set = list(t, "relatedTaskIds");
+          return std::find(set.begin(), set.end(), taskId) != set.end();
+        };
+        if (names(n->cur) || std::any_of(n->extra.begin(), n->extra.end(), names))
+          related.push_back(x);
+      }
+    }
+    if (others) {
       primary->cur = body;
       primary->extra.clear(); // This write supersedes every conflicting head.
       primary->conflicted = false;
