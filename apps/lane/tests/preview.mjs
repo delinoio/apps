@@ -131,7 +131,7 @@ createServer(async (req, res) => {
                   : { state: "ATTACHMENT_STATE_AVAILABLE", png: capturePNG };
           break;
         case "GetSyncInfo":
-          response = { formatVersion: 2, epoch: "test-epoch" };
+          response = { formatVersion: 3, epoch: "test-epoch" };
           break;
         case "WatchChanges":
           res.setHeader("Content-Type", "application/connect+json");

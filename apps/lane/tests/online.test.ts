@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OnlineLane } from "../web/online.ts";
+import { create, toBinary } from "@bufbuild/protobuf";
+import {
+  ConstraintViolation,
+  ErrorDetailSchema,
+  ErrorReason,
+} from "@delino/protos/lane/v1/lane_pb";
+import { LaneRpcError, OnlineLane } from "../web/online.ts";
 Object.defineProperty(globalThis, "navigator", {
   value: { onLine: true },
   configurable: true,
@@ -183,5 +189,104 @@ test("unmatched and old-account reauthentication cannot delete data", async () =
     ).length,
     0,
   );
+  h.lane.stop();
+});
+test("planning service is routed online and constraint violations keep their typed detail", async () => {
+  const paths: string[] = [];
+  const detail = toBinary(
+    ErrorDetailSchema,
+    create(ErrorDetailSchema, {
+      reason: ErrorReason.CONSTRAINT_VIOLATION,
+      violation: ConstraintViolation.DUPLICATE_NAME,
+      entityId: "label-1",
+    }),
+  );
+  const mock: typeof fetch = async (input) => {
+    const path = new URL(
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url,
+    ).pathname;
+    paths.push(path);
+    if (path === "/auth/session")
+      return Response.json({
+        account_id: "a",
+        device_id: "d",
+        csrf_token: "c",
+      });
+    if (path.endsWith("GetSyncInfo")) throw new Error("not connected");
+    if (path.endsWith("SavePlanningItem"))
+      return new Response(
+        JSON.stringify({
+          code: "failed_precondition",
+          message: "Name already used",
+          details: [
+            {
+              type: "lane.v1.ErrorDetail",
+              value: Buffer.from(detail).toString("base64").replace(/=+$/, ""),
+            },
+          ],
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    return Response.json({ items: [], nextCursor: "" });
+  };
+  const lane = new OnlineLane({
+    baseUrl: "https://lane.test",
+    fetch: mock,
+    invalidate: () => {},
+    sessionChanged: () => {},
+    returnTo: "https://app.test/",
+  });
+  await lane.start();
+  const list = await lane.invoke(
+    "lane.v1.PlanningService",
+    "ListPlanningItems",
+    {
+      repositoryId: "r",
+      kind: "ENTITY_KIND_LABEL",
+    },
+  );
+  assert.deepEqual(list, {});
+  await assert.rejects(
+    lane.invoke("lane.v1.PlanningService", "SavePlanningItem", {
+      id: "label-1",
+      expectedVersionId: "v",
+      item: { label: { repositoryId: "r", name: "x", color: "#075AFF" } },
+    }),
+    (error: unknown) =>
+      error instanceof LaneRpcError &&
+      error.laneReason === "CONSTRAINT_VIOLATION" &&
+      error.laneViolation === "DUPLICATE_NAME" &&
+      error.message === "Name already used",
+  );
+  lane.stop();
+});
+test("planning writes and development reset refuse offline or on the web without losing the request", async () => {
+  const h = harness();
+  await h.lane.start();
+  await assert.rejects(
+    h.lane.invoke("local", "ResetDevelopmentData", { confirmed: true }),
+    /desktop and mobile apps only/,
+  );
+  Object.defineProperty(globalThis, "navigator", {
+    value: { onLine: false },
+    configurable: true,
+  });
+  try {
+    await assert.rejects(
+      h.lane.invoke("lane.v1.PlanningService", "CreatePlanningItem", {
+        id: "x",
+      }),
+      /offline.*retained/s,
+    );
+  } finally {
+    Object.defineProperty(globalThis, "navigator", {
+      value: { onLine: true },
+      configurable: true,
+    });
+  }
   h.lane.stop();
 });

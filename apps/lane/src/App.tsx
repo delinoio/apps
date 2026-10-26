@@ -36,7 +36,6 @@ import {
 import { RealQA, RealQADialogs } from "./RealQA";
 import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
-import { StoreMigration } from "./StoreMigration";
 import { savedCaptureRoute } from "./captures-model";
 import { CommandPalette } from "./CommandPalette";
 import {
@@ -49,7 +48,6 @@ import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
   const [realqaDirty, setRealqaDirty] = useState(false);
-  const [migrationAdapter, setMigrationAdapter] = useState<LaneAdapter>();
   const [miniApp, setMiniApp] = useState(MiniApp.Lane);
   const previousApp = useRef(MiniApp.Lane);
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
@@ -119,14 +117,6 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         }
         setAdapter(owned);
       } catch (e) {
-        if (
-          active &&
-          owned?.migrate &&
-          /format|schema|migration|version/i.test(
-            e instanceof Error ? e.message : "",
-          )
-        )
-          setMigrationAdapter(owned);
         if (active)
           setError(e instanceof Error ? e.message : "Lane could not open.");
       } finally {
@@ -466,17 +456,6 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                   <Notice>
                     {error} <Button onClick={refresh}>Retry loading</Button>
                   </Notice>
-                )}
-                {migrationAdapter && (
-                  <StoreMigration
-                    adapter={migrationAdapter}
-                    ready={() => {
-                      setAdapter(migrationAdapter);
-                      setMigrationAdapter(undefined);
-                      setError("");
-                      refresh();
-                    }}
-                  />
                 )}
                 {loading && !adapter && <text>Opening Lane…</text>}
                 {adapter && (page === "Tasks" || page === "Proposals") && (

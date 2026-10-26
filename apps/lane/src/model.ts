@@ -2,6 +2,11 @@
 import { toUI, fromUI, type UI } from "./serializable.ts";
 import { create } from "@bufbuild/protobuf";
 import {
+  planningTaskChanges,
+  type Lookup,
+  type Relations,
+} from "./planning.ts";
+import {
   TaskSchema,
   Progress,
   Proposal,
@@ -61,6 +66,11 @@ export interface Draft {
   id: string;
   base?: string;
   task: Task;
+  // Saved snapshot: detects a move (repository change) and restores the
+  // repository-owned values when the user selects the original repository again.
+  baseTask?: Task;
+  // Derived Subtasks/Blocks edits, loaded with the same-repository task options.
+  relations?: Relations;
   dirty: boolean;
   external: boolean;
   deleted: boolean;
@@ -72,6 +82,7 @@ export function draftFor(result: EntityResult): Draft {
     id: result.version.entityId,
     base: result.version.versionId,
     task: { ...taskOf(result.version)! },
+    baseTask: { ...taskOf(result.version)! },
     dirty: false,
     external: false,
     deleted: false,
@@ -87,6 +98,7 @@ export function receiveExternal(draft: Draft, result: EntityResult): Draft {
 export function historyChanges(
   before: EntityVersion | undefined,
   after: EntityVersion,
+  lookup?: Lookup,
 ): { field: string; before: string; after: string }[] {
   const old = taskOf(before);
   const next = taskOf(after);
@@ -99,15 +111,18 @@ export function historyChanges(
         : value === undefined
           ? "(absent)"
           : String(value);
-  return (
+  const core = (
     ["title", "description", "progress", "proposal", "repositoryId"] as const
   )
     .filter((k) => old?.[k] !== next[k])
     .map((k) => ({
-      field: k,
+      field: k as string,
       before: label(k, old?.[k]),
       after: label(k, next[k]),
     }));
+  // Planning fields and relationships are task fields too; names come from the
+  // current lookups and never from copies stored in this history.
+  return lookup ? [...core, ...planningTaskChanges(old, next, lookup)] : core;
 }
 
 type EntityResult = UI<ProtoEntityResult>;
