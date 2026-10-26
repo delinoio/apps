@@ -190,8 +190,11 @@ only for the behavior specified here; Pace remains outside this scope.
 
 `apps/lane-chrome-extension/src` owns a Manifest V3 extension with `activeTab`,
 `scripting`, `nativeMessaging`, and `storage` permissions. Incognito is disabled.
-The selector runs in Chrome's isolated world. It sends a selected visible rectangle
-and literal metadata to the extension worker. The worker captures the active tab,
+The selector runs in Chrome's isolated world. It accepts only genuine user input
+(`isTrusted === true`) for pointer selection, Tab traversal, Enter capture, click
+capture and Escape cancellation; page-dispatched events share the DOM but are
+ignored before any side effect so the session stays intact. It sends a selected
+visible rectangle and literal metadata to the extension worker. The worker captures the active tab,
 crops the selected rectangle in memory using the screenshot's pixel dimensions,
 and sends only that PNG to Lane. Lane validates and appends it to the existing
 composer; the extension cannot save a task. A DOM shortcut without an active tab
