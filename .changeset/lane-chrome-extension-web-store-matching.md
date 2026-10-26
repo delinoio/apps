@@ -1,5 +1,5 @@
 ---
-"@apps/lane-chrome-extension": patch
+"@apps/lane-chrome-extension": none
 ---
 
 Match the Chrome Web Store exclusion against the parsed HTTPS hostname and path

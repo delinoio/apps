@@ -99,10 +99,6 @@ export function makePlan(records, inventory, read, priorVersions = {}) {
       selectServer(dependency);
   }
   for (const name of selected) {
-    // The Chrome companion is versioned here but submitted to the store separately.
-    // Keep it out of the web matrix and component success tags until store
-    // publication has its own release gate.
-    if (name === "@apps/lane-chrome-extension") continue;
     const file = inventory[name],
       parts = file.split("/"),
       leaf = parts[1];

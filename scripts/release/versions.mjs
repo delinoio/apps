@@ -46,12 +46,6 @@ export function synchronizeVersions(changes, read, components) {
       entries[0][0].replace(/^version = "[^"]+"/m, `version = "${version}"`),
     );
   };
-  if (changes["apps/lane-chrome-extension/package.json"]) {
-    const version = JSON.parse(
-      changes["apps/lane-chrome-extension/package.json"],
-    ).version;
-    jsonVersion("apps/lane-chrome-extension/src/manifest.json", version);
-  }
   if (changes["apps/delitools/package.json"]) {
     const version = JSON.parse(changes["apps/delitools/package.json"]).version;
     jsonVersion("apps/delitools/src-tauri/tauri.conf.json", version);

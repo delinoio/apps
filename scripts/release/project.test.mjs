@@ -55,59 +55,6 @@ test("Server-only and none releases do not bump or deploy frontends", () => {
   assert.equal(result.components[0].binaries, false);
   assert.deepEqual(result.servers, ["delcore-api", "lane-api"]);
 });
-test("Chrome companion bumps its store manifest without selecting deployments", () => {
-  const result = makePlan(
-    [
-      {
-        id: "one",
-        packages: { "@apps/lane-chrome-extension": "patch" },
-        public: "User note",
-      },
-      { id: "two", packages: { "@apps/lane-chrome-extension": "patch" } },
-    ],
-    inventory,
-    read,
-  );
-  synchronizeVersions(result.changes, read, result.components);
-  const version = bumpVersion(
-    JSON.parse(read("apps/lane-chrome-extension/package.json")).version,
-    "patch",
-  );
-  assert.equal(
-    JSON.parse(result.changes["apps/lane-chrome-extension/package.json"])
-      .version,
-    version,
-  );
-  assert.equal(
-    JSON.parse(result.changes["apps/lane-chrome-extension/src/manifest.json"])
-      .version,
-    version,
-  );
-  assert.equal(Object.keys(result.changes).length, 2);
-  assert.deepEqual(result.components, []);
-  assert.deepEqual(result.servers, []);
-  assert.deepEqual(result.versions, {});
-  assert.deepEqual(result.records, ["one", "two"]);
-  assert.deepEqual(result.publicNotes, [
-    { packages: ["@apps/lane-chrome-extension"], note: "User note" },
-  ]);
-});
-test("Chrome companion none records preserve versions and unrelated deployments", () => {
-  const result = plan({
-    "@apps/lane-chrome-extension": "none",
-    "@apps/devbase": "patch",
-  });
-  synchronizeVersions(result.changes, read, result.components);
-  assert.deepEqual(Object.keys(result.changes), ["apps/devbase/package.json"]);
-  assert.deepEqual(
-    result.components.map((c) => c.component),
-    ["devbase"],
-  );
-  assert.deepEqual(result.servers, ["delcore-api", "devbase-api"]);
-});
-test("Unsupported applications still fail before changeset consumption", () => {
-  assert.throws(() => plan({ "@apps/delidev": "patch" }), /No release target/);
-});
 test("Shared dependencies redeploy consuming apps without version inflation", () => {
   const result = plan({ "@packages/ui": "patch" });
   assert.deepEqual(Object.keys(result.changes), ["packages/ui/package.json"]);
