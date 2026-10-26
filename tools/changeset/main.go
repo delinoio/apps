@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,13 +23,13 @@ const (
 	patch bump = "patch"
 	minor bump = "minor"
 	major bump = "major"
+	none  bump = "none"
 )
 
 type record struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Packages      map[string]bump `json:"packages"`
-	Summary       string          `json:"summary"`
-	Public        string          `json:"public,omitempty"`
+	Packages map[string]bump `json:"packages"`
+	Summary  string          `json:"summary"`
+	Public   string          `json:"public,omitempty"`
 }
 type pending struct {
 	ID string `json:"id"`
@@ -135,77 +134,90 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-// Reject duplicate keys before decoding: encoding/json otherwise silently keeps
-// the last value, which could hide a package bump or replace a public note.
-func uniqueJSON(dec *json.Decoder) error {
-	token, err := dec.Token()
-	if err != nil {
+const publicStart = "<!-- public-changelog:start -->"
+const publicEnd = "<!-- public-changelog:end -->"
+
+func decode(data []byte, r *record) error {
+	contents := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	lines := strings.Split(contents, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return errors.New("changeset must start with YAML frontmatter delimited by ---")
+	}
+	end := 1
+	for end < len(lines) && strings.TrimSpace(lines[end]) != "---" {
+		end++
+	}
+	if end == len(lines) {
+		return errors.New("missing closing frontmatter delimiter")
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:end], "\n")), &document); err != nil {
 		return err
 	}
-	delim, ok := token.(json.Delim)
-	if !ok {
+	r.Packages = map[string]bump{}
+	if len(document.Content) > 0 {
+		mapping := document.Content[0]
+		// Empty frontmatter is the standard empty changeset form.
+		if mapping.Kind != yaml.MappingNode && !(mapping.Kind == yaml.ScalarNode && mapping.Tag == "!!null" && mapping.Value == "") {
+			return errors.New("frontmatter must map package names to release types")
+		}
+		for i := 0; i < len(mapping.Content); i += 2 {
+			key, value := mapping.Content[i], mapping.Content[i+1]
+			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" || strings.TrimSpace(key.Value) == "" || value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
+				return errors.New("package names and release types must be strings")
+			}
+			if _, exists := r.Packages[key.Value]; exists {
+				return fmt.Errorf("duplicate package %q", key.Value)
+			}
+			r.Packages[key.Value] = bump(value.Value)
+		}
+	}
+	body := strings.TrimSpace(strings.Join(lines[end+1:], "\n"))
+	r.Summary, r.Public = body, ""
+	if !strings.Contains(body, publicStart) && !strings.Contains(body, publicEnd) {
 		return nil
 	}
-	switch delim {
-	case '{':
-		seen := map[string]bool{}
-		for dec.More() {
-			key, err := dec.Token()
-			if err != nil {
-				return err
+	if strings.Count(body, publicStart) != 1 || strings.Count(body, publicEnd) != 1 {
+		return errors.New("public changelog must have exactly one start and end marker")
+	}
+	before, rest, _ := strings.Cut(body, publicStart)
+	note, after, found := strings.Cut(rest, publicEnd)
+	if !found || strings.TrimSpace(after) != "" || (before != "" && !strings.HasSuffix(before, "\n")) || !strings.HasPrefix(note, "\n") || !strings.HasSuffix(note, "\n") {
+		return errors.New("public changelog markers must occupy separate lines at the end of the body")
+	}
+	// Reject markers in code fences: treating example code as public prose could
+	// expose internal notes. Authors must keep this reserved block outside code.
+	fence := ""
+	for _, line := range strings.Split(before, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if fence == "" {
+			for _, prefix := range []string{"```", "~~~"} {
+				if strings.HasPrefix(trimmed, prefix) {
+					n := 0
+					for n < len(trimmed) && trimmed[n] == prefix[0] {
+						n++
+					}
+					fence = trimmed[:n]
+					break
+				}
 			}
-			name, ok := key.(string)
-			if !ok {
-				return errors.New("expected object key")
-			}
-			if seen[name] {
-				return fmt.Errorf("duplicate JSON key %q", name)
-			}
-			seen[name] = true
-			if err := uniqueJSON(dec); err != nil {
-				return err
-			}
+		} else if strings.HasPrefix(trimmed, fence) && strings.Trim(strings.TrimSpace(trimmed), fence[:1]) == "" {
+			fence = ""
 		}
-	case '[':
-		for dec.More() {
-			if err := uniqueJSON(dec); err != nil {
-				return err
-			}
-		}
-	default:
-		return errors.New("unexpected JSON delimiter")
 	}
-	_, err = dec.Token()
-	return err
-}
-func decode(data []byte, value any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := uniqueJSON(dec); err != nil {
-		return err
+	if fence != "" {
+		return errors.New("public changelog block must not be inside a code fence")
 	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("expected exactly one JSON object")
-	}
-	dec = json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	return dec.Decode(value)
+	r.Summary, r.Public = strings.TrimSpace(before), strings.TrimSpace(note)
+	return nil
 }
 func validate(r record, packages map[string]string) error {
-	if r.SchemaVersion != 1 {
-		return fmt.Errorf("unsupported schemaVersion %d", r.SchemaVersion)
-	}
-	if len(r.Packages) == 0 {
-		return errors.New("packages must not be empty")
-	}
-	if strings.TrimSpace(r.Summary) == "" {
-		return errors.New("summary must not be blank")
-	}
 	for _, name := range sortedKeys(r.Packages) {
 		if _, ok := packages[name]; !ok {
 			return fmt.Errorf("unknown package %q", name)
 		}
 		switch r.Packages[name] {
-		case patch, minor, major:
+		case patch, minor, major, none:
 		default:
 			return fmt.Errorf("invalid bump %q for %s", r.Packages[name], name)
 		}
@@ -219,11 +231,11 @@ func readPending(root string, packages map[string]string) ([]pending, error) {
 	}
 	result := make([]pending, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Name() == "README.md" && entry.Type().IsRegular() {
+		if (strings.EqualFold(entry.Name(), "README.md") || entry.Name() == "config.json") && entry.Type().IsRegular() {
 			continue
 		}
-		id := strings.TrimSuffix(entry.Name(), ".json")
-		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".json") || !validID.MatchString(id) {
+		id := strings.TrimSuffix(entry.Name(), ".md")
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".md") || !validID.MatchString(id) {
 			return nil, fmt.Errorf("unexpected changeset entry %q", entry.Name())
 		}
 		data, err := os.ReadFile(filepath.Join(root, ".changeset", entry.Name()))
@@ -244,11 +256,11 @@ func readPending(root string, packages map[string]string) ([]pending, error) {
 
 type packageFlags map[string]bump
 
-func (p packageFlags) String() string { return "name:patch|minor|major" }
+func (p packageFlags) String() string { return "name:patch|minor|major|none" }
 func (p packageFlags) Set(value string) error {
 	name, level, ok := strings.Cut(value, ":")
 	if !ok || name == "" {
-		return errors.New("use --package name:patch|minor|major")
+		return errors.New("use --package name:patch|minor|major|none")
 	}
 	if _, exists := p[name]; exists {
 		return fmt.Errorf("duplicate package flag %q", name)
@@ -257,13 +269,27 @@ func (p packageFlags) Set(value string) error {
 	return nil
 }
 func writeRecord(root, id string, r record) (err error) {
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
+	var contents strings.Builder
+	contents.WriteString("---\n")
+	for _, name := range sortedKeys(r.Packages) {
+		quoted, _ := json.Marshal(name)
+		fmt.Fprintf(&contents, "%s: %s\n", quoted, r.Packages[name])
+	}
+	contents.WriteString("---\n\n")
+	contents.WriteString(strings.TrimSpace(r.Summary))
+	contents.WriteString("\n")
+	if strings.TrimSpace(r.Public) != "" {
+		fmt.Fprintf(&contents, "\n%s\n%s\n%s\n", publicStart, strings.TrimSpace(r.Public), publicEnd)
+	}
+	data := []byte(contents.String())
+	// Validate the rendered form before writing so reserved block syntax cannot
+	// change the meaning of author-supplied summaries or public notes.
+	var parsed record
+	if err := decode(data, &parsed); err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	// Exclusive creation protects existing records, including concurrent authors.
-	path := filepath.Join(root, ".changeset", id+".json")
+	path := filepath.Join(root, ".changeset", id+".md")
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return err
@@ -318,17 +344,25 @@ func run(root string, args []string, out io.Writer) error {
 		return json.NewEncoder(out).Encode(packages)
 	}
 	if command == "add" {
-		if !validID.MatchString(id) {
-			return errors.New("--id must be lowercase kebab-case")
+		if !validID.MatchString(id) || id == "readme" {
+			return errors.New("--id must be lowercase kebab-case and must not be readme")
 		}
-		r := record{SchemaVersion: 1, Packages: selected, Summary: summary, Public: public}
+		if len(selected) == 0 || strings.TrimSpace(summary) == "" {
+			return errors.New("add requires at least one --package and a nonblank --summary")
+		}
+		for _, text := range []string{summary, public} {
+			if strings.Contains(text, publicStart) || strings.Contains(text, publicEnd) {
+				return errors.New("summary and public text must not contain reserved public changelog markers")
+			}
+		}
+		r := record{Packages: selected, Summary: summary, Public: public}
 		if err := validate(r, packages); err != nil {
 			return err
 		}
 		if err := writeRecord(root, id, r); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(out, "created .changeset/%s.json\n", id)
+		_, err := fmt.Fprintf(out, "created .changeset/%s.md\n", id)
 		return err
 	}
 	records, err := readPending(root, packages)

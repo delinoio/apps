@@ -8,38 +8,59 @@ in the root and the workspaces selected by `pnpm-workspace.yaml`, including priv
 applications and servers. Rust components without their own npm manifest use the
 owning distribution's npm name. Do not invent a second component registry.
 
-This is a repository-specific JSON format, not the upstream Changesets Markdown
-format. It records intent and previews notes. It does not bump versions, expand
-dependency releases, publish artifacts, edit public documentation, or consume or
-delete records. Existing release workflows remain independent.
+Records use the [Changesets Markdown format](https://github.com/changesets/changesets):
+YAML frontmatter maps package names to release types, followed by a Markdown body.
+The Go CLI parses and validates this format itself. It does not depend on the
+upstream Changesets parser or CLI. It records intent and previews notes; it does
+not bump versions, expand dependency releases, publish artifacts, edit public
+documentation, or consume or delete records. Existing release workflows remain
+independent.
 
 ## Record format
 
-Each `.changeset/<id>.json` has this shape:
+Each `.changeset/<id>.md` has this shape:
 
-```json
-{
-  "schemaVersion": 1,
-  "packages": {
-    "@delinoio/lane": "patch"
-  },
-  "summary": "Internal engineering explanation in Markdown.",
-  "public": "Optional user-facing release note in Markdown."
-}
+```markdown
+---
+"@delinoio/lane": patch
+---
+
+Internal engineering explanation in Markdown.
+
+<!-- public-changelog:start -->
+
+Optional user-facing release note in Markdown.
+
+<!-- public-changelog:end -->
 ```
 
-Use the exact names printed by `pnpm changeset packages`. `packages` is nonempty
-and maps each affected package to `patch`, `minor`, or `major`. `summary` is required
-and nonblank. `public` is optional; absent or blank means internal-only. Public
-text applies to every package in the record; use separate records when audiences
-need different notes. Text is authored Markdown. Do not put secrets in either
-field: internal-only controls changelog selection, not access to Git history.
+Use exact names printed by `pnpm changeset packages`. Frontmatter contains only
+package-to-release mappings: `patch`, `minor`, `major`, or `none`. No schema version,
+summary field or public metadata field belongs in frontmatter. Package names must
+be unique across the workspace inventory. A package rename requires updating
+pending records. The reader also accepts standard empty changesets with empty
+frontmatter and empty bodies; `add` requires at least one package and a nonblank
+internal summary. `none` records no version bump intent.
 
-Unknown fields, unsupported schema versions, duplicate JSON keys, unknown package
-names, invalid bumps, empty summaries, trailing JSON, symlinks and unexpected
-files in `.changeset/` fail validation. `README.md` is the only ignored file.
-Records use lowercase kebab-case IDs. Package names must be unique across the
-workspace inventory. A package rename requires updating pending records.
+The public block is a repository convention within the standard Markdown body.
+Its two HTML comment markers must occur exactly once, on separate unindented lines,
+at the end of the body and outside code fences. Text before the block is the
+internal summary. Omit the entire block for internal-only changes. Absent or blank
+public text produces no public note. Ordinary unmarked Changesets Markdown is
+accepted and treated as internal-only. Public text applies to every package in the
+record; use separate records when audiences need different notes. The CLI rejects
+reserved markers in `--summary` and `--public` arguments to prevent ambiguous blocks.
+
+The entire Markdown body remains in Git. Public selection is performed by this Go
+CLI, not by the Changesets file format itself. Do not publish the unfiltered body
+or store secrets in it. A future publication process must retain this selection
+rule; deployment and changelog publication remain outside this tool's scope.
+
+Invalid YAML, duplicate package keys, unknown package names, invalid release types,
+malformed public blocks, symlinks and unexpected files fail validation. `README.md`
+(case-insensitive) and `config.json` are ignored; the latter is reserved for upstream
+configuration and is not interpreted by this tool. Record IDs use lowercase
+kebab-case; `readme` is reserved. The former repository-specific JSON records are not accepted.
 
 ## Commands
 
@@ -56,7 +77,7 @@ pnpm changeset changelog --internal
 
 The npm script runs `go run ./tools/changeset`. Repeat `--package name:bump`
 for multiple packages. Omit `--public` for internal-only changes. `add` refuses to
-overwrite an existing record. For long Markdown, edit the JSON file after creation.
+overwrite an existing record. For long Markdown, edit the Markdown file after creation.
 
 `status` emits all pending records as JSON, including internal summaries.
 `changelog` writes an unreleased Markdown preview to stdout, grouped by sorted

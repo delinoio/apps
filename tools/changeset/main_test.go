@@ -59,7 +59,7 @@ func TestLifecycleAndPublicBoundary(t *testing.T) {
 	root := fixture(t)
 	invoke(t, root, "add", "--id", "private-fix", "--package", "@example/web:patch", "--summary", "INTERNAL_ONLY")
 	invoke(t, root, "add", "--id", "visible-fix", "--package", "@example/web:minor", "--package", "@example/lib:patch", "--summary", "ENGINEERING_ONLY", "--public", "Faster search.\n\nMore reliable results.")
-	before, err := os.ReadFile(filepath.Join(root, ".changeset/visible-fix.json"))
+	before, err := os.ReadFile(filepath.Join(root, ".changeset/visible-fix.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLifecycleAndPublicBoundary(t *testing.T) {
 	if len(records) != 2 || records[0].ID != "private-fix" {
 		t.Fatal(records)
 	}
-	after, _ := os.ReadFile(filepath.Join(root, ".changeset/visible-fix.json"))
+	after, _ := os.ReadFile(filepath.Join(root, ".changeset/visible-fix.md"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("read commands mutated record")
 	}
@@ -92,7 +92,7 @@ func TestLifecycleAndPublicBoundary(t *testing.T) {
 	if err := run(root, []string{"add", "--id", "visible-fix", "--package", "@example/web:major", "--summary", "replace"}, &output); err == nil {
 		t.Fatal("overwrote existing record")
 	}
-	after, _ = os.ReadFile(filepath.Join(root, ".changeset/visible-fix.json"))
+	after, _ = os.ReadFile(filepath.Join(root, ".changeset/visible-fix.md"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("duplicate add changed record")
 	}
@@ -112,20 +112,25 @@ func TestEmptyPublicSelection(t *testing.T) {
 }
 func TestInvalidRecords(t *testing.T) {
 	for name, body := range map[string]string{
-		"version":           `{"schemaVersion":2,"packages":{"repo":"patch"},"summary":"x"}`,
-		"unknown-package":   `{"schemaVersion":1,"packages":{"unknown":"patch"},"summary":"x"}`,
-		"bump":              `{"schemaVersion":1,"packages":{"repo":"huge"},"summary":"x"}`,
-		"empty-packages":    `{"schemaVersion":1,"packages":{},"summary":"x"}`,
-		"empty-summary":     `{"schemaVersion":1,"packages":{"repo":"patch"},"summary":" "}`,
-		"unknown-field":     `{"schemaVersion":1,"packages":{"repo":"patch"},"summary":"x","publc":"typo"}`,
-		"duplicate-package": `{"schemaVersion":1,"packages":{"repo":"patch","repo":"major"},"summary":"x"}`,
-		"duplicate-public":  `{"schemaVersion":1,"packages":{"repo":"patch"},"summary":"x","public":"a","public":"b"}`,
-		"trailing":          `{"schemaVersion":1,"packages":{"repo":"patch"},"summary":"x"} {}`,
-		"malformed":         `{`,
+		"unknown-package":      "---\nunknown: patch\n---\nx",
+		"bump":                 "---\nrepo: huge\n---\nx",
+		"non-string":           "---\nrepo: 1\n---\nx",
+		"duplicate-package":    "---\nrepo: patch\nrepo: major\n---\nx",
+		"nested-map":           "---\nrepo: {type: patch}\n---\nx",
+		"sequence":             "---\n- repo\n---\nx",
+		"missing-frontmatter":  "summary",
+		"unclosed-frontmatter": "---\nrepo: patch",
+		"malformed-yaml":       "---\n[\n---\nx",
+		"unclosed-public":      "---\nrepo: patch\n---\nx\n" + publicStart + "\nnote",
+		"reversed-public":      "---\nrepo: patch\n---\n" + publicEnd + "\n" + publicStart,
+		"duplicate-public":     "---\nrepo: patch\n---\n" + publicStart + "\n" + publicStart + "\n" + publicEnd,
+		"trailing-private":     "---\nrepo: patch\n---\nx\n" + publicStart + "\nnote\n" + publicEnd + "\nprivate",
+		"inline-public":        "---\nrepo: patch\n---\nx " + publicStart + "\nnote\n" + publicEnd,
+		"fenced-public":        "---\nrepo: patch\n---\n```md\n" + publicStart + "\nnote\n" + publicEnd,
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := fixture(t)
-			put(t, root, ".changeset/bad.json", body)
+			put(t, root, ".changeset/bad.md", body)
 			for _, cmd := range []string{"check", "status", "changelog"} {
 				var output bytes.Buffer
 				if err := run(root, []string{cmd}, &output); err == nil {
@@ -141,6 +146,7 @@ func TestInvalidRecords(t *testing.T) {
 func TestInvalidInputs(t *testing.T) {
 	root := fixture(t)
 	for _, args := range [][]string{
+		{"add", "--id", "readme", "--package", "repo:patch", "--summary", "x"},
 		{"add", "--id", "../escape", "--package", "repo:patch", "--summary", "x"},
 		{"add", "--id", "valid", "--package", "repo:patch", "--package", "repo:major", "--summary", "x"},
 		{"add", "--id", "valid", "--package", "repo:patch"},
@@ -168,11 +174,57 @@ func TestUnexpectedEntries(t *testing.T) {
 		})
 	}
 	root := fixture(t)
-	if err := os.Symlink(filepath.Join(root, "package.json"), filepath.Join(root, ".changeset/link.json")); err != nil {
+	if err := os.Symlink(filepath.Join(root, "package.json"), filepath.Join(root, ".changeset/link.md")); err != nil {
 		t.Skip(err)
 	}
 	var output bytes.Buffer
 	if err := run(root, []string{"check"}, &output); err == nil {
 		t.Fatal("accepted symlink")
+	}
+}
+
+func TestChangesetsMarkdown(t *testing.T) {
+	for _, body := range []string{
+		"---\n\"@example/web\": minor\nrepo: none\n---\n\nPlain Markdown summary.\n\n## Details\n\n- First item\n- Second item\n",
+		"---\r\n\"@example/web\": patch\r\n---\r\n\r\nWindows line endings.\r\n",
+		"---\n---\n",
+		"---\n{}\n---\n\nNo release needed.\n",
+		"---\nrepo: patch\n---\n",
+	} {
+		t.Run(body, func(t *testing.T) {
+			root := fixture(t)
+			put(t, root, ".changeset/standard.md", body)
+			put(t, root, ".changeset/config.json", `{"baseBranch":"main"}`)
+			invoke(t, root, "check")
+			if output := invoke(t, root, "changelog"); output != "" {
+				t.Fatalf("unmarked body leaked to public output: %s", output)
+			}
+		})
+	}
+	root := fixture(t)
+	invoke(t, root, "add", "--id", "generated", "--package", "@example/web:minor", "--summary", "Internal detail.", "--public", "User-facing note.")
+	data, err := os.ReadFile(filepath.Join(root, ".changeset/generated.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\n\"@example/web\": minor\n---\n\nInternal detail.\n\n" + publicStart + "\nUser-facing note.\n" + publicEnd + "\n"
+	if string(data) != want {
+		t.Fatalf("unexpected Markdown:\n%s", data)
+	}
+}
+
+func TestReservedMarkersCannotBeInjected(t *testing.T) {
+	for _, field := range []string{"--summary", "--public"} {
+		t.Run(field, func(t *testing.T) {
+			root := fixture(t)
+			args := []string{"add", "--id", "injected", "--package", "repo:patch", "--summary", "internal", field, publicStart + "\nprivate\n" + publicEnd}
+			var output bytes.Buffer
+			if err := run(root, args, &output); err == nil {
+				t.Fatal("accepted reserved markers")
+			}
+			if _, err := os.Stat(filepath.Join(root, ".changeset/injected.md")); !os.IsNotExist(err) {
+				t.Fatal("invalid add created a file")
+			}
+		})
 	}
 }
