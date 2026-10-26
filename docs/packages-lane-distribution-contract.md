@@ -12,6 +12,10 @@ The installer is a small Node.js launcher/package; the product CLI is Rust. Foll
 
 Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal native distribution and production deployment remain follow-up operations.
 
+## Agent Skills Distribution
+
+Skills that help agents use Lane will be distributed through [delinoio/lane-skills](https://github.com/delinoio/lane-skills). This is the planned skills distribution repository; this contract does not establish that the skills have been published. The common `SKILL.md` requirements below remain applicable.
+
 ## Interfaces and Contracts
 
 `npm install -g @delinoio/lane` installs a `lane` executable launcher. Direct binary archives use `lane-<os>-<arch>` identities (`darwin`, `windows`, `linux`; Windows payload `lane.exe`, others `lane`). Include version/platform manifests, checksums, repository license and notices. The npm launcher resolves its packaged platform artifact, verifies the manifest/checksum and propagates arguments, stdio, signals and exit codes. Unsupported platforms or missing/mismatched binaries fail with a useful installation error; never fall back to unverified execution or a server-only command.
