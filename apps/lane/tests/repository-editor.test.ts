@@ -5,6 +5,8 @@ import { LaneService, ResultKind } from "@repo/protos/lane/v1/lane_pb";
 import {
   RepositoryEditor,
   RepositorySaveOutcome,
+  repositoryDraft,
+  repositoryEditUrl,
   type RepositoryDraft,
 } from "../src/repositoryEditor.ts";
 
@@ -419,4 +421,160 @@ test("an external edit accepted before the first save keeps the original base an
   assert.equal(result.outcome, RepositorySaveOutcome.Conflict);
   assert.equal(server.heads.length, 2);
   assert.equal(e.draft?.name, "mine");
+});
+
+// A bounded model of raw-URL normalization from the protocol contract: credentials, scheme
+// and the default port of the URL's own transport (HTTPS 443, SSH 22) disappear, a
+// nondefault explicit port stays, and one terminal ".git" is removed. The native store owns
+// the full rules and has its own conformance tests; this model only fixes the transport
+// semantics that the editor round trip depends on.
+function normalizeRawUrl(raw: string): string {
+  const match =
+    /^(https|ssh):\/\/(?:[^@/]*@)?([^/:]+)(?::(\d+))?\/(.+?)(?:\.git)?\/*$/.exec(
+      raw,
+    );
+  assert(match, `unsupported test URL ${raw}`);
+  const [, scheme, host, port, path] = match;
+  const defaultPort = scheme === "https" ? "443" : "22";
+  return `${host.toLowerCase()}${port && port !== defaultPort ? `:${port}` : ""}/${path}`;
+}
+
+// Applies the repository rules the editor relies on: save normalizes the raw URL and rejects
+// an identifier that another repository already owns.
+class RepositoryNormalizingServer {
+  readonly urls = new Map<string, string>();
+  calls: Call[] = [];
+  constructor(entries: Record<string, string>) {
+    for (const [id, url] of Object.entries(entries)) this.urls.set(id, url);
+  }
+  adapter = {
+    call: async (_method: { name: string }, input: Call["input"]) => {
+      this.calls.push({ method: _method.name, input: structuredClone(input) });
+      const normalized = normalizeRawUrl(input.url);
+      for (const [id, url] of this.urls) {
+        if (id !== input.id && url === normalized) {
+          throw new Error("repository URL already exists");
+        }
+      }
+      this.urls.set(input.id, normalized);
+      return { result: { result: ResultKind.APPLIED } };
+    },
+  } as unknown as Parameters<RepositoryEditor["save"]>[0];
+}
+
+const REPOSITORY_ROUND_TRIPS = [
+  // [raw URL creating the repository, normalized identifier, prefilled editor URL]
+  [
+    "ssh://git@example.com:443/a/b.git",
+    "example.com:443/a/b",
+    "ssh://git@example.com:443/a/b",
+  ],
+  [
+    "ssh://git@example.com:2222/a/b.git",
+    "example.com:2222/a/b",
+    "https://example.com:2222/a/b",
+  ],
+  [
+    "https://example.com:443/a/b.git",
+    "example.com/a/b",
+    "https://example.com/a/b",
+  ],
+  [
+    "ssh://git@example.com:22/a/b.git",
+    "example.com/a/b",
+    "https://example.com/a/b",
+  ],
+  [
+    "https://example.com:22/a/b.git",
+    "example.com:22/a/b",
+    "https://example.com:22/a/b",
+  ],
+  [
+    "https://example.com:8443/a/b",
+    "example.com:8443/a/b",
+    "https://example.com:8443/a/b",
+  ],
+] as const;
+
+const repositoryVersion = (
+  normalizedUrl: string,
+  displayName = "Original",
+) => ({
+  entityId: "repo-a",
+  versionId: "V0",
+  body: { case: "repository", value: { normalizedUrl, displayName } },
+});
+
+test("the edit URL of a stored identifier normalizes back to the same identifier", () => {
+  for (const [raw, normalized, prefilled] of REPOSITORY_ROUND_TRIPS) {
+    assert.equal(normalizeRawUrl(raw), normalized, raw);
+    assert.equal(repositoryEditUrl(normalized), prefilled, normalized);
+    assert.equal(
+      normalizeRawUrl(repositoryEditUrl(normalized)),
+      normalized,
+      normalized,
+    );
+  }
+});
+
+test("a name-only save keeps the repository identifier with and without a portless counterpart", async () => {
+  for (const [, normalized] of REPOSITORY_ROUND_TRIPS) {
+    for (const counterpart of [false, true]) {
+      const entries: Record<string, string> = { "repo-a": normalized };
+      // A distinct repository owning the identifier that a lossy round trip would produce.
+      if (counterpart && normalized.includes(":443/")) {
+        entries["repo-b"] = "example.com/a/b";
+      }
+      const server = new RepositoryNormalizingServer(entries);
+      const { editor: e } = editor();
+      e.open(repositoryDraft(repositoryVersion(normalized)));
+      e.edit({ name: "Renamed only" });
+      const result = await e.save(server.adapter);
+      assert.equal(result.outcome, RepositorySaveOutcome.Saved, normalized);
+      assert.equal(server.calls.length, 1);
+      assert.equal(server.calls[0].method, SAVE.name);
+      assert.equal(server.calls[0].input.displayName, "Renamed only");
+      assert.equal(server.calls[0].input.expectedVersionId, "V0");
+      assert.equal(normalizeRawUrl(server.calls[0].input.url), normalized);
+      assert.equal(server.urls.get("repo-a"), normalized);
+      if (counterpart && normalized.includes(":443/")) {
+        assert.equal(server.urls.get("repo-b"), "example.com/a/b");
+      }
+    }
+  }
+});
+
+test("an explicit URL edit still renames and still rejects an owned identifier", async () => {
+  const owned = new RepositoryNormalizingServer({
+    "repo-a": "example.com:443/a/b",
+    "repo-b": "example.com/a/b",
+  });
+  const first = editor().editor;
+  first.open(repositoryDraft(repositoryVersion("example.com:443/a/b")));
+  first.edit({ url: "https://example.com:443/a/b" });
+  const rejected = await first.save(owned.adapter);
+  assert.equal(rejected.outcome, RepositorySaveOutcome.Failed);
+  assert.equal(owned.urls.get("repo-a"), "example.com:443/a/b");
+  assert.equal(first.draft?.url, "https://example.com:443/a/b");
+
+  const free = new RepositoryNormalizingServer({
+    "repo-a": "example.com:443/a/b",
+  });
+  const second = editor().editor;
+  second.open(repositoryDraft(repositoryVersion("example.com:443/a/b")));
+  second.edit({ url: "https://example.com:443/a/b" });
+  const renamed = await second.save(free.adapter);
+  assert.equal(renamed.outcome, RepositorySaveOutcome.Saved);
+  assert.equal(free.urls.get("repo-a"), "example.com/a/b");
+});
+
+test("a repository draft without a repository body has an empty URL and name", () => {
+  assert.deepEqual(
+    repositoryDraft({
+      entityId: "x",
+      versionId: "V",
+      body: { case: undefined },
+    }),
+    { id: "x", base: "V", url: "", name: "" },
+  );
 });

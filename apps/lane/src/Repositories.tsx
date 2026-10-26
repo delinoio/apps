@@ -11,6 +11,7 @@ import {
   RepositoryEditor,
   RepositorySaveOutcome,
   repositoryConflictMessage,
+  repositoryDraft,
 } from "./repositoryEditor";
 import { Button, Dialog, Field, Notice } from "./components";
 import { conflicted, heads, repositoryName } from "./model";
@@ -125,18 +126,7 @@ export function Repositories({
               onClick={() => {
                 const v = r.version!;
                 setError("");
-                editor.open({
-                  id: v.entityId,
-                  base: v.versionId,
-                  url:
-                    v.body.case === "repository"
-                      ? `https://${v.body.value.normalizedUrl}`
-                      : "",
-                  name:
-                    v.body.case === "repository"
-                      ? v.body.value.displayName || ""
-                      : "",
-                });
+                editor.open(repositoryDraft(v));
               }}
             >
               Rename or change URL
