@@ -647,3 +647,94 @@ test("the manifest still requests no tabs or host permissions", async () => {
   assert.equal(manifest.permissions.includes("tabs"), false);
   assert.equal(manifest.permissions.includes("<all_urls>"), false);
 });
+
+test("actual Web Store URLs are rejected before status and injection", async () => {
+  const urls = [
+    "https://chromewebstore.google.com/",
+    "https://chromewebstore.google.com/detail/item/abc",
+    "https://chromewebstore.google.com/detail/item/abc?hl=en#reviews",
+    "https://chrome.google.com/webstore",
+    "https://chrome.google.com/webstore?hl=en#top",
+    "https://chrome.google.com/webstore/detail/item",
+    "https://chrome.google.com/webstore/detail/item?hl=en#reviews",
+  ];
+  for (const url of urls) {
+    const harness = await connectedHarness();
+    try {
+      harness.setTab({ url });
+      const result = await harness.nativeSelect("store", true);
+      assert.equal(result.reason, "UNSUPPORTED_PAGE", url);
+      assert.equal(
+        harness.sent.some((value) => value.type === "status"),
+        false,
+        `${url} sends no status request`,
+      );
+      assert.equal(harness.calls.executeScript, 0, `${url} is not injected`);
+      assert.deepEqual(harness.activations, [], url);
+    } finally {
+      harness.dispose();
+    }
+  }
+});
+
+test("Web Store lookalikes and sibling paths follow the normal page path", async () => {
+  const urls = [
+    "https://chrome.google.com/webstorefront",
+    "https://chrome.google.com.example.org/webstore",
+    "https://chrome-google-com.example.org/webstore",
+    "https://chromewebstore.google.com.example.org/test",
+    "https://chromewebstore-google-com.example.org/test",
+    "http://example.com/test",
+    "https://example.com/test",
+  ];
+  for (const url of urls) {
+    const harness = await connectedHarness();
+    try {
+      harness.setTab({ url });
+      const result = await harness.nativeSelect("ordinary", false);
+      assert.equal(result.reason, undefined, url);
+      assert.equal(
+        harness.sent.filter((value) => value.type === "status").length,
+        1,
+        `${url} requests native status`,
+      );
+      assert.equal(harness.calls.executeScript, 1, `${url} is injected`);
+    } finally {
+      harness.dispose();
+    }
+  }
+});
+
+test("incognito, internal, file, absent and malformed URLs are rejected safely", async () => {
+  const cases = [
+    ["incognito", { url: "https://example.com/test", incognito: true }],
+    ["internal", { url: "chrome://settings" }],
+    ["file", { url: "file:///tmp/example.html" }],
+    ["malformed", { url: "https://" }],
+    ["not a URL", { url: "not a url" }],
+    ["non-string", { url: 42 }],
+  ];
+  for (const [name, tab] of cases) {
+    const harness = await connectedHarness();
+    try {
+      harness.setTab(tab);
+      const result = await harness.nativeSelect("rejected", false);
+      assert.equal(result.reason, "UNSUPPORTED_PAGE", name);
+      assert.equal(harness.calls.executeScript, 0, name);
+      assert.equal(harness.calls.captureVisibleTab, 0, name);
+    } finally {
+      harness.dispose();
+    }
+  }
+  // An absent URL is unknown rather than malformed: it asks for a tab grant and
+  // still performs no status request or injection.
+  const absent = await connectedHarness();
+  try {
+    absent.omitTabUrl();
+    const result = await absent.nativeSelect("absent", false);
+    assert.equal(result.reason, "PERMISSION_REQUIRED");
+    assert.equal(absent.calls.executeScript, 0);
+  } finally {
+    absent.dispose();
+  }
+});

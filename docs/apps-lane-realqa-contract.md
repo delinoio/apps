@@ -204,7 +204,11 @@ requests neither the `tabs` nor host permissions. A native selection request who
 active normal tab has an omitted or empty URL therefore returns `PERMISSION_REQUIRED`
 and the click-extension guidance, without status requests, activation, injection or
 capture. Only a known restricted URL, a file URL, a Web Store URL, an incognito tab
-or a missing tab is `UNSUPPORTED_PAGE`.
+or a missing tab is `UNSUPPORTED_PAGE`. The Web Store exclusion compares the parsed
+HTTPS hostname and path: `chromewebstore.google.com`, and `chrome.google.com` with
+the path `/webstore` or `/webstore/...`, are excluded regardless of query or
+fragment. Hostname lookalikes and sibling paths such as `/webstorefront` are
+ordinary pages.
 
 The extension service worker is a module worker and must not use top-level `await`:
 Chromium rejects asynchronous module graphs for service workers. It restricts

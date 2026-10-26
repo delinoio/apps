@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { HOST, safeMetadata, visibleRect, remedies } from "./protocol.js";
+import {
+  HOST,
+  isSelectablePageUrl,
+  safeMetadata,
+  visibleRect,
+  remedies,
+} from "./protocol.js";
 // Chromium rejects service workers whose module graph uses top-level await, so the
 // trusted-context restriction is started here without awaiting it. Every handler is
 // registered synchronously below, and every operation that touches credentials,
@@ -117,13 +123,7 @@ async function select({ activate = false } = {}) {
   // inject, capture or activate Chrome for it.
   if (tab.url === undefined || tab.url === null || tab.url === "")
     throw new Error("PERMISSION_REQUIRED");
-  if (
-    !/^https?:\/\//.test(tab.url) ||
-    /^https:\/\/(chromewebstore.google.com|chrome.google.com\/webstore)/.test(
-      tab.url,
-    )
-  )
-    throw new Error("UNSUPPORTED_PAGE");
+  if (!isSelectablePageUrl(tab.url)) throw new Error("UNSUPPORTED_PAGE");
   await request("status");
   if (activate) {
     await chrome.windows.update(tab.windowId, {
