@@ -137,6 +137,8 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
 - Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
   Tooltips must fit the complete app name outside the trigger's bounds.
+- Anchor a separate utility group at the bottom of the rail, with an outline person button above an outline gear button. Use 44-by-44-pixel targets, 24-pixel gray `#68758b` icons, 9-pixel corners, a 12-pixel gap and 24-pixel bottom padding. Preserve the white rail, `#e4e8ef` divider, blue `#075aff` focus and pale-blue `#e8f0fe` hover treatment. Show complete English hover/focus tooltips on `#172033`: `Account & sync` and `App settings`. Expose the same accessible names and support Tab, Enter/Space and direct touch activation. Utility actions are navigation buttons without mini-app selected state.
+- Both utility actions open Lane's existing Settings page from any mini-app, retain repository/task filters and use the existing unsaved-edit confirmation. Cancellation preserves the view and draft. Confirmation navigates and discards the unsaved draft. `Account & sync` reveals and focuses `Local data and synchronization` on native or `Online account` on web. `App settings` reveals and focuses `Notifications on this device`. Keep the contextual Settings entry and its default destination. Opening a destination must not connect synchronization, sign in, request notification permission, change preferences or delete data. Existing account errors and safeguards remain authoritative; local native notification preferences remain usable if account lists fail. On constrained heights, scroll the vertical rail so all five controls remain reachable without overlap; retain bottom anchoring when space permits.
 - At widths of at least 900 pixels, place the 240-pixel app-specific sidebar between the rail and content. Lane retains its navigation, repository list and connection status. Pace and RealQA each show their own name, icon and selected `Overview` item, without Lane navigation. Pace retains `Coming soon`; RealQA shows the capture/settings or read-only entry defined in its owning contract. Below 900 pixels, retain the left rail and show contextual navigation above the content, with scrollable content and wrapping text.
 - Unimplemented mini-apps show their icon and name, `Coming soon`, `<App> is not available yet.`, and `Back to Lane`, without requiring login, connectivity or a permission prompt for that page. Both the Lane selector and return button restore the previous Lane page and filters. Keep Lane's loading, error, authentication and permission behavior unchanged. Do not add release dates or sign-up flows. The former Perfine navigation entry is removed.
 - Apply the existing unsaved-edit confirmation before switching apps. Cancel retains the current screen and draft; confirming discards the unsaved draft. App switching must support keyboard activation, visible focus and content-focus transfer. RealQA capture, composer, settings and saved-result behavior follow the [RealQA contract](apps-lane-realqa-contract.md).
@@ -326,6 +328,35 @@ Lynxtron or the Lane application. `LANE_CHROME_EXTENSION_IDS` supplies exact,
 comma-separated development or published extension IDs at build time. An empty
 value leaves Chrome registration and the connection service disabled; it does
 not produce a placeholder store listing.
+
+Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
+toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Install the frozen
+workspace from the root. On Windows, configure Git Bash as the pnpm script shell
+for the root shell-based hook installer. Run `pnpm build:desktop` from
+`apps/lane`; the launcher selects the architecture of the Node/Lynxtron runtime.
+It resolves pinned official NuGet Foundation `1.8.260803002`, Runtime
+`1.8.260921001` and C++/WinRT `2.0.250303.1` packages, verifies their archive
+SHA512 values, and generates AppNotifications/AppLifecycle and OS projections.
+The ignored `native/desktop/build/windows-app-sdk` cache records the package
+pins, Windows SDK metadata and generated file hashes. Incomplete or changed
+cache content is rebuilt; concurrent provisioning fails rather than sharing
+partially generated headers. Preserve the original SDK and generator licenses
+and notices in `resources/app/licenses/windows-app-sdk`.
+
+An external SDK remains supported through the four absolute paths
+`LANE_WINDOWS_APP_SDK_INCLUDE_DIR`, `LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR`,
+`LANE_WINDOWS_APP_SDK_BOOTSTRAP_DLL` and `LANE_WINDOWS_APP_SDK_LICENSE`.
+Set all four together or leave all four unset. The supplied bootstrap must
+match the build architecture and the supplied headers/projections. External
+SDK owners must retain any additional third-party notices with that SDK.
+
+Set `LANE_NATIVE_TESTING=1` before `pnpm build:desktop` to include the Windows
+policy, helper-transport and synthetic memory-renderer tests. Run
+`ctest --test-dir native/desktop/build/addon -C Release --output-on-failure`
+from `apps/lane`. The capture test checks all six tools, opacity, crop, invalid
+input, queue recovery and nested-selector shutdown without reading screen
+content. The platform test uses only synthetic helper traffic. These tests do
+not install Lane, register Chrome, or establish interactive runtime acceptance.
 
 From `apps/lane`, `node scripts/desktop.mjs install` installs the generated Lane
 application in the current user's application directory and registers the

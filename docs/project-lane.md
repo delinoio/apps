@@ -28,7 +28,7 @@ Additional component ownership:
 - `cmds/lane/src`: Rust local store, domain rules, synchronization and CLI/MCP adapters in the root Cargo workspace.
 - `protos/lane/v1`: canonical schemas, checked-in Go/TypeScript bindings and shared cross-language fixtures. Rust generation runs independently in `servers/crates/delino-protos` and `cmds/lane` Cargo output from the same canonical schema.
 - `servers/lane-api`: Rust Connect API, remote MCP, webhook intake, PostgreSQL migrations, push workers, OCI packaging and operator assets in the independent server workspace.
-- `packages/lane`: npm executable installer, common agent `SKILL.md`, installation and MCP connection guides.
+- `packages/lane`: npm executable launcher and generated platform-specific optional binary packages, common agent `SKILL.md`, installation and MCP connection guides.
 
 ## Domain Contract Documents
 

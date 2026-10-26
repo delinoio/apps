@@ -22,14 +22,17 @@ import {
   type ReconnectTarget,
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
+import { SettingsSection } from "./AppNavigation";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
 export function Settings({
   adapter,
   onReset,
+  target,
 }: {
   adapter: LaneAdapter;
   onReset: () => void;
+  target?: { section: SettingsSection; request: number };
 }) {
   const [deletion, setDeletion] = useState<{
     challengeId: string;
@@ -126,18 +129,102 @@ export function Settings({
   useEffect(() => {
     void run(load);
   }, [adapter]);
+  useEffect(() => {
+    "background only";
+    if (!target || adapter.mode === "web") return;
+    // Wait for layout before measuring; native acceptance is tracked per host.
+    let active = true;
+    const timer = setTimeout(() => {
+      const query = lynx.createSelectorQuery();
+      query
+        .select(`#settings-${target.section}`)
+        .invoke({
+          method: "boundingClientRect",
+          success: (heading) => {
+            if (!active) return;
+            lynx
+              .createSelectorQuery()
+              .select("#settings-scroll")
+              .invoke({
+                method: "boundingClientRect",
+                success: (viewport) => {
+                  if (!active) return;
+                  lynx
+                    .createSelectorQuery()
+                    .select("#settings-scroll")
+                    .invoke({
+                      method: "getScrollInfo",
+                      success: (info) => {
+                        if (!active) return;
+                        lynx
+                          .createSelectorQuery()
+                          .select("#settings-scroll")
+                          .invoke({
+                            method: "scrollTo",
+                            params: {
+                              offset: Math.max(
+                                0,
+                                info.scrollY + heading.top - viewport.top,
+                              ),
+                              smooth: false,
+                            },
+                          })
+                          .exec();
+                        lynx
+                          .createSelectorQuery()
+                          .select(`#settings-${target.section}`)
+                          .invoke({
+                            method: "setFocus",
+                            params: { focus: true },
+                          })
+                          .exec();
+                        lynx
+                          .createSelectorQuery()
+                          .select(`#settings-${target.section}`)
+                          .invoke({ method: "requestAccessibilityFocus" })
+                          .exec();
+                      },
+                    })
+                    .exec();
+                },
+              })
+              .exec();
+          },
+        })
+        .exec();
+    }, 0);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [target, adapter]);
   return (
-    <view className="section">
+    <view
+      className="section"
+      data-settings-target={target ? `${target.section}:${target.request}` : ""}
+    >
       <text className="heading">Settings</text>
       <Button onClick={() => void run(load)}>Refresh settings</Button>
       {error && <Notice>{error}</Notice>}
       {message && <Notice>{message}</Notice>}
       <view className="card">
-        <text className="heading">
-          {adapter.mode === "native"
-            ? "Local data and synchronization"
-            : "Online account"}
-        </text>
+        <view
+          id="settings-account"
+          accessibility-element
+          accessibility-heading
+          focusable
+          accessibility-label={
+            adapter.mode === "native"
+              ? "Local data and synchronization"
+              : "Online account"
+          }
+        >
+          <text className="heading" accessibility-elements-hidden>
+            {adapter.mode === "native"
+              ? "Local data and synchronization"
+              : "Online account"}
+          </text>
+        </view>
         <text>
           {status?.syncEnabled
             ? "Synchronization enabled"
@@ -196,7 +283,17 @@ export function Settings({
         </view>
       </view>
       <view className="card">
-        <text className="heading">Notifications on this device</text>
+        <view
+          id="settings-notifications"
+          accessibility-element
+          accessibility-heading
+          focusable
+          accessibility-label="Notifications on this device"
+        >
+          <text className="heading" accessibility-elements-hidden>
+            Notifications on this device
+          </text>
+        </view>
         <text>
           Only new proposals created through MCP notify you. In-app proposal
           counts remain available.

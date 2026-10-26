@@ -79,6 +79,111 @@ try {
     await search.focus();
     assert.equal(await tooltip.isVisible(), false);
   }
+  const settingsFocus = async (heading) => {
+    await page.waitForFunction((expected) => {
+      const root = document.querySelector("lynx-view").shadowRoot;
+      return root.activeElement?.textContent === expected;
+    }, heading);
+  };
+  const navigationWrites = [];
+  const recordWrites = (request) => {
+    if (
+      request.method() !== "GET" &&
+      /ConnectSync|Notification|Deletion|Disconnect|auth/.test(request.url())
+    )
+      navigationWrites.push(request.url());
+  };
+  page.on("request", recordWrites);
+  for (const width of [1440, 900, 899, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const miniApp of ["Lane", "Pace", "RealQA"]) {
+      for (const [utility, heading] of [
+        ["Account & sync", "Online account"],
+        ["App settings", "Notifications on this device"],
+      ]) {
+        await appButton(miniApp).click();
+        assert.equal(await page.locator(".app-switch").count(), 3);
+        assert.equal(await page.locator(".app-utility").count(), 2);
+        const button = appButton(utility);
+        assert.equal(await button.getAttribute("aria-pressed"), null);
+        await button.focus();
+        const tooltip = button.locator(".app-tooltip");
+        assert.equal(await tooltip.isVisible(), true);
+        assert.equal(await tooltip.textContent(), utility);
+        const bounds = await button.boundingBox();
+        assert.equal(bounds.width, 44);
+        assert.equal(bounds.height, 44);
+        const tooltipBounds = await tooltip.boundingBox();
+        assert.ok(
+          Math.abs(tooltipBounds.y - bounds.y - 4) <= 1,
+          "Utility tooltip stays beside its trigger after resize/scroll",
+        );
+        await page.keyboard.press(utility === "Account & sync" ? "Enter" : " ");
+        await settingsFocus(heading);
+        assert.equal(
+          await appButton("Lane").getAttribute("aria-pressed"),
+          "true",
+        );
+      }
+    }
+  }
+  await page.screenshot({
+    path: join(evidence, "mobile-settings-shortcuts.png"),
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await appButton("Account & sync").click();
+  await settingsFocus("Online account");
+  await appButton("Account & sync").hover();
+  await page.screenshot({
+    path: join(evidence, "desktop-settings-shortcuts.png"),
+  });
+  assert.deepEqual(navigationWrites, []);
+  page.off("request", recordWrites);
+  await page.setViewportSize({ width: 320, height: 240 });
+  await page.locator("lynx-view").evaluate((view) => {
+    view.shadowRoot.querySelector("#lane-root").style.fontSize = "200%";
+  });
+  for (const name of [
+    "Lane",
+    "Pace",
+    "RealQA",
+    "Account & sync",
+    "App settings",
+  ]) {
+    const button = appButton(name);
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    assert.ok(
+      box.y >= 0 && box.y + box.height <= 241,
+      `${name} remains reachable at a short height`,
+    );
+  }
+  await page.locator("lynx-view").evaluate((view) => {
+    view.shadowRoot.querySelector("#lane-root").style.fontSize = "";
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await appButton("All tasks").click();
+  await appButton("Improve empty states").click();
+  const utilityDraft = page.getByRole("textbox", {
+    name: "Title",
+    exact: true,
+  });
+  for (const utility of ["Account & sync", "App settings"]) {
+    await utilityDraft.fill("Keep this utility draft");
+    await appButton(utility).click();
+    await appButton("Keep editing").click();
+    assert.equal(await utilityDraft.inputValue(), "Keep this utility draft");
+    await appButton(utility).click();
+    await appButton("Discard changes").click();
+    await settingsFocus(
+      utility === "Account & sync"
+        ? "Online account"
+        : "Notifications on this device",
+    );
+    await appButton("All tasks").click();
+    await appButton("Improve empty states").click();
+  }
+  await appButton("All tasks").click();
   await search.fill("preserved filter");
   await appButton("Pace").click();
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
@@ -284,6 +389,10 @@ try {
         scope:
           "Mock authenticated server; no live Logto, native, or provider acceptance",
         checks: [
+          "settings shortcuts from every mini-app at 1440, 900, 899, 390 and 320 pixels",
+          "utility names, tooltips, dimensions, Enter/Space and section focus",
+          "all five rail controls reachable at 320 by 240 with enlarged text",
+          "utility navigation has no account/notification writes and respects dirty-draft cancel/confirm",
           "equal Lane, Pace and RealQA rail buttons and app-specific sidebars",
           "mini-app keyboard activation, selected state and title focus",
           "Coming soon return preserves Lane filters",
