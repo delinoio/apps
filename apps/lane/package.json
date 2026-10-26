@@ -15,7 +15,7 @@
     "build:android": "pnpm build && node scripts/native.mjs android build",
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
     "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
-    "test:browser": "pnpm build && node tests/browser.mjs",
+    "test:browser": "pnpm build && node tests/browser.mjs && node tests/command-palette-browser.mjs",
     "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
   },
   "dependencies": {

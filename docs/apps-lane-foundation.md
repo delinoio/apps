@@ -133,6 +133,52 @@ shutdown permission, successful swap/startup and rollback with disposable
 fixtures. Record real macOS and Windows upgrade/restart acceptance separately
 from these fixtures and native packaging builds.
 
+### Navigation command menu
+
+Provide a navigation command menu with `Cmd+K` on macOS and `Ctrl+K` on
+Windows/Linux web. The desktop application's Navigate menu exposes the same
+command through `CmdOrCtrl+K`. Open it from any mini-app, including an editor,
+without changing the current page or draft. Repeating the shortcut closes the
+menu. Do not open it over another dialog or the web account gate.
+
+Use an English single-line search field with `Go to a page or repository...`,
+a visible `Esc` close button, and grouped destinations in this order:
+
+- Pages: `All tasks`, `Proposals`, `Repositories`, `Events`, `Settings`.
+- Apps: `Lane`, `Pace`, `RealQA`.
+- Repositories: the repositories loaded for the active data space.
+
+Filter locally by destination label and repository URL, ignoring case and
+surrounding whitespace and matching every query word. Keep page and app
+navigation available while repositories load or fail to refresh. Show
+`No matching destinations` when no destination matches. Do not search task
+bodies, create a separate repository cache, or issue requests on menu input.
+
+Focus search when the menu opens. Arrow keys move the active result and wrap at
+both ends; Enter opens it. Keep the active result visible, distinguish it with
+a blue left marker and pale-blue surface, and expose its accessible name and
+selection. In the browser, announce the active destination through a polite,
+atomic status region while search retains focus. Announce when no destination
+matches the query. Support direct click/touch activation and visible keyboard focus.
+Escape, the close button and the shortcut dismiss the menu. Browser Tab focus
+stays inside the dialog; closing restores the originating control when it still
+exists, otherwise the workspace. Native hosts return focus to the workspace.
+
+Page destinations select Lane and the requested page and clear the repository
+filter; keep task search, progress and proposal filters. A repository destination
+selects Lane's Tasks page with that repository. App destinations preserve the
+existing return-to-Lane behavior. Apply the existing task and RealQA unsaved-edit
+confirmation before changing destinations. Cancellation retains the screen and
+draft; confirmation discards the unsaved draft and completes navigation. Opening
+or dismissing the menu alone never discards edits.
+
+Keep the existing white/gray surfaces, blue accent, outline icons, 44-pixel
+minimum result targets, and keyboard hints. The panel is at most 560 pixels wide,
+with 16-pixel outer padding on narrow screens, a constrained height and a
+scrollable results area. Keep search and close controls reachable when text is
+enlarged. Native/mobile keyboard and screen-reader acceptance must be recorded
+separately from web fixture checks and shared bundle compilation.
+
 ### Application icon
 
 Use the folded-lanes icon for macOS, Windows, iOS, Android, the web favicon,

@@ -25,6 +25,7 @@ const { scheme, chromeExtensionIds = [] } = config;
 const native = require("./lane_host.node");
 let window, windowSession, tray, poller, composer, realqa, updater;
 let captureWindows = [];
+let pendingCommandPalette = false;
 const pendingRealQA = [];
 const emitRealQA = (name, value) => {
   if (
@@ -213,6 +214,10 @@ function flushEvents() {
     }
   }
   if (windowSession?.ready && window && !window.isDestroyed()) {
+    if (pendingCommandPalette) {
+      pendingCommandPalette = false;
+      window.sendGlobalEvent("lane.commandPalette", {});
+    }
     for (const [name, value] of pendingRealQA.splice(0))
       window.sendGlobalEvent(name, value);
   }
@@ -383,6 +388,19 @@ if (!app.requestSingleInstanceLock({ notificationRoute })) {
             ],
           },
           { role: "editMenu" },
+          {
+            label: "Navigate",
+            submenu: [
+              {
+                label: "Go to a page or repository...",
+                accelerator: "CmdOrCtrl+K",
+                click: () => {
+                  showWindow();
+                  pendingCommandPalette = true;
+                },
+              },
+            ],
+          },
         ]),
       );
       if (process.platform === "win32") {
