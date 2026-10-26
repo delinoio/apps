@@ -62,6 +62,33 @@ malformed public blocks, symlinks and unexpected files fail validation. `README.
 configuration and is not interpreted by this tool. Record IDs use lowercase
 kebab-case; `readme` is reserved. The former repository-specific JSON records are not accepted.
 
+## Public note authoring
+
+Follow the public changelog audience rules in [root instructions](../AGENTS.md#changeset-procedure).
+The internal summary explains the engineering change. The public block explains
+what changed for the affected product's end users. Package names identify ownership;
+they do not determine the audience of the prose.
+
+Examples of the distinction:
+
+- Internal: "Reduce redundant search requests." Public: "Search results load faster."
+  Use the public claim only when the change and validation support it.
+- Internal: "Add changeset validation to CI." Public: omit the block. This changes
+  the development process and does not itself add a user-facing product feature.
+- Requested initial-release example: "Welcome to Delino! This is our first release."
+  Do not replace the release announcement with instructions for the changeset CLI.
+
+A supported API or developer tool can have developers as its end users. In that
+case, describe its public behavior or required migration steps. Repository-local
+maintenance commands and implementation details still belong in the internal
+summary. Do not invent benefits to fill an optional public block.
+
+Run `pnpm changeset changelog` and read the selected text as an end user before
+committing. Check that it explains an actual user-visible change or a requested
+release announcement, without requiring knowledge of the repository's internals.
+The CLI validates structure and selection; audience and factual accuracy require
+this authoring review.
+
 ## Commands
 
 Run from the repository root with the Go version selected by `go.mod`:
