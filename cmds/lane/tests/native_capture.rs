@@ -32,7 +32,7 @@ impl Native {
             input,
             output,
         };
-        native.call(json!({"method":"open","request":{"formatVersion":2,"spaceId":space}}));
+        native.call(json!({"method":"open","request":{"formatVersion":3,"spaceId":space}}));
         native
     }
     fn call(&mut self, request: Value) -> Value {

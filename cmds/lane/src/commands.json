@@ -21,7 +21,7 @@
   },
   "task list": {
     "method": "ListTasks",
-    "help": "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT]"
+    "help": "[--repository-id UUID] [--progress STATE] [--proposal STATE] [--search TEXT] [--priority V]... [--priority-unassigned] [--type V]... [--type-unassigned] [--label-id UUID]... [--unlabeled] [--start-from D] [--start-to D] [--start-unassigned] [--due-from D] [--due-to D] [--due-unassigned] [--points-min N] [--points-max N] [--points-unassigned] [--milestone-id UUID]... [--no-milestone] [--cycle-id UUID]... [--no-cycle] [--relationship KIND]... [--no-relationships] [--sort KEY] [--direction asc|desc] [--page-size N] [--cursor TOKEN]"
   },
   "task get": {
     "method": "GetTask",
@@ -29,11 +29,11 @@
   },
   "task create": {
     "method": "CreateTask",
-    "help": "--repository-id UUID | --repository-url URL; --title TEXT [--description TEXT] [--prompt TEXT | --prompt-stdin] [--progress STATE] [--proposal STATE]"
+    "help": "--repository-id UUID | --repository-url URL; --title TEXT [--description TEXT] [--prompt TEXT | --prompt-stdin] [--progress STATE] [--proposal STATE] [--priority none|urgent|high|normal|low] [--type none|bug|feature|improvement|documentation|maintenance] [--label-id UUID]... [--clear-labels] [--start-date D|none] [--due-date D|none] [--story-points N|none] [--milestone-id UUID|none] [--cycle-id UUID|none] [--parent-id UUID|none] [--duplicate-of UUID|none] [--depends-on UUID]... [--clear-depends-on] [--related UUID]... [--clear-related] [--add-subtask UUID]... [--remove-subtask UUID]... [--add-blocks UUID]... [--remove-blocks UUID]..."
   },
   "task edit": {
     "method": "SaveTask",
-    "help": "ID --expected-version UUID [--title TEXT] [--description TEXT] [--prompt TEXT | --prompt-stdin | --clear-prompt]"
+    "help": "ID --expected-version UUID [--title TEXT] [--description TEXT] [--prompt TEXT | --prompt-stdin | --clear-prompt] [--priority none|urgent|high|normal|low] [--type none|bug|feature|improvement|documentation|maintenance] [--label-id UUID]... [--clear-labels] [--start-date D|none] [--due-date D|none] [--story-points N|none] [--milestone-id UUID|none] [--cycle-id UUID|none] [--parent-id UUID|none] [--duplicate-of UUID|none] [--depends-on UUID]... [--clear-depends-on] [--related UUID]... [--clear-related] [--add-subtask UUID]... [--remove-subtask UUID]... [--add-blocks UUID]... [--remove-blocks UUID]..."
   },
   "task move": {
     "method": "SaveTask",
@@ -69,11 +69,11 @@
   },
   "conflict list": {
     "method": "ConflictList",
-    "help": "[--kind task|repository|url-rule]"
+    "help": "[--kind task|repository|url-rule|label|milestone|cycle]"
   },
   "conflict get": {
     "method": "ConflictGet",
-    "help": "ID --kind task|repository|url-rule"
+    "help": "ID --kind task|repository|url-rule|label|milestone|cycle"
   },
   "conflict resolve": {
     "method": "ResolveConflict",
@@ -231,8 +231,80 @@
     "method": "DeleteURLConnection",
     "help": "ID (permanent)"
   },
-  "data migrate": {
-    "method": "MigrateLocalData",
-    "help": "--space UUID (explicit local schema upgrade; no payload)"
+  "label list": {
+    "method": "ListPlanningItems",
+    "help": "[--repository-id UUID] [--page-size N] [--cursor TOKEN] (local or --remote)"
+  },
+  "label get": {
+    "method": "GetPlanningItem",
+    "help": "ID (local or --remote)"
+  },
+  "label create": {
+    "method": "CreatePlanningItem",
+    "help": "--repository-id UUID --name NAME --color #RRGGBB [--description TEXT] (local or --remote)"
+  },
+  "label edit": {
+    "method": "SavePlanningItem",
+    "help": "ID --expected-version UUID [--name NAME] [--color #RRGGBB] [--description TEXT] (kind and repository cannot change)"
+  },
+  "label delete": {
+    "method": "DeletePlanningItem",
+    "help": "ID (permanent; detaches the item from tasks and keeps the tasks)"
+  },
+  "label history": {
+    "method": "ListHistory",
+    "help": "ID [--page-size N] [--cursor TOKEN] (before/after values, time and origin)"
+  },
+  "milestone list": {
+    "method": "ListPlanningItems",
+    "help": "[--repository-id UUID] [--page-size N] [--cursor TOKEN] (local or --remote)"
+  },
+  "milestone get": {
+    "method": "GetPlanningItem",
+    "help": "ID (local or --remote)"
+  },
+  "milestone create": {
+    "method": "CreatePlanningItem",
+    "help": "--repository-id UUID --name NAME [--description TEXT] [--target-date D] [--completed true|false] (local or --remote)"
+  },
+  "milestone edit": {
+    "method": "SavePlanningItem",
+    "help": "ID --expected-version UUID [--name NAME] [--description TEXT] [--target-date D|none] [--completed true|false] (kind and repository cannot change)"
+  },
+  "milestone delete": {
+    "method": "DeletePlanningItem",
+    "help": "ID (permanent; detaches the item from tasks and keeps the tasks)"
+  },
+  "milestone history": {
+    "method": "ListHistory",
+    "help": "ID [--page-size N] [--cursor TOKEN] (before/after values, time and origin)"
+  },
+  "cycle list": {
+    "method": "ListPlanningItems",
+    "help": "[--repository-id UUID] [--page-size N] [--cursor TOKEN] (local or --remote)"
+  },
+  "cycle get": {
+    "method": "GetPlanningItem",
+    "help": "ID (local or --remote)"
+  },
+  "cycle create": {
+    "method": "CreatePlanningItem",
+    "help": "--repository-id UUID --name NAME --start-date D --end-date D [--description TEXT] (local or --remote)"
+  },
+  "cycle edit": {
+    "method": "SavePlanningItem",
+    "help": "ID --expected-version UUID [--name NAME] [--description TEXT] [--start-date D] [--end-date D] (kind and repository cannot change)"
+  },
+  "cycle delete": {
+    "method": "DeletePlanningItem",
+    "help": "ID (permanent; detaches the item from tasks and keeps the tasks)"
+  },
+  "cycle history": {
+    "method": "ListHistory",
+    "help": "ID [--page-size N] [--cursor TOKEN] (before/after values, time and origin)"
+  },
+  "data reset": {
+    "method": "ResetDevelopmentData",
+    "help": "--space UUID --confirm-development-reset (local-only; discards that space's development data and recreates an empty store)"
   }
 }

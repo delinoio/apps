@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use lane::{protocol, store::Store};
-use rusqlite::{Connection, params};
+use rusqlite::params;
 use serde_json::{Value, json};
 
 fn legacy(value: &mut Value) {
@@ -48,12 +48,11 @@ fn request(store: &Store, method: &str, value: &Value) -> Value {
 #[test]
 #[expect(
     clippy::too_many_lines,
-    reason = "The regression records the complete legacy fixture, explicit migration, replay and import in one audit trail."
+    reason = "The regression records the complete legacy fixture, replay and import in one audit trail."
 )]
-fn schema_one_save_receipt_replays_after_migration_and_protojson_import() {
+fn legacy_save_receipt_replays_and_protojson_import() {
     let root = tempfile::tempdir().unwrap();
     let store = Store::open(root.path(), "", false).unwrap();
-    let space = store.space.clone();
     let created = store
         .invoke(
             "CreateTask",
@@ -103,57 +102,18 @@ fn schema_one_save_receipt_replays_after_migration_and_protojson_import() {
                 "UPDATE receipts SET fingerprint=?,result_json=? WHERE method='SaveTask'",
                 params![old_fingerprint, old_result.to_string()],
             )?;
-            db.execute(
-                "UPDATE store_meta SET value='1' WHERE key='format_version'",
-                [],
-            )?;
             Ok(())
         })
         .unwrap();
-    drop(store);
-    let path = root.path().join("spaces").join(&space).join("lane.sqlite");
-    let previous = root.path().join("previous.sqlite");
-    std::fs::rename(&path, &previous).unwrap();
-    let db = Connection::open(&path).unwrap();
-    let schema = include_str!("../../../apps/lane/native/store/schema.sql")
-        .split("CREATE TABLE attachments")
-        .next()
-        .unwrap()
-        .replace("kind IN (1,2,3)", "kind IN (1,2)");
-    db.execute_batch(&schema).unwrap();
-    db.execute(
-        "ATTACH DATABASE ? AS previous",
-        [previous.to_str().unwrap()],
-    )
-    .unwrap();
-    for table in [
-        "store_meta",
-        "entities",
-        "versions",
-        "heads",
-        "receipts",
-        "outbox",
-    ] {
-        db.execute(
-            &format!("INSERT INTO {table} SELECT * FROM previous.{table}"),
-            [],
-        )
+    let raw_before: String = store
+        .with(false, |db| {
+            Ok(db.query_row(
+                "SELECT envelope_json FROM versions WHERE version_id=?",
+                [saved["result"]["version"]["versionId"].as_str().unwrap()],
+                |r| r.get(0),
+            )?)
+        })
         .unwrap();
-    }
-    db.execute_batch(
-        "DETACH DATABASE previous; PRAGMA application_id=1279348293; PRAGMA user_version=1;",
-    )
-    .unwrap();
-    let raw_before: String = db
-        .query_row(
-            "SELECT envelope_json FROM versions WHERE version_id=?",
-            [saved["result"]["version"]["versionId"].as_str().unwrap()],
-            |r| r.get(0),
-        )
-        .unwrap();
-    drop(db);
-    lane::store::migrate(root.path(), &space).unwrap();
-    let store = Store::open(root.path(), &space, false).unwrap();
     let wire = protocol::request("SaveTask", &saved_request).unwrap();
     assert_eq!(wire["task"]["captures"], json!([]));
     assert_eq!(protocol::fingerprint(&wire), old_fingerprint);

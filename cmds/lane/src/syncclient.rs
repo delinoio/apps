@@ -4,11 +4,12 @@ use crate::{
     error::{Failure, Result, invalid},
     protocol::{id, strv, valid_id},
     remote,
-    store::{Identity, Store, meta, put_meta, rows, sync},
+    store::{Identity, Store, meta, planning, put_meta, rows, sync},
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::{
+    collections::HashSet,
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -162,10 +163,49 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
     let released = release(s, &owner);
     result.and(released)
 }
+/// Select the next upload batch in causal (creation) order. A pending version is held back
+/// while an earlier version of the same entity is blocked, because the server never accepted
+/// its parent, and while it references an entity whose creation the server rejected. Both
+/// resume after the blocked item is retried or corrected, so dependent pushes never race
+/// ahead of the item they depend on.
+fn pending_batch(c: &Connection) -> Result<Vec<Value>> {
+    let mut stmt =
+        c.prepare("SELECT entity_id,request_json,state FROM outbox ORDER BY created_at_us,rowid")?;
+    let mut blocked = HashSet::new();
+    let mut blocked_creations = HashSet::new();
+    let mut out = vec![];
+    for row in stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+        ))
+    })? {
+        let (entity, raw, state) = row?;
+        let mutation: Value = serde_json::from_str(&raw)?;
+        if state == 2 {
+            if mutation["kind"] == "MUTATION_KIND_CREATE" {
+                blocked_creations.insert(entity.clone());
+            }
+            blocked.insert(entity);
+        } else if state == 1
+            && !blocked.contains(&entity)
+            && !planning::referenced_ids(&mutation["version"])
+                .iter()
+                .any(|id| blocked_creations.contains(id))
+        {
+            out.push(mutation);
+            if out.len() == 100 {
+                break;
+            }
+        }
+    }
+    Ok(out)
+}
 fn info(auth: &Auth, s: &Store, endpoint: &str) -> Result<Value> {
     let info = remote::call(auth, s, endpoint, "GetSyncInfo", &json!({}))?;
     let identity = s.identity()?;
-    if info["formatVersion"] != 2 {
+    if info["formatVersion"] != 3 {
         return Err(Failure::new(
             "UNSUPPORTED_FORMAT",
             "Update Lane before synchronizing this format.",
@@ -202,16 +242,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
     if stale {
         return Err(auth::reconnect_error());
     }
-    let items = s.with(false, |c| {
-        rows(
-            c,
-            "SELECT request_json FROM outbox WHERE state=1 ORDER BY created_at_us,rowid LIMIT 100",
-            [],
-        )?
-        .into_iter()
-        .map(|raw| Ok(serde_json::from_str::<Value>(&raw)?))
-        .collect::<Result<Vec<_>>>()
-    })?;
+    let items = s.with(false, pending_batch)?;
     if !items.is_empty() {
         lease(s, owner, Some(identity))?;
         let response = remote::call(
@@ -220,7 +251,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PushChanges",
             &json!({
-            "formatVersion":2,"epoch":epoch,"deviceId":s.device,"mutations":items}
+            "formatVersion":3,"epoch":epoch,"deviceId":s.device,"mutations":items}
             ),
         )?;
         let results = response["results"]
@@ -263,13 +294,25 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
                             ],
                         )?;
                     }
+                    // A constraint rejection is final for this immutable version: keep it
+                    // blocked with the named violation until the user corrects the data.
+                    let (state, stored) = if reason == "ERROR_REASON_CONSTRAINT_VIOLATION" {
+                        (
+                            2,
+                            format!(
+                                "CONSTRAINT_VIOLATION:{}",
+                                strv(e, "violation").trim_start_matches("CONSTRAINT_VIOLATION_")
+                            ),
+                        )
+                    } else {
+                        (
+                            if e["retryable"] == true { 1 } else { 2 },
+                            reason.to_owned(),
+                        )
+                    };
                     c.execute(
                         "UPDATE outbox SET state=?,error_reason=? WHERE request_id=?",
-                        params![
-                            if e["retryable"] == true { 1 } else { 2 },
-                            reason,
-                            strv(r, "requestId")
-                        ],
+                        params![state, stored, strv(r, "requestId")],
                     )?;
                 } else {
                     sync::apply(c, &r["result"])?;
@@ -295,7 +338,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
             endpoint,
             "PullChanges",
             &json!({
-            "formatVersion":2,"epoch":epoch,"cursor":cursor,"pageSize":100}
+            "formatVersion":3,"epoch":epoch,"cursor":cursor,"pageSize":100}
             ),
         )?;
         if response["hasMore"] == true && response["nextCursor"] == cursor {
@@ -356,7 +399,7 @@ pub fn reconnect(auth: &Auth, s: &Store, consent: &Value) -> Result<()> {
                 "",
                 "PullChanges",
                 &json!({
-                "formatVersion":2,"epoch":epoch,"pageSize":1}
+                "formatVersion":3,"epoch":epoch,"pageSize":1}
                 ),
             );
             match probe {

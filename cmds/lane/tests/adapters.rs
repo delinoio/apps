@@ -385,7 +385,7 @@ fn standalone_import_and_sync_once_preserve_versions_and_drain_outbox() {
     let (endpoint, worker) = http_server(3, move |request| {
         let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
         if request.starts_with("POST /lane.v1.SyncService/GetSyncInfo ") {
-            json!({"formatVersion":2,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+            json!({"formatVersion":3,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
         } else if request.starts_with("POST /lane.v1.SyncService/PushChanges ") {
             let mutations = body["mutations"].as_array().unwrap();
             assert_eq!(mutations.len(), 2);
@@ -541,15 +541,35 @@ fn realqa_cli_local_routes_and_mcp_discovery() {
         );
     }
     for args in [
-        vec!["data", "migrate"],
-        vec!["data", "migrate", "--space", "invalid"],
+        vec!["data", "reset"],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "invalid",
+            "--confirm-development-reset",
+        ],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+        ],
+        vec![
+            "data",
+            "reset",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+            "--confirm-development-reset",
+            "--request-json",
+            "{\"x\":1}",
+        ],
+        vec!["data", "reset", "--remote", "--confirm-development-reset"],
         vec![
             "data",
             "migrate",
             "--space",
             "01900100-0000-7000-8000-000000000001",
-            "--request-json",
-            "{\"x\":1}",
         ],
     ] {
         assert_eq!(
@@ -596,12 +616,12 @@ fn attachment_sync_uses_epoch_bound_upload_and_validates_download() {
     let (endpoint, worker) = http_server(7, move |request| {
         let q: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
         if request.contains("/GetSyncInfo ") {
-            json!({"formatVersion":2,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+            json!({"formatVersion":3,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
         } else if request.contains("/PushChanges ") {
-            assert_eq!(q["formatVersion"], 2);
+            assert_eq!(q["formatVersion"], 3);
             json!({"results":q["mutations"].as_array().unwrap().iter().map(|m|json!({"requestId":m["meta"]["requestId"],"result":{"result":"RESULT_KIND_APPLIED","version":m["version"]}})).collect::<Vec<_>>()})
         } else if request.contains("/PullChanges ") {
-            assert_eq!(q["formatVersion"], 2);
+            assert_eq!(q["formatVersion"], 3);
             json!({"changes":[],"nextCursor":"page-1","hasMore":false})
         } else if request.contains("/BeginAttachmentUpload ") {
             assert_eq!(q["epoch"], epoch);

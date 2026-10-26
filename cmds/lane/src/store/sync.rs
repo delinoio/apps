@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::domain::{mapped, redact};
 use super::{
-    Connection, Failure, OptionalExtension, Result, Value, id, invalid, json, params, put_meta,
-    rows, strv, valid_id,
+    Connection, Failure, OptionalExtension, Result, Value, id, invalid, json, params, planning,
+    put_meta, rows, strv, valid_id,
 };
 use crate::protocol;
 use std::collections::{BTreeMap, HashSet};
@@ -10,7 +10,7 @@ fn array(v: &Value) -> &[Value] {
     v.as_array().map_or(&[], Vec::as_slice)
 }
 pub fn validate(v: &Value) -> Result<()> {
-    if !matches!(v["formatVersion"].as_u64(), Some(1 | 2)) {
+    if !matches!(v["formatVersion"].as_u64(), Some(1..=3)) {
         return Err(Failure::new(
             "UNSUPPORTED_FORMAT",
             "Unsupported synchronization format.",
@@ -20,10 +20,21 @@ pub fn validate(v: &Value) -> Result<()> {
         || !valid_id(strv(v, "versionId"))
         || !matches!(
             strv(v, "kind"),
-            "ENTITY_KIND_TASK" | "ENTITY_KIND_REPOSITORY" | "ENTITY_KIND_URL_CONNECTION"
+            "ENTITY_KIND_TASK"
+                | "ENTITY_KIND_REPOSITORY"
+                | "ENTITY_KIND_URL_CONNECTION"
+                | "ENTITY_KIND_LABEL"
+                | "ENTITY_KIND_MILESTONE"
+                | "ENTITY_KIND_CYCLE"
         )
     {
         return Err(invalid("Invalid entity identity."));
+    }
+    if v["formatVersion"].as_u64() != Some(3)
+        && (planning::is_planning_kind(strv(v, "kind"))
+            || planning::has_planning_fields(&v["task"]))
+    {
+        return Err(invalid("Planning data requires entity format 3."));
     }
     let mut prev = "";
     for p in array(&v["parentVersionIds"]) {
@@ -45,6 +56,9 @@ pub fn validate(v: &Value) -> Result<()> {
         if v.get("task").is_some()
             || v.get("repository").is_some()
             || v.get("urlConnection").is_some()
+            || ["label", "milestone", "cycle"]
+                .iter()
+                .any(|field| v.get(*field).is_some())
         {
             return Err(invalid("Deleted version has a body."));
         }
@@ -89,6 +103,9 @@ pub fn validate(v: &Value) -> Result<()> {
         {
             return Err(invalid("Invalid task body."));
         }
+        planning::check_task_shape(t)?;
+    } else if let Some(field) = planning::body_field(strv(v, "kind")) {
+        planning::check_planning_shape(field, &v[field])?;
     } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
         let rule = &v["urlConnection"];
         if !valid_id(strv(rule, "repositoryId"))
@@ -220,6 +237,10 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
         Some(mapped(c, strv(&v["task"], "repositoryId"))?)
     } else if v["urlConnection"].is_object() {
         Some(mapped(c, strv(&v["urlConnection"], "repositoryId"))?)
+    } else if let Some(field) =
+        planning::body_field(strv(v, "kind")).filter(|field| v[*field].is_object())
+    {
+        Some(mapped(c, strv(&v[field], "repositoryId"))?)
     } else {
         None
     };
@@ -245,7 +266,7 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
             }
             return delete_entity(
                 c,
-                &json!({"formatVersion":2,"entityId":entity,"versionId":id(),"kind":v["kind"],"deleted":true}),
+                &json!({"formatVersion":3,"entityId":entity,"versionId":id(),"kind":v["kind"],"deleted":true}),
             );
         }
     }
@@ -261,13 +282,7 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
         "INSERT OR IGNORE INTO entities(id,kind,repository_id,normalized_url) VALUES(?,?,?,?)",
         params![
             entity,
-            if v["kind"] == "ENTITY_KIND_TASK" {
-                2
-            } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
-                3
-            } else {
-                1
-            },
+            planning::kind_number(strv(v, "kind")),
             repo,
             normalized
         ],
@@ -352,7 +367,7 @@ pub fn delete_entity(c: &Connection, v: &Value) -> Result<()> {
     if v["kind"] == "ENTITY_KIND_REPOSITORY" {
         for child in rows(
             c,
-            "SELECT id FROM entities WHERE kind IN (2,3) AND repository_id=? AND deleted=0",
+            "SELECT id FROM entities WHERE kind IN (2,3,4,5,6) AND repository_id=? AND deleted=0",
             [entity],
         )? {
             let kind: i64 = c.query_row("SELECT kind FROM entities WHERE id=?", [&child], |r| {
@@ -360,12 +375,12 @@ pub fn delete_entity(c: &Connection, v: &Value) -> Result<()> {
             })?;
             delete_entity(
                 c,
-                &json!({"formatVersion":2,"entityId":child,"versionId":id(),"kind":if kind==3 {"ENTITY_KIND_URL_CONNECTION"} else {"ENTITY_KIND_TASK"},"deleted":true}),
+                &json!({"formatVersion":3,"entityId":child,"versionId":id(),"kind":match kind{3=>"ENTITY_KIND_URL_CONNECTION",4=>"ENTITY_KIND_LABEL",5=>"ENTITY_KIND_MILESTONE",6=>"ENTITY_KIND_CYCLE",_=>"ENTITY_KIND_TASK"},"deleted":true}),
             )?;
         }
         delete_remote_children(c, 0, entity)?;
     }
-    c.execute("INSERT INTO entities(id,kind,deleted) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET deleted=1,repository_id=NULL,normalized_url=NULL",params![entity,if v["kind"]=="ENTITY_KIND_TASK"{2}else if v["kind"]=="ENTITY_KIND_URL_CONNECTION"{3}else{1}])?;
+    c.execute("INSERT INTO entities(id,kind,deleted) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET deleted=1,repository_id=NULL,normalized_url=NULL",params![entity,planning::kind_number(strv(v,"kind"))])?;
     for sql in [
         "DELETE FROM attachments WHERE task_id=?",
         "DELETE FROM heads WHERE entity_id=?",
@@ -422,7 +437,7 @@ pub fn change(c: &Connection, v: &Value, account: &str) -> Result<()> {
         | "ENTITY_KIND_OR_REMOTE_KIND_TASK"
         | "ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION" => delete_entity(
             c,
-            &json!({"formatVersion":2,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION"{"ENTITY_KIND_URL_CONNECTION"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
+            &json!({"formatVersion":3,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION"{"ENTITY_KIND_URL_CONNECTION"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
         ),
         "ENTITY_KIND_OR_REMOTE_KIND_RECEIVER" => delete_remote(c, 1, id),
         "ENTITY_KIND_OR_REMOTE_KIND_EVENT" => delete_remote(c, 2, id),

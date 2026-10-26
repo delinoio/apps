@@ -16,6 +16,9 @@ pub struct Failure {
     pub current_head_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict: Option<Box<serde_json::Value>>,
+    /// Named planning constraint, set only when the reason is `CONSTRAINT_VIOLATION`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub violation: Option<String>,
 }
 impl Failure {
     #[must_use]
@@ -28,7 +31,17 @@ impl Failure {
             entity_id: "".into(),
             current_head_ids: vec![],
             conflict: None,
+            violation: None,
         }
+    }
+    /// A planning constraint failure naming the violation (for example `PARENT_CYCLE`)
+    /// and, when known, the offending entity.
+    #[must_use]
+    pub fn constraint(violation: &str, entity_id: &str, message: &str) -> Self {
+        let mut failure = Self::new("CONSTRAINT_VIOLATION", message);
+        failure.violation = Some(format!("CONSTRAINT_VIOLATION_{violation}"));
+        failure.entity_id = entity_id.into();
+        failure
     }
 }
 impl std::fmt::Display for Failure {

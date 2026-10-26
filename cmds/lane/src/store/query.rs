@@ -74,7 +74,11 @@ impl Store {
                 "result":result(&heads)}
                 ))
             }
-            "ListTasks" | "ListRepositories" | "ListURLConnections" => {
+            "ListTasks" => self.list_tasks(connection, request),
+            "GetPlanningItem" | "ListPlanningItems" => {
+                self.planning_query(connection, method, request)
+            }
+            "ListRepositories" | "ListURLConnections" => {
                 for (key, valid) in [
                     (
                         "progress",

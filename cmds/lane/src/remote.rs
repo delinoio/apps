@@ -76,6 +76,10 @@ pub fn with_credential(auth: &Auth, c: &Value, method: &str, q: &Value) -> Resul
                             error.correlation_id = strv(&v, "correlationId").into();
                         }
                         error.entity_id = strv(&v, "entityId").into();
+                        error.violation = v["violation"]
+                            .as_str()
+                            .filter(|name| *name != "CONSTRAINT_VIOLATION_UNSPECIFIED")
+                            .map(str::to_owned);
                         error.retryable = v["retryable"] == true;
                         error.current_head_ids =
                             v["currentHeadIds"].as_array().map_or_default(|a| {
