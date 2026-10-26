@@ -34,6 +34,7 @@ impl Fixture {
             ("LANE_WEBHOOK_MIGRATION", "00003_webhooks.sql"),
             ("LANE_PUSH_MIGRATION", "00004_push.sql"),
             ("LANE_CAPTURE_MIGRATION", "00006_captures.sql"),
+            ("LANE_PLANNING_MIGRATION", "00007_planning.sql"),
         ] {
             let path = std::env::var(env)
                 .map(std::path::PathBuf::from)
@@ -88,7 +89,7 @@ impl Fixture {
     }
     async fn sync(&mut self, method: &str, mut q: Value, max: usize) -> Result<Value> {
         if q.get("formatVersion").is_none() {
-            q["formatVersion"] = json!(2);
+            q["formatVersion"] = json!(3);
         }
         if q.get("epoch").is_none() {
             q["epoch"] = json!(self.epoch);
@@ -651,7 +652,7 @@ async fn realqa_atomic_capture_history_move_ownership_and_deletion() {
     assert_eq!(f.count("lane_attachments").await, 0);
     assert_eq!(f.count("lane_entities").await, 2);
     let created = f.capture("CreateCaptureTask", q.clone()).await.unwrap();
-    assert_eq!(created["result"]["version"]["formatVersion"], 2);
+    assert_eq!(created["result"]["version"]["formatVersion"], 3);
     assert_eq!(created["result"]["version"]["task"]["prompt"], "Problem");
     assert_eq!(
         f.capture("CreateCaptureTask", q.clone()).await.unwrap()["result"]["result"],
@@ -763,7 +764,7 @@ async fn realqa_rule_conflicts_duplicates_cascade_and_sync_negotiation() {
     f.call("ResolveConflict",json!({"id":rule,"meta":{"requestId":id()},"expectedHeadIds":hs,"resolved":{"urlConnection":{"prefix":"https://example.com/c","repositoryId":repo}}})).await.unwrap();
     assert_eq!(
         f.sync("GetSyncInfo", json!({}), 1).await.unwrap()["formatVersion"],
-        2
+        3
     );
     assert_eq!(
         f.sync("PullChanges", json!({"formatVersion":1}), 1)

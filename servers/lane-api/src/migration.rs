@@ -19,6 +19,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00006_captures",
         include_str!("../migrations/00006_captures.sql"),
     ),
+    (
+        "00007_planning",
+        include_str!("../migrations/00007_planning.sql"),
+    ),
 ];
 pub async fn migrate(db: &PgPool) -> anyhow::Result<()> {
     let mut tx = db.begin().await?;

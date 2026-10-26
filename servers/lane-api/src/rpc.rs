@@ -63,7 +63,7 @@ impl Server {
         account_lock(&mut tx, &principal.account_id).await?;
         self.auth.authorize(&mut tx, &principal).await?;
         if service == "SyncService" && method == "PullChanges" {
-            if q["formatVersion"].as_u64() != Some(2) {
+            if q["formatVersion"].as_u64() != Some(crate::entities::FORMAT_VERSION) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::InvalidArgument,
                     8,
@@ -86,7 +86,7 @@ impl Server {
                 )
                 .await?
             }
-            "LaneService" => {
+            "LaneService" | "PlanningService" => {
                 crate::entities::dispatch(
                     &mut tx,
                     &principal,
@@ -151,7 +151,7 @@ impl Server {
                 self.config.max_item_bytes,
             )
             .await?;
-            if q["formatVersion"].as_u64() != Some(2) {
+            if q["formatVersion"].as_u64() != Some(crate::entities::FORMAT_VERSION) {
                 return Err(Fault::new(
                     connectrpc::ErrorCode::FailedPrecondition,
                     8,
@@ -222,13 +222,20 @@ impl Server {
         q: Value,
     ) -> ServiceResult<R> {
         let trace = crate::id();
+        let started = std::time::Instant::now();
         match self
             .execute(ctx.headers(), service, method, q.clone(), false)
             .await
         {
             Ok(output) => {
-                if matches!(service, "LaneService" | "CaptureService")
-                    && output["result"]["result"] == "RESULT_KIND_CONFLICT"
+                if matches!(service, "LaneService" | "PlanningService") {
+                    // Content-free: never log task text, names, descriptions or relationship titles.
+                    tracing::info!(correlation_id=%trace,operation=method,result="ok",duration_ms=started.elapsed().as_millis() as u64,"Lane operation completed");
+                }
+                if matches!(
+                    service,
+                    "LaneService" | "CaptureService" | "PlanningService"
+                ) && output["result"]["result"] == "RESULT_KIND_CONFLICT"
                     && !method.starts_with("Get")
                     && !method.starts_with("List")
                 {
@@ -257,7 +264,7 @@ impl Server {
                 .with_header("cache-control", "no-store"))
             }
             Err(f) => {
-                tracing::warn!(request_id=%trace,procedure=method,code=?f.code,"Lane operation rejected");
+                tracing::warn!(request_id=%trace,correlation_id=%trace,procedure=method,operation=method,code=?f.code,result=%crate::planning::category(&f),duration_ms=started.elapsed().as_millis() as u64,"Lane operation rejected");
                 Err(crate::error::connect(f, &trace, string(&q, "id"), vec![]))
             }
         }
@@ -471,6 +478,80 @@ impl LaneService for Server {
             ctx,
             "LaneService",
             "ResolveConflict",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+}
+
+#[allow(refining_impl_trait)]
+impl PlanningService for Server {
+    async fn get_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, GetPlanningItemRequest>,
+    ) -> ServiceResult<GetPlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "GetPlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn list_planning_items(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, ListPlanningItemsRequest>,
+    ) -> ServiceResult<ListPlanningItemsResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "ListPlanningItems",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn create_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, CreatePlanningItemRequest>,
+    ) -> ServiceResult<CreatePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "CreatePlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn save_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, SavePlanningItemRequest>,
+    ) -> ServiceResult<SavePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "SavePlanningItem",
+            serde_json::to_value(q.to_owned_message())
+                .map_err(|_| Fault::invalid("invalid request").connect())?,
+        )
+        .await
+    }
+    async fn delete_planning_item(
+        &self,
+        ctx: RequestContext,
+        q: ServiceRequest<'_, DeletePlanningItemRequest>,
+    ) -> ServiceResult<DeletePlanningItemResponse> {
+        self.handle(
+            ctx,
+            "PlanningService",
+            "DeletePlanningItem",
             serde_json::to_value(q.to_owned_message())
                 .map_err(|_| Fault::invalid("invalid request").connect())?,
         )
