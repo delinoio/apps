@@ -247,7 +247,10 @@ fn execute(
             "ListPlanningItems" => q["kind"] = kind.into(),
             "CreatePlanningItem" => {
                 let body = planning_args::item_body(&group, &mut flags, &mut q, &json!({}))?;
-                q["item"] = json!({ group.as_str(): body });
+                if !q["item"].is_object() {
+                    q["item"] = json!({});
+                }
+                q["item"][group.as_str()] = body;
             }
             "SavePlanningItem" | "GetPlanningItem" | "DeletePlanningItem" | "ListHistory"
                 if !strv(&q, "id").is_empty() =>
@@ -270,7 +273,10 @@ fn execute(
                         ));
                     }
                     let body = planning_args::item_body(&group, &mut flags, &mut q, base)?;
-                    q["item"] = json!({ group.as_str(): body });
+                    if !q["item"].is_object() {
+                        q["item"] = json!({});
+                    }
+                    q["item"][group.as_str()] = body;
                 }
             }
             _ => {}

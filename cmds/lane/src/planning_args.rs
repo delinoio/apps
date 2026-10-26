@@ -449,11 +449,15 @@ pub fn group_kind(group: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-/// Fields supplied on the command line for one planning item, merged over `base`.
-/// `base` is the current stored body for an edit and empty for a create.
+/// Fields supplied on the command line for one planning item, merged over the item body.
+/// `base` is the current stored body for an edit and empty for a create. A typed `item`
+/// already present in the request (for example from `--request-json`) is the starting body;
+/// the stored body is used only when the request carries none. The returned body is also
+/// written back into `q["item"]`.
 pub fn item_body(group: &str, flags: &mut Flags, q: &mut Value, base: &Value) -> Result<Value> {
     let editing = base.as_object().is_some_and(|m| !m.is_empty());
-    let mut body = if editing { base.clone() } else { json!({}) };
+    let supplied = q["item"][group].as_object().cloned().map(Value::Object);
+    let mut body = supplied.unwrap_or_else(|| if editing { base.clone() } else { json!({}) });
 
     for (key, field) in [
         ("name", "name"),
@@ -461,7 +465,7 @@ pub fn item_body(group: &str, flags: &mut Flags, q: &mut Value, base: &Value) ->
         ("repositoryId", "repositoryId"),
     ] {
         if let Some(value) = q.as_object_mut().and_then(|m| m.remove(key)) {
-            if field == "repositoryId" && editing && body[field] != value {
+            if field == "repositoryId" && editing && base[field] != value {
                 return Err(invalid("A planning item's repository cannot be changed"));
             }
             body[field] = value;

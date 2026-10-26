@@ -914,3 +914,79 @@ fn planning_item_conflicts_list_get_and_resolve_by_kind() {
         json!([])
     );
 }
+
+#[test]
+fn typed_request_json_items_are_preserved_and_overridden_by_flags() {
+    let mut h = Harness::new();
+    let repo = h.repository("https://example.com/request-json");
+    // Create with a typed item and no flat fields.
+    let request = json!({"item":{"label":{"repositoryId":repo,"name":"Typed","color":"#abcdef",
+        "description":"from json"}}})
+    .to_string();
+    let created = h.ok(&["label", "create", "--request-json", &request]);
+    let version = created["result"]["version"].clone();
+    let id = strv(&version, "entityId").to_owned();
+    assert_eq!(version["label"]["name"], "Typed");
+    assert_eq!(version["label"]["color"], "#ABCDEF");
+    // A flag overrides the supplied item while its other fields stay.
+    let request = json!({"item":{"label":{"repositoryId":repo,"name":"Typed","color":"#abcdef",
+        "description":"from json"}}})
+    .to_string();
+    let flagged = h.ok(&[
+        "label",
+        "create",
+        "--request-json",
+        &request,
+        "--name",
+        "Flagged",
+    ]);
+    assert_eq!(flagged["result"]["version"]["label"]["name"], "Flagged");
+    assert_eq!(
+        flagged["result"]["version"]["label"]["description"],
+        "from json"
+    );
+    // A JSON-only edit applies the supplied item instead of the stored body.
+    let request = json!({"id":id,"expectedVersionId":version["versionId"],
+        "item":{"label":{"repositoryId":repo,"name":"Typed","color":"#000000",
+        "description":"edited"}}})
+    .to_string();
+    let edited = h.ok(&["label", "edit", "--request-json", &request]);
+    let body = &edited["result"]["version"]["label"];
+    assert_eq!(
+        (&body["color"], &body["description"]),
+        (&json!("#000000"), &json!("edited"))
+    );
+    // Flags still override the supplied item on edit.
+    let request = json!({"id":id,"expectedVersionId":edited["result"]["version"]["versionId"],
+        "item":{"label":{"repositoryId":repo,"name":"Typed","color":"#111111"}}})
+    .to_string();
+    let mixed = h.ok(&[
+        "label",
+        "edit",
+        "--request-json",
+        &request,
+        "--name",
+        "Renamed",
+    ]);
+    let body = &mixed["result"]["version"]["label"];
+    assert_eq!(
+        (&body["name"], &body["color"]),
+        (&json!("Renamed"), &json!("#111111"))
+    );
+    // Without a supplied item the stored body is the base.
+    let request =
+        json!({"id":id,"expectedVersionId":mixed["result"]["version"]["versionId"]}).to_string();
+    let kept = h.ok(&[
+        "label",
+        "edit",
+        "--request-json",
+        &request,
+        "--description",
+        "kept",
+    ]);
+    let body = &kept["result"]["version"]["label"];
+    assert_eq!(
+        (&body["name"], &body["color"]),
+        (&json!("Renamed"), &json!("#111111"))
+    );
+}
