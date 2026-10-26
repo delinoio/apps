@@ -664,6 +664,33 @@ try {
   await text("Discard unsaved changes?").waitFor();
   await button("Discard changes").click();
   await text("Select an item to edit it, or create a new one.").waitFor();
+  // A slow save response only updates the editor that submitted it: switching tabs
+  // or selecting another item meanwhile keeps the new selection.
+  await button("Labels tab").click();
+  await button("Edit label Backend").click();
+  await plan({ delayMs: 700 });
+  await clearRequests();
+  await saveButton().click();
+  await button("Milestones tab").click();
+  await settle(1200);
+  await text("Select an item to edit it, or create a new one.").waitFor();
+  assert.equal(
+    await text("Edit label").count(),
+    0,
+    "a late label save does not reopen the label under Milestones",
+  );
+  await button("Labels tab").click();
+  await button("Edit label Backend").click();
+  await saveButton().click();
+  await button("Edit label Frontend").click();
+  await settle(1200);
+  assert.equal(
+    await box("Name").inputValue(),
+    "Frontend",
+    "a late save does not replace the newly selected item",
+  );
+  await plan({ delayMs: 0 });
+  await button("Close").click();
   // Clean editors never prompt, and discarding in Settings navigation proceeds.
   await button("Labels tab").click();
   await button("Edit label Backend").click();

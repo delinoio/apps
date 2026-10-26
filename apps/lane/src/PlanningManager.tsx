@@ -171,12 +171,16 @@ export function PlanningManager({
         throw new Error(
           "Both versions were preserved. Resolve the conflict, then edit again.",
         );
-      // A created item continues as an edit of its first version.
-      setEditing({
-        ...editing,
-        base: response.result.version?.versionId,
-        initial: editing.input,
-      });
+      // A created item continues as an edit of its first version. Tabs and item
+      // selection stay enabled during a slow save, so apply the response only if the
+      // submitted item is still the open editor; otherwise keep the user's selection.
+      const submitted = editing;
+      const base = response.result.version?.versionId;
+      setEditing((open) =>
+        open && open.id === submitted.id
+          ? { ...open, base, initial: submitted.input }
+          : open,
+      );
     });
   const loadHistory = async (more = false) => {
     if (!editing) return;
