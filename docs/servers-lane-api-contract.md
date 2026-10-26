@@ -170,3 +170,85 @@ Change app, protocol, local-store and CLI contracts together for behavior or int
 - [Repository defaults](repository-defaults.md)
 - [Protocol](protos-lane-v1-contract.md)
 - [Distribution](packages-lane-distribution-contract.md)
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.
+
+### Private image persistence and operations
+
+Apply the forward capture migration explicitly. It adds URL-connection entities,
+account-scoped immutable attachment manifests, temporary uploads and a durable
+object-deletion queue. Existing immutable envelopes and replay fingerprints are
+not rewritten. A server binary that predates this migration fails schema checks.
+Format 2 synchronization refuses format 1 transport clients.
+
+Configure `LANE_R2_ENDPOINT`, `LANE_R2_BUCKET`, `LANE_R2_ACCESS_KEY_ID` and
+`LANE_R2_SECRET_ACCESS_KEY` with a private R2 bucket and a bucket-scoped S3 token.
+Startup requires this configuration. Disable bucket public access. Browser CORS
+must allow the supported Lane origin, PUT/GET and the returned request headers;
+never use credentialed wildcard origins. The endpoint uses the R2 S3 API and
+Signature V4 with region `auto`, as specified in the
+[R2 signed URL documentation](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+
+Begin-upload authorizes the account, task, immutable manifest and epoch under the
+account lock. It signs a five-minute PUT to a temporary object, including the
+expected Content-Length and image/png Content-Type. Completion downloads at most
+the manifest byte count, validates the final PNG, and publishes a separate
+immutable object. The client never receives PUT access to the immutable object.
+An old PUT therefore cannot change an already published image. Download access
+expires after one minute. Previously issued download capabilities remain usable
+until expiry or provider deletion; no new access is issued after owning deletion.
+
+Inline CreateCaptureTask writes the task, manifests, replay receipt and pending
+PNG bytes in one PostgreSQL transaction. The worker publishes pending images to
+R2 and clears the database byte copy after success. Failed transfers remain
+pending and retry without a second task. MAX_ITEM_BYTES applies to each new image
+and task metadata. It also bounds decoder working allocations and the expanded
+pixel byte count. Decoder-limit failures return ITEM_TOO_LARGE for that item;
+unrelated sync items continue. Already validated pending bytes remain eligible
+for publication after a limit reduction. The limit does not restrict existing
+downloads or deletion. No new
+image-count, retention or local-storage quota is introduced.
+
+History retains image bytes until task deletion. Repository deletion selects the
+current task owner, so moving a task protects its images from deletion of its
+former repository. Repository deletion also removes URL rules. Account clearing
+queues all provider objects before erasing manifests. Garbage work survives
+account clearing and provider outages. Temporary keys are queued when allocated;
+the worker deletes them after the PUT capability expires, including abandoned
+and completed uploads. Failed provider work remains in the queue. Inspect queue
+counts without exporting PNG bytes, signed URLs or capture metadata. Restore
+provider connectivity and valid bucket credentials to drain pending work; do not
+purge pending rows as a recovery shortcut.
+
+### Disposable S3 integration fixture
+
+The affected Ubuntu Lane server integration step runs
+`python3 servers/lane-api/tests/integration_fixture.py` from the repository root.
+Set `TEST_DATABASE_URL` to a disposable loopback PostgreSQL database. The helper
+rejects non-loopback database hosts and connection parameters that can redirect
+the connection. The existing CI database step owns PostgreSQL startup and cleanup.
+
+The helper creates a temporary Python virtual environment, installs the pinned
+`moto[server]==5.1.22` test dependency, and verifies that version before serving. It
+requires Python 3 with venv/pip, package-index access, and the existing Rust and
+protocol build tools. It binds S3 to `127.0.0.1` on an OS-assigned port, creates and
+checks a private test bucket, and supplies synthetic R2 credentials. Inherited
+AWS, Moto and Lane R2 settings cannot select a live provider. Request logging is
+disabled so signed URLs do not enter fixture logs.
+
+After readiness, the helper runs all Lane ignored integration tests with the
+PostgreSQL aliases and S3 endpoint configured. It returns Cargo's status and
+stops its process groups and removes the temporary environment on success,
+failure, SIGINT or SIGTERM. The in-memory bucket disappears with the mock. It
+prints structured readiness and cleanup records without credentials or database
+URLs. No production credentials, cloud bucket or OCI release job is required.
+Other server matrix entries retain their existing PostgreSQL integration command.
+These mock tests do not establish live R2 or native/device acceptance.

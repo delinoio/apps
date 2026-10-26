@@ -20,6 +20,7 @@ pub fn router(server: Arc<Server>) -> Router {
     let max = server.max_request_bytes();
     let rpc = connectrpc::Router::new()
         .add_service::<_, LaneServiceRegisterMarker>(server.clone())
+        .add_service::<_, CaptureServiceRegisterMarker>(server.clone())
         .add_service::<_, SyncServiceRegisterMarker>(server.clone())
         .add_service::<_, AccountServiceRegisterMarker>(server.clone())
         .add_service::<_, WebhookServiceRegisterMarker>(server.clone())

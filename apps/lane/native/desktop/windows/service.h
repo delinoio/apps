@@ -60,6 +60,7 @@ class Service {
           }
         }
         active_generation_ = generation;
+        if (method == "migrate") return store_->migrate(args.at(0));
         if (method == "open") {
           auto response = store_->open(args.at(0));
           auto envelope = Parse(response);
@@ -153,7 +154,7 @@ class Service {
           // The helper validates state/PKCE and updates registry routing using
           // its credential store. Never copy its tokens into NAPI or events.
           PendingAccountSpace({});
-          auto opened = Parse(store_->open(R"({"formatVersion":1,"spaceId":""})"));
+          auto opened = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
           if (opened.GetNamedBoolean(L"ok", false)) {
             const auto space = Text(opened.GetNamedObject(L"response"), L"spaceId");
             watched_.insert(space);
@@ -279,12 +280,12 @@ class Service {
       if (!result.GetNamedBoolean(L"ok", false)) throw std::runtime_error("Cannot disconnect the sync helper");
     };
     store_->setHostHooks(std::move(hooks));
-    auto initial = Parse(store_->open(R"({"formatVersion":1,"spaceId":""})"));
+    auto initial = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
     if (initial.GetNamedBoolean(L"ok", false)) watched_.insert(Text(initial.GetNamedObject(L"response"), L"spaceId"));
   }
   void OpenBackground(const std::string& space) {
     Json request; Set(request, L"spaceId", space);
-    request.Insert(L"formatVersion", Value::CreateNumberValue(1));
+    request.Insert(L"formatVersion", Value::CreateNumberValue(2));
     store_->open(Dump(request));
   }
   void Tick() {

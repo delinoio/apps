@@ -21,9 +21,13 @@ impl Response {
 }
 pub trait SendRequest {
     fn send_cancellable(self, auth: &Auth) -> Result<Response>;
+    fn send_cancellable_limit(self, auth: &Auth, limit: usize) -> Result<Response>;
 }
 impl SendRequest for reqwest::RequestBuilder {
     fn send_cancellable(self, auth: &Auth) -> Result<Response> {
+        self.send_cancellable_limit(auth, 16 << 20)
+    }
+    fn send_cancellable_limit(self, auth: &Auth, limit: usize) -> Result<Response> {
         let unavailable = || Failure::new("DEPENDENCY_UNAVAILABLE", "Lane service is unavailable.");
         // Keep the reactor alive across requests so pooled HTTP connections and
         // concurrent MCP calls share a bounded number of I/O threads.
@@ -42,7 +46,7 @@ impl SendRequest for reqwest::RequestBuilder {
                 let status = response.status();
                 let mut body = Vec::new();
                 while let Some(chunk) = response.chunk().await.map_err(|_| unavailable())? {
-                    if body.len() + chunk.len() > 16 << 20 {
+                    if body.len().saturating_add(chunk.len()) > limit {
                         return Err(Failure::new(
                             "INVALID_INPUT",
                             "Lane response exceeds the size limit.",

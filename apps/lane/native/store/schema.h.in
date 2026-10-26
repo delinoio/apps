@@ -2,3 +2,4 @@
 #pragma once
 inline constexpr const char* kSchema = R"LANESQL(@LANE_SCHEMA@)LANESQL";
 inline constexpr const char* kRegistry = R"LANESQL(@LANE_REGISTRY@)LANESQL";
+inline constexpr const char* kMigration2 = R"LANESQL(@LANE_MIGRATION_2@)LANESQL";

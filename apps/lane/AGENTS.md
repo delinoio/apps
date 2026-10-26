@@ -8,5 +8,7 @@
 
 - Read the [local-store contract](../../docs/apps-lane-local-store-contract.md) and [protocol contract](../../docs/protos-lane-v1-contract.md) for host persistence and cross-language interfaces. `native/store` owns shared SQL and native store support; platform registration remains in each host.
 
-- Desktop uses Lynxtron; `native/desktop/main.mjs` owns application lifecycle and message dispatch. CMake builds only the Node-API storage/OS module. Keep mobile SDK integration separate. Use `scripts/desktop.mjs` for desktop packaging and launch; do not add a manual desktop Lynx SDK prerequisite.
+- Desktop uses Lynxtron; `native/desktop/main.mjs` owns application lifecycle and message dispatch. CMake builds the Node-API storage/OS module and the standalone Chrome relay launcher. Keep mobile SDK integration separate. Use `scripts/desktop.mjs` for desktop packaging and launch; do not add a manual desktop Lynx SDK prerequisite.
 - Run desktop native validation with an explicit scratch data root and a `LANE_NATIVE_TESTING=1` build. Production builds disable test-root injection. Keep Lynxtron's original runtime licenses and framework symlinks intact when packaging.
+
+- Desktop RealQA validation and relay installation follow [desktop capture packaging](../../docs/apps-lane-foundation.md#desktop-capture-packaging-and-local-validation). Use explicit native-testing builds and scratch roots for capture/store and installer probes. Keep fixture extension IDs separate from actual installed/published IDs; never record fixture registration as Chrome publication or Windows runtime acceptance.

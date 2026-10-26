@@ -159,7 +159,7 @@ std::string Failure(NSString* reason, NSString* message) {
     [host helper:@[@"--json", @"--space", Text(space), @"sync", @"disconnect", @"--retention", @"keep-local"] input:nil];
   };
   _store->setHostHooks(std::move(hooks));
-  NSDictionary* opened = Parse(_store->open(R"({"formatVersion":1,"spaceId":""})"));
+  NSDictionary* opened = Parse(_store->open(R"({"formatVersion":2,"spaceId":""})"));
   if ([opened[@"ok"] boolValue]) {
     _currentSpace = opened[@"response"][@"spaceId"];
     [_spaces addObject:_currentSpace];
@@ -228,7 +228,9 @@ std::string Failure(NSString* reason, NSString* message) {
       try {
         if (host->_stopped) throw std::runtime_error("Host stopped");
         [host ensureStore];
-        if (method == "open") {
+        if (method == "migrate") {
+          response = host->_store->migrate(args.at(0));
+        } else if (method == "open") {
           response = host->_store->open(args.at(0));
           NSDictionary* body = Parse(response);
           if ([body[@"ok"] boolValue]) {
@@ -418,7 +420,7 @@ std::string Failure(NSString* reason, NSString* message) {
       [self ensureStore];
       // A notification pins its account space. Never reinterpret its task ID
       // in the active space, which may belong to a different retained account.
-      NSDictionary* opened = Parse(self->_store->open(JSON(@{@"formatVersion":@1,@"spaceId":space})));
+      NSDictionary* opened = Parse(self->_store->open(JSON(@{@"formatVersion":@2,@"spaceId":space})));
       if (![opened[@"ok"] boolValue]) return;
       self->_store->close(space.UTF8String);
       [self->_routes addObject:@{@"kind":@"task",@"id":task,@"spaceId":space}];

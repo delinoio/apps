@@ -274,8 +274,8 @@ Delcore, DevBase, Git Tracker and DeliTools use the [server Rust workspace](serv
 
 ### Lane validation
 
-Lane source and owning contract changes select the Ubuntu `lane-frontend` job.
-It checks TypeScript and builds native and browser bundles. These checks do not
+Lane source, Chrome extension source and owning contract changes select the Ubuntu `lane-frontend` job.
+It checks TypeScript, builds native and browser bundles, runs the Chrome extension tests/build, and runs the desktop RealQA bridge fixtures with Node. It removes both app and extension generated `dist` output even on failure. These checks do not
 establish native SDK compilation or device/store acceptance. Native host build
 commands and prerequisites belong to the [Lane contract](apps-lane-foundation.md).
 
@@ -289,4 +289,4 @@ Run `pnpm dev:db:up` to prepare the local databases. Run the Lane binary's `migr
 
 The [Lane project](project-lane.md) and [API contract](servers-lane-api-contract.md) own product scope and service configuration. Native build/install/behavior acceptance remains separate from frontend compilation and fixture checks.
 
-Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. These checks do not add macOS runners, a full manual mode or production publication.
+Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a `lane-api` entry in both Rust server matrices. CLI/package changes select Rust tests and package tests/builds for the Linux amd64 host on Ubuntu; full six-target packaging requires the corresponding Rust target, linker and native SDK toolchains. Root Cargo changes also select CLI validation; local-store schema changes select both CLI and frontend consumers. Lane protocol changes select its app, CLI and server consumers plus protocol validation. Shared Lynx UI changes select Lane frontend validation. The result gate rejects failed, canceled or skipped selected Lane jobs. The API matrix uses disposable database `lane_api_test` on port `55437`. Its existing integration step invokes `servers/lane-api/tests/integration_fixture.py` to supply a pinned disposable loopback S3 mock while running all Lane ignored tests. See the [server fixture procedure](servers-lane-api-contract.md#disposable-s3-integration-fixture) for prerequisites and cleanup. These checks do not add macOS runners, a full manual mode or production publication.

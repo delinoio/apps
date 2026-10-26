@@ -7,13 +7,19 @@
 }
 + (NSString *)name { return @"LaneStore"; }
 + (NSDictionary<NSString *, NSString *> *)methodLookup {
-  return @{@"open": NSStringFromSelector(@selector(open:callback:)),
+  return @{@"migrate": NSStringFromSelector(@selector(migrate:callback:)),
+           @"open": NSStringFromSelector(@selector(open:callback:)),
            @"invoke": NSStringFromSelector(@selector(invoke:request:callback:)),
            @"close": NSStringFromSelector(@selector(close:callback:))};
 }
 - (instancetype)init {
   if ((self = [super init])) _spaces = [NSCountedSet new];
   return self;
+}
+- (void)migrate:(NSString *)space callback:(LynxCallbackBlock)callback {
+  [[LaneHost shared] migrate:space completion:^(id result) {
+    @synchronized (self) { if (!self->_destroyed) callback(result); }
+  }];
 }
 - (void)open:(NSString *)json callback:(LynxCallbackBlock)callback {
   [[LaneHost shared] open:json completion:^(id result) {

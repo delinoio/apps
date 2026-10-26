@@ -44,7 +44,7 @@ internal class LaneRuntime(val application: LaneApplication) {
     fun <T> submit(action: () -> T) = executor.submit<T> { action() }
     fun execute(action: () -> Unit) { executor.execute(action) }
     fun engine(method: String, request: String) = store().invoke(method, request)
-    fun workerOpen(): String = store().open("{\"formatVersion\":1,\"spaceId\":\"\"}")
+    fun workerOpen(): String = store().open("{\"formatVersion\":2,\"spaceId\":\"\"}")
 
     fun foreground(session: LaneSession) = execute {
         sessions.add(session)
@@ -72,6 +72,11 @@ internal class LaneRuntime(val application: LaneApplication) {
             }
             session.spaces.clear()
         }
+    }
+    fun migrate(session: LaneSession, space: String, callback: Callback) = operation(session, callback) {
+        if (!LaneLinks.validId(space)) BridgeJson.error("INVALID_INPUT", "Choose an existing data space")
+        else if (allSessions.any { it.spaces.containsKey(space) }) BridgeJson.error("STORAGE_BUSY", "Close this data space before upgrading it")
+        else store().migrate(space)
     }
     fun open(session: LaneSession, request: String, callback: Callback) = operation(session, callback) {
         val result = store().open(request)
@@ -107,7 +112,7 @@ internal class LaneRuntime(val application: LaneApplication) {
             if (method == "ConnectSync") host.captureConnectionIntent(space)
             try { host.beginUiCall(session, space, method, request) }
             catch (_: Exception) { host.endUiCall(); return@operation BridgeJson.error("INVALID_INPUT", "A native deletion challenge is required; proof fields are forbidden") }
-            val result = try { engine(method, wrapper.toString()) }
+            val result = try { if (method == "GetAttachment") host.attachment(session, space, request) else engine(method, wrapper.toString()) }
                 finally { host.endUiCall(); if (method == "ConnectSync") host.clearConnectionIntent() }
             if (JSONObject(result).optBoolean("ok")) {
                 when (method) {

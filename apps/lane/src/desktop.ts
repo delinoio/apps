@@ -13,6 +13,7 @@ export interface DesktopBridge {
   ): void;
 }
 export interface HostModule {
+  realqa?(value: string, callback: (raw: string) => void): void;
   copyText(value: string, callback: (raw: string) => void): void;
   openURL(value: string, callback: (raw: string) => void): void;
   cancelReauthentication(value: string, callback: (raw: string) => void): void;
@@ -52,6 +53,8 @@ export function desktopModules(bridge: DesktopBridge): {
   };
   return {
     store: {
+      migrate: (space, callback) =>
+        call("LaneStore", "migrate", [space], callback),
       open: (request, callback) =>
         call("LaneStore", "open", [request], callback),
       invoke: (method, request, callback) =>
@@ -59,6 +62,8 @@ export function desktopModules(bridge: DesktopBridge): {
       close: (space, callback) => call("LaneStore", "close", [space], callback),
     },
     host: {
+      realqa: (value, callback) =>
+        call("LaneHost", "realqa", [value], callback),
       copyText: (value, callback) =>
         call("LaneHost", "copyText", [value], callback),
       openURL: (value, callback) =>

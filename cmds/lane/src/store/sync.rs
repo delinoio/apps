@@ -10,7 +10,7 @@ fn array(v: &Value) -> &[Value] {
     v.as_array().map_or(&[], Vec::as_slice)
 }
 pub fn validate(v: &Value) -> Result<()> {
-    if v["formatVersion"] != 1 {
+    if !matches!(v["formatVersion"].as_u64(), Some(1 | 2)) {
         return Err(Failure::new(
             "UNSUPPORTED_FORMAT",
             "Unsupported synchronization format.",
@@ -20,7 +20,7 @@ pub fn validate(v: &Value) -> Result<()> {
         || !valid_id(strv(v, "versionId"))
         || !matches!(
             strv(v, "kind"),
-            "ENTITY_KIND_TASK" | "ENTITY_KIND_REPOSITORY"
+            "ENTITY_KIND_TASK" | "ENTITY_KIND_REPOSITORY" | "ENTITY_KIND_URL_CONNECTION"
         )
     {
         return Err(invalid("Invalid entity identity."));
@@ -33,11 +33,19 @@ pub fn validate(v: &Value) -> Result<()> {
         }
         prev = p;
     }
+    if v["formatVersion"] == 1
+        && (v["kind"] == "ENTITY_KIND_URL_CONNECTION" || !array(&v["task"]["captures"]).is_empty())
+    {
+        return Err(invalid("RealQA data requires entity format 2."));
+    }
     if v["promptRestoration"] == true && (v["deleted"] == true || v["kind"] != "ENTITY_KIND_TASK") {
         return Err(invalid("Invalid prompt restoration marker."));
     }
     if v["deleted"] == true {
-        if v.get("task").is_some() || v.get("repository").is_some() {
+        if v.get("task").is_some()
+            || v.get("repository").is_some()
+            || v.get("urlConnection").is_some()
+        {
             return Err(invalid("Deleted version has a body."));
         }
         return Ok(());
@@ -57,6 +65,13 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     if v["kind"] == "ENTITY_KIND_TASK" {
         let t = &v["task"];
+        let mut seen = HashSet::new();
+        for capture in array(&t["captures"]) {
+            crate::capture::validate_reference(capture)?;
+            if !seen.insert(strv(capture, "attachmentId")) {
+                return Err(invalid("Duplicate attachment reference."));
+            }
+        }
         if !valid_id(strv(t, "repositoryId"))
             || strv(t, "title").trim().is_empty()
             || !matches!(
@@ -73,6 +88,13 @@ pub fn validate(v: &Value) -> Result<()> {
             )
         {
             return Err(invalid("Invalid task body."));
+        }
+    } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
+        let rule = &v["urlConnection"];
+        if !valid_id(strv(rule, "repositoryId"))
+            || crate::capture::normalize_prefix(strv(rule, "prefix"))? != strv(rule, "prefix")
+        {
+            return Err(invalid("Invalid URL connection."));
         }
     } else if strv(&v["repository"], "normalizedUrl").is_empty() {
         return Err(invalid("Invalid repository body."));
@@ -129,6 +151,28 @@ pub fn insert_version(c: &Connection, v: &Value) -> Result<()> {
         }
         return Ok(());
     }
+    for capture in array(&v["task"]["captures"]) {
+        super::Store::remember_capture_identity(c, entity, capture)?;
+        let attachment = strv(capture, "attachmentId");
+        let expected = (
+            entity.to_owned(),
+            strv(capture, "sha256").to_owned(),
+            capture["width"].as_i64().unwrap(),
+            capture["height"].as_i64().unwrap(),
+            strv(capture, "byteSize").parse::<i64>().unwrap(),
+        );
+        let old: Option<(String, String, i64, i64, i64)> = c
+            .query_row(
+                "SELECT task_id,sha256,width,height,byte_size FROM attachments WHERE id=?",
+                [attachment],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()?;
+        if old.is_some_and(|old| old != expected) {
+            return Err(invalid("Immutable attachment owner or content changed."));
+        }
+        c.execute("INSERT OR IGNORE INTO attachments(id,task_id,sha256,width,height,byte_size) VALUES(?,?,?,?,?,?)", params![attachment,expected.0,expected.1,expected.2,expected.3,expected.4])?;
+    }
     let mut prompt = v["promptRestoration"] == true
         || (array(&v["parentVersionIds"]).is_empty() && v["task"].get("prompt").is_some());
     for parent in array(&v["parentVersionIds"]) {
@@ -148,8 +192,9 @@ pub fn insert_version(c: &Connection, v: &Value) -> Result<()> {
             return Err(invalid("Cross-entity parent."));
         }
         let previous: Value = serde_json::from_str(&raw)?;
-        prompt |=
-            v["task"].is_object() && previous["task"].get("prompt") != v["task"].get("prompt");
+        prompt |= v["task"].is_object()
+            && (previous["task"].get("prompt") != v["task"].get("prompt")
+                || previous["task"].get("captures") != v["task"].get("captures"));
     }
     let us = chrono::DateTime::parse_from_rfc3339(strv(&v, "createdAt"))
         .map_or(0, |t| t.timestamp_micros());
@@ -173,6 +218,8 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
     }
     let repo = if v["task"].is_object() {
         Some(mapped(c, strv(&v["task"], "repositoryId"))?)
+    } else if v["urlConnection"].is_object() {
+        Some(mapped(c, strv(&v["urlConnection"], "repositoryId"))?)
     } else {
         None
     };
@@ -198,7 +245,7 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
             }
             return delete_entity(
                 c,
-                &json!({"formatVersion":1,"entityId":entity,"versionId":id(),"kind":"ENTITY_KIND_TASK","deleted":true}),
+                &json!({"formatVersion":2,"entityId":entity,"versionId":id(),"kind":v["kind"],"deleted":true}),
             );
         }
     }
@@ -216,6 +263,8 @@ pub fn apply(c: &Connection, r: &Value) -> Result<()> {
             entity,
             if v["kind"] == "ENTITY_KIND_TASK" {
                 2
+            } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
+                3
             } else {
                 1
             },
@@ -303,18 +352,22 @@ pub fn delete_entity(c: &Connection, v: &Value) -> Result<()> {
     if v["kind"] == "ENTITY_KIND_REPOSITORY" {
         for child in rows(
             c,
-            "SELECT id FROM entities WHERE kind=2 AND repository_id=? AND deleted=0",
+            "SELECT id FROM entities WHERE kind IN (2,3) AND repository_id=? AND deleted=0",
             [entity],
         )? {
+            let kind: i64 = c.query_row("SELECT kind FROM entities WHERE id=?", [&child], |r| {
+                r.get(0)
+            })?;
             delete_entity(
                 c,
-                &json!({"formatVersion":1,"entityId":child,"versionId":id(),"kind":"ENTITY_KIND_TASK","deleted":true}),
+                &json!({"formatVersion":2,"entityId":child,"versionId":id(),"kind":if kind==3 {"ENTITY_KIND_URL_CONNECTION"} else {"ENTITY_KIND_TASK"},"deleted":true}),
             )?;
         }
         delete_remote_children(c, 0, entity)?;
     }
-    c.execute("INSERT INTO entities(id,kind,deleted) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET deleted=1,repository_id=NULL,normalized_url=NULL",params![entity,if v["kind"]=="ENTITY_KIND_TASK"{2}else{1}])?;
+    c.execute("INSERT INTO entities(id,kind,deleted) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET deleted=1,repository_id=NULL,normalized_url=NULL",params![entity,if v["kind"]=="ENTITY_KIND_TASK"{2}else if v["kind"]=="ENTITY_KIND_URL_CONNECTION"{3}else{1}])?;
     for sql in [
+        "DELETE FROM attachments WHERE task_id=?",
         "DELETE FROM heads WHERE entity_id=?",
         "DELETE FROM versions WHERE entity_id=?",
         "DELETE FROM outbox WHERE entity_id=?",
@@ -365,12 +418,12 @@ pub fn change(c: &Connection, v: &Value, account: &str) -> Result<()> {
     let d = &v["deletion"];
     let id = strv(d, "id");
     match strv(d, "kind") {
-        "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY" | "ENTITY_KIND_OR_REMOTE_KIND_TASK" => {
-            delete_entity(
-                c,
-                &json!({"formatVersion":1,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
-            )
-        }
+        "ENTITY_KIND_OR_REMOTE_KIND_REPOSITORY"
+        | "ENTITY_KIND_OR_REMOTE_KIND_TASK"
+        | "ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION" => delete_entity(
+            c,
+            &json!({"formatVersion":2,"entityId":id,"versionId":d["deletionVersionId"],"kind":if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_TASK"{"ENTITY_KIND_TASK"}else if d["kind"]=="ENTITY_KIND_OR_REMOTE_KIND_URL_CONNECTION"{"ENTITY_KIND_URL_CONNECTION"}else{"ENTITY_KIND_REPOSITORY"},"deleted":true}),
+        ),
         "ENTITY_KIND_OR_REMOTE_KIND_RECEIVER" => delete_remote(c, 1, id),
         "ENTITY_KIND_OR_REMOTE_KIND_EVENT" => delete_remote(c, 2, id),
         "ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT" => {
@@ -380,7 +433,7 @@ pub fn change(c: &Connection, v: &Value, account: &str) -> Result<()> {
                     "Account deletion target mismatch.",
                 ));
             }
-            c.execute_batch("DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM receipts; DELETE FROM repository_mappings; DELETE FROM notification_receipts;")?;
+            c.execute_batch("DELETE FROM attachments; DELETE FROM heads; DELETE FROM versions; DELETE FROM entities; DELETE FROM outbox; DELETE FROM remote_objects; DELETE FROM receipts; DELETE FROM repository_mappings; DELETE FROM notification_receipts;")?;
             put_meta(c, "account_deleted", "1")
         }
         _ => Err(invalid("Invalid synchronization change.")),

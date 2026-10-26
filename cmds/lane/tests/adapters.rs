@@ -385,7 +385,7 @@ fn standalone_import_and_sync_once_preserve_versions_and_drain_outbox() {
     let (endpoint, worker) = http_server(3, move |request| {
         let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
         if request.starts_with("POST /lane.v1.SyncService/GetSyncInfo ") {
-            json!({"formatVersion":1,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+            json!({"formatVersion":2,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
         } else if request.starts_with("POST /lane.v1.SyncService/PushChanges ") {
             let mutations = body["mutations"].as_array().unwrap();
             assert_eq!(mutations.len(), 2);
@@ -477,4 +477,160 @@ fn remote_cancellation_interrupts_stalled_body() {
     );
     assert!(start.elapsed() < std::time::Duration::from_secs(1));
     server.join().unwrap();
+}
+
+#[test]
+fn realqa_cli_local_routes_and_mcp_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runtime = Runtime::new(
+        Some(dir.path().to_path_buf()),
+        Auth::default(),
+        "ORIGIN_KIND_CLI",
+    );
+    let opt = Options::default();
+    let repo = runtime
+        .invoke(
+            &opt,
+            "CreateRepository",
+            json!({"url":"https://example.com/app"}),
+        )
+        .unwrap();
+    let args = [
+        "--json",
+        "url-rule",
+        "create",
+        "--prefix",
+        "https://example.com/app",
+        "--repository-id",
+        repo["result"]["version"]["entityId"].as_str().unwrap(),
+    ]
+    .map(str::to_owned);
+    let mut output = vec![];
+    assert_eq!(
+        cli::run(
+            &args,
+            &mut runtime,
+            &mut Cursor::new(""),
+            &mut output,
+            &mut vec![]
+        ),
+        0
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output).unwrap()["ok"],
+        true
+    );
+    for method in [
+        "CreateCaptureTask",
+        "GetAttachment",
+        "ListURLConnections",
+        "CreateURLConnection",
+        "SaveURLConnection",
+        "DeleteURLConnection",
+    ] {
+        let tool = lane::mcp::tools()
+            .into_iter()
+            .find(|(name, _)| name == method)
+            .unwrap()
+            .1;
+        assert!(
+            !tool["description"]
+                .as_str()
+                .unwrap()
+                .contains("Online-only")
+        );
+    }
+    for args in [
+        vec!["data", "migrate"],
+        vec!["data", "migrate", "--space", "invalid"],
+        vec![
+            "data",
+            "migrate",
+            "--space",
+            "01900100-0000-7000-8000-000000000001",
+            "--request-json",
+            "{\"x\":1}",
+        ],
+    ] {
+        assert_eq!(
+            cli::run(
+                &args.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                &mut runtime,
+                &mut Cursor::new(""),
+                &mut vec![],
+                &mut vec![]
+            ),
+            2
+        );
+    }
+}
+
+#[test]
+fn attachment_sync_uses_epoch_bound_upload_and_validates_download() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let dir = tempfile::tempdir().unwrap();
+    let source = lane::store::Store::open(dir.path(), "", false).unwrap();
+    let mut runtime = Runtime::new(
+        Some(dir.path().to_path_buf()),
+        Auth::default(),
+        "ORIGIN_KIND_CLI",
+    );
+    let repo = runtime
+        .invoke(
+            &Options::default(),
+            "CreateRepository",
+            json!({"url":"https://example.com/capture"}),
+        )
+        .unwrap()["result"]["version"]["entityId"]
+        .clone();
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let bytes = STANDARD.decode(png).unwrap();
+    let attachment = protocol::id();
+    let version = runtime.invoke(&Options::default(),"CreateCaptureTask",json!({"repositoryId":repo,"title":"Test","images":[{"capture":{"attachmentId":attachment,"width":1,"height":1,"byteSize":bytes.len().to_string(),"sha256":protocol::hash(&bytes)},"png":png}]})).unwrap()["result"]["version"].clone();
+    drop(runtime);
+    let account = protocol::id();
+    let epoch = protocol::id();
+    let dest = source.select_account("issuer", &account, "tenant").unwrap();
+    lane::syncclient::import(&source, &dest).unwrap();
+    let server_account = account.clone();
+    let (endpoint, worker) = http_server(7, move |request| {
+        let q: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        if request.contains("/GetSyncInfo ") {
+            json!({"formatVersion":2,"accountId":server_account,"tenantId":"tenant","epoch":epoch})
+        } else if request.contains("/PushChanges ") {
+            assert_eq!(q["formatVersion"], 2);
+            json!({"results":q["mutations"].as_array().unwrap().iter().map(|m|json!({"requestId":m["meta"]["requestId"],"result":{"result":"RESULT_KIND_APPLIED","version":m["version"]}})).collect::<Vec<_>>()})
+        } else if request.contains("/PullChanges ") {
+            assert_eq!(q["formatVersion"], 2);
+            json!({"changes":[],"nextCursor":"page-1","hasMore":false})
+        } else if request.contains("/BeginAttachmentUpload ") {
+            assert_eq!(q["epoch"], epoch);
+            assert_eq!(q["attachmentId"], attachment);
+            json!({"state":"ATTACHMENT_STATE_AVAILABLE"})
+        } else {
+            assert!(request.contains("/GetAttachment "));
+            assert_eq!(q["attachmentId"], attachment);
+            json!({"state":"ATTACHMENT_STATE_AVAILABLE","png":png})
+        }
+    });
+    let auth = Auth {
+        vault: Arc::new(MemoryVault::default()),
+        credential_lock_root: Some(dir.path().join("credential-locks")),
+        ..Auth::default()
+    };
+    auth.save(&dest,&json!({"endpoint":endpoint,"access_token":"access","refresh_token":"refresh","issuer":"issuer","account_id":account,"tenant_id":"tenant","device_id":source.device,"session_id":"session","expires_at":(chrono::Utc::now()+chrono::Duration::hours(1)).to_rfc3339()})).unwrap();
+    dest.set_enabled(true).unwrap();
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    dest.with(true, |c| {
+        assert_eq!(
+            c.query_row::<i64, _, _>("SELECT synchronized FROM attachments", [], |r| r.get(0))?,
+            1
+        );
+        c.execute("UPDATE attachments SET png_base64=NULL", [])?;
+        Ok(())
+    })
+    .unwrap();
+    lane::syncclient::run(&auth, &dest, "", true, false).unwrap();
+    worker.join().unwrap();
+    assert_eq!(dest.invoke("GetAttachment",&json!({"taskId":version["entityId"],"attachmentId":version["task"]["captures"][0]["attachmentId"]})).unwrap()["png"],png);
 }

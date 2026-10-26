@@ -46,7 +46,7 @@ function Smoke() {
     const events = lynx.getJSModule("GlobalEventEmitter");
     events.addListener("lane.storeChanged", changed);
     store.open(
-      JSON.stringify({ formatVersion: 1, spaceId: "" }),
+      JSON.stringify({ formatVersion: 2, spaceId: "" }),
       async (json: string) => {
         try {
           const result = JSON.parse(json);

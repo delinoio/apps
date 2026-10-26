@@ -1,0 +1,47 @@
+body {
+  width: 300px;
+  margin: 0;
+  background: #fff;
+  color: #172033;
+  font: 14px system-ui;
+}
+main {
+  padding: 20px;
+}
+h1 {
+  font-size: 20px;
+  margin-top: 0;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+}
+input,
+button {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  font: inherit;
+  border: 1px solid #8c98aa;
+  border-radius: 8px;
+}
+button {
+  cursor: pointer;
+  background: #f1f5fa;
+}
+#capture {
+  background: #2563eb;
+  color: #fff;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #6399ff;
+  outline-offset: 2px;
+}
+p {
+  line-height: 1.5;
+}
+#status {
+  font-weight: 600;
+}

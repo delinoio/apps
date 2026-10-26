@@ -212,7 +212,7 @@ export function select(paths, lockfiles) {
       shared.lynxUi ||
       shared.protocol ||
       paths.some((path) =>
-        /^(apps\/lane\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
+        /^(apps\/(?:lane|lane-chrome-extension)\/|protos\/lane\/|docs\/(?:project-lane|apps-lane|protos-lane))/u.test(
           path,
         ),
       ),

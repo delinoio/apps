@@ -11,9 +11,16 @@
 
 // Shared with the Go CLI: the same advisory lock covers append and pruning.
 // Only fixed event names enter this logger; never pass native error descriptions.
-inline void LaneLog(const char* event) {
+inline void LaneLog(const char* event, const char* operation = "", uint64_t durationMs = 0, const char* result = "") {
   @autoreleasepool {
-    std::string line = std::string("{\"event\":\"") + event + "\"}\n";
+    auto identifier = [](const char* value) {
+      for (; *value; ++value) if (!((*value >= 'a' && *value <= 'z') || *value == '_')) return false;
+      return true;
+    };
+    if (!identifier(event) || !identifier(operation) || !identifier(result)) return;
+    std::string line = std::string("{\"event\":\"") + event + "\",\"operation\":\"" + operation +
+      "\",\"result\":\"" + result + "\",\"durationMs\":" + std::to_string(durationMs) +
+      ",\"correlationId\":\"" + NSUUID.UUID.UUIDString.UTF8String + "\"}\n";
     fputs(line.c_str(), stderr);
     NSURL* support = [[NSFileManager defaultManager] URLForDirectory:NSApplicationSupportDirectory
       inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];

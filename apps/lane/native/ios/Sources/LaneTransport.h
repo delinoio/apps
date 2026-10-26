@@ -6,6 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSDictionary *)callService:(NSString *)service method:(NSString *)method
                      request:(NSDictionary *)request token:(NSString *)token;
 - (NSDictionary *)postForm:(NSDictionary *)form url:(NSURL *)url;
+- (NSDictionary *)attachment:(NSURL *)url;
 - (NSDictionary *)getJSON:(NSURL *)url;
 - (NSDictionary *)postJSON:(NSDictionary *)json path:(NSString *)path token:(NSString *)token;
 - (NSDictionary *)getPath:(NSString *)path query:(NSDictionary *)query token:(NSString *)token;

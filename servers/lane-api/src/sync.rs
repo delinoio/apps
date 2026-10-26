@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //! Sync calls never commit. The transport opens an authorized account-locked transaction per item.
-use crate::entities::{self as e, REPOSITORY, TASK, fault};
+use crate::entities::{self as e, REPOSITORY, TASK, URL_CONNECTION, fault};
 use crate::{Principal, Result, string};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
@@ -50,7 +50,7 @@ pub async fn validate_watch(
 }
 
 fn normalize_version(v: &Value) -> Result<Value> {
-    if v["formatVersion"].as_u64() != Some(1) {
+    if !matches!(v["formatVersion"].as_u64(), Some(1 | 2)) {
         return Err(fault(8, "unsupported synchronization format; update Lane"));
     }
     e::uuid(string(v, "entityId"))?;
@@ -58,12 +58,22 @@ fn normalize_version(v: &Value) -> Result<Value> {
     let kind = match v["kind"].as_str() {
         Some("ENTITY_KIND_REPOSITORY") => REPOSITORY,
         Some("ENTITY_KIND_TASK") => TASK,
+        Some("ENTITY_KIND_URL_CONNECTION") => URL_CONNECTION,
         _ => match v["kind"].as_i64() {
             Some(1) => REPOSITORY,
             Some(2) => TASK,
+            Some(3) => URL_CONNECTION,
             _ => return Err(fault(1, "invalid entity kind")),
         },
     };
+    if v["formatVersion"] == 1
+        && (kind == URL_CONNECTION
+            || v["task"]["captures"]
+                .as_array()
+                .is_some_and(|v| !v.is_empty()))
+    {
+        return Err(fault(8, "captures require format 2"));
+    }
     let timestamp = chrono::DateTime::parse_from_rfc3339(string(v, "createdAt"))
         .map_err(|_| fault(1, "invalid version timestamp"))?;
     let timestamp = chrono::DateTime::from_timestamp_micros(timestamp.timestamp_micros())
@@ -89,7 +99,7 @@ fn normalize_version(v: &Value) -> Result<Value> {
     if !string(&origin, "deviceId").is_empty() {
         e::uuid(string(&origin, "deviceId"))?;
     }
-    let mut out = json!({"formatVersion":1,"entityId":v["entityId"],"kind":if kind==REPOSITORY{"ENTITY_KIND_REPOSITORY"}else{"ENTITY_KIND_TASK"},"versionId":v["versionId"],"parentVersionIds":parents,"createdAt":timestamp.to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":origin,"deleted":deleted,"promptRestoration":v["promptRestoration"].as_bool().unwrap_or(false)});
+    let mut out = json!({"formatVersion":v["formatVersion"],"entityId":v["entityId"],"kind":e::kind_name(kind),"versionId":v["versionId"],"parentVersionIds":parents,"createdAt":timestamp.to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":origin,"deleted":deleted,"promptRestoration":v["promptRestoration"].as_bool().unwrap_or(false)});
     if out["promptRestoration"] == true && (deleted || kind != TASK || parents.len() != 1) {
         return Err(fault(
             1,
@@ -97,11 +107,16 @@ fn normalize_version(v: &Value) -> Result<Value> {
         ));
     }
     if deleted {
-        if v.get("repository").is_some() || v.get("task").is_some() {
+        if v.get("repository").is_some()
+            || v.get("task").is_some()
+            || v.get("urlConnection").is_some()
+        {
             return Err(fault(1, "deleted versions cannot contain a body"));
         }
     } else if kind == REPOSITORY {
         out["repository"] = e::repository_body(&v["repository"])?;
+    } else if kind == URL_CONNECTION {
+        out["urlConnection"] = crate::capture::rule_body(&v["urlConnection"])?;
     } else {
         out["task"] = e::task_body(&v["task"], false)?;
     }
@@ -130,7 +145,7 @@ pub async fn push_item(
     q: &Value,
     max_item_bytes: usize,
 ) -> Result<Value> {
-    if q["formatVersion"].as_u64() != Some(1) {
+    if q["formatVersion"].as_u64() != Some(2) {
         return Err(fault(8, "unsupported synchronization format; update Lane"));
     }
     check_epoch(db, p, string(q, "epoch")).await?;
@@ -173,6 +188,8 @@ pub async fn push_item(
     }
     let kind = if v["kind"] == "ENTITY_KIND_REPOSITORY" {
         REPOSITORY
+    } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
+        URL_CONNECTION
     } else {
         TASK
     };
@@ -208,16 +225,35 @@ pub async fn push_item(
             return Err(fault(1, "deleted version requires delete mutation"));
         }
         // Parent repository deletion dominates even a delayed first upload of a task.
-        if kind == TASK {
-            let repo =
-                e::canonical_repository(db, &p.account_id, string(&v["task"], "repositoryId"))
-                    .await?;
+        if kind == TASK || kind == URL_CONNECTION {
+            let repo = e::canonical_repository(
+                db,
+                &p.account_id,
+                string(&v[e::body_key(kind)], "repositoryId"),
+            )
+            .await?;
             if e::entity(db, &p.account_id, &repo)
                 .await?
                 .is_some_and(|r| r.kind == REPOSITORY && r.deleted)
             {
-                response = e::delete_entity(db, p, &entity_id, TASK, None).await?;
-                return finish(db, p, request, &digest, &entity_id, &response).await;
+                // An immutable historical version can name a former repository. Its
+                // later deletion must not delete a task or rule that has already moved.
+                // Still tombstone delayed first uploads and entities currently owned there.
+                let current_repository: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+                    "SELECT repository_id FROM lane_entities WHERE account_id=$1 AND id=$2",
+                )
+                .bind(&p.account_id)
+                .bind(&entity_id)
+                .fetch_optional(&mut *db)
+                .await?
+                .flatten();
+                if current_repository
+                    .as_deref()
+                    .is_none_or(|current| current == repo)
+                {
+                    response = e::delete_entity(db, p, &entity_id, kind, None).await?;
+                    return finish(db, p, request, &digest, &entity_id, &response).await;
+                }
             }
         }
         if let Some(row) = sqlx::query(
@@ -229,7 +265,9 @@ pub async fn push_item(
         .await?
         {
             let stored: Value = row.get("envelope");
-            if row.get::<String, _>("entity_id") != entity_id || stored != v {
+            if row.get::<String, _>("entity_id") != entity_id
+                || e::canonical(&stored)? != e::canonical(&v)?
+            {
                 return Err(fault(
                     6,
                     "version ID identifies different immutable content",
@@ -321,9 +359,10 @@ pub async fn push_item(
                 let prompt = kind == TASK
                     && (v["promptRestoration"] == true
                         || parent_versions.is_empty() && v["task"].get("prompt").is_some()
-                        || parent_versions
-                            .iter()
-                            .any(|old| old["task"].get("prompt") != v["task"].get("prompt")));
+                        || parent_versions.iter().any(|old| {
+                            old["task"].get("prompt") != v["task"].get("prompt")
+                                || old["task"].get("captures") != v["task"].get("captures")
+                        }));
                 e::insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
                 let same_repository = kind == REPOSITORY
                     && action == "CREATE"
@@ -427,11 +466,11 @@ pub async fn dispatch(
 ) -> Result<Value> {
     match method {
         "GetSyncInfo" => Ok(
-            json!({"formatVersion":1,"accountId":p.account_id,"tenantId":p.tenant_id,"epoch":epoch(db,p).await?,"maxItemBytes":max_item_bytes.to_string()}),
+            json!({"formatVersion":2,"accountId":p.account_id,"tenantId":p.tenant_id,"epoch":epoch(db,p).await?,"maxItemBytes":max_item_bytes.to_string()}),
         ),
         "PushChanges" => push_item(db, p, q, max_item_bytes).await,
         "PullChanges" => {
-            if q["formatVersion"].as_u64() != Some(1) {
+            if q["formatVersion"].as_u64() != Some(2) {
                 return Err(fault(8, "unsupported synchronization format; update Lane"));
             }
             pull(db, p, q).await

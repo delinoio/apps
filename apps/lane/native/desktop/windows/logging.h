@@ -7,7 +7,7 @@
 namespace lane::windows {
 // Only fixed event/state identifiers and numeric OS categories belong here.
 // Never pass task content, callback URIs, filesystem paths or exception text.
-inline void Log(const char* event, const char* state = "", DWORD code = 0) noexcept {
+inline void Log(const char* event, const char* state = "", DWORD code = 0, uint64_t durationMs = 0) noexcept {
   try {
     auto identifier = [](const char* value) {
       for (; *value; ++value) if (!((*value >= 'a' && *value <= 'z') ||
@@ -35,8 +35,11 @@ inline void Log(const char* event, const char* state = "", DWORD code = 0) noexc
     timestamp << std::setfill('0') << std::setw(4) << time.wYear << '-' << std::setw(2) << time.wMonth << '-'
               << std::setw(2) << time.wDay << 'T' << std::setw(2) << time.wHour << ':'
               << std::setw(2) << time.wMinute << ':' << std::setw(2) << time.wSecond << 'Z';
+    GUID correlation{}; CoCreateGuid(&correlation);
+    wchar_t correlationText[40]{}; StringFromGUID2(correlation, correlationText, 40);
+    std::string correlationId; for(const auto c:correlationText) if(c)correlationId.push_back(static_cast<char>(c));
     const std::string line = "{\"time\":\"" + timestamp.str() + "\",\"event\":\"" + event +
-        "\",\"state\":\"" + state + "\",\"code\":" + std::to_string(code) + "}\n";
+        "\",\"state\":\"" + state + "\",\"code\":" + std::to_string(code) + ",\"durationMs\":" + std::to_string(durationMs) + ",\"correlationId\":\"" + correlationId + "\"}\n";
     struct File { std::filesystem::path path; std::filesystem::file_time_type modified; uintmax_t bytes; };
     std::vector<File> files;
     uintmax_t total = 0;

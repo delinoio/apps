@@ -200,3 +200,60 @@ Change local-store, CLI, server and app contracts together when wire fields, dom
 - [Repository defaults](repository-defaults.md)
 - [Local store](apps-lane-local-store-contract.md)
 - [Server](servers-lane-api-contract.md)
+
+## RealQA integration
+
+The [RealQA contract](apps-lane-realqa-contract.md) extends this domain with durable
+final-PNG attachments, authorized retrieval and synchronized URL-to-repository
+rules. Preserve existing account routing, whole-task conflicts, request replay,
+history, task moves and deletion precedence. Native saves commit locally before
+optional image upload. Pending synchronization must not be reported as failed
+local saving. Unsupported schema/format versions must be refused before writes.
+These requirements do not establish implementation or release acceptance.
+
+### RealQA format 2 interfaces
+
+Format 2 adds ordered `CaptureReference captures=7` to Task. Each reference owns
+an immutable UUID v7 attachment ID, PNG dimensions, SHA-256 digest and byte count,
+plus optional page URL, page title and CSS selector. Metadata belongs to the
+whole-task version and can be removed without deleting history's image content.
+`CreateCaptureTask` accepts final PNG bytes and metadata together and atomically
+creates one regular To do task. Its stable request ID covers the complete input.
+`GetAttachment` requires both task and attachment identity; local callers receive
+PNG bytes and remote callers receive short-lived authorized download access.
+Signed URLs never enter persisted prompts or task versions.
+
+URL connections use `EntityKind.URL_CONNECTION=3` and the `url_connection=12`
+EntityVersion body. `ListURLConnections`, `CreateURLConnection`,
+`SaveURLConnection` and `DeleteURLConnection` share the existing version,
+request, conflict and deletion rules. `ResolveConflict` resolves these versions
+explicitly. A rule has a normalized HTTP(S) prefix and target repository ID.
+Conflicted rules cannot participate in automatic selection.
+
+Existing field numbers remain stable. Format 1 clients must refuse format 2
+stores and synchronization; they cannot round-trip these extended snapshots.
+Schema migration and synchronization upgrades require coordinated consumers.
+
+### Private attachment transfer
+
+Synchronize task versions before transferring their PNG bytes. The format 2
+transport accepts historical immutable format 1 envelopes but rejects format 1
+transport requests. Historical format 1 envelopes cannot contain captures or URL
+connections. New server versions use format 2.
+
+`BeginAttachmentUpload(task_id, attachment_id, epoch)` returns `upload_id`,
+`upload_url`, `expires_at`, required `headers` and `state`. PUT the exact final PNG
+with those headers, then call
+`CompleteAttachmentUpload(task_id, attachment_id, upload_id, epoch)`. Completion
+validates byte count, digest, PNG structure and decoded image data before marking
+the attachment available. An available response makes retries safe without a
+second PUT. Expired uploads require a new begin call. Both calls require the
+current account epoch and the attachment's owning task. Signed transfer URLs are
+short-lived capabilities; do not forward Lane authorization headers to R2.
+
+The immutable manifest binds attachment ID, owner task, dimensions, digest and
+byte count. Browser metadata remains part of each task version. Removing a
+reference from the current version preserves bytes required by history. Moving
+a task preserves its attachment ownership. Task deletion and account deletion
+remove access and queue provider deletion. Retrieval of a pending manifest
+returns `WAITING_FOR_SYNC`; it must not be displayed as a failed local save.

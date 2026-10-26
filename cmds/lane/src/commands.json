@@ -69,11 +69,11 @@
   },
   "conflict list": {
     "method": "ConflictList",
-    "help": "[--kind task|repository]"
+    "help": "[--kind task|repository|url-rule]"
   },
   "conflict get": {
     "method": "ConflictGet",
-    "help": "ID --kind task|repository"
+    "help": "ID --kind task|repository|url-rule"
   },
   "conflict resolve": {
     "method": "ResolveConflict",
@@ -206,5 +206,33 @@
   "rpc": {
     "method": "RPC",
     "help": "METHOD --request-json JSON|- (typed helper interface)"
+  },
+  "capture create": {
+    "method": "CreateCaptureTask",
+    "help": "--repository-id UUID --title TEXT --images-json JSON_ARRAY [--description TEXT] (final PNGs encoded as base64)"
+  },
+  "attachment get": {
+    "method": "GetAttachment",
+    "help": "--task-id UUID --attachment-id UUID (authorized PNG bytes or short-lived download URL)"
+  },
+  "url-rule list": {
+    "method": "ListURLConnections",
+    "help": "[--page-size N] [--cursor TOKEN]"
+  },
+  "url-rule create": {
+    "method": "CreateURLConnection",
+    "help": "--prefix URL --repository-id UUID"
+  },
+  "url-rule edit": {
+    "method": "SaveURLConnection",
+    "help": "ID --expected-version UUID --prefix URL --repository-id UUID"
+  },
+  "url-rule delete": {
+    "method": "DeleteURLConnection",
+    "help": "ID (permanent)"
+  },
+  "data migrate": {
+    "method": "MigrateLocalData",
+    "help": "--space UUID (explicit local schema upgrade; no payload)"
   }
 }

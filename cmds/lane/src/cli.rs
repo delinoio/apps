@@ -239,7 +239,11 @@ fn execute(
     if let Some(heads) = flags.remove("expected-head") {
         q["expectedHeadIds"] = json!(heads);
     }
-    for (k, f) in [("tasks-json", "tasks"), ("resolved-json", "resolved")] {
+    for (k, f) in [
+        ("tasks-json", "tasks"),
+        ("resolved-json", "resolved"),
+        ("images-json", "images"),
+    ] {
         let raw = pop(&mut flags, k);
         if !raw.is_empty() {
             q[f] = serde_json::from_str(&raw)?;
@@ -307,6 +311,24 @@ fn execute(
         "task reject" => q["proposal"] = "PROPOSAL_REJECTED".into(),
         "task prompt-history" => q["promptsOnly"] = true.into(),
         _ => {}
+    }
+    if method == "MigrateLocalData"
+        && (opt.remote || !protocol::valid_id(&opt.space) || !q.as_object().unwrap().is_empty())
+    {
+        return Err(invalid(
+            "data migrate requires explicit --space UUID, local target, and no payload.",
+        ));
+    }
+    if matches!(method.as_str(), "CreateURLConnection" | "SaveURLConnection")
+        && q.get("connection").is_none()
+    {
+        let mut connection = json!({});
+        for field in ["prefix", "repositoryId"] {
+            if let Some(value) = q.as_object_mut().unwrap().remove(field) {
+                connection[field] = value;
+            }
+        }
+        q["connection"] = connection;
     }
     if method == "CreateTask" {
         let mut target = json!({});

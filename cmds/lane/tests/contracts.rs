@@ -252,7 +252,7 @@ fn schema_and_space_isolation() {
     );
     assert!(Store::open(temp.path(), &id(), false).is_err());
     s.with(true, |c| {
-        c.execute_batch("PRAGMA user_version=2")?;
+        c.execute_batch("PRAGMA user_version=99")?;
         Ok(())
     })
     .unwrap();

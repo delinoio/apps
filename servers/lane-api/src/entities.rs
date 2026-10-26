@@ -8,6 +8,21 @@ use unicode_casefold::UnicodeCaseFold;
 
 pub(crate) const REPOSITORY: i16 = 1;
 pub(crate) const TASK: i16 = 2;
+pub(crate) const URL_CONNECTION: i16 = 3;
+pub(crate) fn body_key(kind: i16) -> &'static str {
+    match kind {
+        REPOSITORY => "repository",
+        URL_CONNECTION => "urlConnection",
+        _ => "task",
+    }
+}
+pub(crate) fn kind_name(kind: i16) -> &'static str {
+    match kind {
+        REPOSITORY => "ENTITY_KIND_REPOSITORY",
+        URL_CONNECTION => "ENTITY_KIND_URL_CONNECTION",
+        _ => "ENTITY_KIND_TASK",
+    }
+}
 pub(crate) fn fault(reason: i32, message: &str) -> Fault {
     let code = match reason {
         2 => ErrorCode::NotFound,
@@ -124,6 +139,11 @@ pub(crate) fn canonical(value: &Value) -> Result<String> {
             keys.sort_by_cached_key(|s| s.encode_utf16().collect::<Vec<_>>());
             let mut parts = Vec::new();
             for k in keys {
+                // Protobuf emits newly added repeated fields as []; old receipts omitted them.
+                // Keep historical fingerprints stable without rewriting immutable envelopes.
+                if k == "captures" && m[k].as_array().is_some_and(Vec::is_empty) {
+                    continue;
+                }
                 parts.push(format!(
                     "{}:{}",
                     serde_json::to_string(k)?,
@@ -224,6 +244,12 @@ pub(crate) fn task_body(v: &Value, creation: bool) -> Result<Value> {
         }
         body["prompt"] = prompt.clone();
     }
+    if let Some(captures) = v.get("captures").filter(|v| !v.is_null()) {
+        let captures = crate::capture::references(captures)?;
+        if !captures.as_array().unwrap().is_empty() {
+            body["captures"] = captures;
+        }
+    }
     Ok(body)
 }
 pub(crate) fn repository_body(v: &Value) -> Result<Value> {
@@ -244,13 +270,9 @@ pub(crate) fn version(
     body: Option<Value>,
     p: &Principal,
 ) -> Value {
-    let mut v = json!({"formatVersion":1,"entityId":entity,"kind":if kind==REPOSITORY {"ENTITY_KIND_REPOSITORY"} else {"ENTITY_KIND_TASK"},"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none(),"promptRestoration":false});
+    let mut v = json!({"formatVersion":2,"entityId":entity,"kind":kind_name(kind),"versionId":id(),"parentVersionIds":parents,"createdAt":now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":p.origin(),"deleted":body.is_none(),"promptRestoration":false});
     if let Some(body) = body {
-        v[if kind == REPOSITORY {
-            "repository"
-        } else {
-            "task"
-        }] = body;
+        v[body_key(kind)] = body;
     }
     v
 }
@@ -386,7 +408,13 @@ pub(crate) async fn validate_body(
             return Err(fault(1, "repository URL is already registered"));
         }
     } else {
-        require_repository(db, account, string(&v["task"], "repositoryId")).await?;
+        require_repository(db, account, string(&v[body_key(kind)], "repositoryId")).await?;
+        if kind == URL_CONNECTION {
+            crate::capture::validate_rule(db, account, entity_id, &v["urlConnection"]).await?;
+        }
+        if kind == TASK {
+            crate::capture::validate_ownership(db, account, entity_id, &v["task"]).await?;
+        }
     }
     Ok(())
 }
@@ -407,6 +435,9 @@ pub(crate) async fn insert_version(
         sqlx::query("INSERT INTO lane_version_identities(account_id,version_id,entity_id,fingerprint) VALUES($1,$2,$3,$4)")
             .bind(account).bind(string(v,"versionId")).bind(entity_id).bind(&digest).execute(&mut *db).await?;
     }
+    if v.get("task").is_some() {
+        crate::capture::register_manifests(db, account, entity_id, &v["task"]).await?;
+    }
     sqlx::query("INSERT INTO lane_versions(account_id,version_id,entity_id,envelope,prompt_version) VALUES($1,$2,$3,$4,$5)").bind(account).bind(string(v,"versionId")).bind(entity_id).bind(v).bind(prompt).execute(db).await?;
     Ok(())
 }
@@ -426,8 +457,8 @@ pub(crate) async fn project(
     kind: i16,
     v: &Value,
 ) -> Result<()> {
-    let repo = if kind == TASK {
-        Some(canonical_repository(db, account, string(&v["task"], "repositoryId")).await?)
+    let repo = if kind == TASK || kind == URL_CONNECTION {
+        Some(canonical_repository(db, account, string(&v[body_key(kind)], "repositoryId")).await?)
     } else {
         None
     };
@@ -461,7 +492,7 @@ pub(crate) async fn new_entity(
         &p.account_id,
         entity_id,
         v,
-        kind == TASK && v["task"].get("prompt").is_some(),
+        kind == TASK && (v["task"].get("prompt").is_some() || v["task"].get("captures").is_some()),
     )
     .await?;
     add_head(db, &p.account_id, entity_id, string(v, "versionId")).await?;
@@ -509,15 +540,17 @@ pub(crate) async fn delete_entity(
         }
     }
     if kind == REPOSITORY {
-        let tasks:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND repository_id=$2 AND kind=2 AND NOT deleted").bind(&p.account_id).bind(entity_id).fetch_all(&mut *db).await?;
+        let tasks:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND repository_id=$2 AND kind IN (2,3) AND NOT deleted").bind(&p.account_id).bind(entity_id).fetch_all(&mut *db).await?;
         for task in tasks {
-            Box::pin(delete_entity(db, p, &task, TASK, None)).await?;
+            let child = entity(db, &p.account_id, &task).await?.unwrap();
+            Box::pin(delete_entity(db, p, &task, child.kind, None)).await?;
         }
         crate::webhooks::delete_repository(db, &p.account_id, entity_id).await?;
     } else {
         crate::push::cancel(db, &p.account_id, entity_id).await?;
         crate::webhooks::redact_task(db, &p.account_id, entity_id).await?;
     }
+    crate::capture::delete_task(db, &p.account_id, entity_id).await?;
     let mut tombstone = supplied.unwrap_or_else(|| version(entity_id, kind, &[], None, p));
     // Deletion keeps no old parent graph, device name or user content.
     tombstone.as_object_mut().unwrap().remove("task");
@@ -607,6 +640,9 @@ fn normalize_request(p: &Principal, method: &str, q: &Value) -> Result<Value> {
             PROPOSAL,
             Some("PROPOSAL_REGULAR")
         )?);
+    }
+    if matches!(method, "CreateURLConnection" | "SaveURLConnection") {
+        q["connection"] = crate::capture::rule_body(&q["connection"])?;
     }
     if method == "SaveTask" {
         q["task"] = task_body(&q["task"], false)?;
@@ -709,10 +745,10 @@ async fn list(db: &mut PgConnection, p: &Principal, method: &str, q: &Value) -> 
         };
         return Ok(json!({"versions":rows,"nextCursor":next}));
     }
-    let kind = if method == "ListRepositories" {
-        REPOSITORY
-    } else {
-        TASK
+    let kind = match method {
+        "ListRepositories" => REPOSITORY,
+        "ListURLConnections" => URL_CONNECTION,
+        _ => TASK,
     };
     let ids:Vec<String>=sqlx::query_scalar("SELECT id FROM lane_entities WHERE account_id=$1 AND kind=$2 AND NOT deleted AND id>$3 ORDER BY id").bind(&p.account_id).bind(kind).bind(&after).fetch_all(&mut *db).await?;
     let mut items = Vec::new();
@@ -788,7 +824,10 @@ pub async fn dispatch(
     q: &Value,
     max_item_bytes: usize,
 ) -> Result<Value> {
-    if matches!(method, "ListRepositories" | "ListTasks" | "ListHistory") {
+    if matches!(
+        method,
+        "ListRepositories" | "ListTasks" | "ListHistory" | "ListURLConnections"
+    ) {
         return list(db, p, method, q).await;
     }
     if matches!(method, "GetRepository" | "GetTask") {
@@ -819,6 +858,9 @@ pub async fn dispatch(
             | "RestorePrompt"
             | "DeleteTask"
             | "ResolveConflict"
+            | "CreateURLConnection"
+            | "SaveURLConnection"
+            | "DeleteURLConnection"
     ) {
         return Err(fault(1, "unknown Lane method"));
     }
@@ -845,28 +887,36 @@ pub async fn dispatch(
         return Ok(response);
     }
     let response;
-    if method == "DeleteRepository" || method == "DeleteTask" {
-        let kind = if method == "DeleteRepository" {
-            REPOSITORY
-        } else {
-            TASK
+    if matches!(
+        method,
+        "DeleteRepository" | "DeleteTask" | "DeleteURLConnection"
+    ) {
+        let kind = match method {
+            "DeleteRepository" => REPOSITORY,
+            "DeleteURLConnection" => URL_CONNECTION,
+            _ => TASK,
         };
         response = json!({"result":delete_entity(db,p,&entity_id,kind,None).await?});
     } else {
         if canonical(&q)?.len() > max_item_bytes {
             return Err(fault(15, "item exceeds configured byte limit"));
         }
-        if method == "CreateRepository" || method == "CreateTask" {
+        if matches!(
+            method,
+            "CreateRepository" | "CreateTask" | "CreateURLConnection"
+        ) {
             if existing.is_some() {
                 return Err(fault(6, "entity ID is already in use"));
             }
-            let kind = if method == "CreateRepository" {
-                REPOSITORY
-            } else {
-                TASK
+            let kind = match method {
+                "CreateRepository" => REPOSITORY,
+                "CreateURLConnection" => URL_CONNECTION,
+                _ => TASK,
             };
             let mut repo_result = None;
-            let body = if kind == REPOSITORY {
+            let body = if kind == URL_CONNECTION {
+                q["connection"].clone()
+            } else if kind == REPOSITORY {
                 let mut b = json!({"normalizedUrl":q["url"]});
                 if let Some(n) = q.get("displayName") {
                     b["displayName"] = n.clone();
@@ -924,7 +974,10 @@ pub async fn dispatch(
                 vec![expected.to_owned()]
             };
             if (method == "SaveRepository" && e.kind != REPOSITORY)
-                || (!resolving && method != "SaveRepository" && e.kind != TASK)
+                || (method == "SaveURLConnection" && e.kind != URL_CONNECTION)
+                || (!resolving
+                    && !matches!(method, "SaveRepository" | "SaveURLConnection")
+                    && e.kind != TASK)
             {
                 return Err(fault(1, "entity kind mismatch"));
             }
@@ -932,11 +985,15 @@ pub async fn dispatch(
                 if q["resolved"]["deleted"].as_bool() == Some(true) {
                     return Err(fault(1, "use deletion to delete an entity"));
                 }
-                if e.kind == TASK {
+                if e.kind == URL_CONNECTION {
+                    crate::capture::rule_body(&q["resolved"]["urlConnection"])?
+                } else if e.kind == TASK {
                     task_body(&q["resolved"]["task"], false)?
                 } else {
                     repository_body(&q["resolved"]["repository"])?
                 }
+            } else if e.kind == URL_CONNECTION {
+                q["connection"].clone()
             } else if e.kind == REPOSITORY {
                 let mut b = json!({"normalizedUrl":q["url"]});
                 if let Some(n) = q.get("displayName") {
@@ -974,6 +1031,10 @@ pub async fn dispatch(
                             string(&q, "sourceVersionId"),
                         )
                         .await?;
+                        b.as_object_mut().unwrap().remove("captures");
+                        if let Some(captures) = source["task"].get("captures") {
+                            b["captures"] = captures.clone();
+                        }
                         b.as_object_mut().unwrap().remove("prompt");
                         if let Some(prompt) = source["task"].get("prompt") {
                             b["prompt"] = prompt.clone();
@@ -987,7 +1048,9 @@ pub async fn dispatch(
             v["promptRestoration"] = json!(method == "RestorePrompt");
             validate_body(db, &p.account_id, &entity_id, e.kind, &v).await?;
             let prompt = method == "RestorePrompt"
-                || (e.kind == TASK && current["task"].get("prompt") != v["task"].get("prompt"));
+                || (e.kind == TASK
+                    && (current["task"].get("prompt") != v["task"].get("prompt")
+                        || current["task"].get("captures") != v["task"].get("captures")));
             insert_version(db, &p.account_id, &entity_id, &v, prompt).await?;
             if resolving || parents == hs {
                 sqlx::query("DELETE FROM lane_heads WHERE account_id=$1 AND entity_id=$2")

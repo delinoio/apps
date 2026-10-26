@@ -39,7 +39,7 @@ void merge_repository_histories() {
   auto local_task = f.task(request);
   const auto account = identity(uuid(), uuid(), uuid());
   success(f.store.approveAccount(account.dump(), false));
-  f.space = success(f.store.open(R"({"formatVersion":1,"spaceId":""})")).at("spaceId");
+  f.space = success(f.store.open(R"({"formatVersion":2,"spaceId":""})")).at("spaceId");
   auto online = named_repository(f, "Account name", "https://merge.example/repo");
   request = f.createRequest("Account task"); request["repository"] = {{"id", online.at("entityId")}};
   auto account_task = f.task(request);
@@ -67,7 +67,7 @@ void mapping_alias_reads_and_writes() {
   J canonical = local;
   canonical["entityId"] = uuid(); canonical["versionId"] = uuid();
   J push = {{"repositoryMappings", J::array({J{{"localId", local.at("entityId")}, {"canonicalId", canonical.at("entityId")}}})}};
-  J sync = {{"formatVersion", 1}, {"epoch", remote.epoch}, {"owner", remote.owner}, {"push", push},
+  J sync = {{"formatVersion", 2}, {"epoch", remote.epoch}, {"owner", remote.owner}, {"push", push},
       {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {
           {"result", "RESULT_KIND_APPLIED"}, {"version", canonical}}}}})}, {"nextCursor", "alias-cursor"}}}};
   success(f.store.applySync(f.space, sync.dump()));
@@ -104,7 +104,7 @@ void server_resolution_supersedes_provisional() {
   Sql db(f.database());
   auto mutation = J::parse(db.scalar("SELECT request_json FROM outbox WHERE entity_id='" +
       base.at("entityId").get<std::string>() + "' AND request_json LIKE '%" + provisional.at("versionId").get<std::string>() + "%' ORDER BY created_at_us DESC LIMIT 1"));
-  J sync = {{"formatVersion", 1}, {"epoch", remote.epoch}, {"owner", remote.owner},
+  J sync = {{"formatVersion", 2}, {"epoch", remote.epoch}, {"owner", remote.owner},
       {"push", {{"results", J::array({J{{"requestId", mutation.at("meta").at("requestId")},
           {"error", {{"reason", "ERROR_REASON_STALE_RESOLUTION"}, {"currentHeadIds", J::array({accepted.at("versionId")})}}}}})}}},
       {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {
@@ -127,7 +127,7 @@ struct CachedEvent {
         {"payload", payload}, {"state", "EVENT_STATE_COMPLETED"}, {"revision", "1"}};
     processing = {{"id", uuid()}, {"eventId", event.at("id")}, {"taskIds", J::array()},
         {"completedAt", "2026-01-01T00:01:00Z"}, {"origin", f.meta().at("origin")}};
-    success(f.store.applySync(f.space, J{{"formatVersion", 1}, {"epoch", remote.epoch}, {"owner", remote.owner},
+    success(f.store.applySync(f.space, J{{"formatVersion", 2}, {"epoch", remote.epoch}, {"owner", remote.owner},
         {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"event", event}},
             J{{"sequence", "2"}, {"processing", processing}}})}, {"nextCursor", "cache-cursor"}}}}.dump()));
   }
@@ -201,7 +201,7 @@ void duplicate_input_keys() {
   error(J::parse(f.store.open("{\"formatVersion\":1,\"formatVersion\":1,\"spaceId\":\"" + f.space + "\"}")), "INVALID_INPUT");
   require(counts(db) == before, "duplicate input keys rejected without writes");
   RemoteProposals remote(f);
-  auto sync = J{{"formatVersion", 1}, {"epoch", remote.epoch}, {"owner", remote.owner},
+  auto sync = J{{"formatVersion", 2}, {"epoch", remote.epoch}, {"owner", remote.owner},
       {"pull", {{"changes", J::array()}, {"nextCursor", ""}}}}.dump();
   sync.pop_back(); sync += ",\"pull\":{\"changes\":[],\"nextCursor\":\"forged\"}}";
   error(J::parse(f.store.applySync(f.space, sync)), "INVALID_INPUT");
@@ -261,7 +261,7 @@ void account_deletion_binding() {
   hooks.disconnect = [&](std::string space) { require(space == f.space, "account deletion disconnect routing"); ++disconnects; };
   f.store.setHostHooks(hooks);
   auto change = [&](const std::string& target) {
-    return J{{"formatVersion", 1}, {"epoch", remote.epoch}, {"owner", remote.owner},
+    return J{{"formatVersion", 2}, {"epoch", remote.epoch}, {"owner", remote.owner},
         {"pull", {{"changes", J::array({J{{"sequence", "3"}, {"deletion", {
             {"kind", "ENTITY_KIND_OR_REMOTE_KIND_ACCOUNT"}, {"id", target}, {"deletionVersionId", uuid()}}}}})},
             {"nextCursor", "account-delete-cursor"}}}};

@@ -26,7 +26,7 @@ internal object LaneMethods {
         "CreateReceiver", "SaveReceiver", "RotateReceiverKey", "DeleteReceiver", "DeleteEvent",
         "ClaimEvent", "RenewEventLease", "ReleaseEventLease", "CompleteEvent", "ReopenEvent")
     val allowed = mutations + setOf("GetRepository", "ListRepositories", "GetTask", "ListTasks",
-        "ListHistory", "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences",
+        "GetAttachment", "ListHistory", "GetLocalStatus", "GetNotificationPreferences", "SetNotificationPreferences",
         "ConnectSync", "DisconnectSync", "RemoveDeviceData", "ListDevices", "DisconnectDevice",
         "ListConnections", "RevokeConnection", "RegisterPush", "BeginDataDeletion", "DeleteAccountData",
         "ListReceivers", "ListEvents", "GetEvent")

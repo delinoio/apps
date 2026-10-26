@@ -89,6 +89,54 @@ macro_rules! tool {
 }
 const TOOLS: &[Tool] = &[
     tool!(
+        "lane_begin_attachment_upload",
+        "CaptureService",
+        "BeginAttachmentUpload",
+        BeginAttachmentUploadRequest
+    ),
+    tool!(
+        "lane_complete_attachment_upload",
+        "CaptureService",
+        "CompleteAttachmentUpload",
+        CompleteAttachmentUploadRequest
+    ),
+    tool!(
+        "lane_create_capture_task",
+        "CaptureService",
+        "CreateCaptureTask",
+        CreateCaptureTaskRequest
+    ),
+    tool!(
+        "lane_get_attachment",
+        "CaptureService",
+        "GetAttachment",
+        GetAttachmentRequest
+    ),
+    tool!(
+        "lane_list_url_connections",
+        "CaptureService",
+        "ListURLConnections",
+        ListURLConnectionsRequest
+    ),
+    tool!(
+        "lane_create_url_connection",
+        "CaptureService",
+        "CreateURLConnection",
+        CreateURLConnectionRequest
+    ),
+    tool!(
+        "lane_save_url_connection",
+        "CaptureService",
+        "SaveURLConnection",
+        SaveURLConnectionRequest
+    ),
+    tool!(
+        "lane_delete_url_connection",
+        "CaptureService",
+        "DeleteURLConnection",
+        DeleteURLConnectionRequest
+    ),
+    tool!(
         "lane_get_repository",
         "LaneService",
         "GetRepository",

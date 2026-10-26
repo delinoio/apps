@@ -9,6 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSDictionary *)complete:(NSURL *)url;
 - (BOOL)save:(NSDictionary *)credential space:(NSString *)space;
 - (nullable NSString *)lastAccessTokenForSpace:(NSString *)space;
+- (nullable NSDictionary *)identityForSpace:(NSString *)space;
 - (nullable NSString *)deviceForSpace:(NSString *)space;
 - (nullable NSString *)tokenForSpace:(NSString *)space;
 - (void)disconnect:(NSString *)space;

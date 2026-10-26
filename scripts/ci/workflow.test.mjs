@@ -741,3 +741,56 @@ test("Perfine jobs use owned package contracts and real fixture interfaces", () 
     /node scripts\/ci\/perfine-acceptance\.mjs/u,
   );
 });
+
+test("Lane integration owns a pinned disposable loopback S3 fixture", () => {
+  const job = workflow.jobs["rust-servers"];
+  const step = job.steps.find((step) => step.id === "integration");
+  assert.match(
+    step.run,
+    /if \[ "\$SERVICE" = lane-api \]; then\s+python3 "servers\/lane-api\/tests\/integration_fixture\.py"\s+else\s+cargo test/u,
+  );
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(step["timeout-minutes"], 10);
+  assert.match(
+    job.steps.find((step) => step.id === "protoc").run,
+    /if \[ "\$SERVICE" = lane-api \]; then sudo apt-get install -y python3-venv; fi/u,
+  );
+  const helper = readFileSync(
+    new URL(
+      "../../servers/lane-api/tests/integration_fixture.py",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(helper, /MOTO_VERSION = "5\.1\.22"/u);
+  assert.match(helper, /moto\[server\]==\{MOTO_VERSION\}/u);
+  assert.match(
+    helper,
+    /ThreadedMotoServer\(ip_address="127\.0\.0\.1", port=0/u,
+  );
+  assert.match(helper, /client\.create_bucket/u);
+  assert.match(helper, /client\.head_bucket/u);
+  assert.match(helper, /TemporaryDirectory/u);
+  assert.match(helper, /finally:\s+stop\(mock\)/u);
+  assert.match(helper, /SIGINT, signal\.SIGTERM/u);
+  assert.match(helper, /"--ignored", "--nocapture"/u);
+  assert.doesNotMatch(step.run, /docker build|ci:oci/u);
+});
+
+test("Lane Ubuntu validation includes extension and desktop RealQA fixtures", () => {
+  const job = workflow.jobs["lane-frontend"];
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job.if, "needs.changes.outputs.lane == 'true'");
+  assert.equal(
+    job.steps.find((step) => step.id === "frontend").run.trim(),
+    "pnpm --filter lane test\npnpm --filter lane-chrome-extension test\nnode --test apps/lane/native/desktop/realqa*.test.mjs",
+  );
+  const cleanup = job.steps.find(
+    (step) => step.name === "Remove generated output",
+  );
+  assert.equal(cleanup.if, "${{ always() }}");
+  assert.equal(
+    cleanup.run,
+    'rm -rf "apps/lane/dist" "apps/lane-chrome-extension/dist"',
+  );
+});

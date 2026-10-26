@@ -17,7 +17,7 @@ pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
     raw.into_iter()
         .map(|raw| {
             let v = protocol::message("EntityVersion", &serde_json::from_str(&raw)?)?;
-            if v["formatVersion"] != 1 {
+            if !matches!(v["formatVersion"].as_u64(), Some(1 | 2)) {
                 return Err(Failure::new(
                     "UNSUPPORTED_FORMAT",
                     "Unsupported entity format.",
@@ -28,7 +28,7 @@ pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
                 || (v["deleted"] != true && v["createdAt"].is_null())
                 || !matches!(
                     strv(&v, "kind"),
-                    "ENTITY_KIND_REPOSITORY" | "ENTITY_KIND_TASK"
+                    "ENTITY_KIND_REPOSITORY" | "ENTITY_KIND_TASK" | "ENTITY_KIND_URL_CONNECTION"
                 )
             {
                 return Err(invalid("Invalid stored version."));
@@ -36,6 +36,8 @@ pub(super) fn heads(c: &Connection, id: &str) -> Result<Vec<Value>> {
             if v["deleted"] != true {
                 if (v["kind"] == "ENTITY_KIND_TASK" && !v["task"].is_object())
                     || (v["kind"] == "ENTITY_KIND_REPOSITORY" && !v["repository"].is_object())
+                    || (v["kind"] == "ENTITY_KIND_URL_CONNECTION"
+                        && !v["urlConnection"].is_object())
                 {
                     return Err(invalid("Invalid stored body."));
                 }
@@ -102,7 +104,7 @@ pub(super) fn mapped(c: &Connection, id: &str) -> Result<String> {
 }
 pub(super) fn new_version(id: &str, kind: &str, meta: &Value, parents: Vec<String>) -> Value {
     json!({
-    "formatVersion":1,"entityId":id,"kind":kind,"versionId":protocol::id(),"parentVersionIds":parents,"createdAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":meta["origin"]}
+    "formatVersion":2,"entityId":id,"kind":kind,"versionId":protocol::id(),"parentVersionIds":parents,"createdAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros,true),"origin":meta["origin"]}
     )
 }
 fn save_receipt(
@@ -159,6 +161,8 @@ impl Store {
         let id = strv(v, "entityId");
         let rid = if v["task"].is_object() {
             Some(mapped(c, strv(&v["task"], "repositoryId"))?)
+        } else if v["urlConnection"].is_object() {
+            Some(mapped(c, strv(&v["urlConnection"], "repositoryId"))?)
         } else {
             None
         };
@@ -181,6 +185,8 @@ impl Store {
                 id,
                 if v["kind"] == "ENTITY_KIND_REPOSITORY" {
                     1
+                } else if v["kind"] == "ENTITY_KIND_URL_CONNECTION" {
+                    3
                 } else {
                     2
                 }
@@ -247,6 +253,7 @@ impl Store {
         let mut v = new_version(id, strv(&h[0], "kind"), meta, head_ids(&h));
         v["deleted"] = true.into();
         for sql in [
+            "DELETE FROM attachments WHERE task_id=?",
             "DELETE FROM heads WHERE entity_id=?",
             "DELETE FROM versions WHERE entity_id=?",
             "DELETE FROM outbox WHERE entity_id=?",
@@ -269,7 +276,13 @@ impl Store {
             "CreateRepository" | "SaveRepository" => {
                 q["url"] = normalize::url(strv(&q, "url"))?.into();
             }
-            "CreateTask" => {
+            "CreateTask" | "CreateCaptureTask" => {
+                if method == "CreateCaptureTask" {
+                    q["repository"] = json!({"id":q["repositoryId"]});
+                    q["progress"] = "PROGRESS_TODO".into();
+                    q["proposal"] = "PROPOSAL_REGULAR".into();
+                    q["prompt"] = q["description"].clone();
+                }
                 if q["progress"] == "PROGRESS_UNSPECIFIED" {
                     q["progress"] = "PROGRESS_TODO".into();
                 }
@@ -279,6 +292,10 @@ impl Store {
                 if !strv(&q["repository"], "url").is_empty() {
                     q["repository"]["url"] = normalize::url(strv(&q["repository"], "url"))?.into();
                 }
+            }
+            "CreateURLConnection" | "SaveURLConnection" => {
+                q["connection"]["prefix"] =
+                    crate::capture::normalize_prefix(strv(&q["connection"], "prefix"))?.into();
             }
             "ResolveConflict" => {
                 if let Some(a) = q["expectedHeadIds"].as_array_mut() {
@@ -299,7 +316,17 @@ impl Store {
                 "Valid request and local origin identities are required.",
             ));
         }
-        let fp = fingerprint(&q);
+        // Capture creation uses derived task fields below, but its receipt must
+        // fingerprint only the typed request shared with native and remote peers.
+        let fp = if method == "CreateCaptureTask" {
+            let mut wire = q.clone();
+            for field in ["repository", "progress", "proposal", "prompt"] {
+                wire.as_object_mut().unwrap().remove(field);
+            }
+            fingerprint(&wire)
+        } else {
+            fingerprint(&q)
+        };
         let mut committed_error = None;
         let out=self.with(true,|c|{
             if strv(&meta["origin"],"accountId")!=self.identity()?.account{
@@ -311,6 +338,9 @@ if old!=fp{
 return Err(Failure::new("REQUEST_ID_REUSED","Request ID was reused with different content."));
 }
 let mut r:Value=serde_json::from_str(&raw)?;
+// Native receipts retain the response wrapper; earlier Rust receipts retain
+// the inner EntityResult. Read both without rewriting durable replay records.
+if r["result"].is_object() { r = r["result"].clone(); }
                 if r["result"]=="RESULT_KIND_CONFLICT"{
 committed_error=Some(stale(&r,strv(&q,"id")));
 }
@@ -324,7 +354,7 @@ None}
 ;
 return Ok(response(r,repo));
 }
-            let create=matches!(method,"CreateTask"|"CreateRepository");
+            let create=matches!(method,"CreateTask"|"CreateCaptureTask"|"CreateRepository"|"CreateURLConnection");
 let id=if create&&strv(&q,"id").is_empty(){
 id()}
 else{
@@ -353,10 +383,10 @@ let r=result(&h);
 save_receipt(c,method,&q,&fp,&id,&r)?;
 return Ok(response(r,None));
 }
-            if matches!(method,"DeleteTask"|"DeleteRepository"){
+            if matches!(method,"DeleteTask"|"DeleteRepository"|"DeleteURLConnection"){
 let want=if method=="DeleteTask"{
 "ENTITY_KIND_TASK"}
-else{
+else if method=="DeleteURLConnection" { "ENTITY_KIND_URL_CONNECTION" } else{
 "ENTITY_KIND_REPOSITORY"}
 ;
 if h[0]["kind"]!=want{
@@ -395,7 +425,7 @@ v["repository"]=json!({
 );
 }
 ,
-                "CreateTask"=>{
+                "CreateTask"|"CreateCaptureTask"=>{
 let mut rid=strv(&q["repository"],"id").to_owned();
 let url=strv(&q["repository"],"url");
 if !url.is_empty(){
@@ -425,6 +455,13 @@ if let Some(p)=q.get("prompt"){
 v["task"]["prompt"]=p.clone();
 prompt=true;
 }
+if method=="CreateCaptureTask" { v["task"]["captures"]=self.insert_captures(c,&id,&q["images"])?; }
+}
+,
+                "CreateURLConnection"|"SaveURLConnection"=>{
+if !create && h[0]["kind"]!="ENTITY_KIND_URL_CONNECTION" { return Err(invalid("Wrong entity kind.")); }
+v["kind"]="ENTITY_KIND_URL_CONNECTION".into();
+v["urlConnection"]=q["connection"].clone();
 }
 ,
                 "SaveTask"=>{
@@ -455,6 +492,7 @@ let source:Value=serde_json::from_str(&raw.ok_or_else(||Failure::new("NOT_FOUND"
 if !source["task"].is_object(){
 return Err(invalid("Invalid prompt source."));
 }
+v["task"]["captures"]=source["task"].get("captures").cloned().unwrap_or_else(||json!([]));
 v["task"].as_object_mut().unwrap().remove("prompt");
 if let Some(p)=source["task"].get("prompt"){
 v["task"]["prompt"]=p.clone();
@@ -470,10 +508,10 @@ if h.len()<2||json!(head_ids(&h))!=q["expectedHeadIds"]{
 return Err(Failure::new("STALE_RESOLUTION","Conflict heads changed."));
 }
 let resolved=&q["resolved"];
-if resolved["kind"]!=h[0]["kind"]||resolved["deleted"]==true||resolved["entityId"]!=id||resolved["formatVersion"]!=1{
+if resolved["kind"]!=h[0]["kind"]||resolved["deleted"]==true||resolved["entityId"]!=id||!matches!(resolved["formatVersion"].as_u64(),Some(1|2)){
 return Err(invalid("Invalid resolved snapshot."));
 }
-for field in ["task","repository"]{
+for field in ["task","repository","urlConnection"]{
 if let Some(body)=resolved.get(field){
 v[field]=body.clone();
 }
@@ -500,7 +538,8 @@ conflict=true;
 }
             if v["task"].is_object(){
 validate_task(c,&v["task"])?;
-prompt|=h.iter().any(|old|old["task"].get("prompt")!=v["task"].get("prompt"));
+self.validate_capture_references(c,&id,&v["task"]["captures"])?;
+prompt|=h.iter().any(|old|old["task"].get("prompt")!=v["task"].get("prompt") || old["task"].get("captures")!=v["task"].get("captures"));
 }
 else if v["repository"].is_object(){
 let url=strv(&v["repository"],"normalizedUrl");
@@ -508,6 +547,7 @@ if normalize::url(&format!("https://{url}/lane-validation"))?!=format!("{url}/la
 return Err(invalid("Invalid normalized repository URL."));
 }
 }
+else if v["urlConnection"].is_object() { self.validate_connection(c,&id,&v["urlConnection"])?; }
 else{
 return Err(invalid("Snapshot body is missing."));
 }

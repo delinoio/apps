@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)start;
 - (void)foreground;
 - (void)background;
+- (void)migrate:(NSString *)space completion:(LynxCallbackBlock)completion;
 - (void)open:(NSString *)json completion:(LynxCallbackBlock)completion;
 - (void)invoke:(NSString *)method json:(NSString *)json completion:(LynxCallbackBlock)completion;
 - (void)close:(NSString *)space completion:(LynxCallbackBlock)completion;

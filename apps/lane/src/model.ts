@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { UI } from "./serializable";
+import { toUI, fromUI, type UI } from "./serializable.ts";
 import { create } from "@bufbuild/protobuf";
 import {
   TaskSchema,
@@ -8,7 +8,7 @@ import {
   ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
-  type Task,
+  type Task as ProtoTask,
 } from "@delino/protos/lane/v1/lane_pb";
 export const progressOptions = [
   [Progress.TODO, "To do"],
@@ -47,13 +47,15 @@ export function conflicted(result?: EntityResult): boolean {
   );
 }
 export function blankTask(repositoryId = ""): Task {
-  return create(TaskSchema, {
-    repositoryId,
-    title: "",
-    description: "",
-    progress: Progress.TODO,
-    proposal: Proposal.REGULAR,
-  });
+  return toUI(
+    create(TaskSchema, {
+      repositoryId,
+      title: "",
+      description: "",
+      progress: Progress.TODO,
+      proposal: Proposal.REGULAR,
+    }),
+  );
 }
 export interface Draft {
   id: string;
@@ -69,7 +71,7 @@ export function draftFor(result: EntityResult): Draft {
   return {
     id: result.version.entityId,
     base: result.version.versionId,
-    task: create(TaskSchema, taskOf(result.version)),
+    task: { ...taskOf(result.version)! },
     dirty: false,
     external: false,
     deleted: false,
@@ -111,3 +113,8 @@ export function historyChanges(
 type EntityResult = UI<ProtoEntityResult>;
 
 type EntityVersion = UI<ProtoEntityVersion>;
+
+type Task = UI<ProtoTask>;
+export function createUITask(value: UI<ProtoTask>): UI<ProtoTask> {
+  return toUI(fromUI(TaskSchema, value));
+}

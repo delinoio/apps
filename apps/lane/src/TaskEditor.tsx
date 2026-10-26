@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Captures } from "./Captures";
 import type { UI } from "./serializable";
 import { useState } from "@lynx-js/react";
 import { create } from "@bufbuild/protobuf";
@@ -13,6 +14,7 @@ import {
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Markdown, Notice } from "./components";
 import {
+  createUITask,
   conflicted,
   heads,
   historyChanges,
@@ -57,7 +59,7 @@ export function TaskEditor({
   const edit = (patch: Partial<Draft["task"]>) =>
     setDraft({
       ...draft,
-      task: create(TaskSchema, { ...draft.task, ...patch }),
+      task: createUITask({ ...draft.task, ...patch }),
       dirty: true,
     });
   const run = async (action: () => Promise<void>) => {
@@ -320,6 +322,13 @@ export function TaskEditor({
             }
           />
         )}
+        {tab === "Prompt" && (
+          <Captures
+            adapter={adapter}
+            taskId={draft.id}
+            captures={draft.task.captures}
+          />
+        )}
         {error && <Notice>{error} Your input is retained.</Notice>}
       </scroll-view>
       <view className="toolbar row wrap">
@@ -405,6 +414,11 @@ export function TaskEditor({
               {prompts ? (
                 <>
                   <Markdown source={taskOf(version)?.prompt ?? "(No prompt)"} />
+                  <Captures
+                    adapter={adapter}
+                    taskId={draft.id}
+                    captures={taskOf(version)?.captures || []}
+                  />
                   <Button
                     disabled={busy || readOnly || draft.dirty}
                     onClick={() =>
@@ -469,6 +483,11 @@ export function TaskEditor({
                     ? "Empty"
                     : taskOf(v)?.prompt}
               </text>
+              <Captures
+                adapter={adapter}
+                taskId={draft.id}
+                captures={taskOf(v)?.captures || []}
+              />
               <text>
                 Progress:{" "}
                 {
@@ -511,7 +530,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         title,
                       }),
@@ -528,7 +547,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         description,
                       }),
@@ -552,7 +571,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         prompt:
                           value === "absent"
@@ -572,7 +591,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         prompt,
                       }),
@@ -589,7 +608,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         progress,
                       }),
@@ -606,7 +625,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         proposal,
                       }),
@@ -626,7 +645,7 @@ export function TaskEditor({
                     ...resolution,
                     body: {
                       case: "task",
-                      value: create(TaskSchema, {
+                      value: createUITask({
                         ...taskOf(resolution)!,
                         repositoryId,
                       }),

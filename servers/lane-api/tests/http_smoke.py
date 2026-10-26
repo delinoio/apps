@@ -97,6 +97,7 @@ env = dict(os.environ, DATABASE_URL=DB, LISTEN=f"127.0.0.1:{port}", LANE_PUBLIC_
            LOGTO_ISSUER=mock_url, LANE_LOGTO_CLIENT_ID="fixture", LANE_LOGTO_CLIENT_SECRET="fixture", DELCORE_RESOURCE="fixture", DELCORE_URL=mock_url, LOGTO_TOKEN_URL=mock_url + "/token", CLIENT_ID="fixture", CLIENT_SECRET="fixture",
            LANE_WEB_RETURN_URLS=json.dumps([api + "/callback"]), LANE_OAUTH_CLIENTS=json.dumps({"fixture": {"name": "fixture", "redirect_uris": [api + "/callback"], "origin_kind": "ORIGIN_KIND_CLI", "resource": api}}),
            LANE_WEBHOOK_ENCRYPTION_KEY="CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg", LANE_WEBHOOK_BASE_URL=api,
+           LANE_R2_ENDPOINT=mock_url, LANE_R2_BUCKET="fixture", LANE_R2_ACCESS_KEY_ID="fixture-access", LANE_R2_SECRET_ACCESS_KEY="fixture-secret",
            LANE_APNS_ENABLED="false", LANE_FCM_ENABLED="false", LANE_WEB_PUSH_ENABLED="false")
 subprocess.run([BINARY, "migrate"], env=env, check=True, stdout=subprocess.DEVNULL)
 subprocess.run([BINARY, "check-schema"], env=env, check=True, stdout=subprocess.DEVNULL)

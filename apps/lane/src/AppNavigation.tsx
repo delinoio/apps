@@ -73,7 +73,11 @@ export function MiniAppNavigation({ app }: { app: MiniApp }) {
         <Button primary>Overview</Button>
       </view>
       <view className="nav-spacer" />
-      <text className="muted miniapp-status">Coming soon</text>
+      <text className="muted miniapp-status">
+        {app === MiniApp.RealQA
+          ? "Saved captures appear in Lane"
+          : "Coming soon"}
+      </text>
     </view>
   );
 }

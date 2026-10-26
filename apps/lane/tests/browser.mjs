@@ -54,7 +54,7 @@ try {
     name: "Search title or description",
     exact: true,
   });
-  for (const name of ["Lane", "Pace", "Handrail"]) {
+  for (const name of ["Lane", "Pace", "RealQA"]) {
     const button = appButton(name);
     const tooltip = button.locator(".app-tooltip");
     await search.focus();
@@ -94,7 +94,9 @@ try {
   await appButton("RealQA").focus();
   await page.keyboard.press(" ");
   await page
-    .getByText("RealQA is not available yet.", { exact: true })
+    .getByText("Capture on desktop. View saved captures in Lane.", {
+      exact: true,
+    })
     .waitFor();
   assert.equal(await appButton("RealQA").getAttribute("aria-pressed"), "true");
   await page.screenshot({ path: join(evidence, "desktop-realqa.png") });
@@ -123,7 +125,7 @@ try {
     assert.ok(layout.buttonRight <= width);
   }
   await page.screenshot({ path: join(evidence, "mobile-realqa.png") });
-  await appButton("Back to Lane").click();
+  await appButton("Open Lane").click();
   await search.waitFor();
   assert.equal(await search.inputValue(), "preserved filter");
   await search.fill("");

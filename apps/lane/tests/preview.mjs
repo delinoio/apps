@@ -3,7 +3,10 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-const root = resolve(import.meta.dirname, "../dist");
+const port = Number(process.env.LANE_PREVIEW_PORT || 46400);
+const root = process.env.LANE_PREVIEW_ROOT
+  ? resolve(process.env.LANE_PREVIEW_ROOT)
+  : resolve(import.meta.dirname, "../dist");
 const repo = {
   formatVersion: 1,
   entityId: "019a196d-0000-7000-8000-000000000001",
@@ -12,6 +15,9 @@ const repo = {
   repository: { normalizedUrl: "github.com/delinoio/apps" },
   origin: { kind: "ORIGIN_KIND_APP", deviceName: "Test device" },
 };
+const capturePNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAeAAAADwCAIAAABXFyDtAAADxElEQVR4nO3doU0FABBEQRw9UjsajQCDAQpA/uPeJZNMAaue3af3jy8Agp7WFwDwJ4EGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaIAogQaIEmiAKIEGiBJogCiBBogSaICohwX6+eUbgF8CDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINEJULNACPJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQ8L9OvbJ/DP1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiiBhsPWC8IogYbD1gvCKIGGw9YLwiinsQBRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0QJdAAUQINECXQAFECDRAl0ABRAg0Q9QMrcRxzdlKf7wAAAABJRU5ErkJggg==";
+let captureState = "available";
 let task = {
   formatVersion: 1,
   entityId: "019a196d-0000-7000-8000-000000000003",
@@ -22,7 +28,22 @@ let task = {
     title: "Improve empty states",
     description:
       "A **clear** next step.\n\n<script>alert(1)</script>\n\n![blocked](http://example.test/image.png)",
-    prompt: "Explain the empty state.",
+    prompt:
+      "The empty state needs a clear next action. This saved capture is read-only.",
+    captures: [
+      {
+        attachmentId: "019a196d-0000-7000-8000-000000000011",
+        width: 480,
+        height: 240,
+        sha256:
+          "b1a3b76227a10218d723bf9a73fba148dd10c4b79e09b25dae364a28e45e6b6f",
+        byteSize: "1021",
+        pageUrl:
+          "https://example.test/app/a-very-long-path-that-must-wrap-on-narrow-mobile-layouts",
+        pageTitle: "Empty state QA",
+        cssSelector: "main > section[data-test=empty-state] > button",
+      },
+    ],
     progress: "PROGRESS_TODO",
     proposal: "PROPOSAL_PENDING",
   },
@@ -39,7 +60,12 @@ let failSave = false;
 let history = [task];
 createServer(async (req, res) => {
   try {
-    const url = new URL(req.url, "http://127.0.0.1:46400");
+    const url = new URL(req.url, `http://127.0.0.1:${port}`);
+    if (url.pathname === "/test/capture-state") {
+      captureState = url.searchParams.get("state") || "available";
+      res.end("{}");
+      return;
+    }
     if (url.pathname === "/test/empty-list") {
       emptyList = url.searchParams.get("enabled") === "1";
       res.end("{}");
@@ -77,8 +103,26 @@ createServer(async (req, res) => {
       const method = url.pathname.split("/").at(-1);
       let response = {};
       switch (method) {
+        case "GetAttachment":
+          if (captureState === "denied") {
+            res.statusCode = 403;
+            response = {
+              code: "permission_denied",
+              message: "Permission denied",
+            };
+          } else if (captureState === "error") {
+            res.statusCode = 503;
+            response = { code: "unavailable", message: "Retrieval failed" };
+          } else
+            response =
+              captureState === "waiting"
+                ? { state: "ATTACHMENT_STATE_WAITING_FOR_SYNC" }
+                : captureState === "deleted"
+                  ? { state: "ATTACHMENT_STATE_DELETED" }
+                  : { state: "ATTACHMENT_STATE_AVAILABLE", png: capturePNG };
+          break;
         case "GetSyncInfo":
-          response = { formatVersion: 1, epoch: "test-epoch" };
+          response = { formatVersion: 2, epoch: "test-epoch" };
           break;
         case "WatchChanges":
           res.setHeader("Content-Type", "application/connect+json");
@@ -150,7 +194,7 @@ createServer(async (req, res) => {
       data = Buffer.from(
         data
           .toString()
-          .replace("https://lane.api.delino.io", "http://127.0.0.1:46400"),
+          .replace("https://lane.api.delino.io", `http://127.0.0.1:${port}`),
       );
     res.setHeader(
       "Content-Type",
@@ -166,6 +210,6 @@ createServer(async (req, res) => {
     res.statusCode = 404;
     res.end();
   }
-}).listen(46400, "127.0.0.1", () =>
-  console.log("Lane test-only preview http://127.0.0.1:46400"),
+}).listen(port, "127.0.0.1", () =>
+  console.log(`Lane test-only preview http://127.0.0.1:${port}`),
 );

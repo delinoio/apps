@@ -58,6 +58,10 @@ impl Fixture {
                 .await
                 .unwrap();
         }
+        sqlx::raw_sql(include_str!("../migrations/00006_captures.sql"))
+            .execute(&mut db)
+            .await
+            .unwrap();
         let principal = Principal {
             account_id: id(),
             tenant_id: id(),

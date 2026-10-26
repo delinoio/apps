@@ -22,6 +22,28 @@ class LaneTransportTest {
         override fun getErrorStream() = ByteArrayInputStream(response)
         override fun getResponseCode() = status
     }
+    @Test fun attachmentDownloadUsesIndependentCredentialFreeGet() {
+        lateinit var connection: Connection
+        val bytes = byteArrayOf(-119, 80, 78, 71, 0, -1)
+        val transport = LaneTransport("https://unit.test") { Connection(it, response = bytes).also { connection = it } }
+        assertArrayEquals(bytes, transport.attachment("https://objects.test/private?signature=synthetic"))
+        assertEquals("GET", connection.requestMethod)
+        assertNull(connection.getRequestProperty("Authorization"))
+        assertNull(connection.getRequestProperty("Cookie"))
+        assertFalse(connection.useCaches)
+        assertFalse(connection.instanceFollowRedirects)
+        assertTrue(connection.closed)
+    }
+    @Test fun attachmentRejectsRedirectsAndUnsafeUrls() {
+        val transport = LaneTransport("https://unit.test") { Connection(it, 302) }
+        assertThrows(LaneTransport.AttachmentFailure::class.java) { transport.attachment("https://objects.test/image") }
+        for (status in listOf(403, 404, 500)) {
+            val expired = LaneTransport("https://unit.test") { Connection(it, status) }
+            assertThrows(LaneTransport.AttachmentFailure::class.java) { expired.attachment("https://objects.test/image") }
+        }
+        for (url in listOf("http://objects.test/image", "https://user:secret@objects.test/image", "file:///private/image", "https://objects.test/image#fragment"))
+            assertThrows(IllegalArgumentException::class.java) { transport.attachment(url) }
+    }
     @Test fun unaryUsesConnectJsonWithoutRedirectingBearerCredentials() {
         lateinit var connection: Connection
         val transport = LaneTransport("https://unit.test") { Connection(it).also { connection = it } }

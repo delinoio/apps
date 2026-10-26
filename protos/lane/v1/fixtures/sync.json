@@ -1396,7 +1396,7 @@
       "id": "unsupported-format",
       "input": {
         "version": {
-          "formatVersion": 2,
+          "formatVersion": 99,
           "entityId": "019a0000-0000-7000-8000-000000000003",
           "kind": "ENTITY_KIND_TASK",
           "versionId": "019a0000-0000-7000-8000-000000000014",
