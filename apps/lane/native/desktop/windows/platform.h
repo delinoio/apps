@@ -38,6 +38,31 @@ inline std::string Dump(const Json& value) { return winrt::to_string(value.Strin
 inline std::string Text(const Json& value, const wchar_t* key, const wchar_t* fallback = L"") {
   return winrt::to_string(value.GetNamedString(key, fallback));
 }
+// Reads the DisconnectSync retention choice by JSON value type. Never use the
+// GetNamedString fallback overload here: it throws E_ILLEGAL_METHOD_CALL for a
+// present non-string value, and Settings sends the numeric enum. This function
+// must not throw because callers use it for bookkeeping after the store committed.
+inline LocalRetention RetentionChoice(const Json& request) noexcept {
+  try {
+    if (!request.HasKey(L"retention")) return LocalRetention::Unspecified;
+    const auto value = request.GetNamedValue(L"retention");
+    switch (value.ValueType()) {
+      case winrt::Windows::Data::Json::JsonValueType::Number:
+        return RetentionFromNumber(value.GetNumber());
+      case winrt::Windows::Data::Json::JsonValueType::String:
+        return RetentionFromName(winrt::to_string(value.GetString()));
+      default: return LocalRetention::Unspecified;
+    }
+  } catch (...) { return LocalRetention::Unspecified; }
+}
+inline LocalRetention RetentionChoiceOfInput(const Json& input) noexcept {
+  try {
+    if (!input.HasKey(L"request")) return LocalRetention::Unspecified;
+    const auto request = input.GetNamedValue(L"request");
+    if (request.ValueType() != winrt::Windows::Data::Json::JsonValueType::Object) return LocalRetention::Unspecified;
+    return RetentionChoice(request.GetObject());
+  } catch (...) { return LocalRetention::Unspecified; }
+}
 inline void Set(Json& value, const wchar_t* key, const std::string& text) {
   value.Insert(key, Value::CreateStringValue(winrt::to_hstring(text)));
 }

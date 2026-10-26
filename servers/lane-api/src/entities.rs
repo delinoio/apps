@@ -278,8 +278,23 @@ const PLANNING_KEYS: [&str; 12] = [
     "relatedTaskIds",
     "duplicateOfTaskId",
 ];
+/// Validate an already normalized `host[:port]/path` repository identifier.
+///
+/// The identifier carries no transport, so no transport default may be stripped from it.
+/// `normalize_url` removes port 443 for HTTPS but keeps it for SSH, and keeps port 22 for HTTPS.
+/// Validate an explicit port 443 as SSH and every other identifier as HTTPS so that no explicit
+/// port is ever removed. A synthetic terminal `.git` is appended because normalization removes
+/// one, and a normalized path may itself end in `.git`.
+fn normalized_repository_identifier(identifier: &str) -> Result<String> {
+    let authority = identifier.split('/').next().unwrap_or_default();
+    let explicit_443 = authority
+        .rsplit_once(':')
+        .is_some_and(|(_, port)| port.parse::<u16>() == Ok(443));
+    let scheme = if explicit_443 { "ssh" } else { "https" };
+    normalize_url(&format!("{scheme}://{identifier}.git"))
+}
 pub(crate) fn repository_body(v: &Value) -> Result<Value> {
-    let normalized = normalize_url(&format!("https://{}.git", string(v, "normalizedUrl")))?;
+    let normalized = normalized_repository_identifier(string(v, "normalizedUrl"))?;
     let mut b = json!({"normalizedUrl":normalized});
     if let Some(name) = v.get("displayName").filter(|v| !v.is_null()) {
         if !name.is_string() {
@@ -342,6 +357,25 @@ pub(crate) async fn canonical_repository(
     .fetch_optional(db)
     .await?
     .unwrap_or_else(|| repository.to_owned()))
+}
+/// Every spelling of one repository inside an account: the canonical ID first, then each local
+/// alias mapped to it. Alias-owned rows and canonical-owned rows are the same repository.
+pub(crate) async fn repository_identities(
+    db: &mut PgConnection,
+    account: &str,
+    canonical: &str,
+) -> Result<Vec<String>> {
+    let mut identities = vec![canonical.to_owned()];
+    identities.extend(
+        sqlx::query_scalar::<_, String>(
+            "SELECT local_id FROM lane_repository_mappings WHERE account_id=$1 AND canonical_id=$2 ORDER BY local_id",
+        )
+        .bind(account)
+        .bind(canonical)
+        .fetch_all(db)
+        .await?,
+    );
+    Ok(identities)
 }
 pub async fn require_repository(
     db: &mut PgConnection,
@@ -1292,5 +1326,62 @@ mod tests {
     fn normalized_repository_body_does_not_strip_another_suffix() {
         let v = json!({"normalizedUrl":"example.com/a.git"});
         assert_eq!(repository_body(&v).unwrap(), v);
+    }
+    #[test]
+    fn normalized_repository_body_preserves_explicit_ports() {
+        for url in [
+            "example.com:443/a/b",
+            "example.com:22/a/b",
+            "example.com:2222/a/b",
+            "example.com:8443/a/b",
+            "example.com/a/b",
+            "example.com:443/a/b.git",
+            "example.com/Mixed/Case",
+            "[::1]:443/a/b",
+        ] {
+            let v = json!({"normalizedUrl":url});
+            assert_eq!(repository_body(&v).unwrap(), v, "{url}");
+            let named = json!({"normalizedUrl":url,"displayName":"Name"});
+            assert_eq!(repository_body(&named).unwrap(), named, "{url}");
+        }
+    }
+    #[test]
+    fn raw_input_normalization_removes_only_transport_defaults() {
+        for (raw, expected) in [
+            ("ssh://git@example.com:443/a/b.git", "example.com:443/a/b"),
+            ("git@example.com:a/b.git", "example.com/a/b"),
+            ("ssh://git@example.com:22/a/b.git", "example.com/a/b"),
+            ("https://example.com:443/a/b.git", "example.com/a/b"),
+            ("ssh://git@example.com:2222/a/b", "example.com:2222/a/b"),
+            ("https://example.com:22/a/b", "example.com:22/a/b"),
+            ("https://example.com:8443/a/b", "example.com:8443/a/b"),
+        ] {
+            assert_eq!(normalize_url(raw).unwrap(), expected, "{raw}");
+            let v = json!({"normalizedUrl":expected});
+            assert_eq!(repository_body(&v).unwrap(), v, "{raw}");
+        }
+    }
+    #[test]
+    fn normalized_repository_body_rejects_malformed_identifiers() {
+        for url in [
+            "",
+            "example.com",
+            "example.com/",
+            "/a/b",
+            "example.com/a/../b",
+            "example.com/a/./b",
+            "example.com:443/a/%2Fb",
+            "example.com:443/a/%5Cb",
+            "example.com:443/a?x=1",
+            "example.com:443/a#frag",
+            "example.com:443\\a",
+            "example.com:443/a/%zz",
+            "example.com:abc/a/b",
+        ] {
+            assert!(
+                repository_body(&json!({"normalizedUrl":url})).is_err(),
+                "{url:?}"
+            );
+        }
     }
 }

@@ -182,6 +182,9 @@ export async function createChromeBridge({
           if (authenticated(message, client.origin)) {
             client.profileId = message.profileId;
             send({ id, ok: true, token: message.token });
+            // An authenticated reconnect changes the live connection state, so
+            // observers must refresh just like after a fresh approval.
+            onStatus();
             return;
           }
           if (approving.has(message.profileId))

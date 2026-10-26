@@ -675,6 +675,426 @@ async fn repository_conflicts_reserve_urls_and_mapping_preserves_immutable_versi
     f.close().await;
 }
 
+const PORT_URL: &str = "example.com:443/a/b";
+const PORTLESS_URL: &str = "example.com/a/b";
+
+/// A format-2 repository version as a synchronizing client would upload it.
+fn repo_version(entity: &str, url: &str, parents: &[String], name: Option<&str>) -> Value {
+    let mut v = json!({
+        "formatVersion":2,
+        "entityId":entity,
+        "kind":"ENTITY_KIND_REPOSITORY",
+        "versionId":id(),
+        "parentVersionIds":parents,
+        "createdAt":"2026-01-01T00:00:00.000000Z",
+        "origin":{"kind":"ORIGIN_KIND_CLI","deviceId":"","deviceName":"Fixture CLI","accountId":""},
+        "deleted":false,
+        "promptRestoration":false,
+        "repository":{"normalizedUrl":url},
+    });
+    if let Some(name) = name {
+        v["repository"]["displayName"] = json!(name);
+    }
+    v
+}
+fn resolve_mutation(v: Value, expected: &[String]) -> Value {
+    json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_RESOLVE","version":v,"expectedHeadIds":expected})
+}
+impl Fixture {
+    async fn stored_envelope(&mut self, version: &str) -> Value {
+        sqlx::query_scalar(
+            "SELECT envelope FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn projected_url(&mut self, entity: &str) -> Option<String> {
+        sqlx::query_scalar("SELECT normalized_url FROM lane_entities WHERE account_id=$1 AND id=$2")
+            .bind(&self.p.account_id)
+            .bind(entity)
+            .fetch_one(&mut self.db)
+            .await
+            .unwrap()
+    }
+    /// Create a repository interactively from its raw SSH URL, then save `alternatives + 1`
+    /// concurrent versions from the original one so that every head retains the explicit port.
+    async fn conflicted_port_repository(
+        &mut self,
+        entity: &str,
+        raw: &str,
+        normalized: &str,
+        alternatives: usize,
+    ) -> Vec<String> {
+        let original = self.repo(entity, raw).await;
+        assert_eq!(original["repository"]["normalizedUrl"], json!(normalized));
+        for n in 0..=alternatives {
+            let saved = self
+                .call(
+                    "SaveRepository",
+                    json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":original["versionId"],"url":raw,"displayName":format!("Head {n}")}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                saved["result"]["version"]["repository"]["normalizedUrl"],
+                json!(normalized)
+            );
+        }
+        let heads = self.heads(entity).await;
+        assert_eq!(heads.len(), alternatives + 1);
+        heads
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn sync_create_preserves_explicit_port_without_mapping_to_a_portless_repository() {
+    for with_portless in [false, true] {
+        let mut f = Fixture::new().await;
+        let portless = id();
+        if with_portless {
+            f.repo(&portless, "https://example.com/a/b").await;
+        }
+        let entity = id();
+        let version = repo_version(&entity, PORT_URL, &[], Some("Port"));
+        let m = mutation(version.clone());
+        let pushed = f.push(m.clone()).await.unwrap();
+        assert_eq!(
+            pushed["results"][0]["result"]["result"],
+            "RESULT_KIND_APPLIED"
+        );
+        assert_eq!(pushed["repositoryMappings"], json!([]));
+        assert_eq!(
+            pushed["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        // The persisted envelope, entity projection and head all keep the explicit port.
+        let stored = f.stored_envelope(string(&version, "versionId")).await;
+        assert_eq!(stored["repository"], version["repository"]);
+        assert_eq!(f.projected_url(&entity).await.as_deref(), Some(PORT_URL));
+        assert_eq!(
+            f.heads(&entity).await,
+            vec![string(&version, "versionId").to_owned()]
+        );
+        if with_portless {
+            assert_eq!(
+                f.projected_url(&portless).await.as_deref(),
+                Some(PORTLESS_URL)
+            );
+            assert_eq!(f.heads(&portless).await.len(), 1);
+        }
+        assert_eq!(f.count("lane_repository_mappings").await, 0);
+        // Replaying the same mutation acknowledges the original result without new rows.
+        let (versions, entities) = (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+        );
+        let replay = f.push(m).await.unwrap();
+        assert_eq!(
+            replay["results"][0]["result"]["result"],
+            "RESULT_KIND_REPLAYED"
+        );
+        assert_eq!(
+            replay["results"][0]["result"]["version"],
+            pushed["results"][0]["result"]["version"]
+        );
+        assert_eq!(replay["repositoryMappings"], json!([]));
+        // A fresh transport request for the identical immutable version is also a replay.
+        let again = f.push(mutation(version.clone())).await.unwrap();
+        assert_eq!(
+            again["results"][0]["result"]["result"],
+            "RESULT_KIND_REPLAYED"
+        );
+        assert_eq!(
+            again["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        assert_eq!(f.count("lane_versions").await, versions);
+        assert_eq!(f.count("lane_entities").await, entities);
+        assert_eq!(f.count("lane_repository_mappings").await, 0);
+        // A true URL collision still maps the later repository to the owner of the exact URL.
+        let duplicate = id();
+        let collided = f
+            .push(mutation(repo_version(&duplicate, PORT_URL, &[], None)))
+            .await
+            .unwrap();
+        assert_eq!(
+            collided["repositoryMappings"],
+            json!([{"localId":duplicate,"canonicalId":entity}])
+        );
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_port_repository_version_replays_through_sync_create() {
+    let mut f = Fixture::new().await;
+    let entity = id();
+    let created = f
+        .call(
+            "CreateRepository",
+            json!({"meta":{"requestId":id()},"id":entity,"url":"ssh://git@example.com:443/a/b.git","displayName":"Port"}),
+        )
+        .await
+        .unwrap()["result"]["version"]
+        .clone();
+    assert_eq!(
+        created["repository"],
+        json!({"normalizedUrl":PORT_URL,"displayName":"Port"})
+    );
+    let (versions, entities) = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+    );
+    let replay = f.push(mutation(created.clone())).await.unwrap();
+    assert_eq!(
+        replay["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(replay["results"][0]["result"]["version"], created);
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert_eq!(f.count("lane_entities").await, entities);
+    assert_eq!(f.count("lane_repository_mappings").await, 0);
+    assert_eq!(
+        f.stored_envelope(string(&created, "versionId")).await,
+        created
+    );
+    // A genuinely changed body under the same version ID is still rejected without writes.
+    for changed in [
+        json!({"normalizedUrl":"example.com/a/b","displayName":"Port"}),
+        json!({"normalizedUrl":PORT_URL,"displayName":"Changed"}),
+        json!({"normalizedUrl":"example.com:8443/a/b","displayName":"Port"}),
+    ] {
+        let mut v = created.clone();
+        v["repository"] = changed;
+        let err = f.push(mutation(v)).await.unwrap_err();
+        assert_eq!(err.reason, 6);
+    }
+    assert_eq!(
+        f.stored_envelope(string(&created, "versionId")).await,
+        created
+    );
+    assert_eq!(f.count("lane_versions").await, versions);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_and_sync_resolution_retain_the_explicit_port() {
+    for with_portless in [false, true] {
+        let mut f = Fixture::new().await;
+        if with_portless {
+            f.repo(&id(), "https://example.com/a/b").await;
+            f.repo(&id(), "https://example.com/c/d").await;
+        }
+        // Interactive ResolveConflict.
+        let a = id();
+        let heads = f
+            .conflicted_port_repository(&a, "ssh://git@example.com:443/a/b.git", PORT_URL, 1)
+            .await;
+        let history = f.count("lane_versions").await;
+        let resolved = f
+            .call(
+                "ResolveConflict",
+                json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL,"displayName":"Merged"}}}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved["result"]["version"]["repository"],
+            json!({"normalizedUrl":PORT_URL,"displayName":"Merged"})
+        );
+        let head = f.heads(&a).await;
+        assert_eq!(head.len(), 1);
+        assert_eq!(f.count("lane_versions").await, history + 1);
+        let stored = f.stored_envelope(&head[0]).await;
+        assert_eq!(stored["repository"]["normalizedUrl"], json!(PORT_URL));
+        let mut parents: Vec<String> = stored["parentVersionIds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        parents.sort();
+        assert_eq!(parents, heads);
+        assert_eq!(f.projected_url(&a).await.as_deref(), Some(PORT_URL));
+
+        // Sync RESOLVE with the complete observed head set.
+        let b = id();
+        let heads = f
+            .conflicted_port_repository(
+                &b,
+                "ssh://git@example.com:443/c/d.git",
+                "example.com:443/c/d",
+                1,
+            )
+            .await;
+        let history = f.count("lane_versions").await;
+        let version = repo_version(&b, "example.com:443/c/d", &heads, Some("Merged"));
+        let result = f
+            .push(resolve_mutation(version.clone(), &heads))
+            .await
+            .unwrap();
+        assert_eq!(result["repositoryMappings"], json!([]));
+        assert_eq!(
+            result["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        assert_eq!(
+            f.heads(&b).await,
+            vec![string(&version, "versionId").to_owned()]
+        );
+        assert_eq!(f.count("lane_versions").await, history + 1);
+        assert_eq!(
+            f.projected_url(&b).await.as_deref(),
+            Some("example.com:443/c/d")
+        );
+        assert_eq!(
+            f.stored_envelope(string(&version, "versionId")).await["repository"],
+            version["repository"]
+        );
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_and_colliding_port_resolutions_are_rejected_without_writes() {
+    let mut f = Fixture::new().await;
+    f.repo(&id(), "https://example.com/a/b").await;
+    let a = id();
+    let heads = f
+        .conflicted_port_repository(&a, "ssh://git@example.com:443/a/b.git", PORT_URL, 1)
+        .await;
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    // True URL collision: the portless URL is owned by another repository.
+    let err = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORTLESS_URL}}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 1);
+    let err = f
+        .push(resolve_mutation(
+            repo_version(&a, PORTLESS_URL, &heads, None),
+            &heads,
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 1);
+    assert_eq!(f.heads(&a).await, heads);
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    // A resolution that keeps the port succeeds even though the portless repository exists.
+    f.call(
+        "ResolveConflict",
+        json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL}}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.projected_url(&a).await.as_deref(), Some(PORT_URL));
+    // Stale: the observed heads were already replaced by the resolution above.
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    let current = f.heads(&a).await;
+    let err = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL}}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 5);
+    let err = f
+        .push(resolve_mutation(
+            repo_version(&a, PORT_URL, &heads, None),
+            &heads,
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 5);
+    assert_eq!(f.heads(&a).await, current);
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn malformed_repository_identifiers_are_rejected_atomically() {
+    let mut f = Fixture::new().await;
+    for url in [
+        "example.com:8443/Mixed/Case",
+        "example.com/path.git",
+        "example.com:22/a/b",
+    ] {
+        let entity = id();
+        let version = repo_version(&entity, url, &[], None);
+        f.push(mutation(version.clone())).await.unwrap();
+        assert_eq!(
+            f.stored_envelope(string(&version, "versionId")).await["repository"]["normalizedUrl"],
+            json!(url)
+        );
+        assert_eq!(f.projected_url(&entity).await.as_deref(), Some(url));
+    }
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    for url in [
+        "example.com:443/a/b?x=1",
+        "example.com:443/a/b#frag",
+        "example.com:443/a/../b",
+        "example.com:443/a/./b",
+        "example.com:443/a/%2Fb",
+        "example.com:443/a/%5Cb",
+        "example.com:443",
+        "/a/b",
+        "",
+    ] {
+        let err = f
+            .push(mutation(repo_version(&id(), url, &[], None)))
+            .await
+            .unwrap_err();
+        assert_eq!(err.reason, 1, "{url:?}");
+    }
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    f.close().await;
+}
+
 impl Fixture {
     async fn capture(&mut self, method: &str, q: Value) -> Result<Value> {
         let mut tx = self.db.begin().await?;

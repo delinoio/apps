@@ -31,10 +31,12 @@ import { useTaskOptions, type PlanningState } from "./usePlanning";
 import {
   createUITask,
   conflicted,
+  editDraft,
   headIds,
   heads,
   historyEntryChanges,
   progressOptions,
+  promptForPresence,
   proposalOptions,
   repositoryName,
   resolutionStale,
@@ -150,18 +152,8 @@ export function TaskEditor({
   );
   const edit = (patch: Partial<Draft["task"]>) => {
     // Input controls can echo an unchanged value; that must not mark the draft dirty.
-    const task = draft.task as Record<string, unknown>;
-    if (
-      Object.entries(patch).every(
-        ([key, value]) => JSON.stringify(task[key]) === JSON.stringify(value),
-      )
-    )
-      return;
-    setDraft({
-      ...draft,
-      task: createUITask({ ...draft.task, ...patch }),
-      dirty: true,
-    });
+    const next = editDraft(draft, patch);
+    if (next !== draft) setDraft(next);
   };
   // Repository-owned values belong to one repository: clear them on a change and
   // restore the saved values when the original repository is selected again.
@@ -443,7 +435,9 @@ export function TaskEditor({
               ["absent", "No prompt"],
               ["present", "Include prompt"],
             ]}
-            onChange={(v) => edit({ prompt: v === "present" ? "" : undefined })}
+            onChange={(v) =>
+              edit({ prompt: promptForPresence(draft.task.prompt, v) })
+            }
             disabled={busy || readOnly}
           />
         )}
