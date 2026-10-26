@@ -1,5 +1,5 @@
 ---
-"delino-apps": minor
+"@apps/delino-docs": minor
 ---
 
 Add npm package-based change records, validation, and separate public changelog previews. Release automation and record consumption remain separate.
