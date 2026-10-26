@@ -111,10 +111,14 @@ async function select({ activate = false } = {}) {
     lastFocusedWindow: true,
   });
   const win = tab && (await chrome.windows.get(tab.windowId));
+  if (!tab || tab.incognito) throw new Error("UNSUPPORTED_PAGE");
+  // Without a grant for this tab Chrome hides tab.url, so an omitted or empty URL is
+  // unknown rather than restricted. Ask the user to click the extension and never
+  // inject, capture or activate Chrome for it.
+  if (tab.url === undefined || tab.url === null || tab.url === "")
+    throw new Error("PERMISSION_REQUIRED");
   if (
-    !tab ||
-    tab.incognito ||
-    !/^https?:\/\//.test(tab.url || "") ||
+    !/^https?:\/\//.test(tab.url) ||
     /^https:\/\/(chromewebstore.google.com|chrome.google.com\/webstore)/.test(
       tab.url,
     )

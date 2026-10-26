@@ -507,3 +507,143 @@ test("native revocation removes the stored token after successful initialization
     harness.dispose();
   }
 });
+
+async function connectedHarness(options) {
+  const harness = createHarness(options);
+  await harness.load();
+  assert.equal((await harness.connect()).ok, true);
+  harness.sent.length = 0;
+  harness.calls.executeScript = 0;
+  harness.calls.captureVisibleTab = 0;
+  return harness;
+}
+const clickExtensionRemedy =
+  "Click the RealQA extension on this page, then select an element.";
+
+test("native selection requests with an unknown tab URL ask for a tab grant", async () => {
+  for (const omit of ["omitted", "empty"]) {
+    for (const activate of [false, true]) {
+      const harness = await connectedHarness();
+      try {
+        if (omit === "omitted") harness.omitTabUrl();
+        else harness.setTab({ url: "" });
+        const result = await harness.nativeSelect(
+          `unknown-${activate}`,
+          activate,
+        );
+        assert.equal(
+          result.reason,
+          "PERMISSION_REQUIRED",
+          `${omit}/${activate}`,
+        );
+        assert.equal(harness.session.status, clickExtensionRemedy);
+        assert.equal(harness.calls.executeScript, 0, "no injection");
+        assert.equal(harness.calls.captureVisibleTab, 0, "no capture");
+        assert.deepEqual(harness.activations, [], "no activation");
+        assert.equal(
+          harness.sent.some((value) => value.type === "status"),
+          false,
+          "no native status request",
+        );
+      } finally {
+        harness.dispose();
+      }
+    }
+  }
+});
+
+test("popup and shortcut selection with an unknown tab URL report the click-extension remedy", async () => {
+  const harness = await connectedHarness();
+  try {
+    harness.omitTabUrl();
+    const reply = await harness.invoke({ type: "capture" });
+    assert.deepEqual(reply, { ok: false, message: clickExtensionRemedy });
+    harness.commands.emit("select-element");
+    await settle();
+    assert.equal(harness.session.status, clickExtensionRemedy);
+    assert.equal(harness.calls.executeScript, 0);
+    assert.equal(harness.calls.captureVisibleTab, 0);
+  } finally {
+    harness.dispose();
+  }
+});
+
+test("known restricted, incognito and absent tabs remain unsupported without injection", async () => {
+  const cases = [
+    ["chrome internal", { url: "chrome://settings" }],
+    ["file", { url: "file:///tmp/example.html" }],
+    [
+      "current Web Store",
+      { url: "https://chromewebstore.google.com/detail/x" },
+    ],
+    [
+      "legacy Web Store",
+      { url: "https://chrome.google.com/webstore/detail/x" },
+    ],
+    ["incognito", { url: "https://example.com/test", incognito: true }],
+    ["incognito without url", { url: undefined, incognito: true }],
+  ];
+  for (const activate of [false, true]) {
+    for (const [name, tab] of cases) {
+      const harness = await connectedHarness();
+      try {
+        harness.setTab(tab);
+        const result = await harness.nativeSelect(`case-${activate}`, activate);
+        assert.equal(result.reason, "UNSUPPORTED_PAGE", name);
+        assert.equal(harness.calls.executeScript, 0, name);
+        assert.equal(harness.calls.captureVisibleTab, 0, name);
+        assert.deepEqual(harness.activations, [], name);
+      } finally {
+        harness.dispose();
+      }
+    }
+    const harness = await connectedHarness();
+    try {
+      harness.removeTab();
+      const result = await harness.nativeSelect(`absent-${activate}`, activate);
+      assert.equal(result.reason, "UNSUPPORTED_PAGE", "no active tab");
+      assert.equal(harness.calls.executeScript, 0);
+      assert.equal(harness.calls.captureVisibleTab, 0);
+    } finally {
+      harness.dispose();
+    }
+  }
+});
+
+test("known ordinary tabs inject the selector and map denied injection to a tab grant request", async () => {
+  for (const url of ["http://example.com/test", "https://example.com/test"]) {
+    const granted = await connectedHarness();
+    try {
+      granted.setTab({ url });
+      const result = await granted.nativeSelect("granted", false);
+      assert.equal(result.reason, undefined, url);
+      assert.equal(granted.calls.executeScript, 1, url);
+    } finally {
+      granted.dispose();
+    }
+    const denied = await connectedHarness({
+      executeScript: async () => {
+        throw new Error("Cannot access contents of the page");
+      },
+    });
+    try {
+      denied.setTab({ url });
+      const result = await denied.nativeSelect("denied", false);
+      assert.equal(result.reason, "PERMISSION_REQUIRED", url);
+      assert.equal(denied.session.status, clickExtensionRemedy);
+      assert.equal(denied.calls.captureVisibleTab, 0, "no capture on failure");
+    } finally {
+      denied.dispose();
+    }
+  }
+});
+
+test("the manifest still requests no tabs or host permissions", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const manifest = JSON.parse(
+    await readFile(new URL("../src/manifest.json", import.meta.url), "utf8"),
+  );
+  assert.equal(manifest.host_permissions, undefined);
+  assert.equal(manifest.permissions.includes("tabs"), false);
+  assert.equal(manifest.permissions.includes("<all_urls>"), false);
+});

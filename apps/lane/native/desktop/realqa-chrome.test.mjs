@@ -150,3 +150,54 @@ test("Lane DOM actions activate Chrome while shortcuts require foreground Chrome
   assert.equal(JSON.parse(await host.invoke(shortcut)).ok, true);
   assert.deepEqual(selections[2], { activate: false });
 });
+
+test("worker PERMISSION_REQUIRED reaches click-to-grant guidance for in-app and shortcut triggers without losing the draft", async () => {
+  const nativeCalls = [],
+    selections = [];
+  const host = new RealQA({
+    native: {
+      capture(raw, callback) {
+        const request = JSON.parse(raw);
+        nativeCalls.push(request.op);
+        callback(JSON.stringify({ ok: true, value: { chrome: true } }));
+      },
+    },
+  });
+  host.extension = await connectChrome({
+    realqa: host,
+    createBridge: async () => ({
+      startSelection: async (options) => {
+        selections.push(options);
+        throw new Error("PERMISSION_REQUIRED");
+      },
+    }),
+  });
+  host.draft = {
+    id: "draft",
+    images: [],
+    title: "Keep",
+    description: "",
+    repositoryId: "r",
+  };
+  const draft = structuredClone(host.draft);
+  for (const trigger of [undefined, "shortcut"]) {
+    const reply = JSON.parse(
+      await host.invoke(
+        JSON.stringify({ op: "capture", mode: "dom", trigger }),
+      ),
+    );
+    assert.equal(reply.ok, false);
+    assert.equal(
+      reply.error.message,
+      "Click the RealQA extension on this Chrome tab to grant tab access, then retry.",
+    );
+    assert.equal(reply.error.retryable, true);
+  }
+  assert.deepEqual(selections, [{ activate: true }, { activate: false }]);
+  assert.deepEqual(host.draft, draft, "draft is preserved");
+  assert.deepEqual(
+    nativeCalls,
+    ["activeBrowser"],
+    "only the shortcut foreground check ran and no fallback capture was attempted",
+  );
+});

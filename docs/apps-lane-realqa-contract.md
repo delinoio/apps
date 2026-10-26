@@ -199,6 +199,12 @@ grant explains that the user must first click the extension on that page.
 In-app DOM actions focus the last connected approved Chrome profile and select
 its last-focused active tab. Only that profile receives an activation request.
 DOM shortcuts retain the foreground Chrome check and do not activate a browser.
+Chrome hides a tab's URL until the extension has access to it, and the extension
+requests neither the `tabs` nor host permissions. A native selection request whose
+active normal tab has an omitted or empty URL therefore returns `PERMISSION_REQUIRED`
+and the click-extension guidance, without status requests, activation, injection or
+capture. Only a known restricted URL, a file URL, a Web Store URL, an incognito tab
+or a missing tab is `UNSUPPORTED_PAGE`.
 
 The extension service worker is a module worker and must not use top-level `await`:
 Chromium rejects asynchronous module graphs for service workers. It restricts
