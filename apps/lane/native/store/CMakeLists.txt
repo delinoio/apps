@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(lane_store LANGUAGES C CXX)
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
 include(verify-dependencies.cmake)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/schema.sql" LANE_SCHEMA)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/registry.sql" LANE_REGISTRY)
