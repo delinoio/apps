@@ -274,9 +274,11 @@ function saveHarness() {
         },
       },
     );
-  // An accepted transition, as App.navigate performs it.
-  const navigate = (fn: () => void) => {
-    lifetime.supersede();
+  // An accepted transition, as App.navigate performs it. A transition that only
+  // starts a task read keeps the editor until the read publishes.
+  const navigate = (fn: () => void, retainsEditor = false) => {
+    if (retainsEditor) lifetime.supersedeReads();
+    else lifetime.supersede();
     fn();
   };
   const edit = (title: string) => {
@@ -418,6 +420,82 @@ test("a published task read ends the previous editor's completions", async () =>
     () => Promise.resolve({ result: { id: "B", title: "Task B" } }),
     { opened: (t) => h.open(t.id, t.title), failed: () => undefined },
   );
+  h.edit("B unsaved");
+  save.saved({ id: "A", title: "A edited", base: "v2" });
+  assert.equal(h.state.draft?.id, "B");
+  assert.equal(h.state.draft?.title, "B unsaved");
+});
+
+// Opening task B through App.navigate retains task A's editor until B's read
+// publishes, so A's pending mutation keeps its completion if that read fails.
+for (const [label, read] of [
+  ["fails", () => Promise.reject(new Error("Read failed"))],
+  ["returns nothing", () => Promise.resolve({})],
+] as const) {
+  test(`navigating to another task keeps A's pending mutation when B's read ${label}`, async () => {
+    const h = saveHarness();
+    h.open("A");
+    h.edit("A edited");
+    const save = h.begin();
+    let failure = "";
+    await new Promise<void>((done) => {
+      h.navigate(() => {
+        void readTaskOwned<Task>(h.lifetime, read, {
+          opened: () => assert.fail("no result is published"),
+          failed: (e) => {
+            failure = (e as Error).message;
+          },
+        }).then(() => done());
+      }, true);
+    });
+    assert.equal(failure, label === "fails" ? "Read failed" : "");
+    save.saved({ id: "A", title: "A edited", base: "v2" });
+    assert.deepEqual(h.state.draft, {
+      id: "A",
+      title: "A edited",
+      base: "v2",
+      dirty: false,
+    });
+  });
+}
+
+test("a navigation that retains the editor still ends older reads", async () => {
+  const lifetime = new EditorLifetime();
+  const older = lifetime.begin();
+  lifetime.supersedeReads();
+  assert.equal(lifetime.owns(older), false);
+  let published = false;
+  let resolveRead: (value: { result?: Task }) => void = () => undefined;
+  const read = readTaskOwned<Task>(
+    lifetime,
+    () => new Promise((resolve) => (resolveRead = resolve)),
+    {
+      opened: () => {
+        published = true;
+      },
+      failed: () => undefined,
+    },
+  );
+  lifetime.supersedeReads();
+  resolveRead({ result: { id: "B", title: "Task B" } });
+  await read;
+  assert.equal(published, false);
+});
+
+test("a published read after a retaining navigation replaces A's editor", async () => {
+  const h = saveHarness();
+  h.open("A");
+  h.edit("A edited");
+  const save = h.begin();
+  await new Promise<void>((done) => {
+    h.navigate(() => {
+      void readTaskOwned<Task>(
+        h.lifetime,
+        () => Promise.resolve({ result: { id: "B", title: "Task B" } }),
+        { opened: (t) => h.open(t.id, t.title), failed: () => undefined },
+      ).then(() => done());
+    }, true);
+  });
   h.edit("B unsaved");
   save.saved({ id: "A", title: "A edited", base: "v2" });
   assert.equal(h.state.draft?.id, "B");

@@ -176,6 +176,7 @@ try {
     try {
       await run(page, before);
     } finally {
+      await control("hold=0");
       await saveControl("hold=0&reset=1");
       for (const [i, s] of (await saveControl("")).entries())
         if (!s.done) await saveControl(`release=${i}:ok`);
@@ -316,6 +317,27 @@ try {
       await saveControl(`release=${n + 2}:ok`);
       const after = await saveControl("");
       assert.notEqual(after[n + 2].requestId, after[n + 1].requestId);
+    });
+  }
+  // Opening task B through the task list keeps A's editor on screen until B's read
+  // publishes. When that read fails or returns nothing, the proposal change that A
+  // submitted still completes in A instead of leaving the old proposal on screen.
+  for (const mode of ["fail", "empty"]) {
+    await saveScenario(async (page, n) => {
+      await button(page, "Task A").click();
+      await field(page, "Title").waitFor();
+      await page.getByText("Proposal: Pending", { exact: false }).waitFor();
+      await button(page, "Accept proposal").click();
+      await waitSaves(n + 1);
+      const held = (await control("")).length;
+      await control("hold=1");
+      await button(page, "Task B").click();
+      await waitHeld(held + 1);
+      await release(held, mode);
+      await settle(page);
+      await saveControl(`release=${n}:ok`);
+      await page.getByText("Proposal: Accepted", { exact: false }).waitFor();
+      assert.equal(await field(page, "Title").inputValue(), "Task A");
     });
   }
   assert.deepEqual(errors, []);

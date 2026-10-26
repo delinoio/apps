@@ -92,6 +92,18 @@ const taskOpen =
         saveCount: 0,
       }
     : undefined;
+// Records one SaveTask or SetProposal request of the task-open scenario and, while
+// saves are held, waits until /test/save-hold releases it with a mode.
+const settleSave = async (entry) => {
+  taskOpen.saves.push(entry);
+  if (!taskOpen.holdSave) return "ok";
+  return new Promise((release) => {
+    entry.release = (m) => {
+      entry.done = true;
+      release(m);
+    };
+  });
+};
 // Switchable API principal and request log for the session reconciliation checks.
 // The log records only paths and CSRF headers, never request content.
 const principals = {
@@ -230,7 +242,15 @@ createServer(async (req, res) => {
       // one held reply; the reply lists every SaveTask request received so far.
       const q = url.searchParams;
       if (q.has("hold")) taskOpen.holdSave = q.get("hold") === "1";
-      if (q.has("reset")) taskOpen.conflicts.clear();
+      if (q.has("reset")) {
+        // Restores the conflicts and proposals that held saves produced.
+        taskOpen.conflicts.clear();
+        for (const [id, t] of taskOpen.tasks)
+          taskOpen.tasks.set(id, {
+            ...t,
+            task: { ...t.task, proposal: "PROPOSAL_PENDING" },
+          });
+      }
       if (q.has("release")) {
         const [index, mode] = q.get("release").split(":");
         taskOpen.saves[Number(index)].release(mode);
@@ -420,15 +440,7 @@ createServer(async (req, res) => {
               title: input.task?.title,
               done: false,
             };
-            taskOpen.saves.push(entry);
-            const mode = taskOpen.holdSave
-              ? await new Promise((release) => {
-                  entry.release = (m) => {
-                    entry.done = true;
-                    release(m);
-                  };
-                })
-              : "ok";
+            const mode = await settleSave(entry);
             if (mode === "fail") {
               res.statusCode = 503;
               response = { code: "unavailable", message: "Save failed" };
@@ -467,6 +479,33 @@ createServer(async (req, res) => {
           };
           history.push(task);
           response = { result: result(task) };
+          break;
+        case "SetProposal":
+          if (taskOpen) {
+            // A proposal change is answered like a task save: held and released
+            // through /test/save-hold, then served as the task's next version.
+            const served = taskOpen.tasks.get(input.id);
+            const entry = {
+              id: input.id,
+              requestId: input.meta?.requestId,
+              title: served.task.title,
+              done: false,
+            };
+            const mode = await settleSave(entry);
+            if (mode === "fail") {
+              res.statusCode = 503;
+              response = { code: "unavailable", message: "Proposal failed" };
+              break;
+            }
+            if (mode === "empty") break;
+            const changed = {
+              ...served,
+              versionId: `019a196d-0000-7000-8000-0000000001${String(++taskOpen.saveCount).padStart(2, "0")}`,
+              task: { ...served.task, proposal: input.proposal },
+            };
+            taskOpen.tasks.set(input.id, changed);
+            response = { result: openResult(changed) };
+          }
           break;
         case "CreateTask":
           task = {

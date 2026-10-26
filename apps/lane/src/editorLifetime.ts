@@ -27,6 +27,16 @@ export class EditorLifetime {
     ++this.editor;
   }
 
+  // Invalidates pending reads only. Use it for an accepted transition that keeps
+  // the editor on screen until a new read publishes a task: a mutation submitted
+  // by that editor keeps its right to apply its completion if the read fails or
+  // returns nothing. A successful read replaces the editor through
+  // `readTaskOwned`; any other code path that clears the editor must call
+  // `replaceEditor` or `supersede` itself.
+  supersedeReads(): void {
+    ++this.generation;
+  }
+
   owns(token: number): boolean {
     return token === this.generation;
   }
