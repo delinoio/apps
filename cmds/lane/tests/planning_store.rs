@@ -852,7 +852,7 @@ fn correcting_a_rejected_version_replaces_it_and_keeps_dependents_after_it() {
     assert!(queue.iter().all(|q| q.1 == 1));
     assert!(queue[1].2.contains("MUTATION_KIND_CREATE"));
     // Rebuilding the upload order after a reconnect keeps referenced entities first.
-    let ordered = store.with(false, |c| store::sync::ordered(c)).unwrap();
+    let ordered = store.with(false, store::sync::ordered).unwrap();
     let index = |version: &Value| {
         ordered
             .iter()
