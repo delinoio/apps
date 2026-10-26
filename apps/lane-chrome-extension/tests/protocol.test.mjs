@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
-import { safeMetadata, visibleRect } from "../src/protocol.js";
+import {
+  isSelectablePageUrl,
+  safeMetadata,
+  visibleRect,
+} from "../src/protocol.js";
 import { readFile } from "node:fs/promises";
 test("clips visible bounds without scrolling or stitching", () => {
   assert.deepEqual(
@@ -56,4 +60,43 @@ test("manifest excludes incognito, broad permissions and external messages", asy
     "storage",
   ]);
   assert.equal(manifest.commands["select-element"].suggested_key, undefined);
+});
+test("Web Store exclusion matches exact hosts and path boundaries only", () => {
+  for (const url of [
+    "https://chromewebstore.google.com/",
+    "https://chromewebstore.google.com/detail/item/abc?hl=en#reviews",
+    "https://CHROMEWEBSTORE.google.com/category/extensions",
+    "https://chromewebstore.google.com./",
+    "https://chrome.google.com/webstore",
+    "https://chrome.google.com/webstore?hl=en",
+    "https://chrome.google.com/webstore#top",
+    "https://chrome.google.com/webstore/",
+    "https://chrome.google.com/webstore/detail/item",
+    "https://chrome.google.com/webstore/detail/item?hl=en#reviews",
+  ])
+    assert.equal(isSelectablePageUrl(url), false, url);
+  for (const url of [
+    "https://example.com/test",
+    "http://example.com/test",
+    "https://chrome.google.com/webstorefront",
+    "https://chrome.google.com/webstore-extra/detail",
+    "https://chrome.google.com/",
+    "https://chrome.google.com.example.org/webstore",
+    "https://chromewebstore.google.com.example.org/test",
+    "https://chrome-google-com.example.org/webstore",
+    "https://chromewebstore-google-com.example.org/test",
+    "https://example.org/?next=https://chromewebstore.google.com/",
+    "https://example.org/chrome.google.com/webstore",
+  ])
+    assert.equal(isSelectablePageUrl(url), true, url);
+  for (const url of [
+    "chrome://settings",
+    "file:///tmp/example.html",
+    "javascript:alert(1)",
+    "not a url",
+    "",
+    undefined,
+    null,
+  ])
+    assert.equal(isSelectablePageUrl(url), false, String(url));
 });

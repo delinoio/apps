@@ -14,6 +14,31 @@ export function safeMetadata(value) {
     cssSelector: String(value.cssSelector || ""),
   };
 }
+const STORE_HOST = "chromewebstore.google.com",
+  LEGACY_STORE_HOST = "chrome.google.com",
+  LEGACY_STORE_PATH = "/webstore";
+// Returns true only for a parseable HTTP or HTTPS URL that is not a Chrome Web Store
+// page. Compare the parsed hostname and path segment instead of the raw string so
+// hostname lookalikes such as chromewebstore.google.com.example.org and sibling
+// paths such as /webstorefront are ordinary pages, while query strings and
+// fragments never affect the decision. A trailing root dot names the same host.
+export function isSelectablePageUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (!["https:", "http:"].includes(url.protocol)) return false;
+  if (url.protocol !== "https:") return true;
+  const host = url.hostname.replace(/\.$/, "");
+  if (host === STORE_HOST) return false;
+  return !(
+    host === LEGACY_STORE_HOST &&
+    (url.pathname === LEGACY_STORE_PATH ||
+      url.pathname.startsWith(`${LEGACY_STORE_PATH}/`))
+  );
+}
 export function visibleRect(rect, viewport) {
   const left = Math.max(0, rect.x),
     top = Math.max(0, rect.y);
@@ -47,6 +72,8 @@ export const remedies = {
     "Open a normal HTTP or HTTPS page. Chrome internal pages, the Web Store, files and incognito are not supported.",
   PAGE_CHANGED:
     "The page moved or changed during capture. Select the element again.",
+  ACCESS_UNAVAILABLE:
+    "Chrome could not secure RealQA's local storage. Reload the extension, then try again.",
   PERMISSION_REQUIRED:
     "Click the RealQA extension on this page, then select an element.",
 };
