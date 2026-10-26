@@ -4,7 +4,10 @@ import test from "node:test";
 import { EventState, WebhookService } from "@repo/protos/lane/v1/lane_pb";
 import type { LaneAdapter } from "../src/adapter.ts";
 import {
+  EventDetailReader,
   EventsLoader,
+  emptyEventDetailView,
+  type EventDetailView,
   eventsQueryKey,
   emptyEventsView,
   type EventsQuery,
@@ -448,4 +451,260 @@ test("an invalidation after dispose or adapter replacement publishes nothing", a
   await h.loader.reload(A);
   assert.equal(h.calls.length, 2);
   assert.equal(h.view(), before);
+});
+
+// Deferred GetEvent adapter: every read waits until the test settles it. Any
+// method other than GetEvent fails the test, so reads cannot mutate events.
+interface DetailCall {
+  id: string;
+  resolve(value: { event?: { id: string }; processing: string[] }): void;
+  reject(error: Error): void;
+}
+
+function detailHarness() {
+  const calls: DetailCall[] = [];
+  const adapter = {
+    call(method: unknown, input: { id: string }) {
+      assert.equal(method, WebhookService.method.getEvent);
+      return new Promise((resolve, reject) =>
+        calls.push({
+          id: input.id,
+          resolve: resolve as DetailCall["resolve"],
+          reject,
+        }),
+      );
+    },
+  } as unknown as LaneAdapter;
+  let view: EventDetailView = emptyEventDetailView;
+  const published: EventDetailView[] = [];
+  const reader = new EventDetailReader(adapter, (v) => {
+    view = v;
+    published.push(v);
+  });
+  return { calls, reader, view: () => view, published };
+}
+
+const reply = (id: string, payload: string) => ({
+  event: { id, payload },
+  processing: [`${id}-history`],
+});
+const shown = (view: EventDetailView) => ({
+  id: view.selected?.event.id,
+  payload: (view.selected?.event as { payload?: string } | undefined)?.payload,
+  processing: view.selected?.processing.map(String),
+});
+
+test("detail: a late A success cannot replace the accepted B", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  const b = h.reader.inspect("B");
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  assert.deepEqual(shown(h.view()), {
+    id: "B",
+    payload: "payload-B",
+    processing: ["B-history"],
+  });
+  const before = h.published.length;
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  assert.equal(h.published.length, before);
+  assert.deepEqual(shown(h.view()), {
+    id: "B",
+    payload: "payload-B",
+    processing: ["B-history"],
+  });
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().loading, false);
+});
+
+test("detail: a late A failure publishes no obsolete status", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  const b = h.reader.inspect("B");
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  const before = h.published.length;
+  h.calls[0].reject(new Error("obsolete A failure"));
+  await a;
+  assert.equal(h.published.length, before);
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().selected?.event.id, "B");
+});
+
+test("detail: an obsolete read settling while B is pending keeps B loading", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  const b = h.reader.inspect("B");
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  assert.equal(h.view().selected, undefined);
+  assert.equal(h.view().loading, true);
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  assert.equal(h.view().selected?.event.id, "B");
+  assert.equal(h.view().loading, false);
+});
+
+test("detail: closing ends ownership so older reads cannot reopen or fail", async () => {
+  for (const settle of ["resolve", "reject"] as const) {
+    const h = detailHarness();
+    const a = h.reader.inspect("A");
+    const b = h.reader.inspect("B");
+    h.calls[1].resolve(reply("B", "payload-B"));
+    await b;
+    h.reader.close();
+    assert.equal(h.view().selected, undefined);
+    const before = h.published.length;
+    if (settle === "resolve") h.calls[0].resolve(reply("A", "payload-A"));
+    else h.calls[0].reject(new Error("obsolete A failure"));
+    await a;
+    assert.equal(h.published.length, before);
+    assert.equal(h.view().selected, undefined);
+    assert.equal(h.view().error, "");
+  }
+});
+
+test("detail: a pending current read closed before it settles stays closed", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  h.reader.close();
+  assert.equal(h.view().loading, false);
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  assert.equal(h.view().selected, undefined);
+});
+
+test("detail: A then B then A keeps the newest A content", async () => {
+  const h = detailHarness();
+  const first = h.reader.inspect("A");
+  const second = h.reader.inspect("B");
+  const third = h.reader.inspect("A");
+  assert.deepEqual(
+    h.calls.map((c) => c.id),
+    ["A", "B", "A"],
+  );
+  h.calls[2].resolve(reply("A", "new-A"));
+  await third;
+  h.calls[0].resolve(reply("A", "old-A"));
+  await first;
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await second;
+  assert.deepEqual(shown(h.view()), {
+    id: "A",
+    payload: "new-A",
+    processing: ["A-history"],
+  });
+});
+
+test("detail: disposal invalidates pending reads", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  h.reader.dispose();
+  const before = h.published.length;
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  const failed = h.reader.inspect("B");
+  await failed;
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.published.length, before);
+  assert.equal(h.view().selected, undefined);
+});
+
+test("detail: closing for Open linked task invalidates an older A, even after a newer A", async () => {
+  const h = detailHarness();
+  const old = h.reader.inspect("A");
+  const newest = h.reader.inspect("A");
+  h.calls[1].resolve(reply("A", "new-A"));
+  await newest;
+  // Open linked task closes the detail through the same close path.
+  h.reader.close();
+  h.calls[0].resolve(reply("A", "old-A"));
+  await old;
+  assert.equal(h.view().selected, undefined);
+});
+
+test("detail: a single current read, a later close and flushed callbacks stay closed", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  assert.equal(h.view().loading, true);
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  assert.equal(h.view().selected?.event.id, "A");
+  assert.equal(h.view().loading, false);
+  h.reader.close();
+  await tick();
+  assert.equal(h.view().selected, undefined);
+});
+
+test("detail: reads in request order end on the final B", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  const b = h.reader.inspect("B");
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  assert.equal(h.view().selected?.event.id, "B");
+});
+
+test("detail: a missing event while closed opens nothing and a missing event while open keeps the detail", async () => {
+  const h = detailHarness();
+  const closed = h.reader.inspect("A");
+  h.calls[0].resolve({ processing: [] });
+  await closed;
+  assert.equal(h.view().selected, undefined);
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().loading, false);
+  const b = h.reader.inspect("B");
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  const missing = h.reader.inspect("C");
+  h.calls[2].resolve({ processing: [] });
+  await missing;
+  assert.equal(h.view().selected?.event.id, "B");
+});
+
+test("detail: a current failure is visible and an explicit retry recovers", async () => {
+  const h = detailHarness();
+  const failed = h.reader.inspect("A");
+  h.calls[0].reject(new Error("read failed"));
+  await failed;
+  assert.equal(h.view().error, "read failed");
+  assert.equal(h.view().loading, false);
+  assert.equal(h.view().selected, undefined);
+  const retry = h.reader.inspect("A");
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().loading, true);
+  h.calls[1].resolve(reply("A", "payload-A"));
+  await retry;
+  assert.equal(h.view().error, "");
+  assert.equal(h.view().selected?.event.id, "A");
+});
+
+test("detail: update keeps the accepted history and is ignored while closed", async () => {
+  const h = detailHarness();
+  h.reader.update({ id: "B" } as never);
+  assert.equal(h.view().selected, undefined);
+  const b = h.reader.inspect("B");
+  h.calls[0].resolve(reply("B", "payload-B"));
+  await b;
+  h.reader.update({ id: "B", payload: "reopened" } as never);
+  assert.deepEqual(shown(h.view()), {
+    id: "B",
+    payload: "reopened",
+    processing: ["B-history"],
+  });
+  // An obsolete read cannot undo the accepted update.
+  const a = h.reader.inspect("A");
+  const c = h.reader.inspect("B");
+  h.calls[2].resolve(reply("B", "latest"));
+  await c;
+  h.calls[1].resolve(reply("A", "payload-A"));
+  await a;
+  assert.equal(h.view().selected?.event.id, "B");
+  assert.equal(
+    (h.view().selected?.event as { payload?: string }).payload,
+    "latest",
+  );
 });

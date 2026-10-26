@@ -15,7 +15,7 @@
     "build:android": "pnpm build && node scripts/native.mjs android build",
     "mobile:ios:init": "pnpm build && node scripts/native.mjs ios init",
     "build:ios": "pnpm mobile:ios:init && node scripts/native.mjs ios build",
-    "test:browser": "pnpm build && node tests/browser.mjs && node tests/command-palette-browser.mjs && node tests/planning-browser.mjs && node tests/native-reset-browser.mjs && node tests/modal-rail-browser.mjs && node tests/session-browser.mjs && node tests/notification-save-browser.mjs && node tests/events-browser.mjs",
+    "test:browser": "pnpm build && node tests/browser.mjs && node tests/command-palette-browser.mjs && node tests/planning-browser.mjs && node tests/native-reset-browser.mjs && node tests/modal-rail-browser.mjs && node tests/session-browser.mjs && node tests/notification-save-browser.mjs && node tests/events-browser.mjs && node tests/events-detail-browser.mjs",
     "desktop:start": "pnpm build:desktop && node scripts/desktop.mjs run"
   },
   "dependencies": {

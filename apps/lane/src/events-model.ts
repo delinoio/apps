@@ -4,12 +4,14 @@ import {
   EventState,
   type WebhookReceiver as ProtoWebhookReceiver,
   type WebhookEvent as ProtoWebhookEvent,
+  type ProcessingRecord as ProtoProcessingRecord,
 } from "@repo/protos/lane/v1/lane_pb";
 import type { LaneAdapter } from "./adapter.ts";
 import type { UI } from "./serializable.ts";
 
 export type WebhookReceiver = UI<ProtoWebhookReceiver>;
 export type WebhookEvent = UI<ProtoWebhookEvent>;
+export type ProcessingRecord = UI<ProtoProcessingRecord>;
 
 // The Events filters that define which receivers and events a load returns.
 export interface EventsQuery {
@@ -47,6 +49,98 @@ export const emptyEventsView: EventsView = {
 };
 
 const PAGE_SIZE = 100;
+
+// The event the details dialog shows, with its processing history.
+export interface EventDetail {
+  event: WebhookEvent;
+  processing: ProcessingRecord[];
+}
+
+export interface EventDetailView {
+  // The accepted detail shown in the dialog; undefined while closed.
+  selected: EventDetail | undefined;
+  // The current inspection is still pending.
+  loading: boolean;
+  // Failure of the current inspection; empty otherwise.
+  error: string;
+}
+
+export const emptyEventDetailView: EventDetailView = {
+  selected: undefined,
+  loading: false,
+  error: "",
+};
+
+// Owns Events detail reads. Every inspection is a separate intent with its own
+// generation number, even when it targets an ID that is already pending. The
+// newest inspection, closing the detail and disposal invalidate older reads, so
+// an obsolete response can neither open or replace the detail nor publish its
+// error. Reads never modify events. Mutation outcomes are not routed here.
+export class EventDetailReader {
+  private generation = 0;
+  private disposed = false;
+  private view: EventDetailView = emptyEventDetailView;
+
+  constructor(
+    private readonly adapter: LaneAdapter,
+    private readonly publish: (view: EventDetailView) => void,
+  ) {}
+
+  // Starts reading `id`, superseding every older inspection. The accepted
+  // detail stays visible until this read, if still current, replaces it.
+  async inspect(id: string): Promise<void> {
+    if (this.disposed) return;
+    const generation = ++this.generation;
+    this.set({ loading: true, error: "" });
+    try {
+      const r = await this.adapter.call(WebhookService.method.getEvent, {
+        id,
+      });
+      if (!this.owns(generation)) return;
+      // A missing event leaves the current detail state unchanged.
+      if (r.event)
+        this.set({ selected: { event: r.event, processing: r.processing } });
+    } catch (e) {
+      if (this.owns(generation))
+        this.set({
+          error:
+            e instanceof Error
+              ? e.message
+              : "Operation failed. Input is retained.",
+        });
+    } finally {
+      if (this.owns(generation)) this.set({ loading: false });
+    }
+  }
+
+  // Replaces the accepted event after a mutation, keeping its history. Ignored
+  // while no detail is open.
+  update(event: WebhookEvent): void {
+    if (this.disposed || !this.view.selected) return;
+    this.set({ selected: { ...this.view.selected, event } });
+  }
+
+  // Closes the detail and ends the ownership of every pending inspection.
+  close(): void {
+    if (this.disposed) return;
+    this.generation++;
+    this.set({ selected: undefined, loading: false, error: "" });
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.generation++;
+  }
+
+  private owns(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
+  }
+
+  private set(patch: Partial<EventDetailView>): void {
+    this.view = { ...this.view, ...patch };
+    this.publish(this.view);
+  }
+}
 
 // Owns Events list loading. Every load takes a generation number; the last
 // started reload, any query change, and disposal invalidate older work so an
