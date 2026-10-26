@@ -57,9 +57,35 @@ function laneError(error: unknown): unknown {
     detail.violation ? ConstraintViolation[detail.violation] : undefined,
   );
 }
+// Distinguishes a rejected session (HTTP 401) from a transient failure so the
+// reconciler can end the session instead of retaining a possibly stale identity.
+export class AuthRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+const SESSION_UNAVAILABLE_MESSAGE =
+  "Lane could not confirm your account session. Your current-screen input is retained. Retry explicitly.";
+const SESSION_CHANGED_MESSAGE =
+  "The account changed or the session was replaced. Reload before continuing.";
+const SESSION_RECONCILING_MESSAGE =
+  "Lane is confirming your account session. Your current-screen input is retained. Retry explicitly.";
+// Get/List methods are read-only and bypass CSRF on the server; everything else mutates.
+function isReadMethod(method: string) {
+  return /^(Get|List)/.test(method);
+}
 export class OnlineLane {
   private session?: Session;
   private generation = 0;
+  // Newest-started reconciliation wins; older session responses are discarded.
+  private reconcileSeq = 0;
+  private reconciling?: Promise<void>;
+  // True when the retained session could not be confirmed (transient failure).
+  // Account-bound work stays blocked until an explicit retry confirms it.
+  private unavailable = false;
   private fetcher: typeof fetch;
   private abort?: AbortController;
   private watchRetry?: ReturnType<typeof setTimeout>;
@@ -106,24 +132,72 @@ export class OnlineLane {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok)
-      throw new Error(
+      throw new AuthRequestError(
         response.status === 401
           ? "Sign in to Lane to continue."
           : `Account request failed (${response.status}). Retry explicitly.`,
+        response.status,
       );
     return response.status === 204 ? {} : response.json();
   }
   async start() {
-    const session = (await this.auth("/auth/session")) as Session;
+    await this.reconcile();
+  }
+  // Reads GET /auth/session and installs the newest accepted identity. Concurrent
+  // calls are serialized by recency: only the most recently started request may
+  // install its result, so an obsolete response released last cannot win.
+  reconcile(): Promise<void> {
+    const seq = ++this.reconcileSeq;
+    const run = this.runReconcile(seq);
+    this.reconciling = run;
+    const clear = () => {
+      if (this.reconciling === run) this.reconciling = undefined;
+    };
+    run.then(clear, clear);
+    return run;
+  }
+  private async runReconcile(seq: number): Promise<void> {
+    let session: Session;
+    try {
+      session = (await this.auth("/auth/session")) as Session;
+    } catch (error) {
+      if (seq !== this.reconcileSeq) return this.reconciling;
+      this.failReconcile(error);
+      throw error;
+    }
+    if (seq !== this.reconcileSeq) return this.reconciling;
     if (
-      this.session?.account_id !== session.account_id ||
-      this.session?.device_id !== session.device_id
+      typeof session?.account_id !== "string" ||
+      typeof session.device_id !== "string" ||
+      typeof session.csrf_token !== "string" ||
+      !session.account_id
     ) {
+      // A malformed body cannot establish an identity; treat it as transient.
+      const error = new Error(
+        "Account session response was invalid. Retry explicitly.",
+      );
+      this.failReconcile(error);
+      throw error;
+    }
+    this.installSession(session);
+  }
+  private installSession(session: Session) {
+    const previous = this.session;
+    // The CSRF token is bound to the session cookie, so a new token also means
+    // new credentials even when the account and device are unchanged.
+    const changed =
+      !previous ||
+      previous.account_id !== session.account_id ||
+      previous.device_id !== session.device_id ||
+      previous.csrf_token !== session.csrf_token;
+    if (changed) {
       ++this.generation;
+      this.stop();
       this.deletion = undefined;
       this.cursor = "";
       this.epoch = "";
     }
+    this.unavailable = false;
     this.session = session;
     this.notificationEnabled =
       session.notification_preferences?.enabled ?? false;
@@ -131,6 +205,30 @@ export class OnlineLane {
       session.notification_preferences?.content ?? NotificationContent.DETAIL;
     this.options.sessionChanged(this.session);
     this.startWatch();
+  }
+  private failReconcile(error: unknown) {
+    if (error instanceof AuthRequestError && error.status === 401) {
+      // The session is gone: stop account-bound work and show the sign-in gate.
+      this.endSession();
+      return;
+    }
+    // Transient failure: keep the view and its input, but stop account-bound work
+    // and block saves until an explicit retry confirms the session.
+    if (this.session) {
+      this.unavailable = true;
+      ++this.generation;
+      this.stop();
+    }
+  }
+  private endSession() {
+    this.stop();
+    this.session = undefined;
+    this.unavailable = false;
+    this.deletion = undefined;
+    this.cursor = "";
+    this.epoch = "";
+    ++this.generation;
+    this.options.sessionChanged(undefined);
   }
   async refreshSession() {
     await this.auth("/auth/refresh", {});
@@ -150,6 +248,18 @@ export class OnlineLane {
       );
     if (service === "local")
       return this.local(methodName, input as Record<string, unknown>);
+    // Captured before any wait so a response for an earlier identity is rejected.
+    const generation = this.generation;
+    const read = isReadMethod(methodName);
+    if (this.reconciling) {
+      // Reads wait for the in-flight reconciliation; a mutation is never held or
+      // queued and must be retried explicitly.
+      if (!read) throw new Error(SESSION_RECONCILING_MESSAGE);
+      await this.settled();
+      if (generation !== this.generation)
+        throw new Error(SESSION_CHANGED_MESSAGE);
+    }
+    if (this.unavailable) throw new Error(SESSION_UNAVAILABLE_MESSAGE);
     if (!this.session) throw new Error("Sign in to Lane to continue.");
     const serviceDescriptor = [
       LaneService,
@@ -166,7 +276,6 @@ export class OnlineLane {
       throw new Error("Unsupported Lane operation.");
     if (service === CaptureService.typeName && methodName !== "GetAttachment")
       throw new Error("Capture and RealQA settings are available on desktop.");
-    const generation = this.generation;
     const response = await this.transport
       .unary(
         method as DescMethodUnary,
@@ -178,8 +287,12 @@ export class OnlineLane {
       .catch((error: unknown) => {
         throw laneError(error);
       });
+    // A read that finishes while the session is being reconciled cannot be
+    // attributed to an identity yet; hold it until the outcome is known.
+    if (read) await this.settled();
     if (generation !== this.generation)
-      throw new Error("The account changed. Reload before continuing.");
+      throw new Error(SESSION_CHANGED_MESSAGE);
+    if (read && this.unavailable) throw new Error(SESSION_UNAVAILABLE_MESSAGE);
     if (
       service === AccountService.typeName &&
       methodName === "BeginDataDeletion"
@@ -213,7 +326,7 @@ export class OnlineLane {
           spaceId: "",
           deviceId: this.session?.device_id || "",
           syncEnabled: true,
-          connected: !!this.session && navigator.onLine,
+          connected: !!this.session && !this.unavailable && navigator.onLine,
           pendingItemCount: "0",
           itemErrors: [],
         };
@@ -292,10 +405,7 @@ export class OnlineLane {
         return { authorizationUrl: this.loginUrl(), challengeId: "" };
       case "DisconnectSync":
         await this.auth("/auth/logout", {});
-        this.stop();
-        this.session = undefined;
-        ++this.generation;
-        this.options.sessionChanged(undefined);
+        this.endSession();
         return { completed: true };
       case "RemoveDeviceData":
         throw new Error("Web does not store Lane task data on this device.");
@@ -308,6 +418,9 @@ export class OnlineLane {
     }
   }
   async completeDeletion(challengeId: string) {
+    // The reauthentication popup shares the browser cookie; confirm which
+    // identity it belongs to before redeeming any proof.
+    await this.reconcile();
     if (
       !this.deletion ||
       this.deletion.challengeId !== challengeId ||
@@ -329,17 +442,21 @@ export class OnlineLane {
       confirmedAccountId: this.deletion.account,
       reauthProof: reauth_proof,
     });
-    this.deletion = undefined;
-    this.stop();
-    this.session = undefined;
-    ++this.generation;
-    this.options.sessionChanged(undefined);
+    this.endSession();
+  }
+  private async settled() {
+    while (this.reconciling) await this.reconciling.catch(() => {});
   }
   private startWatch() {
     clearTimeout(this.watchRetry);
     this.abort?.abort();
     const controller = new AbortController();
     this.abort = controller;
+    // A stream belongs to the identity that opened it; its results are dropped
+    // once the generation moves on.
+    const generation = this.generation;
+    const current = () =>
+      !controller.signal.aborted && generation === this.generation;
     const client = createClient(SyncService, this.transport);
     void (async () => {
       try {
@@ -347,7 +464,7 @@ export class OnlineLane {
           {},
           { signal: controller.signal },
         );
-        if (controller.signal.aborted) return;
+        if (!current()) return;
         this.epoch = info.epoch;
         for await (const notification of client.watchChanges(
           { epoch: this.epoch, cursor: this.cursor },
@@ -365,17 +482,19 @@ export class OnlineLane {
               },
               { signal: controller.signal },
             );
+            if (!current()) return;
             this.cursor = page.nextCursor;
             more = page.hasMore;
           }
           void notification;
+          if (!current()) return;
           this.retryDelay = 1000;
           this.options.invalidate();
         }
       } catch {
-        if (!controller.signal.aborted) this.options.invalidate();
+        if (current()) this.options.invalidate();
       } finally {
-        if (!controller.signal.aborted && this.session) {
+        if (current() && this.session) {
           this.watchRetry = setTimeout(
             () => this.startWatch(),
             this.retryDelay,
@@ -385,11 +504,14 @@ export class OnlineLane {
       }
     })();
   }
-  resume() {
-    if (this.session) {
-      this.startWatch();
-      this.options.invalidate();
-    }
+  // Focus and online resume. Credentials may have been replaced in an approval
+  // popup, so the session is reconciled before the stream restarts or any
+  // business query is invalidated. After a transient failure the user must retry
+  // explicitly, so resume does nothing until start() succeeds.
+  async resume() {
+    if (!this.session || this.unavailable || !navigator.onLine) return;
+    await this.reconcile();
+    this.options.invalidate();
   }
   stop() {
     clearTimeout(this.watchRetry);
