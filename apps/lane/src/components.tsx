@@ -118,6 +118,11 @@ export function Notice({ children }: { children: ReactNode }) {
     </view>
   );
 }
+let openDialogs = 0;
+export function hasOpenDialog() {
+  "background only";
+  return openDialogs > 0;
+}
 export function Dialog({
   title,
   children,
@@ -127,6 +132,13 @@ export function Dialog({
   children: ReactNode;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    "background only";
+    openDialogs++;
+    return () => {
+      openDialogs--;
+    };
+  }, []);
   return (
     <view
       className="overlay"

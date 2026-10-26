@@ -232,6 +232,7 @@ text {
 }
 .overlay {
   position: fixed;
+  z-index: 3;
   top: 0;
   left: 0;
   width: 100%;
@@ -627,4 +628,98 @@ text {
    does not leave the first form label above the composer's scroll boundary. */
 .image-editor {
   padding: 12px 24px 24px;
+}
+
+.command-overlay {
+  padding: 16px;
+}
+.command-palette {
+  width: 560px;
+  max-width: 100%;
+  height: 80%;
+  max-height: 650px;
+  padding: 0;
+  border: 1px solid #e4e8ef;
+  box-shadow: 0 12px 40px #17203322;
+  overflow: hidden;
+}
+.command-search-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+  border-bottom: 1px solid #e4e8ef;
+  flex-shrink: 0;
+}
+.command-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.command-search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 4px;
+  height: 40px;
+  font-size: 16px;
+}
+.command-close {
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+.command-results {
+  flex: 1;
+  min-height: 0;
+}
+.command-group-label {
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #68758b;
+}
+.command-result {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  gap: 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background-color: #fff;
+}
+.command-selected {
+  background-color: #e8f0fe;
+  border-left-color: #075aff;
+}
+.command-result-label {
+  flex: 1;
+  min-width: 0;
+}
+.command-context {
+  color: #68758b;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.command-empty {
+  padding: 20px;
+  color: #68758b;
+}
+.command-footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid #e4e8ef;
+  flex-shrink: 0;
+}
+.mobile .command-palette {
+  width: 560px;
+  max-width: 100%;
+  padding: 0;
 }
