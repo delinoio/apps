@@ -55,6 +55,7 @@ import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
 import { savedCaptureRoute } from "./captures-model";
 import { CommandPalette } from "./CommandPalette";
+import { EditorLifetime, readTaskOwned } from "./editorLifetime";
 import {
   destinations,
   DestinationKind,
@@ -105,6 +106,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [discard, setDiscard] = useState<() => void>();
   const [pendingCount, setPendingCount] = useState(0);
   const queryGeneration = useRef(0);
+  // Task-detail reads publish only while they own the editor lifetime.
+  const editorLifetime = useRef(new EditorLifetime()).current;
   // Identifies the open data space; native route and reset switches change it.
   const planning = usePlanning(
     adapter,
@@ -131,6 +134,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     let active = true;
     let owned: LaneAdapter | undefined;
     const stopHost = listenHost(setPendingRoute, setError, () => {
+      editorLifetime.supersede();
       setDraft(undefined);
       setCurrent(undefined);
       setTasks([]);
@@ -168,6 +172,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     })();
     return () => {
       active = false;
+      // Adapter or data-space disposal ends every pending task-detail read.
+      editorLifetime.supersede();
       stopHost();
       unsubscribe?.();
       owned?.close();
@@ -310,6 +316,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const activeFilters = activeFilterCount(filter);
   const navigate = (fn: () => void) => {
     const proceed = () => {
+      // An accepted transition supersedes earlier reads; a pending discard prompt
+      // or its cancellation does not.
+      editorLifetime.supersede();
       if (planningDirty) {
         // Remount the manager so confirmed discards also apply when the page stays the same.
         setPlanningDirty(false);
@@ -318,7 +327,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       fn();
     };
     if (draft?.dirty || realqaDirty || planningDirty) setDiscard(() => proceed);
-    else fn();
+    else proceed();
   };
   const selectApp = (app: MiniApp) => {
     if (app === miniApp) return;
@@ -367,16 +376,19 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   };
   const openTask = async (id: string) => {
     if (!adapter) return;
-    try {
-      const r = await adapter.call(LaneService.method.getTask, { id });
-      if (r.result) {
-        setCurrent(r.result);
-        setDraft(draftFor(r.result));
-        setPage("Tasks");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Task is unavailable.");
-    }
+    await readTaskOwned(
+      editorLifetime,
+      () => adapter.call(LaneService.method.getTask, { id }),
+      {
+        opened: (result) => {
+          setCurrent(result);
+          setDraft(draftFor(result));
+          setPage("Tasks");
+        },
+        failed: (e) =>
+          setError(e instanceof Error ? e.message : "Task is unavailable."),
+      },
+    );
   };
   useEffect(() => {
     if (!pendingRoute || !adapter) return;
@@ -879,6 +891,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                       adapter={adapter}
                       target={settingsTarget}
                       onReset={() => {
+                        editorLifetime.supersede();
                         setDraft(undefined);
                         setTasks([]);
                         setRepositories([]);

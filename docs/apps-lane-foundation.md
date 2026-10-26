@@ -267,6 +267,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Allow moving a task between repositories while preserving its ID, prompt, and history. A linked webhook event stays in its original repository and continues to reference the moved task ID.
 - Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
+- Opening a task is owned by the latest accepted editor action. Selecting another task, choosing New task, closing the editor, changing page or app, resetting data, and disposing of the adapter or data space supersede earlier pending task reads, including a read of the same task started before. A superseded read neither replaces a draft nor reopens a closed editor, changes the page, or reports an error. Cancelling a discard prompt supersedes nothing; only an accepted transition does.
 - If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
 
 ### Task planning metadata
