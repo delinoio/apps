@@ -40,6 +40,10 @@ Additional component ownership:
 - [Server, synchronization, identity and operations](servers-lane-api-contract.md)
 - [Distribution and common agent skill](packages-lane-distribution-contract.md)
 
+## Agent Skills Distribution
+
+Skills that help agents use Lane will be distributed through [delinoio/lane-skills](https://github.com/delinoio/lane-skills). See the [distribution contract](packages-lane-distribution-contract.md#agent-skills-distribution) for this planned distribution channel.
+
 ## Cross-Domain Invariants
 
 Native apps target macOS, Windows, iOS and Android. Linux supports CLI/local MCP and online web, not a native GUI. Keep ReactLynx and Rspeedy for the shared client, Lynx SDKs for mobile, and Lynxtron for desktop. TypeScript/ReactLynx and platform integration languages remain the UI exception to repository language defaults; new CLI code uses Rust and server code uses Rust.
