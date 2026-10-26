@@ -49,6 +49,12 @@ if(APPLE)
     target_link_libraries(LaneReauthTest PRIVATE lane_store "-framework Cocoa" "-framework UserNotifications")
     add_test(NAME lane_macos_reauthentication COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/macos/run_reauth_test.py" "$<TARGET_FILE:LaneReauthTest>")
+    add_executable(LanePushRegistrationTest macos/push_registration_test.mm macos/runtime.mm)
+    target_compile_options(LanePushRegistrationTest PRIVATE -fobjc-arc)
+    target_compile_definitions(LanePushRegistrationTest PRIVATE LANE_NATIVE_TESTING)
+    target_link_libraries(LanePushRegistrationTest PRIVATE lane_store "-framework Cocoa" "-framework UserNotifications")
+    add_test(NAME lane_macos_push_registration COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/macos/run_push_registration_test.py" "$<TARGET_FILE:LanePushRegistrationTest>")
   endif()
 elseif(WIN32)
   add_executable(LaneIcon windows/icon.cc)
