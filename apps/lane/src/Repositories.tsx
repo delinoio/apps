@@ -3,11 +3,16 @@ import type { UI } from "./serializable";
 import { useState } from "@lynx-js/react";
 import {
   LaneService,
-  ResultKind,
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
 } from "@repo/protos/lane/v1/lane_pb";
 import { type LaneAdapter, meta, newId } from "./adapter";
+import {
+  RepositoryEditor,
+  RepositorySaveOutcome,
+  repositoryConflictMessage,
+  repositoryDraft,
+} from "./repositoryEditor";
 import { Button, Dialog, Field, Notice } from "./components";
 import { conflicted, heads, repositoryName } from "./model";
 import { PlanningManager } from "./PlanningManager";
@@ -28,16 +33,20 @@ export function Repositories({
   dirty: (value: boolean) => void;
 }) {
   const [detail, setDetail] = useState("");
-  const [editing, setEditing] = useState<{
-    id: string;
-    base?: string;
-    url: string;
-    name: string;
-  }>();
+  // The editor owns the draft, its lifetime and its retry identity; re-render on change.
+  const [, setRevision] = useState(0);
+  const [editor] = useState(
+    () => new RepositoryEditor(() => setRevision((value) => value + 1)),
+  );
+  const editing = editor.draft;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<EntityVersion>();
   const [conflict, setConflict] = useState<EntityResult>();
+  const errorMessage = (e: unknown) =>
+    e instanceof Error
+      ? e.message
+      : "Operation failed. Your input is retained.";
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -45,11 +54,25 @@ export function Repositories({
       await fn();
       refresh();
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Operation failed. Your input is retained.",
-      );
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await editor.save(adapter);
+      if (result.outcome === RepositorySaveOutcome.Ignored) return;
+      // The mutation happened regardless of the editor lifetime, so lists always refresh.
+      if (result.outcome !== RepositorySaveOutcome.Failed) refresh();
+      // Only the editor that submitted the save reports into it.
+      if (!result.current) return;
+      if (result.outcome === RepositorySaveOutcome.Conflict)
+        setError(repositoryConflictMessage);
+      else if (result.outcome === RepositorySaveOutcome.Failed)
+        setError(errorMessage(result.error));
     } finally {
       setBusy(false);
     }
@@ -76,7 +99,10 @@ export function Repositories({
       </text>
       <Button
         primary
-        onClick={() => setEditing({ id: newId(), url: "", name: "" })}
+        onClick={() => {
+          setError("");
+          editor.open({ id: newId(), url: "", name: "" });
+        }}
       >
         Add repository
       </Button>
@@ -99,18 +125,8 @@ export function Repositories({
               disabled={conflicted(r)}
               onClick={() => {
                 const v = r.version!;
-                setEditing({
-                  id: v.entityId,
-                  base: v.versionId,
-                  url:
-                    v.body.case === "repository"
-                      ? `https://${v.body.value.normalizedUrl}`
-                      : "",
-                  name:
-                    v.body.case === "repository"
-                      ? v.body.value.displayName || ""
-                      : "",
-                });
+                setError("");
+                editor.open(repositoryDraft(v));
               }}
             >
               Rename or change URL
@@ -129,7 +145,7 @@ export function Repositories({
       {editing && (
         <Dialog
           title={editing.base ? "Edit repository" : "Add repository"}
-          onClose={() => setEditing(undefined)}
+          onClose={() => editor.close()}
         >
           {current?.version?.versionId !== editing.base && editing.base && (
             <Notice>
@@ -140,13 +156,15 @@ export function Repositories({
           <Field
             label="Repository URL"
             value={editing.url}
-            onChange={(url) => setEditing({ ...editing, url })}
+            onChange={(url) => editor.edit({ url })}
+            disabled={editor.saving}
             focus
           />
           <Field
             label="Display name (optional)"
             value={editing.name}
-            onChange={(name) => setEditing({ ...editing, name })}
+            onChange={(name) => editor.edit({ name })}
+            disabled={editor.saving}
           />
           <Notice>
             Changing the URL keeps tasks, history and receivers. The old URL
@@ -156,32 +174,7 @@ export function Repositories({
           <Button
             primary
             disabled={busy || conflicted(current)}
-            onClick={() =>
-              void run(async () => {
-                const input = {
-                  meta: meta(),
-                  id: editing.id,
-                  url: editing.url,
-                  displayName: editing.name || undefined,
-                };
-                const response = editing.base
-                  ? await adapter.call(LaneService.method.saveRepository, {
-                      ...input,
-                      expectedVersionId: editing.base,
-                    })
-                  : await adapter.call(
-                      LaneService.method.createRepository,
-                      input,
-                    );
-                if (response.result?.result === ResultKind.CONFLICT) {
-                  refresh();
-                  throw new Error(
-                    "Repository versions conflict. Your input is retained. Close this editor to compare and resolve the saved alternatives.",
-                  );
-                }
-                setEditing(undefined);
-              })
-            }
+            onClick={() => void save()}
           >
             Save
           </Button>

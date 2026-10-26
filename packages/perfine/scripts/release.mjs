@@ -142,10 +142,12 @@ export function verifyRemote({ tag, expectedCommit, sourceCommit }) {
     rmSync(directory, { recursive: true, force: true });
   }
 }
-export function source(tag) {
+export function source(tag, revision) {
   exactTag(tag);
   const sourceTag = `perfine@${tag}`;
-  const sha = commit(git(root, "rev-parse", `refs/tags/${sourceTag}^{commit}`));
+  const sha = revision
+    ? commit(revision)
+    : commit(git(root, "rev-parse", `refs/tags/${sourceTag}^{commit}`));
   git(root, "merge-base", "--is-ancestor", sha, "origin/main");
   const expected = tag.slice(1);
   for (const path of [
@@ -230,7 +232,7 @@ function publishAction(tag, sourceCommit, directory) {
 export function main(env = process.env, command = process.argv[2]) {
   const tag = exactTag(env.PERFINE_RELEASE_TAG);
   if (command === "source") {
-    const sha = source(tag);
+    const sha = source(tag, env.PERFINE_SOURCE_COMMIT);
     if (env.GITHUB_OUTPUT)
       appendFileSync(
         env.GITHUB_OUTPUT,

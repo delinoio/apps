@@ -445,6 +445,39 @@ void preferences_and_notifications() {
   f.call("SetNotificationPreferences", {{"enabled", true}, {"content", "NOTIFICATION_CONTENT_DETAIL"}});
   require(f.call("GetNotificationPreferences").at("permission") == "NOTIFICATION_PERMISSION_DENIED", "denial visible");
 }
+// The Settings screen submits numeric NotificationContent values even when the
+// store reads back ProtoJSON names, so notification items must follow both.
+void notification_content_from_ui_preferences() {
+  Fixture f; RemoteProposals remote(f);
+  lane::HostHooks hooks;
+  hooks.requestNotificationPermission = [] { return "NOTIFICATION_PERMISSION_GRANTED"; };
+  f.store.setHostHooks(hooks);
+  struct Case { int content; const char* name; bool generic; };
+  for (const auto& c : {Case{2, "NOTIFICATION_CONTENT_GENERIC", true},
+                        Case{1, "NOTIFICATION_CONTENT_DETAIL", false}}) {
+    f.call("SetNotificationPreferences", {{"enabled", true}, {"content", c.content}});
+    require(f.call("GetNotificationPreferences").at("content") == c.name, "numeric content reads back by name");
+    // Saving the named readback again without a content edit keeps the value.
+    f.call("SetNotificationPreferences", {{"enabled", true}, {"content", c.content}});
+    auto proposal = remote.create();
+    remote.apply(proposal);
+    const auto items = success(f.store.pendingNotifications(f.space)).at("items");
+    const auto id = proposal.at("entityId").get<std::string>();
+    bool found = false;
+    for (const auto& item : items) {
+      if (item.at("proposalId") != id) continue;
+      found = true;
+      require(item.at("content") == c.name, "notification item content");
+      if (c.generic) {
+        require(item.at("repositoryName") == "" && item.at("title") == "New Lane proposal", "generic item hides repository and title");
+      } else {
+        require(item.at("repositoryName") != "" && item.at("title") == "Remote proposal", "detail item keeps repository and title");
+      }
+    }
+    require(found, "eligible proposal produced a notification item");
+    success(f.store.acknowledgeNotification(f.space, id));
+  }
+}
 void concurrent_notification_claims() {
   Fixture f; RemoteProposals remote(f);
   lane::HostHooks hooks;
@@ -680,6 +713,7 @@ void unsupported_schema() {
 #include "planning_cases.h"
 #include "disk_full_vfs.h"
 #include "sync_hard_cases.h"
+#include "repository_identifier_cases.h"
 #include "shared_sync_runner.h"
 #include "epoch_lifecycle.h"
 #include "lifetime_locks.h"
@@ -705,6 +739,7 @@ int main(int argc, char** argv) {
     {"URLs, Unicode and validation", urls_unicode_and_validation},
     {"external writers and rollback", observation_and_rollback},
     {"preferences and notifications", preferences_and_notifications},
+    {"notification content from UI preferences", notification_content_from_ui_preferences},
     {"concurrent notification claims", concurrent_notification_claims},
     {"accounts and host hooks", accounts_and_host_hooks},
     {"explicit account merge", explicit_account_merge},
@@ -747,6 +782,10 @@ int main(int argc, char** argv) {
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
     {"conflicted heads, union cycles and cursor scope", planning_conflict_union_cycle_and_cursor_scope},
     {"reset account reconnect flow", reset_account_space_reconnect_flow},
+    {"repository identifier resolution and editing", repository_identifier_resolution_and_editing},
+    {"repository identifier name-only save with counterpart", repository_identifier_name_only_save_with_counterpart},
+    {"repository identifier sync, import and merge", repository_identifier_sync_import_and_merge},
+    {"malformed repository identifier pull rolls back", repository_identifier_malformed_pull_rolls_back},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {

@@ -15,7 +15,7 @@ Provide one public documentation app for multiple Delino services at `https://do
 - `apps/delino-docs/services.ts`: service identifiers and labels shared by navigation configuration and the service selector.
 - `apps/delino-docs/docs`: curated public pages grouped by language. `en` owns source Markdown; other language directories own translated pages.
 - `apps/delino-docs/i18n`: language registry, navigation/theme text catalogs and source fingerprints.
-- `.github/workflows/release-delino.yml`: shared `delino@vMAJOR.MINOR.PATCH` Cloudflare Pages publication with `delino-site`. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
+- `.github/workflows/release.yml`: changeset-selected Cloudflare Pages publication with a `delino@vMAJOR.MINOR.PATCH` success tag and independent app versions. Both applications use the `delino-site-production` GitHub environment with separate Pages project variables. Shared version preparation follows the [workflow contract](repository-workflow-contract.md#project-release-preparation).
 
 ## Domain Contract Documents
 

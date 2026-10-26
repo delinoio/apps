@@ -14,7 +14,7 @@ export function withUpdateFixture(host) {
     )
     .replace(
       "view.onNativeModulesCall = async (name, data, moduleName) => {",
-      `window.laneUpdateFixture = { phase: "idle", installedRelease: "delino@v1.2.3", message: "Update Lane to the latest version. The app will restart when the update is ready.", starts: 0, cancels: 0 };
+      `window.laneUpdateFixture = { phase: "idle", installedRelease: "lane@v1.2.3", message: "Update Lane to the latest version. The app will restart when the update is ready.", starts: 0, cancels: 0 };
 view.onNativeModulesCall = async (name, data, moduleName) => {
   if (moduleName === "bridge") {
     const fixture = window.laneUpdateFixture;

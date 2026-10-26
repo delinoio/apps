@@ -173,16 +173,49 @@ fn fault(f: Fault) -> Response {
     )
         .into_response()
 }
+/// Origin admission decision for one request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Admission {
+    /// No Origin header or the configured frontend origin: existing behavior including CORS.
+    Frontend,
+    /// The API's own origin on the same-origin OAuth consent form POST. Admitted without
+    /// granting any credentialed cross-origin response access.
+    ApiConsent,
+    /// Any other present Origin, including the opaque `null` Origin.
+    Rejected,
+}
+const CONSENT_PATH: &str = "/oauth/consent";
+fn admission(
+    config: &crate::config::Config,
+    method: &Method,
+    path: &str,
+    headers: &HeaderMap,
+) -> Admission {
+    let Some(origin) = headers.get("origin") else {
+        return Admission::Frontend;
+    };
+    if origin == config.web_origin.as_str() {
+        Admission::Frontend
+    } else if origin == config.public_url.as_str() && method == Method::POST && path == CONSENT_PATH
+    {
+        // The API-hosted consent page posts to itself. This exception is exact in origin, method
+        // and path; all other routes keep the frontend-only Origin admission rule.
+        Admission::ApiConsent
+    } else {
+        Admission::Rejected
+    }
+}
 async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Response {
     let trace = crate::id();
     let start = Instant::now();
     let path = req.uri().path().to_owned();
     let subscription = path.ends_with("/WatchChanges");
     let api = path.starts_with("/lane.v1.") || path == "/mcp";
-    let allowed = req
-        .headers()
-        .get("origin")
-        .is_none_or(|v| v == s.config.web_origin.as_str());
+    let admission = admission(&s.config, req.method(), &path, req.headers());
+    let allowed = admission != Admission::Rejected;
+    if !allowed {
+        tracing::warn!(request_id=%trace,method=%req.method(),path=%path,"Lane request rejected by Origin policy");
+    }
     let preflight = req.method() == Method::OPTIONS;
     let mut response = if !allowed {
         StatusCode::FORBIDDEN.into_response()
@@ -212,7 +245,8 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
     let h = response.headers_mut();
     h.entry("x-request-id").or_insert(trace.parse().unwrap());
     h.insert("cache-control", HeaderValue::from_static("no-store"));
-    if allowed {
+    // Credentialed CORS response access stays limited to the configured frontend.
+    if admission == Admission::Frontend {
         h.insert(
             "access-control-allow-origin",
             s.config.web_origin.parse().unwrap(),
@@ -233,4 +267,84 @@ async fn policy(State(s): State<Arc<Server>>, req: Request, next: Next) -> Respo
         );
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn config(public_url: &str, web_origin: &str) -> Config {
+        Config {
+            listen: "127.0.0.1:0".into(),
+            public_url: public_url.into(),
+            web_origin: web_origin.into(),
+            metrics_token: "synthetic-metrics-token-at-least-32-characters".into(),
+            max_item_bytes: 1,
+            max_webhook_bytes: 1,
+            requests_per_minute: 1,
+            webhook_requests_per_minute: 1,
+        }
+    }
+    fn decide(config: &Config, method: Method, path: &str, origin: Option<&str>) -> Admission {
+        let mut headers = HeaderMap::new();
+        if let Some(origin) = origin {
+            headers.insert("origin", HeaderValue::from_str(origin).unwrap());
+        }
+        admission(config, &method, path, &headers)
+    }
+
+    #[test]
+    fn api_origin_is_admitted_only_for_the_consent_post() {
+        let c = config("https://lane.api.example.test", "https://lane.example.test");
+        let api = Some("https://lane.api.example.test");
+        assert_eq!(
+            decide(&c, Method::POST, "/oauth/consent", api),
+            Admission::ApiConsent
+        );
+        for (method, path) in [
+            (Method::GET, "/oauth/consent"),
+            (Method::OPTIONS, "/oauth/consent"),
+            (Method::POST, "/oauth/consent/"),
+            (Method::POST, "/oauth/token"),
+            (Method::POST, "/auth/refresh"),
+            (Method::POST, "/mcp"),
+            (Method::POST, "/lane.v1.LaneService/ListTasks"),
+        ] {
+            assert_eq!(decide(&c, method, path, api), Admission::Rejected, "{path}");
+        }
+        for origin in [
+            "null",
+            "https://attacker.example",
+            "https://lane.api.example.test/",
+        ] {
+            assert_eq!(
+                decide(&c, Method::POST, "/oauth/consent", Some(origin)),
+                Admission::Rejected,
+                "{origin}"
+            );
+        }
+        // Existing frontend and absent-Origin admission is unchanged.
+        for path in ["/oauth/consent", "/mcp", "/auth/refresh"] {
+            assert_eq!(
+                decide(&c, Method::POST, path, Some("https://lane.example.test")),
+                Admission::Frontend
+            );
+            assert_eq!(decide(&c, Method::POST, path, None), Admission::Frontend);
+        }
+    }
+
+    #[test]
+    fn equal_configured_origins_keep_frontend_cors() {
+        let c = config("https://lane.example.test", "https://lane.example.test");
+        assert_eq!(
+            decide(
+                &c,
+                Method::POST,
+                "/oauth/consent",
+                Some("https://lane.example.test")
+            ),
+            Admission::Frontend
+        );
+    }
 }

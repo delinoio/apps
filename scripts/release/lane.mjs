@@ -35,7 +35,7 @@ const desktopPlatforms = ["darwin-amd64", "darwin-arm64", "windows-amd64"];
 export function releaseIdentity(env = process.env) {
   assert.match(
     env.LANE_RELEASE_TAG ?? "",
-    /^delino@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/,
+    /^lane@v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/,
   );
   assert.match(env.LANE_SOURCE_REVISION ?? "", /^[a-f0-9]{40}$/);
   return { tag: env.LANE_RELEASE_TAG, revision: env.LANE_SOURCE_REVISION };
@@ -182,7 +182,7 @@ export function packageDesktop(destination, identity = releaseIdentity()) {
       `missing helper notice: ${name}`,
     );
   mkdirSync(destination, { recursive: true });
-  const name = `lane-desktop-${platform}-${identity.tag.replace("delino@", "")}.tar.gz`;
+  const name = `lane-desktop-${platform}-${identity.tag.replace("lane@", "")}.tar.gz`;
   run("tar", [
     "-czf",
     resolve(destination, name),
@@ -304,7 +304,7 @@ export function assemble(inputs, destination, identity = releaseIdentity()) {
         assert.equal(desktop.cliVersion, combined.version);
         assert.equal(
           desktop.archive,
-          `lane-desktop-${desktop.platform}-${identity.tag.replace("delino@", "")}.tar.gz`,
+          `lane-desktop-${desktop.platform}-${identity.tag.replace("lane@", "")}.tar.gz`,
         );
         assert.equal(
           sha256(resolve(candidate, desktop.archive)),
@@ -404,7 +404,7 @@ export function publish(directory, identity = releaseIdentity()) {
       ),
       ...desktopPlatforms.map(
         (platform) =>
-          `lane-desktop-${platform}-${identity.tag.replace("delino@", "")}.tar.gz`,
+          `lane-desktop-${platform}-${identity.tag.replace("lane@", "")}.tar.gz`,
       ),
       `delinoio-lane-${record.cliVersion}.tgz`,
       "lane-release.json",
@@ -413,29 +413,43 @@ export function publish(directory, identity = releaseIdentity()) {
     "checksum set must cover every release artifact",
   );
   const repo = "delinoio/apps";
-  const api = `repos/${repo}/releases/tags/${identity.tag}`;
-  let release;
-  try {
-    release = JSON.parse(run("gh", ["api", api]));
-  } catch (error) {
-    // Only a confirmed missing release permits creation; auth/network errors
-    // must stop so a retry cannot accidentally create a second publication.
-    if (!error.stderr?.toString().includes("(HTTP 404)")) throw error;
+  // The tag endpoint covers published releases. List authenticated releases so
+  // partial draft uploads can be resumed before the success tag exists.
+  const findRelease = () =>
+    JSON.parse(
+      run("gh", [
+        "api",
+        "--paginate",
+        "--slurp",
+        `repos/${repo}/releases?per_page=100`,
+      ]),
+    )
+      .flat()
+      .find((entry) => entry.tag_name === identity.tag);
+  let release = findRelease();
+  if (!release) {
     run("gh", [
       "release",
       "create",
       identity.tag,
       "--repo",
       repo,
-      "--verify-tag",
+      "--target",
+      identity.revision,
       "--draft",
       "--title",
-      `Delino ${identity.tag.replace("delino@", "")} — Lane binaries`,
+      `Lane ${identity.tag.replace("lane@", "")}`,
       "--notes",
       `Source: ${identity.revision}\nCLI: ${record.cliVersion}; six targets. Desktop: macOS Intel/Apple Silicon (ad-hoc signed), Windows x64 (unsigned portable archive). Native installation, device behavior, signing/notarization and store acceptance are separate. The npm archive is downloadable; npm registry publication is not performed.`,
     ]);
-    release = JSON.parse(run("gh", ["api", api]));
+    release = findRelease();
   }
+  assert.ok(release, "Draft release was not returned after creation");
+  assert.equal(
+    release.target_commitish,
+    identity.revision,
+    "Release source mismatch",
+  );
   const temporary = mkdtempSync(resolve(tmpdir(), "lane-published-"));
   try {
     for (const name of files) {
@@ -481,18 +495,9 @@ export function publish(directory, identity = releaseIdentity()) {
         );
       }
     }
-    if (release.draft)
-      run("gh", [
-        "release",
-        "edit",
-        identity.tag,
-        "--repo",
-        repo,
-        "--draft=false",
-      ]);
     console.info(
       JSON.stringify({
-        event: "lane_release_published",
+        event: "lane_release_assets_staged",
         tag: identity.tag,
         revision: identity.revision,
         assets: files.length,

@@ -1,0 +1,38 @@
+name: Mock server deployment in dependency order
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      servers:
+        required: true
+        type: string
+permissions:
+  contents: read
+# Replace these mock steps only when a runtime adapter defines deployment,
+# explicit migration and readiness behavior. Until then, no service is changed.
+jobs:
+  delcore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mock foundational server deployment
+        env:
+          REVISION: ${{ inputs.revision }}
+          SELECTED: ${{ contains(fromJSON(inputs.servers), 'delcore-api') }}
+        run: |
+          if [ "$SELECTED" = true ]; then
+            printf 'MOCK deployment: delcore-api at %s. No runtime or migration changed.\n' "$REVISION" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+  dependents:
+    needs: delcore
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mock dependent server deployments
+        env:
+          REVISION: ${{ inputs.revision }}
+          SERVERS: ${{ inputs.servers }}
+        run: |
+          jq -r '.[] | select(. != "delcore-api")' <<< "$SERVERS" | while IFS= read -r server; do
+            printf 'MOCK deployment: %s at %s after delcore-api. No runtime or migration changed.\n' "$server" "$REVISION" | tee -a "$GITHUB_STEP_SUMMARY"
+          done

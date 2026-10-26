@@ -601,6 +601,426 @@ async fn repository_conflicts_reserve_urls_and_mapping_preserves_immutable_versi
     f.close().await;
 }
 
+const PORT_URL: &str = "example.com:443/a/b";
+const PORTLESS_URL: &str = "example.com/a/b";
+
+/// A format-2 repository version as a synchronizing client would upload it.
+fn repo_version(entity: &str, url: &str, parents: &[String], name: Option<&str>) -> Value {
+    let mut v = json!({
+        "formatVersion":2,
+        "entityId":entity,
+        "kind":"ENTITY_KIND_REPOSITORY",
+        "versionId":id(),
+        "parentVersionIds":parents,
+        "createdAt":"2026-01-01T00:00:00.000000Z",
+        "origin":{"kind":"ORIGIN_KIND_CLI","deviceId":"","deviceName":"Fixture CLI","accountId":""},
+        "deleted":false,
+        "promptRestoration":false,
+        "repository":{"normalizedUrl":url},
+    });
+    if let Some(name) = name {
+        v["repository"]["displayName"] = json!(name);
+    }
+    v
+}
+fn resolve_mutation(v: Value, expected: &[String]) -> Value {
+    json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_RESOLVE","version":v,"expectedHeadIds":expected})
+}
+impl Fixture {
+    async fn stored_envelope(&mut self, version: &str) -> Value {
+        sqlx::query_scalar(
+            "SELECT envelope FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn projected_url(&mut self, entity: &str) -> Option<String> {
+        sqlx::query_scalar("SELECT normalized_url FROM lane_entities WHERE account_id=$1 AND id=$2")
+            .bind(&self.p.account_id)
+            .bind(entity)
+            .fetch_one(&mut self.db)
+            .await
+            .unwrap()
+    }
+    /// Create a repository interactively from its raw SSH URL, then save `alternatives + 1`
+    /// concurrent versions from the original one so that every head retains the explicit port.
+    async fn conflicted_port_repository(
+        &mut self,
+        entity: &str,
+        raw: &str,
+        normalized: &str,
+        alternatives: usize,
+    ) -> Vec<String> {
+        let original = self.repo(entity, raw).await;
+        assert_eq!(original["repository"]["normalizedUrl"], json!(normalized));
+        for n in 0..=alternatives {
+            let saved = self
+                .call(
+                    "SaveRepository",
+                    json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":original["versionId"],"url":raw,"displayName":format!("Head {n}")}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                saved["result"]["version"]["repository"]["normalizedUrl"],
+                json!(normalized)
+            );
+        }
+        let heads = self.heads(entity).await;
+        assert_eq!(heads.len(), alternatives + 1);
+        heads
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn sync_create_preserves_explicit_port_without_mapping_to_a_portless_repository() {
+    for with_portless in [false, true] {
+        let mut f = Fixture::new().await;
+        let portless = id();
+        if with_portless {
+            f.repo(&portless, "https://example.com/a/b").await;
+        }
+        let entity = id();
+        let version = repo_version(&entity, PORT_URL, &[], Some("Port"));
+        let m = mutation(version.clone());
+        let pushed = f.push(m.clone()).await.unwrap();
+        assert_eq!(
+            pushed["results"][0]["result"]["result"],
+            "RESULT_KIND_APPLIED"
+        );
+        assert_eq!(pushed["repositoryMappings"], json!([]));
+        assert_eq!(
+            pushed["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        // The persisted envelope, entity projection and head all keep the explicit port.
+        let stored = f.stored_envelope(string(&version, "versionId")).await;
+        assert_eq!(stored["repository"], version["repository"]);
+        assert_eq!(f.projected_url(&entity).await.as_deref(), Some(PORT_URL));
+        assert_eq!(
+            f.heads(&entity).await,
+            vec![string(&version, "versionId").to_owned()]
+        );
+        if with_portless {
+            assert_eq!(
+                f.projected_url(&portless).await.as_deref(),
+                Some(PORTLESS_URL)
+            );
+            assert_eq!(f.heads(&portless).await.len(), 1);
+        }
+        assert_eq!(f.count("lane_repository_mappings").await, 0);
+        // Replaying the same mutation acknowledges the original result without new rows.
+        let (versions, entities) = (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+        );
+        let replay = f.push(m).await.unwrap();
+        assert_eq!(
+            replay["results"][0]["result"]["result"],
+            "RESULT_KIND_REPLAYED"
+        );
+        assert_eq!(
+            replay["results"][0]["result"]["version"],
+            pushed["results"][0]["result"]["version"]
+        );
+        assert_eq!(replay["repositoryMappings"], json!([]));
+        // A fresh transport request for the identical immutable version is also a replay.
+        let again = f.push(mutation(version.clone())).await.unwrap();
+        assert_eq!(
+            again["results"][0]["result"]["result"],
+            "RESULT_KIND_REPLAYED"
+        );
+        assert_eq!(
+            again["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        assert_eq!(f.count("lane_versions").await, versions);
+        assert_eq!(f.count("lane_entities").await, entities);
+        assert_eq!(f.count("lane_repository_mappings").await, 0);
+        // A true URL collision still maps the later repository to the owner of the exact URL.
+        let duplicate = id();
+        let collided = f
+            .push(mutation(repo_version(&duplicate, PORT_URL, &[], None)))
+            .await
+            .unwrap();
+        assert_eq!(
+            collided["repositoryMappings"],
+            json!([{"localId":duplicate,"canonicalId":entity}])
+        );
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_port_repository_version_replays_through_sync_create() {
+    let mut f = Fixture::new().await;
+    let entity = id();
+    let created = f
+        .call(
+            "CreateRepository",
+            json!({"meta":{"requestId":id()},"id":entity,"url":"ssh://git@example.com:443/a/b.git","displayName":"Port"}),
+        )
+        .await
+        .unwrap()["result"]["version"]
+        .clone();
+    assert_eq!(
+        created["repository"],
+        json!({"normalizedUrl":PORT_URL,"displayName":"Port"})
+    );
+    let (versions, entities) = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+    );
+    let replay = f.push(mutation(created.clone())).await.unwrap();
+    assert_eq!(
+        replay["results"][0]["result"]["result"],
+        "RESULT_KIND_REPLAYED"
+    );
+    assert_eq!(replay["results"][0]["result"]["version"], created);
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert_eq!(f.count("lane_entities").await, entities);
+    assert_eq!(f.count("lane_repository_mappings").await, 0);
+    assert_eq!(
+        f.stored_envelope(string(&created, "versionId")).await,
+        created
+    );
+    // A genuinely changed body under the same version ID is still rejected without writes.
+    for changed in [
+        json!({"normalizedUrl":"example.com/a/b","displayName":"Port"}),
+        json!({"normalizedUrl":PORT_URL,"displayName":"Changed"}),
+        json!({"normalizedUrl":"example.com:8443/a/b","displayName":"Port"}),
+    ] {
+        let mut v = created.clone();
+        v["repository"] = changed;
+        let err = f.push(mutation(v)).await.unwrap_err();
+        assert_eq!(err.reason, 6);
+    }
+    assert_eq!(
+        f.stored_envelope(string(&created, "versionId")).await,
+        created
+    );
+    assert_eq!(f.count("lane_versions").await, versions);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_and_sync_resolution_retain_the_explicit_port() {
+    for with_portless in [false, true] {
+        let mut f = Fixture::new().await;
+        if with_portless {
+            f.repo(&id(), "https://example.com/a/b").await;
+            f.repo(&id(), "https://example.com/c/d").await;
+        }
+        // Interactive ResolveConflict.
+        let a = id();
+        let heads = f
+            .conflicted_port_repository(&a, "ssh://git@example.com:443/a/b.git", PORT_URL, 1)
+            .await;
+        let history = f.count("lane_versions").await;
+        let resolved = f
+            .call(
+                "ResolveConflict",
+                json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL,"displayName":"Merged"}}}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved["result"]["version"]["repository"],
+            json!({"normalizedUrl":PORT_URL,"displayName":"Merged"})
+        );
+        let head = f.heads(&a).await;
+        assert_eq!(head.len(), 1);
+        assert_eq!(f.count("lane_versions").await, history + 1);
+        let stored = f.stored_envelope(&head[0]).await;
+        assert_eq!(stored["repository"]["normalizedUrl"], json!(PORT_URL));
+        let mut parents: Vec<String> = stored["parentVersionIds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        parents.sort();
+        assert_eq!(parents, heads);
+        assert_eq!(f.projected_url(&a).await.as_deref(), Some(PORT_URL));
+
+        // Sync RESOLVE with the complete observed head set.
+        let b = id();
+        let heads = f
+            .conflicted_port_repository(
+                &b,
+                "ssh://git@example.com:443/c/d.git",
+                "example.com:443/c/d",
+                1,
+            )
+            .await;
+        let history = f.count("lane_versions").await;
+        let version = repo_version(&b, "example.com:443/c/d", &heads, Some("Merged"));
+        let result = f
+            .push(resolve_mutation(version.clone(), &heads))
+            .await
+            .unwrap();
+        assert_eq!(result["repositoryMappings"], json!([]));
+        assert_eq!(
+            result["results"][0]["result"]["version"]["repository"],
+            version["repository"]
+        );
+        assert_eq!(
+            f.heads(&b).await,
+            vec![string(&version, "versionId").to_owned()]
+        );
+        assert_eq!(f.count("lane_versions").await, history + 1);
+        assert_eq!(
+            f.projected_url(&b).await.as_deref(),
+            Some("example.com:443/c/d")
+        );
+        assert_eq!(
+            f.stored_envelope(string(&version, "versionId")).await["repository"],
+            version["repository"]
+        );
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_and_colliding_port_resolutions_are_rejected_without_writes() {
+    let mut f = Fixture::new().await;
+    f.repo(&id(), "https://example.com/a/b").await;
+    let a = id();
+    let heads = f
+        .conflicted_port_repository(&a, "ssh://git@example.com:443/a/b.git", PORT_URL, 1)
+        .await;
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    // True URL collision: the portless URL is owned by another repository.
+    let err = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORTLESS_URL}}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 1);
+    let err = f
+        .push(resolve_mutation(
+            repo_version(&a, PORTLESS_URL, &heads, None),
+            &heads,
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 1);
+    assert_eq!(f.heads(&a).await, heads);
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    // A resolution that keeps the port succeeds even though the portless repository exists.
+    f.call(
+        "ResolveConflict",
+        json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL}}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.projected_url(&a).await.as_deref(), Some(PORT_URL));
+    // Stale: the observed heads were already replaced by the resolution above.
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    let current = f.heads(&a).await;
+    let err = f
+        .call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":a,"expectedHeadIds":heads,"resolved":{"repository":{"normalizedUrl":PORT_URL}}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 5);
+    let err = f
+        .push(resolve_mutation(
+            repo_version(&a, PORT_URL, &heads, None),
+            &heads,
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(err.reason, 5);
+    assert_eq!(f.heads(&a).await, current);
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn malformed_repository_identifiers_are_rejected_atomically() {
+    let mut f = Fixture::new().await;
+    for url in [
+        "example.com:8443/Mixed/Case",
+        "example.com/path.git",
+        "example.com:22/a/b",
+    ] {
+        let entity = id();
+        let version = repo_version(&entity, url, &[], None);
+        f.push(mutation(version.clone())).await.unwrap();
+        assert_eq!(
+            f.stored_envelope(string(&version, "versionId")).await["repository"]["normalizedUrl"],
+            json!(url)
+        );
+        assert_eq!(f.projected_url(&entity).await.as_deref(), Some(url));
+    }
+    let snapshot = (
+        f.count("lane_versions").await,
+        f.count("lane_entities").await,
+        f.count("lane_repository_mappings").await,
+    );
+    for url in [
+        "example.com:443/a/b?x=1",
+        "example.com:443/a/b#frag",
+        "example.com:443/a/../b",
+        "example.com:443/a/./b",
+        "example.com:443/a/%2Fb",
+        "example.com:443/a/%5Cb",
+        "example.com:443",
+        "/a/b",
+        "",
+    ] {
+        let err = f
+            .push(mutation(repo_version(&id(), url, &[], None)))
+            .await
+            .unwrap_err();
+        assert_eq!(err.reason, 1, "{url:?}");
+    }
+    assert_eq!(
+        (
+            f.count("lane_versions").await,
+            f.count("lane_entities").await,
+            f.count("lane_repository_mappings").await,
+        ),
+        snapshot
+    );
+    f.close().await;
+}
+
 impl Fixture {
     async fn capture(&mut self, method: &str, q: Value) -> Result<Value> {
         let mut tx = self.db.begin().await?;
@@ -2325,5 +2745,496 @@ async fn planning_item_listing_filters_pages_and_rejects_invalid_kinds() {
     sorted.sort();
     assert_eq!(seen, sorted);
     assert_eq!(seen.len(), 3);
+    f.close().await;
+}
+
+// Prompt-history membership is derived from the submitted parent snapshots, never from the
+// accepted head, and both write paths share one rule.
+impl Fixture {
+    async fn envelope(&mut self, version: &str) -> Value {
+        sqlx::query_scalar(
+            "SELECT envelope FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn flag(&mut self, version: &str) -> bool {
+        sqlx::query_scalar(
+            "SELECT prompt_version FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn history(&mut self, entity: &str, prompts_only: bool) -> Vec<String> {
+        let r = self
+            .call(
+                "ListHistory",
+                json!({"id":entity,"promptsOnly":prompts_only,"page":{"size":100}}),
+            )
+            .await
+            .unwrap();
+        let mut ids: Vec<String> = r["versions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| string(v, "versionId").to_owned())
+            .collect();
+        ids.sort();
+        ids
+    }
+    /// Create a task with an optional prompt and return its first version ID.
+    async fn prompt_task(&mut self, entity: &str, prompt: Option<&str>) -> String {
+        let mut q = json!({"meta":{"requestId":id()},"id":entity,"repository":{"id":REPO},"title":"initial"});
+        if let Some(prompt) = prompt {
+            q["prompt"] = json!(prompt);
+        }
+        let r = self.call("CreateTask", q).await.unwrap();
+        string(&r["result"]["version"], "versionId").to_owned()
+    }
+    /// Submit SaveTask with the complete body of `base` changed by `edit`.
+    async fn edit(&mut self, entity: &str, base: &str, edit: impl FnOnce(&mut Value)) -> Value {
+        let mut task = self.envelope(base).await["task"].clone();
+        edit(&mut task);
+        self.call_new(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":base,"task":task}),
+        )
+        .await
+        .unwrap()
+    }
+    /// Like `call`, but records the version this request added in `newVersionId`. A preserved
+    /// stale save answers with the accepted head, so the added head is found by comparison.
+    async fn call_new(&mut self, method: &str, q: Value) -> Result<Value> {
+        let entity = string(&q, "id").to_owned();
+        let before = self.heads(&entity).await;
+        let mut r = self.call(method, q).await?;
+        let added = self
+            .heads(&entity)
+            .await
+            .into_iter()
+            .find(|h| !before.contains(h));
+        r["newVersionId"] =
+            json!(added.unwrap_or_else(|| string(&r["result"]["version"], "versionId").to_owned()));
+        Ok(r)
+    }
+    async fn resolve(&mut self, entity: &str, body: Value) -> Value {
+        let heads = self.heads(entity).await;
+        self.call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":entity,"expectedHeadIds":heads,"resolved":{"task":body}}),
+        )
+        .await
+        .unwrap()
+    }
+}
+/// The version a request added (see `Fixture::call_new`), else the version it returned.
+fn version_id(r: &Value) -> String {
+    r.get("newVersionId")
+        .map_or_else(
+            || string(&r["result"]["version"], "versionId"),
+            |v| v.as_str().unwrap(),
+        )
+        .to_owned()
+}
+fn set_prompt(task: &mut Value, prompt: Option<&str>) {
+    match prompt {
+        Some(prompt) => task["prompt"] = json!(prompt),
+        None => {
+            task.as_object_mut().unwrap().remove("prompt");
+        }
+    }
+}
+const PROMPT_CASES: [(Option<&str>, Option<&str>); 2] =
+    [(Some("old"), Some("new")), (None, Some(""))];
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_save_membership_follows_the_submitted_base_not_the_accepted_head() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (old, new) in PROMPT_CASES {
+        // C changes A's prompt but equals the accepted head B: it is a member.
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(&f.edit(&task, &a, |t| set_prompt(t, new)).await);
+        let stale = f
+            .edit(&task, &a, |t| {
+                t["title"] = json!("changed");
+                set_prompt(t, new);
+            })
+            .await;
+        assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+        let c = version_id(&stale);
+        assert!(f.flag(&b).await && f.flag(&c).await, "{old:?}->{new:?}");
+        let mut members = vec![b.clone(), c.clone()];
+        members.extend(old.map(|_| a.clone()));
+        members.sort();
+        assert_eq!(f.history(&task, true).await, members, "{old:?}->{new:?}");
+        let mut all = vec![a.clone(), b, c];
+        all.sort();
+        assert_eq!(f.history(&task, false).await, all);
+        assert_eq!(f.heads(&task).await.len(), 2);
+
+        // C changes only the title relative to A although B differs: it is not a member.
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(&f.edit(&task, &a, |t| set_prompt(t, new)).await);
+        let stale = f
+            .edit(&task, &a, |t| {
+                t["title"] = json!("changed");
+                set_prompt(t, old);
+            })
+            .await;
+        assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+        let c = version_id(&stale);
+        assert!(!f.flag(&c).await, "{old:?}->{new:?}");
+        let mut members = vec![b.clone()];
+        members.extend(old.map(|_| a.clone()));
+        members.sort();
+        assert_eq!(f.history(&task, true).await, members, "{old:?}->{new:?}");
+        let mut all = vec![a, b, c];
+        all.sort();
+        assert_eq!(f.history(&task, false).await, all);
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn resolution_membership_compares_every_parent() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (old, new) in PROMPT_CASES {
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(
+            &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+                .await,
+        );
+        f.edit(&task, &a, |t| set_prompt(t, new)).await;
+        let body = f.envelope(&b).await["task"].clone();
+        // The body equals the accepted parent B but differs from C.
+        let resolved = version_id(&f.resolve(&task, body).await);
+        assert!(f.flag(&resolved).await, "{old:?}->{new:?}");
+        assert!(f.history(&task, true).await.contains(&resolved));
+        assert_eq!(f.heads(&task).await, vec![resolved]);
+    }
+
+    // Resolving to the shared prompt and captures of every parent is not a member.
+    let task = id();
+    let a = f.prompt_task(&task, Some("same")).await;
+    let b = version_id(&f.edit(&task, &a, |t| t["title"] = json!("b")).await);
+    f.edit(&task, &a, |t| t["description"] = json!("c")).await;
+    let body = f.envelope(&b).await["task"].clone();
+    let resolved = version_id(&f.resolve(&task, body).await);
+    assert!(!f.flag(&resolved).await);
+    assert!(!f.history(&task, true).await.contains(&resolved));
+
+    // Capture metadata differences make a resolution a member, and a stale save a member.
+    let task = id();
+    let mut image = image();
+    image["capture"]["pageTitle"] = json!("Before");
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[image]}))
+        .await
+        .unwrap();
+    let a = version_id(&created);
+    let b = version_id(
+        &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+            .await,
+    );
+    let stale = f
+        .edit(&task, &a, |t| {
+            t["captures"][0]["pageTitle"] = json!("After")
+        })
+        .await;
+    assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(f.flag(&version_id(&stale)).await);
+    let body = f.envelope(&b).await["task"].clone();
+    let resolved = version_id(&f.resolve(&task, body).await);
+    assert!(f.flag(&resolved).await);
+    assert!(f.history(&task, true).await.contains(&resolved));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_specialized_edits_use_the_submitted_base_for_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (method, extra) in [
+        ("SetProgress", json!({"progress":"PROGRESS_DONE"})),
+        ("SetProposal", json!({"proposal":"PROPOSAL_ACCEPTED"})),
+    ] {
+        let task = id();
+        let r = f
+            .call("CreateTask", json!({"meta":{"requestId":id()},"id":task,"repository":{"id":REPO},"title":"initial","proposal":"PROPOSAL_PENDING","prompt":"old"}))
+            .await
+            .unwrap();
+        let a = version_id(&r);
+        // The accepted head changes the prompt; a stale edit that keeps A's prompt is not a
+        // member although it differs from the head.
+        let b = version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await);
+        let mut q = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":a});
+        for (k, v) in extra.as_object().unwrap() {
+            q[k] = v.clone();
+        }
+        let stale = f.call_new(method, q).await.unwrap();
+        assert_eq!(
+            stale["result"]["result"], "RESULT_KIND_CONFLICT",
+            "{method}"
+        );
+        let c = version_id(&stale);
+        assert_ne!(c, b);
+        assert!(!f.flag(&c).await, "{method}");
+        assert!(!f.history(&task, true).await.contains(&c), "{method}");
+        assert!(f.history(&task, false).await.contains(&c), "{method}");
+    }
+    // A fresh edit from the head keeps the head's prompt and stays outside the prompt history.
+    let task = id();
+    let a = f.prompt_task(&task, Some("old")).await;
+    let b = version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await);
+    let fresh = f
+        .call_new("SetProgress", json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":b,"progress":"PROGRESS_DONE"}))
+        .await
+        .unwrap();
+    assert!(!f.flag(&version_id(&fresh)).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn capture_changes_and_normalization_decide_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let (first, second) = (image(), image());
+    let task = id();
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[first.clone(),second.clone()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    let (c1, c2) = (first["capture"].clone(), second["capture"].clone());
+
+    // Reordering and removal are fresh capture changes.
+    let reordered = version_id(
+        &f.edit(&task, &v0, |t| t["captures"] = json!([c2, c1]))
+            .await,
+    );
+    assert!(f.flag(&reordered).await);
+    // A stale title-only edit from V0 is unchanged relative to its base although the head
+    // reordered the captures.
+    let stale = f
+        .edit(&task, &v0, |t| t["title"] = json!("title only"))
+        .await;
+    assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(!f.flag(&version_id(&stale)).await);
+    // A stale removal differs from its base and is a member, on a task of its own.
+    let task = id();
+    let (third, fourth) = (image(), image());
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[third.clone(),fourth.clone()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    f.edit(&task, &v0, |t| {
+        t["captures"] = json!([fourth["capture"].clone(), third["capture"].clone()])
+    })
+    .await;
+    let removal = f
+        .edit(&task, &v0, |t| {
+            t["captures"] = json!([third["capture"].clone()])
+        })
+        .await;
+    assert_eq!(removal["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(f.flag(&version_id(&removal)).await);
+    // Attachment ownership and retained references are unchanged.
+    assert_eq!(f.count("lane_attachments").await, 4);
+    let other = id();
+    f.task(&other, REPO).await;
+    let other_base = f.accepted(&other).await;
+    let foreign = f
+        .call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":other,"expectedVersionId":other_base,"task":task_fields("Title", REPO, json!({"captures":[c1]}))}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(foreign.reason & 0xff, 13, "{foreign:?}");
+
+    // A removal head can restore the retained references from V0.
+    let task = id();
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[image()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    let removed = version_id(
+        &f.edit(&task, &v0, |t| {
+            t.as_object_mut().unwrap().remove("captures");
+        })
+        .await,
+    );
+    assert!(f.flag(&removed).await);
+    let restored = f
+        .call_new("RestorePrompt", json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":removed,"sourceVersionId":v0}))
+        .await
+        .unwrap();
+    assert!(f.flag(&version_id(&restored)).await);
+
+    // Omitted and empty capture arrays are equal after normalization.
+    let task = id();
+    let v0 = f.prompt_task(&task, Some("p")).await;
+    let v1 = version_id(
+        &f.edit(&task, &v0, |t| {
+            t["title"] = json!("one");
+            t["captures"] = json!([]);
+        })
+        .await,
+    );
+    assert!(!f.flag(&v1).await);
+    let v2 = version_id(
+        &f.edit(&task, &v1, |t| {
+            t["title"] = json!("two");
+            t.as_object_mut().unwrap().remove("captures");
+        })
+        .await,
+    );
+    assert!(!f.flag(&v2).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn fresh_edits_restorations_and_replay_keep_their_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for prompt in [Some("same"), None] {
+        let task = id();
+        let a = f.prompt_task(&task, prompt).await;
+        let title = version_id(&f.edit(&task, &a, |t| t["title"] = json!("changed")).await);
+        assert!(!f.flag(&title).await);
+        let changed = version_id(
+            &f.edit(&task, &title, |t| set_prompt(t, Some("different")))
+                .await,
+        );
+        assert!(f.flag(&changed).await);
+        // Restoring equal text or an absent prompt is explicit and remains a member, once.
+        let back = version_id(&f.edit(&task, &changed, |t| set_prompt(t, prompt)).await);
+        assert!(f.flag(&back).await);
+        let restore = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":back,"sourceVersionId":a});
+        let restored = f.call("RestorePrompt", restore.clone()).await.unwrap();
+        assert!(f.flag(&version_id(&restored)).await);
+        let versions = f.count("lane_versions").await;
+        let replay = f.call("RestorePrompt", restore).await.unwrap();
+        assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+        assert_eq!(f.count("lane_versions").await, versions);
+    }
+
+    // A replayed stale save creates no extra version.
+    let task = id();
+    let a = f.prompt_task(&task, Some("old")).await;
+    f.edit(&task, &a, |t| t["prompt"] = json!("new")).await;
+    let mut stale = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":a});
+    let mut body = f.envelope(&a).await["task"].clone();
+    body["title"] = json!("changed");
+    stale["task"] = body;
+    let first = f.call_new("SaveTask", stale.clone()).await.unwrap();
+    let versions = f.count("lane_versions").await;
+    f.call("SaveTask", stale).await.unwrap();
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert!(!f.flag(&version_id(&first)).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_and_sync_classify_equivalent_graphs_identically() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    // Graph one: A(old) -> B(title only); C(prompt new) stale from A; resolution with B's body.
+    // Graph two: A(old) -> B(prompt new); C(title changed, prompt old) stale from A.
+    let mut interactive: Vec<Vec<bool>> = Vec::new();
+    let mut synced: Vec<Vec<bool>> = Vec::new();
+    for shape in [1, 2] {
+        let task = id();
+        let a = f.prompt_task(&task, Some("old")).await;
+        let (b, c) = if shape == 1 {
+            (
+                version_id(
+                    &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+                        .await,
+                ),
+                version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await),
+            )
+        } else {
+            (
+                version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await),
+                version_id(&f.edit(&task, &a, |t| t["title"] = json!("changed")).await),
+            )
+        };
+        let mut ids = vec![a, b.clone(), c];
+        if shape == 1 {
+            let body = f.envelope(&b).await["task"].clone();
+            ids.push(version_id(&f.resolve(&task, body).await));
+        }
+        let mut flags = Vec::new();
+        for version in &ids {
+            flags.push(f.flag(version).await);
+        }
+        interactive.push(flags);
+
+        let task = id();
+        let versions: Vec<String> = (0..4).map(|_| id()).collect();
+        let body = |title: &str, prompt: &str| task_fields(title, REPO, json!({"prompt":prompt}));
+        f.push(mutation(pushed_task(
+            &task,
+            &versions[0],
+            &[],
+            body("initial", "old"),
+            3,
+        )))
+        .await
+        .unwrap();
+        let specs: [(&str, &str); 2] = if shape == 1 {
+            [("title only", "old"), ("initial", "new")]
+        } else {
+            [("initial", "new"), ("changed", "old")]
+        };
+        for (slot, (title, prompt)) in specs.iter().enumerate() {
+            f.push(mutation(pushed_task(
+                &task,
+                &versions[slot + 1],
+                &[&versions[0]],
+                body(title, prompt),
+                3,
+            )))
+            .await
+            .unwrap();
+        }
+        let mut count = 3;
+        if shape == 1 {
+            let heads = f.heads(&task).await;
+            assert_eq!(heads.len(), 2);
+            f.push(json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_RESOLVE","expectedHeadIds":heads,"version":pushed_task(&task, &versions[3], &[&versions[1], &versions[2]], body("title only", "old"), 3)}))
+                .await
+                .unwrap();
+            count = 4;
+        }
+        let mut flags = Vec::new();
+        for version in &versions[..count] {
+            flags.push(f.flag(version).await);
+        }
+        synced.push(flags);
+    }
+    assert_eq!(interactive, synced);
+    assert_eq!(interactive[0], vec![true, false, true, true]);
+    assert_eq!(interactive[1], vec![true, true, false]);
     f.close().await;
 }

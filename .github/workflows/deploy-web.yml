@@ -1,0 +1,78 @@
+name: Deploy selected web apps
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      apps:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(inputs.apps) }}
+    environment: ${{ matrix.app == 'devbase' && 'devbase-production' || matrix.app == 'delitools' && 'delitools-production' || 'delino-site-production' }}
+    concurrency:
+      group: release-web-${{ matrix.app }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.revision }}
+          lfs: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - name: Validate deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || 'CLOUDFLARE_PAGES_PROJECT'] }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-f0-9]{32}$ ]]
+          [[ "$CLOUDFLARE_PAGES_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,57}$ ]]
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate and build the selected web application
+        env:
+          WEB_COMMAND: ${{ (matrix.app == 'devbase' || matrix.app == 'delitools') && 'test' || 'build' }}
+          # Public browser identifiers only; Git Tracker is the only consumer.
+          PUBLIC_LOGTO_ENDPOINT: ${{ vars.PUBLIC_LOGTO_ENDPOINT }}
+          PUBLIC_LOGTO_APP_ID: ${{ vars.PUBLIC_LOGTO_APP_ID }}
+        working-directory: apps/${{ matrix.app }}
+        run: pnpm "$WEB_COMMAND"
+      - name: Include distribution notices
+        run: cp "LICENSE" "NOTICE" "apps/${{ matrix.app }}/dist/"
+      - name: Preserve the deployment candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}-${{ inputs.version }}-${{ inputs.revision }}
+          path: apps/${{ matrix.app }}/dist/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Deploy the release build to Cloudflare Pages production
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        env:
+          # pnpm 12 reads pnpm_config_* rather than npm_config_* settings.
+          # The action installs Wrangler with `pnpm add` at the workspace root.
+          # Remove this step-local exception when it supports `--workspace-root`.
+          pnpm_config_ignore_workspace_root_check: "true"
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.151.1"
+          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || 'CLOUDFLARE_PAGES_PROJECT'] }} --branch=main --commit-hash=${{ inputs.revision }}
+      - name: Remove generated frontend output
+        if: always()
+        run: rm -rf "apps/${{ matrix.app }}/dist"
