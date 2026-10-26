@@ -1,5 +1,5 @@
 ---
-"@apps/lane-chrome-extension": patch
+"@apps/lane-chrome-extension": none
 ---
 
 Treat an omitted or empty active-tab URL as a missing tab grant instead of a

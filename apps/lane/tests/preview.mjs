@@ -112,6 +112,23 @@ const principals = {
 let principal = "a";
 let sessionMode = "ok";
 let requestLog = [];
+// Events fixture served by ListReceivers/ListEvents. /test/events replaces it,
+// /test/events-requests returns the recorded read requests. An optional page
+// size makes ListEvents paginate with offset cursors, and a fail count makes
+// the next reads fail. All fields start empty so other scenarios are unaffected.
+// GetEvent replies come from `details` (keyed by event ID). While `holdDetails`
+// is set, each GetEvent waits in `heldDetails` until /test/events-release
+// settles it by arrival index, which lets a test order replies explicitly.
+const eventsFixture = {
+  receivers: [],
+  events: [],
+  pageSize: 0,
+  failReads: 0,
+  requests: [],
+  details: {},
+  holdDetails: false,
+  heldDetails: [],
+};
 let emptyList = false;
 let failSave = false;
 let history = [task];
@@ -163,6 +180,34 @@ createServer(async (req, res) => {
           })),
         ),
       );
+      return;
+    }
+    if (url.pathname === "/test/events") {
+      const body = JSON.parse(url.searchParams.get("body") || "{}");
+      for (const key of [
+        "receivers",
+        "events",
+        "pageSize",
+        "failReads",
+        "details",
+        "holdDetails",
+      ])
+        if (key in body) eventsFixture[key] = body[key];
+      // Turning holding on or off starts a new release index sequence.
+      if ("holdDetails" in body) eventsFixture.heldDetails = [];
+      res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/events-release") {
+      const held = eventsFixture.heldDetails[Number(url.searchParams.get("n"))];
+      held?.settle(url.searchParams.get("mode") || "ok");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ released: Boolean(held) }));
+      return;
+    }
+    if (url.pathname === "/test/events-requests") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(eventsFixture.requests));
       return;
     }
     if (url.pathname === "/test/fail-save") {
@@ -362,10 +407,70 @@ createServer(async (req, res) => {
         case "ListConnections":
           response = { items: [{ id: "test-connection", name: "Test agent" }] };
           break;
-        case "ListReceivers":
-        case "ListEvents":
-          response = { items: [] };
+        case "GetEvent": {
+          eventsFixture.requests.push({ method, input });
+          // The reply content is fixed when the request arrives, so a test can
+          // change the fixture between two inspections of the same ID.
+          const detail = eventsFixture.details[input.id] ?? {};
+          let mode = "ok";
+          if (eventsFixture.holdDetails)
+            mode = await new Promise((settle) =>
+              eventsFixture.heldDetails.push({ id: input.id, settle }),
+            );
+          if (mode === "fail") {
+            res.statusCode = 503;
+            response = {
+              code: "unavailable",
+              message: `Simulated detail failure ${input.id}`,
+            };
+          } else if (mode === "ok") response = detail;
           break;
+        }
+        case "ReopenEvent": {
+          eventsFixture.requests.push({ method, input });
+          const event = eventsFixture.details[input.id]?.event;
+          if (event)
+            response = {
+              event: { ...event, state: "EVENT_STATE_PENDING", revision: "2" },
+            };
+          break;
+        }
+        case "DeleteEvent":
+          eventsFixture.requests.push({ method, input });
+          break;
+        case "ListReceivers":
+        case "ListEvents": {
+          eventsFixture.requests.push({ method, input });
+          if (eventsFixture.failReads > 0) {
+            eventsFixture.failReads--;
+            res.statusCode = 503;
+            response = {
+              code: "unavailable",
+              message: "Simulated read failure",
+            };
+            break;
+          }
+          const repositoryId = input.repositoryId;
+          const matches = (item) =>
+            !repositoryId || item.repositoryId === repositoryId;
+          if (method === "ListReceivers") {
+            response = { items: eventsFixture.receivers.filter(matches) };
+            break;
+          }
+          const states = input.states ?? [];
+          const items = eventsFixture.events.filter(
+            (item) =>
+              matches(item) && (!states.length || states.includes(item.state)),
+          );
+          const start = Number(input.page?.cursor || 0);
+          const size = eventsFixture.pageSize || items.length;
+          const end = start + size;
+          response = {
+            items: items.slice(start, end),
+            nextCursor: end < items.length ? String(end) : "",
+          };
+          break;
+        }
       }
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(response));

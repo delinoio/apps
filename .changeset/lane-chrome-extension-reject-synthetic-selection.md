@@ -1,5 +1,5 @@
 ---
-"@apps/lane-chrome-extension": patch
+"@apps/lane-chrome-extension": none
 ---
 
 Ignore page-dispatched click, pointermove and keyboard events in the RealQA

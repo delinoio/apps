@@ -4,27 +4,36 @@ import { useEffect, useRef, useState } from "@lynx-js/react";
 import {
   WebhookService,
   EventState,
-  type WebhookReceiver as ProtoWebhookReceiver,
-  type WebhookEvent as ProtoWebhookEvent,
-  type ProcessingRecord as ProtoProcessingRecord,
   type EntityResult as ProtoEntityResult,
 } from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
+import {
+  EventDetailReader,
+  EventsLoader,
+  emptyEventDetailView,
+  emptyEventsView,
+  eventsQueryKey,
+  type EventDetailView,
+  type EventsView,
+} from "./events-model";
 import { repositoryName } from "./model";
 import { hostAction } from "./runtime";
 export function Events({
   adapter,
   repositories,
+  revision,
   openTask,
 }: {
   adapter: LaneAdapter;
   repositories: EntityResult[];
+  // Server-change invalidation counter owned by App. A new value rereads the
+  // first page of the active query; Events keeps its identity and local state.
+  revision: number;
   openTask: (id: string) => void;
 }) {
-  const [receivers, setReceivers] = useState<WebhookReceiver[]>([]);
-  const [events, setEvents] = useState<WebhookEvent[]>([]);
-  const [cursor, setCursor] = useState("");
+  const [view, setView] = useState<EventsView>(emptyEventsView);
+  const { receivers, events, cursor, cursorKey } = view;
   const [repositoryId, setRepositoryId] = useState("");
   const [state, setState] = useState<EventState>(EventState.UNSPECIFIED);
   const [editing, setEditing] = useState<{
@@ -33,16 +42,14 @@ export function Events({
     repositoryId: string;
     name: string;
   }>();
-  const [selected, setSelected] = useState<{
-    event: WebhookEvent;
-    processing: ProcessingRecord[];
-  }>();
+  const [detail, setDetail] = useState<EventDetailView>(emptyEventDetailView);
+  const { selected } = detail;
   const [secret, setSecret] = useState<{ secret: string; endpoint?: string }>();
   const [deleting, setDeleting] = useState<{
     kind: "receiver" | "event";
     id: string;
   }>();
-  const [busy, setBusy] = useState(false);
+  const [mutating, setMutating] = useState(false);
   // Tracks only the receiver editor's own save. It is separate from the shared
   // `busy` flag so unrelated reloads never lock the receiver fields while the
   // user is typing. The ref closes the window before the next render disables
@@ -50,8 +57,11 @@ export function Events({
   const [savingReceiver, setSavingReceiver] = useState(false);
   const savingReceiverRef = useRef(false);
   const [error, setError] = useState("");
+  // A pending current inspection also blocks mutations, as before; obsolete
+  // inspections never reach this state.
+  const busy = mutating || detail.loading;
   const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
+    setMutating(true);
     setError("");
     try {
       await fn();
@@ -60,32 +70,45 @@ export function Events({
         e instanceof Error ? e.message : "Operation failed. Input is retained.",
       );
     } finally {
-      setBusy(false);
+      setMutating(false);
     }
   };
-  const load = async (more = false) => {
-    let receiverCursor = "";
-    const all: WebhookReceiver[] = [];
-    do {
-      const r = await adapter.call(WebhookService.method.listReceivers, {
-        page: { size: 100, cursor: receiverCursor },
-        repositoryId: repositoryId || undefined,
-      });
-      all.push(...r.items);
-      receiverCursor = r.nextCursor;
-    } while (receiverCursor);
-    setReceivers(all);
-    const r = await adapter.call(WebhookService.method.listEvents, {
-      page: { size: 100, cursor: more ? cursor : "" },
-      repositoryId: repositoryId || undefined,
-      states: state ? [state] : [],
-    });
-    setEvents(more ? [...events, ...r.items] : r.items);
-    setCursor(r.nextCursor);
-  };
+  // Owns list loading so only the latest load for the current adapter and
+  // filters can publish rows, cursor and load status. Mutation outcomes stay in
+  // run() above.
+  const loader = useRef<EventsLoader | undefined>(undefined);
+  const query = { repositoryId, state };
   useEffect(() => {
-    void run(() => load());
-  }, [adapter, repositoryId, state]);
+    const owned = new EventsLoader(adapter, setView);
+    loader.current = owned;
+    setView(emptyEventsView);
+    return () => {
+      owned.dispose();
+      if (loader.current === owned) loader.current = undefined;
+    };
+  }, [adapter]);
+  // Reloading the same query keeps filters, rows and dialogs, restarts the
+  // first page and supersedes older loads and continuations.
+  useEffect(() => {
+    void loader.current?.reload({ repositoryId, state });
+  }, [adapter, repositoryId, state, revision]);
+  // Owns detail reads so only the newest inspection of the active adapter can
+  // open or replace the dialog or publish its status; Close, Escape, leaving to
+  // a linked task and unmounting end the ownership of older reads.
+  const reader = useRef<EventDetailReader | undefined>(undefined);
+  useEffect(() => {
+    const owned = new EventDetailReader(adapter, setDetail);
+    reader.current = owned;
+    setDetail(emptyEventDetailView);
+    return () => {
+      owned.dispose();
+      if (reader.current === owned) reader.current = undefined;
+    };
+  }, [adapter]);
+  const closeDetail = () => reader.current?.close();
+  const load = async () => {
+    await loader.current?.refresh();
+  };
   return (
     <view className="section">
       <text className="heading">Events and webhook receivers</text>
@@ -116,7 +139,7 @@ export function Events({
         onChange={setState}
       />
       <view className="row wrap">
-        <Button onClick={() => void run(() => load())}>Refresh events</Button>
+        <Button onClick={() => void load()}>Refresh events</Button>
         <Button
           primary
           onClick={() =>
@@ -131,7 +154,9 @@ export function Events({
           Create receiver
         </Button>
       </view>
-      {error && <Notice>{error}</Notice>}
+      {(error || view.error || detail.error) && (
+        <Notice>{error || view.error || detail.error}</Notice>
+      )}
       <text className="heading">Receiving settings</text>
       {receivers.map((r) => (
         <view className="card" key={r.id}>
@@ -181,7 +206,10 @@ export function Events({
         </view>
       ))}
       <text className="heading">Retained events</text>
-      {events.length === 0 && (
+      {events.length === 0 && view.loading && (
+        <text className="muted">Loading events...</text>
+      )}
+      {events.length === 0 && !view.loading && (
         <text className="muted">No events match these filters.</text>
       )}
       {events.map((e) => (
@@ -191,22 +219,20 @@ export function Events({
           </text>
           <text>Sender event: {e.senderEventId}</text>
           <Button
-            onClick={() =>
-              void run(async () => {
-                const r = await adapter.call(WebhookService.method.getEvent, {
-                  id: e.id,
-                });
-                if (r.event)
-                  setSelected({ event: r.event, processing: r.processing });
-              })
-            }
+            onClick={() => {
+              setError("");
+              void reader.current?.inspect(e.id);
+            }}
           >
             Inspect event
           </Button>
         </view>
       ))}
-      {cursor && (
-        <Button onClick={() => void run(() => load(true))}>
+      {cursor && cursorKey === eventsQueryKey(query) && (
+        <Button
+          disabled={view.loading || view.loadingMore}
+          onClick={() => void loader.current?.loadMore(query)}
+        >
           Load more events
         </Button>
       )}
@@ -317,7 +343,7 @@ export function Events({
         </Dialog>
       )}
       {selected && (
-        <Dialog title="Event details" onClose={() => setSelected(undefined)}>
+        <Dialog title="Event details" onClose={closeDetail}>
           <text>
             {selected.event.eventType} · {EventState[selected.event.state]}
           </text>
@@ -342,7 +368,7 @@ export function Events({
                 <Button
                   key={id}
                   onClick={() => {
-                    setSelected(undefined);
+                    closeDetail();
                     openTask(id);
                   }}
                 >
@@ -363,7 +389,7 @@ export function Events({
                     expectedRevision: selected.event.revision,
                   },
                 );
-                if (r.event) setSelected({ ...selected, event: r.event });
+                if (r.event) reader.current?.update(r.event);
                 await load();
               })
             }
@@ -377,7 +403,7 @@ export function Events({
           >
             Delete event
           </Button>
-          {error && <Notice>{error}</Notice>}
+          {(error || detail.error) && <Notice>{error || detail.error}</Notice>}
         </Dialog>
       )}
       {deleting && (
@@ -405,7 +431,7 @@ export function Events({
                     id: deleting.id,
                   });
                 setDeleting(undefined);
-                setSelected(undefined);
+                closeDetail();
                 await load();
               })
             }
@@ -420,9 +446,3 @@ export function Events({
 }
 
 type EntityResult = UI<ProtoEntityResult>;
-
-type WebhookReceiver = UI<ProtoWebhookReceiver>;
-
-type WebhookEvent = UI<ProtoWebhookEvent>;
-
-type ProcessingRecord = UI<ProtoProcessingRecord>;

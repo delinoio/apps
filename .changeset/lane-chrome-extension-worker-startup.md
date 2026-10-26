@@ -1,5 +1,5 @@
 ---
-"@apps/lane-chrome-extension": patch
+"@apps/lane-chrome-extension": none
 ---
 
 Remove top-level await from the extension service worker so Chromium can start it.
