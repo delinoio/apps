@@ -130,14 +130,31 @@ document.body.append(view);
 installAccessibility(view);
 
 view.hidden = true;
+// A failed reconciliation never discards the view: after a transient failure the
+// view is only hidden, so current-screen input survives until an explicit retry
+// confirms the session. A rejected session already reset the view through
+// sessionChanged(undefined).
+const showGate = (e) => {
+  gate.hidden = false;
+  view.hidden = true;
+  status.textContent =
+    e instanceof Error ? e.message : "Connection failed. Retry explicitly.";
+};
 const start = async () => {
   status.textContent = "Connecting…";
   try {
     await online.start();
   } catch (e) {
-    gate.hidden = false;
-    status.textContent =
-      e instanceof Error ? e.message : "Connection failed. Retry explicitly.";
+    showGate(e);
+  }
+};
+// Focus and online resume reconcile the API session before business requests
+// continue, because an approval popup may have replaced the session cookie.
+const resume = async () => {
+  try {
+    await online.resume();
+  } catch (e) {
+    showGate(e);
   }
 };
 signIn.href = online.loginUrl();
@@ -154,10 +171,10 @@ window.addEventListener("message", (event) => {
     gate.hidden = false;
   });
 });
-window.addEventListener("online", () => online.resume());
+window.addEventListener("online", () => void resume());
 window.addEventListener("offline", () =>
   view.sendGlobalEvent("lane.onlineChanged", [{}]),
 );
-window.addEventListener("focus", () => online.resume());
+window.addEventListener("focus", () => void resume());
 window.addEventListener("pagehide", () => online.stop());
 await start();

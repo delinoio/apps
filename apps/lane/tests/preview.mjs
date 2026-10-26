@@ -65,6 +65,32 @@ const planning =
   process.env.LANE_PREVIEW_SCENARIO === "planning"
     ? createPlanningState(task, repo)
     : undefined;
+// Switchable API principal and request log for the session reconciliation checks.
+// The log records only paths and CSRF headers, never request content.
+const principals = {
+  a: {
+    account_id: "test-account",
+    device_id: "test-device",
+    csrf_token: "test-csrf",
+    title: "Improve empty states",
+  },
+  b: {
+    account_id: "other-account",
+    device_id: "other-device",
+    csrf_token: "other-csrf",
+    title: "Account B task",
+  },
+  // Same account as B after a new approval: new device and CSRF token.
+  b2: {
+    account_id: "other-account",
+    device_id: "other-device-2",
+    csrf_token: "other-csrf-2",
+    title: "Account B task",
+  },
+};
+let principal = "a";
+let sessionMode = "ok";
+let requestLog = [];
 let emptyList = false;
 let failSave = false;
 let history = [task];
@@ -122,15 +148,48 @@ createServer(async (req, res) => {
       res.end("{}");
       return;
     }
-    if (url.pathname === "/auth/session") {
+    if (url.pathname === "/test/principal") {
+      principal = url.searchParams.get("name") || "a";
+      task = {
+        ...task,
+        task: { ...task.task, title: principals[principal].title },
+      };
+      res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/session-mode") {
+      sessionMode = url.searchParams.get("mode") || "ok";
+      res.end("{}");
+      return;
+    }
+    if (url.pathname === "/test/log") {
       res.setHeader("Content-Type", "application/json");
-      res.end(
-        JSON.stringify({
-          account_id: "test-account",
-          device_id: "test-device",
-          csrf_token: "test-csrf",
-        }),
-      );
+      res.end(JSON.stringify(requestLog));
+      return;
+    }
+    if (url.pathname === "/test/log-reset") {
+      requestLog = [];
+      res.end("{}");
+      return;
+    }
+    if (
+      url.pathname === "/auth/session" ||
+      url.pathname.startsWith("/lane.v1.")
+    )
+      requestLog.push({
+        path: url.pathname,
+        csrf: req.headers["x-lane-csrf"] ?? null,
+      });
+    if (url.pathname === "/auth/session") {
+      if (sessionMode !== "ok") {
+        res.statusCode = Number(sessionMode);
+        res.end("{}");
+        return;
+      }
+      const { title, ...session } = principals[principal];
+      void title;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(session));
       return;
     }
     if (url.pathname.startsWith("/lane.v1.")) {
