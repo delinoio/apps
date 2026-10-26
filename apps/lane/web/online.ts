@@ -22,6 +22,37 @@ import {
   NotificationContent,
   DataDeletionMode,
 } from "@repo/protos/lane/v1/lane_pb";
+/**
+ * Resolves once the given registration has an active worker. An already active
+ * worker (including one with an update installing) resolves immediately.
+ * Rejects when the installing or waiting worker becomes redundant, or when the
+ * registration has no worker to wait for.
+ */
+function whenWorkerActive(
+  registration: ServiceWorkerRegistration,
+): Promise<void> {
+  if (registration.active) return Promise.resolve();
+  const worker = registration.installing ?? registration.waiting;
+  const failure = () =>
+    new Error(
+      "The notification worker could not be activated. In-app indications remain available.",
+    );
+  if (!worker) return Promise.reject(failure());
+  return new Promise<void>((resolve, reject) => {
+    const settle = () => {
+      if (worker.state === "activated") {
+        worker.removeEventListener("statechange", settle);
+        resolve();
+      } else if (worker.state === "redundant") {
+        worker.removeEventListener("statechange", settle);
+        reject(failure());
+      }
+    };
+    worker.addEventListener("statechange", settle);
+    // The worker may have changed state before the listener was attached.
+    settle();
+  });
+}
 export interface Session {
   account_id: string;
   device_id: string;
@@ -265,25 +296,34 @@ export class OnlineLane {
             atob(config.public_key.replace(/-/g, "+").replace(/_/g, "/")),
             (c) => c.charCodeAt(0),
           );
+          // register() resolves while the worker may still be installing, and
+          // PushManager.subscribe() rejects with InvalidStateError until this
+          // registration has an active worker. Wait on the registration returned
+          // above, never on navigator.serviceWorker.ready, which can resolve
+          // for a different registration.
+          await whenWorkerActive(registration);
           subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: key,
           });
         }
-        if (subscription) {
-          const json = subscription.toJSON();
-          await createClient(AccountService, this.transport).registerPush({
-            meta: { requestId: uuid() },
-            deviceId: this.session.device_id,
-            provider: PushProvider.WEB_PUSH,
-            endpoint: subscription.endpoint,
-            publicKey: decodeBase64(json.keys?.p256dh || ""),
-            authSecret: decodeBase64(json.keys?.auth || ""),
-            enabled,
-            content,
-          });
-          if (!enabled) await subscription.unsubscribe();
-        }
+        // The server owns per-device preferences, so every save is acknowledged
+        // by RegisterPush even when this browser has no push subscription. A
+        // disabled registration needs no endpoint or keys; the server validates
+        // those fields only when enabled. The adapter state below is installed
+        // only after this call resolves, and a failure is surfaced without retry.
+        const json = subscription?.toJSON();
+        await createClient(AccountService, this.transport).registerPush({
+          meta: { requestId: uuid() },
+          deviceId: this.session.device_id,
+          provider: PushProvider.WEB_PUSH,
+          endpoint: subscription?.endpoint ?? "",
+          publicKey: decodeBase64(json?.keys?.p256dh || ""),
+          authSecret: decodeBase64(json?.keys?.auth || ""),
+          enabled,
+          content,
+        });
+        if (!enabled && subscription) await subscription.unsubscribe();
         this.notificationEnabled = enabled;
         this.notificationContent = content;
         return this.local("GetNotificationPreferences", {});

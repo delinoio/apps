@@ -136,14 +136,14 @@ export function createPlanningState(baseTask, repoApps) {
 }
 // Hand-encoded lane.v1.ErrorDetail: reason (field 1) = CONSTRAINT_VIOLATION (19), violation (field 6).
 const violations = { PARENT_CYCLE: 1, DEPENDENCY_CYCLE: 2, DUPLICATE_NAME: 7 };
-const errorBody = (code, message, violation) => ({
+const errorBody = (code, message, violation, reason = 1) => ({
   code,
   message,
   details: [
     {
       type: "lane.v1.ErrorDetail",
       value: Buffer.from(
-        violation ? [0x08, 19, 0x30, violations[violation]] : [0x08, 1],
+        violation ? [0x08, 19, 0x30, violations[violation]] : [0x08, reason],
       )
         .toString("base64")
         .replace(/=+$/, ""),
@@ -160,23 +160,38 @@ const pick = (items, repositoryId) =>
 let counter = 900;
 // A conflicted task keeps its head and gains an alternative that differs only in relationships.
 const taskResult = (state, t) =>
-  t.entityId === state.conflictTask
-    ? {
-        result: "RESULT_KIND_CONFLICT",
-        version: t,
-        alternatives: [
-          {
-            ...t,
-            versionId: id(Number(t.entityId.slice(-3)) + 5000),
-            task: {
-              ...t.task,
-              parentTaskId: ids.taskA,
-              relatedTaskIds: [ids.unknown],
+  t.entityId === state.conflictTask && state.heads
+    ? // Explicit head set: several versions are a conflict, a single one is resolved.
+      (() => {
+        const all = state.heads.map(({ versionId, title }) => ({
+          ...t,
+          versionId,
+          task: { ...t.task, title },
+        }));
+        return {
+          result:
+            all.length > 1 ? "RESULT_KIND_CONFLICT" : "RESULT_KIND_APPLIED",
+          version: all[0],
+          alternatives: all.slice(1),
+        };
+      })()
+    : t.entityId === state.conflictTask
+      ? {
+          result: "RESULT_KIND_CONFLICT",
+          version: t,
+          alternatives: [
+            {
+              ...t,
+              versionId: id(Number(t.entityId.slice(-3)) + 5000),
+              task: {
+                ...t.task,
+                parentTaskId: ids.taskA,
+                relatedTaskIds: [ids.unknown],
+              },
             },
-          },
-        ],
-      }
-    : applied(t);
+          ],
+        }
+      : applied(t);
 export async function handle(state, method, input) {
   state.requests.push({ method, input });
   if (state.delayMs && /^(Save|Create|Delete)/.test(method))
@@ -255,6 +270,36 @@ export async function handle(state, method, input) {
         t.entityId === input.id ? next : t,
       );
       return { body: { result: applied(next), affected: [] } };
+    }
+    case "ResolveConflict": {
+      // Mirrors the server guard: the expected heads must equal the current heads exactly.
+      const current = state.heads?.map((h) => h.versionId) ?? [];
+      const expected = [...new Set(input.expectedHeadIds)];
+      if (
+        current.length < 2 ||
+        expected.length !== current.length ||
+        !expected.every((v) => current.includes(v))
+      ) {
+        return {
+          status: 409,
+          body: errorBody(
+            "failed_precondition",
+            "The conflict changed since it was read.",
+            undefined,
+            5,
+          ),
+        };
+      }
+      const next = {
+        ...state.tasks.find((t) => t.entityId === input.id),
+        versionId: id(++counter),
+        task: input.resolved.task,
+      };
+      state.tasks = state.tasks.map((t) =>
+        t.entityId === input.id ? next : t,
+      );
+      state.heads = [{ versionId: next.versionId, title: next.task.title }];
+      return { body: { result: applied(next) } };
     }
     case "CreateTask": {
       const { meta, repository, id: entityId, ...fields } = input;

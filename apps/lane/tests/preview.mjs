@@ -118,6 +118,7 @@ createServer(async (req, res) => {
       if (body.failNext) planning.failNext = body.failNext;
       if (body.delayMs !== undefined) planning.delayMs = body.delayMs;
       if ("conflictTask" in body) planning.conflictTask = body.conflictTask;
+      if ("heads" in body) planning.heads = body.heads;
       res.end("{}");
       return;
     }
