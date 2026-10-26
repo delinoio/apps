@@ -861,3 +861,46 @@ fn correcting_a_rejected_version_replaces_it_and_keeps_dependents_after_it() {
     };
     assert!(index(&renamed["versionId"]) < index(&task_version));
 }
+
+#[test]
+fn stale_save_validates_the_graph_that_is_persisted() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/stale-cycle");
+    let a = task(&store, &repo, "A", &json!({}));
+    let a_version = a["result"]["version"].clone();
+    let a_id = strv(&a_version, "entityId").to_owned();
+    let b = task(&store, &repo, "B", &json!({"parentTaskId":a_id}));
+    let b_id = strv(&b["result"]["version"], "entityId").to_owned();
+    // A moves on so the next save of A is stale.
+    let mut renamed = a_version["task"].clone();
+    renamed["title"] = "A2".into();
+    call(
+        &store,
+        "SaveTask",
+        &json!({"id":a_id,"expectedVersionId":a_version["versionId"],"task":renamed}),
+    )
+    .unwrap();
+    // The stale snapshot makes B the parent of A and "removes" B's parent edge, but a stale
+    // save never edits other tasks, so B keeps A as parent and the alternative closes a cycle.
+    let mut alternative = a_version["task"].clone();
+    alternative["parentTaskId"] = b_id.clone().into();
+    let error = call(
+        &store,
+        "SaveTask",
+        &json!({"id":a_id,"expectedVersionId":a_version["versionId"],"task":alternative,
+            "relationshipEdits":{"removeSubtaskIds":[b_id]}}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.violation.map(lane::error::Violation::as_str),
+        Some("CONSTRAINT_VIOLATION_PARENT_CYCLE")
+    );
+    let heads = store.invoke("GetTask", &json!({"id":a_id})).unwrap();
+    assert_eq!(
+        heads["result"]["alternatives"]
+            .as_array()
+            .map_or(0, Vec::len),
+        0
+    );
+    assert_eq!(current(&store, &b_id)["task"]["parentTaskId"], a_id);
+}

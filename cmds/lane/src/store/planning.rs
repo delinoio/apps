@@ -415,13 +415,21 @@ fn has_cycle(work: &TaskSet, key: &str, starts: &BTreeSet<String>) -> bool {
 
 /// Validate and plan a task create or save. `previous` is the task's current single-head body
 /// for a save, which enables move handling; resolutions and creations pass `None`.
+///
+/// A `stale` write is preserved as an alternative head next to the current heads and never
+/// edits other tasks, so it is validated against exactly the graph that will be persisted:
+/// the other tasks unchanged, the task with its existing heads plus the alternative. Its
+/// relationship edits and move cleanup are discarded rather than applied during validation.
 pub(super) fn write_task(
     c: &Connection,
     id: &str,
     mut t: Value,
     edits: &Value,
     previous: Option<&Value>,
+    stale: bool,
 ) -> Result<TaskWrite> {
+    let no_edits = Value::Null;
+    let edits = if stale { &no_edits } else { edits };
     let repository = live_repository(c, strv(&t, "repositoryId"))?;
     if let Some(prev) = previous {
         let prev_repository = mapped(c, strv(prev, "repositoryId"))?;
@@ -430,6 +438,13 @@ pub(super) fn write_task(
             // every other task's reference to the moved task.
             clear_references(&mut t);
             validate_task_fields(c, &mut t, &repository)?;
+            if stale {
+                // The alternative is stored without removing other tasks' references.
+                return Ok(TaskWrite {
+                    primary: t,
+                    others: BTreeMap::new(),
+                });
+            }
             let mut work = load_repository(c, &prev_repository)?;
             work.remove(id);
             let before = work.clone();
@@ -479,7 +494,8 @@ pub(super) fn write_task(
         related.extend(list(h, "relatedTaskIds"));
     }
     let related_now = list(&t, "relatedTaskIds");
-    for r in sorted_unique(related) {
+    // Symmetric related links of a stale alternative are not written to the other tasks.
+    for r in sorted_unique(related).into_iter().filter(|_| !stale) {
         if let Some(heads) = work.get_mut(&r) {
             for h in heads.iter_mut() {
                 let mut ids: Vec<String> = list(h, "relatedTaskIds")
@@ -493,7 +509,11 @@ pub(super) fn write_task(
             }
         }
     }
-    work.insert(id.to_owned(), vec![t.clone()]);
+    if stale {
+        work.entry(id.to_owned()).or_default().push(t.clone());
+    } else {
+        work.insert(id.to_owned(), vec![t.clone()]);
+    }
     for r in edit("addSubtaskIds") {
         for h in work.get_mut(&r).into_iter().flatten() {
             set_optional(h, "parentTaskId", Some(id.to_owned()));

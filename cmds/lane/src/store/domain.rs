@@ -623,12 +623,10 @@ self.validate_capture_references(c,&id,&v["task"]["captures"])?;
 prompt|=h.iter().any(|old|old["task"].get("prompt")!=v["task"].get("prompt") || old["task"].get("captures")!=v["task"].get("captures"));
 if matches!(method,"CreateTask"|"SaveTask"|"ResolveConflict"){
 let previous=(method=="SaveTask"&&h.len()==1).then(||&h[0]["task"]);
-let written=planning::write_task(c,&id,v["task"].clone(),&q["relationshipEdits"],previous)?;
+let written=planning::write_task(c,&id,v["task"].clone(),&q["relationshipEdits"],previous,conflict)?;
 v["task"]=written.primary;
 // A stale save is preserved as an alternative and never edits other tasks.
-if !conflict{
 others=written.others;
-}
 }
 }
 else if let Some(field)=planning::body_field(strv(&v,"kind")).filter(|field|v[*field].is_object()){
