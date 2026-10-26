@@ -14,7 +14,7 @@ import {
   type EntityResult as ProtoEntityResult,
   type EntityVersion as ProtoEntityVersion,
   type Task as ProtoTask,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { LaneError } from "./adapter.ts";
 import { toUI, type UI } from "./serializable.ts";
 

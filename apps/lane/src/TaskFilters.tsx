@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { SortDirection, TaskSortKey } from "@delino/protos/lane/v1/lane_pb";
+import { SortDirection, TaskSortKey } from "@repo/protos/lane/v1/lane_pb";
 import { Button, Choices, Field, MultiChoices, Notice } from "./components";
 import {
   PlanningKind,

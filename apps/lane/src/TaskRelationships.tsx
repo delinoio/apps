@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "@lynx-js/react";
 import type { UI } from "./serializable";
-import type { Task as ProtoTask } from "@delino/protos/lane/v1/lane_pb";
+import type { Task as ProtoTask } from "@repo/protos/lane/v1/lane_pb";
 import { Button, Field, Notice } from "./components";
 import type { Draft } from "./model";
 import type { TaskRef } from "./planning";

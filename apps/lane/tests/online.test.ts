@@ -6,7 +6,7 @@ import {
   ConstraintViolation,
   ErrorDetailSchema,
   ErrorReason,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import { LaneRpcError, OnlineLane } from "../web/online.ts";
 Object.defineProperty(globalThis, "navigator", {
   value: { onLine: true },
