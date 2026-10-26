@@ -12,7 +12,7 @@ use connectrpc::ErrorCode;
 use serde_json::{Map, Value, json};
 use sqlx::{PgConnection, Row};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use unicode_casefold::UnicodeCaseFold;
 
 pub(crate) const MAX_NAME_SCALARS: usize = 100;
@@ -1243,6 +1243,52 @@ pub(crate) struct ListTask {
     pub repo: String,
     pub body: Value,
 }
+/// Live labels, milestones and cycles of the account: kind and repository by ID.
+pub(crate) type LiveItems = BTreeMap<String, (i16, String)>;
+/// Drop every reference that is not a live entity of the task's own repository, so filters,
+/// sorts and derived relationship views only see live assignments. Cleanup after a deletion or
+/// move deliberately skips a conflicted task, which therefore keeps a dangling reference in its
+/// accepted body until the conflict is resolved. `tasks` is every live task of the account.
+pub(crate) fn normalize_references(tasks: &mut [ListTask], items: &LiveItems) {
+    let repos: HashMap<String, String> = tasks
+        .iter()
+        .map(|t| (t.id.clone(), t.repo.clone()))
+        .collect();
+    for t in tasks.iter_mut() {
+        let repo = t.repo.clone();
+        let live_item =
+            |id: &str, kind: i16| items.get(id).is_some_and(|(k, r)| *k == kind && *r == repo);
+        let live_task = |id: &str| repos.get(id).is_some_and(|r| *r == repo);
+        let labels = strings(&t.body, "labelIds");
+        if labels.iter().any(|l| !live_item(l, LABEL)) {
+            set_strings(
+                &mut t.body,
+                "labelIds",
+                labels.into_iter().filter(|l| live_item(l, LABEL)).collect(),
+            );
+        }
+        for (key, kind) in [("milestoneId", MILESTONE), ("cycleId", CYCLE)] {
+            if opt_str(&t.body, key).is_some_and(|id| !live_item(id, kind)) {
+                set_opt(&mut t.body, key, None);
+            }
+        }
+        for key in ["parentTaskId", "duplicateOfTaskId"] {
+            if opt_str(&t.body, key).is_some_and(|id| !live_task(id)) {
+                set_opt(&mut t.body, key, None);
+            }
+        }
+        for key in ["dependsOnTaskIds", "relatedTaskIds"] {
+            let ids = strings(&t.body, key);
+            if ids.iter().any(|id| !live_task(id)) {
+                set_strings(
+                    &mut t.body,
+                    key,
+                    ids.into_iter().filter(|id| live_task(id)).collect(),
+                );
+            }
+        }
+    }
+}
 /// Derived relationship views need every live task of the account.
 struct Relations {
     parents: HashSet<String>,
@@ -1594,7 +1640,7 @@ pub(crate) async fn list_tasks(db: &mut PgConnection, p: &Principal, q: &Value) 
     // Prompt and capture content is not needed to filter or sort.
     let rows = sqlx::query("SELECT e.id,e.repository_id,(v.envelope->'task')-'prompt'-'captures' AS body FROM lane_entities e JOIN lane_versions v ON v.account_id=e.account_id AND v.entity_id=e.id AND v.version_id=e.accepted_version_id WHERE e.account_id=$1 AND e.kind=2 AND NOT e.deleted ORDER BY e.id")
         .bind(&p.account_id).fetch_all(&mut *db).await?;
-    let tasks: Vec<ListTask> = rows
+    let mut tasks: Vec<ListTask> = rows
         .iter()
         .map(|r| ListTask {
             id: r.get("id"),
@@ -1604,6 +1650,12 @@ pub(crate) async fn list_tasks(db: &mut PgConnection, p: &Principal, q: &Value) 
             body: r.get("body"),
         })
         .collect();
+    let live: LiveItems = sqlx::query("SELECT id,kind,repository_id FROM lane_entities WHERE account_id=$1 AND kind IN (4,5,6) AND NOT deleted")
+        .bind(&p.account_id).fetch_all(&mut *db).await?
+        .iter()
+        .map(|r| (r.get("id"), (r.get("kind"), r.get::<Option<String>, _>("repository_id").unwrap_or_default())))
+        .collect();
+    normalize_references(&mut tasks, &live);
     let mut lookups = SortLookups::default();
     if query.needs_milestones() || query.needs_cycles() {
         let kind: i16 = if query.needs_milestones() {
@@ -1922,7 +1974,7 @@ mod tests {
     fn list_vectors_match_the_reference_order_and_pages() {
         let suite = fixture("planning-list");
         let snapshot = snapshot(&suite["dataset"]);
-        let tasks: Vec<ListTask> = snapshot
+        let mut tasks: Vec<ListTask> = snapshot
             .tasks
             .iter()
             .map(|(id, t)| ListTask {
@@ -1931,6 +1983,12 @@ mod tests {
                 body: t.bodies[0].clone(),
             })
             .collect();
+        let live: LiveItems = snapshot
+            .items
+            .iter()
+            .map(|(id, i)| (id.clone(), (i.kind, i.repo.clone())))
+            .collect();
+        normalize_references(&mut tasks, &live);
         let mut lookups = SortLookups::default();
         for entity in suite["dataset"]["entities"].as_array().unwrap() {
             if entity["deleted"] == true {
@@ -1991,6 +2049,109 @@ mod tests {
                 .collect();
             assert_eq!(pages, want, "{id}: pages");
         }
+    }
+    #[test]
+    fn dangling_references_are_ignored_by_filters_sorts_and_relationship_views() {
+        const REPO: &str = "r1";
+        const OTHER_REPO: &str = "r2";
+        const A: &str = "019c0000-0000-7000-8000-000000000001";
+        const B: &str = "019c0000-0000-7000-8000-000000000002";
+        const FOREIGN_T: &str = "019c0000-0000-7000-8000-000000000003";
+        const GONE_T: &str = "019c0000-0000-7000-8000-0000000000f1";
+        const GONE: &str = "019c0000-0000-7000-8000-0000000000f2";
+        const GONE_M: &str = "019c0000-0000-7000-8000-0000000000f3";
+        const LIVE: &str = "019c0000-0000-7000-8000-0000000000e1";
+        const OTHER: &str = "019c0000-0000-7000-8000-0000000000e2";
+        const OTHER_C: &str = "019c0000-0000-7000-8000-0000000000e3";
+        let task = |id: &str, repo: &str, extra: Value| {
+            let mut body = json!({"repositoryId":repo,"title":id,"description":"","progress":"PROGRESS_TODO","proposal":"PROPOSAL_REGULAR"});
+            for (k, v) in extra.as_object().unwrap() {
+                body[k] = v.clone();
+            }
+            ListTask {
+                id: id.into(),
+                repo: repo.into(),
+                body,
+            }
+        };
+        let mut tasks = vec![
+            // Retains a deleted label, milestone and cycle, a deleted task and foreign entities.
+            task(
+                A,
+                REPO,
+                json!({"labelIds":[GONE,OTHER,LIVE],"milestoneId":GONE_M,"cycleId":OTHER_C,
+                    "parentTaskId":GONE_T,"duplicateOfTaskId":FOREIGN_T,
+                    "dependsOnTaskIds":[GONE_T,B],"relatedTaskIds":[GONE_T]}),
+            ),
+            task(B, REPO, json!({"labelIds":[GONE],"cycleId":OTHER_C})),
+            task(FOREIGN_T, OTHER_REPO, json!({})),
+        ];
+        let items: LiveItems = [
+            (LIVE, (LABEL, REPO)),
+            (OTHER, (LABEL, OTHER_REPO)),
+            (OTHER_C, (CYCLE, OTHER_REPO)),
+        ]
+        .into_iter()
+        .map(|(id, (kind, repo))| (id.to_owned(), (kind, repo.to_owned())))
+        .collect();
+        normalize_references(&mut tasks, &items);
+        assert_eq!(tasks[0].body["labelIds"], json!([LIVE]));
+        for key in [
+            "milestoneId",
+            "cycleId",
+            "parentTaskId",
+            "duplicateOfTaskId",
+            "relatedTaskIds",
+        ] {
+            assert!(tasks[0].body.get(key).is_none(), "{key}");
+        }
+        assert_eq!(tasks[0].body["dependsOnTaskIds"], json!([B]));
+        assert!(tasks[1].body.get("labelIds").is_none());
+
+        let ids = |filter: Value, sort: Option<&str>| {
+            let mut q = json!({"filter":filter});
+            if let Some(key) = sort {
+                q["sortKey"] = json!(key);
+            }
+            let query = ListQuery::parse(&q, None).unwrap();
+            evaluate(&query, &tasks, &SortLookups::default(), None, usize::MAX).0
+        };
+        // A deleted label no longer selects a task and does not hide it from "unlabeled".
+        assert!(ids(json!({"labelIds":[GONE]}), None).is_empty());
+        assert_eq!(ids(json!({"labelIds":[LIVE]}), None), [A]);
+        assert_eq!(ids(json!({"includeUnlabeled":true}), None), [B, FOREIGN_T]);
+        assert!(ids(json!({"milestoneIds":[GONE_M]}), None).is_empty());
+        assert!(ids(json!({"cycleIds":[OTHER_C]}), None).is_empty());
+        assert_eq!(
+            ids(
+                json!({"includeNoMilestone":true,"includeNoCycle":true}),
+                None
+            ),
+            [A, B, FOREIGN_T]
+        );
+        // Only the live dependency counts: A depends on B and B blocks nothing else.
+        assert_eq!(
+            ids(
+                json!({"relationships":["RELATIONSHIP_KIND_PARENT","RELATIONSHIP_KIND_RELATED","RELATIONSHIP_KIND_DUPLICATE_OF"]}),
+                None
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            ids(json!({"includeNoRelationships":true}), None),
+            [FOREIGN_T]
+        );
+        // A cycle of another repository is not an assignment, so it cannot order the task.
+        let lookups = SortLookups {
+            cycle_starts: BTreeMap::from([(OTHER_C.to_owned(), "2026-01-01".to_owned())]),
+            ..Default::default()
+        };
+        let query =
+            ListQuery::parse(&json!({"sortKey":"TASK_SORT_KEY_CYCLE_START_DATE"}), None).unwrap();
+        assert_eq!(
+            evaluate(&query, &tasks, &lookups, None, usize::MAX).0,
+            [A, B, FOREIGN_T]
+        );
     }
     #[test]
     fn violations_round_trip_through_the_error_detail() {

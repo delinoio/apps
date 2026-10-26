@@ -1554,6 +1554,79 @@ async fn stale_specialized_edits_are_validated_against_the_current_heads() {
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn list_ignores_references_retained_by_conflicted_tasks_after_deletion() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.label(LABEL, REPO, "Doomed").await;
+    f.planning(
+        MILESTONE,
+        json!({"milestone":{"repositoryId":REPO,"name":"Doomed"}}),
+    )
+    .await
+    .unwrap();
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    let fields = || {
+        task_fields(
+            "Title",
+            REPO,
+            json!({"labelIds":[LABEL],"milestoneId":MILESTONE}),
+        )
+    };
+    let assigned = f.save_task(TASK, fields(), None).await.unwrap();
+    let base = string(&assigned["result"]["version"], "versionId").to_owned();
+    // Two saves from the same base: the second is a conflict alternative, so the task is
+    // conflicted and deletion cleanup deliberately leaves its accepted body untouched.
+    for title in ["one", "two"] {
+        let mut task = fields();
+        task["title"] = json!(title);
+        f.call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":base,"task":task}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(f.heads(TASK).await.len(), 2);
+    for item in [LABEL, MILESTONE] {
+        f.call(
+            "DeletePlanningItem",
+            json!({"meta":{"requestId":id()},"id":item}),
+        )
+        .await
+        .unwrap();
+    }
+    let accepted = f.task_bodies().await;
+    assert_eq!(accepted[TASK]["labelIds"], json!([LABEL]));
+    assert_eq!(accepted[TASK]["milestoneId"], MILESTONE);
+    let list = |filter: Value| json!({"page":{"size":10},"filter":filter});
+    let listed = |page: Value| -> Vec<String> {
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| string(&r["version"], "entityId").to_owned())
+            .collect()
+    };
+    for filter in [
+        json!({"labelIds":[LABEL]}),
+        json!({"milestoneIds":[MILESTONE]}),
+    ] {
+        let page = f.call("ListTasks", list(filter)).await.unwrap();
+        assert!(listed(page).is_empty());
+    }
+    for filter in [
+        json!({"includeUnlabeled":true}),
+        json!({"includeNoMilestone":true}),
+    ] {
+        let page = f.call("ListTasks", list(filter)).await.unwrap();
+        assert_eq!(listed(page), [TASK, TASK_B]);
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn repository_deletion_cascades_planning_items_and_account_clearing_covers_them() {
     let mut f = Fixture::new().await;
     f.repo(REPO, "https://example.com/repo").await;
