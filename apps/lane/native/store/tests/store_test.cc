@@ -735,6 +735,7 @@ int main(int argc, char** argv) {
     {"planning sync rejection and retry", planning_sync_rejection_and_retry},
     {"planning envelope formats", planning_envelope_formats},
     {"correction supersedes rejected chain", planning_correction_supersedes_rejected_chain},
+    {"stale alternative ignores discarded edits", planning_stale_alternative_ignores_discarded_edits},
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},

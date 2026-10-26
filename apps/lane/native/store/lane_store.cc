@@ -1727,12 +1727,17 @@ struct Store::Impl {
   // the relationship graph against current heads, applies symmetric related
   // links and relationship edits, and clears references on a move. Returns the
   // IDs of the other tasks that need new versions. With `others` false (a
-  // stale save preserved only as a conflict alternative) nothing else changes.
+  // stale save preserved only as a conflict alternative) nothing else changes:
+  // relationship edits and symmetric related links are discarded and the
+  // alternative is checked against the graph that stays committed, the other
+  // tasks unchanged and this task with its existing heads plus the alternative.
   std::vector<std::string> planTaskWrite(Db &d, NodeMap &nodes,
                                          const std::string &taskId, J &body,
-                                         const J &edits,
+                                         const J &requestedEdits,
                                          const std::string &previousRepo,
                                          bool others) {
+    static const J noEdits = J::object();
+    const J &edits = others ? requestedEdits : noEdits;
     const auto repo = mapped(d, str(body, "repositoryId"));
     auto *previous = previousRepo.empty() ? nullptr : taskNode(d, nodes, taskId);
     if (!previousRepo.empty() && previousRepo != repo) {
@@ -1787,9 +1792,17 @@ struct Store::Impl {
     if (previous)
       for (auto &x : list(previous->orig, "relatedTaskIds"))
         related.push_back(x);
-    primary->cur = body;
-    primary->extra.clear(); // This write supersedes every conflicting head.
-    primary->conflicted = false;
+    if (others) {
+      primary->cur = body;
+      primary->extra.clear(); // This write supersedes every conflicting head.
+      primary->conflicted = false;
+    } else if (primary->orig.is_null()) {
+      primary->cur = body;
+    } else {
+      // The alternative is stored next to the existing heads, so cycle checks
+      // see the union of their references.
+      primary->extra.push_back(body);
+    }
     // Edits to another task apply to every head of a conflicted task; changing
     // any of them fails the whole operation instead of resolving the conflict.
     auto touch = [&](TaskNode *n, const std::function<void(J &)> &edit) {
@@ -1808,7 +1821,7 @@ struct Store::Impl {
     const auto mine = list(body, "relatedTaskIds");
     for (auto &x : sortedUnique(related)) {
       auto *other = taskNode(d, nodes, x);
-      if (!other)
+      if (!other || !others)
         continue;
       const bool linked = std::find(mine.begin(), mine.end(), x) != mine.end();
       touch(other, [&](J &t) {

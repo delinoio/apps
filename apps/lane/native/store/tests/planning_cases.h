@@ -436,3 +436,26 @@ void planning_correction_supersedes_rejected_chain() {
   body["title"] = "Alternative";
   error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", accepted.at("entityId")}, {"expectedVersionId", accepted.at("versionId")}, {"task", body}}), "STALE_VERSION");
 }
+void planning_stale_alternative_ignores_discarded_edits() {
+  Fixture f; auto repo = repository_for(f); const auto repo_id = repo.at("entityId").get<std::string>();
+  auto a = planned_task(f, repo_id); auto b = planned_task(f, repo_id);
+  const auto a_id = a.at("entityId").get<std::string>(), b_id = b.at("entityId").get<std::string>();
+  auto blocked = b.at("task"); blocked["dependsOnTaskIds"] = J::array({a_id});
+  auto b2 = f.save(b, blocked);
+  auto retitled = a.at("task"); retitled["title"] = "Newer";
+  f.save(a, retitled); // A's base version is now stale.
+  // A stale save is stored only as an alternative: its removal edit is discarded, so B
+  // still depends on A and A -> B would close a cycle across the committed heads.
+  auto cyclic = a.at("task"); cyclic["dependsOnTaskIds"] = J::array({b_id});
+  Sql db(f.database()); const auto before = counts(db);
+  auto rejected = f.raw("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", a.at("versionId")}, {"task", cyclic},
+      {"relationshipEdits", {{"removeBlockedTaskIds", J::array({b_id})}}}});
+  error(rejected, "CONSTRAINT_VIOLATION");
+  require(rejected.at("error").at("violation") == "CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE", "discarded removal does not hide the cycle");
+  require(counts(db) == before && f.get(b_id) == b2, "rejected stale save writes nothing");
+  // Without the cycle the alternative is kept, and the discarded edit still leaves B alone.
+  auto plain = a.at("task"); plain["title"] = "Alternative";
+  error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", a.at("versionId")}, {"task", plain},
+      {"relationshipEdits", {{"removeBlockedTaskIds", J::array({b_id})}}}}), "STALE_VERSION");
+  require(f.call("GetTask", {{"id", a_id}}).at("result").at("alternatives").size() == 2 && f.get(b_id) == b2, "alternative stored, other tasks untouched");
+}
