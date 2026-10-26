@@ -731,7 +731,7 @@ struct ChannelReader {
     pending: Cursor<Vec<u8>>,
 }
 impl ChannelReader {
-    fn new(receiver: std::sync::mpsc::Receiver<Vec<u8>>) -> Self {
+    const fn new(receiver: std::sync::mpsc::Receiver<Vec<u8>>) -> Self {
         Self {
             receiver,
             pending: Cursor::new(vec![]),
