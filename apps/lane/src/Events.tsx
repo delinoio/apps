@@ -4,13 +4,18 @@ import { useEffect, useRef, useState } from "@lynx-js/react";
 import {
   WebhookService,
   EventState,
-  type WebhookReceiver as ProtoWebhookReceiver,
-  type WebhookEvent as ProtoWebhookEvent,
   type ProcessingRecord as ProtoProcessingRecord,
   type EntityResult as ProtoEntityResult,
 } from "@repo/protos/lane/v1/lane_pb";
 import { meta, newId, type LaneAdapter } from "./adapter";
 import { Button, Choices, Dialog, Field, Notice } from "./components";
+import {
+  EventsLoader,
+  emptyEventsView,
+  eventsQueryKey,
+  type EventsView,
+  type WebhookEvent,
+} from "./events-model";
 import { repositoryName } from "./model";
 import { hostAction } from "./runtime";
 export function Events({
@@ -22,9 +27,8 @@ export function Events({
   repositories: EntityResult[];
   openTask: (id: string) => void;
 }) {
-  const [receivers, setReceivers] = useState<WebhookReceiver[]>([]);
-  const [events, setEvents] = useState<WebhookEvent[]>([]);
-  const [cursor, setCursor] = useState("");
+  const [view, setView] = useState<EventsView>(emptyEventsView);
+  const { receivers, events, cursor, cursorKey } = view;
   const [repositoryId, setRepositoryId] = useState("");
   const [state, setState] = useState<EventState>(EventState.UNSPECIFIED);
   const [editing, setEditing] = useState<{
@@ -63,29 +67,26 @@ export function Events({
       setBusy(false);
     }
   };
-  const load = async (more = false) => {
-    let receiverCursor = "";
-    const all: WebhookReceiver[] = [];
-    do {
-      const r = await adapter.call(WebhookService.method.listReceivers, {
-        page: { size: 100, cursor: receiverCursor },
-        repositoryId: repositoryId || undefined,
-      });
-      all.push(...r.items);
-      receiverCursor = r.nextCursor;
-    } while (receiverCursor);
-    setReceivers(all);
-    const r = await adapter.call(WebhookService.method.listEvents, {
-      page: { size: 100, cursor: more ? cursor : "" },
-      repositoryId: repositoryId || undefined,
-      states: state ? [state] : [],
-    });
-    setEvents(more ? [...events, ...r.items] : r.items);
-    setCursor(r.nextCursor);
-  };
+  // Owns list loading so only the latest load for the current adapter and
+  // filters can publish rows, cursor and load status. Mutation outcomes stay in
+  // run() above.
+  const loader = useRef<EventsLoader | undefined>(undefined);
+  const query = { repositoryId, state };
   useEffect(() => {
-    void run(() => load());
+    const owned = new EventsLoader(adapter, setView);
+    loader.current = owned;
+    setView(emptyEventsView);
+    return () => {
+      owned.dispose();
+      if (loader.current === owned) loader.current = undefined;
+    };
+  }, [adapter]);
+  useEffect(() => {
+    void loader.current?.reload({ repositoryId, state });
   }, [adapter, repositoryId, state]);
+  const load = async () => {
+    await loader.current?.refresh();
+  };
   return (
     <view className="section">
       <text className="heading">Events and webhook receivers</text>
@@ -116,7 +117,7 @@ export function Events({
         onChange={setState}
       />
       <view className="row wrap">
-        <Button onClick={() => void run(() => load())}>Refresh events</Button>
+        <Button onClick={() => void load()}>Refresh events</Button>
         <Button
           primary
           onClick={() =>
@@ -131,7 +132,7 @@ export function Events({
           Create receiver
         </Button>
       </view>
-      {error && <Notice>{error}</Notice>}
+      {(error || view.error) && <Notice>{error || view.error}</Notice>}
       <text className="heading">Receiving settings</text>
       {receivers.map((r) => (
         <view className="card" key={r.id}>
@@ -181,7 +182,10 @@ export function Events({
         </view>
       ))}
       <text className="heading">Retained events</text>
-      {events.length === 0 && (
+      {events.length === 0 && view.loading && (
+        <text className="muted">Loading events...</text>
+      )}
+      {events.length === 0 && !view.loading && (
         <text className="muted">No events match these filters.</text>
       )}
       {events.map((e) => (
@@ -205,8 +209,11 @@ export function Events({
           </Button>
         </view>
       ))}
-      {cursor && (
-        <Button onClick={() => void run(() => load(true))}>
+      {cursor && cursorKey === eventsQueryKey(query) && (
+        <Button
+          disabled={view.loading || view.loadingMore}
+          onClick={() => void loader.current?.loadMore(query)}
+        >
           Load more events
         </Button>
       )}
@@ -420,9 +427,5 @@ export function Events({
 }
 
 type EntityResult = UI<ProtoEntityResult>;
-
-type WebhookReceiver = UI<ProtoWebhookReceiver>;
-
-type WebhookEvent = UI<ProtoWebhookEvent>;
 
 type ProcessingRecord = UI<ProtoProcessingRecord>;
