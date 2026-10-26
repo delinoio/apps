@@ -315,7 +315,7 @@ All relationship endpoints must be live tasks in the same repository and the sam
 
 ### Planning history
 
-- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive before/after values from consecutive versions.
+- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive each version's before/after values from that version and its declared parent, never from a chronologically neighboring version that may belong to another branch. A zero-parent version is a creation with absent before values. While a declared parent is not yet loaded, the history card keeps its time and origin and shows no field delta; it compares once the parent is loaded. A resolution with several parents keeps its metadata and shows no single-baseline delta.
 - Do not add metadata-version restoration. Only the existing prompt restoration remains.
 - Retention and deletion follow the existing rules. Deleting an owning entity removes its historical content. Never retain deleted content by copying it into another entity's history; tasks keep only identity references to labels, milestones, cycles and other tasks, so deleting an item erases its name and description everywhere. Surviving tasks keep their own history.
 
