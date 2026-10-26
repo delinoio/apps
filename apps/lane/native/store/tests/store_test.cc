@@ -734,6 +734,7 @@ int main(int argc, char** argv) {
     {"conflicted tasks block cleanup", planning_conflicted_tasks_block_cleanup},
     {"planning sync rejection and retry", planning_sync_rejection_and_retry},
     {"planning envelope formats", planning_envelope_formats},
+    {"correction supersedes rejected chain", planning_correction_supersedes_rejected_chain},
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},

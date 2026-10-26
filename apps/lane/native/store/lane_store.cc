@@ -15,7 +15,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <functional>
 #include <map>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -1168,14 +1170,169 @@ struct Store::Impl {
            k == 1 && !deleted ? str(v["repository"], "normalizedUrl") : "",
            deleted ? "1" : "0", e});
   }
-  void outbox(Db &d, const J &v, const std::string &kind) {
+  // `at` overrides the upload position (microseconds) of the queued mutation;
+  // a version that supersedes a rejected chain keeps the chain's position.
+  void outbox(Db &d, const J &v, const std::string &kind, int64_t at = 0) {
     auto rid = uuid();
     J m = {{"meta", {{"requestId", rid}, {"origin", v["origin"]}}},
            {"version", v},
            {"expectedHeadIds", v["parentVersionIds"]},
            {"kind", kind}};
     d.run("INSERT INTO outbox VALUES(?,?,?,1,NULL,?)",
-          {rid, str(v, "entityId"), m.dump(), std::to_string(now())});
+          {rid, str(v, "entityId"), m.dump(),
+           std::to_string(at ? at : now())});
+  }
+  struct Supersession {
+    J parents;        // parents of the oldest version in the replaced chain
+    int64_t position; // upload position of the oldest replaced version
+  };
+  // An ordinary edit of an entity whose head chain holds a version the server
+  // rejected for a constraint violation replaces that unsynchronized chain: the
+  // correction takes the chain's parents (the last accepted heads, or none for
+  // a creation) and its upload position, because PushChanges requires every
+  // parent to exist on the server. The rejected immutable versions stay in
+  // local history; their outbox rows are dropped so they are never uploaded or
+  // retried. Call only after every validation of the edit has passed.
+  std::optional<Supersession> supersedeBlocked(Db &d, const J &head) {
+    struct Row { std::string request; bool rejected; int64_t at; };
+    std::map<std::string, Row> pending;
+    for (auto &r : d.run("SELECT request_id,request_json,state,COALESCE(error_reason,''),"
+                         "created_at_us FROM outbox WHERE entity_id=?",
+                         {str(head, "entityId")}))
+      pending[str(parse(r[1])["version"], "versionId")] = {
+          r[0],
+          r[2] == "2" && r[3].rfind("CONSTRAINT_VIOLATION:", 0) == 0,
+          std::stoll(r[4])};
+    // Walk the single-parent chain of unsynchronized versions from the head.
+    std::vector<J> chain;
+    J current = head;
+    while (pending.count(str(current, "versionId"))) {
+      chain.push_back(current);
+      auto parents = current.value("parentVersionIds", J::array());
+      if (parents.size() != 1)
+        break;
+      auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?",
+                       {parents[0].get<std::string>()});
+      if (raw.empty())
+        break;
+      current = parse(raw);
+    }
+    const bool rejected = std::any_of(chain.begin(), chain.end(), [&](const J &v) {
+      return pending.at(str(v, "versionId")).rejected;
+    });
+    if (!rejected)
+      return std::nullopt;
+    Supersession s{chain.back().value("parentVersionIds", J::array()), INT64_MAX};
+    for (auto &v : chain) {
+      auto &row = pending.at(str(v, "versionId"));
+      s.position = std::min(s.position, row.at);
+      d.run("DELETE FROM outbox WHERE request_id=?", {row.request});
+    }
+    return s;
+  }
+  static std::string mutationKind(const J &parents) {
+    return parents.empty()      ? "MUTATION_KIND_CREATE"
+           : parents.size() > 1 ? "MUTATION_KIND_RESOLVE"
+                                : "MUTATION_KIND_SAVE";
+  }
+  // Every other entity a version refers to: its repository and, for a task, its
+  // planning items and related tasks. Used to order dependent uploads.
+  static std::vector<std::string> referencedIds(const J &version) {
+    std::vector<std::string> out;
+    for (auto field : {"task", "urlConnection", "label", "milestone", "cycle"}) {
+      if (!version.contains(field) || !version[field].is_object())
+        continue;
+      const J &body = version[field];
+      for (auto key : {"repositoryId", "milestoneId", "cycleId", "parentTaskId", "duplicateOfTaskId"})
+        if (body.contains(key) && body[key].is_string())
+          out.push_back(body[key].get<std::string>());
+      for (auto key : {"labelIds", "dependsOnTaskIds", "relatedTaskIds"})
+        if (body.contains(key) && body[key].is_array())
+          for (auto &x : body[key])
+            if (x.is_string())
+              out.push_back(x.get<std::string>());
+    }
+    return out;
+  }
+  struct PendingRow {
+    std::string entity;
+    J mutation;
+    int state;
+  };
+  // Orders outbox rows so that every row follows the earlier row of its own
+  // entity and the pending creation of every entity it references, keeping the
+  // stored order otherwise. A corrected version that took an older upload
+  // position therefore still uploads after a label created after it. Reference
+  // cycles are cut at the edge that closes them.
+  static std::vector<size_t> dependencyOrder(const std::vector<PendingRow> &rows) {
+    std::map<std::string, size_t> creations, last;
+    for (size_t i = 0; i < rows.size(); ++i)
+      if (rows[i].mutation.value("kind", "") == "MUTATION_KIND_CREATE")
+        creations.emplace(rows[i].entity, i);
+    std::vector<std::vector<size_t>> deps(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i) {
+      auto previous = last.find(rows[i].entity);
+      if (previous != last.end())
+        deps[i].push_back(previous->second);
+      last[rows[i].entity] = i;
+      for (auto &ref : referencedIds(rows[i].mutation["version"])) {
+        auto created = creations.find(ref);
+        if (created != creations.end() && created->second != i)
+          deps[i].push_back(created->second);
+      }
+    }
+    std::vector<int> state(rows.size(), 0); // 1 = on the current path, 2 = placed
+    std::vector<size_t> order;
+    for (size_t start = 0; start < rows.size(); ++start) {
+      if (state[start])
+        continue;
+      state[start] = 1;
+      std::vector<std::pair<size_t, size_t>> stack{{start, 0}};
+      while (!stack.empty()) {
+        auto &[node, next] = stack.back();
+        if (next < deps[node].size()) {
+          auto dep = deps[node][next++];
+          if (!state[dep]) {
+            state[dep] = 1;
+            stack.emplace_back(dep, 0);
+          }
+        } else {
+          state[node] = 2;
+          order.push_back(node);
+          stack.pop_back();
+        }
+      }
+    }
+    return order;
+  }
+  // The next upload batch in causal order. A pending version is held back
+  // while an earlier version of the same entity is blocked, because the server
+  // never accepted its parent, and while it references an entity whose
+  // creation is blocked or itself held back. Both resume after the blocked
+  // item is retried or superseded by a correction.
+  J uploadBatch(Db &d) {
+    std::vector<PendingRow> rows;
+    for (auto &r : d.run("SELECT entity_id,request_json,state FROM outbox ORDER BY "
+                         "created_at_us,rowid"))
+      rows.push_back({r[0], parse(r[1]), std::stoi(r[2])});
+    std::set<std::string> blocked, blockedCreations;
+    J out = J::array();
+    for (auto index : dependencyOrder(rows)) {
+      auto &row = rows[index];
+      if (row.state != 1 && row.state != 2)
+        continue;
+      bool held = row.state == 2 || blocked.count(row.entity);
+      for (auto &ref : referencedIds(row.mutation["version"]))
+        held = held || blockedCreations.count(ref);
+      if (!held) {
+        out.push_back(row.mutation);
+        continue;
+      }
+      if (row.mutation.value("kind", "") == "MUTATION_KIND_CREATE")
+        blockedCreations.insert(row.entity);
+      blocked.insert(row.entity);
+    }
+    return out;
   }
   void cancelNotification(Db &d, const std::string &e) {
     d.run("UPDATE notification_receipts SET state=3 WHERE proposal_id=? AND "
@@ -1958,14 +2115,22 @@ struct Store::Impl {
         }
       }
       if (k == 2) captureReferences(d,e,body.value("captures",J::array()));
+      // A correction of a rejected, never-accepted chain replaces that chain.
+      std::optional<Supersession> superseded;
+      if (!create && !resolve && !stale)
+        superseded = supersedeBlocked(d, hs[0]);
+      if (superseded)
+        parents = superseded->parents;
       auto v = version(s, e, k, body, parents);
       if (m == "RestorePrompt")
         v["promptRestoration"] = true;
       persist(d, v, prompt, !stale, !stale);
       outbox(d, v,
-             create    ? "MUTATION_KIND_CREATE"
+             superseded ? mutationKind(parents)
+             : create    ? "MUTATION_KIND_CREATE"
              : resolve ? "MUTATION_KIND_RESOLVE"
-                       : "MUTATION_KIND_SAVE");
+                       : "MUTATION_KIND_SAVE",
+             superseded ? superseded->position : 0);
       changed(d, e);
       if (k == 2 && body["proposal"] != "PROPOSAL_PENDING")
         cancelNotification(d, e);
@@ -3231,10 +3396,8 @@ std::string Store::pendingSync(std::string s, std::string owner) {
                       meta(d, "reconnect_required", "0") != "1";
     // Blocked (rejected) items are never re-sent implicitly; the user corrects
     // them and retries explicitly (RetryBlockedItems).
-    for (auto &r : d.run("SELECT request_json FROM outbox WHERE state=1 ORDER BY "
-                         "created_at_us,request_id"))
-      if (epochReady)
-        mutations.push_back(parse(r[0]));
+    if (epochReady)
+      mutations = impl_->uploadBatch(d);
     J attachments = J::array();
     if (epochReady) {
       for (auto &row : d.run("SELECT a.id,a.task_id,a.sha256,a.width,a.height,a.byte_size,a.png_base64 FROM attachments a JOIN entities e ON e.id=a.task_id WHERE a.synchronized=0 AND a.png_base64 IS NOT NULL AND e.deleted=0 ORDER BY a.id")) {
@@ -3549,9 +3712,32 @@ std::string Store::confirmSyncEpoch(std::string s, std::string epoch) {
             "Local data changed during approval. Confirm again.");
     if (meta(d, "account_epoch") != epoch) {
       d.exec("DELETE FROM outbox; UPDATE attachments SET synchronized=0;");
+      // Only versions reachable from a current head are uploaded. A rejected
+      // version that an ordinary edit superseded stays in local history but is
+      // neither a head nor an ancestor of one.
+      std::set<std::string> reachable;
+      std::map<std::string, J> stored;
+      for (auto &r : d.run("SELECT version_id,envelope_json FROM versions"))
+        stored[r[0]] = parse(r[1]).value("parentVersionIds", J::array());
+      std::vector<std::string> frontier;
+      for (auto &r : d.run("SELECT version_id FROM heads"))
+        if (reachable.insert(r[0]).second)
+          frontier.push_back(r[0]);
+      while (!frontier.empty()) {
+        auto version = frontier.back();
+        frontier.pop_back();
+        auto it = stored.find(version);
+        if (it == stored.end())
+          continue;
+        for (auto &parent : it->second)
+          if (parent.is_string() && reachable.insert(parent.get<std::string>()).second)
+            frontier.push_back(parent.get<std::string>());
+      }
       for (auto &r : d.run("SELECT envelope_json FROM versions ORDER BY "
                            "created_at_us,version_id")) {
         auto v = parse(r[0]);
+        if (!reachable.count(str(v, "versionId")))
+          continue;
         auto parents = v.value("parentVersionIds", J::array());
         impl_->outbox(d, v,
                       v.value("deleted", false) ? "MUTATION_KIND_DELETE"

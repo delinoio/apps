@@ -363,3 +363,76 @@ void reset_account_space_reconnect_flow() {
   success(f.store.confirmSyncEpoch(f.space, epoch));
   require(f.call("GetLocalStatus").at("reconnectRequired") == false, "explicit confirmation resumes synchronization");
 }
+// An account-bound space with a synchronization lease, for upload-order and
+// rejection scenarios. `accept` stands in for the server accepting a pushed
+// version; `reject` for a constraint violation on it.
+struct Synced {
+  Fixture f; std::string epoch, owner;
+  Synced() {
+    epoch = uuid();
+    success(f.store.approveAccount(identity(uuid(), uuid(), epoch).dump(), false));
+    f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
+    owner = uuid(); success(f.store.acquireSync(f.space, owner));
+  }
+  J push(const J& results) {
+    return success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", epoch}, {"owner", owner}, {"push", {{"results", results}}}}.dump()));
+  }
+  std::string request(const J& version) {
+    Sql db(f.database());
+    return db.scalar("SELECT request_id FROM outbox WHERE request_json LIKE '%\"versionId\":\"" + version.at("versionId").get<std::string>() + "\"%'");
+  }
+  void accept(const J& version) {
+    push(J::array({J{{"requestId", request(version)}, {"result", {{"result", "RESULT_KIND_APPLIED"}, {"version", version}}}}}));
+  }
+  void reject(const J& version, const std::string& violation = "CONSTRAINT_VIOLATION_PARENT_CYCLE") {
+    push(J::array({J{{"requestId", request(version)}, {"error", {{"reason", "ERROR_REASON_CONSTRAINT_VIOLATION"},
+        {"violation", violation}, {"entityId", version.at("entityId")}, {"retryable", false}}}}}));
+  }
+  J pending() { return success(f.store.pendingSync(f.space, owner)).at("mutations"); }
+  std::vector<std::string> pending_versions() {
+    std::vector<std::string> ids;
+    for (const auto& m : pending()) ids.push_back(m.at("version").at("versionId"));
+    return ids;
+  }
+};
+void planning_correction_supersedes_rejected_chain() {
+  // Never accepted: the correction becomes the entity's creation.
+  Synced s; auto& f = s.f;
+  auto repo = repository_for(f); s.accept(repo);
+  auto task = planned_task(f, repo.at("entityId"));
+  auto body = task.at("task"); body["title"] = "Second";
+  auto second = f.save(task, body);
+  Sql db(f.database());
+  const auto first_at = db.scalar("SELECT min(created_at_us) FROM outbox WHERE entity_id='" + task.at("entityId").get<std::string>() + "'");
+  s.reject(task);
+  require(s.pending().empty(), "a version whose parent was rejected is held back");
+  body["title"] = "Corrected";
+  auto fixed = f.save(second, body);
+  require(fixed.at("parentVersionIds").empty() && fixed.at("versionId") != second.at("versionId"), "correction takes the parents of the rejected chain");
+  const auto entity = task.at("entityId").get<std::string>();
+  require(db.scalar("SELECT count(*) FROM outbox WHERE entity_id='" + entity + "'") == "1" &&
+          db.scalar("SELECT created_at_us FROM outbox WHERE entity_id='" + entity + "'") == first_at, "the chain is replaced at its upload position");
+  auto mutations = s.pending();
+  require(mutations.size() == 1 && mutations[0].at("kind") == "MUTATION_KIND_CREATE" &&
+          mutations[0].at("version").at("versionId") == fixed.at("versionId"), "the corrected creation is uploaded alone");
+  require(f.history(fixed).size() == 3 && f.get(entity) == fixed, "rejected versions stay in local history");
+  require(f.call("RetryBlockedItems").at("completed") == true && s.pending_versions() == std::vector<std::string>{fixed.at("versionId")},
+          "superseded versions are not retried");
+  require(f.call("GetLocalStatus").at("itemErrors").empty(), "no blocked item remains");
+  // Accepted before: the correction is a save on the last accepted head.
+  auto accepted = planned_task(f, repo.at("entityId")); s.accept(accepted);
+  body = accepted.at("task"); body["title"] = "Rejected"; auto bad = f.save(accepted, body);
+  s.reject(bad);
+  body["title"] = "Better";
+  auto better = f.save(bad, body);
+  require(better.at("parentVersionIds") == J::array({accepted.at("versionId")}), "correction parents are the last accepted heads");
+  mutations = s.pending();
+  const auto better_id = better.at("versionId").get<std::string>();
+  const auto sent = std::find_if(mutations.begin(), mutations.end(), [&](const J& m) { return m.at("version").at("versionId") == better_id; });
+  require(sent != mutations.end() && sent->at("kind") == "MUTATION_KIND_SAVE" &&
+          sent->at("expectedHeadIds") == J::array({accepted.at("versionId")}), "the correction is a save over the accepted head");
+  require(std::none_of(mutations.begin(), mutations.end(), [&](const J& m) { return m.at("version").at("versionId") == bad.at("versionId"); }), "rejected version is never uploaded");
+  // A stale edit is only an alternative and does not supersede anything.
+  body["title"] = "Alternative";
+  error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", accepted.at("entityId")}, {"expectedVersionId", accepted.at("versionId")}, {"task", body}}), "STALE_VERSION");
+}
