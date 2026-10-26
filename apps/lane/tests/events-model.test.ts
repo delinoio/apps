@@ -708,3 +708,30 @@ test("detail: update keeps the accepted history and is ignored while closed", as
     "latest",
   );
 });
+
+test("detail: a delayed mutation response for A cannot replace the open B", async () => {
+  const h = detailHarness();
+  const a = h.reader.inspect("A");
+  h.calls[0].resolve(reply("A", "payload-A"));
+  await a;
+  // The user starts reopening A, closes its details and inspects B.
+  h.reader.close();
+  const b = h.reader.inspect("B");
+  h.calls[1].resolve(reply("B", "payload-B"));
+  await b;
+  const before = h.published.length;
+  h.reader.update({ id: "A", payload: "reopened-A" } as never);
+  assert.equal(h.published.length, before);
+  assert.deepEqual(shown(h.view()), {
+    id: "B",
+    payload: "payload-B",
+    processing: ["B-history"],
+  });
+  // A response for the accepted event still applies and keeps its history.
+  h.reader.update({ id: "B", payload: "reopened-B" } as never);
+  assert.deepEqual(shown(h.view()), {
+    id: "B",
+    payload: "reopened-B",
+    processing: ["B-history"],
+  });
+});

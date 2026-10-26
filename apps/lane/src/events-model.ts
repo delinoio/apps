@@ -114,9 +114,16 @@ export class EventDetailReader {
   }
 
   // Replaces the accepted event after a mutation, keeping its history. Ignored
-  // while no detail is open.
+  // while no detail is open and when `event` is not the accepted event, so a
+  // delayed mutation response for an event whose detail was closed cannot
+  // replace the detail of a different event.
   update(event: WebhookEvent): void {
-    if (this.disposed || !this.view.selected) return;
+    if (
+      this.disposed ||
+      !this.view.selected ||
+      this.view.selected.event.id !== event.id
+    )
+      return;
     this.set({ selected: { ...this.view.selected, event } });
   }
 
