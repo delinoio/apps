@@ -522,3 +522,53 @@ void planning_deleted_affected_task_is_redacted_from_receipts() {
   require(after.at("ok").get<bool>() && after.dump().find("Secret") == std::string::npos, "replay never returns deleted content");
   require(!after.at("response").contains("affected") && after.at("response").at("result").at("result") == "RESULT_KIND_REPLAYED", "replay keeps the primary result");
 }
+void planning_list_ignores_dangling_references() {
+  Synced s; auto& f = s.f;
+  auto repo = repository_for(f); const auto repo_id = repo.at("entityId").get<std::string>();
+  auto label = planning_item(f, "label", {{"repositoryId", repo_id}, {"name", "Doomed"}, {"color", "#010203"}});
+  auto milestone = planning_item(f, "milestone", {{"repositoryId", repo_id}, {"name", "Doomed"}});
+  auto cycle = planning_item(f, "cycle", {{"repositoryId", repo_id}, {"name", "Doomed"}, {"startDate", "2026-01-01"}, {"endDate", "2026-01-02"}});
+  auto peer = planned_task(f, repo_id);
+  auto task = planned_task(f, repo_id, {{"labelIds", J::array({label.at("entityId")})}, {"milestoneId", milestone.at("entityId")},
+      {"cycleId", cycle.at("entityId")}, {"parentTaskId", peer.at("entityId")}, {"dependsOnTaskIds", J::array({peer.at("entityId")})},
+      {"relatedTaskIds", J::array({peer.at("entityId")})}, {"duplicateOfTaskId", peer.at("entityId")}});
+  const auto task_id = task.at("entityId").get<std::string>();
+  // A conflicted task: deletions that arrive from the server never clean it up.
+  auto body = task.at("task"); body["title"] = "Left"; f.save(task, body);
+  body["title"] = "Right";
+  error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", task_id}, {"expectedVersionId", task.at("versionId")}, {"task", body}}), "STALE_VERSION");
+  auto plain = planned_task(f, repo_id);
+  auto tombstone = [&](const J& head) {
+    J v = {{"formatVersion", 3}, {"entityId", head.at("entityId")}, {"kind", head.at("kind")}, {"versionId", uuid()},
+        {"parentVersionIds", J::array({head.at("versionId")})}, {"createdAt", "2026-01-01T00:00:00Z"},
+        {"origin", {{"kind", "ORIGIN_KIND_CLI"}, {"deviceId", uuid()}, {"deviceName", "Remote"}, {"accountId", ""}}}, {"deleted", true}};
+    success(f.store.applySync(f.space, J{{"formatVersion", 3}, {"epoch", s.epoch}, {"owner", s.owner},
+        {"pull", {{"changes", J::array({J{{"sequence", "1"}, {"entity", {{"result", "RESULT_KIND_DELETED"}, {"version", v}}}}})},
+                  {"nextCursor", "c"}, {"hasMore", false}}}}.dump()));
+  };
+  for (const auto* head : {&label, &milestone, &cycle, &peer}) tombstone(*head);
+  auto raw = f.call("GetTask", {{"id", task_id}}).at("result");
+  require(raw.at("result") == "RESULT_KIND_CONFLICT" && raw.at("version").at("task").contains("labelIds") &&
+          raw.at("version").at("task").contains("parentTaskId"), "the conflicted task retains its dangling references");
+  auto listed = [&](const J& filter) {
+    std::set<std::string> ids;
+    for (const auto& item : items(f.call("ListTasks", {{"filter", filter}}))) ids.insert(item.at("version").at("entityId"));
+    return ids;
+  };
+  const std::set<std::string> only_plain{plain.at("entityId")}, both{plain.at("entityId"), task_id};
+  require(listed({{"labelIds", J::array({label.at("entityId")})}}).empty(), "a deleted label selects nothing");
+  require(listed({{"includeUnlabeled", true}}) == both, "unlabeled includes the task whose label was deleted");
+  require(listed({{"milestoneIds", J::array({milestone.at("entityId")})}}).empty() && listed({{"includeNoMilestone", true}}) == both, "deleted milestone");
+  require(listed({{"cycleIds", J::array({cycle.at("entityId")})}}).empty() && listed({{"includeNoCycle", true}}) == both, "deleted cycle");
+  require(listed({{"relationships", J::array({"RELATIONSHIP_KIND_PARENT", "RELATIONSHIP_KIND_DEPENDS_ON", "RELATIONSHIP_KIND_RELATED",
+                                               "RELATIONSHIP_KIND_DUPLICATE_OF"})}}).empty() && listed({{"includeNoRelationships", true}}) == both,
+          "deleted related tasks are not relationships");
+  // Returned snapshots are not rewritten.
+  auto page = items(f.call("ListTasks", {{"filter", {{"includeUnlabeled", true}}}}));
+  const auto found = std::find_if(page.begin(), page.end(), [&](const J& i) { return i.at("version").at("entityId") == task_id; });
+  require(found != page.end() && found->at("version").at("task").contains("labelIds"), "listed snapshots keep their stored references");
+  // Live references of the same repository still count.
+  auto live = planning_item(f, "label", {{"repositoryId", repo_id}, {"name", "Live"}, {"color", "#010203"}});
+  auto labeled = planned_task(f, repo_id, {{"labelIds", J::array({live.at("entityId")})}});
+  require(listed({{"labelIds", J::array({live.at("entityId")})}}) == std::set<std::string>{labeled.at("entityId")}, "live assignments still match");
+}

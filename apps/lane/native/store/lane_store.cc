@@ -2337,16 +2337,67 @@ struct Store::Impl {
     const int sortKey = optionalEnum(q, "sortKey", "TASK_SORT_KEY_", sortKeys);
     const int direction = optionalEnum(q, "sortDirection", "SORT_DIRECTION_", sortDirections);
     const bool descending = direction == 2;
-    struct Row { std::string id; J item; SortValue value; };
+    // `task` is the body of `item` with its references normalized against the
+    // live entities of the task's repository; `item` itself stays untouched.
+    struct Row { std::string id; J item; SortValue value; J task; std::string repo; };
     std::vector<Row> rows;
-    std::set<std::string> parents, blockers, relatedBack;
+    std::map<std::string, std::string> taskRepos;
     for (auto &r : d.run("SELECT id FROM entities WHERE kind=2 AND deleted=0 ORDER BY id")) {
-      Row row{r[0], result(d, r[0]), {}};
-      const J &t = row.item["version"]["task"];
+      Row row{r[0], result(d, r[0]), {}, {}, {}};
+      row.task = row.item["version"]["task"];
+      row.repo = mapped(d, str(row.task, "repositoryId"));
+      taskRepos[row.id] = row.repo;
+      rows.push_back(std::move(row));
+    }
+    // Cleanup after a deletion or move skips a conflicted task, so its accepted
+    // body can keep a reference to an entity that no longer exists (or that
+    // lives in another repository). Such a reference is not an assignment:
+    // ignore it for filters, sort keys and the derived relationship views.
+    std::map<std::string, bool> liveItems;
+    auto liveItem = [&](const std::string &itemId, int kind, const std::string &repo) {
+      const auto key = std::to_string(kind) + itemId + "@" + repo;
+      auto it = liveItems.find(key);
+      if (it == liveItems.end()) {
+        auto h = heads(d, itemId);
+        bool live = !h.empty() && !h[0].value("deleted", false) &&
+                    h[0]["kind"] == kindName(kind) && h[0].contains(bodyKey(kind)) &&
+                    mapped(d, str(h[0][bodyKey(kind)], "repositoryId")) == repo;
+        it = liveItems.emplace(key, live).first;
+      }
+      return it->second;
+    };
+    auto liveTask = [&](const std::string &taskId, const std::string &repo) {
+      auto it = taskRepos.find(taskId);
+      return it != taskRepos.end() && it->second == repo;
+    };
+    std::set<std::string> parents, blockers, relatedBack;
+    for (auto &row : rows) {
+      J &t = row.task;
+      auto keep = [&](const char *key, const std::function<bool(const std::string &)> &live) {
+        if (!t.contains(key))
+          return;
+        if (t[key].is_string()) {
+          if (!live(t[key].get<std::string>()))
+            t.erase(key);
+          return;
+        }
+        std::vector<std::string> kept;
+        for (auto &x : list(t, key))
+          if (live(x))
+            kept.push_back(x);
+        putSet(t, key, kept);
+      };
+      keep("labelIds", [&](const std::string &x) { return liveItem(x, kLabel, row.repo); });
+      keep("milestoneId", [&](const std::string &x) { return liveItem(x, kMilestone, row.repo); });
+      keep("cycleId", [&](const std::string &x) { return liveItem(x, kCycle, row.repo); });
+      for (auto key : {"parentTaskId", "duplicateOfTaskId", "dependsOnTaskIds", "relatedTaskIds"})
+        keep(key, [&](const std::string &x) { return liveTask(x, row.repo); });
+    }
+    for (auto &row : rows) {
+      const J &t = row.task;
       if (t.contains("parentTaskId")) parents.insert(str(t, "parentTaskId"));
       for (auto &x : list(t, "dependsOnTaskIds")) blockers.insert(x);
       for (auto &x : list(t, "relatedTaskIds")) if (x != row.id) relatedBack.insert(x);
-      rows.push_back(std::move(row));
     }
     std::map<std::string, std::string> milestoneNames, cycleStarts;
     auto milestoneName = [&](const std::string &mid) {
@@ -2371,8 +2422,8 @@ struct Store::Impl {
     };
     std::vector<Row> matched;
     for (auto &row : rows) {
-      const J &t = row.item["version"]["task"];
-      if (!wanted.empty() && mapped(d, str(t, "repositoryId")) != mapped(d, wanted)) continue;
+      const J &t = row.task;
+      if (!wanted.empty() && row.repo != mapped(d, wanted)) continue;
       if (!pg.empty() && !pg.count(str(t, "progress"))) continue;
       if (!pr.empty() && !pr.count(str(t, "proposal"))) continue;
       if (!search.empty() && fold(str(t, "title")).find(search) == std::string::npos &&
