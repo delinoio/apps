@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Bundles the real Task editor and shared components for Node tests, replacing
-// only the ReactLynx runtime and the host-bound runtime module.
+// only the ReactLynx runtime and the host-bound runtime module. The bundle
+// exposes the bare TaskEditor and a small Host component that owns the draft
+// state the application shell normally provides.
 import { build, type Plugin } from "esbuild";
 import { fileURLToPath } from "node:url";
 import type { HostNode } from "./lynx-react.ts";
@@ -10,7 +12,9 @@ const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 
 export interface TaskEditorBundle {
   TaskEditor: (props: any) => unknown;
+  Host: (props: any) => unknown;
   runtime: typeof import("./lynx-react.ts");
+  captured: { draft?: any };
 }
 
 const plugin: Plugin = {
@@ -38,11 +42,19 @@ const plugin: Plugin = {
 export async function loadTaskEditor(): Promise<TaskEditorBundle> {
   const result = await build({
     stdin: {
-      contents: `export { TaskEditor } from "./src/TaskEditor.tsx";
-export * as runtime from "./tests/harness/lynx-react.ts";`,
+      contents: `import { useState } from "@lynx-js/react";
+import { TaskEditor } from "./src/TaskEditor.tsx";
+export { TaskEditor };
+export * as runtime from "./tests/harness/lynx-react.ts";
+export const captured = {};
+export function Host(props) {
+  const [draft, setDraft] = useState(props.initial);
+  captured.draft = draft;
+  return <TaskEditor {...props} draft={draft} setDraft={setDraft} />;
+}`,
       resolveDir: lane,
-      sourcefile: "task-editor-entry.ts",
-      loader: "ts",
+      sourcefile: "task-editor-entry.tsx",
+      loader: "tsx",
     },
     bundle: true,
     write: false,
