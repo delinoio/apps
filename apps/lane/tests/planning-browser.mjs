@@ -376,6 +376,25 @@ try {
   assert.equal(created.storyPoints, undefined);
   assert.equal(created.labelIds, undefined);
 
+  // Conflict comparison lists each version's relationship targets, not compact counts.
+  await plan({ conflictTask: ids.taskB });
+  await button("All tasks").click();
+  await button("Offline edit").click();
+  await button("Compare conflict").click();
+  const compare = page.getByRole("dialog", {
+    name: "Resolve whole-task conflict",
+  });
+  await compare.getByText("Parent: Plan the launch", { exact: true }).waitFor();
+  await compare
+    .getByText("Parent: Improve empty states", { exact: true })
+    .waitFor();
+  await compare
+    .getByText(`Related: (unavailable task ${ids.unknown})`, { exact: true })
+    .waitFor();
+  assert.equal(await compare.getByText("Has parent").count(), 0);
+  await page.keyboard.press("Escape");
+  await plan({ conflictTask: "" });
+
   // ---- Repository planning management ------------------------------------------
   await button("Repositories").click();
   await button("Labels, milestones and cycles").first().click();

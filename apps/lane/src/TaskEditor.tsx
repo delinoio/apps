@@ -23,6 +23,7 @@ import {
   parsePoints,
   relationshipEdits,
   taskMetadata,
+  taskRelationshipLines,
   unionRelated,
   validateTaskPlanning,
 } from "./planning";
@@ -864,15 +865,23 @@ function PlanningSummary({
   lookup: ReturnType<typeof lookupOf>;
 }) {
   const meta = taskMetadata(task, lookup, false);
+  // Comparisons list each relationship target, not the compact list-row counts.
+  const relationships = taskRelationshipLines(task, lookup);
   return (
     <>
       <text text-selection>
         Planning: {meta.summary.join(" · ") || "No planning values"}
       </text>
       <text text-selection>Labels: {meta.labels.join(", ") || "None"}</text>
-      <text text-selection>
-        Links: {meta.relationships.join(" · ") || "None"}
-      </text>
+      {relationships.length ? (
+        relationships.map((line) => (
+          <text text-selection key={line}>
+            {line}
+          </text>
+        ))
+      ) : (
+        <text text-selection>Links: None</text>
+      )}
     </>
   );
 }

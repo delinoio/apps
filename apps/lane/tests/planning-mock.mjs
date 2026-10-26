@@ -15,6 +15,7 @@ export const ids = {
   labelDocsBackend: id(33),
   milestone: id(41),
   cycle: id(51),
+  unknown: id(999),
 };
 const origin = { kind: "ORIGIN_KIND_APP", deviceName: "Test device" };
 const version = (entityId, versionId, body, extra = {}) => ({
@@ -157,6 +158,25 @@ const pick = (items, repositoryId) =>
         ?.repositoryId === repositoryId,
   );
 let counter = 900;
+// A conflicted task keeps its head and gains an alternative that differs only in relationships.
+const taskResult = (state, t) =>
+  t.entityId === state.conflictTask
+    ? {
+        result: "RESULT_KIND_CONFLICT",
+        version: t,
+        alternatives: [
+          {
+            ...t,
+            versionId: id(Number(t.entityId.slice(-3)) + 5000),
+            task: {
+              ...t.task,
+              parentTaskId: ids.taskA,
+              relatedTaskIds: [ids.unknown],
+            },
+          },
+        ],
+      }
+    : applied(t);
 export async function handle(state, method, input) {
   state.requests.push({ method, input });
   if (state.delayMs && /^(Save|Create|Delete)/.test(method))
@@ -171,12 +191,19 @@ export async function handle(state, method, input) {
       return { body: { items: state.repositories.map(applied) } };
     case "ListTasks":
       return {
-        body: { items: pick(state.tasks, input.repositoryId).map(applied) },
+        body: {
+          items: pick(state.tasks, input.repositoryId).map((t) =>
+            taskResult(state, t),
+          ),
+        },
       };
     case "GetTask":
       return {
         body: {
-          result: applied(state.tasks.find((t) => t.entityId === input.id)),
+          result: taskResult(
+            state,
+            state.tasks.find((t) => t.entityId === input.id),
+          ),
         },
       };
     case "ListPlanningItems": {

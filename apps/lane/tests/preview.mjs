@@ -117,6 +117,7 @@ createServer(async (req, res) => {
       const body = JSON.parse(url.searchParams.get("body") || "{}");
       if (body.failNext) planning.failNext = body.failNext;
       if (body.delayMs !== undefined) planning.delayMs = body.delayMs;
+      if ("conflictTask" in body) planning.conflictTask = body.conflictTask;
       res.end("{}");
       return;
     }

@@ -527,6 +527,23 @@ export function taskMetadata(
   return { summary, labels, relationships };
 }
 
+/**
+ * Full relationship targets for comparisons, where compact counts would hide differences.
+ * Titles come from the lookup; a task that is not loaded shows its identifier instead.
+ */
+export function taskRelationshipLines(task: Task, lookup: Lookup): string[] {
+  const target = (id: string) => lookup.task(id) ?? `(unavailable task ${id})`;
+  const lines: string[] = [];
+  if (task.parentTaskId) lines.push(`Parent: ${target(task.parentTaskId)}`);
+  if (task.dependsOnTaskIds.length)
+    lines.push(`Depends on: ${task.dependsOnTaskIds.map(target).join(", ")}`);
+  if (task.relatedTaskIds.length)
+    lines.push(`Related: ${task.relatedTaskIds.map(target).join(", ")}`);
+  if (task.duplicateOfTaskId)
+    lines.push(`Duplicate of: ${target(task.duplicateOfTaskId)}`);
+  return lines;
+}
+
 // ---- Task history ----------------------------------------------------------
 
 export const planningHistoryFields = [

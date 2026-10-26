@@ -31,6 +31,7 @@ import {
   pruneFilter,
   relationshipEdits,
   taskMetadata,
+  taskRelationshipLines,
   toTaskFilter,
   unionRelated,
   validDate,
@@ -459,4 +460,41 @@ test("planning editor input counts as unsaved only when a field differs", () => 
     planningInputChanged(initial, { ...initial, description: "" }),
     false,
   );
+});
+
+test("relationship comparison lists target titles and falls back to identifiers", () => {
+  const lookup = lookupOf(
+    [],
+    new Map([
+      ["p1", "Plan A"],
+      ["p2", "Plan B"],
+      ["d", "Design"],
+    ]),
+    new Map(),
+  );
+  const first = taskRelationshipLines(
+    uiTask({ parentTaskId: "p1", dependsOnTaskIds: ["d", "gone"] }),
+    lookup,
+  );
+  const second = taskRelationshipLines(
+    uiTask({
+      parentTaskId: "p2",
+      dependsOnTaskIds: ["d", "gone"],
+      duplicateOfTaskId: "d",
+      relatedTaskIds: ["p1"],
+    }),
+    lookup,
+  );
+  assert.deepEqual(first, [
+    "Parent: Plan A",
+    "Depends on: Design, (unavailable task gone)",
+  ]);
+  assert.deepEqual(second, [
+    "Parent: Plan B",
+    "Depends on: Design, (unavailable task gone)",
+    "Related: Plan A",
+    "Duplicate of: Design",
+  ]);
+  assert.notDeepEqual(first, second);
+  assert.deepEqual(taskRelationshipLines(uiTask({}), lookup), []);
 });
