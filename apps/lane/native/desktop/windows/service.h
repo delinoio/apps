@@ -60,7 +60,6 @@ class Service {
           }
         }
         active_generation_ = generation;
-        if (method == "migrate") return store_->migrate(args.at(0));
         if (method == "open") {
           auto response = store_->open(args.at(0));
           auto envelope = Parse(response);
@@ -84,6 +83,13 @@ class Service {
         try { input = Parse(args.at(1)); }
         catch (...) { return Failure("ERROR_REASON_INVALID_INPUT", "The native request must be a JSON object."); }
         routed_space_ = Text(input, L"spaceId");
+        if (operation == "ResetDevelopmentData") {
+          // The explicit development reset needs the exclusive space lease: stop
+          // the supervised `lane sync run` helper first. The store still fails
+          // with STORAGE_BUSY while any other process holds a handle.
+          CancelPending();
+          if (!routed_space_.empty()) supervisor_->Stop(routed_space_);
+        }
         if (operation == "DeleteAccountData") {
           auto request = input.GetNamedObject(L"request");
           if (request.HasKey(L"reauthProof") || request.HasKey(L"reauth_proof"))
@@ -154,7 +160,7 @@ class Service {
           // The helper validates state/PKCE and updates registry routing using
           // its credential store. Never copy its tokens into NAPI or events.
           PendingAccountSpace({});
-          auto opened = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
+          auto opened = Parse(store_->open(R"({"formatVersion":3,"spaceId":""})"));
           if (opened.GetNamedBoolean(L"ok", false)) {
             const auto space = Text(opened.GetNamedObject(L"response"), L"spaceId");
             watched_.insert(space);
@@ -280,12 +286,12 @@ class Service {
       if (!result.GetNamedBoolean(L"ok", false)) throw std::runtime_error("Cannot disconnect the sync helper");
     };
     store_->setHostHooks(std::move(hooks));
-    auto initial = Parse(store_->open(R"({"formatVersion":2,"spaceId":""})"));
+    auto initial = Parse(store_->open(R"({"formatVersion":3,"spaceId":""})"));
     if (initial.GetNamedBoolean(L"ok", false)) watched_.insert(Text(initial.GetNamedObject(L"response"), L"spaceId"));
   }
   void OpenBackground(const std::string& space) {
     Json request; Set(request, L"spaceId", space);
-    request.Insert(L"formatVersion", Value::CreateNumberValue(2));
+    request.Insert(L"formatVersion", Value::CreateNumberValue(3));
     store_->open(Dump(request));
   }
   void Tick() {

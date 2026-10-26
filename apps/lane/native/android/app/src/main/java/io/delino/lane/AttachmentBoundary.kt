@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Validate server negotiation against the already-open local space, never UI ownership fields. */
 internal object AttachmentBoundary {
     fun validate(status: JSONObject, identity: JSONObject, info: JSONObject, epoch: String) {
-        if (info.optInt("formatVersion") != 2) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
+        if (info.optInt("formatVersion") != 3) throw SyncBoundary.Failure("UNSUPPORTED_FORMAT")
         if (!status.optBoolean("syncEnabled") || status.optBoolean("reconnectRequired"))
             throw SyncBoundary.Failure("ONLINE_REQUIRED")
         if (info.optString("epoch").isEmpty() || info.optString("epoch") != epoch)

@@ -44,7 +44,7 @@ internal class LaneRuntime(val application: LaneApplication) {
     fun <T> submit(action: () -> T) = executor.submit<T> { action() }
     fun execute(action: () -> Unit) { executor.execute(action) }
     fun engine(method: String, request: String) = store().invoke(method, request)
-    fun workerOpen(): String = store().open("{\"formatVersion\":2,\"spaceId\":\"\"}")
+    fun workerOpen(): String = store().open("{\"formatVersion\":3,\"spaceId\":\"\"}")
 
     fun foreground(session: LaneSession) = execute {
         sessions.add(session)
@@ -73,11 +73,6 @@ internal class LaneRuntime(val application: LaneApplication) {
             session.spaces.clear()
         }
     }
-    fun migrate(session: LaneSession, space: String, callback: Callback) = operation(session, callback) {
-        if (!LaneLinks.validId(space)) BridgeJson.error("INVALID_INPUT", "Choose an existing data space")
-        else if (allSessions.any { it.spaces.containsKey(space) }) BridgeJson.error("STORAGE_BUSY", "Close this data space before upgrading it")
-        else store().migrate(space)
-    }
     fun open(session: LaneSession, request: String, callback: Callback) = operation(session, callback) {
         val result = store().open(request)
         val envelope = JSONObject(result)
@@ -101,6 +96,22 @@ internal class LaneRuntime(val application: LaneApplication) {
     fun invoke(session: LaneSession, method: String, raw: String, callback: Callback) {
         if (method !in LaneMethods.allowed) {
             deliver(session, callback, BridgeJson.error("INVALID_INPUT", "Unknown Lane method")); return
+        }
+        if (method == "ResetDevelopmentData") {
+            // Explicit development reset: works without an open handle so an
+            // unsupported store can be replaced. The engine takes the exclusive
+            // lifetime lease and fails with STORAGE_BUSY if any handle remains.
+            operation(session, callback) {
+                val wrapper = JSONObject(raw)
+                val space = wrapper.optString("spaceId")
+                if (space.isNotEmpty() && !LaneLinks.validId(space))
+                    return@operation BridgeJson.error("INVALID_INPUT", "Choose an existing data space")
+                host.beforeReset(space)
+                val result = engine(method, wrapper.toString())
+                if (JSONObject(result).optBoolean("ok")) safe { host.scheduleNow(); "{}" }
+                result
+            }
+            return
         }
         operation(session, callback) {
             val wrapper = JSONObject(raw)
@@ -130,7 +141,7 @@ internal class LaneRuntime(val application: LaneApplication) {
                     }
                     "DisconnectSync", "RemoveDeviceData" -> safe { host.onDisconnect(space); "{}" }
                 }
-                if (method in LaneMethods.mutations) safe { host.scheduleNow(); "{}" }
+                if (method in LaneMethods.mutations || method == "RetryBlockedItems") safe { host.scheduleNow(); "{}" }
             }
             decorate(method, result)
         }

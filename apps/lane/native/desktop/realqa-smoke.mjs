@@ -58,7 +58,7 @@ export async function realQASmoke(realqa) {
   };
   const opened = await bridge(
     "open",
-    JSON.stringify({ formatVersion: 2, spaceId: "" }),
+    JSON.stringify({ formatVersion: 3, spaceId: "" }),
   );
   const meta = (requestId) => ({
     requestId: requestId || uuid(),

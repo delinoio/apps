@@ -26,7 +26,7 @@
   assert([token isEqualToString:@"synthetic-access"]);
   assert([service isEqualToString:@"lane.v1.SyncService"]);
   assert([method isEqualToString:@"GetSyncInfo"]);
-  return @{@"formatVersion": @(self.formatVersion ?: 2), @"accountId": self.account, @"tenantId": @"tenant", @"epoch": @"epoch"};
+  return @{@"formatVersion": @(self.formatVersion ?: 3), @"accountId": self.account, @"tenantId": @"tenant", @"epoch": @"epoch"};
 }
 @end
 static NSURL *Callback(NSDictionary *challenge, NSString *suffix) {
@@ -68,7 +68,7 @@ int main(void) {
     server.formatVersion = 99;
     challenge = [auth begin:@"account" device:server.device];
     assert(![auth complete:Callback(challenge, @"")]);
-    server.formatVersion = 2;
+    server.formatVersion = 3;
     LaneTransport *objects = [LaneTransport new];
     for (NSString *unsafe in @[@"http://objects.invalid/image", @"https://user:secret@objects.invalid/image", @"file:///private/image", @"https://objects.invalid/image#fragment"])
       assert([[objects attachment:[NSURL URLWithString:unsafe]][@"error"][@"reason"] isEqual:@"ERROR_REASON_INVALID_INPUT"]);

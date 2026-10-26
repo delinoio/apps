@@ -8,10 +8,10 @@ import org.junit.Test
 class AttachmentBoundaryTest {
     private fun status() = JSONObject().put("syncEnabled", true).put("accountId", "account-a").put("deviceId", "device-a")
     private fun identity() = JSONObject().put("account_id", "account-a").put("tenant_id", "tenant-a").put("device_id", "device-a")
-    private fun info() = JSONObject().put("formatVersion", 2).put("accountId", "account-a").put("tenantId", "tenant-a").put("epoch", "epoch-a")
-    @Test fun requiresFormatTwoAndPinnedAccountDeviceTenantEpoch() {
+    private fun info() = JSONObject().put("formatVersion", 3).put("accountId", "account-a").put("tenantId", "tenant-a").put("epoch", "epoch-a")
+    @Test fun requiresFormatThreeAndPinnedAccountDeviceTenantEpoch() {
         AttachmentBoundary.validate(status(), identity(), info(), "epoch-a")
-        for (format in listOf(0, 1, 99)) assertEquals("UNSUPPORTED_FORMAT",
+        for (format in listOf(0, 1, 2, 99)) assertEquals("UNSUPPORTED_FORMAT",
             assertThrows(SyncBoundary.Failure::class.java) {
                 AttachmentBoundary.validate(status(), identity(), info().put("formatVersion", format), "epoch-a")
             }.reason)
