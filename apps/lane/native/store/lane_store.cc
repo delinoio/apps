@@ -1633,35 +1633,56 @@ struct Store::Impl {
     primary->cur = body;
     primary->extra.clear(); // This write supersedes every conflicting head.
     primary->conflicted = false;
+    // Edits to another task apply to every head of a conflicted task; changing
+    // any of them fails the whole operation instead of resolving the conflict.
+    auto touch = [&](TaskNode *n, const std::function<void(J &)> &edit) {
+      bool any = false;
+      J before = n->cur;
+      edit(n->cur);
+      any = n->cur != before;
+      for (auto body : n->extra) {
+        J copy = body;
+        edit(copy);
+        any = any || copy != body;
+      }
+      if (any && n->conflicted)
+        fail("CONFLICT_READ_ONLY", "Resolve the conflict before editing.");
+    };
+    const auto mine = list(body, "relatedTaskIds");
     for (auto &x : sortedUnique(related)) {
       auto *other = taskNode(d, nodes, x);
       if (!other)
         continue;
-      auto set = list(other->cur, "relatedTaskIds");
-      set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
-      auto mine = list(body, "relatedTaskIds");
-      if (std::find(mine.begin(), mine.end(), x) != mine.end())
-        set.push_back(taskId);
-      putSet(other->cur, "relatedTaskIds", set);
+      const bool linked = std::find(mine.begin(), mine.end(), x) != mine.end();
+      touch(other, [&](J &t) {
+        auto set = list(t, "relatedTaskIds");
+        set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
+        if (linked)
+          set.push_back(taskId);
+        putSet(t, "relatedTaskIds", set);
+      });
     }
     for (auto &x : list(edits, "addSubtaskIds"))
-      taskNode(d, nodes, x)->cur["parentTaskId"] = taskId;
+      touch(taskNode(d, nodes, x), [&](J &t) { t["parentTaskId"] = taskId; });
     for (auto &x : list(edits, "removeSubtaskIds"))
       if (auto *n = taskNode(d, nodes, x))
-        if (n->cur.contains("parentTaskId") && n->cur["parentTaskId"] == taskId)
-          n->cur.erase("parentTaskId");
-    for (auto &x : list(edits, "addBlockedTaskIds")) {
-      auto *n = taskNode(d, nodes, x);
-      auto set = list(n->cur, "dependsOnTaskIds");
-      set.push_back(taskId);
-      putSet(n->cur, "dependsOnTaskIds", set);
-    }
+        touch(n, [&](J &t) {
+          if (t.contains("parentTaskId") && t["parentTaskId"] == taskId)
+            t.erase("parentTaskId");
+        });
+    for (auto &x : list(edits, "addBlockedTaskIds"))
+      touch(taskNode(d, nodes, x), [&](J &t) {
+        auto set = list(t, "dependsOnTaskIds");
+        set.push_back(taskId);
+        putSet(t, "dependsOnTaskIds", set);
+      });
     for (auto &x : list(edits, "removeBlockedTaskIds"))
-      if (auto *n = taskNode(d, nodes, x)) {
-        auto set = list(n->cur, "dependsOnTaskIds");
-        set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
-        putSet(n->cur, "dependsOnTaskIds", set);
-      }
+      if (auto *n = taskNode(d, nodes, x))
+        touch(n, [&](J &t) {
+          auto set = list(t, "dependsOnTaskIds");
+          set.erase(std::remove(set.begin(), set.end(), taskId), set.end());
+          putSet(t, "dependsOnTaskIds", set);
+        });
     // A new cycle must pass through a task this write changed.
     std::vector<std::string> touched{taskId};
     for (auto &x : changedTasks(nodes, taskId, false))

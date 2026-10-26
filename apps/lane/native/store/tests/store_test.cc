@@ -737,6 +737,8 @@ int main(int argc, char** argv) {
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
+    {"conflicted heads, union cycles and cursor scope", planning_conflict_union_cycle_and_cursor_scope},
+    {"reset account reconnect flow", reset_account_space_reconnect_flow},
   };
   unsigned failures = 0;
   for (const auto& test : tests) {

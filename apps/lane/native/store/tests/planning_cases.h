@@ -314,3 +314,52 @@ void interrupted_reset_is_repeatable() {
   require(success(restarted.reset(f.space)).at("completed") == true, "repeating the reset finishes it");
   require(success(restarted.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump())).at("sequence") == "0", "valid empty store afterwards");
 }
+void planning_conflict_union_cycle_and_cursor_scope() {
+  Fixture f; auto repo = repository_for(f); const auto repo_id = repo.at("entityId").get<std::string>();
+  auto a = planned_task(f, repo_id); auto b = planned_task(f, repo_id);
+  // A becomes conflicted: one head links to B, the other only changes the title.
+  auto linked = a.at("task"); linked["parentTaskId"] = b.at("entityId");
+  f.save(a, linked);
+  auto titled = a.at("task"); titled["title"] = "Alternative";
+  error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", a.at("entityId")}, {"expectedVersionId", a.at("versionId")}, {"task", titled}}), "STALE_VERSION");
+  // Cycle checks use the union of every head's references.
+  auto parent = b.at("task"); parent["parentTaskId"] = a.at("entityId");
+  auto rejected = f.raw("SaveTask", {{"meta", f.meta()}, {"id", b.at("entityId")}, {"expectedVersionId", b.at("versionId")}, {"task", parent}});
+  error(rejected, "CONSTRAINT_VIOLATION");
+  require(rejected.at("error").at("violation") == "CONSTRAINT_VIOLATION_PARENT_CYCLE", "union of conflicting heads closes the cycle");
+  // A relationship edit of a conflicted task fails the operation without writes.
+  auto edits = b.at("task");
+  Sql db(f.database()); const auto before = counts(db);
+  error(f.raw("SaveTask", {{"meta", f.meta()}, {"id", b.at("entityId")}, {"expectedVersionId", b.at("versionId")}, {"task", edits},
+      {"relationshipEdits", {{"addSubtaskIds", J::array({a.at("entityId")})}}}}), "CONFLICT_READ_ONLY");
+  require(counts(db) == before, "conflicted affected task leaves no partial write");
+  // Cursors are scoped to their query: another filter or sort rejects them.
+  Fixture g; auto grepo = repository_for(g).at("entityId");
+  for (int i = 0; i < 3; ++i) planned_task(g, grepo, {{"priority", i == 0 ? "TASK_PRIORITY_LOW" : "TASK_PRIORITY_HIGH"}});
+  auto page = g.call("ListTasks", {{"page", {{"size", 1}}}, {"sortKey", "TASK_SORT_KEY_PRIORITY"}});
+  const auto cursor = page.at("nextCursor").get<std::string>();
+  require(!cursor.empty(), "keyset cursor issued");
+  error(g.raw("ListTasks", {{"page", {{"size", 1}, {"cursor", cursor}}}, {"sortKey", "TASK_SORT_KEY_TYPE"}}), "INVALID_INPUT");
+  error(g.raw("ListTasks", {{"page", {{"size", 1}, {"cursor", cursor}}}, {"sortKey", "TASK_SORT_KEY_PRIORITY"}, {"filter", {{"priorities", J::array({"TASK_PRIORITY_LOW"})}}}}), "INVALID_INPUT");
+  require(g.call("ListTasks", {{"page", {{"size", 1}, {"cursor", cursor}}}, {"sortKey", "TASK_SORT_KEY_PRIORITY"}}).at("items").size() == 1, "same query continues");
+}
+void reset_account_space_reconnect_flow() {
+  Fixture f; const auto epoch = uuid(), account = uuid(), tenant = uuid();
+  lane::HostHooks hooks;
+  hooks.authorize = [](std::string) { return J{{"authorizationUrl", "https://identity.example.test/approve"}, {"challengeId", "c"}}.dump(); };
+  f.store.setHostHooks(hooks);
+  success(f.store.approveAccount(identity(account, tenant, epoch).dump(), false));
+  f.space = success(f.store.open(R"({"formatVersion":3,"spaceId":""})")).at("spaceId");
+  f.task(); success(f.store.close(f.space));
+  f.call("ResetDevelopmentData", {{"confirmed", true}}).at("completed"); // Hosts reopen afterwards.
+  success(f.store.open(J{{"formatVersion", 3}, {"spaceId", f.space}}.dump()));
+  require(f.call("GetLocalStatus").at("reconnectRequired") == true && f.call("GetLocalStatus").at("syncEnabled") == false, "reset account space waits for reconnect");
+  // Reconnect follows the epoch-change confirmation path and never uploads implicitly.
+  f.call("ConnectSync", {{"accountId", account}});
+  success(f.store.approveAccount(identity(account, tenant, epoch).dump(), false));
+  require(f.call("GetLocalStatus").at("syncEnabled") == true && f.call("GetLocalStatus").at("reconnectRequired") == true, "approval alone does not resume synchronization");
+  const auto owner = uuid(); success(f.store.acquireSync(f.space, owner));
+  require(success(f.store.pendingSync(f.space, owner)).at("mutations").empty(), "no upload before confirmation");
+  success(f.store.confirmSyncEpoch(f.space, epoch));
+  require(f.call("GetLocalStatus").at("reconnectRequired") == false, "explicit confirmation resumes synchronization");
+}
