@@ -82,7 +82,7 @@ try {
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
   }
   await page.screenshot({ path: join(evidence, "updates-narrow.png") });
-  await page.getByRole("button", { name: "All tasks", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.waitForFunction(() => window.laneUpdateFixture.cancels > 0);
   assert.deepEqual(errors, []);
   console.log(
