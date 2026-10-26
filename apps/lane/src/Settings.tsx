@@ -26,6 +26,17 @@ import { AppUpdates } from "./AppUpdates";
 import { ResetDevelopmentDialog } from "./ResetDevelopment";
 import { describeItemError } from "./planning";
 import { SettingsSection } from "./AppNavigation";
+// Native hosts return ProtoJSON enum names while the web adapter and Choices use
+// numbers. Display and Save share this conversion so a save never changes the
+// content preference that the screen shows. Missing or unspecified values keep
+// the DETAIL default.
+const notificationContent = (
+  value: NotificationPreferences["content"] | undefined,
+): NotificationContent =>
+  Number(value) === NotificationContent.GENERIC ||
+  value === "NOTIFICATION_CONTENT_GENERIC"
+    ? NotificationContent.GENERIC
+    : NotificationContent.DETAIL;
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
 export function Settings({
@@ -343,10 +354,7 @@ export function Settings({
             <Choices
               disabled={busy}
               label="Notification content"
-              value={
-                Number(prefs.content) ||
-                (prefs.content === "NOTIFICATION_CONTENT_GENERIC" ? 2 : 1)
-              }
+              value={notificationContent(prefs.content)}
               options={[
                 [NotificationContent.DETAIL, "Repository and title"],
                 [NotificationContent.GENERIC, "Generic notice"],
@@ -366,7 +374,7 @@ export function Settings({
                     "SetNotificationPreferences",
                     {
                       enabled: prefs.enabled,
-                      content: Number(prefs.content) || 1,
+                      content: notificationContent(prefs.content),
                     },
                   );
                   prefsDirty.current = false;
