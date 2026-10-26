@@ -724,6 +724,68 @@ fn mcp_exposes_typed_planning_tools_and_extended_task_schemas() {
     );
 }
 
+/// Blocking reader fed by a channel so a test can send MCP requests one at a time. Dropping
+/// the sender ends the input.
+struct ChannelReader {
+    receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+    pending: Cursor<Vec<u8>>,
+}
+impl ChannelReader {
+    fn new(receiver: std::sync::mpsc::Receiver<Vec<u8>>) -> Self {
+        Self {
+            receiver,
+            pending: Cursor::new(vec![]),
+        }
+    }
+}
+impl std::io::Read for ChannelReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            let read = self.pending.read(buf)?;
+            if read > 0 {
+                return Ok(read);
+            }
+            match self.receiver.recv() {
+                Ok(bytes) => self.pending = Cursor::new(bytes),
+                Err(_) => return Ok(0),
+            }
+        }
+    }
+}
+/// MCP output shared between the session thread and the test thread.
+#[derive(Clone, Default)]
+struct SharedOutput(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+impl std::io::Write for SharedOutput {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl SharedOutput {
+    /// Wait until a complete reply with the given JSON-RPC ID has been written.
+    fn wait_for_reply(&self, id: &Value) -> Value {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let text = String::from_utf8(self.0.lock().unwrap().clone()).unwrap();
+            let found = text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .find(|reply| reply["id"] == *id);
+            if let Some(reply) = found {
+                return reply;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no MCP reply for request {id}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+}
+
 #[test]
 fn local_mcp_uses_the_mcp_origin_for_planning_writes() {
     let dir = tempfile::tempdir().unwrap();
@@ -762,23 +824,29 @@ fn local_mcp_uses_the_mcp_origin_for_planning_writes() {
         ),
         call(5, "lane_get_planning_item", json!({"id":label_id})),
     ];
-    let mut input = Cursor::new(
-        messages
-            .iter()
-            .map(Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n",
-    );
-    let mut out = vec![];
-    runtime
-        .mcp(&Options::default(), &mut input, &mut out)
-        .unwrap();
-    let mut replies: Vec<Value> = String::from_utf8(out)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
+    // The server handles each tools/call on its own worker, so it only orders requests whose
+    // replies the client has already received. Drive the session like a real client: send one
+    // request and wait for its reply before sending the next.
+    let (sender, receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+    let out = SharedOutput::default();
+    let mut writer = out.clone();
+    let mut input = std::io::BufReader::new(ChannelReader::new(receiver));
+    let mut replies: Vec<Value> = vec![];
+    std::thread::scope(|scope| {
+        let session = scope.spawn(|| {
+            runtime
+                .mcp(&Options::default(), &mut input, &mut writer)
+                .unwrap();
+        });
+        for message in &messages {
+            sender
+                .send(format!("{message}\n").into_bytes())
+                .expect("the MCP session is running");
+            replies.push(out.wait_for_reply(&message["id"]));
+        }
+        drop(sender);
+        session.join().unwrap();
+    });
     replies.sort_by_key(|r| r["id"].as_i64());
     let created = &replies[1]["result"]["structuredContent"];
     assert_eq!(
