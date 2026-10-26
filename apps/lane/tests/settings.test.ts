@@ -39,7 +39,14 @@ test.before(async () => {
 
 // Mounts the real Settings screen against a scripted local adapter. Tests
 // replace `handlers` entries to hold or fail individual host operations.
-async function open(mode: "web" | "native" = "web") {
+async function open(
+  mode: "web" | "native" = "web",
+  initial: Record<string, unknown> = {
+    enabled: false,
+    content: 1,
+    permission: 2,
+  },
+) {
   const calls: Call[] = [];
   const handlers: Record<string, (request: any) => Promise<unknown>> = {
     GetLocalStatus: async () => ({
@@ -49,11 +56,7 @@ async function open(mode: "web" | "native" = "web") {
       connected: false,
       pendingItemCount: 0,
     }),
-    GetNotificationPreferences: async () => ({
-      enabled: false,
-      content: 1,
-      permission: 2,
-    }),
+    GetNotificationPreferences: async () => initial,
   };
   const adapter = {
     mode,
@@ -387,4 +390,128 @@ test("delayed initial load keeps the screen busy and then adopts clean preferenc
   assert.ok(field);
   const on = all(field.children, (n) => isButton(n) && text(n) === "On")[0];
   assert.match(on.props.className, /primary/);
+});
+
+// Native hosts answer with ProtoJSON enum names; the web adapter and the
+// Choices buttons use numbers. Each case is [stored content, shown option,
+// submitted content].
+const GENERIC_OPTION = "Generic notice";
+const DETAIL_OPTION = "Repository and title";
+const CONTENT_CASES: [unknown, string, number][] = [
+  ["NOTIFICATION_CONTENT_GENERIC", GENERIC_OPTION, 2],
+  ["NOTIFICATION_CONTENT_DETAIL", DETAIL_OPTION, 1],
+  [1, DETAIL_OPTION, 1],
+  [2, GENERIC_OPTION, 2],
+];
+const PERMISSION = "NOTIFICATION_PERMISSION_GRANTED";
+const saved = (s: Awaited<ReturnType<typeof open>>) =>
+  s.calls
+    .filter((c) => c.name === "SetNotificationPreferences")
+    .map((c) => c.request);
+
+for (const [content, option, submitted] of CONTENT_CASES) {
+  for (const startEnabled of [true, false]) {
+    test(`unchanged ${String(content)} content survives no-op and enablement-only saves, reload and a second save (enabled ${startEnabled})`, async () => {
+      const s = await open("native", {
+        enabled: startEnabled,
+        content,
+        permission: PERMISSION,
+      });
+      assert.equal(s.selected(CONTENT, option), true);
+      // The native store answers with the symbolic name after every save.
+      const symbolic = (enabled: boolean) => ({
+        enabled,
+        content:
+          submitted === 2
+            ? "NOTIFICATION_CONTENT_GENERIC"
+            : "NOTIFICATION_CONTENT_DETAIL",
+        permission: PERMISSION,
+      });
+      s.handlers.SetNotificationPreferences = async (request: any) =>
+        symbolic(request.enabled);
+
+      // No-op save.
+      await s.tap(s.button(SAVE));
+      assert.deepEqual(saved(s), [
+        { enabled: startEnabled, content: submitted },
+      ]);
+      assert.equal(s.selected(CONTENT, option), true);
+      assert.deepEqual(s.notices(), [SAVED]);
+      assert.equal(s.permission(), `Permission: ${PERMISSION}`);
+
+      // Reload returns the named response, then a second save still matches.
+      s.handlers.GetNotificationPreferences = async () =>
+        symbolic(startEnabled);
+      await s.tap(s.button("Refresh settings"));
+      assert.equal(s.selected(CONTENT, option), true);
+      await s.tap(s.button(SAVE));
+
+      // Enablement-only change in the other direction.
+      await s.tap(s.choice(ENABLE, startEnabled ? "Off" : "On"));
+      assert.equal(s.selected(CONTENT, option), true);
+      await s.tap(s.button(SAVE));
+      assert.equal(s.selected(CONTENT, option), true);
+      await s.tap(s.button(SAVE));
+      assert.deepEqual(saved(s), [
+        { enabled: startEnabled, content: submitted },
+        { enabled: startEnabled, content: submitted },
+        { enabled: !startEnabled, content: submitted },
+        { enabled: !startEnabled, content: submitted },
+      ]);
+    });
+  }
+}
+
+test("explicit content changes persist the selected value across native string responses", async () => {
+  const s = await open("native", {
+    enabled: true,
+    content: "NOTIFICATION_CONTENT_GENERIC",
+    permission: PERMISSION,
+  });
+  s.handlers.SetNotificationPreferences = async (request: any) => ({
+    enabled: request.enabled,
+    content:
+      request.content === 2
+        ? "NOTIFICATION_CONTENT_GENERIC"
+        : "NOTIFICATION_CONTENT_DETAIL",
+    permission: PERMISSION,
+  });
+  await s.tap(s.choice(CONTENT, DETAIL_OPTION));
+  assert.equal(s.selected(CONTENT, DETAIL_OPTION), true);
+  await s.tap(s.button(SAVE));
+  assert.equal(s.selected(CONTENT, DETAIL_OPTION), true);
+  assert.equal(s.selected(CONTENT, GENERIC_OPTION), false);
+  // A later save without edits keeps the explicit Detail choice.
+  await s.tap(s.button(SAVE));
+
+  await s.tap(s.choice(CONTENT, GENERIC_OPTION));
+  await s.tap(s.button(SAVE));
+  assert.equal(s.selected(CONTENT, GENERIC_OPTION), true);
+  assert.equal(s.selected(CONTENT, DETAIL_OPTION), false);
+  await s.tap(s.button(SAVE));
+  assert.deepEqual(saved(s), [
+    { enabled: true, content: 1 },
+    { enabled: true, content: 1 },
+    { enabled: true, content: 2 },
+    { enabled: true, content: 2 },
+  ]);
+});
+
+test("missing and unspecified content keep the Detail default for display and save", async () => {
+  for (const content of [undefined, 0, "NOTIFICATION_CONTENT_UNSPECIFIED"]) {
+    const s = await open("native", {
+      enabled: true,
+      content,
+      permission: PERMISSION,
+    });
+    assert.equal(s.selected(CONTENT, DETAIL_OPTION), true);
+    assert.equal(s.selected(CONTENT, GENERIC_OPTION), false);
+    s.handlers.SetNotificationPreferences = async () => ({
+      enabled: true,
+      content: "NOTIFICATION_CONTENT_DETAIL",
+      permission: PERMISSION,
+    });
+    await s.tap(s.button(SAVE));
+    assert.deepEqual(saved(s), [{ enabled: true, content: 1 }]);
+  }
 });
