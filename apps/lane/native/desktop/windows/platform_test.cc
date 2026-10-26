@@ -8,7 +8,7 @@
 
 using namespace lane::windows;
 int wmain(int count, wchar_t** args) {
-  winrt::init_apartment(winrt::apartment_type::multi_threaded);
+  ApartmentScope apartment;
   if (count > 1) {
     if (std::wstring(args[1]) == L"--hang") { Sleep(INFINITE); return 0; }
     if (std::wstring(args[1]) == L"--invalid") return 2;
@@ -27,7 +27,7 @@ int wmain(int count, wchar_t** args) {
   for (const auto& invalid : {"http://example.com", "javascript:alert(1)", "file:///tmp/a", "https://u:p@example.com", "https://", "https://example.com\n"}) assert(!HTTPS(invalid));
   assert(!HTTPS(std::string("https://example.com\0evil", 24)));
   auto error = Parse(Failure("ERROR_REASON_INVALID_INPUT", "Invalid request."));
-  assert(UUID(Text(error.GetNamedObject(L"error"), L"correlationId")));
+  assert(lane::windows::UUID(Text(error.GetNamedObject(L"error"), L"correlationId")));
   auto exact = Parse(R"({"sequence":"18446744073709551615","permission":"NOTIFICATION_PERMISSION_DENIED"})");
   assert(Text(Parse(Dump(exact)), L"sequence") == "18446744073709551615");
   wchar_t path[32768];
@@ -48,6 +48,5 @@ int wmain(int count, wchar_t** args) {
   auto child = Launch(path, {L"--hang"}, null.Get(), null.Get(), null.Get());
   assert(child->Running());
   child->Stop(); assert(!child->Running());
-  winrt::uninit_apartment();
   std::cout << "Windows platform and helper transport tests passed\n";
 }
