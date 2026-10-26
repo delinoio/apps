@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./runtime/static/js/client.js";
 import { installAccessibility } from "./accessibility.js";
-import { OnlineLane } from "./online.js";
+import { OnlineLane, createRouteDelivery, loginRoute } from "./online.js";
 const api =
   document.querySelector('meta[name="lane-api"]')?.content ||
   "https://lane.api.delino.io";
 let previousAccount;
 let currentAccount;
 let approvalPopup;
-let routeDelivered = false;
+const deliverRoute = createRouteDelivery();
 const returnTo = new URL("/", location.href).href;
 const callbackChallenge = new URL(location.href).searchParams.get(
   "reauth_challenge",
@@ -57,25 +57,8 @@ view.nativeModulesMap = {
 view.onNativeModulesCall = async (name, data, moduleName) => {
   try {
     if (moduleName === "LaneOnline" && name === "ready") {
-      const route = new URL(location.href).searchParams;
-      if (!routeDelivered && currentAccount) {
-        routeDelivered = true;
-        if (route.get("account") && route.get("account") !== currentAccount) {
-          view.sendGlobalEvent("lane.hostError", [
-            {
-              message:
-                "This notification belongs to another account. Switch accounts explicitly to open it.",
-            },
-          ]);
-        } else if (route.get("task"))
-          view.sendGlobalEvent("lane.openRoute", [
-            { kind: "task", id: route.get("task") },
-          ]);
-        else if (route.get("repository"))
-          view.sendGlobalEvent("lane.openRoute", [
-            { kind: "repository", id: route.get("repository") },
-          ]);
-      }
+      const event = deliverRoute(location.search, currentAccount);
+      if (event) view.sendGlobalEvent(event.name, [event.payload]);
       return { ok: true };
     }
     if (moduleName === "LaneOnline")
@@ -130,17 +113,35 @@ document.body.append(view);
 installAccessibility(view);
 
 view.hidden = true;
+// A failed reconciliation never discards the view: after a transient failure the
+// view is only hidden, so current-screen input survives until an explicit retry
+// confirms the session. A rejected session already reset the view through
+// sessionChanged(undefined).
+const showGate = (e) => {
+  gate.hidden = false;
+  view.hidden = true;
+  status.textContent =
+    e instanceof Error ? e.message : "Connection failed. Retry explicitly.";
+};
 const start = async () => {
   status.textContent = "Connecting…";
   try {
     await online.start();
   } catch (e) {
-    gate.hidden = false;
-    status.textContent =
-      e instanceof Error ? e.message : "Connection failed. Retry explicitly.";
+    showGate(e);
   }
 };
-signIn.href = online.loginUrl();
+// Focus and online resume reconcile the API session before business requests
+// continue, because an approval popup may have replaced the session cookie.
+const resume = async () => {
+  try {
+    await online.resume();
+  } catch (e) {
+    showGate(e);
+  }
+};
+// Preserve the page destination across the full-page sign-in redirect.
+signIn.href = online.loginUrl(loginRoute(location.search));
 retry.addEventListener("click", start);
 window.addEventListener("message", (event) => {
   if (
@@ -154,10 +155,10 @@ window.addEventListener("message", (event) => {
     gate.hidden = false;
   });
 });
-window.addEventListener("online", () => online.resume());
+window.addEventListener("online", () => void resume());
 window.addEventListener("offline", () =>
   view.sendGlobalEvent("lane.onlineChanged", [{}]),
 );
-window.addEventListener("focus", () => online.resume());
+window.addEventListener("focus", () => void resume());
 window.addEventListener("pagehide", () => online.stop());
 await start();

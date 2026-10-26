@@ -178,6 +178,8 @@ Lane is not deployed and development data may be discarded, so this pre-release 
 
 Logical deletion removes content immediately in connected stores and redacts retained receipt/outbox responses; retain only required identities/fingerprints. Use secure deletion and coordinated checkpointing to reduce residual SQLite content without claiming forensic erasure of storage media. A failure must not report success. No user-facing backup/export/trash feature is introduced.
 
+The macOS host retains the latest APNs token in memory and reconciles `RegisterPush` per space against the store's current status (`syncEnabled`, enabled notification preferences and the space's device), as described in the [notification requirements](apps-lane-foundation.md#notifications). It never persists the token, registers a space under another account's identity, or requests permission again.
+
 Remote APNs and FCM messages are data-only wake hints with `type=lane.proposal`, `proposalId` and the authenticated registration's `accountId`. APNs uses `content-available:1`, background push type and priority 5; FCM uses HIGH priority without a notification payload. The native host selects that retained account, synchronizes, then claims eligible local notification receipts and applies current preferences before OS display. Never fall back to another active account. Apple background wakes can be delayed or omitted; the next permitted synchronization checks pending proposals. This does not guarantee immediate notification delivery while suspended.
 
 ## Security
