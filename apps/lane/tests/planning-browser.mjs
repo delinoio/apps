@@ -387,6 +387,34 @@ try {
   assert.deepEqual(saved.relationshipEdits, { addSubtaskIds: [ids.taskB] });
   await plan({ delayMs: 0 });
 
+  // An open relationship picker is inert while a save is in flight: a pick would change
+  // the draft after the request was built, and the saved result would discard it.
+  await plan({ delayMs: 400 });
+  await clearRequests();
+  await button("Remove Write onboarding guide from Related").click();
+  await button("Add related task").click();
+  await box("Search tasks for Related").waitFor();
+  await saveButton().click();
+  await button("Saving…").waitFor();
+  assert.equal(
+    await button("Add Plan the launch to Related").getAttribute(
+      "aria-disabled",
+    ),
+    "true",
+    "picker results are disabled while saving",
+  );
+  await button("Add Plan the launch to Related").click({ force: true });
+  await settle(700);
+  assert.deepEqual((await last("SaveTask")).task.relatedTaskIds ?? [], []);
+  assert.equal(
+    await button("Remove Plan the launch from Related").count(),
+    0,
+    "a pick made while saving is not applied",
+  );
+  await plan({ delayMs: 0 });
+  // The picker stays open after the save; restore the link for the following checks.
+  await button("Add Write onboarding guide to Related").click();
+
   // Removing a link and Open: unsaved changes ask before leaving.
   await button("Remove Plan the launch from Parent").click();
   await button("Open Write onboarding guide").first().click();

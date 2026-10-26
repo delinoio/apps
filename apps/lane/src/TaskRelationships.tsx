@@ -35,12 +35,15 @@ function TaskPicker({
   title,
   options,
   exclude,
+  disabled,
   onPick,
   onClose,
 }: {
   title: string;
   options: TaskRef[];
   exclude: string[];
+  // While the editor is saving or read-only, the picker must not change the draft.
+  disabled: boolean;
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
@@ -59,6 +62,7 @@ function TaskPicker({
         label={`Search tasks for ${title}`}
         value={query}
         onChange={setQuery}
+        disabled={disabled}
         focus
       />
       {matches.length === 0 ? (
@@ -72,6 +76,7 @@ function TaskPicker({
           <Button
             key={m.id}
             label={`Add ${m.title} to ${title}`}
+            disabled={disabled}
             onClick={() => onPick(m.id)}
           >
             {m.title}
@@ -238,7 +243,10 @@ export function TaskRelationships({
                 title={title}
                 options={candidates}
                 exclude={single ? [] : ids}
+                disabled={disabled || unavailable}
                 onPick={(id) => {
+                  // A save in flight already built its request from the current draft.
+                  if (disabled || unavailable) return;
                   set(kind, single ? [id] : [...ids, id]);
                   setAdding(undefined);
                 }}
