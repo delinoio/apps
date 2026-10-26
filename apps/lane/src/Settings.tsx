@@ -23,6 +23,8 @@ import {
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
 import { AppUpdates } from "./AppUpdates";
+import { ResetDevelopmentDialog } from "./ResetDevelopment";
+import { describeItemError } from "./planning";
 import { SettingsSection } from "./AppNavigation";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
@@ -83,6 +85,7 @@ export function Settings({
     null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
   const [reconnect, setReconnect] = useState<ReconnectTarget>();
+  const [resetOpen, setResetOpen] = useState(false);
   const [account, setAccount] = useState("");
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
@@ -254,10 +257,26 @@ export function Settings({
         <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
         {status?.itemErrors?.map((e) => (
           <Notice key={e.entityId}>
-            {e.entityId}: {e.reason}. Other eligible items can continue
-            synchronizing.
+            {e.entityId}: {describeItemError(e.reason)} Other eligible items can
+            continue synchronizing.
           </Notice>
         ))}
+        {adapter.mode === "native" && !!status?.itemErrors?.length && (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await adapter.local("RetryBlockedItems", {});
+                await load();
+                setMessage(
+                  "Blocked items were returned to pending and will synchronize again.",
+                );
+              })
+            }
+          >
+            Retry blocked items
+          </Button>
+        )}
         <view className="row wrap">
           <Button
             disabled={busy}
@@ -427,6 +446,25 @@ export function Settings({
           </view>
         ))}
       </view>
+      {adapter.mode === "native" && (
+        <view className="card">
+          <text className="heading">Development data</text>
+          <text>
+            Lane is pre-release. If a data space cannot be opened because its
+            format is outdated, or you want to discard disposable development
+            data, reset this space explicitly. Lane never resets data
+            automatically.
+          </text>
+          <Button
+            onClick={() => {
+              setError("");
+              setResetOpen(true);
+            }}
+          >
+            Reset development data
+          </Button>
+        </view>
+      )}
       <view className="card">
         <text className="heading">Delete Lane data</text>
         <text>These actions preserve your shared Logto identity.</text>
@@ -452,6 +490,16 @@ export function Settings({
           Delete server data, keep local data
         </Button>
       </view>
+      {resetOpen && (
+        <ResetDevelopmentDialog
+          onClose={() => setResetOpen(false)}
+          onConfirm={async () => {
+            await adapter.local("ResetDevelopmentData", { confirmed: true });
+            setResetOpen(false);
+            onReset();
+          }}
+        />
+      )}
       {deletion && (
         <Dialog title="Complete data deletion" onClose={cancelDeletion}>
           <Notice>

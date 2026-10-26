@@ -18,6 +18,8 @@ export interface BridgeError {
   message: string;
   correlationId?: string;
   retryable?: boolean;
+  // Named ConstraintViolation (for example PARENT_CYCLE) when reason is CONSTRAINT_VIOLATION.
+  violation?: string;
 }
 export type Reply<T> =
   | { ok: true; response: T; sequence?: string }
@@ -30,10 +32,6 @@ export interface StoreInfo {
   sequence: string;
 }
 export interface LaneStoreModule {
-  migrate?(
-    spaceId: string,
-    callback: (value: string | Reply<StoreInfo>) => void,
-  ): void;
   open(
     requestJson: string,
     callback: (value: string | Reply<StoreInfo>) => void,
@@ -76,7 +74,14 @@ export interface LocalOperations {
   ];
   DisconnectSync: [{ retention: number }, { completed: boolean }];
   RemoveDeviceData: [{}, { completed: boolean }];
+  // Explicit pre-release development reset; the host rejects any request whose
+  // confirmed flag is not true. Native only: the web host refuses it.
+  ResetDevelopmentData: [{ confirmed: boolean }, { completed: boolean }];
+  // Returns blocked or rejected pending rows to pending, like `sync run --retry-blocked`.
+  RetryBlockedItems: [{}, Record<string, unknown>];
 }
+// The format written by task planning. Earlier formats are refused, never migrated.
+export const STORE_FORMAT_VERSION = 3;
 export class LaneError extends Error {
   constructor(readonly detail: BridgeError) {
     super(detail.message);
@@ -93,7 +98,8 @@ export interface LaneAdapter {
   deleteReauthenticated?(challengeId: string): Promise<void>;
   cancelDeletion?(): void;
   open(spaceId?: string): Promise<void>;
-  migrate?(spaceId: string): Promise<void>;
+  // Native only: reset the active space when it could not be opened (unsupported format).
+  resetUnopened?(): Promise<void>;
   call<I extends DescMessage, O extends DescMessage>(
     method: DescMethodUnary<I, O>,
     input: UI<MessageInitShape<I>>,
@@ -157,13 +163,16 @@ export class NativeAdapter implements LaneAdapter {
     if (generation !== this.generation)
       throw new Error("The data space changed. Reopen Lane.");
     const info = await new Promise<StoreInfo>((resolve, reject) =>
-      this.module.open(JSON.stringify({ formatVersion: 2, spaceId }), (raw) => {
-        try {
-          resolve(decodeReply(raw));
-        } catch (e) {
-          reject(e);
-        }
-      }),
+      this.module.open(
+        JSON.stringify({ formatVersion: STORE_FORMAT_VERSION, spaceId }),
+        (raw) => {
+          try {
+            resolve(decodeReply(raw));
+          } catch (e) {
+            reject(e);
+          }
+        },
+      ),
     );
     if (generation !== this.generation) {
       this.module.close(info.spaceId, () => {});
@@ -175,48 +184,59 @@ export class NativeAdapter implements LaneAdapter {
         "The host opened a different data space. Navigation was stopped.",
       );
     }
-    if (info.schemaVersion !== 2 || info.formatVersion !== 2) {
+    if (
+      info.schemaVersion !== STORE_FORMAT_VERSION ||
+      info.formatVersion !== STORE_FORMAT_VERSION
+    ) {
       await new Promise<void>((resolve) =>
         this.module.close(info.spaceId, () => resolve()),
       );
       throw new Error(
-        "Update Lane to open this data format. Your data has not been changed.",
+        "This data space uses an unsupported format. Lane never migrates or resets it automatically; update Lane or explicitly reset disposable development data. Your data has not been changed.",
       );
     }
     this.info = info;
   }
-  async migrate(spaceId: string) {
-    if (!spaceId.trim()) throw new Error("Choose an existing data space ID.");
-    if (!this.module.migrate)
-      throw new Error(
-        "This host does not support explicit migration. Update Lane.",
-      );
-    const previous = this.info;
+  async resetUnopened() {
+    // The host resolves the empty space ID to the registry's active space.
+    await this.resetSpace("");
+  }
+  private resetSpace(spaceId: string) {
+    return new Promise<void>((resolve, reject) =>
+      this.module.invoke(
+        "ResetDevelopmentData",
+        JSON.stringify({ spaceId, request: { confirmed: true } }),
+        (raw) => {
+          try {
+            decodeReply(raw);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        },
+      ),
+    );
+  }
+  // The host refuses a development reset with a retryable STORAGE_BUSY while
+  // any handle of the space is open, including this window's own. Close the
+  // handle first; callers reopen the space after a successful reset, and a
+  // refused reset restores the handle so the window keeps working.
+  private async resetOpen() {
+    const open = this.info;
+    if (!open) throw new Error("The local store is not open.");
     this.info = undefined;
     this.deletion = undefined;
     ++this.generation;
-    if (previous)
-      await new Promise<void>((resolve, reject) =>
-        this.module.close(previous.spaceId, (raw) => {
-          try {
-            decodeReply(raw as string | Reply<unknown>);
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        }),
-      );
-    await new Promise<void>((resolve, reject) =>
-      this.module.migrate!(spaceId.trim(), (raw) => {
-        try {
-          decodeReply(raw);
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      }),
+    await new Promise<void>((resolve) =>
+      this.module.close(open.spaceId, () => resolve()),
     );
-    await this.open(spaceId.trim());
+    try {
+      await this.resetSpace(open.spaceId);
+    } catch (reset) {
+      await this.open(open.spaceId);
+      throw reset;
+    }
+    return { completed: true };
   }
   private async invoke<T>(method: string, request: unknown): Promise<T> {
     if (!this.info) throw new Error("The local store is not open.");
@@ -274,6 +294,8 @@ export class NativeAdapter implements LaneAdapter {
     method: K,
     input: LocalOperations[K][0],
   ): Promise<LocalOperations[K][1]> {
+    if (method === "ResetDevelopmentData")
+      return this.resetOpen() as Promise<LocalOperations[K][1]>;
     return this.invoke(method, input);
   }
   cancelDeletion() {

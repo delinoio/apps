@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createClient } from "@connectrpc/connect";
+import { ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
   create,
@@ -11,7 +11,11 @@ import {
 import {
   CaptureService,
   AccountService,
+  ConstraintViolation,
+  ErrorDetailSchema,
+  ErrorReason,
   LaneService,
+  PlanningService,
   SyncService,
   WebhookService,
   PushProvider,
@@ -31,6 +35,27 @@ export interface OnlineOptions {
   invalidate: () => void;
   sessionChanged: (session: Session | undefined) => void;
   returnTo: string;
+}
+// Carries the typed Lane error detail across the host-module boundary so the
+// frontend can explain constraint violations instead of showing a transport code.
+export class LaneRpcError extends Error {
+  constructor(
+    message: string,
+    readonly laneReason: string,
+    readonly laneViolation?: string,
+  ) {
+    super(message);
+  }
+}
+function laneError(error: unknown): unknown {
+  if (!(error instanceof ConnectError)) return error;
+  const detail = error.findDetails(ErrorDetailSchema)[0];
+  if (!detail) return error;
+  return new LaneRpcError(
+    error.rawMessage || error.message,
+    ErrorReason[detail.reason] ?? "UNSPECIFIED",
+    detail.violation ? ConstraintViolation[detail.violation] : undefined,
+  );
 }
 export class OnlineLane {
   private session?: Session;
@@ -128,6 +153,7 @@ export class OnlineLane {
     if (!this.session) throw new Error("Sign in to Lane to continue.");
     const serviceDescriptor = [
       LaneService,
+      PlanningService,
       CaptureService,
       AccountService,
       WebhookService,
@@ -141,13 +167,17 @@ export class OnlineLane {
     if (service === CaptureService.typeName && methodName !== "GetAttachment")
       throw new Error("Capture and RealQA settings are available on desktop.");
     const generation = this.generation;
-    const response = await this.transport.unary(
-      method as DescMethodUnary,
-      undefined,
-      30000,
-      undefined,
-      fromJson(method.input, input),
-    );
+    const response = await this.transport
+      .unary(
+        method as DescMethodUnary,
+        undefined,
+        30000,
+        undefined,
+        fromJson(method.input, input),
+      )
+      .catch((error: unknown) => {
+        throw laneError(error);
+      });
     if (generation !== this.generation)
       throw new Error("The account changed. Reload before continuing.");
     if (
@@ -269,6 +299,10 @@ export class OnlineLane {
         return { completed: true };
       case "RemoveDeviceData":
         throw new Error("Web does not store Lane task data on this device.");
+      case "ResetDevelopmentData":
+        throw new Error(
+          "Development data reset is available in the desktop and mobile apps only.",
+        );
       default:
         throw new Error("Unsupported online operation.");
     }
@@ -324,7 +358,7 @@ export class OnlineLane {
           while (more) {
             const page = await client.pullChanges(
               {
-                formatVersion: 2,
+                formatVersion: 3,
                 epoch: this.epoch,
                 cursor: this.cursor,
                 pageSize: 100,

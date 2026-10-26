@@ -7,19 +7,41 @@ export function Button({
   onClick,
   disabled = false,
   primary = false,
+  pressed,
+  expanded,
+  label,
+  swatch,
 }: {
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   primary?: boolean;
+  // Toggle state for chips; exposed to assistive technology, not only by color.
+  pressed?: boolean;
+  expanded?: boolean;
+  // Overrides the accessible name when the visible text is not a plain string.
+  label?: string;
+  // Decorative color next to the text; the name always stays visible.
+  swatch?: string;
 }) {
+  const selected = pressed ?? primary;
   return (
     <view
-      className={`button ${primary ? "primary" : ""} ${disabled ? "disabled" : ""}`}
+      className={`button ${primary || pressed ? "primary" : ""} ${disabled ? "disabled" : ""}`}
+      data-pressed={pressed === undefined ? undefined : String(pressed)}
+      data-expanded={expanded === undefined ? undefined : String(expanded)}
       accessibility-element
       accessibility-traits="button"
-      accessibility-label={typeof children === "string" ? children : undefined}
-      accessibility-value={disabled ? "Disabled" : undefined}
+      accessibility-label={
+        label ?? (typeof children === "string" ? children : undefined)
+      }
+      accessibility-value={
+        disabled
+          ? "Disabled"
+          : pressed !== undefined && selected
+            ? "Selected"
+            : undefined
+      }
       focusable={!disabled}
       bindtap={() => {
         if (!disabled) onClick?.();
@@ -28,6 +50,13 @@ export function Button({
         if (!disabled && (e.key === "Enter" || e.key === " ")) onClick?.();
       }}
     >
+      {swatch && (
+        <view
+          className="swatch"
+          accessibility-elements-hidden
+          style={{ backgroundColor: swatch }}
+        />
+      )}
       <text>{children}</text>
     </view>
   );
@@ -39,6 +68,8 @@ export function Field({
   multiline = false,
   disabled = false,
   focus = false,
+  error,
+  help,
 }: {
   label: string;
   value: string;
@@ -46,6 +77,9 @@ export function Field({
   multiline?: boolean;
   disabled?: boolean;
   focus?: boolean;
+  // Validation message shown in text next to the field, never by color alone.
+  error?: string;
+  help?: string;
 }) {
   const [id] = useState(() => "field-" + Math.random().toString(36).slice(2));
   useEffect(() => {
@@ -68,15 +102,17 @@ export function Field({
   const props = {
     id,
     className: `input ${multiline ? "multiline" : ""}`,
-    "accessibility-label": label,
+    "accessibility-label": error ? `${label}. ${error}` : label,
     disabled,
     maxlength: 2147483647,
     bindinput: (e: { detail: { value: string } }) => onChange(e.detail.value),
   };
   return (
-    <view className="field">
+    <view className="field" data-invalid={error ? "true" : undefined}>
       <text className="label">{label}</text>
       {multiline ? <textarea {...props} /> : <input {...props} />}
+      {help && !error && <text className="muted">{help}</text>}
+      {error && <text className="validation">{error}</text>}
     </view>
   );
 }
@@ -86,12 +122,15 @@ export function Choices<T extends string | number>({
   options,
   onChange,
   disabled = false,
+  exclusive = false,
 }: {
   label: string;
   value: T;
   options: readonly (readonly [T, string])[];
   onChange: (v: T) => void;
   disabled?: boolean;
+  // Expose the pressed state to assistive technology for exclusive choices.
+  exclusive?: boolean;
 }) {
   return (
     <view className="field">
@@ -101,10 +140,59 @@ export function Choices<T extends string | number>({
           <Button
             key={v}
             disabled={disabled}
-            primary={v === value}
+            primary={exclusive ? undefined : v === value}
+            pressed={exclusive ? v === value : undefined}
+            label={exclusive ? `${label}: ${title}` : undefined}
             onClick={() => onChange(v)}
           >
             {title}
+          </Button>
+        ))}
+      </view>
+    </view>
+  );
+}
+// Multi-select chips: every option exposes its own pressed state.
+export function MultiChoices({
+  label,
+  selected,
+  options,
+  onToggle,
+  disabled = false,
+  extra,
+}: {
+  label: string;
+  selected: readonly string[];
+  options: readonly { id: string; title: string; swatch?: string }[];
+  onToggle: (id: string) => void;
+  disabled?: boolean;
+  // Field-specific "Unassigned" style choice that ORs with the selection.
+  extra?: { title: string; pressed: boolean; onToggle: () => void };
+}) {
+  return (
+    <view className="field">
+      <text className="label">{label}</text>
+      <view className="row wrap">
+        {extra && (
+          <Button
+            disabled={disabled}
+            pressed={extra.pressed}
+            label={`${label}: ${extra.title}`}
+            onClick={extra.onToggle}
+          >
+            {extra.title}
+          </Button>
+        )}
+        {options.map((option) => (
+          <Button
+            key={option.id}
+            disabled={disabled}
+            pressed={selected.includes(option.id)}
+            swatch={option.swatch}
+            label={`${label}: ${option.title}`}
+            onClick={() => onToggle(option.id)}
+          >
+            {option.title}
           </Button>
         ))}
       </view>

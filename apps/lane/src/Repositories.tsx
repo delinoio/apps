@@ -10,17 +10,24 @@ import {
 import { type LaneAdapter, meta, newId } from "./adapter";
 import { Button, Dialog, Field, Notice } from "./components";
 import { conflicted, heads, repositoryName } from "./model";
+import { PlanningManager } from "./PlanningManager";
+import type { PlanningState } from "./usePlanning";
 export function Repositories({
   adapter,
   items,
+  planning,
   refresh,
   select,
+  dirty,
 }: {
   adapter: LaneAdapter;
   items: EntityResult[];
+  planning: PlanningState;
   refresh: () => void;
   select: (id: string) => void;
+  dirty: (value: boolean) => void;
 }) {
+  const [detail, setDetail] = useState("");
   const [editing, setEditing] = useState<{
     id: string;
     base?: string;
@@ -48,6 +55,18 @@ export function Repositories({
     }
   };
   const current = items.find((i) => i.version?.entityId === editing?.id);
+  const detailRepository = items.find((i) => i.version?.entityId === detail);
+  if (detailRepository)
+    return (
+      <PlanningManager
+        adapter={adapter}
+        repository={detailRepository}
+        planning={planning}
+        refresh={refresh}
+        dirty={dirty}
+        back={() => setDetail("")}
+      />
+    );
   return (
     <view className="section">
       <text className="heading">Repositories</text>
@@ -72,6 +91,9 @@ export function Repositories({
           <view className="row wrap">
             <Button onClick={() => select(r.version!.entityId)}>
               View tasks
+            </Button>
+            <Button onClick={() => setDetail(r.version!.entityId)}>
+              Labels, milestones and cycles
             </Button>
             <Button
               disabled={conflicted(r)}
@@ -172,8 +194,8 @@ export function Repositories({
         >
           <Notice>
             {repositoryName(deleting)}: delete its current tasks, prompts,
-            histories and retained events. Tasks already moved elsewhere remain.
-            There is no recovery.
+            histories, labels, milestones, cycles and retained events. Tasks
+            already moved elsewhere remain. There is no recovery.
           </Notice>
           {error && <Notice>{error}</Notice>}
           <Button

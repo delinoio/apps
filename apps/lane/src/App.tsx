@@ -5,6 +5,8 @@ import {
   LaneService,
   Progress,
   Proposal,
+  SortDirection,
+  TaskSortKey,
   type EntityResult as ProtoEntityResult,
 } from "@repo/protos/lane/v1/lane_pb";
 import { newId, type LaneAdapter } from "./adapter";
@@ -22,6 +24,21 @@ import {
   type Draft,
 } from "./model";
 import { TaskEditor } from "./TaskEditor";
+import { TaskFilters } from "./TaskFilters";
+import { usePlanning } from "./usePlanning";
+import { StoreReset } from "./StoreReset";
+import {
+  activeFilterCount,
+  describeError,
+  emptyFilter,
+  filterErrors,
+  hasErrors,
+  lookupOf,
+  pruneFilter,
+  taskMetadata,
+  toTaskFilter,
+  type FilterState,
+} from "./planning";
 import { Repositories } from "./Repositories";
 import { Settings } from "./Settings";
 import { Events } from "./Events";
@@ -36,7 +53,6 @@ import {
 import { RealQA, RealQADialogs } from "./RealQA";
 import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
-import { StoreMigration } from "./StoreMigration";
 import { savedCaptureRoute } from "./captures-model";
 import { CommandPalette } from "./CommandPalette";
 import {
@@ -49,11 +65,14 @@ import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
   const [realqaDirty, setRealqaDirty] = useState(false);
-  const [migrationAdapter, setMigrationAdapter] = useState<LaneAdapter>();
+  // Unsaved label, milestone or cycle input in the repository planning manager.
+  const [planningDirty, setPlanningDirty] = useState(false);
+  const [planningEpoch, setPlanningEpoch] = useState(0);
   const [miniApp, setMiniApp] = useState(MiniApp.Lane);
   const previousApp = useRef(MiniApp.Lane);
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
   const [adapter, setAdapter] = useState<LaneAdapter>();
+  const [resetAdapter, setResetAdapter] = useState<LaneAdapter>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("Tasks");
@@ -71,6 +90,13 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [search, setSearch] = useState("");
   const [progress, setProgress] = useState<Progress>(Progress.UNSPECIFIED);
   const [proposal, setProposal] = useState<Proposal>(Proposal.UNSPECIFIED);
+  const [filter, setFilter] = useState<FilterState>(emptyFilter);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<TaskSortKey>(TaskSortKey.UNSPECIFIED);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(
+    SortDirection.ASCENDING,
+  );
+  const [listError, setListError] = useState("");
   const [draft, setDraft] = useState<Draft>();
   const [current, setCurrent] = useState<EntityResult>();
   const [spaceRevision, setSpaceRevision] = useState(0);
@@ -79,6 +105,12 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const [discard, setDiscard] = useState<() => void>();
   const [pendingCount, setPendingCount] = useState(0);
   const queryGeneration = useRef(0);
+  // Identifies the open data space; native route and reset switches change it.
+  const planning = usePlanning(
+    adapter,
+    revision,
+    adapter ? `${adapter.spaceId ?? ""}#${spaceRevision}` : "",
+  );
   const currentDraft = useRef(draft);
   currentDraft.current = draft;
   const refresh = () => setRevision((v) => v + 1);
@@ -119,14 +151,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         }
         setAdapter(owned);
       } catch (e) {
+        // An unsupported local format offers only the explicit, typed-confirmation reset.
         if (
           active &&
-          owned?.migrate &&
-          /format|schema|migration|version/i.test(
-            e instanceof Error ? e.message : "",
+          owned?.resetUnopened &&
+          /UNSUPPORTED_FORMAT|unsupported format/i.test(
+            `${(e as { detail?: { reason?: string } })?.detail?.reason ?? ""} ${e instanceof Error ? e.message : ""}`,
           )
         )
-          setMigrationAdapter(owned);
+          setResetAdapter(owned);
         if (active)
           setError(e instanceof Error ? e.message : "Lane could not open.");
       } finally {
@@ -194,24 +227,43 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
       active = false;
     };
   }, [adapter, revision]);
+  const filterProblems = filterErrors(filter);
+  const filterInvalid = hasErrors(filterProblems);
+  // One request builder serves the first page and "Load more", so the cursor
+  // always belongs to the same query, filter and sort.
+  const listRequest = (after = "") => ({
+    page: { size: 100, cursor: after },
+    repositoryId: repository || undefined,
+    progress: progress ? [progress] : [],
+    proposal:
+      page === "Proposals"
+        ? [proposal || Proposal.PENDING]
+        : proposal
+          ? [proposal]
+          : [],
+    search,
+    filter: toTaskFilter(filter),
+    sortKey,
+    sortDirection:
+      sortKey === TaskSortKey.UNSPECIFIED
+        ? SortDirection.UNSPECIFIED
+        : sortDirection,
+  });
   useEffect(() => {
     if (!adapter || miniApp !== MiniApp.Lane) return;
     const generation = ++queryGeneration.current;
-    setLoading(true);
     setError("");
+    setListError("");
+    if (filterInvalid) {
+      // Never send a malformed range; the Filters region explains the problem.
+      setTasks([]);
+      setCursor("");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     void adapter
-      .call(LaneService.method.listTasks, {
-        page: { size: 100 },
-        repositoryId: repository || undefined,
-        progress: progress ? [progress] : [],
-        proposal:
-          page === "Proposals"
-            ? [proposal || Proposal.PENDING]
-            : proposal
-              ? [proposal]
-              : [],
-        search,
-      })
+      .call(LaneService.method.listTasks, listRequest())
       .then(
         (r) => {
           if (generation === queryGeneration.current) {
@@ -220,8 +272,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           }
         },
         (e) => {
-          if (generation === queryGeneration.current)
-            setError(e instanceof Error ? e.message : "Could not load tasks.");
+          if (generation === queryGeneration.current) {
+            setTasks([]);
+            setCursor("");
+            setListError(describeError(e));
+          }
         },
       )
       .finally(() => {
@@ -236,9 +291,33 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     page,
     revision,
     miniApp,
+    JSON.stringify(filter),
+    sortKey,
+    sortDirection,
   ]);
+  // Repository-owned selections only make sense inside their repository scope.
+  useEffect(() => {
+    if (planning.status !== "ready") return;
+    const scoped = repository
+      ? planning.items.filter((i) => i.repositoryId === repository)
+      : planning.items;
+    setFilter((f) => pruneFilter(f, scoped));
+  }, [repository, planning.items, planning.status]);
+  const repositoryNames = new Map(
+    repositories.map((r) => [r.version!.entityId, repositoryName(r.version)]),
+  );
+  const lookup = lookupOf(planning.items, new Map(), repositoryNames);
+  const activeFilters = activeFilterCount(filter);
   const navigate = (fn: () => void) => {
-    if (draft?.dirty || realqaDirty) setDiscard(() => fn);
+    const proceed = () => {
+      if (planningDirty) {
+        // Remount the manager so confirmed discards also apply when the page stays the same.
+        setPlanningDirty(false);
+        setPlanningEpoch((v) => v + 1);
+      }
+      fn();
+    };
+    if (draft?.dirty || realqaDirty || planningDirty) setDiscard(() => proceed);
     else fn();
   };
   const selectApp = (app: MiniApp) => {
@@ -462,19 +541,34 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
               )
             ) : (
               <>
-                {error && (
+                {error && !resetAdapter && (
                   <Notice>
                     {error} <Button onClick={refresh}>Retry loading</Button>
                   </Notice>
                 )}
-                {migrationAdapter && (
-                  <StoreMigration
-                    adapter={migrationAdapter}
+                {resetAdapter?.resetUnopened && !adapter && (
+                  <StoreReset
+                    message={error}
+                    reset={() => resetAdapter.resetUnopened!()}
                     ready={() => {
-                      setAdapter(migrationAdapter);
-                      setMigrationAdapter(undefined);
+                      const owned = resetAdapter;
+                      setResetAdapter(undefined);
                       setError("");
-                      refresh();
+                      setLoading(true);
+                      void owned.open().then(
+                        () => {
+                          setAdapter(owned);
+                          setLoading(false);
+                        },
+                        (e) => {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : "Lane could not open.",
+                          );
+                          setLoading(false);
+                        },
+                      );
                     }}
                   />
                 )}
@@ -569,6 +663,20 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                               ]}
                               onChange={setProposal}
                             />
+                            <TaskFilters
+                              open={filtersOpen}
+                              setOpen={setFiltersOpen}
+                              filter={filter}
+                              setFilter={setFilter}
+                              errors={filterProblems}
+                              planning={planning}
+                              repositoryId={repository}
+                              repositoryNames={repositoryNames}
+                              sortKey={sortKey}
+                              setSortKey={setSortKey}
+                              sortDirection={sortDirection}
+                              setSortDirection={setSortDirection}
+                            />
                             <view
                               className="task-results"
                               key={
@@ -579,17 +687,42 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                     : "populated"
                               }
                             >
-                              {loading ? (
+                              {filterInvalid ? (
+                                <Notice>
+                                  Fix the highlighted filter values to update
+                                  the list. Nothing was sent.
+                                </Notice>
+                              ) : loading ? (
                                 <text>Loading…</text>
+                              ) : listError ? (
+                                <view className="empty">
+                                  <text className="heading">
+                                    Tasks could not be loaded
+                                  </text>
+                                  <text>{listError}</text>
+                                  <Button primary onClick={refresh}>
+                                    Retry loading tasks
+                                  </Button>
+                                </view>
                               ) : tasks.length === 0 ? (
                                 <view className="empty">
                                   <text className="heading">
-                                    No tasks here yet
+                                    {activeFilters || search
+                                      ? "No tasks match"
+                                      : "No tasks here yet"}
                                   </text>
                                   <text>
-                                    Create a task with a title, or change your
-                                    filters.
+                                    {activeFilters || search
+                                      ? "No task matches the search and filters. Change them or clear the filters."
+                                      : "Create a task with a title, or change your filters."}
                                   </text>
+                                  {activeFilters > 0 && (
+                                    <Button
+                                      onClick={() => setFilter(emptyFilter())}
+                                    >
+                                      Clear filters
+                                    </Button>
+                                  )}
                                 </view>
                               ) : (
                                 tasks.map((r) => {
@@ -628,6 +761,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                             Conflict
                                           </text>
                                         )}
+                                        <TaskMetadataLine
+                                          task={t}
+                                          lookup={lookup}
+                                          qualify={!repository}
+                                        />
                                       </view>
                                     )
                                   );
@@ -638,18 +776,10 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                   onClick={() => {
                                     const generation = queryGeneration.current;
                                     void adapter
-                                      .call(LaneService.method.listTasks, {
-                                        page: { size: 100, cursor },
-                                        repositoryId: repository || undefined,
-                                        progress: progress ? [progress] : [],
-                                        proposal:
-                                          page === "Proposals"
-                                            ? [proposal || Proposal.PENDING]
-                                            : proposal
-                                              ? [proposal]
-                                              : [],
-                                        search,
-                                      })
+                                      .call(
+                                        LaneService.method.listTasks,
+                                        listRequest(cursor),
+                                      )
                                       .then(
                                         (r) => {
                                           if (
@@ -660,7 +790,14 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                                             setCursor(r.nextCursor);
                                           }
                                         },
-                                        (e) => setError(String(e)),
+                                        (e) => {
+                                          // An obsolete query's failure must not replace current results.
+                                          if (
+                                            generation ===
+                                            queryGeneration.current
+                                          )
+                                            setListError(describeError(e));
+                                        },
                                       );
                                   }}
                                 >
@@ -680,6 +817,13 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                         setDraft={setDraft}
                         current={current}
                         repositories={repositories}
+                        planning={planning}
+                        revision={revision}
+                        openTask={(id) =>
+                          navigate(() => {
+                            void openTask(id);
+                          })
+                        }
                         onSaved={saved}
                         onClose={() =>
                           navigate(() => {
@@ -697,8 +841,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
                     scroll-orientation="vertical"
                   >
                     <Repositories
+                      key={planningEpoch}
+                      dirty={setPlanningDirty}
                       adapter={adapter}
                       items={repositories}
+                      planning={planning}
                       refresh={refresh}
                       select={(id) => {
                         setRepository(id);
@@ -791,6 +938,35 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
             Keep editing
           </Button>
         </Dialog>
+      )}
+    </view>
+  );
+}
+
+// Compact planning metadata under a row; names are always text, color never alone.
+function TaskMetadataLine({
+  task,
+  lookup,
+  qualify,
+}: {
+  task: NonNullable<ReturnType<typeof taskOf>>;
+  lookup: ReturnType<typeof lookupOf>;
+  qualify: boolean;
+}) {
+  const meta = taskMetadata(task, lookup, qualify);
+  const parts = [...meta.summary, ...meta.relationships];
+  if (!parts.length && !meta.labels.length) return null;
+  return (
+    <view className="task-meta">
+      {parts.length > 0 && <text className="muted">{parts.join(" · ")}</text>}
+      {meta.labels.length > 0 && (
+        <view className="row wrap">
+          {meta.labels.map((name, index) => (
+            <text className="badge" key={`${name}-${index}`}>
+              {name}
+            </text>
+          ))}
+        </view>
       )}
     </view>
   );

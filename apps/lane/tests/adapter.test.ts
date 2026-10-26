@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   NativeAdapter,
   decodeReply,
+  LaneError,
   newId,
   type LaneStoreModule,
   type EventSource,
@@ -23,8 +24,8 @@ function harness() {
           response: {
             spaceId: JSON.parse(_req).spaceId || "space",
             deviceId: "device",
-            formatVersion: 2,
-            schemaVersion: 2,
+            formatVersion: 3,
+            schemaVersion: 3,
             sequence: "0",
           },
         }),
@@ -122,11 +123,11 @@ test("unsupported schema refuses opening", async () => {
         spaceId: "s",
         deviceId: "d",
         schemaVersion: 99,
-        formatVersion: 2,
+        formatVersion: 3,
         sequence: "0",
       },
     });
-  await assert.rejects(h.adapter.open(), /Update Lane/);
+  await assert.rejects(h.adapter.open(), /unsupported format/);
 });
 test("request IDs are UUID v7", () => {
   for (let i = 0; i < 100; i++)
@@ -149,7 +150,7 @@ test("explicit route opens exactly the named space with no fallback on error", a
     cb({ ok: false, error: { reason: "NOT_FOUND", message: "Space removed" } });
   };
   await assert.rejects(h.adapter.open("named-space"), /Space removed/);
-  assert.deepEqual(requests, [{ formatVersion: 2, spaceId: "named-space" }]);
+  assert.deepEqual(requests, [{ formatVersion: 3, spaceId: "named-space" }]);
   assert.equal(closes, 1);
   await assert.rejects(
     h.adapter.call(LaneService.method.listTasks, {}),
@@ -170,8 +171,8 @@ test("late read from old space is rejected after a new space opens", async () =>
       response: {
         spaceId: "new-space",
         deviceId: "device",
-        schemaVersion: 2,
-        formatVersion: 2,
+        schemaVersion: 3,
+        formatVersion: 3,
         sequence: "0",
       },
     });
@@ -252,41 +253,123 @@ test("cancel and space change invalidate native deletion challenge", async () =>
   }
 });
 
-test("explicit migration closes the active handle before migrating and reopening the chosen space", async () => {
+test("an earlier store format is refused with reset guidance and never migrated", async () => {
   const h = harness();
-  const order: string[] = [];
-  const close = h.module.close;
-  const open = h.module.open;
-  h.module.close = (space, callback) => {
-    order.push(`close:${space}`);
-    close(space, callback);
-  };
-  h.module.open = (request, callback) => {
-    order.push(`open:${JSON.parse(request).spaceId}`);
-    assert.equal(JSON.parse(request).formatVersion, 2);
-    open(request, callback);
-  };
-  h.module.migrate = (space, callback) => {
-    order.push(`migrate:${space}`);
-    callback({
+  const closed: string[] = [];
+  h.module.open = (_r, cb) =>
+    cb({
       ok: true,
       response: {
-        spaceId: space,
-        deviceId: "device",
+        spaceId: "old",
+        deviceId: "d",
         schemaVersion: 2,
         formatVersion: 2,
         sequence: "0",
       },
     });
+  h.module.close = (space, callback) => {
+    closed.push(space);
+    callback({ ok: true, response: { completed: true } });
   };
-  await h.adapter.open("old-space");
+  await assert.rejects(
+    h.adapter.open("old"),
+    /never migrates or resets it automatically/,
+  );
+  assert.deepEqual(closed, ["old"]);
+  assert.equal("migrate" in h.adapter, false);
+  await assert.rejects(
+    h.adapter.call(LaneService.method.listTasks, {}),
+    /not open/,
+  );
+});
+test("development reset closes this window's handle first, carries the confirmation flag and restores the handle when refused", async () => {
+  const h = harness();
+  const order: string[] = [];
+  const close = h.module.close.bind(h.module);
+  const open = h.module.open.bind(h.module);
+  const invoke = h.module.invoke.bind(h.module);
+  h.module.close = (space, cb) => {
+    order.push(`close:${space}`);
+    close(space, cb);
+  };
+  h.module.open = (request, cb) => {
+    order.push("open");
+    open(request, cb);
+  };
+  await h.adapter.open();
+  const result = await h.adapter.local("ResetDevelopmentData", {
+    confirmed: true,
+  });
+  assert.deepEqual(result, { completed: true });
+  assert.deepEqual(order, ["open", "close:space"]);
+  assert.deepEqual(h.calls.at(-1), {
+    method: "ResetDevelopmentData",
+    request: { spaceId: "space", request: { confirmed: true } },
+  });
+  // After a successful reset the caller reopens the space; nothing is cached.
+  assert.equal(h.adapter.spaceId, undefined);
+  await h.adapter.open("space");
+  // A refused reset (another process holds a handle) reopens this window's handle.
+  h.module.invoke = (method, json, cb) => {
+    if (method !== "ResetDevelopmentData") return invoke(method, json, cb);
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  };
   order.length = 0;
-  await assert.rejects(h.adapter.migrate(""), /existing data space/);
-  assert.deepEqual(order, []);
-  await h.adapter.migrate("chosen-space");
-  assert.deepEqual(order, [
-    "close:old-space",
-    "migrate:chosen-space",
-    "open:chosen-space",
-  ]);
+  await assert.rejects(
+    h.adapter.local("ResetDevelopmentData", { confirmed: true }),
+    /Close other Lane windows/,
+  );
+  assert.deepEqual(order, ["close:space", "open"]);
+  assert.equal(h.adapter.spaceId, "space");
+});
+test("constraint violations keep their named code through the bridge error", () => {
+  assert.throws(
+    () =>
+      decodeReply({
+        ok: false,
+        error: {
+          reason: "CONSTRAINT_VIOLATION",
+          message: "Parent loop",
+          violation: "PARENT_CYCLE",
+        },
+      }),
+    (error: unknown) =>
+      error instanceof LaneError && error.detail.violation === "PARENT_CYCLE",
+  );
+});
+test("an unsupported store can be reset without opening it, using the active space and the confirmation flag", async () => {
+  const h = harness();
+  h.module.open = (_r, cb) =>
+    cb({
+      ok: false,
+      error: {
+        reason: "ERROR_REASON_UNSUPPORTED_FORMAT",
+        message: "Run the explicit development reset.",
+      },
+    });
+  await assert.rejects(h.adapter.open(), /explicit development reset/);
+  await h.adapter.resetUnopened!();
+  assert.deepEqual(h.calls.at(-1), {
+    method: "ResetDevelopmentData",
+    request: { spaceId: "", request: { confirmed: true } },
+  });
+  // Rejections stay visible to the user.
+  h.module.invoke = (_m, _r, cb) =>
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  await assert.rejects(h.adapter.resetUnopened!(), /Close other Lane windows/);
+});
+test("blocked synchronization items are retried through the local operation", async () => {
+  const h = harness();
+  await h.adapter.open();
+  await h.adapter.local("RetryBlockedItems", {});
+  assert.deepEqual(h.calls.at(-1), {
+    method: "RetryBlockedItems",
+    request: { spaceId: "space", request: {} },
+  });
 });

@@ -54,8 +54,6 @@ export function desktopModules(bridge: DesktopBridge): {
   };
   return {
     store: {
-      migrate: (space, callback) =>
-        call("LaneStore", "migrate", [space], callback),
       open: (request, callback) =>
         call("LaneStore", "open", [request], callback),
       invoke: (method, request, callback) =>
