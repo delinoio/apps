@@ -24,6 +24,8 @@ import {
 import { hostAction, listenReauthentication } from "./runtime";
 import { AppUpdates } from "./AppUpdates";
 import { SettingsSection } from "./AppNavigation";
+// Typed by the user so a reset is never a single accidental activation.
+export const RESET_CONFIRMATION = "reset development data";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
 export function Settings({
@@ -83,6 +85,8 @@ export function Settings({
     null | "disconnect" | "local" | "server" | "everywhere" | "reconnect"
   >(null);
   const [reconnect, setReconnect] = useState<ReconnectTarget>();
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetText, setResetText] = useState("");
   const [account, setAccount] = useState("");
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
@@ -427,6 +431,26 @@ export function Settings({
           </view>
         ))}
       </view>
+      {adapter.mode === "native" && (
+        <view className="card">
+          <text className="heading">Development data</text>
+          <text>
+            Lane is pre-release. If a data space cannot be opened because its
+            format is outdated, or you want to discard disposable development
+            data, reset this space explicitly. Lane never resets data
+            automatically.
+          </text>
+          <Button
+            onClick={() => {
+              setResetText("");
+              setError("");
+              setResetOpen(true);
+            }}
+          >
+            Reset development data
+          </Button>
+        </view>
+      )}
       <view className="card">
         <text className="heading">Delete Lane data</text>
         <text>These actions preserve your shared Logto identity.</text>
@@ -452,6 +476,51 @@ export function Settings({
           Delete server data, keep local data
         </Button>
       </view>
+      {resetOpen && (
+        <Dialog
+          title="Reset development data?"
+          onClose={() => {
+            if (!busy) setResetOpen(false);
+          }}
+        >
+          <Notice>
+            This permanently removes every repository, task, prompt, label,
+            milestone, cycle, history, attachment and pending change in this
+            local data space. It does not contact the server, delete server data
+            or sign you out. Use it only for disposable development data. There
+            is no recovery.
+          </Notice>
+          <text>
+            Type <text className="bold">{RESET_CONFIRMATION}</text> to confirm.
+          </text>
+          <Field
+            label={`Type ${RESET_CONFIRMATION} to confirm`}
+            value={resetText}
+            onChange={setResetText}
+            disabled={busy}
+            focus
+          />
+          {error && <Notice>{error}</Notice>}
+          <Button
+            primary
+            disabled={busy || resetText.trim() !== RESET_CONFIRMATION}
+            onClick={() =>
+              void run(async () => {
+                await adapter.local("ResetDevelopmentData", {
+                  confirmed: true,
+                });
+                setResetOpen(false);
+                onReset();
+              })
+            }
+          >
+            {busy ? "Resetting…" : "Reset development data"}
+          </Button>
+          <Button disabled={busy} onClick={() => setResetOpen(false)}>
+            Cancel
+          </Button>
+        </Dialog>
+      )}
       {deletion && (
         <Dialog title="Complete data deletion" onClose={cancelDeletion}>
           <Notice>
