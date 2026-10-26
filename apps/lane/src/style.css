@@ -368,6 +368,22 @@ text {
   min-height: 0;
   height: 100%;
 }
+.app-rail-scroll {
+  width: 64px;
+  height: 100%;
+  flex-shrink: 0;
+  z-index: 2;
+}
+.app-rail-spacer {
+  flex: 1;
+  min-height: 12px;
+}
+.app-selectors,
+.app-utilities {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .app-rail {
   display: flex;
   flex-direction: column;
@@ -375,12 +391,12 @@ text {
   flex-shrink: 0;
   width: 64px;
   padding: 24px 10px;
-  gap: 12px;
   border-right: 1px solid #e4e8ef;
   background-color: #fff;
   z-index: 2;
 }
-.app-switch {
+.app-switch,
+.app-utility {
   position: relative;
   width: 44px;
   height: 44px;
@@ -393,10 +409,12 @@ text {
 .app-switch.selected {
   background-color: #e8f0fe;
 }
-.app-switch:focus {
+.app-switch:focus,
+.app-utility:focus {
   border-color: #075aff;
 }
-.app-switch:hover {
+.app-switch:hover,
+.app-utility:hover {
   background-color: #e8f0fe;
 }
 .app-selection {
@@ -413,9 +431,9 @@ text {
   /* Pre-3.5 Lynx targets can paint text under display:none. Clip this parent
      until all supported targets suppress that painting without the workaround. */
   overflow: hidden;
-  position: absolute;
-  left: 48px;
-  top: 4px;
+  /* Fixed tooltips escape the narrow scroll container without clipping. */
+  position: fixed;
+  left: 60px;
   /* The tooltip sits outside its 44px trigger; size it independently of that box. */
   width: max-content;
   padding: 8px 12px;
@@ -427,7 +445,9 @@ text {
   font-size: 0.85rem;
 }
 .app-switch:hover .app-tooltip,
-.app-switch:focus .app-tooltip {
+.app-switch:focus .app-tooltip,
+.app-utility:hover .app-tooltip,
+.app-utility:focus .app-tooltip {
   display: flex;
 }
 .app-icon {
