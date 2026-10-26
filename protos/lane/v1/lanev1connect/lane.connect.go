@@ -33,6 +33,8 @@ const (
 	SyncServiceName = "lane.v1.SyncService"
 	// CaptureServiceName is the fully-qualified name of the CaptureService service.
 	CaptureServiceName = "lane.v1.CaptureService"
+	// PlanningServiceName is the fully-qualified name of the PlanningService service.
+	PlanningServiceName = "lane.v1.PlanningService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -172,6 +174,21 @@ const (
 	// CaptureServiceDeleteURLConnectionProcedure is the fully-qualified name of the CaptureService's
 	// DeleteURLConnection RPC.
 	CaptureServiceDeleteURLConnectionProcedure = "/lane.v1.CaptureService/DeleteURLConnection"
+	// PlanningServiceGetPlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// GetPlanningItem RPC.
+	PlanningServiceGetPlanningItemProcedure = "/lane.v1.PlanningService/GetPlanningItem"
+	// PlanningServiceListPlanningItemsProcedure is the fully-qualified name of the PlanningService's
+	// ListPlanningItems RPC.
+	PlanningServiceListPlanningItemsProcedure = "/lane.v1.PlanningService/ListPlanningItems"
+	// PlanningServiceCreatePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// CreatePlanningItem RPC.
+	PlanningServiceCreatePlanningItemProcedure = "/lane.v1.PlanningService/CreatePlanningItem"
+	// PlanningServiceSavePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// SavePlanningItem RPC.
+	PlanningServiceSavePlanningItemProcedure = "/lane.v1.PlanningService/SavePlanningItem"
+	// PlanningServiceDeletePlanningItemProcedure is the fully-qualified name of the PlanningService's
+	// DeletePlanningItem RPC.
+	PlanningServiceDeletePlanningItemProcedure = "/lane.v1.PlanningService/DeletePlanningItem"
 )
 
 // LaneServiceClient is a client for the lane.v1.LaneService service.
@@ -1614,4 +1631,178 @@ func (UnimplementedCaptureServiceHandler) SaveURLConnection(context.Context, *co
 
 func (UnimplementedCaptureServiceHandler) DeleteURLConnection(context.Context, *connect.Request[v1.DeleteURLConnectionRequest]) (*connect.Response[v1.DeleteURLConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.CaptureService.DeleteURLConnection is not implemented"))
+}
+
+// PlanningServiceClient is a client for the lane.v1.PlanningService service.
+type PlanningServiceClient interface {
+	GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error)
+	ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error)
+	CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error)
+	SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error)
+	DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error)
+}
+
+// NewPlanningServiceClient constructs a client for the lane.v1.PlanningService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPlanningServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PlanningServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	planningServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("PlanningService").Methods()
+	return &planningServiceClient{
+		getPlanningItem: connect.NewClient[v1.GetPlanningItemRequest, v1.GetPlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceGetPlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("GetPlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		listPlanningItems: connect.NewClient[v1.ListPlanningItemsRequest, v1.ListPlanningItemsResponse](
+			httpClient,
+			baseURL+PlanningServiceListPlanningItemsProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("ListPlanningItems")),
+			connect.WithClientOptions(opts...),
+		),
+		createPlanningItem: connect.NewClient[v1.CreatePlanningItemRequest, v1.CreatePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceCreatePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("CreatePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		savePlanningItem: connect.NewClient[v1.SavePlanningItemRequest, v1.SavePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceSavePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("SavePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+		deletePlanningItem: connect.NewClient[v1.DeletePlanningItemRequest, v1.DeletePlanningItemResponse](
+			httpClient,
+			baseURL+PlanningServiceDeletePlanningItemProcedure,
+			connect.WithSchema(planningServiceMethods.ByName("DeletePlanningItem")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// planningServiceClient implements PlanningServiceClient.
+type planningServiceClient struct {
+	getPlanningItem    *connect.Client[v1.GetPlanningItemRequest, v1.GetPlanningItemResponse]
+	listPlanningItems  *connect.Client[v1.ListPlanningItemsRequest, v1.ListPlanningItemsResponse]
+	createPlanningItem *connect.Client[v1.CreatePlanningItemRequest, v1.CreatePlanningItemResponse]
+	savePlanningItem   *connect.Client[v1.SavePlanningItemRequest, v1.SavePlanningItemResponse]
+	deletePlanningItem *connect.Client[v1.DeletePlanningItemRequest, v1.DeletePlanningItemResponse]
+}
+
+// GetPlanningItem calls lane.v1.PlanningService.GetPlanningItem.
+func (c *planningServiceClient) GetPlanningItem(ctx context.Context, req *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error) {
+	return c.getPlanningItem.CallUnary(ctx, req)
+}
+
+// ListPlanningItems calls lane.v1.PlanningService.ListPlanningItems.
+func (c *planningServiceClient) ListPlanningItems(ctx context.Context, req *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error) {
+	return c.listPlanningItems.CallUnary(ctx, req)
+}
+
+// CreatePlanningItem calls lane.v1.PlanningService.CreatePlanningItem.
+func (c *planningServiceClient) CreatePlanningItem(ctx context.Context, req *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error) {
+	return c.createPlanningItem.CallUnary(ctx, req)
+}
+
+// SavePlanningItem calls lane.v1.PlanningService.SavePlanningItem.
+func (c *planningServiceClient) SavePlanningItem(ctx context.Context, req *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error) {
+	return c.savePlanningItem.CallUnary(ctx, req)
+}
+
+// DeletePlanningItem calls lane.v1.PlanningService.DeletePlanningItem.
+func (c *planningServiceClient) DeletePlanningItem(ctx context.Context, req *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error) {
+	return c.deletePlanningItem.CallUnary(ctx, req)
+}
+
+// PlanningServiceHandler is an implementation of the lane.v1.PlanningService service.
+type PlanningServiceHandler interface {
+	GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error)
+	ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error)
+	CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error)
+	SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error)
+	DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error)
+}
+
+// NewPlanningServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPlanningServiceHandler(svc PlanningServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	planningServiceMethods := v1.File_lane_v1_lane_proto.Services().ByName("PlanningService").Methods()
+	planningServiceGetPlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceGetPlanningItemProcedure,
+		svc.GetPlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("GetPlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceListPlanningItemsHandler := connect.NewUnaryHandler(
+		PlanningServiceListPlanningItemsProcedure,
+		svc.ListPlanningItems,
+		connect.WithSchema(planningServiceMethods.ByName("ListPlanningItems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceCreatePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceCreatePlanningItemProcedure,
+		svc.CreatePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("CreatePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceSavePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceSavePlanningItemProcedure,
+		svc.SavePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("SavePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	planningServiceDeletePlanningItemHandler := connect.NewUnaryHandler(
+		PlanningServiceDeletePlanningItemProcedure,
+		svc.DeletePlanningItem,
+		connect.WithSchema(planningServiceMethods.ByName("DeletePlanningItem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/lane.v1.PlanningService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PlanningServiceGetPlanningItemProcedure:
+			planningServiceGetPlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceListPlanningItemsProcedure:
+			planningServiceListPlanningItemsHandler.ServeHTTP(w, r)
+		case PlanningServiceCreatePlanningItemProcedure:
+			planningServiceCreatePlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceSavePlanningItemProcedure:
+			planningServiceSavePlanningItemHandler.ServeHTTP(w, r)
+		case PlanningServiceDeletePlanningItemProcedure:
+			planningServiceDeletePlanningItemHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPlanningServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPlanningServiceHandler struct{}
+
+func (UnimplementedPlanningServiceHandler) GetPlanningItem(context.Context, *connect.Request[v1.GetPlanningItemRequest]) (*connect.Response[v1.GetPlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.GetPlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) ListPlanningItems(context.Context, *connect.Request[v1.ListPlanningItemsRequest]) (*connect.Response[v1.ListPlanningItemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.ListPlanningItems is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) CreatePlanningItem(context.Context, *connect.Request[v1.CreatePlanningItemRequest]) (*connect.Response[v1.CreatePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.CreatePlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) SavePlanningItem(context.Context, *connect.Request[v1.SavePlanningItemRequest]) (*connect.Response[v1.SavePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.SavePlanningItem is not implemented"))
+}
+
+func (UnimplementedPlanningServiceHandler) DeletePlanningItem(context.Context, *connect.Request[v1.DeletePlanningItemRequest]) (*connect.Response[v1.DeletePlanningItemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("lane.v1.PlanningService.DeletePlanningItem is not implemented"))
 }

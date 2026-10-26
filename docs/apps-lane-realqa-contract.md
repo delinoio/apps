@@ -112,7 +112,7 @@ only for the behavior specified here; Pace remains outside this scope.
 - Preserve existing task-move semantics: moving a task preserves its identity, prompt, history, and required attachments. Deleting its former repository must not delete the moved task's content.
 - Keep account deletion, local removal, and server-clear/keep-local behavior consistent for attachments and synchronized URL rules. Do not relabel retained data into another account.
 - Extend the shared schema and typed protocol in the owning contracts before runtime changes. Preserve existing field numbers and interfaces. Apply existing format negotiation and unsupported-schema refusal; old clients must not silently drop attachment/rule data or overwrite an unsupported store.
-- Existing explicit migration and compatible rollback/fix-forward procedures apply. No new import/export or backup product is included.
+- Lane has not been deployed. Store schema changes before release use the explicit development reset in the [local-store contract](apps-lane-local-store-contract.md) instead of migration. No new import/export or backup product is included.
 
 ### Operations, privacy, and documentation
 
@@ -168,7 +168,7 @@ only for the behavior specified here; Pace remains outside this scope.
 11. Save offline, close/reopen after successful local save, reconnect, and verify attachment synchronization. Inject auth, network, R2, limit, and partial-upload failures with disposable PostgreSQL and mocked R2/identity dependencies. Preserve unrelated synchronization and distinguish local save success from remote completion.
 12. Retrieve attachments from GUI, local CLI/MCP, and remote CLI/MCP. Test cross-account IDs, revoked credentials, expired signed access, unavailable objects, and malformed references without exposing data or interpreting metadata as executable input.
 13. Remove a current reference, restore an earlier prompt, move a task, delete its former repository, delete its current owner, and exercise all existing account/local deletion modes. Ensure history and deletion precedence work for image content and delayed synchronization.
-14. Test compatible upgrade/migration and unsupported old-client refusal; validate shared typed bindings, schema checks, and cross-language fixtures.
+14. Test unsupported old-schema refusal with the explicit reset instruction; validate shared typed bindings, schema checks, and cross-language fixtures.
 15. Exercise approved layouts, keyboard-only capture/composer/settings flows, screen readers, focus transfer, non-color states, narrow viewports, and text enlargement. Verify read-only result rendering on actual mobile and web targets.
 16. Assert structured failure categories/correlation IDs, retention, and exclusion of images, problem text, URL/selector values, tokens, and signed URLs from logs. Cover relevant existing alert/recovery and support procedures without adding a new numeric SLO.
 17. Run applicable frontend (`pnpm test` in `apps/lane`), root Go/protocol, and Rust checks. If Rust changes, include root `cargo test` and owning server-workspace checks. Preserve existing Lane task/proposal/history/conflict/navigation/auth regression coverage and CI allocation rules. Record exact commands and results at implementation time.

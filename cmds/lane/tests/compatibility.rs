@@ -6,8 +6,24 @@ use serde_json::{Value, json};
 fn legacy(value: &mut Value) {
     match value {
         Value::Object(fields) => {
-            if fields.get("captures").is_some_and(|v| v == &json!([])) {
-                fields.remove("captures");
+            // Receipts written before captures and the planning extension carry none of
+            // these implicit defaults.
+            for key in ["captures", "labelIds", "dependsOnTaskIds", "relatedTaskIds"] {
+                if fields.get(key).is_some_and(|v| v == &json!([])) {
+                    fields.remove(key);
+                }
+            }
+            if fields
+                .get("priority")
+                .is_some_and(|v| v == "TASK_PRIORITY_UNSPECIFIED")
+            {
+                fields.remove("priority");
+            }
+            if fields
+                .get("type")
+                .is_some_and(|v| v == "TASK_TYPE_UNSPECIFIED")
+            {
+                fields.remove("type");
             }
             if fields.contains_key("formatVersion") {
                 fields.insert("formatVersion".into(), 1.into());

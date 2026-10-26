@@ -74,7 +74,7 @@ signing and store registration remain separate.
 
 ### Approved UI composition
 
-Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. These product constraints do not change the platform build/toolchain choices.
+Use desktop navigation/list/detail and mobile list/detail pages. Use English, a white/gray surface and blue accent. Keep progress separate from proposal disposition. Provide explicit Save, history, prompt restore, conflict comparison/resolution, and settings for devices, MCP approvals, webhook receivers and per-device notifications. Use an icon-only app rail to the left of the contextual sidebar. Lane, Pace and RealQA are equal app selectors in that order; Pace shows its own sidebar and `Coming soon` page. RealQA follows the [capture and attachment contract](apps-lane-realqa-contract.md). Remove the former Perfine entry. Apply Toss UX guidance, keyboard/screen-reader access, visible focus, non-color state cues and text enlargement. Task Properties, Relationships, list Filters and sort, and repository Labels, Milestones and Cycles management follow the [task planning UI specification](#task-planning-ui-specification). These product constraints do not change the platform build/toolchain choices.
 
 ### Desktop app updates
 
@@ -235,7 +235,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Native apps and the default CLI use local data without login. Optional synchronization and server webhook facilities require the existing Logto identity system. **The `lane-api` server must depend on `delcore-api`.** Integrate through Delcore's Connect API and follow the identity, tenant, and authorization ownership defined in `docs/project-delcore.md`, `docs/servers-delcore-api-contract.md`, and `docs/protos-delcore-v1-contract.md`.
 - The web app requires login and server connectivity and reads/writes server data. Do not implement independent browser persistence, offline editing, offline relaunch guarantees, or an offline mutation queue for web.
 - Isolate each user's server data. Identical repository URLs in different accounts do not share tasks. No team workspace or collaboration model is included.
-- Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free.
+- Provide the first version free of charge. No paid plans or billing. No feature flag is needed because this is a new product made available to all logged-in users on the server; local use remains account-free. Task planning metadata adds no feature flag, paid plan, team role or entitlement.
 - Web domain: `lane.delino.io`. API domain: `lane.api.delino.io`.
 - Register `lane-dev://` for development builds and `lane://` for distribution builds. Support login callbacks, opening the app, and links to a repository or task. Do not include decision-item links.
 - Keep Lane, Pace and RealQA as equal, enabled app selectors in a 64-pixel icon rail, ordered from the top. Use the approved folded-lanes artwork for Lane, the folded-ribbon speedometer artwork for Pace, and the approved checklist-and-cursor artwork for RealQA. Each target is 44 by 44 pixels with a 24-pixel icon and 12-pixel spacing. Show app names on hover/focus and expose accessible names and selected state. Use a pale-blue background, blue icon and left marker for selection.
@@ -258,16 +258,107 @@ The following behavior is authoritative for all Lane entry points. The linked do
 
 ### Tasks, proposals, prompts, and history
 
-- A task has a required title, optional human-readable description, one optional prompt, progress state, and a separate proposal disposition. A title alone is sufficient for creation. Do not add priority, labels, or due dates.
+- A task has a required title, optional human-readable description, one optional prompt, progress state, and a separate proposal disposition. A title alone is sufficient for creation. Optional planning metadata and relationships are specified in the task planning sections below; omission always means unassigned.
 - Progress states are To do, In progress, Blocked, Done, and Canceled. All transitions are allowed, including reopening Done/Canceled tasks. A creation request can set progress; omission means To do.
 - Agents can create regular tasks directly, create proposed tasks, and modify existing tasks. Accepting a proposal makes it a regular task. Preserve rejected proposals and allow later acceptance. Accepting or rejecting does not reset progress.
 - Apps, CLI, and MCP provide full management, including task creation/editing, progress changes, proposal acceptance/rejection, deletion, prompt editing/restoration, repository management, and conflict resolution.
 - Keep prompt versions indefinitely until their owning task/repository is deleted. Users can inspect a past version and restore it; restoration creates a new version. A diff-view feature is not required.
-- Preserve user-visible changes to title, description, progress, proposal acceptance/rejection, and repository moves. Show before/after values, time, and change origin: app/CLI/MCP, device name, and account identity when logged in. Do not introduce agent-supplied display identities. Only prompts have a past-version restoration action.
+- Preserve user-visible changes to title, description, progress, proposal acceptance/rejection, repository moves, planning metadata and relationships. Show before/after values, time, and change origin: app/CLI/MCP, device name, and account identity when logged in. Do not introduce agent-supplied display identities. Only prompts have a past-version restoration action.
 - Allow moving a task between repositories while preserving its ID, prompt, and history. A linked webhook event stays in its original repository and continues to reference the moved task ID.
 - Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
 - If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
+
+### Task planning metadata
+
+Tasks carry optional planning fields. A title remains sufficient for creation, and every field below is unassigned when omitted.
+
+| Field                | Required behavior                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Priority             | Fixed values: None, Urgent, High, Normal, Low. None means unassigned.                                                                                                  |
+| Type                 | Fixed values: None, Bug, Feature, Improvement, Documentation, Maintenance. None means unassigned.                                                                      |
+| Labels               | Zero or more labels of the task's repository; at most 100 per task.                                                                                                    |
+| Start date, due date | Real calendar dates (`YYYY-MM-DD`, leap years included) without time or time zone. When both exist, start date must not be later than due date; equal dates are valid. |
+| Story points         | Optional integer from 0 through 2,147,483,647. Zero differs from unassigned. Reject negative, fractional and larger values.                                            |
+| Milestone            | At most one milestone of the task's repository.                                                                                                                        |
+| Cycle                | At most one cycle of the task's repository. Use Cycle as the UI term for the selected cycle/sprint capability.                                                         |
+
+Task dates are independent of milestone target dates and cycle periods; a task can fall outside either plan's dates. Lane adds no deadline notifications, automatic progress changes, effort tracking or automatic rollover. Every field can be set, read, changed and cleared through the apps, CLI, local MCP and remote MCP. Keep the separate progress and proposal-disposition state machines unchanged.
+
+### Repository planning items
+
+Labels, milestones and cycles belong to exactly one repository, including in standalone local use. Apps, CLI and MCP provide create, list, read, edit, delete and history for each kind. Entities use UUID v7 identities, and tasks reference them by identity, never by display name.
+
+- Every item has a required name and an optional description. Trim leading and trailing whitespace from names; a name has 1 to 100 Unicode scalar values after trimming and a description has at most 4,000.
+- Within one repository and item kind, reject a duplicate name without regard to case; the item being edited and deleted items are excluded from the comparison. Different kinds and different repositories may use the same name.
+- A label requires a color in `#RRGGBB` form on creation; Lane stores it upper-case and allows later color edits. A color is never the only indicator of a label; its name is always shown.
+- A milestone has an optional target date and a completion boolean that is initially incomplete. Completion is an explicit edit; it does not change task progress and no task state changes it.
+- A cycle requires a start date and an end date, with start date no later than end date. A cycle has no lifecycle state and no recurring-generation behavior.
+- An item's kind and repository cannot change after creation. Edits use the expected-version and request-ID rules of the other entities, and concurrent edits of the same item are a whole-item conflict resolved through the same conflict operations.
+
+### Task relationships
+
+All relationship endpoints must be live tasks in the same repository and the same personal data space.
+
+- Parent/subtask: a task has at most one parent. Subtasks are the inverse view. Reject self-links and hierarchy cycles.
+- Depends on/blocks: two views of one directed dependency. Reject self-links and dependency cycles.
+- Related: a symmetric relationship, stored on both endpoints. Reject self-links.
+- Duplicate of: at most one original task, stored on the duplicate only. Reject self-links and duplicate-reference cycles.
+- Relationships only describe work. They never change progress or proposal state, never reject a completion because related work is unfinished, and never automatically close duplicates or parents.
+- Editing a task's Subtasks or Blocks changes the other tasks' stored fields in the same atomic operation. Each affected task receives its own new version with the caller's origin. If any affected task is in conflict the whole operation fails with the existing read-only conflict result, and a deleted affected task fails as not found or deleted. Failure leaves no partial change.
+- Show linked task titles, not a new issue-number identity scheme.
+
+### Moves, deletion and reference cleanup
+
+- Moving a task to another repository clears its labels, milestone, cycle, parent, dependencies, related tasks and duplicate-of reference, and removes every other task's reference to it. Other linked tasks survive and receive a new version for each removed reference. The moved task keeps its priority, type, dates, story points, ID, prompt, capture ownership and applicable history.
+- Deleting a task removes other tasks' relationship references to it. Deleting a label, milestone or cycle removes that assignment from every task that references it and then deletes the item. Linked tasks survive. Repository and account deletion keep their existing cascading rules, including deletion of that repository's planning items.
+- Automatic cleanup writes use the deleting or moving actor's origin and run in the same transaction as the triggering operation. A failed operation leaves no partial cleanup, history, replay record or outbox row. Retried requests do not create duplicate relationships, entities or history.
+
+### Planning history
+
+- Record before/after values, time and the established app/CLI/MCP, device and authenticated account origin for every planning-field and relationship change, including automatic reference removal caused by moves and deletions. Record edits to labels, milestones and cycles in each item's own history. Clients derive before/after values from consecutive versions.
+- Do not add metadata-version restoration. Only the existing prompt restoration remains.
+- Retention and deletion follow the existing rules. Deleting an owning entity removes its historical content. Never retain deleted content by copying it into another entity's history; tasks keep only identity references to labels, milestones, cycles and other tasks, so deleting an item erases its name and description everywhere. Surviving tasks keep their own history.
+
+### Task filtering and sorting
+
+Repository-specific and all-repository task lists, in apps, CLI and MCP, accept the planning filters and one sort.
+
+- Filter by priority, type, labels, start-date range, due-date range, story-point range, milestone, cycle and task relationships, including finding unassigned values.
+- Different fields combine with AND. Selected values within one field combine with OR; a label filter matches a task that has at least one selected label. A field's unassigned selection (no priority, no type, no labels, no start/due date, no points, no milestone, no cycle, no relationships) combines with that field's selected values with OR. A field with no selection and no unassigned choice does not restrict. A date or point range that has only bounds excludes unassigned tasks; bounds are inclusive. A relationship filter selects tasks that have at least one relationship of the chosen kinds (parent, subtasks, depends on, blocks, related, duplicate of), or none.
+- Existing title/description search and progress/proposal filters remain and combine with AND with every planning field.
+- In all-repository lists, identify labels, milestones and cycles with their repository name, allow selections from several repositories, and keep same-name items distinct by identity.
+- Support one sort key at a time with ascending or descending direction. Keys are priority, type, start date, due date, story points, milestone name and cycle start date. Priority ascending is Urgent, High, Normal, Low. Type follows the order listed above. Dates compare as calendar dates. Milestone names compare case-insensitively with a deterministic code-point tie-break. Cycle sorting uses the cycle's start date. Unassigned values always sort last in both directions, and equal keys break ties by ascending task ID. Without a sort key, lists keep the existing task-ID order.
+- Ordering and pagination are identical in every interface: a page boundary never repeats or skips a task, and concatenated pages equal the unpaged result. A cursor remains opaque and scoped to its query and account.
+- Clear filters clears filter conditions while preserving the search text and sort selection.
+
+### Planning synchronization and constraint rejection
+
+Native and CLI saves commit locally without a server. Synchronization preserves the planning data, history and deletion cleanup of the accepted server state. Web remains online-only: an offline web save fails with retained input.
+
+- The server validates every pushed task and planning item against the **accepted server state** with the rules above. Independently valid offline changes can combine into a violation, for example two devices creating a combined cycle, giving a task two parents, or creating the same name twice.
+- A violating item is rejected with `CONSTRAINT_VIOLATION` and a named violation. The server keeps its accepted state and never rolls it back. The client keeps the rejected local version and its pending record in the blocked state, shows the reason in its synchronization status, never marks it synchronized and never discards it.
+- The user corrects the local data with an ordinary edit and then retries the blocked item explicitly (`lane sync run --retry-blocked` or the equivalent app action). Ordinary whole-task version conflicts and their resolution are unchanged.
+
+### Task planning UI specification
+
+This text specification is authoritative without supporting images. Preview data is illustrative, not seeded product data. Existing navigation, task content editing, progress/proposal behavior and app selectors remain unchanged. Layout references were a 720-pixel desktop content width for the task editor and 760 pixels for the task list and repository management.
+
+1. **Task creation and detail.** Add Properties and Relationships sections to the existing editor. Properties contains priority, type, labels, start date, due date, story points, milestone and cycle. Relationships contains Parent, Subtasks, Depends on, Blocks, Related and Duplicate of. Select existing tasks of the same repository by search and display their titles. Show Change parent when a parent exists. Field edits and relationship changes remain in the draft until the existing Save action succeeds. Opening a related task uses the existing unsaved-change confirmation.
+2. **Task lists.** Add a collapsible Filters region and separate sort-key and direction controls. Keep the existing search, progress and proposal controls. Label every filter, give each filter its own Unassigned choice, and identify repository-owned values with their repository in the all-repository list. Show task metadata compactly. Do not add grouping, bulk selection or saved views.
+3. **Repository management.** Provide Labels, Milestones and Cycles tabs under the repository detail area, each with an item list and an edit area and with New item, Save, Delete and History actions. Labels expose name, color and description. Milestones expose name, description, optional target date and completion. Cycles expose name, description and required start and end dates. History shows before/after values, time and origin and has no Restore action. An empty list offers creation. Deletion confirmation explains that deleting an item detaches it from tasks while the tasks remain.
+4. **Responsive layout.** At widths of at least 900 pixels keep the existing desktop list/detail navigation and use two-column fields where space permits. Below 900 pixels keep the mobile list/detail navigation and stack fields and filters in one column. At 360 pixels wrap long names and labels and keep every control usable without horizontal scrolling.
+5. **Visual treatment.** English UI, white and gray surfaces, gray borders, dark text and the existing blue accent `#075AFF`. Keep the current design system and approved navigation. Color supplements text and is never the only state indicator.
+6. **States and recovery.** Show loading and empty-result states and an explicit retry for list and option failures. Keep drafts after failed saves. Explain field validation and relationship-conflict causes in text. Disable duplicate submission while saving. Preserve the existing authentication, permission, deletion and whole-task-conflict states. Web offline saves fail with retained input; native, local CLI and local MCP saves remain local.
+7. **Accessibility.** Keyboard operation, visible focus, accessible control names, screen-reader support, non-color state cues and text enlargement apply on every supported GUI platform. Dialogs close with Escape and return focus to their trigger. Apply the existing automatic-focus rule to forms with one critical input.
+
+### Pre-release data reset
+
+Lane has not been deployed, and existing development data may be discarded. This pre-release exception applies to task planning only: there is no backward compatibility, no development-data preservation, no old-to-new data migration and no old-client support. The earlier local migration procedure no longer exists. Implementations must never reset silently when a store is opened.
+
+- A local store or server schema that does not match the current format is refused with an update/reset instruction. The explicit procedures are `lane data reset` and the native Settings reset in the [local-store contract](apps-lane-local-store-contract.md#development-data-reset), and the disposable development database reset in the [server contract](servers-lane-api-contract.md#development-data-reset).
+- Reset is destructive and explicit: it requires a confirmation control, coordinates with open handles and background workers, respects account boundaries and removes the associated content. Use it only with disposable development data, never production data.
+- Record the reset, validation errors, rejected synchronization and the explicit correction and retry in the user and operator guides.
 
 ### Local storage, synchronization, and conflicts
 
@@ -281,7 +372,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Desktop supports background synchronization after the app window closes. Mobile synchronizes while running and at platform-permitted background opportunities. Web uses its active online connection; do not imply an offline data mode.
 - Use server change notifications for live updates. Local process changes must reach the running app without requiring an app restart; verify this during implementation.
 - Native/CLI connectivity failure or expired Logto authorization does not block local work. Preserve pending changes; resume synchronization after reconnection/reauthentication.
-- Unsupported synchronization format stops synchronization with an update instruction, while compatible local features and pending changes remain available. An older app must not open/write an unsupported local data format or initialize it as empty; require a supported version.
+- Unsupported synchronization format stops synchronization with an update instruction, while compatible local features and pending changes remain available. An older app must not open/write an unsupported local data format or initialize it as empty; require a supported version. Opening a local store whose format differs from the current one is refused with an instruction that names the explicit development reset described in [pre-release data reset](#pre-release-data-reset); it never resets implicitly.
 - Operators must configure server input-size and request-rate limits before startup. Provide no default limits; missing configuration fails startup. Do not apply these server limits to standalone local input. An oversized upload blocks only that item with an explanation; other items continue synchronizing. Lowering limits must not block reading/downloading/deleting previously accepted data; reject only oversized new or modified uploads.
 
 ### Authentication, connection management, and deletion
@@ -328,6 +419,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 
 - CLI defaults to local operations; only an explicit remote option targets server data. Default output is human-readable; `--json` emits structured results/errors. Provide macOS/Windows/Linux executables and the npm installer package **`@delinoio/lane`**, with installation instructions.
 - Local MCP uses stdio. Optional remote MCP uses browser-approved Logto authentication. Both expose the agreed management functions, with online-only server operations identified explicitly.
+- Task planning fields, relationships, filters, sorts and repository labels/milestones/cycles use the typed protocol (extended task operations and the typed planning service) in native bridge, CLI, local MCP, remote MCP and web adapters. Do not add an untyped side-channel API. CLI keeps human and JSON output, explicit remote selection, retryable request IDs and expected-version checks; MCP names and schemas follow the typed-method mapping. Help text, the interface contracts and the common agent skill are updated together with these capabilities and limitations.
 - Supply a common Lane `SKILL.md` and remote/local MCP connection instructions. Do not run or distribute an AI execution service.
 - Preserve the Lane project ID/application ID and existing platform/toolchain contracts. Follow repository defaults for new server implementation (Rust), other unspecified new projects (Go), UUID v7 entity IDs, and Connect RPC business interfaces. MCP and webhook adapters must preserve the same ownership, version, deletion, and idempotency rules.
 - Keep client, protocol, server, CLI, and distribution work in the same repository. Before runtime expansion, update `docs/project-lane.md`, the application foundation, and the documentation catalog; add owning server/protocol/CLI/distribution contracts and required scoped ownership instructions. Do not place issue-specific requirements or issue identifiers in repository instruction files.
@@ -336,22 +428,23 @@ The following behavior is authoritative for all Lane entry points. The linked do
 ### Operations and observability
 
 - Produce deployable web/API/remote-MCP artifacts, configuration, and runbooks for the specified domains. Do not perform actual production deployment. Native completion requires build/install/behavior validation; store publication and formal distribution are follow-up work.
-- Run database migrations explicitly, never on server startup. Roll back only to a binary compatible with the current schema; otherwise recover with a corrected forward version. Do not require down migrations.
+- Run database migrations explicitly, never on server startup. Roll back only to a binary compatible with the current schema; otherwise recover with a corrected forward version. Do not require down migrations. The pre-release reset for task planning is the documented exception described in [pre-release data reset](#pre-release-data-reset); it promises no rollback to an incompatible binary.
 - No numeric latency, capacity, or availability SLO is promised. Measure response time/error rate and test functional recovery. Alert thresholds below are operational triggers, not SLOs.
-- Include structured logs, request correlation IDs, health checks, basic metrics, dashboards, and automatic alerts. Record operational metadata, not user content or credentials. Server logs expire after 30 days. Local native/CLI logs remain local, expire after 30 days, and have a combined 100 MiB limit; remove oldest entries when either limit is reached. No automatic diagnostic upload.
+- Include structured logs, request correlation IDs, health checks, basic metrics, dashboards, and automatic alerts. Record operational metadata, not user content or credentials. Planning operations log the operation, correlation ID, result category and duration only; they never log task content, label/milestone/cycle names or descriptions, relationship titles or other user content. Server logs expire after 30 days. Local native/CLI logs remain local, expire after 30 days, and have a combined 100 MiB limit; remove oldest entries when either limit is reached. No automatic diagnostic upload.
 - Supply Prometheus rules and Alertmanager email routing/configuration. Operators configure email transport and recipients. No Lane-owned email provider integration is required.
 - Service and DB health: probe every 30 seconds with a five-second timeout; alert after five minutes of continuous failure; resolve after five minutes continuously healthy.
 - API: over a rolling five-minute window with at least 20 requests, alert if server errors/timeouts exceed 5% or p95 response time exceeds two seconds continuously for five minutes. Exclude long-lived connection lifetime from request-latency measurement.
 - Push: alert when transient failure rate exceeds 10% over a 15-minute window with at least 20 delivery attempts, continuously for five minutes; also alert when the oldest pending delivery exceeds ten minutes.
 - Resolve API/push alerts after the triggering condition clears continuously for ten minutes. Insufficient samples alone do not prove recovery; an empty push queue clears its age condition. Send email once on firing, once per hour while active, and once on recovery. Make these numbers operator-configurable with the agreed initial values.
-- Document user troubleshooting and operator procedures for server/DB failures, synchronization, webhooks, push delivery, and alerts. No separate customer-support/admin diagnostic product is required.
+- Document user troubleshooting and operator procedures for server/DB failures, synchronization, webhooks, push delivery, and alerts. For task planning, also document the development-data reset, validation errors, rejected synchronization items and their explicit correction and retry. No separate customer-support/admin diagnostic product is required. Task planning uses the existing deployment units, stores, sync workers, request limits, health checks, metrics and alert policies, adds no numeric SLO, and requires no external integration or new credential.
 
 ### Explicit exclusions
 
 - Decision items in their entirety: no question/answer records, choices, answer history, deferral/reopening/acknowledgment, decision-specific UI/API/MCP functions, links, or notifications.
 - Lane-driven AI calls, agent execution, Git content access, Git access verification, event interpretation by Lane AI, user-rule automation engines, and provider-specific webhook adapters.
 - Team workspaces, billing/paid plans, feature flags, app password/biometric locks, end-to-end encryption, independent offline browser data, and Linux native GUI.
-- File import/export, separate user backup/restore, trash/recovery, priority/labels/due dates, old repository URL aliases, mini-app implementations, and a separate customer-support tool.
+- File import/export, separate user backup/restore, trash/recovery, old repository URL aliases, mini-app implementations, and a separate customer-support tool.
+- Task planning exclusions: user-defined fields or configurable priority/type vocabularies; assignees, reporters, subscribers and team collaboration; cross-repository relationships; grouping, bulk editing, saved views, nested Boolean filters and multi-key sorting; time tracking, estimated hours, date-time or time-zone inputs and fractional story points; external issue-tracker integration, new notifications, deadline reminders, automatic progress changes, recurring cycles and automatic rollover; metadata-history restoration; preserving or migrating existing development data and supporting old clients.
 - Windows remote WNS push and its package-registration work, actual production deployment, store publication/formal release, and actual Logto/push/email account/device delivery validation.
 
 ## Storage
@@ -380,7 +473,7 @@ lifecycle, signing, installation and store submission need separate platform
 validation. No macOS runner is added to PR, main-push or affected manual CI.
 Remove generated `dist` after validation.
 
-Required product tests cover all task/proposal transitions, optional prompts, explicit-save history, prompt restore as a new version, task moves, repository normalization and conflicts, safe Markdown, and input retention on errors. Test keyboard operation, screen readers, visible focus, non-color states and text enlargement on every released GUI platform.
+Required product tests cover all task/proposal transitions, optional prompts, explicit-save history, prompt restore as a new version, task moves, repository normalization and conflicts, safe Markdown, and input retention on errors. Task planning tests cover title-only creation; setting and clearing every field in every adapter; name, color, label-limit, date and story-point boundaries; same-name items across repositories and kinds; relationship self-link, cycle and multiple-parent rejection with unchanged progress; moves and each deletion kind with detached references, surviving tasks and history redaction; filter AND/OR/unassigned combinations, sort directions, unassigned-last, task-ID ties and page boundaries; restart persistence without a server; rejected synchronization with correction and explicit retry; response-loss replay and request-ID reuse; transaction rollback without partial cleanup; structured logs without user content; and the explicit development reset with active-handle coordination. Test keyboard operation, screen readers, visible focus, non-color states, text enlargement, the 900-pixel and 360-pixel layouts, loading/empty/error states and Escape handling on every released GUI platform.
 
 Native acceptance must exercise SQLite reads/writes, close/reopen, failed writes, concurrent CLI/MCP access while the window is closed, and automatic observation in a running app on each relevant host. Android/Windows execution and automatic change observation remain acceptance gates. Earlier isolated macOS/iOS probes do not establish product completion. Do not infer web offline support from an IndexedDB experiment.
 

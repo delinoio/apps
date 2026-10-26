@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 CREATE TABLE store_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE entities (
-  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2,3)),
+  id TEXT PRIMARY KEY, kind INTEGER NOT NULL CHECK(kind IN (1,2,3,4,5,6)),
   repository_id TEXT, normalized_url TEXT,
   deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1))
 );
