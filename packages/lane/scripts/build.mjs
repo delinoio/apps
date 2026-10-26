@@ -14,6 +14,7 @@ import { parseArgs } from "node:util";
 import { platforms } from "../bin/verify.mjs";
 import { targets } from "./targets.mjs";
 import { collectNotices } from "./notices.mjs";
+import { npm } from "./npm.mjs";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const { values } = parseArgs({
   options: {
@@ -186,11 +187,10 @@ if (
   throw new Error(
     "CLI source changed during packaging; discard artifacts and rebuild",
   );
-execFileSync(
-  "npm",
-  ["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"],
-  { cwd: stage, stdio: "inherit" },
-);
+npm(["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"], {
+  cwd: stage,
+  stdio: "inherit",
+});
 const files = selectedPlatforms
   .map((key) => `lane-${key}-${pkg.version}.tar.gz`)
   .concat(`delinoio-lane-${pkg.version}.tgz`);

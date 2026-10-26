@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifiedExecutable, platformKey, platforms } from "../bin/verify.mjs";
+import { npm } from "./npm.mjs";
 const source = fileURLToPath(new URL("../", import.meta.url));
 const { version } = JSON.parse(readFileSync(resolve(source, "package.json")));
 const temporary = mkdtempSync(resolve(tmpdir(), "lane-packed-"));
@@ -46,8 +47,7 @@ try {
     );
   }
   assert.equal(expectedArchives.size, 0, "missing archive checksum");
-  execFileSync(
-    "npm",
+  npm(
     [
       "install",
       "--offline",
