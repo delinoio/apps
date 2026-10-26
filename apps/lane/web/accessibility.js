@@ -6,6 +6,7 @@ export function installAccessibility(view) {
   let previousApp;
   let restoreFocus;
   let previousSettingsTarget;
+  let previousCommand;
   const wired = new WeakSet();
   const focusables = (root) =>
     [
@@ -19,7 +20,8 @@ export function installAccessibility(view) {
     // x-text delegates rendering to an inner box; its host cannot take focus.
     const target =
       node?.shadowRoot?.querySelector("input,textarea,#inner-box") || node;
-    if (target?.id === "inner-box") target.tabIndex = -1;
+    if (target?.id === "inner-box" || target?.id === "lane-workspace")
+      target.tabIndex = -1;
     target?.focus();
   };
   const update = () => {
@@ -48,6 +50,12 @@ export function installAccessibility(view) {
       button.setAttribute("role", "button");
       const disabled = button.classList.contains("disabled");
       button.setAttribute("aria-disabled", String(disabled));
+      if (button.classList.contains("command-result")) {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.classList.contains("command-selected")),
+        );
+      }
       if (button.classList.contains("app-switch")) {
         button.setAttribute(
           "aria-pressed",
@@ -105,12 +113,20 @@ export function installAccessibility(view) {
     const dialog = dialogs[dialogs.length - 1];
     if (dialog !== previousDialog) {
       if (dialog) {
-        restoreFocus = root.activeElement;
+        if (!previousDialog) restoreFocus = root.activeElement;
         dialog.setAttribute("role", "dialog");
         dialog.setAttribute("aria-modal", "true");
         queueMicrotask(() => focus(focusables(dialog)[0]));
-      } else if (previousDialog) focus(restoreFocus);
+      } else if (previousDialog) {
+        if (restoreFocus?.isConnected) focus(restoreFocus);
+        else focus(root.querySelector("#lane-workspace"));
+      }
       previousDialog = dialog;
+    }
+    const command = root.querySelector(".command-selected");
+    if (command !== previousCommand) {
+      previousCommand = command;
+      command?.scrollIntoView({ block: "nearest" });
     }
     const app = root.querySelector("#lane-root")?.getAttribute("data-app");
     if (app && app !== previousApp) {
@@ -179,6 +195,49 @@ export function installAccessibility(view) {
         "disabled",
       ],
     });
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          view.hidden ||
+          !root.querySelector("#lane-root") ||
+          event.isComposing
+        )
+          return;
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === "k"
+        ) {
+          if (
+            previousDialog &&
+            !previousDialog.classList.contains("command-palette")
+          )
+            return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (!event.repeat) view.sendGlobalEvent("lane.commandPalette", [{}]);
+          return;
+        }
+        if (
+          previousDialog?.classList.contains("command-palette") &&
+          ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)
+        ) {
+          // Keep native input/confirm and the runtime's global key listener from
+          // handling the same key a second time while pinned to web-core 0.26.5.
+          if (
+            event.key === "Enter" &&
+            root.activeElement?.classList.contains("button")
+          )
+            return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          view.sendGlobalEvent("lane.commandKey", [{ key: event.key }]);
+        }
+      },
+      true,
+    );
     root.addEventListener("keydown", (event) => {
       if (!previousDialog) return;
       if (event.key === "Escape") {

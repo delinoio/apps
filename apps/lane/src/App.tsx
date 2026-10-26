@@ -38,6 +38,13 @@ import { CaptureComposer } from "./CaptureComposer";
 import { useRealQA } from "./useRealQA";
 import { StoreMigration } from "./StoreMigration";
 import { savedCaptureRoute } from "./captures-model";
+import { CommandPalette } from "./CommandPalette";
+import {
+  destinations,
+  DestinationKind,
+  LanePage,
+  type Destination,
+} from "./navigation";
 import "./style.css";
 export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const realqa = useRealQA();
@@ -55,6 +62,9 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
     request: number;
   }>();
   const [repository, setRepository] = useState("");
+  const [repositoryStatus, setRepositoryStatus] = useState(
+    "Loading repositories...",
+  );
   const [repositories, setRepositories] = useState<EntityResult[]>([]);
   const [tasks, setTasks] = useState<EntityResult[]>([]);
   const [cursor, setCursor] = useState("");
@@ -133,6 +143,8 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   useEffect(() => {
     if (!adapter) return;
     let active = true;
+    setRepositoryStatus("Loading repositories...");
+    let repositoriesLoaded = false;
     void (async () => {
       try {
         const repos: EntityResult[] = [];
@@ -144,7 +156,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           repos.push(...r.items);
           after = r.nextCursor;
         } while (after);
-        if (active) setRepositories(repos);
+        repositoriesLoaded = true;
+        if (active) {
+          setRepositories(repos);
+          setRepositoryStatus("");
+        }
         let count = 0;
         after = "";
         do {
@@ -167,8 +183,11 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           }
         }
       } catch (e) {
-        if (active)
+        if (active) {
+          if (!repositoriesLoaded)
+            setRepositoryStatus("Repositories could not be refreshed.");
           setError(e instanceof Error ? e.message : "Refresh failed.");
+        }
       }
     })();
     return () => {
@@ -244,6 +263,27 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         section,
         request: (previous?.request ?? 0) + 1,
       }));
+    });
+  };
+  const selectDestination = (destination: Destination) => {
+    if (destination.kind === DestinationKind.App) {
+      selectApp(destination.target as MiniApp);
+      return;
+    }
+    navigate(() => {
+      setDraft(undefined);
+      setCurrent(undefined);
+      setRealqaDirty(false);
+      setMiniApp(MiniApp.Lane);
+      setSettingsTarget(undefined);
+      if (destination.kind === DestinationKind.Repository) {
+        setRepository(destination.target);
+        setPage(LanePage.Tasks);
+      } else {
+        setPage(destination.target);
+        // All tasks is the unfiltered repository destination; other filters remain.
+        setRepository("");
+      }
     });
   };
   const openTask = async (id: string) => {
@@ -711,6 +751,23 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
           </view>
         </view>
       </view>
+      <CommandPalette
+        items={destinations(
+          repositories.flatMap((result) =>
+            result.version?.body.case === "repository"
+              ? [
+                  {
+                    id: result.version.entityId,
+                    name: repositoryName(result.version),
+                    url: result.version.body.value.normalizedUrl,
+                  },
+                ]
+              : [],
+          ),
+        )}
+        repositoryStatus={repositoryStatus}
+        onSelect={selectDestination}
+      />
       <RealQADialogs
         controller={realqa}
         onOpenSaved={(saved) => setPendingRoute(savedCaptureRoute(saved))}
