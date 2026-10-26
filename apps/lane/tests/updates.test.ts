@@ -506,41 +506,45 @@ test("a loaded replacement acknowledges the exact release and installer errors s
   assert.equal((await f.updater.status()).message, "Retry safely.");
 });
 
-test("standalone installer waits for explicit shutdown permission and starts the replacement", async (t) => {
-  const job = await installFixture(t);
-  const { spawn } = await import("node:child_process");
-  const childScript = `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(job.result)}, JSON.stringify({phase:"healthy",release:${JSON.stringify(next)}}));\nrequire("node:fs").writeFileSync(${JSON.stringify(join(job.stage, "app-pid"))},String(process.pid));\nsetTimeout(()=>{},30000);\n`;
-  await writeFile(executablePath(job.candidate, "darwin"), childScript);
-  await chmod(executablePath(job.candidate, "darwin"), 0o755);
-  const jobFile = join(job.stage, "job.json");
-  await writeFile(jobFile, JSON.stringify({ ...job, parentPid: 2147483647 }));
-  const script = new URL(
-    "../native/desktop/update-install.mjs",
-    import.meta.url,
-  );
-  const run = () =>
-    new Promise<number | null>((resolve, reject) => {
-      const child = spawn(process.execPath, [script.pathname, jobFile], {
-        stdio: "inherit",
+test(
+  "standalone installer waits for explicit shutdown permission and starts the replacement",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const job = await installFixture(t);
+    const { spawn } = await import("node:child_process");
+    const childScript = `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(job.result)}, JSON.stringify({phase:"healthy",release:${JSON.stringify(next)}}));\nrequire("node:fs").writeFileSync(${JSON.stringify(join(job.stage, "app-pid"))},String(process.pid));\nsetTimeout(()=>{},30000);\n`;
+    await writeFile(executablePath(job.candidate, "darwin"), childScript);
+    await chmod(executablePath(job.candidate, "darwin"), 0o755);
+    const jobFile = join(job.stage, "job.json");
+    await writeFile(jobFile, JSON.stringify({ ...job, parentPid: 2147483647 }));
+    const script = new URL(
+      "../native/desktop/update-install.mjs",
+      import.meta.url,
+    );
+    const run = () =>
+      new Promise<number | null>((resolve, reject) => {
+        const child = spawn(process.execPath, [script.pathname, jobFile], {
+          stdio: "inherit",
+        });
+        child.once("error", reject);
+        child.once("exit", resolve);
       });
-      child.once("error", reject);
-      child.once("exit", resolve);
-    });
-  assert.equal(await run(), 0);
-  assert.equal(
-    await readFile(executablePath(job.install, "darwin"), "utf8"),
-    "old",
-  );
-  await writeFile(join(job.stage, "install"), "install");
-  assert.equal(await run(), 0);
-  const pid = Number(await readFile(join(job.stage, "app-pid"), "utf8"));
-  try {
-    process.kill(pid);
-  } catch {
-    /* Fixture process may already be gone. */
-  }
-  assert.equal(
-    JSON.parse(await readFile(job.result, "utf8")).phase,
-    "complete",
-  );
-});
+    assert.equal(await run(), 0);
+    assert.equal(
+      await readFile(executablePath(job.install, "darwin"), "utf8"),
+      "old",
+    );
+    await writeFile(join(job.stage, "install"), "install");
+    assert.equal(await run(), 0);
+    const pid = Number(await readFile(join(job.stage, "app-pid"), "utf8"));
+    try {
+      process.kill(pid);
+    } catch {
+      /* Fixture process may already be gone. */
+    }
+    assert.equal(
+      JSON.parse(await readFile(job.result, "utf8")).phase,
+      "complete",
+    );
+  },
+);
