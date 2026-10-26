@@ -2,21 +2,21 @@
 import { createRef } from "react";
 import { describe, expect, it } from "@rstest/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Button } from "@delino/ui/components/button";
-import { Card } from "@delino/ui/components/card";
-import { NativeSelect } from "@delino/ui/components/native-select";
-import { Input } from "@delino/ui/components/input";
-import { Label } from "@delino/ui/components/label";
-import { Checkbox } from "@delino/ui/components/checkbox";
-import { Switch } from "@delino/ui/components/switch";
+import { Button } from "@packages/ui/components/button";
+import { Card } from "@packages/ui/components/card";
+import { NativeSelect } from "@packages/ui/components/native-select";
+import { Input } from "@packages/ui/components/input";
+import { Label } from "@packages/ui/components/label";
+import { Checkbox } from "@packages/ui/components/checkbox";
+import { Switch } from "@packages/ui/components/switch";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
   DialogTrigger,
-} from "@delino/ui/components/dialog";
-import { cn } from "@delino/ui/lib/utils";
+} from "@packages/ui/components/dialog";
+import { cn } from "@packages/ui/lib/utils";
 
 describe("shared UI consumer contracts", () => {
   it("merges consumer utility overrides", () => {

@@ -88,7 +88,7 @@ test("Rust jobs retain independent selection, prerequisites and strict commands"
       );
       assert.equal(
         build.run,
-        `pnpm exec turbo run build:frontend --filter=${owner === "delitools" ? "delitools" : "delidev-desktop"}`,
+        `pnpm exec turbo run build:frontend --filter=@apps/${owner}`,
       );
       assert.ok(steps.indexOf(build) < steps.indexOf(command));
     }
@@ -594,7 +594,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
   assert.equal(workflow.jobs.validate, undefined);
   assert.equal(
     workflow.jobs["shared-ui"].steps.find((step) => step.id === "lynx-ui").run,
-    "pnpm --filter @delino/lynx-ui test",
+    "pnpm --filter @packages/lynx-ui test",
   );
   assert.match(
     workflow.jobs["shared-ui"].steps.find(
@@ -604,7 +604,7 @@ test("shared checks allocate independent jobs from planner outputs", () => {
   );
   for (const [id, key, command] of [
     ["tooling", "tooling", "pnpm test:tooling"],
-    ["shared-ui", "shared_ui", "pnpm --filter @delino/ui test"],
+    ["shared-ui", "shared_ui", "pnpm --filter @packages/ui test"],
     ["workflows", "workflows", "go tool actionlint -shellcheck=''"],
   ]) {
     assert.equal(
@@ -783,7 +783,7 @@ test("Lane Ubuntu validation includes extension and desktop RealQA fixtures", ()
   assert.equal(job.if, "needs.changes.outputs.lane == 'true'");
   assert.equal(
     job.steps.find((step) => step.id === "frontend").run.trim(),
-    "pnpm --filter lane test\npnpm --filter lane-chrome-extension test\nnode --test apps/lane/native/desktop/realqa*.test.mjs",
+    "pnpm --filter @apps/lane test\npnpm --filter @apps/lane-chrome-extension test\nnode --test apps/lane/native/desktop/realqa*.test.mjs",
   );
   const cleanup = job.steps.find(
     (step) => step.name === "Remove generated output",

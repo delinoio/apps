@@ -11,7 +11,7 @@ import {
   type JsonValue,
 } from "@bufbuild/protobuf";
 
-import { AccountService } from "@delino/protos/lane/v1/lane_pb";
+import { AccountService } from "@repo/protos/lane/v1/lane_pb";
 
 export interface BridgeError {
   reason: string;

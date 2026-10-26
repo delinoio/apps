@@ -8,7 +8,7 @@ import {
   type LaneStoreModule,
   type EventSource,
 } from "../src/adapter.ts";
-import { LaneService } from "@delino/protos/lane/v1/lane_pb";
+import { LaneService } from "@repo/protos/lane/v1/lane_pb";
 function harness() {
   const calls: { method: string; request: Record<string, unknown> }[] = [];
   const listeners = new Map<
@@ -198,7 +198,7 @@ test("sequence invalidation compares decimal values beyond safe integers without
 });
 
 test("native deletion is explicit, challenge-bound, and sends no proof to JavaScript", async () => {
-  const { AccountService } = await import("@delino/protos/lane/v1/lane_pb");
+  const { AccountService } = await import("@repo/protos/lane/v1/lane_pb");
   const h = harness();
   await h.adapter.open();
   h.module.invoke = (method, json, cb) => {
@@ -236,7 +236,7 @@ test("native deletion is explicit, challenge-bound, and sends no proof to JavaSc
   await assert.rejects(h.adapter.deleteReauthenticated("challenge"));
 });
 test("cancel and space change invalidate native deletion challenge", async () => {
-  const { AccountService } = await import("@delino/protos/lane/v1/lane_pb");
+  const { AccountService } = await import("@repo/protos/lane/v1/lane_pb");
   for (const action of ["cancel", "switch"]) {
     const h = harness();
     await h.adapter.open();

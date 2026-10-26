@@ -41,7 +41,7 @@ jobs:
           node --input-type=module -e 'import { releaseConfig } from "./apps/delitools/scripts/mobile.mjs"; releaseConfig(process.env.DELITOOLS_BUILD_NUMBER)'
           echo "Source revision: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm --filter delitools test
+      - run: pnpm --filter @apps/delitools test
 
   android:
     needs: preflight
@@ -69,14 +69,14 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm --filter delitools mobile:android:init --ci
+      - run: pnpm --filter @apps/delitools mobile:android:init --ci
       - name: Restore upload keystore
         env:
           KEYSTORE_B64: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_B64 }}
         run: |
           node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["KEYSTORE_B64", "TAURI_ANDROID_KEYSTORE_PASSWORD", "TAURI_ANDROID_KEY_ALIAS", "TAURI_ANDROID_KEY_PASSWORD"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/delitools-upload.jks", Buffer.from(process.env.KEYSTORE_B64, "base64"), { mode: 0o600 });'
           echo "TAURI_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/delitools-upload.jks" >> "$GITHUB_ENV"
-      - run: pnpm --filter delitools build:android --ci --target aarch64 --target armv7 --aab
+      - run: pnpm --filter @apps/delitools build:android --ci --target aarch64 --target armv7 --aab
       - name: Collect and verify signed bundle
         run: |
           set -euo pipefail
@@ -135,8 +135,8 @@ jobs:
         run: |
           node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["PRIVATE_KEY_B64", "APPLE_DEVELOPMENT_TEAM", "APPLE_API_ISSUER", "APPLE_API_KEY"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/delitools-auth.p8", Buffer.from(process.env.PRIVATE_KEY_B64, "base64"), { mode: 0o600 });'
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/delitools-auth.p8" >> "$GITHUB_ENV"
-      - run: pnpm --filter delitools mobile:ios:init --ci
-      - run: pnpm --filter delitools build:ios --ci --target aarch64 --export-method app-store-connect
+      - run: pnpm --filter @apps/delitools mobile:ios:init --ci
+      - run: pnpm --filter @apps/delitools build:ios --ci --target aarch64 --export-method app-store-connect
       - name: Collect and verify signed IPA
         run: |
           set -euo pipefail

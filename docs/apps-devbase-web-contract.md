@@ -36,13 +36,13 @@ Rsbuild reports startup and build failures. Future service integrations must emi
 
 Run `pnpm test` in this directory for TypeScript checks and a production build. `pnpm build` emits `dist`. Affected CI runs these checks on Ubuntu. Remove generated `dist` after validation.
 
-Cloudflare Pages builds the `devbase` workspace from the repository root with `pnpm --filter devbase build` and publishes `apps/devbase/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
+Cloudflare Pages builds the `@apps/devbase` workspace from the repository root with `pnpm --filter @apps/devbase build` and publishes `apps/devbase/dist`. Include repository `LICENSE` and `NOTICE` in distributions. Domain binding and deployment require separate platform configuration; a local build does not establish deployment acceptance.
 
 Production publication uses `.github/workflows/release-devbase.yml` after `release-project.yml` commits and tags the selected version. The owning `devbase-production` environment supplies Cloudflare configuration. Existing immutable tags can be dispatched again from main for deployment recovery. Follow the [release procedure](repository-workflow-contract.md#web-publication); local builds do not establish Cloudflare or domain acceptance.
 
 ## Dependencies and Integrations
 
-`@delino/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
+`@packages/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
 Use the repository-pinned React, Rsbuild and TypeScript versions. Delcore owns tenants and billing for the separate DevBase API services. The end-user directory is free and billing-independent. No live integration is part of the scaffold.
 

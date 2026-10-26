@@ -1,5 +1,5 @@
 {
-  "name": "delidev-desktop",
+  "name": "@apps/delidev",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
@@ -17,7 +17,7 @@
   "dependencies": {
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "@delino/ui": "workspace:*"
+    "@packages/ui": "workspace:*"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",

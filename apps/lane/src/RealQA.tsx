@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState } from "@lynx-js/react";
-import type { EntityResult } from "@delino/protos/lane/v1/lane_pb";
+import type { EntityResult } from "@repo/protos/lane/v1/lane_pb";
 import type { UI } from "./serializable";
 import type { LaneAdapter } from "./adapter";
 import { Button, Dialog, Field, Notice } from "./components";

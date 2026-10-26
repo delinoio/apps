@@ -59,7 +59,10 @@ export function versionChanges(project, bump, read) {
   const packageFile = `apps/${apps[0]}/package.json`;
   const source = read(packageFile);
   const manifest = JSON.parse(source);
-  requireValue(manifest.name === apps[0], "Package identity mismatch");
+  requireValue(
+    manifest.name === `@apps/${apps[0]}`,
+    "Package identity mismatch",
+  );
   const previous = manifest.version;
   const version = bumpVersion(previous, bump);
   const changes = {};
@@ -75,7 +78,7 @@ export function versionChanges(project, bump, read) {
   for (const app of apps) {
     const file = `apps/${app}/package.json`;
     requireValue(
-      JSON.parse(read(file)).name === app,
+      JSON.parse(read(file)).name === `@apps/${app}`,
       "Package identity mismatch",
     );
     replaceJson(file);
@@ -284,7 +287,7 @@ export function validateReleaseSource(directory, project, tag) {
     const manifest = JSON.parse(
       git(directory, "show", `${revision}:apps/${app}/package.json`),
     );
-    requireValue(manifest.name === app, "Package identity mismatch");
+    requireValue(manifest.name === `@apps/${app}`, "Package identity mismatch");
     requireValue(
       manifest.version === version,
       "Tag and source version disagree",

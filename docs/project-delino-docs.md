@@ -6,7 +6,7 @@ Provide one public documentation app for multiple Delino services at `https://do
 
 ## Project ID
 
-`delino-docs`. The npm workspace is `delino-docs`.
+`delino-docs`. The npm workspace is `@apps/delino-docs`.
 
 ## Domain Ownership Map
 

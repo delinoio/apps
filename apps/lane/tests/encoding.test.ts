@@ -80,7 +80,7 @@ test("bootstrap precedes eager generated descriptors in an isolate without web e
     stdin: {
       contents: `import './src/encoding.ts';
     import {create,toBinary,fromBinary} from '@bufbuild/protobuf';
-    import {TaskSchema} from '@delino/protos/lane/v1/lane_pb';
+    import {TaskSchema} from '@repo/protos/lane/v1/lane_pb';
     const task=create(TaskSchema,{title:'한국어 😀',description:'Unicode'});
     globalThis.result=fromBinary(TaskSchema,toBinary(TaskSchema,task)).title;`,
       resolveDir: fileURLToPath(new URL("..", import.meta.url)),

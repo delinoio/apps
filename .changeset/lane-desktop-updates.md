@@ -1,5 +1,5 @@
 ---
-"lane": minor
+"@apps/lane": minor
 ---
 
 Add an explicit desktop update operation with release identity and checksum validation,

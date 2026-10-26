@@ -69,7 +69,7 @@ async function runFixture(t, filters = [], initialSource = "initial") {
     write(
       `servers/${api}-api/package.json`,
       JSON.stringify({
-        name: `@delinoio/${api}-api`,
+        name: `@servers/${api}-api`,
         scripts: { dev: `node ../../fixture.mjs ${api}` },
       }),
     );
@@ -273,7 +273,7 @@ test(
   "Turbo includes the shared build when selecting one API",
   { skip: process.platform === "win32", timeout: 30000 },
   async (t) => {
-    const fixture = await runFixture(t, ["--filter=@delinoio/delcore-api"]);
+    const fixture = await runFixture(t, ["--filter=@servers/delcore-api"]);
     const events = await fixture.wait((events) =>
       events.some((event) => event.kind === "start"),
     );

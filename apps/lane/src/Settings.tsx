@@ -8,7 +8,7 @@ import {
   NotificationContent,
   type Device as ProtoDevice,
   type Connection as ProtoConnection,
-} from "@delino/protos/lane/v1/lane_pb";
+} from "@repo/protos/lane/v1/lane_pb";
 import {
   meta,
   type LaneAdapter,

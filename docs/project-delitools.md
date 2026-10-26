@@ -6,7 +6,7 @@ Provide useful end-user tools through desktop, mobile and web applications, with
 
 ## Project ID
 
-`delitools`. The npm workspace is `delitools`; the native package is `delitools-shell`.
+`delitools`. The npm workspace is `@apps/delitools`; the native package is `delitools-shell`.
 
 ## Domain Ownership Map
 
