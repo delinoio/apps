@@ -22,8 +22,25 @@ use sqlx::{PgConnection, Row, postgres::PgRow};
 #[derive(Clone)]
 pub struct WebhookConfig {
     encryption_key: [u8; 32],
+    /// Complete public intake base without a trailing slash. The receiver ID is appended as the
+    /// final path segment. See `intake_base` for how the configured URL maps to this value.
     pub base_url: String,
     pub max_webhook_bytes: usize,
+}
+/// Internal route that serves webhook intake. It is mounted by the HTTP adapter.
+const INTAKE_ROUTE: &str = "/webhooks";
+/// Map the configured URL to the complete public intake base.
+///
+/// An empty or root path means the value is an API origin, so the internal intake route is
+/// appended. Any explicit non-root path is the complete public intake base and is kept as
+/// configured; a custom path therefore needs an operator-managed rewrite to the internal route.
+fn intake_base(url: &url::Url, configured: &str) -> String {
+    let configured = configured.trim_end_matches('/');
+    if url.path().trim_matches('/').is_empty() {
+        format!("{configured}{INTAKE_ROUTE}")
+    } else {
+        configured.into()
+    }
 }
 impl WebhookConfig {
     pub fn new(key: &str, base_url: &str, max_webhook_bytes: usize) -> Result<Self> {
@@ -48,7 +65,7 @@ impl WebhookConfig {
         }
         Ok(Self {
             encryption_key: key,
-            base_url: base_url.trim_end_matches('/').into(),
+            base_url: intake_base(&url, base_url),
             max_webhook_bytes,
         })
     }
@@ -63,6 +80,10 @@ impl WebhookConfig {
                 .parse()
                 .map_err(|_| Fault::invalid("invalid MAX_WEBHOOK_BYTES"))?,
         )
+    }
+    /// Public intake endpoint returned for a receiver.
+    pub fn endpoint(&self, receiver: &str) -> String {
+        format!("{}/{receiver}", self.base_url)
     }
     fn encrypt(&self, account: &str, receiver: &str, key: &[u8]) -> Result<Vec<u8>> {
         let cipher =
@@ -318,7 +339,7 @@ pub async fn dispatch_with_config(
                 .bind(&p.account_id).bind(resource).bind(repository).bind(string(q,"name")).bind(encrypted).fetch_one(&mut *db).await?;
             let receiver = receiver(&row);
             crate::entities::change(db, &p.account_id, &json!({"receiver":receiver})).await?;
-            json!({"receiver":receiver,"secret":URL_SAFE_NO_PAD.encode(key),"endpoint":format!("{}/{}",config.base_url,resource)})
+            json!({"receiver":receiver,"secret":URL_SAFE_NO_PAD.encode(key),"endpoint":config.endpoint(resource)})
         }
         "SaveReceiver" | "RotateReceiverKey" => {
             let row = receiver_row(db, &p.account_id, resource).await?;
@@ -852,6 +873,63 @@ pub fn unique_json(raw: &[u8]) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn config(base: &str) -> Result<WebhookConfig> {
+        WebhookConfig::new(&URL_SAFE_NO_PAD.encode([7; 32]), base, 1024)
+    }
+    #[test]
+    fn origin_bases_append_the_intake_route_once() {
+        let id = "01900000-0000-7000-8000-000000000010";
+        for base in [
+            "https://lane.api.delino.io",
+            "https://lane.api.delino.io/",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:8080/",
+        ] {
+            let endpoint = config(base).unwrap().endpoint(id);
+            assert_eq!(
+                endpoint,
+                format!("{}/webhooks/{id}", base.trim_end_matches('/'))
+            );
+        }
+    }
+    #[test]
+    fn explicit_paths_are_the_complete_intake_base() {
+        let id = "01900000-0000-7000-8000-000000000010";
+        for (base, expected) in [
+            (
+                "https://lane.example/webhooks",
+                "https://lane.example/webhooks",
+            ),
+            (
+                "https://lane.example/webhooks/",
+                "https://lane.example/webhooks",
+            ),
+            ("https://lane.example/hooks", "https://lane.example/hooks"),
+            ("https://lane.example/hooks/", "https://lane.example/hooks"),
+            ("https://lane.example/a/b/", "https://lane.example/a/b"),
+        ] {
+            assert_eq!(
+                config(base).unwrap().endpoint(id),
+                format!("{expected}/{id}")
+            );
+        }
+    }
+    #[test]
+    fn base_url_validation_is_unchanged() {
+        for base in [
+            "https://user@lane.example",
+            "https://user:pass@lane.example/webhooks",
+            "https://lane.example/webhooks?x=1",
+            "https://lane.example/#fragment",
+            "http://lane.example",
+            "ftp://lane.example",
+            "lane.example",
+        ] {
+            assert!(config(base).is_err(), "{base} must stay invalid");
+        }
+        assert!(config("http://localhost:8080").is_ok());
+        assert!(config("http://[::1]:8080/").is_ok());
+    }
     #[test]
     fn shared_signature_vectors() {
         let fixtures: Value = serde_json::from_str(include_str!(
