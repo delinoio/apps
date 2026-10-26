@@ -23,9 +23,9 @@ import {
 } from "./reconnect";
 import { hostAction, listenReauthentication } from "./runtime";
 import { AppUpdates } from "./AppUpdates";
+import { ResetDevelopmentDialog } from "./ResetDevelopment";
+import { describeItemError } from "./planning";
 import { SettingsSection } from "./AppNavigation";
-// Typed by the user so a reset is never a single accidental activation.
-export const RESET_CONFIRMATION = "reset development data";
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
 export function Settings({
@@ -86,7 +86,6 @@ export function Settings({
   >(null);
   const [reconnect, setReconnect] = useState<ReconnectTarget>();
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetText, setResetText] = useState("");
   const [account, setAccount] = useState("");
   const [retention, setRetention] = useState<LocalRetention>(
     LocalRetention.KEEP_LOCAL,
@@ -258,10 +257,26 @@ export function Settings({
         <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
         {status?.itemErrors?.map((e) => (
           <Notice key={e.entityId}>
-            {e.entityId}: {e.reason}. Other eligible items can continue
-            synchronizing.
+            {e.entityId}: {describeItemError(e.reason)} Other eligible items can
+            continue synchronizing.
           </Notice>
         ))}
+        {adapter.mode === "native" && !!status?.itemErrors?.length && (
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await adapter.local("RetryBlockedItems", {});
+                await load();
+                setMessage(
+                  "Blocked items were returned to pending and will synchronize again.",
+                );
+              })
+            }
+          >
+            Retry blocked items
+          </Button>
+        )}
         <view className="row wrap">
           <Button
             disabled={busy}
@@ -442,7 +457,6 @@ export function Settings({
           </text>
           <Button
             onClick={() => {
-              setResetText("");
               setError("");
               setResetOpen(true);
             }}
@@ -477,49 +491,14 @@ export function Settings({
         </Button>
       </view>
       {resetOpen && (
-        <Dialog
-          title="Reset development data?"
-          onClose={() => {
-            if (!busy) setResetOpen(false);
+        <ResetDevelopmentDialog
+          onClose={() => setResetOpen(false)}
+          onConfirm={async () => {
+            await adapter.local("ResetDevelopmentData", { confirmed: true });
+            setResetOpen(false);
+            onReset();
           }}
-        >
-          <Notice>
-            This permanently removes every repository, task, prompt, label,
-            milestone, cycle, history, attachment and pending change in this
-            local data space. It does not contact the server, delete server data
-            or sign you out. Use it only for disposable development data. There
-            is no recovery.
-          </Notice>
-          <text>
-            Type <text className="bold">{RESET_CONFIRMATION}</text> to confirm.
-          </text>
-          <Field
-            label={`Type ${RESET_CONFIRMATION} to confirm`}
-            value={resetText}
-            onChange={setResetText}
-            disabled={busy}
-            focus
-          />
-          {error && <Notice>{error}</Notice>}
-          <Button
-            primary
-            disabled={busy || resetText.trim() !== RESET_CONFIRMATION}
-            onClick={() =>
-              void run(async () => {
-                await adapter.local("ResetDevelopmentData", {
-                  confirmed: true,
-                });
-                setResetOpen(false);
-                onReset();
-              })
-            }
-          >
-            {busy ? "Resetting…" : "Reset development data"}
-          </Button>
-          <Button disabled={busy} onClick={() => setResetOpen(false)}>
-            Cancel
-          </Button>
-        </Dialog>
+        />
       )}
       {deletion && (
         <Dialog title="Complete data deletion" onClose={cancelDeletion}>

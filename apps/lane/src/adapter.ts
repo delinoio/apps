@@ -77,6 +77,8 @@ export interface LocalOperations {
   // Explicit pre-release development reset; the host rejects any request whose
   // confirmed flag is not true. Native only: the web host refuses it.
   ResetDevelopmentData: [{ confirmed: boolean }, { completed: boolean }];
+  // Returns blocked or rejected pending rows to pending, like `sync run --retry-blocked`.
+  RetryBlockedItems: [{}, Record<string, unknown>];
 }
 // The format written by task planning. Earlier formats are refused, never migrated.
 export const STORE_FORMAT_VERSION = 3;
@@ -96,6 +98,8 @@ export interface LaneAdapter {
   deleteReauthenticated?(challengeId: string): Promise<void>;
   cancelDeletion?(): void;
   open(spaceId?: string): Promise<void>;
+  // Native only: reset the active space when it could not be opened (unsupported format).
+  resetUnopened?(): Promise<void>;
   call<I extends DescMessage, O extends DescMessage>(
     method: DescMethodUnary<I, O>,
     input: UI<MessageInitShape<I>>,
@@ -192,6 +196,23 @@ export class NativeAdapter implements LaneAdapter {
       );
     }
     this.info = info;
+  }
+  async resetUnopened() {
+    // The host resolves the empty space ID to the registry's active space.
+    await new Promise<void>((resolve, reject) =>
+      this.module.invoke(
+        "ResetDevelopmentData",
+        JSON.stringify({ spaceId: "", request: { confirmed: true } }),
+        (raw) => {
+          try {
+            decodeReply(raw);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        },
+      ),
+    );
   }
   private async invoke<T>(method: string, request: unknown): Promise<T> {
     if (!this.info) throw new Error("The local store is not open.");

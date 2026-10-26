@@ -26,6 +26,7 @@ import {
 import { TaskEditor } from "./TaskEditor";
 import { TaskFilters } from "./TaskFilters";
 import { usePlanning } from "./usePlanning";
+import { StoreReset } from "./StoreReset";
 import {
   activeFilterCount,
   describeError,
@@ -68,6 +69,7 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
   const previousApp = useRef(MiniApp.Lane);
   const [pendingRoute, setPendingRoute] = useState<OpenRoute>();
   const [adapter, setAdapter] = useState<LaneAdapter>();
+  const [resetAdapter, setResetAdapter] = useState<LaneAdapter>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("Tasks");
@@ -141,6 +143,15 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
         }
         setAdapter(owned);
       } catch (e) {
+        // An unsupported local format offers only the explicit, typed-confirmation reset.
+        if (
+          active &&
+          owned?.resetUnopened &&
+          /UNSUPPORTED_FORMAT|unsupported format/i.test(
+            `${(e as { detail?: { reason?: string } })?.detail?.reason ?? ""} ${e instanceof Error ? e.message : ""}`,
+          )
+        )
+          setResetAdapter(owned);
         if (active)
           setError(e instanceof Error ? e.message : "Lane could not open.");
       } finally {
@@ -514,10 +525,36 @@ export function App({ providedAdapter }: { providedAdapter?: LaneAdapter }) {
               )
             ) : (
               <>
-                {error && (
+                {error && !resetAdapter && (
                   <Notice>
                     {error} <Button onClick={refresh}>Retry loading</Button>
                   </Notice>
+                )}
+                {resetAdapter?.resetUnopened && !adapter && (
+                  <StoreReset
+                    message={error}
+                    reset={() => resetAdapter.resetUnopened!()}
+                    ready={() => {
+                      const owned = resetAdapter;
+                      setResetAdapter(undefined);
+                      setError("");
+                      setLoading(true);
+                      void owned.open().then(
+                        () => {
+                          setAdapter(owned);
+                          setLoading(false);
+                        },
+                        (e) => {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : "Lane could not open.",
+                          );
+                          setLoading(false);
+                        },
+                      );
+                    }}
+                  />
                 )}
                 {loading && !adapter && <text>Opening Lane…</text>}
                 {adapter && (page === "Tasks" || page === "Proposals") && (

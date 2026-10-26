@@ -18,6 +18,7 @@ import {
   activeFilterCount,
   deriveRelations,
   describeError,
+  describeItemError,
   emptyFilter,
   filterErrors,
   lookupOf,
@@ -399,5 +400,48 @@ test("task history names planning changes from current lookups and hides deleted
   assert.equal(
     historyChanges(taskVersion("a", {}), taskVersion("b", {})).length,
     0,
+  );
+});
+
+test("rejected synchronization reasons are explained and omitted ProtoJSON defaults are tolerated", () => {
+  assert.match(
+    describeItemError("CONSTRAINT_VIOLATION:DUPLICATE_NAME"),
+    /retry the blocked items/,
+  );
+  assert.equal(describeItemError("STORAGE_FULL"), "STORAGE_FULL");
+  const sparse = toUI(
+    create(EntityVersionSchema, {
+      entityId: "m",
+      versionId: "v",
+      body: { case: "milestone", value: { repositoryId: "r1" } },
+    }),
+  );
+  const parsed = planningItemOf(
+    toUI(
+      create(EntityResultSchema, {
+        version: create(EntityVersionSchema, {
+          entityId: "m",
+          versionId: "v",
+          body: { case: "milestone", value: { repositoryId: "r1" } },
+        }),
+      }),
+    ),
+  )!;
+  assert.deepEqual(
+    [parsed.name, parsed.description, parsed.completed, parsed.targetDate],
+    ["", "", false, undefined],
+  );
+  // Even hand-built bodies without the empty fields default safely.
+  delete (sparse.body.value as Record<string, unknown>).name;
+  delete (sparse.body.value as Record<string, unknown>).completed;
+  assert.equal(
+    planningItemOf({
+      result: 1,
+      alternatives: [],
+      correlationId: "",
+      $typeName: "lane.v1.EntityResult",
+      version: sparse,
+    } as never)!.completed,
+    false,
   );
 });

@@ -309,3 +309,36 @@ test("constraint violations keep their named code through the bridge error", () 
       error instanceof LaneError && error.detail.violation === "PARENT_CYCLE",
   );
 });
+test("an unsupported store can be reset without opening it, using the active space and the confirmation flag", async () => {
+  const h = harness();
+  h.module.open = (_r, cb) =>
+    cb({
+      ok: false,
+      error: {
+        reason: "ERROR_REASON_UNSUPPORTED_FORMAT",
+        message: "Run the explicit development reset.",
+      },
+    });
+  await assert.rejects(h.adapter.open(), /explicit development reset/);
+  await h.adapter.resetUnopened!();
+  assert.deepEqual(h.calls.at(-1), {
+    method: "ResetDevelopmentData",
+    request: { spaceId: "", request: { confirmed: true } },
+  });
+  // Rejections stay visible to the user.
+  h.module.invoke = (_m, _r, cb) =>
+    cb({
+      ok: false,
+      error: { reason: "STORAGE_BUSY", message: "Close other Lane windows." },
+    });
+  await assert.rejects(h.adapter.resetUnopened!(), /Close other Lane windows/);
+});
+test("blocked synchronization items are retried through the local operation", async () => {
+  const h = harness();
+  await h.adapter.open();
+  await h.adapter.local("RetryBlockedItems", {});
+  assert.deepEqual(h.calls.at(-1), {
+    method: "RetryBlockedItems",
+    request: { spaceId: "space", request: {} },
+  });
+});

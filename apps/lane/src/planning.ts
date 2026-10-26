@@ -150,6 +150,14 @@ const violationText: Record<string, string> = {
 export function violationFromReason(text: string): string | undefined {
   return /^CONSTRAINT_VIOLATION:([A-Z_]+)$/.exec(text.trim())?.[1];
 }
+/** Explains a rejected synchronization item (local reason text CONSTRAINT_VIOLATION:<VIOLATION>). */
+export function describeItemError(reason: string): string {
+  const violation = violationFromReason(reason);
+  const text = violation ? violationText[violation] : undefined;
+  return text
+    ? `${text} Correct the item with an ordinary edit, then retry the blocked items.`
+    : reason;
+}
 /** Explains an operation failure in text; the caller retains the draft. */
 export function describeError(error: unknown): string {
   if (error instanceof LaneError) {
@@ -219,29 +227,29 @@ export function planningItemFromVersion(
       ...base,
       kind: PlanningKind.Label,
       repositoryId: body.value.repositoryId,
-      name: body.value.name,
-      description: body.value.description,
-      color: body.value.color,
+      name: body.value.name ?? "",
+      description: body.value.description ?? "",
+      color: body.value.color ?? "",
     };
   if (body.case === "milestone")
     return {
       ...base,
       kind: PlanningKind.Milestone,
       repositoryId: body.value.repositoryId,
-      name: body.value.name,
-      description: body.value.description,
+      name: body.value.name ?? "",
+      description: body.value.description ?? "",
       targetDate: body.value.targetDate,
-      completed: body.value.completed,
+      completed: body.value.completed ?? false,
     };
   if (body.case === "cycle")
     return {
       ...base,
       kind: PlanningKind.Cycle,
       repositoryId: body.value.repositoryId,
-      name: body.value.name,
-      description: body.value.description,
-      startDate: body.value.startDate,
-      endDate: body.value.endDate,
+      name: body.value.name ?? "",
+      description: body.value.description ?? "",
+      startDate: body.value.startDate ?? "",
+      endDate: body.value.endDate ?? "",
     };
   return undefined;
 }
