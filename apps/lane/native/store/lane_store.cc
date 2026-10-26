@@ -1258,7 +1258,46 @@ struct Store::Impl {
     std::string entity;
     J mutation;
     int state;
+    // Targets of parent, dependency and duplicate-of edges this version removes
+    // relative to its parents, and whether it adds any such edge.
+    std::set<std::string> dropped;
+    bool adds = false;
   };
+  static std::set<std::string> edgeTargets(const J &task) {
+    std::set<std::string> out;
+    for (auto key : {"parentTaskId", "duplicateOfTaskId"})
+      if (task.contains(key) && task[key].is_string())
+        out.insert(task[key].get<std::string>());
+    if (task.contains("dependsOnTaskIds") && task["dependsOnTaskIds"].is_array())
+      for (auto &x : task["dependsOnTaskIds"])
+        if (x.is_string())
+          out.insert(x.get<std::string>());
+    return out;
+  }
+  // Records the graph edges a pending task version removes and adds by comparing
+  // it with its parent versions.
+  void edgeChanges(Db &d, PendingRow &row) {
+    const J &v = row.mutation["version"];
+    if (v.value("deleted", false) || !v.contains("task"))
+      return;
+    const auto now = edgeTargets(v["task"]);
+    std::set<std::string> before;
+    for (auto &parent : v.value("parentVersionIds", J::array())) {
+      auto raw = d.one("SELECT envelope_json FROM versions WHERE version_id=?",
+                       {parent.get<std::string>()});
+      if (raw.empty())
+        continue;
+      auto stored = parse(raw);
+      if (stored.contains("task"))
+        for (auto &x : edgeTargets(stored["task"]))
+          before.insert(x);
+    }
+    for (auto &x : before)
+      if (!now.count(x))
+        row.dropped.insert(x);
+    for (auto &x : now)
+      row.adds = row.adds || !before.count(x);
+  }
   // Orders outbox rows so that every row follows the earlier row of its own
   // entity and the pending creation of every entity it references, keeping the
   // stored order otherwise. A corrected version that took an older upload
@@ -1270,6 +1309,23 @@ struct Store::Impl {
       if (rows[i].mutation.value("kind", "") == "MUTATION_KIND_CREATE")
         creations.emplace(rows[i].entity, i);
     std::vector<std::vector<size_t>> deps(rows.size());
+    std::map<std::string, std::vector<size_t>> byEntity;
+    for (size_t i = 0; i < rows.size(); ++i)
+      byEntity[rows[i].entity].push_back(i);
+    // The server validates each item against the state it has accepted so far.
+    // A version that adds a graph edge must therefore follow a version of
+    // another task that removes an edge pointing at the first task, or the
+    // old edge still closes a cycle (B depended on A; A now depends on B and B
+    // no longer depends on A).
+    for (size_t removal = 0; removal < rows.size(); ++removal)
+      for (auto &target : rows[removal].dropped) {
+        auto addition = byEntity.find(target);
+        if (addition == byEntity.end())
+          continue;
+        for (auto index : addition->second)
+          if (index != removal && rows[index].adds && rows[index].entity != rows[removal].entity)
+            deps[index].push_back(removal);
+      }
     for (size_t i = 0; i < rows.size(); ++i) {
       auto previous = last.find(rows[i].entity);
       if (previous != last.end())
@@ -1314,7 +1370,9 @@ struct Store::Impl {
     std::vector<PendingRow> rows;
     for (auto &r : d.run("SELECT entity_id,request_json,state FROM outbox ORDER BY "
                          "created_at_us,rowid"))
-      rows.push_back({r[0], parse(r[1]), std::stoi(r[2])});
+      rows.push_back({r[0], parse(r[1]), std::stoi(r[2]), {}, false});
+    for (auto &row : rows)
+      edgeChanges(d, row);
     std::set<std::string> blocked, blockedCreations;
     J out = J::array();
     for (auto index : dependencyOrder(rows)) {

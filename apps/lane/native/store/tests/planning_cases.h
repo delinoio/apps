@@ -572,3 +572,29 @@ void planning_list_ignores_dangling_references() {
   auto labeled = planned_task(f, repo_id, {{"labelIds", J::array({live.at("entityId")})}});
   require(listed({{"labelIds", J::array({live.at("entityId")})}}) == std::set<std::string>{labeled.at("entityId")}, "live assignments still match");
 }
+void planning_uploads_edge_removals_before_dependent_additions() {
+  Synced s; auto& f = s.f;
+  auto repo = repository_for(f); s.accept(repo);
+  auto a = planned_task(f, repo.at("entityId")); auto b = planned_task(f, repo.at("entityId")); s.accept(a); s.accept(b);
+  const auto a_id = a.at("entityId").get<std::string>(), b_id = b.at("entityId").get<std::string>();
+  // B depends on A, and the server has accepted that edge.
+  auto blocked = b.at("task"); blocked["dependsOnTaskIds"] = J::array({a_id});
+  auto b2 = f.save(b, blocked); s.accept(b2);
+  // Locally acyclic: A depends on B and B stops depending on A in the same operation.
+  auto reversed = a.at("task"); reversed["dependsOnTaskIds"] = J::array({b_id});
+  auto saved = f.call("SaveTask", {{"meta", f.meta()}, {"id", a_id}, {"expectedVersionId", a.at("versionId")}, {"task", reversed},
+      {"relationshipEdits", {{"removeBlockedTaskIds", J::array({b_id})}}}});
+  const auto a_version = saved.at("result").at("version").at("versionId").get<std::string>(),
+             b_version = saved.at("affected")[0].at("version").at("versionId").get<std::string>();
+  require(!f.get(b_id).at("task").contains("dependsOnTaskIds"), "the cleanup removed B's dependency on A");
+  auto order = s.pending_versions();
+  require(order.size() == 2 && order[0] == b_version && order[1] == a_version,
+          "the edge removal is uploaded before the addition that the old edge would reject");
+  // Unrelated additions keep their creation order.
+  s.accept(saved.at("result").at("version")); s.accept(saved.at("affected")[0].at("version"));
+  auto c = planned_task(f, repo.at("entityId"));
+  auto plain = c.at("task"); plain["dependsOnTaskIds"] = J::array({a_id});
+  auto dependent = f.save(c, plain);
+  order = s.pending_versions();
+  require(order == std::vector<std::string>{c.at("versionId"), dependent.at("versionId")}, "stored order is kept when no edge is removed");
+}

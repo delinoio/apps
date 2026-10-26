@@ -739,6 +739,7 @@ int main(int argc, char** argv) {
     {"stale specialized mutations are validated", planning_stale_specialized_mutations_are_validated},
     {"deleted affected task is redacted from receipts", planning_deleted_affected_task_is_redacted_from_receipts},
     {"list ignores dangling references", planning_list_ignores_dangling_references},
+    {"uploads edge removals before additions", planning_uploads_edge_removals_before_dependent_additions},
     {"unsupported store and reset", unsupported_store_and_reset},
     {"development reset coordination", development_reset_coordination},
     {"interrupted reset is repeatable", interrupted_reset_is_repeatable},
