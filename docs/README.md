@@ -87,6 +87,7 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Repository workflow
 
+- [Changeset contract](repository-changeset-contract.md): npm package identities, pending change records and public changelog previews.
 - [Workflow contract](repository-workflow-contract.md): affected CI, release gates, formatting, cache and validation evidence.
 - [Environment contract](repository-environment-contract.md): committed configuration and service/release secret ownership.
 

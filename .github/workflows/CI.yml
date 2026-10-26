@@ -78,7 +78,12 @@ jobs:
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
       - id: gofmt
-        run: node scripts/ci/check-go-format.mjs protos examples
+        run: node scripts/ci/check-go-format.mjs protos examples tools/changeset
+      - id: changesets
+        run: |
+          go vet ./tools/changeset
+          go test -race ./tools/changeset
+          pnpm changeset check
       - id: protobuf-format
         run: pnpm exec buf format --diff --exit-code
       - name: Save pnpm cache after successful main validation

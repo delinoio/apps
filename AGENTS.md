@@ -200,3 +200,10 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 - `apps/lane` owns the shared ReactLynx client and native/browser hosts.
 - Planned Lane protocol, Rust CLI/local MCP, Rust server/remote MCP and npm distribution paths are routed through the [Lane project index](docs/project-lane.md) and their parent scoped instructions.
 - Read [Lane project](docs/project-lane.md) and [application foundation](docs/apps-lane-foundation.md) before changing these paths.
+
+## Changeset procedure
+
+- Record component behavior changes and validate pending records according to the [changeset contract](docs/repository-changeset-contract.md). Use owning npm package names and keep public notes separate from internal summaries.
+- `tools/changeset/` owns the Go CLI; `.changeset/` owns pending records. Run its Go tests and vet check when changing the CLI.
+- Write public changelog notes for the affected product's end users. Describe observable behavior, benefits or required user actions. Keep repository tooling, changeset mechanics, CI, refactoring and implementation details in the internal summary unless they are part of the product's supported public interface or workflow. Omit the public block when there is no user-visible change; do not rephrase internal work as a public feature.
+- Apply the same audience rule to examples and initial-release notes. Announce the product release without inventing capabilities or describing release tooling. Before committing a public note, preview it with `pnpm changeset changelog` and review its audience and factual claims; format validation alone does not establish suitable public content.
