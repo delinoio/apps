@@ -316,6 +316,35 @@ comma-separated development or published extension IDs at build time. An empty
 value leaves Chrome registration and the connection service disabled; it does
 not produce a placeholder store listing.
 
+Windows builds require Node 24, CMake, Visual Studio with the MSVC C++ desktop
+toolchain, and a Windows 10/11 SDK containing `Windows.winmd`. Install the frozen
+workspace from the root. On Windows, configure Git Bash as the pnpm script shell
+for the root shell-based hook installer. Run `pnpm build:desktop` from
+`apps/lane`; the launcher selects the architecture of the Node/Lynxtron runtime.
+It resolves pinned official NuGet Foundation `1.8.260803002`, Runtime
+`1.8.260921001` and C++/WinRT `2.0.250303.1` packages, verifies their archive
+SHA512 values, and generates AppNotifications/AppLifecycle and OS projections.
+The ignored `native/desktop/build/windows-app-sdk` cache records the package
+pins, Windows SDK metadata and generated file hashes. Incomplete or changed
+cache content is rebuilt; concurrent provisioning fails rather than sharing
+partially generated headers. Preserve the original SDK and generator licenses
+and notices in `resources/app/licenses/windows-app-sdk`.
+
+An external SDK remains supported through the four absolute paths
+`LANE_WINDOWS_APP_SDK_INCLUDE_DIR`, `LANE_WINDOWS_APP_SDK_PROJECTIONS_DIR`,
+`LANE_WINDOWS_APP_SDK_BOOTSTRAP_DLL` and `LANE_WINDOWS_APP_SDK_LICENSE`.
+Set all four together or leave all four unset. The supplied bootstrap must
+match the build architecture and the supplied headers/projections. External
+SDK owners must retain any additional third-party notices with that SDK.
+
+Set `LANE_NATIVE_TESTING=1` before `pnpm build:desktop` to include the Windows
+policy, helper-transport and synthetic memory-renderer tests. Run
+`ctest --test-dir native/desktop/build/addon -C Release --output-on-failure`
+from `apps/lane`. The capture test checks all six tools, opacity, crop, invalid
+input, queue recovery and nested-selector shutdown without reading screen
+content. The platform test uses only synthetic helper traffic. These tests do
+not install Lane, register Chrome, or establish interactive runtime acceptance.
+
 From `apps/lane`, `node scripts/desktop.mjs install` installs the generated Lane
 application in the current user's application directory and registers the
 packaged relay for its configured extension IDs. It refuses to replace an
