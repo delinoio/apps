@@ -227,7 +227,12 @@ Lane Unix socket or Windows named pipe. It never starts Lane or serves HTTP.
 The endpoint uses a per-run secret; runtime files and Unix sockets use owner-only
 permissions. Stored profile approvals are device-local and are not synchronized.
 Revocation invalidates credentials and closes matching connections. The OS-user
-boundary applies to the desktop bridge and its state.
+boundary applies to the desktop bridge and its state. Every transition of a profile
+to connected, including an authenticated `connect` on a new socket for an already
+approved profile, sends one status notification after the connection is assigned, so
+the adapter raises `lane.realqa.changed` and a mounted settings view refreshes
+without a status poll or another user action. Reconnection stays an extension action
+and never bypasses approval.
 
 The existing Lane installer bundles the relay with a private runtime or standalone
 executable and registers exact extension origins through the extension's
