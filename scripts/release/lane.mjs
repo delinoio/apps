@@ -143,6 +143,16 @@ export function packageDesktop(destination, identity = releaseIdentity()) {
     app,
     mac ? "Contents/Resources/app" : "resources/app",
   );
+  const desktopConfig = json(resolve(resources, "package.json"));
+  assert.equal(desktopConfig.name, "lane");
+  assert.equal(desktopConfig.scheme, "lane");
+  assert.equal(desktopConfig.testing, false);
+  assert.equal(desktopConfig.releaseTag, identity.tag);
+  assert.equal(desktopConfig.sourceRevision, identity.revision);
+  assert.ok(
+    existsSync(resolve(resources, "update-install.mjs")),
+    "missing update installer",
+  );
   const source = resolve(root, "packages/lane/dist/package");
   assert.equal(
     json(resolve(source, "manifest.json")).sourceRevision,

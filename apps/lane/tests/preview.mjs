@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Explicit test-only server. Never included in production build output.
+import { bridgeModule, withUpdateFixture } from "./update-preview.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -61,6 +62,14 @@ let history = [task];
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://127.0.0.1:${port}`);
+    if (
+      process.env.LANE_PREVIEW_UPDATES === "1" &&
+      url.pathname === "/test-update-module.js"
+    ) {
+      res.setHeader("Content-Type", "application/javascript");
+      res.end(bridgeModule);
+      return;
+    }
     if (url.pathname === "/test/capture-state") {
       captureState = url.searchParams.get("state") || "available";
       res.end("{}");
@@ -190,6 +199,12 @@ createServer(async (req, res) => {
       return;
     }
     let data = await readFile(path);
+    if (process.env.LANE_PREVIEW_UPDATES === "1" && path.endsWith("/host.js"))
+      data = Buffer.from(
+        withUpdateFixture(
+          await readFile(new URL("../web/host.js", import.meta.url), "utf8"),
+        ),
+      );
     if (path.endsWith("index.html"))
       data = Buffer.from(
         data
