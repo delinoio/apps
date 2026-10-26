@@ -1154,6 +1154,26 @@ pub async fn dispatch(
                 if supersede {
                     cascade = plan.others;
                 }
+            } else if e.kind == TASK {
+                // SetProgress, SetProposal and RestorePrompt copy the planning fields of the
+                // submitted base snapshot. When that base is stale, the copy becomes a conflict
+                // alternative whose relationships may no longer be valid against the current
+                // heads (for example a dependency that would now close a cycle), so validate it
+                // like a synchronized version: no reinterpretation, no cascade, and the union of
+                // every head's references for the cycle checks.
+                crate::planning::plan_task(
+                    db,
+                    &p.account_id,
+                    crate::planning::TaskPlan {
+                        id: &entity_id,
+                        current_repo: e.repository.as_deref(),
+                        body: body.clone(),
+                        edits: &crate::planning::Edits::default(),
+                        mode: crate::planning::Mode::Push,
+                        supersede: parents == hs,
+                    },
+                )
+                .await?;
             }
             let mut v = version(&entity_id, e.kind, &parents, Some(body), p);
             v["promptRestoration"] = json!(method == "RestorePrompt");

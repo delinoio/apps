@@ -1496,6 +1496,64 @@ async fn conflicted_tasks_are_read_only_for_cascades_and_rollback_is_complete() 
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL"]
+async fn stale_specialized_edits_are_validated_against_the_current_heads() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    f.task(TASK, REPO).await;
+    f.task(TASK_B, REPO).await;
+    // A depends on B, then drops that dependency, then B depends on A.
+    let with_dependency = f
+        .save_task(
+            TASK,
+            task_fields("Title", REPO, json!({"dependsOnTaskIds":[TASK_B]})),
+            None,
+        )
+        .await
+        .unwrap();
+    let stale = string(&with_dependency["result"]["version"], "versionId").to_owned();
+    f.save_task(TASK, task_fields("Title", REPO, json!({})), None)
+        .await
+        .unwrap();
+    f.save_task(
+        TASK_B,
+        task_fields("Title", REPO, json!({"dependsOnTaskIds":[TASK]})),
+        None,
+    )
+    .await
+    .unwrap();
+    let before = f.footprint().await;
+    // The copied stale A -> B edge would close a cycle across the current heads.
+    for (method, extra) in [
+        ("SetProgress", json!({"progress":"PROGRESS_DONE"})),
+        ("RestorePrompt", json!({"sourceVersionId":stale})),
+    ] {
+        let mut q = json!({"meta":{"requestId":id()},"id":TASK,"expectedVersionId":stale});
+        for (k, v) in extra.as_object().unwrap() {
+            q[k] = v.clone();
+        }
+        let r = f.call(method, q).await.unwrap_err();
+        assert_eq!(r.reason & 0xff, 19, "{method}: {r:?}");
+        assert_eq!(
+            violation_name(&r),
+            Some("CONSTRAINT_VIOLATION_DEPENDENCY_CYCLE"),
+            "{method}"
+        );
+        assert_eq!(f.footprint().await, before, "{method}: partial writes");
+    }
+    // A stale edit that closes no cycle still becomes a conflict alternative.
+    f.task(TASK_C, REPO).await;
+    let c0 = f.accepted(TASK_C).await;
+    f.call("SetProgress", json!({"meta":{"requestId":id()},"id":TASK_C,"expectedVersionId":c0,"progress":"PROGRESS_DONE"})).await.unwrap();
+    let alternative = f
+        .call("SetProgress", json!({"meta":{"requestId":id()},"id":TASK_C,"expectedVersionId":c0,"progress":"PROGRESS_IN_PROGRESS"}))
+        .await
+        .unwrap();
+    assert_eq!(alternative["result"]["result"], "RESULT_KIND_CONFLICT");
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
 async fn repository_deletion_cascades_planning_items_and_account_clearing_covers_them() {
     let mut f = Fixture::new().await;
     f.repo(REPO, "https://example.com/repo").await;
