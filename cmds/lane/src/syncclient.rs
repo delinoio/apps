@@ -9,7 +9,7 @@ use crate::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -163,17 +163,77 @@ pub fn run(auth: &Auth, s: &Store, endpoint: &str, once: bool, retry_blocked: bo
     let released = release(s, &owner);
     result.and(released)
 }
-/// Select the next upload batch in causal (creation) order. A pending version is held back
-/// while an earlier version of the same entity is blocked, because the server never accepted
-/// its parent, and while it references an entity whose creation the server rejected. Both
-/// resume after the blocked item is retried or corrected, so dependent pushes never race
-/// ahead of the item they depend on.
-fn pending_batch(c: &Connection) -> Result<Vec<Value>> {
+/// One unsynchronized outbox row, in stored (timestamp) order.
+struct Pending {
+    entity: String,
+    mutation: Value,
+    state: i64,
+}
+/// Order outbox rows so that every row follows the earlier row of its own entity and the
+/// pending creation of every entity it references, keeping the stored order otherwise. A
+/// version that was rewritten to an older upload position (for example a corrected task that
+/// now references a label created after it) therefore still uploads after what it references.
+/// Reference cycles are cut at the edge that closes them.
+fn dependency_order(rows: &[Pending]) -> Vec<usize> {
+    let mut creations: HashMap<&str, usize> = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        if row.mutation["kind"] == "MUTATION_KIND_CREATE" {
+            creations.entry(row.entity.as_str()).or_insert(index);
+        }
+    }
+    let mut last: HashMap<&str, usize> = HashMap::new();
+    let dependencies: Vec<Vec<usize>> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let mut deps: Vec<usize> = last
+                .insert(row.entity.as_str(), index)
+                .into_iter()
+                .collect();
+            deps.extend(
+                planning::referenced_ids(&row.mutation["version"])
+                    .iter()
+                    .filter_map(|id| creations.get(id.as_str()).copied())
+                    .filter(|dep| *dep != index),
+            );
+            deps
+        })
+        .collect();
+    // 1 = on the current path, 2 = placed.
+    let mut state = vec![0_u8; rows.len()];
+    let mut order = Vec::with_capacity(rows.len());
+    for start in 0..rows.len() {
+        if state[start] != 0 {
+            continue;
+        }
+        state[start] = 1;
+        let mut stack = vec![(start, 0_usize)];
+        while let Some((node, next)) = stack.last_mut() {
+            if let Some(dep) = dependencies[*node].get(*next).copied() {
+                *next += 1;
+                if state[dep] == 0 {
+                    state[dep] = 1;
+                    stack.push((dep, 0));
+                }
+            } else {
+                state[*node] = 2;
+                order.push(*node);
+                stack.pop();
+            }
+        }
+    }
+    order
+}
+/// Select the next upload batch in causal order: stored (creation) order, adjusted so a
+/// version follows the pending creations it references. A pending version is held back while
+/// an earlier version of the same entity is blocked, because the server never accepted its
+/// parent, and while it references an entity whose creation is blocked or itself held back.
+/// Both resume after the blocked item is retried or corrected, so dependent pushes never
+/// race ahead of the item they depend on.
+pub fn pending_batch(c: &Connection) -> Result<Vec<Value>> {
     let mut stmt =
         c.prepare("SELECT entity_id,request_json,state FROM outbox ORDER BY created_at_us,rowid")?;
-    let mut blocked = HashSet::new();
-    let mut blocked_creations = HashSet::new();
-    let mut out = vec![];
+    let mut rows = vec![];
     for row in stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -182,24 +242,39 @@ fn pending_batch(c: &Connection) -> Result<Vec<Value>> {
         ))
     })? {
         let (entity, raw, state) = row?;
-        let mutation: Value = serde_json::from_str(&raw)?;
-        if state == 2 {
+        rows.push(Pending {
+            entity,
+            mutation: serde_json::from_str(&raw)?,
+            state,
+        });
+    }
+    let mut blocked = HashSet::new();
+    let mut blocked_creations = HashSet::new();
+    let mut out = vec![];
+    for index in dependency_order(&rows) {
+        let Pending {
+            entity,
+            mutation,
+            state,
+        } = &rows[index];
+        if *state != 1 && *state != 2 {
+            continue;
+        }
+        let held = *state == 2
+            || blocked.contains(entity)
+            || planning::referenced_ids(&mutation["version"])
+                .iter()
+                .any(|id| blocked_creations.contains(id));
+        if held {
             if mutation["kind"] == "MUTATION_KIND_CREATE" {
                 blocked_creations.insert(entity.clone());
             }
-            blocked.insert(entity);
-        } else if state == 1
-            && !blocked.contains(&entity)
-            && !planning::referenced_ids(&mutation["version"])
-                .iter()
-                .any(|id| blocked_creations.contains(id))
-        {
-            out.push(mutation);
-            if out.len() == 100 {
-                break;
-            }
+            blocked.insert(entity.clone());
+        } else {
+            out.push(mutation.clone());
         }
     }
+    out.truncate(100);
     Ok(out)
 }
 fn info(auth: &Auth, s: &Store, endpoint: &str) -> Result<Value> {

@@ -904,3 +904,60 @@ fn stale_save_validates_the_graph_that_is_persisted() {
     );
     assert_eq!(current(&store, &b_id)["task"]["parentTaskId"], a_id);
 }
+
+#[test]
+fn corrected_task_uploads_after_the_label_it_was_corrected_with() {
+    let (_dir, store) = open();
+    let repo = repository(&store, "https://example.com/dependency-order");
+    let created = task(&store, &repo, "Rejected", &json!({}));
+    let version = created["result"]["version"].clone();
+    let task_id = strv(&version, "entityId").to_owned();
+    store
+        .with(true, |c| {
+            c.execute(
+                "UPDATE outbox SET state=2,error_reason='CONSTRAINT_VIOLATION:DATE_ORDER' WHERE entity_id=?",
+                [&task_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    // The label is created after the rejected task, then the task is corrected with it.
+    let label = planning(&store, &repo, "label", "Fix");
+    let label_id = strv(&label, "entityId").to_owned();
+    let mut corrected = version["task"].clone();
+    corrected["labelIds"] = json!([label_id]);
+    let saved = call(
+        &store,
+        "SaveTask",
+        &json!({"id":task_id,"expectedVersionId":version["versionId"],"task":corrected}),
+    )
+    .unwrap()["result"]["version"]
+        .clone();
+    assert_eq!(saved["parentVersionIds"], json!([]));
+    let batch = |store: &Store| -> Vec<String> {
+        store
+            .with(false, lane::syncclient::pending_batch)
+            .unwrap()
+            .iter()
+            .map(|m| strv(&m["version"], "entityId").to_owned())
+            .collect()
+    };
+    let expected = vec![repo.clone(), label_id.clone(), task_id.clone()];
+    assert_eq!(
+        batch(&store),
+        expected,
+        "the repositioned task follows the label"
+    );
+    // Even when the corrected version sits at an older upload position, the batch order
+    // places the pending creation it references first.
+    store
+        .with(true, |c| {
+            c.execute(
+                "UPDATE outbox SET created_at_us=0 WHERE entity_id=?",
+                [&task_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(batch(&store), expected);
+}

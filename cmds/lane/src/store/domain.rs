@@ -649,7 +649,16 @@ supersede_blocked(c,&h[0],&mut v,&mut kind)?
 None
 };
             self.persist(c,&v,meta,kind,conflict,prompt)?;
-if let Some(position)=superseded{
+if let Some(mut position)=superseded{
+// Never move the corrected version before a pending entity it now references, such as
+// a label created after the rejected version was written.
+for reference in planning::referenced_ids(&v){
+if reference==id{
+continue;
+}
+let created:Option<i64>=c.query_row("SELECT max(created_at_us) FROM outbox WHERE entity_id=?",[&reference],|r|r.get(0))?;
+position=position.max(created.unwrap_or(position));
+}
 c.execute("UPDATE outbox SET created_at_us=? WHERE request_id=?",params![position,strv(&v,"versionId")])?;
 }
 let r=result(&heads(c,&id)?);
