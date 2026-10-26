@@ -272,10 +272,12 @@ fn wipe(path: &Path) {
     });
     let _ = c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
 }
-/// Explicit pre-release development reset of one existing local space: discard its database,
-/// WAL files and attachment content, then recreate an empty schema 3 store with the same
-/// space ID. Requires the exclusive handle lease, so any open handle or sync worker of any
-/// process fails with retryable `STORAGE_BUSY` before anything changes. Never contacts a server.
+/// Explicit pre-release development reset of one existing local space.
+///
+/// Discards the database, WAL files and attachment content, then recreates an empty schema 3
+/// store with the same space ID. Requires the exclusive handle lease, so any open handle or
+/// sync worker of any process fails with retryable `STORAGE_BUSY` before anything changes.
+/// Never contacts a server.
 pub fn reset(root: &Path, space: &str) -> Result<Value> {
     if !valid_id(space) {
         return Err(invalid("Reset requires an explicit space UUID."));

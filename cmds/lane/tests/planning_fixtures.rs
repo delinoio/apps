@@ -25,7 +25,7 @@ fn bind(request: &Value, heads: &HashMap<String, String>) -> Value {
 fn assert_error(case: &Value, got: &Failure, want: &Value) {
     assert_eq!(got.reason, want["reason"], "{case}: {got:?}");
     assert_eq!(
-        got.violation.as_deref().unwrap_or(""),
+        got.violation.map_or("", lane::error::Violation::as_str),
         strv(want, "violation"),
         "{case}"
     );
@@ -267,7 +267,7 @@ fn list_cursors_are_scoped_to_the_query() {
     )
     .unwrap();
     let cursor = strv(&first, "nextCursor");
-    assert!(!cursor.is_empty());
+    assert_ne!(cursor, "");
     for other in [
         json!({"page":{"size":2,"cursor":cursor},"sortKey":"TASK_SORT_KEY_DUE_DATE"}),
         json!({"page":{"size":2,"cursor":cursor},"sortKey":"TASK_SORT_KEY_PRIORITY","sortDirection":"SORT_DIRECTION_DESCENDING"}),

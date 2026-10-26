@@ -333,7 +333,6 @@ impl Store {
                 }
                 normalize_sets(&mut q);
             }
-            "CreatePlanningItem" | "SavePlanningItem" | "DeletePlanningItem" => {}
             "CreateURLConnection" | "SaveURLConnection" => {
                 q["connection"]["prefix"] =
                     crate::capture::normalize_prefix(strv(&q["connection"], "prefix"))?.into();
@@ -646,10 +645,15 @@ else if v["urlConnection"].is_object() { self.validate_connection(c,&id,&v["urlC
 else{
 return Err(invalid("Snapshot body is missing."));
 }
-            if !create&&!conflict&&method!="ResolveConflict"&&h.len()==1{
-supersede_blocked(c,&h[0],&mut v,&mut kind)?;
-}
+            let superseded=if !create&&!conflict&&method!="ResolveConflict"&&h.len()==1{
+supersede_blocked(c,&h[0],&mut v,&mut kind)?
+}else{
+None
+};
             self.persist(c,&v,meta,kind,conflict,prompt)?;
+if let Some(position)=superseded{
+c.execute("UPDATE outbox SET created_at_us=? WHERE request_id=?",params![position,strv(&v,"versionId")])?;
+}
 let r=result(&heads(c,&id)?);
 if conflict{
 committed_error=Some(stale(&r,&id));
@@ -711,7 +715,12 @@ fn normalize_sets(v: &mut Value) {
 /// chain's parents (the last version the server accepted) and the superseded outbox rows are
 /// dropped. The rejected immutable versions stay in local history; the server never sees them,
 /// so the corrected version is not stranded behind a parent that will never be accepted.
-fn supersede_blocked(c: &Connection, head: &Value, v: &mut Value, kind: &mut &str) -> Result<()> {
+fn supersede_blocked(
+    c: &Connection,
+    head: &Value,
+    v: &mut Value,
+    kind: &mut &str,
+) -> Result<Option<i64>> {
     // Version ID -> (request ID, state, error reason) of every unsynchronized version.
     let mut pending: HashMap<String, (String, i64, Option<String>)> = HashMap::new();
     let mut stmt = c.prepare(
@@ -763,11 +772,24 @@ fn supersede_blocked(c: &Connection, head: &Value, v: &mut Value, kind: &mut &st
             })
     });
     let Some(oldest) = chain.last().filter(|_| rejected) else {
-        return Ok(());
+        return Ok(None);
     };
     let parents = oldest["parentVersionIds"].clone();
+    // The corrected version keeps the upload position of the oldest version it replaces, so
+    // versions created in between that depend on this entity are still pushed after it.
+    let mut position = None;
     for version in &chain {
         if let Some((request, _, _)) = pending.get(strv(version, "versionId")) {
+            let created: Option<i64> = c
+                .query_row(
+                    "SELECT created_at_us FROM outbox WHERE request_id=?",
+                    [request],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(created) = created {
+                position = Some(position.map_or(created, |p: i64| p.min(created)));
+            }
             c.execute("DELETE FROM outbox WHERE request_id=?", [request])?;
         }
     }
@@ -777,7 +799,7 @@ fn supersede_blocked(c: &Connection, head: &Value, v: &mut Value, kind: &mut &st
         _ => "MUTATION_KIND_RESOLVE",
     };
     v["parentVersionIds"] = parents;
-    Ok(())
+    Ok(position)
 }
 fn response(r: Value, repo: Option<Value>, affected: Vec<Value>) -> Value {
     let mut v = json!({

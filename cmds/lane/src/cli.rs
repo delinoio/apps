@@ -249,28 +249,28 @@ fn execute(
                 let body = planning_args::item_body(&group, &mut flags, &mut q, &json!({}))?;
                 q["item"] = json!({ group.as_str(): body });
             }
-            "SavePlanningItem" | "GetPlanningItem" | "DeletePlanningItem" | "ListHistory" => {
-                if !strv(&q, "id").is_empty() {
-                    if method == "SavePlanningItem" && q.get("expectedVersionId").is_none() {
-                        return Err(invalid("--expected-version is required"));
+            "SavePlanningItem" | "GetPlanningItem" | "DeletePlanningItem" | "ListHistory"
+                if !strv(&q, "id").is_empty() =>
+            {
+                if method == "SavePlanningItem" && q.get("expectedVersionId").is_none() {
+                    return Err(invalid("--expected-version is required"));
+                }
+                *code = 1;
+                let read = dispatcher.invoke(opt, "GetPlanningItem", json!({"id":q["id"]}))?;
+                if read["result"]["version"]["kind"] != kind {
+                    return Err(Failure::new("NOT_FOUND", "Planning item does not exist."));
+                }
+                *code = 2;
+                if method == "SavePlanningItem" {
+                    let base = &read["result"]["version"][group.as_str()];
+                    if !base.is_object() {
+                        return Err(Failure::new(
+                            "NOT_FOUND",
+                            "Planning item is unavailable or deleted.",
+                        ));
                     }
-                    *code = 1;
-                    let read = dispatcher.invoke(opt, "GetPlanningItem", json!({"id":q["id"]}))?;
-                    if read["result"]["version"]["kind"] != kind {
-                        return Err(Failure::new("NOT_FOUND", "Planning item does not exist."));
-                    }
-                    *code = 2;
-                    if method == "SavePlanningItem" {
-                        let base = &read["result"]["version"][group.as_str()];
-                        if !base.is_object() {
-                            return Err(Failure::new(
-                                "NOT_FOUND",
-                                "Planning item is unavailable or deleted.",
-                            ));
-                        }
-                        let body = planning_args::item_body(&group, &mut flags, &mut q, base)?;
-                        q["item"] = json!({ group.as_str(): body });
-                    }
+                    let body = planning_args::item_body(&group, &mut flags, &mut q, base)?;
+                    q["item"] = json!({ group.as_str(): body });
                 }
             }
             _ => {}

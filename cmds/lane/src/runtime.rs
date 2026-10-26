@@ -552,7 +552,7 @@ impl Dispatcher for Runtime {
             let correlation = result
                 .as_ref()
                 .err()
-                .map_or_else(protocol::id, |e| e.correlation_id.clone());
+                .map_or_else(protocol::id, |e| e.correlation_id.to_string());
             tracing::debug!(
                 operation = method,
                 correlation_id = %correlation,

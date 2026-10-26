@@ -240,7 +240,7 @@ impl Context<'_> {
         if !selected_labels.is_empty() || flag(f, "includeUnlabeled") {
             let labels = strings(t, "labelIds");
             let any = labels.iter().any(|l| selected_labels.contains(l));
-            if !any && !(flag(f, "includeUnlabeled") && labels.is_empty()) {
+            if !(any || flag(f, "includeUnlabeled") && labels.is_empty()) {
                 return Ok(false);
             }
         }
@@ -265,7 +265,7 @@ impl Context<'_> {
         if !wanted.is_empty() || flag(f, "includeNoRelationships") {
             let kinds = self.relationship_kinds(id, heads);
             let any = wanted.iter().any(|k| kinds.contains(k.as_str()));
-            if !any && !(flag(f, "includeNoRelationships") && kinds.is_empty()) {
+            if !(any || flag(f, "includeNoRelationships") && kinds.is_empty()) {
                 return Ok(false);
             }
         }
@@ -505,7 +505,7 @@ impl Store {
         let start = if sorted {
             String::new()
         } else {
-            after.as_ref().map(|(_, id)| id.clone()).unwrap_or_default()
+            after.as_ref().map_or_default(|(_, id)| id.clone())
         };
         for id in rows(
             c,
@@ -590,7 +590,7 @@ impl Store {
             fingerprint(&query)
         );
         let (size, after) = decode(request, &scope)?;
-        let last = after.map(|(_, id)| id).unwrap_or_default();
+        let last = after.map_or_default(|(_, id)| id);
         let repository = if strv(request, "repositoryId").is_empty() {
             None
         } else {

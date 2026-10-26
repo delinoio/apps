@@ -4,7 +4,7 @@
 //! Values are validated before dispatch with field-specific messages; the store re-validates
 //! everything inside its write transaction.
 use crate::{
-    error::{Failure, Result, invalid},
+    error::{Failure, Result, Violation, invalid},
     protocol::valid_id,
     store::planning::valid_date,
 };
@@ -40,7 +40,7 @@ fn switch(flags: &mut Flags, key: &str) -> bool {
 fn all(flags: &mut Flags, key: &str) -> Vec<String> {
     flags.remove(key).unwrap_or_default()
 }
-fn is_none(value: &str) -> bool {
+const fn is_none(value: &str) -> bool {
     value.eq_ignore_ascii_case("none")
 }
 fn uuid(flag: &str, value: &str) -> Result<String> {
@@ -87,7 +87,7 @@ fn points(flag: &str, value: &str) -> Result<u64> {
         .filter(|n| *n <= 2_147_483_647)
         .ok_or_else(|| {
             Failure::constraint(
-                "FIELD_RANGE",
+                Violation::FieldRange,
                 "",
                 &format!("--{flag} must be an integer from 0 to 2147483647"),
             )
@@ -124,6 +124,10 @@ fn task_type(value: &str) -> Result<String> {
 /// Planning options of `task create` and `task edit`. `None` leaves a field unchanged on edit
 /// and unassigned on create; `Some(None)` clears it.
 #[derive(Default)]
+#[expect(
+    clippy::option_option,
+    reason = "Each field distinguishes unchanged (None), cleared (Some(None)) and set values."
+)]
 pub struct TaskPlanning {
     priority: Option<String>,
     task_type: Option<String>,
@@ -217,7 +221,7 @@ impl TaskPlanning {
     }
     /// Relationship edits for other tasks, or `Null` when none were requested.
     #[must_use]
-    pub fn edits(&self) -> &Value {
+    pub const fn edits(&self) -> &Value {
         &self.edits
     }
     /// Set the flat planning fields of a `CreateTask` request.
@@ -448,18 +452,16 @@ pub fn group_kind(group: &str) -> Option<&'static str> {
 /// Fields supplied on the command line for one planning item, merged over `base`.
 /// `base` is the current stored body for an edit and empty for a create.
 pub fn item_body(group: &str, flags: &mut Flags, q: &mut Value, base: &Value) -> Result<Value> {
-    let mut body = if base.is_object() {
-        base.clone()
-    } else {
-        json!({})
-    };
+    let editing = base.as_object().is_some_and(|m| !m.is_empty());
+    let mut body = if editing { base.clone() } else { json!({}) };
+
     for (key, field) in [
         ("name", "name"),
         ("description", "description"),
         ("repositoryId", "repositoryId"),
     ] {
         if let Some(value) = q.as_object_mut().and_then(|m| m.remove(key)) {
-            if field == "repositoryId" && base.is_object() && body[field] != value {
+            if field == "repositoryId" && editing && body[field] != value {
                 return Err(invalid("A planning item's repository cannot be changed"));
             }
             body[field] = value;

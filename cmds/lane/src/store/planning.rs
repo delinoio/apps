@@ -12,6 +12,7 @@ use super::{
     domain::{heads, mapped},
     invalid, json, rows, strv,
 };
+use crate::error::Violation;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub const KIND_TASK: i64 = 2;
@@ -69,13 +70,16 @@ pub fn body_field(kind: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-fn violation(name: &str, entity: &str) -> Failure {
+fn violation(name: Violation, entity: &str) -> Failure {
     Failure::constraint(
         name,
         entity,
         &format!(
             "Planning constraint violated: {}.",
-            name.to_lowercase().replace('_', " ")
+            name.as_str()
+                .trim_start_matches("CONSTRAINT_VIOLATION_")
+                .to_lowercase()
+                .replace('_', " ")
         ),
     )
 }
@@ -117,7 +121,7 @@ pub fn valid_date(s: &str) -> bool {
         return false;
     }
     let mut days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+    if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
         days[1] = 29;
     }
     day <= days[month - 1]
@@ -128,15 +132,12 @@ fn opt<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 /// Read a set-valued task field.
 #[must_use]
 pub fn list(v: &Value, key: &str) -> Vec<String> {
-    v.get(key)
-        .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
+    v.get(key).and_then(Value::as_array).map_or_default(|a| {
+        a.iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    })
 }
 fn sorted_unique(mut v: Vec<String>) -> Vec<String> {
     v.sort();
@@ -226,10 +227,10 @@ fn check_planning_reference(c: &Connection, id: &str, kind: i64, repository: &st
             if repo.as_deref() == Some(repository) {
                 Ok(())
             } else {
-                Err(violation("CROSS_REPOSITORY", id))
+                Err(violation(Violation::CrossRepository, id))
             }
         }
-        _ => Err(violation("REFERENCE_NOT_FOUND", id)),
+        _ => Err(violation(Violation::ReferenceNotFound, id)),
     }
 }
 /// Check the repository a planning item or task lives in: it must be a live, unconflicted
@@ -275,18 +276,18 @@ pub(super) fn validate_task_fields(c: &Connection, t: &mut Value, repository: &s
         match points.as_u64() {
             Some(n) if n <= MAX_STORY_POINTS => {}
             _ => {
-                return Err(violation("FIELD_RANGE", ""));
+                return Err(violation(Violation::FieldRange, ""));
             }
         }
     }
     if let (Some(start), Some(due)) = (opt(t, "startDate"), opt(t, "dueDate"))
         && start > due
     {
-        return Err(violation("DATE_ORDER", ""));
+        return Err(violation(Violation::DateOrder, ""));
     }
     let labels = sorted_unique(list(t, "labelIds"));
     if labels.len() > MAX_LABELS {
-        return Err(violation("LABEL_LIMIT", ""));
+        return Err(violation(Violation::LabelLimit, ""));
     }
     for id in &labels {
         check_planning_reference(c, id, KIND_LABEL, repository)?;
@@ -429,8 +430,7 @@ pub(super) fn write_task(
             // every other task's reference to the moved task.
             clear_references(&mut t);
             validate_task_fields(c, &mut t, &repository)?;
-            let original = load_repository(c, &prev_repository)?;
-            let mut work = original.clone();
+            let mut work = load_repository(c, &prev_repository)?;
             work.remove(id);
             let before = work.clone();
             for heads in work.values_mut() {
@@ -457,19 +457,19 @@ pub(super) fn write_task(
         links.extend(edit(key));
     }
     if let Some(link) = links.iter().find(|l| *l == id) {
-        return Err(violation("SELF_LINK", link));
+        return Err(violation(Violation::SelfLink, link));
     }
     for link in &links {
         let live_elsewhere = !work.contains_key(link)
             && entity_info(c, link)?
                 .is_some_and(|(kind, _, deleted)| kind == KIND_TASK && !deleted);
         if !work.contains_key(link) && !live_elsewhere {
-            return Err(violation("REFERENCE_NOT_FOUND", link));
+            return Err(violation(Violation::ReferenceNotFound, link));
         }
     }
     for link in &links {
         if !work.contains_key(link) {
-            return Err(violation("CROSS_REPOSITORY", link));
+            return Err(violation(Violation::CrossRepository, link));
         }
     }
     // Related links are stored on both endpoints.
@@ -528,13 +528,13 @@ pub(super) fn write_task(
     starts.insert(id.to_owned());
     // Only chains that start at a written task can contain a new cycle.
     if has_cycle(&work, "parentTaskId", &starts) {
-        return Err(violation("PARENT_CYCLE", id));
+        return Err(violation(Violation::ParentCycle, id));
     }
     if has_cycle(&work, "dependsOnTaskIds", &starts) {
-        return Err(violation("DEPENDENCY_CYCLE", id));
+        return Err(violation(Violation::DependencyCycle, id));
     }
     if has_cycle(&work, "duplicateOfTaskId", &starts) {
-        return Err(violation("DUPLICATE_CYCLE", id));
+        return Err(violation(Violation::DuplicateCycle, id));
     }
     Ok(TaskWrite { primary: t, others })
 }
@@ -656,7 +656,7 @@ pub(super) fn write_planning(
                 ));
             }
             if start > end {
-                return Err(violation("DATE_ORDER", id));
+                return Err(violation(Violation::DateOrder, id));
             }
         }
     }
@@ -668,7 +668,7 @@ pub(super) fn write_planning(
     )? {
         for head in heads(c, &other)? {
             if simple_lowercase(strv(&head[field], "name")) == wanted {
-                return Err(violation("DUPLICATE_NAME", id));
+                return Err(violation(Violation::DuplicateName, id));
             }
         }
     }

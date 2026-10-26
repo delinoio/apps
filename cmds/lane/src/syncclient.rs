@@ -296,7 +296,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
                     }
                     // A constraint rejection is final for this immutable version: keep it
                     // blocked with the named violation until the user corrects the data.
-                    let (state, stored) = if reason == "ERROR_REASON_CONSTRAINT_VIOLATION" {
+                    let (next_state, stored) = if reason == "ERROR_REASON_CONSTRAINT_VIOLATION" {
                         (
                             2,
                             format!(
@@ -312,7 +312,7 @@ fn cycle(auth: &Auth, s: &Store, endpoint: &str, owner: &str, identity: &Identit
                     };
                     c.execute(
                         "UPDATE outbox SET state=?,error_reason=? WHERE request_id=?",
-                        params![state, stored, strv(r, "requestId")],
+                        params![next_state, stored, strv(r, "requestId")],
                     )?;
                 } else {
                     sync::apply(c, &r["result"])?;
