@@ -67,6 +67,62 @@ export interface OnlineOptions {
   sessionChanged: (session: Session | undefined) => void;
   returnTo: string;
 }
+// Navigation intent carried by a web link (a notification or a repository link).
+export interface WebRoute {
+  kind: "task" | "repository";
+  id: string;
+  account?: string;
+}
+export type HostEvent =
+  | { name: "lane.hostError"; payload: { message: string } }
+  | {
+      name: "lane.openRoute";
+      payload: { kind: "task" | "repository"; id: string };
+    };
+export const ACCOUNT_MISMATCH_MESSAGE =
+  "This notification belongs to another account. Switch accounts explicitly to open it.";
+// Canonical lowercase hyphenated UUID v7, the identifier shape the API accepts.
+const CANONICAL_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// Selects the single destination a page URL names; a task wins over a repository.
+function selectedRoute(params: URLSearchParams) {
+  const task = params.get("task");
+  if (task) return { kind: "task" as const, id: task };
+  const repository = params.get("repository");
+  if (repository) return { kind: "repository" as const, id: repository };
+  return undefined;
+}
+// Returns the route to preserve across sign-in. Only a complete, well-formed
+// destination qualifies: a malformed link signs in plainly (the previous
+// behavior) instead of making the API reject the login, and a malformed account
+// hint drops the destination because the hint is the account-isolation guard.
+export function loginRoute(search: string): WebRoute | undefined {
+  const params = new URLSearchParams(search);
+  const route = selectedRoute(params);
+  if (!route || !CANONICAL_ID.test(route.id)) return undefined;
+  const account = params.get("account");
+  if (account === null) return route;
+  return CANONICAL_ID.test(account) ? { ...route, account } : undefined;
+}
+// Delivers the page URL's destination to the app at most once per host. The
+// account hint is only a navigation guard: a different authenticated account gets
+// the explicit mismatch error and no navigation, never an automatic switch.
+export function createRouteDelivery() {
+  let delivered = false;
+  return (search: string, currentAccount?: string): HostEvent | undefined => {
+    if (delivered || !currentAccount) return undefined;
+    delivered = true;
+    const params = new URLSearchParams(search);
+    const account = params.get("account");
+    if (account && account !== currentAccount)
+      return {
+        name: "lane.hostError",
+        payload: { message: ACCOUNT_MISMATCH_MESSAGE },
+      };
+    const route = selectedRoute(params);
+    return route ? { name: "lane.openRoute", payload: route } : undefined;
+  };
+}
 // Carries the typed Lane error detail across the host-module boundary so the
 // frontend can explain constraint violations instead of showing a transport code.
 export class LaneRpcError extends Error {
@@ -278,8 +334,17 @@ export class OnlineLane {
     await this.auth("/auth/refresh", {});
     await this.start();
   }
-  loginUrl() {
-    return `${this.options.baseUrl}/auth/login?return_to=${encodeURIComponent(this.options.returnTo)}`;
+  // return_to stays the query-free registered callback. A route is sent as separate
+  // typed fields that the API validates and restores only after a successful login.
+  // Callers without a page destination (for example ConnectSync) omit the route.
+  loginUrl(route?: WebRoute) {
+    const url = new URL(`${this.options.baseUrl}/auth/login`);
+    url.searchParams.set("return_to", this.options.returnTo);
+    if (route) {
+      url.searchParams.set(route.kind, route.id);
+      if (route.account) url.searchParams.set("account", route.account);
+    }
+    return url.href;
   }
   async invoke(
     service: string,
