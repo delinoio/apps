@@ -7,6 +7,7 @@ export function installAccessibility(view) {
   let restoreFocus;
   let previousSettingsTarget;
   let previousCommand;
+  const pendingAnnouncements = new WeakSet();
   const wired = new WeakSet();
   const focusables = (root) =>
     [
@@ -127,6 +128,37 @@ export function installAccessibility(view) {
     if (command !== previousCommand) {
       previousCommand = command;
       command?.scrollIntoView({ block: "nearest" });
+    }
+    const palette = root.querySelector(".command-palette");
+    if (palette) {
+      let status = palette.querySelector(".command-announcement");
+      if (!status) {
+        // The real input lives in x-input's own shadow root, so an ARIA ID
+        // reference to a result in the outer root would not cross that boundary.
+        // Keep this live region until web-core exposes cross-root relationships.
+        status = document.createElement("span");
+        status.className = "command-announcement";
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.setAttribute("aria-atomic", "true");
+        status.style.cssText =
+          "position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap";
+        palette.append(status);
+      }
+      if (!pendingAnnouncements.has(status)) {
+        pendingAnnouncements.add(status);
+        // Mount the empty live region before writing its first announcement.
+        requestAnimationFrame(() => {
+          pendingAnnouncements.delete(status);
+          if (!status.isConnected) return;
+          const selected = palette.querySelector(".command-selected");
+          const announcement = selected
+            ? `Selected: ${selected.getAttribute("accessibility-label")}`
+            : "No matching destinations";
+          if (status.textContent !== announcement)
+            status.textContent = announcement;
+        });
+      }
     }
     const app = root.querySelector("#lane-root")?.getAttribute("data-app");
     if (app && app !== previousApp) {

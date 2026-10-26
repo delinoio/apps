@@ -89,7 +89,9 @@ bodies, create a separate repository cache, or issue requests on menu input.
 Focus search when the menu opens. Arrow keys move the active result and wrap at
 both ends; Enter opens it. Keep the active result visible, distinguish it with
 a blue left marker and pale-blue surface, and expose its accessible name and
-selection. Support direct click/touch activation and visible keyboard focus.
+selection. In the browser, announce the active destination through a polite,
+atomic status region while search retains focus. Announce when no destination
+matches the query. Support direct click/touch activation and visible keyboard focus.
 Escape, the close button and the shortcut dismiss the menu. Browser Tab focus
 stays inside the dialog; closing restores the originating control when it still
 exists, otherwise the workspace. Native hosts return focus to the workspace.

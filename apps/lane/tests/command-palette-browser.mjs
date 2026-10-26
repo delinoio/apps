@@ -55,6 +55,26 @@ try {
     true,
   );
   assert.equal(await menu.locator(".command-result").count(), 9);
+  const announcement = menu.getByRole("status");
+  const announced = async (text) => {
+    await page.waitForFunction(
+      (expected) =>
+        document
+          .querySelector("lynx-view")
+          .shadowRoot.querySelector(".command-announcement")?.textContent ===
+        expected,
+      text,
+    );
+    assert.equal(await announcement.getAttribute("aria-live"), "polite");
+    assert.equal(await announcement.getAttribute("aria-atomic"), "true");
+    assert.equal(
+      await input.evaluate(
+        (element) => element === element.getRootNode().activeElement,
+      ),
+      true,
+    );
+  };
+  await announced("Selected: All tasks, Pages");
   await page.keyboard.press("ArrowUp");
   await page.waitForFunction(() =>
     document
@@ -62,6 +82,7 @@ try {
       .shadowRoot.querySelector(".command-selected")
       ?.textContent.includes("github.com/delinoio/apps"),
   );
+  await announced("Selected: github.com/delinoio/apps, Repositories");
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(() =>
     document
@@ -69,11 +90,16 @@ try {
       .shadowRoot.querySelector(".command-selected")
       ?.textContent.includes("All tasks"),
   );
+  await announced("Selected: All tasks, Pages");
   await page.screenshot({
     path: join(evidence, "desktop-command-palette.png"),
   });
   await input.fill("does not exist");
-  await menu.getByText("No matching destinations", { exact: true }).waitFor();
+  await menu
+    .locator(".command-empty")
+    .filter({ hasText: "No matching destinations" })
+    .waitFor();
+  await announced("No matching destinations");
   await page.keyboard.press("Enter");
   assert.equal(await menu.isVisible(), true);
   await page.keyboard.press("Escape");
@@ -86,6 +112,7 @@ try {
   );
   await page.keyboard.press("Control+k");
   await input.fill("  pAcE ");
+  await announced("Selected: Pace, Apps");
   await page.keyboard.press("Enter");
   await page.getByText("Pace is not available yet.", { exact: true }).waitFor();
   await page.keyboard.press("Control+k");
