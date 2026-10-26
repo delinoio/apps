@@ -47,6 +47,8 @@ export const remedies = {
     "Open a normal HTTP or HTTPS page. Chrome internal pages, the Web Store, files and incognito are not supported.",
   PAGE_CHANGED:
     "The page moved or changed during capture. Select the element again.",
+  ACCESS_UNAVAILABLE:
+    "Chrome could not secure RealQA's local storage. Reload the extension, then try again.",
   PERMISSION_REQUIRED:
     "Click the RealQA extension on this page, then select an element.",
 };

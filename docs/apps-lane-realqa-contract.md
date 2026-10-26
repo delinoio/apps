@@ -200,6 +200,17 @@ In-app DOM actions focus the last connected approved Chrome profile and select
 its last-focused active tab. Only that profile receives an activation request.
 DOM shortcuts retain the foreground Chrome check and do not activate a browser.
 
+The extension service worker is a module worker and must not use top-level `await`:
+Chromium rejects asynchronous module graphs for service workers. It restricts
+`chrome.storage.local` to trusted extension contexts by starting that setting at
+module evaluation without awaiting it, registers every message, command and
+tab-removal listener synchronously, and makes every credential read or write,
+native message, screenshot and selector injection wait for the setting to succeed.
+If the setting fails, the worker logs the failure once, replies or shows a status
+with a reload remedy, and performs no protected work until Chrome restarts the
+worker. Node fixtures and a static top-level-await check cover this ordering; they
+do not replace loading the unpacked build in Chrome and restarting its worker.
+
 The desktop `chrome-bridge.mjs` owns profile approval and token-hash persistence.
 `chrome-native-host.mjs` is a Chrome-launched stdio relay to an already running
 Lane Unix socket or Windows named pipe. It never starts Lane or serves HTTP.
