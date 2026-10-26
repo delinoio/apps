@@ -394,6 +394,7 @@ Lane has not been deployed, and existing development data may be discarded. This
 
 - Support only the Lane common webhook format: required sender event ID, event type, occurrence time, and JSON object payload. No GitHub-specific adapter is required.
 - Each receiving endpoint belongs to a repository. Changing its repository affects only future events. Retained events remain in their original repository.
+- While a receiver save request is pending, the editor disables the receiver name, repository choices and Save so the submitted values cannot diverge from the visible draft. Success closes the editor and reloads. Failure retains the draft, shows the error and re-enables editing for an explicit retry.
 - The server only receives, retains, and synchronizes events. A user's existing agent reads them through MCP and decides whether to create tasks. Lane does not interpret events with AI, execute agents, or add a user-rule automation engine.
 - App, CLI, and MCP manage receiving settings and list/delete events. Retain events until explicitly deleted.
 - Require a secret-key signature over request content and timestamp. Accept timestamps within five minutes in either direction of server time. Retries use the same event ID with a fresh timestamp/signature. A rotated key invalidates the prior key immediately. Show secrets once on creation/rotation; loss requires rotation, not retrieval.
