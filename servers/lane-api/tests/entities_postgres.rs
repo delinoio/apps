@@ -2327,3 +2327,494 @@ async fn planning_item_listing_filters_pages_and_rejects_invalid_kinds() {
     assert_eq!(seen.len(), 3);
     f.close().await;
 }
+
+// Prompt-history membership is derived from the submitted parent snapshots, never from the
+// accepted head, and both write paths share one rule.
+impl Fixture {
+    async fn envelope(&mut self, version: &str) -> Value {
+        sqlx::query_scalar(
+            "SELECT envelope FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn flag(&mut self, version: &str) -> bool {
+        sqlx::query_scalar(
+            "SELECT prompt_version FROM lane_versions WHERE account_id=$1 AND version_id=$2",
+        )
+        .bind(&self.p.account_id)
+        .bind(version)
+        .fetch_one(&mut self.db)
+        .await
+        .unwrap()
+    }
+    async fn history(&mut self, entity: &str, prompts_only: bool) -> Vec<String> {
+        let r = self
+            .call(
+                "ListHistory",
+                json!({"id":entity,"promptsOnly":prompts_only,"page":{"size":100}}),
+            )
+            .await
+            .unwrap();
+        let mut ids: Vec<String> = r["versions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| string(v, "versionId").to_owned())
+            .collect();
+        ids.sort();
+        ids
+    }
+    /// Create a task with an optional prompt and return its first version ID.
+    async fn prompt_task(&mut self, entity: &str, prompt: Option<&str>) -> String {
+        let mut q = json!({"meta":{"requestId":id()},"id":entity,"repository":{"id":REPO},"title":"initial"});
+        if let Some(prompt) = prompt {
+            q["prompt"] = json!(prompt);
+        }
+        let r = self.call("CreateTask", q).await.unwrap();
+        string(&r["result"]["version"], "versionId").to_owned()
+    }
+    /// Submit SaveTask with the complete body of `base` changed by `edit`.
+    async fn edit(&mut self, entity: &str, base: &str, edit: impl FnOnce(&mut Value)) -> Value {
+        let mut task = self.envelope(base).await["task"].clone();
+        edit(&mut task);
+        self.call_new(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":entity,"expectedVersionId":base,"task":task}),
+        )
+        .await
+        .unwrap()
+    }
+    /// Like `call`, but records the version this request added in `newVersionId`. A preserved
+    /// stale save answers with the accepted head, so the added head is found by comparison.
+    async fn call_new(&mut self, method: &str, q: Value) -> Result<Value> {
+        let entity = string(&q, "id").to_owned();
+        let before = self.heads(&entity).await;
+        let mut r = self.call(method, q).await?;
+        let added = self
+            .heads(&entity)
+            .await
+            .into_iter()
+            .find(|h| !before.contains(h));
+        r["newVersionId"] =
+            json!(added.unwrap_or_else(|| string(&r["result"]["version"], "versionId").to_owned()));
+        Ok(r)
+    }
+    async fn resolve(&mut self, entity: &str, body: Value) -> Value {
+        let heads = self.heads(entity).await;
+        self.call(
+            "ResolveConflict",
+            json!({"meta":{"requestId":id()},"id":entity,"expectedHeadIds":heads,"resolved":{"task":body}}),
+        )
+        .await
+        .unwrap()
+    }
+}
+/// The version a request added (see `Fixture::call_new`), else the version it returned.
+fn version_id(r: &Value) -> String {
+    r.get("newVersionId")
+        .map_or_else(
+            || string(&r["result"]["version"], "versionId"),
+            |v| v.as_str().unwrap(),
+        )
+        .to_owned()
+}
+fn set_prompt(task: &mut Value, prompt: Option<&str>) {
+    match prompt {
+        Some(prompt) => task["prompt"] = json!(prompt),
+        None => {
+            task.as_object_mut().unwrap().remove("prompt");
+        }
+    }
+}
+const PROMPT_CASES: [(Option<&str>, Option<&str>); 2] =
+    [(Some("old"), Some("new")), (None, Some(""))];
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_save_membership_follows_the_submitted_base_not_the_accepted_head() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (old, new) in PROMPT_CASES {
+        // C changes A's prompt but equals the accepted head B: it is a member.
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(&f.edit(&task, &a, |t| set_prompt(t, new)).await);
+        let stale = f
+            .edit(&task, &a, |t| {
+                t["title"] = json!("changed");
+                set_prompt(t, new);
+            })
+            .await;
+        assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+        let c = version_id(&stale);
+        assert!(f.flag(&b).await && f.flag(&c).await, "{old:?}->{new:?}");
+        let mut members = vec![b.clone(), c.clone()];
+        members.extend(old.map(|_| a.clone()));
+        members.sort();
+        assert_eq!(f.history(&task, true).await, members, "{old:?}->{new:?}");
+        let mut all = vec![a.clone(), b, c];
+        all.sort();
+        assert_eq!(f.history(&task, false).await, all);
+        assert_eq!(f.heads(&task).await.len(), 2);
+
+        // C changes only the title relative to A although B differs: it is not a member.
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(&f.edit(&task, &a, |t| set_prompt(t, new)).await);
+        let stale = f
+            .edit(&task, &a, |t| {
+                t["title"] = json!("changed");
+                set_prompt(t, old);
+            })
+            .await;
+        assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+        let c = version_id(&stale);
+        assert!(!f.flag(&c).await, "{old:?}->{new:?}");
+        let mut members = vec![b.clone()];
+        members.extend(old.map(|_| a.clone()));
+        members.sort();
+        assert_eq!(f.history(&task, true).await, members, "{old:?}->{new:?}");
+        let mut all = vec![a, b, c];
+        all.sort();
+        assert_eq!(f.history(&task, false).await, all);
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn resolution_membership_compares_every_parent() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (old, new) in PROMPT_CASES {
+        let task = id();
+        let a = f.prompt_task(&task, old).await;
+        let b = version_id(
+            &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+                .await,
+        );
+        f.edit(&task, &a, |t| set_prompt(t, new)).await;
+        let body = f.envelope(&b).await["task"].clone();
+        // The body equals the accepted parent B but differs from C.
+        let resolved = version_id(&f.resolve(&task, body).await);
+        assert!(f.flag(&resolved).await, "{old:?}->{new:?}");
+        assert!(f.history(&task, true).await.contains(&resolved));
+        assert_eq!(f.heads(&task).await, vec![resolved]);
+    }
+
+    // Resolving to the shared prompt and captures of every parent is not a member.
+    let task = id();
+    let a = f.prompt_task(&task, Some("same")).await;
+    let b = version_id(&f.edit(&task, &a, |t| t["title"] = json!("b")).await);
+    f.edit(&task, &a, |t| t["description"] = json!("c")).await;
+    let body = f.envelope(&b).await["task"].clone();
+    let resolved = version_id(&f.resolve(&task, body).await);
+    assert!(!f.flag(&resolved).await);
+    assert!(!f.history(&task, true).await.contains(&resolved));
+
+    // Capture metadata differences make a resolution a member, and a stale save a member.
+    let task = id();
+    let mut image = image();
+    image["capture"]["pageTitle"] = json!("Before");
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[image]}))
+        .await
+        .unwrap();
+    let a = version_id(&created);
+    let b = version_id(
+        &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+            .await,
+    );
+    let stale = f
+        .edit(&task, &a, |t| {
+            t["captures"][0]["pageTitle"] = json!("After")
+        })
+        .await;
+    assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(f.flag(&version_id(&stale)).await);
+    let body = f.envelope(&b).await["task"].clone();
+    let resolved = version_id(&f.resolve(&task, body).await);
+    assert!(f.flag(&resolved).await);
+    assert!(f.history(&task, true).await.contains(&resolved));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn stale_specialized_edits_use_the_submitted_base_for_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for (method, extra) in [
+        ("SetProgress", json!({"progress":"PROGRESS_DONE"})),
+        ("SetProposal", json!({"proposal":"PROPOSAL_ACCEPTED"})),
+    ] {
+        let task = id();
+        let r = f
+            .call("CreateTask", json!({"meta":{"requestId":id()},"id":task,"repository":{"id":REPO},"title":"initial","proposal":"PROPOSAL_PENDING","prompt":"old"}))
+            .await
+            .unwrap();
+        let a = version_id(&r);
+        // The accepted head changes the prompt; a stale edit that keeps A's prompt is not a
+        // member although it differs from the head.
+        let b = version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await);
+        let mut q = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":a});
+        for (k, v) in extra.as_object().unwrap() {
+            q[k] = v.clone();
+        }
+        let stale = f.call_new(method, q).await.unwrap();
+        assert_eq!(
+            stale["result"]["result"], "RESULT_KIND_CONFLICT",
+            "{method}"
+        );
+        let c = version_id(&stale);
+        assert_ne!(c, b);
+        assert!(!f.flag(&c).await, "{method}");
+        assert!(!f.history(&task, true).await.contains(&c), "{method}");
+        assert!(f.history(&task, false).await.contains(&c), "{method}");
+    }
+    // A fresh edit from the head keeps the head's prompt and stays outside the prompt history.
+    let task = id();
+    let a = f.prompt_task(&task, Some("old")).await;
+    let b = version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await);
+    let fresh = f
+        .call_new("SetProgress", json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":b,"progress":"PROGRESS_DONE"}))
+        .await
+        .unwrap();
+    assert!(!f.flag(&version_id(&fresh)).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn capture_changes_and_normalization_decide_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    let (first, second) = (image(), image());
+    let task = id();
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[first.clone(),second.clone()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    let (c1, c2) = (first["capture"].clone(), second["capture"].clone());
+
+    // Reordering and removal are fresh capture changes.
+    let reordered = version_id(
+        &f.edit(&task, &v0, |t| t["captures"] = json!([c2, c1]))
+            .await,
+    );
+    assert!(f.flag(&reordered).await);
+    // A stale title-only edit from V0 is unchanged relative to its base although the head
+    // reordered the captures.
+    let stale = f
+        .edit(&task, &v0, |t| t["title"] = json!("title only"))
+        .await;
+    assert_eq!(stale["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(!f.flag(&version_id(&stale)).await);
+    // A stale removal differs from its base and is a member, on a task of its own.
+    let task = id();
+    let (third, fourth) = (image(), image());
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[third.clone(),fourth.clone()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    f.edit(&task, &v0, |t| {
+        t["captures"] = json!([fourth["capture"].clone(), third["capture"].clone()])
+    })
+    .await;
+    let removal = f
+        .edit(&task, &v0, |t| {
+            t["captures"] = json!([third["capture"].clone()])
+        })
+        .await;
+    assert_eq!(removal["result"]["result"], "RESULT_KIND_CONFLICT");
+    assert!(f.flag(&version_id(&removal)).await);
+    // Attachment ownership and retained references are unchanged.
+    assert_eq!(f.count("lane_attachments").await, 4);
+    let other = id();
+    f.task(&other, REPO).await;
+    let other_base = f.accepted(&other).await;
+    let foreign = f
+        .call(
+            "SaveTask",
+            json!({"meta":{"requestId":id()},"id":other,"expectedVersionId":other_base,"task":task_fields("Title", REPO, json!({"captures":[c1]}))}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(foreign.reason & 0xff, 13, "{foreign:?}");
+
+    // A removal head can restore the retained references from V0.
+    let task = id();
+    let created = f
+        .capture("CreateCaptureTask", json!({"id":task,"meta":{"requestId":id()},"repositoryId":REPO,"title":"Capture","description":"Problem","images":[image()]}))
+        .await
+        .unwrap();
+    let v0 = version_id(&created);
+    let removed = version_id(
+        &f.edit(&task, &v0, |t| {
+            t.as_object_mut().unwrap().remove("captures");
+        })
+        .await,
+    );
+    assert!(f.flag(&removed).await);
+    let restored = f
+        .call_new("RestorePrompt", json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":removed,"sourceVersionId":v0}))
+        .await
+        .unwrap();
+    assert!(f.flag(&version_id(&restored)).await);
+
+    // Omitted and empty capture arrays are equal after normalization.
+    let task = id();
+    let v0 = f.prompt_task(&task, Some("p")).await;
+    let v1 = version_id(
+        &f.edit(&task, &v0, |t| {
+            t["title"] = json!("one");
+            t["captures"] = json!([]);
+        })
+        .await,
+    );
+    assert!(!f.flag(&v1).await);
+    let v2 = version_id(
+        &f.edit(&task, &v1, |t| {
+            t["title"] = json!("two");
+            t.as_object_mut().unwrap().remove("captures");
+        })
+        .await,
+    );
+    assert!(!f.flag(&v2).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn fresh_edits_restorations_and_replay_keep_their_membership() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    for prompt in [Some("same"), None] {
+        let task = id();
+        let a = f.prompt_task(&task, prompt).await;
+        let title = version_id(&f.edit(&task, &a, |t| t["title"] = json!("changed")).await);
+        assert!(!f.flag(&title).await);
+        let changed = version_id(
+            &f.edit(&task, &title, |t| set_prompt(t, Some("different")))
+                .await,
+        );
+        assert!(f.flag(&changed).await);
+        // Restoring equal text or an absent prompt is explicit and remains a member, once.
+        let back = version_id(&f.edit(&task, &changed, |t| set_prompt(t, prompt)).await);
+        assert!(f.flag(&back).await);
+        let restore = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":back,"sourceVersionId":a});
+        let restored = f.call("RestorePrompt", restore.clone()).await.unwrap();
+        assert!(f.flag(&version_id(&restored)).await);
+        let versions = f.count("lane_versions").await;
+        let replay = f.call("RestorePrompt", restore).await.unwrap();
+        assert_eq!(replay["result"]["result"], "RESULT_KIND_REPLAYED");
+        assert_eq!(f.count("lane_versions").await, versions);
+    }
+
+    // A replayed stale save creates no extra version.
+    let task = id();
+    let a = f.prompt_task(&task, Some("old")).await;
+    f.edit(&task, &a, |t| t["prompt"] = json!("new")).await;
+    let mut stale = json!({"meta":{"requestId":id()},"id":task,"expectedVersionId":a});
+    let mut body = f.envelope(&a).await["task"].clone();
+    body["title"] = json!("changed");
+    stale["task"] = body;
+    let first = f.call_new("SaveTask", stale.clone()).await.unwrap();
+    let versions = f.count("lane_versions").await;
+    f.call("SaveTask", stale).await.unwrap();
+    assert_eq!(f.count("lane_versions").await, versions);
+    assert!(!f.flag(&version_id(&first)).await);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL"]
+async fn interactive_and_sync_classify_equivalent_graphs_identically() {
+    let mut f = Fixture::new().await;
+    f.repo(REPO, "https://example.com/repo").await;
+    // Graph one: A(old) -> B(title only); C(prompt new) stale from A; resolution with B's body.
+    // Graph two: A(old) -> B(prompt new); C(title changed, prompt old) stale from A.
+    let mut interactive: Vec<Vec<bool>> = Vec::new();
+    let mut synced: Vec<Vec<bool>> = Vec::new();
+    for shape in [1, 2] {
+        let task = id();
+        let a = f.prompt_task(&task, Some("old")).await;
+        let (b, c) = if shape == 1 {
+            (
+                version_id(
+                    &f.edit(&task, &a, |t| t["title"] = json!("title only"))
+                        .await,
+                ),
+                version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await),
+            )
+        } else {
+            (
+                version_id(&f.edit(&task, &a, |t| t["prompt"] = json!("new")).await),
+                version_id(&f.edit(&task, &a, |t| t["title"] = json!("changed")).await),
+            )
+        };
+        let mut ids = vec![a, b.clone(), c];
+        if shape == 1 {
+            let body = f.envelope(&b).await["task"].clone();
+            ids.push(version_id(&f.resolve(&task, body).await));
+        }
+        let mut flags = Vec::new();
+        for version in &ids {
+            flags.push(f.flag(version).await);
+        }
+        interactive.push(flags);
+
+        let task = id();
+        let versions: Vec<String> = (0..4).map(|_| id()).collect();
+        let body = |title: &str, prompt: &str| task_fields(title, REPO, json!({"prompt":prompt}));
+        f.push(mutation(pushed_task(
+            &task,
+            &versions[0],
+            &[],
+            body("initial", "old"),
+            3,
+        )))
+        .await
+        .unwrap();
+        let specs: [(&str, &str); 2] = if shape == 1 {
+            [("title only", "old"), ("initial", "new")]
+        } else {
+            [("initial", "new"), ("changed", "old")]
+        };
+        for (slot, (title, prompt)) in specs.iter().enumerate() {
+            f.push(mutation(pushed_task(
+                &task,
+                &versions[slot + 1],
+                &[&versions[0]],
+                body(title, prompt),
+                3,
+            )))
+            .await
+            .unwrap();
+        }
+        let mut count = 3;
+        if shape == 1 {
+            let heads = f.heads(&task).await;
+            assert_eq!(heads.len(), 2);
+            f.push(json!({"meta":{"requestId":id()},"kind":"MUTATION_KIND_RESOLVE","expectedHeadIds":heads,"version":pushed_task(&task, &versions[3], &[&versions[1], &versions[2]], body("title only", "old"), 3)}))
+                .await
+                .unwrap();
+            count = 4;
+        }
+        let mut flags = Vec::new();
+        for version in &versions[..count] {
+            flags.push(f.flag(version).await);
+        }
+        synced.push(flags);
+    }
+    assert_eq!(interactive, synced);
+    assert_eq!(interactive[0], vec![true, false, true, true]);
+    assert_eq!(interactive[1], vec![true, true, false]);
+    f.close().await;
+}
