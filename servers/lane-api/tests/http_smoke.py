@@ -139,6 +139,31 @@ with log.open("w") as output:
         assert conflict[0] == 409 and conflict[1]["code"] == "aborted", conflict
         retained = call("/lane.v1.LaneService/GetTask", {"id": task})
         assert retained[1]["result"]["result"] == "RESULT_KIND_CONFLICT"
+        # Planning: the typed PlanningService, task metadata, filters, constraint errors and a
+        # constraint-rejected synchronization item over the real HTTP adapters.
+        label = identity()
+        made = call("/lane.v1.PlanningService/CreatePlanningItem", {"meta": {"requestId": identity()}, "id": label, "item": {"label": {"repositoryId": repository, "name": "Docs", "color": "#aabbcc"}}})
+        assert made[0] == 200 and made[1]["result"]["version"]["label"]["color"] == "#AABBCC", made
+        duplicate = call("/lane.v1.PlanningService/CreatePlanningItem", {"meta": {"requestId": identity()}, "id": identity(), "item": {"label": {"repositoryId": repository, "name": "docs", "color": "#000000"}}})
+        assert duplicate[0] == 400 and duplicate[1]["code"] == "failed_precondition", duplicate
+        assert call("/lane.v1.PlanningService/GetPlanningItem", {"id": label})[1]["result"]["version"]["label"]["name"] == "Docs"
+        child = identity()
+        assert call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": child, "repository": {"id": repository}, "title": "child"})[0] == 200
+        tagged = identity()
+        planned = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": tagged, "repository": {"id": repository}, "title": "planned", "priority": "TASK_PRIORITY_HIGH", "labelIds": [label], "storyPoints": 0, "relationshipEdits": {"addSubtaskIds": [child]}})
+        assert planned[0] == 200 and planned[1]["result"]["version"]["task"]["labelIds"] == [label], planned
+        assert [a["version"]["entityId"] for a in planned[1]["affected"]] == [child], planned
+        blocked = call("/lane.v1.LaneService/CreateTask", {"meta": {"requestId": identity()}, "id": identity(), "repository": {"id": repository}, "title": "blocked", "relationshipEdits": {"addSubtaskIds": [task]}})
+        assert blocked[0] == 400 and blocked[1]["code"] == "failed_precondition", blocked
+        listed = call("/lane.v1.LaneService/ListTasks", {"filter": {"labelIds": [label]}, "sortKey": "TASK_SORT_KEY_PRIORITY", "page": {"size": 1}})
+        assert listed[0] == 200 and [i["version"]["entityId"] for i in listed[1]["items"]] == [tagged] and not listed[1].get("nextCursor"), listed
+        wrong_kind = call("/lane.v1.PlanningService/GetPlanningItem", {"id": task})
+        assert wrong_kind[0] == 404, wrong_kind
+        pushed = call("/lane.v1.SyncService/PushChanges", {"formatVersion": 3, "epoch": EPOCH, "deviceId": DEVICE, "mutations": [{"meta": {"requestId": identity()}, "kind": "MUTATION_KIND_CREATE", "version": {"formatVersion": 3, "entityId": identity(), "kind": "ENTITY_KIND_LABEL", "versionId": identity(), "createdAt": "2026-01-01T00:00:00Z", "origin": {"kind": "ORIGIN_KIND_CLI", "deviceId": DEVICE, "deviceName": "fixture"}, "label": {"repositoryId": repository, "name": "DOCS", "color": "#000000"}}}]})
+        rejection = pushed[1]["results"][0]["error"]
+        assert pushed[0] == 200 and rejection["reason"] == "ERROR_REASON_CONSTRAINT_VIOLATION" and rejection["violation"] == "CONSTRAINT_VIOLATION_DUPLICATE_NAME" and not rejection.get("retryable"), pushed
+        assert call("/lane.v1.SyncService/PushChanges", {"formatVersion": 2, "epoch": EPOCH, "deviceId": DEVICE, "mutations": []})[0] == 400
+        assert call("/lane.v1.SyncService/GetSyncInfo", {})[1]["formatVersion"] == 3
         begin = {"meta": {"requestId": identity()}, "mode": "DATA_DELETION_MODE_CLEAR_SERVER_KEEP_LOCAL", "confirmedAccountId": ACCOUNT}
         challenge = call("/lane.v1.AccountService/BeginDataDeletion", begin)
         assert challenge[0] == 200, challenge
@@ -149,6 +174,10 @@ with log.open("w") as output:
         accept = {"accept": "application/json, text/event-stream"}
         assert call("/mcp", init, headers=accept)[0] == 401
         assert call("/mcp", init, token=MCP_TOKEN, headers=accept)[0] == 200
+        tool = call("/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "lane_list_planning_items", "arguments": {"kind": "ENTITY_KIND_LABEL"}}}, token=MCP_TOKEN, headers=accept)
+        assert tool[0] == 200 and tool[1]["result"]["isError"] is False and len(tool[1]["result"]["structuredContent"]["items"]) == 1, tool
+        refused = call("/mcp", {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lane_create_planning_item", "arguments": {"id": identity(), "meta": {"requestId": identity()}, "item": {"cycle": {"repositoryId": repository, "name": "Bad", "startDate": "2026-02-02", "endDate": "2026-02-01"}}}}}, token=MCP_TOKEN, headers=accept)
+        assert refused[1]["result"]["isError"] is True and refused[1]["result"]["structuredContent"]["error"]["violation"] == "CONSTRAINT_VIOLATION_DATE_ORDER", refused
         assert call("/lane.v1.LaneService/ListRepositories", {}, token=MCP_TOKEN)[0] == 401
         state = "TENANT_STATE_BLOCKED"
         assert call("/lane.v1.LaneService/ListRepositories", {})[0] == 403
