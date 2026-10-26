@@ -185,6 +185,14 @@ test(
       assert.equal(result.status, 0, result.stderr);
       return JSON.parse(result.stdout)[0];
     };
+    for (const key of platforms) {
+      f.manifest.artifacts[key] = {
+        ...f.manifest.artifacts[f.key],
+        platform: key,
+        path: key.startsWith("windows") ? "lane.exe" : "lane",
+      };
+    }
+    f.save();
     const entry = pack(f.root);
     assert.ok(
       entry.files.every(
