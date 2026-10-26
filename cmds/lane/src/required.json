@@ -34,5 +34,9 @@
   "GetAttachment": ["taskId", "attachmentId"],
   "CreateURLConnection": ["connection"],
   "SaveURLConnection": ["id", "expectedVersionId", "connection"],
-  "DeleteURLConnection": ["id"]
+  "DeleteURLConnection": ["id"],
+  "GetPlanningItem": ["id"],
+  "CreatePlanningItem": ["item"],
+  "SavePlanningItem": ["id", "expectedVersionId", "item"],
+  "DeletePlanningItem": ["id"]
 }

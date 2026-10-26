@@ -52,7 +52,7 @@ fn native_and_rust_share_data_and_removal_locks() {
         let mut native = Native::new(dir.path());
         assert_eq!(
             native.exchange(
-                &json!({"method":"open","request":{"formatVersion":2,"spaceId":store.space}})
+                &json!({"method":"open","request":{"formatVersion":3,"spaceId":store.space}})
             )["ok"],
             true
         );

@@ -5,7 +5,6 @@ use super::{
 };
 use crate::protocol::fingerprint;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use caseless::Caseless;
 fn page(request: &Value, scope: &str) -> Result<(usize, String)> {
     let size = request["page"]["size"].as_u64().unwrap_or(0);
     if size > 1000 {
@@ -74,34 +73,11 @@ impl Store {
                 "result":result(&heads)}
                 ))
             }
-            "ListTasks" | "ListRepositories" | "ListURLConnections" => {
-                for (key, valid) in [
-                    (
-                        "progress",
-                        &[
-                            "PROGRESS_TODO",
-                            "PROGRESS_IN_PROGRESS",
-                            "PROGRESS_BLOCKED",
-                            "PROGRESS_DONE",
-                            "PROGRESS_CANCELED",
-                        ][..],
-                    ),
-                    (
-                        "proposal",
-                        &[
-                            "PROPOSAL_REGULAR",
-                            "PROPOSAL_PENDING",
-                            "PROPOSAL_ACCEPTED",
-                            "PROPOSAL_REJECTED",
-                        ][..],
-                    ),
-                ] {
-                    if let Some(a) = request[key].as_array()
-                        && a.iter().any(|v| !valid.contains(&v.as_str().unwrap_or("")))
-                    {
-                        return Err(invalid("Invalid state filter."));
-                    }
-                }
+            "ListTasks" => self.list_tasks(connection, request),
+            "GetPlanningItem" | "ListPlanningItems" => {
+                self.planning_query(connection, method, request)
+            }
+            "ListRepositories" | "ListURLConnections" => {
                 let mut query = request.clone();
                 query.as_object_mut().unwrap().remove("page");
                 let scope = format!(
@@ -117,62 +93,13 @@ impl Store {
                 for id in rows(
                     connection,
                     "SELECT id FROM entities WHERE kind=? AND deleted=0 AND id>? ORDER BY id",
-                    params![
-                        if method == "ListTasks" {
-                            2
-                        } else if method == "ListURLConnections" {
-                            3
-                        } else {
-                            1
-                        },
-                        last
-                    ],
+                    params![if method == "ListURLConnections" { 3 } else { 1 }, last],
                 )? {
-                    let heads = heads(connection, &id)?;
-                    let mut matches = method != "ListTasks";
-                    for v in &heads {
-                        let task = &v["task"];
-                        if !task.is_object() {
-                            continue;
-                        }
-                        let target = strv(request, "repositoryId");
-                        if !target.is_empty()
-                            && mapped(connection, strv(task, "repositoryId"))?
-                                != mapped(connection, target)?
-                        {
-                            continue;
-                        }
-                        if !contains(request, "progress", &task["progress"])
-                            || !contains(request, "proposal", &task["proposal"])
-                        {
-                            continue;
-                        }
-                        let search = strv(request, "search")
-                            .chars()
-                            .default_case_fold()
-                            .collect::<String>();
-                        if strv(task, "title")
-                            .chars()
-                            .default_case_fold()
-                            .collect::<String>()
-                            .contains(&search)
-                            || strv(task, "description")
-                                .chars()
-                                .default_case_fold()
-                                .collect::<String>()
-                                .contains(&search)
-                        {
-                            matches = true;
-                        }
-                    }
-                    if !matches {
-                        continue;
-                    }
                     if items.len() == size {
                         next = cursor(&scope, &prev);
                         break;
                     }
-                    items.push(result(&heads));
+                    items.push(result(&heads(connection, &id)?));
                     prev = id;
                 }
                 Ok(json!({

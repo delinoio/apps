@@ -71,7 +71,7 @@ Names are public command groups; help must spell out required arguments and loca
 
 Filter fields combine with AND, selected values within a field with OR, and an unassigned flag adds that field's unassigned case. Unassigned values sort last in both directions, ties break by task ID, and pages continue consistently through `--cursor`. The semantics are identical to the [protocol contract](protos-lane-v1-contract.md#task-list-filtering-and-sorting).
 
-`label create --repository-id UUID --name N --color #RRGGBB [--description D]`, `milestone create --repository-id UUID --name N [--description D] [--target-date D] [--completed true|false]` and `cycle create --repository-id UUID --name N --start-date D --end-date D [--description D]` create items. `list` accepts `--repository-id UUID` and the usual paging options, and `get ID` reads one item. `edit ID --expected-version UUID` replaces the supplied fields and cannot change an item's kind or repository. `delete ID` is itself confirmation and detaches the item from tasks while keeping the tasks. `history ID [--page-size N --cursor T]` shows before/after values, time and origin; there is no restore command. `conflict list/get --kind label|milestone|cycle` reads planning-item conflicts and `conflict resolve` submits the complete expected head set. All of these accept `--request-id` and `--request-json`, and `--remote` for server data.
+`label create --repository-id UUID --name N --color #RRGGBB [--description D]`, `milestone create --repository-id UUID --name N [--description D] [--target-date D] [--completed true|false]` and `cycle create --repository-id UUID --name N --start-date D --end-date D [--description D]` create items. `list` accepts `--repository-id UUID` and the usual paging options, and `get ID` reads one item. `edit ID --expected-version UUID` replaces the supplied fields and cannot change an item's kind or repository. `delete ID` is itself confirmation and detaches the item from tasks while keeping the tasks. `history ID [--page-size N --cursor T]` shows before/after values, time and origin; there is no restore command. `conflict list/get --kind label|milestone|cycle` reads planning-item conflicts and `conflict resolve` submits the complete expected head set. All of these accept `--request-id` and `--request-json`, and `--remote` for server data. `label create` and `label edit` read `--color` as the `#RRGGBB` label color; the terminal option keeps its `auto` and `never` values (`--color=never`) and both can appear in one invocation.
 
 ### Development data reset
 
@@ -225,7 +225,12 @@ blocked with reason `CONSTRAINT_VIOLATION:<VIOLATION>`. `sync status` and the
 local MCP status tool list the item and reason. Correct the local data with an
 ordinary edit (a new expected version and request ID), then run
 `sync run --retry-blocked`. The CLI never reports a blocked item as synchronized
-and never discards it.
+and never discards it. The ordinary edit of an entity whose head is an
+unsynchronized chain containing a rejected version replaces that chain: the new version takes the
+chain's parents and upload position, so the server never needs the rejected parent, and the
+rejected immutable versions stay in local history. Uploads are ordered by creation; a pending
+version is held back while an earlier version of the same entity is blocked or while it refers to
+an entity whose creation was rejected, and resumes after correction or `--retry-blocked`.
 
 ## RealQA integration
 

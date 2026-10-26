@@ -81,17 +81,22 @@ pub fn tools() -> Vec<(String, Value)> {
     for service in protocol::pool().services().filter(|s| {
         matches!(
             s.name(),
-            "LaneService" | "CaptureService" | "AccountService" | "WebhookService"
+            "LaneService"
+                | "PlanningService"
+                | "CaptureService"
+                | "AccountService"
+                | "WebhookService"
         )
     }) {
         for m in service.methods() {
             let mut desc = format!("{} using the selected Lane target.", m.name());
-            if !matches!(service.name(), "LaneService" | "CaptureService")
-                || matches!(
-                    m.name(),
-                    "BeginAttachmentUpload" | "CompleteAttachmentUpload"
-                )
-            {
+            if !matches!(
+                service.name(),
+                "LaneService" | "PlanningService" | "CaptureService"
+            ) || matches!(
+                m.name(),
+                "BeginAttachmentUpload" | "CompleteAttachmentUpload"
+            ) {
                 desc.push_str(" Online-only; requires explicit remote selection and approval.");
             }
             if matches!(m.name(), "GetEvent" | "ListEvents") {
@@ -101,7 +106,7 @@ pub fn tools() -> Vec<(String, Value)> {
                 );
             }
             if m.name().starts_with("Delete") {
-                desc.push_str(" Permanently deletes data; invocation confirms task, repository, receiver, or event deletion.");
+                desc.push_str(" Permanently deletes data; invocation confirms task, repository, planning item (label, milestone or cycle), receiver, or event deletion. Deleting a planning item detaches it from tasks and keeps the tasks.");
             }
             if matches!(m.name(), "DeleteAccountData" | "BeginDataDeletion") {
                 desc.push_str(" Account deletion requires human account confirmation and browser reauthentication; fabricated proof is forbidden.");

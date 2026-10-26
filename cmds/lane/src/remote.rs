@@ -2,7 +2,7 @@
 use crate::network::SendRequest;
 use crate::{
     auth::{Auth, endpoint},
-    error::{Failure, Result, invalid},
+    error::{Failure, Result, Violation, invalid},
     protocol::{self, strv},
     store::Store,
 };
@@ -76,6 +76,7 @@ pub fn with_credential(auth: &Auth, c: &Value, method: &str, q: &Value) -> Resul
                             error.correlation_id = strv(&v, "correlationId").into();
                         }
                         error.entity_id = strv(&v, "entityId").into();
+                        error.violation = v["violation"].as_str().and_then(Violation::from_name);
                         error.retryable = v["retryable"] == true;
                         error.current_head_ids =
                             v["currentHeadIds"].as_array().map_or_default(|a| {

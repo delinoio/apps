@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 mod capture;
 mod domain;
-mod migration;
-pub use migration::migrate;
+mod list;
 pub mod normalize;
+pub mod planning;
 mod query;
 pub mod sync;
 use crate::{
@@ -118,7 +118,26 @@ pub fn transaction<T>(
     }
     r
 }
-fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
+/// Store schema and entity-envelope format written by this release. Lane is not deployed, so
+/// every other version is refused and recovered only through the explicit development reset.
+pub const SCHEMA_VERSION: i64 = 3;
+const STORE_FORMAT: &str = "3";
+
+/// `UNSUPPORTED_FORMAT` that names the explicit reset command; a store is never reset silently.
+fn unsupported(space: &str) -> Failure {
+    let target = if space.is_empty() {
+        "<space-id>"
+    } else {
+        space
+    };
+    Failure::new(
+        "UNSUPPORTED_FORMAT",
+        &format!(
+            "Unsupported Lane database format. Development data can only be recreated with the explicit command `lane --space {target} data reset --confirm-development-reset`, which permanently discards that space's local data."
+        ),
+    )
+}
+fn compatible(c: &Connection, schema: Option<&str>, space: &str) -> Result<()> {
     let app: i64 = c.query_row("PRAGMA application_id", [], |r| r.get(0))?;
     let version: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     let is_store: bool = c.query_row(
@@ -126,7 +145,7 @@ fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if app == 1_279_348_293 && version == if is_store { 2 } else { 1 } {
+    if app == 1_279_348_293 && version == if is_store { SCHEMA_VERSION } else { 1 } {
         return Ok(());
     }
     let count: i64 = c.query_row(
@@ -140,19 +159,22 @@ fn compatible(c: &Connection, schema: Option<&str>) -> Result<()> {
         && let Some(schema) = schema
     {
         c.execute_batch(schema)?;
-        c.execute_batch(if schema.contains("CREATE TABLE store_meta") {
-            "PRAGMA application_id=1279348293; PRAGMA user_version=2"
+        c.execute_batch(&if schema.contains("CREATE TABLE store_meta") {
+            format!("PRAGMA application_id=1279348293; PRAGMA user_version={SCHEMA_VERSION}")
         } else {
-            "PRAGMA application_id=1279348293; PRAGMA user_version=1"
+            "PRAGMA application_id=1279348293; PRAGMA user_version=1".to_owned()
         })?;
         return Ok(());
     }
+    if is_store || !space.is_empty() {
+        return Err(unsupported(space));
+    }
     Err(Failure::new(
         "UNSUPPORTED_FORMAT",
-        "Update Lane to open this database.",
+        "Unsupported Lane registry format.",
     ))
 }
-fn open_db(path: &Path, schema: &str) -> Result<Connection> {
+fn open_db(path: &Path, schema: &str, space: &str) -> Result<Connection> {
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -163,7 +185,7 @@ fn open_db(path: &Path, schema: &str) -> Result<Connection> {
     let c = Connection::open(path)?;
     c.busy_timeout(Duration::from_secs(5))?;
     c.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;")?;
-    transaction(&c, true, |c| compatible(c, Some(schema)))?;
+    transaction(&c, true, |c| compatible(c, Some(schema), space))?;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         match c.query_row::<String, _, _>("PRAGMA journal_mode=WAL", [], |r| r.get(0)) {
@@ -187,6 +209,26 @@ fn open_db(path: &Path, schema: &str) -> Result<Connection> {
     }
     Ok(c)
 }
+/// Insert the default `store_meta` rows of a new schema 3 database; existing rows are kept.
+fn init_meta(c: &Connection, space: &str, device: &str) -> Result<()> {
+    for (k, v) in [
+        ("space_id", space),
+        ("device_id", device),
+        ("format_version", STORE_FORMAT),
+        ("account_epoch", ""),
+        ("pull_cursor", ""),
+        ("notification_enabled", "0"),
+        ("notification_content", "DETAIL"),
+        ("sync_owner", ""),
+        ("sync_owner_expires_at_us", "0"),
+    ] {
+        c.execute(
+            "INSERT OR IGNORE INTO store_meta VALUES(?,?)",
+            params![k, v],
+        )?;
+    }
+    Ok(())
+}
 pub fn meta(c: &Connection, key: &str) -> Result<String> {
     Ok(
         c.query_row("SELECT value FROM store_meta WHERE key=?", [key], |r| {
@@ -205,6 +247,125 @@ pub fn rows(c: &Connection, sql: &str, p: impl rusqlite::Params) -> Result<Vec<S
         .query_map(p, |r| r.get(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?)
 }
+/// Best-effort secure wipe of an existing database file before it is unlinked, so a reset
+/// does not leave user content in freed pages. The file may use an unsupported schema or be
+/// corrupt, so failures are ignored and the files are removed regardless.
+fn wipe(path: &Path) {
+    let Ok(c) = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+    else {
+        return;
+    };
+    let _ = c.busy_timeout(Duration::from_secs(1));
+    let _ = c.execute_batch("PRAGMA secure_delete=ON; PRAGMA foreign_keys=OFF;");
+    let Ok(tables) = rows(
+        &c,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        [],
+    ) else {
+        return;
+    };
+    let _ = transaction(&c, true, |c| {
+        for table in &tables {
+            c.execute_batch(&format!("DELETE FROM \"{}\"", table.replace('"', "\"\"")))?;
+        }
+        Ok(())
+    });
+    let _ = c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+}
+/// Explicit pre-release development reset of one existing local space.
+///
+/// Discards the database, WAL files and attachment content, then recreates an empty schema 3
+/// store with the same space ID. Requires the exclusive handle lease, so any open handle or
+/// sync worker of any process fails with retryable `STORAGE_BUSY` before anything changes.
+/// Never contacts a server.
+pub fn reset(root: &Path, space: &str) -> Result<Value> {
+    if !valid_id(space) {
+        return Err(invalid("Reset requires an explicit space UUID."));
+    }
+    let registry_path = root.join("registry.sqlite");
+    if !registry_path.is_file() {
+        return Err(Failure::new("NOT_FOUND", "Space does not exist."));
+    }
+    let registry =
+        Connection::open_with_flags(&registry_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    registry.busy_timeout(Duration::from_secs(5))?;
+    registry.execute_batch("PRAGMA synchronous=FULL;")?;
+    transaction(&registry, false, |c| compatible(c, None, ""))?;
+    let (account_key, device): (String, String) = transaction(&registry, false, |c| {
+        let key: Option<String> = c
+            .query_row("SELECT account_key FROM spaces WHERE id=?", [space], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        let unavailable: i64 = c.query_row(
+            "SELECT count(*) FROM registry_meta WHERE key=? AND value='1'",
+            [format!("unavailable:{space}")],
+            |r| r.get(0),
+        )?;
+        let key = key.ok_or_else(|| Failure::new("NOT_FOUND", "Space does not exist."))?;
+        if unavailable > 0 {
+            return Err(Failure::new("DELETED", "Space is unavailable."));
+        }
+        let device = c.query_row(
+            "SELECT value FROM registry_meta WHERE key='device_id'",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok((key, device))
+    })?;
+    // The rendezvous file is retained permanently; only the lease is taken and released.
+    let _lease = lock(
+        &root.join("locks").join(format!("{space}.handles.lock")),
+        true,
+    )?;
+    let marker = format!("reset_pending:{space}");
+    transaction(&registry, true, |c| {
+        c.execute(
+            "INSERT OR REPLACE INTO registry_meta VALUES(?,'1')",
+            [&marker],
+        )?;
+        Ok(())
+    })?;
+    let dir = root.join("spaces").join(space);
+    wipe(&dir.join("lane.sqlite"));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)?;
+    }
+    mkdir(&root.join("spaces"))?;
+    mkdir(&dir)?;
+    let db = open_db(
+        &dir.join("lane.sqlite"),
+        include_str!("../../../../apps/lane/native/store/schema.sql"),
+        space,
+    )?;
+    let account_space = account_key != "local";
+    transaction(&db, true, |c| {
+        init_meta(c, space, &device)?;
+        if account_space {
+            // The account binding survives, but local data is gone: uploads stay stopped until
+            // the user confirms reconnection exactly as after an epoch change.
+            put_meta(c, "reconnect_required", "1")?;
+        }
+        Ok(())
+    })?;
+    drop(db);
+    transaction(&registry, true, |c| {
+        c.execute("DELETE FROM registry_meta WHERE key=?", [&marker])?;
+        Ok(())
+    })?;
+    tracing::debug!(
+        operation = "ResetDevelopmentData",
+        account_space,
+        "Lane space reset"
+    );
+    Ok(json!({
+        "completed": true,
+        "spaceId": space,
+        "schemaVersion": SCHEMA_VERSION,
+        "formatVersion": SCHEMA_VERSION,
+        "reconnectRequired": account_space,
+    }))
+}
 impl Store {
     pub fn open(root: &Path, selected: &str, removal: bool) -> Result<Self> {
         if !selected.is_empty() && !valid_id(selected) {
@@ -214,6 +375,7 @@ impl Store {
         let registry = open_db(
             &root.join("registry.sqlite"),
             include_str!("../../../../apps/lane/native/store/registry.sql"),
+            "",
         )?;
         let (space, device) = transaction(&registry, true, |c| {
             let mut space = selected.to_owned();
@@ -289,29 +451,26 @@ impl Store {
         mkdir(&root.join("spaces"))?;
         let dir = root.join("spaces").join(&s.space);
         mkdir(&dir)?;
+        let pending: i64 = s.registry.query_row(
+            "SELECT count(*) FROM registry_meta WHERE key=? AND value='1'",
+            [format!("reset_pending:{}", s.space)],
+            |r| r.get(0),
+        )?;
+        if pending > 0 {
+            return Err(Failure::new(
+                "UNSUPPORTED_FORMAT",
+                &format!(
+                    "A development reset of this space was interrupted. Repeat `lane --space {} data reset --confirm-development-reset`.",
+                    s.space
+                ),
+            ));
+        }
         let db = open_db(
             &dir.join("lane.sqlite"),
             include_str!("../../../../apps/lane/native/store/schema.sql"),
+            &s.space,
         )?;
-        transaction(&db, true, |c| {
-            for (k, v) in [
-                ("space_id", s.space.as_str()),
-                ("device_id", &s.device),
-                ("format_version", "2"),
-                ("account_epoch", ""),
-                ("pull_cursor", ""),
-                ("notification_enabled", "0"),
-                ("notification_content", "DETAIL"),
-                ("sync_owner", ""),
-                ("sync_owner_expires_at_us", "0"),
-            ] {
-                c.execute(
-                    "INSERT OR IGNORE INTO store_meta VALUES(?,?)",
-                    params![k, v],
-                )?;
-            }
-            Ok(())
-        })?;
+        transaction(&db, true, |c| init_meta(c, &s.space, &s.device))?;
         s.db.replace(Some(db));
         s.with(false, |_| Ok(()))?;
         Ok(s)
@@ -339,19 +498,16 @@ impl Store {
             .as_ref()
             .ok_or_else(|| Failure::new("DELETED", "Space is unavailable."))?;
         transaction(c, write, |c| {
-            compatible(c, None)?;
-            compatible(&self.registry, None)?;
+            compatible(c, None, &self.space)?;
+            compatible(&self.registry, None, "")?;
             if self.unavailable()? || meta(c, "removed")? == "1" {
                 return Err(Failure::new("DELETED", "Space is unavailable."));
             }
             if meta(c, "space_id")? != self.space
                 || meta(c, "device_id")? != self.device
-                || meta(c, "format_version")? != "2"
+                || meta(c, "format_version")? != STORE_FORMAT
             {
-                return Err(Failure::new(
-                    "UNSUPPORTED_FORMAT",
-                    "Incompatible space format.",
-                ));
+                return Err(unsupported(&self.space));
             }
             let n:i64=c.query_row("SELECT count(*) FROM heads h LEFT JOIN versions v ON v.version_id=h.version_id WHERE v.version_id IS NULL OR h.entity_id<>v.entity_id",[],|r|r.get(0))?;
             if n != 0 {
@@ -484,7 +640,7 @@ out["lastSyncAt"]=t.to_rfc3339_opts(chrono::SecondsFormat::Micros,true).into();
 }
 Ok(out)}
 ),
-            "CreateCaptureTask"|"CreateURLConnection"|"SaveURLConnection"|"DeleteURLConnection"|"CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
+            "CreatePlanningItem"|"SavePlanningItem"|"DeletePlanningItem"|"CreateCaptureTask"|"CreateURLConnection"|"SaveURLConnection"|"DeleteURLConnection"|"CreateRepository"|"SaveRepository"|"DeleteRepository"|"CreateTask"|"SaveTask"|"SetProgress"|"SetProposal"|"RestorePrompt"|"DeleteTask"|"ResolveConflict"=>self.mutate(method,q),
             "GetAttachment"=>self.with(false, |c| self.get_attachment(c,q)),
             _=>self.with(false,|c|self.query(c,method,q)),
         }

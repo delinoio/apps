@@ -9,7 +9,16 @@ use std::{
     path::Path,
     time::{Duration, SystemTime},
 };
-pub fn record(root: &Path, operation: &str, reason: &str, correlation: &str) -> Result<()> {
+/// Append one structured operation record. Records carry only the operation name, correlation
+/// ID, result category and duration; never task content or label, milestone and cycle names
+/// and descriptions.
+pub fn record(
+    root: &Path,
+    operation: &str,
+    reason: &str,
+    correlation: &str,
+    duration: Duration,
+) -> Result<()> {
     let dir = root.join("logs");
     mkdir(&dir)?;
     let _lock = lock(&dir.join(".rotation.lock"), true)?;
@@ -23,7 +32,7 @@ pub fn record(root: &Path, operation: &str, reason: &str, correlation: &str) -> 
     writeln!(
         file,
         "{}",
-        serde_json::json!({"time":chrono::Utc::now().to_rfc3339(),"level":"INFO","msg":"operation","operation":operation,"reason":reason,"correlationId":correlation})
+        serde_json::json!({"time":chrono::Utc::now().to_rfc3339(),"level":"INFO","msg":"operation","operation":operation,"reason":reason,"correlationId":correlation,"durationMs":u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)})
     )?;
     drop(file);
     let mut files = vec![];
