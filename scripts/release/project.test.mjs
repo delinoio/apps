@@ -278,6 +278,12 @@ test("web workflows validate main ancestry before allocating protected deploymen
           concurrency_group: "release-git-tracker",
           pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER",
         },
+        {
+          app: "lane",
+          environment: "delino-site-production",
+          concurrency_group: "release-lane",
+          pages_project_variable: "CLOUDFLARE_PAGES_PROJECT_LANE",
+        },
       ]);
       assert.equal(job.environment, "${{ matrix.environment }}");
       assert.deepEqual(job.concurrency, {
@@ -344,6 +350,7 @@ test("Delino releases publish server images with narrowly scoped package access"
     "delitools-api",
     "devbase-api",
     "git-tracker-api",
+    "lane-api",
   ]);
   assert.equal(
     jobs.images.steps[0].with.ref,

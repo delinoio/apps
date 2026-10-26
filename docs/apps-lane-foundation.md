@@ -57,9 +57,16 @@ Native builds embed the local production bundle and do not fetch remote template
   Run `pnpm build:ios` for an unsigned simulator build. Open the generated
   workspace for device development and signing.
 
-Web output is a static Cloudflare Pages candidate. Upload `apps/lane/dist` after
-building from the root with `pnpm --filter lane build`. The product domain is `lane.delino.io`. This contract does not provision an account,
-release workflow, signing identity or store registration.
+Web output is static Cloudflare Pages content. The shared `release-delino.yml`
+workflow builds `apps/lane/dist` and deploys it from each immutable
+`delino@vMAJOR.MINOR.PATCH` tag to `lane.delino.io`. Lane keeps its independent
+package version. The deployment uses the `delino-site-production` environment,
+its shared Cloudflare credentials and `CLOUDFLARE_PAGES_PROJECT_LANE` variable,
+with the `release-lane` concurrency group. Builds use the default public API
+origin `https://lane.api.delino.io`. Follow the
+[web publication procedure](repository-workflow-contract.md#web-publication)
+for account setup and retrying an existing tag. Account provisioning, native
+signing and store registration remain separate.
 
 ### Approved UI composition
 
