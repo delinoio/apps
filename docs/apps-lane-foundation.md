@@ -267,6 +267,7 @@ The following behavior is authoritative for all Lane entry points. The linked do
 - Store descriptions and prompts as Markdown source. Render Markdown in the app; allow source editing and copying. Do not execute embedded HTML. Automatically load images only from HTTPS URLs.
 - App edits require explicit Save; saves create versions. If external changes arrive during editing, retain unsaved input, indicate the external change, and check conflicts when saving.
 - If local storage is full or saving fails, retain unsaved input on the current screen and provide an error/retry action. Do not show successful save/synchronization. In web, connectivity loss blocks saving but retains current-screen input; reconnection requires an explicit retry, not an offline queue.
+- The repository editor locks its URL and name fields while its own save is pending, so input cannot be accepted and then discarded by that save. A save completes only into the editor that submitted it: closing an editor, or opening another one (including the same repository again), starts a new lifetime, and a late response from an earlier lifetime refreshes lists but never closes, changes or reports an error into the newer editor. An unchanged retry of a failed repository save, including after a lost response, reuses the original request ID, entity ID and base so the server replays the original outcome. Changed URL or display name, a different operation or base, and a new editor session use a fresh request ID.
 
 ### Task planning metadata
 
