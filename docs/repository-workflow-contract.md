@@ -340,7 +340,7 @@ Lane CI uses the existing `lane-frontend` job, an affected `lane-cli` job, and a
 ## Pending changesets
 
 The [changeset contract](repository-changeset-contract.md) owns pending change
-records and the Go CLI under `scripts/changeset/`. Use npm package names for all
+records and the Go CLI under `tools/changeset/`. Use npm package names for all
 component identities. Public changelog previews select explicitly authored public
 notes only. The unconditional formatting job validates records, runs CLI tests
 and vet, and checks Go formatting in this directory. Release preparation and

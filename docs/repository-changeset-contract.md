@@ -2,7 +2,7 @@
 
 ## Ownership and scope
 
-`scripts/changeset/` owns the repository Go CLI in the root Go module. `.changeset/`
+`tools/changeset/` owns the repository Go CLI in the root Go module. `.changeset/`
 stores pending change records. Package identities come from `package.json` names
 in the root and the workspaces selected by `pnpm-workspace.yaml`, including private
 applications and servers. Rust components without their own npm manifest use the
@@ -54,7 +54,7 @@ pnpm changeset changelog
 pnpm changeset changelog --internal
 ```
 
-The npm script runs `go run ./scripts/changeset`. Repeat `--package name:bump`
+The npm script runs `go run ./tools/changeset`. Repeat `--package name:bump`
 for multiple packages. Omit `--public` for internal-only changes. `add` refuses to
 overwrite an existing record. For long Markdown, edit the JSON file after creation.
 
@@ -72,5 +72,5 @@ Documentation-only and workflow-only changes do not require a record. Run
 `pnpm changeset check` before committing. CI checks all pending records in its
 existing unconditional formatting job so package renames cannot leave stale
 records. That job also runs the CLI's Go tests and vet check. CI does not enforce
-that every diff has a changeset. Run `go test -race ./scripts/changeset` and
-`go vet ./scripts/changeset` when changing the CLI.
+that every diff has a changeset. Run `go test -race ./tools/changeset` and
+`go vet ./tools/changeset` when changing the CLI.

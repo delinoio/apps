@@ -204,4 +204,4 @@ Read [Perfine contracts](docs/project-perfine.md) before changing `crates/perfin
 ## Changeset procedure
 
 - Record component behavior changes and validate pending records according to the [changeset contract](docs/repository-changeset-contract.md). Use owning npm package names and keep public notes separate from internal summaries.
-- `scripts/changeset/` owns the Go CLI; `.changeset/` owns pending records. Run its Go tests and vet check when changing the CLI.
+- `tools/changeset/` owns the Go CLI; `.changeset/` owns pending records. Run its Go tests and vet check when changing the CLI.

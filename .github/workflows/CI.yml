@@ -78,11 +78,11 @@ jobs:
         run: |
           cargo fmt --manifest-path servers/Cargo.toml --all --check
       - id: gofmt
-        run: node scripts/ci/check-go-format.mjs protos examples scripts/changeset
+        run: node scripts/ci/check-go-format.mjs protos examples tools/changeset
       - id: changesets
         run: |
-          go vet ./scripts/changeset
-          go test -race ./scripts/changeset
+          go vet ./tools/changeset
+          go test -race ./tools/changeset
           pnpm changeset check
       - id: protobuf-format
         run: pnpm exec buf format --diff --exit-code
