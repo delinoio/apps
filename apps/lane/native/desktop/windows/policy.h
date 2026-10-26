@@ -19,6 +19,21 @@ inline bool UUID(std::string_view value) {
   }
   return true;
 }
+// Local-data retention choices for DisconnectSync. The store accepts both the
+// numeric enum values (what Settings sends) and the ProtoJSON names, and stays
+// the authority on validation. This classifier only decides host bookkeeping
+// after the store already succeeded, so unrecognized values never count as removal.
+enum class LocalRetention { Unspecified, KeepLocal, RemoveLocal };
+inline LocalRetention RetentionFromNumber(double value) {
+  if (value == 1.0) return LocalRetention::KeepLocal;
+  if (value == 2.0) return LocalRetention::RemoveLocal;
+  return LocalRetention::Unspecified;
+}
+inline LocalRetention RetentionFromName(std::string_view value) {
+  if (value == "LOCAL_RETENTION_KEEP_LOCAL") return LocalRetention::KeepLocal;
+  if (value == "LOCAL_RETENTION_REMOVE_LOCAL") return LocalRetention::RemoveLocal;
+  return LocalRetention::Unspecified;
+}
 struct Reauthentication {
   std::string space, account, mode, challenge;
   uint64_t generation = 0;
