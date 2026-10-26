@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { platformPackage } from "../bin/verify.mjs";
+import { npmCommand } from "./npm.mjs";
 
 // Serve only local candidates so npm exercises normal optional dependency selection
 // without relying on published versions or an existing npm cache.
@@ -62,42 +63,39 @@ export async function installCandidate({
   try {
     const registry = `http://127.0.0.1:${server.address().port}`;
     await new Promise((done, reject) => {
-      const child = spawn(
-        "npm",
-        [
-          "install",
-          "--ignore-scripts",
-          "--no-audit",
-          "--no-fund",
-          "--fetch-retries=0",
-          ...(global ? ["--global"] : []),
-          ...(targetKey
-            ? [
-                `--os=${platformPackage(targetKey).os}`,
-                `--cpu=${platformPackage(targetKey).cpu}`,
-              ]
-            : []),
-          "--registry",
-          registry,
-          "--cache",
-          resolve(prefix, "cache"),
-          "--userconfig",
-          resolve(prefix, "empty.npmrc"),
-          ...(omitOptional ? ["--omit=optional"] : []),
-          "--prefix",
-          prefix,
-          resolve(dist, `delinoio-lane-${version}.tgz`),
-        ],
-        {
-          env: {
-            ...process.env,
-            npm_config_registry: registry,
-            "npm_config_@delinoio:registry": registry,
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-          timeout: 30000,
+      const command = npmCommand([
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--fetch-retries=0",
+        ...(global ? ["--global"] : []),
+        ...(targetKey
+          ? [
+              `--os=${platformPackage(targetKey).os}`,
+              `--cpu=${platformPackage(targetKey).cpu}`,
+            ]
+          : []),
+        "--registry",
+        registry,
+        "--cache",
+        resolve(prefix, "cache"),
+        "--userconfig",
+        resolve(prefix, "empty.npmrc"),
+        ...(omitOptional ? ["--omit=optional"] : []),
+        "--prefix",
+        prefix,
+        resolve(dist, `delinoio-lane-${version}.tgz`),
+      ]);
+      const child = spawn(command.file, command.args, {
+        env: {
+          ...process.env,
+          npm_config_registry: registry,
+          "npm_config_@delinoio:registry": registry,
         },
-      );
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 30000,
+      });
       let output = "";
       child.stdout.on("data", (data) => {
         output += data;

@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. These distribution paths do not establish package publication.
+`packages/lane` owns the npm installer `@delinoio/lane`, executable manifests/checksums, common agent `SKILL.md`, CLI installation and MCP connection guides. CLI source remains in `cmds/lane`; native app build ownership remains in `apps/lane`; server OCI/runtime/runbooks remain in `servers/lane-api`. The shared Delino release publishes downloadable binary archives and a lightweight npm launcher and six platform npm archives; npm registry publication remains separate.
 
 ## Runtime and Language
 
@@ -10,7 +10,7 @@ The installer is a small Node.js launcher/package; the product CLI is Rust. Foll
 
 ## Users and Operators
 
-Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal native distribution and production deployment remain follow-up operations.
+Individuals install the CLI directly or through npm; agents consume the common skill and connect to user-approved MCP. Operators use deployable server/web artifacts and runbooks. Store publication, formal signing/installer distribution and API runtime deployment remain follow-up operations.
 
 ## Agent Skills Distribution
 
@@ -33,6 +33,23 @@ Ship connection examples:
 User guides cover installation, repository registration/rename/moves, task/proposal management, prompt restore, conflicts, explicit Save and failure/input retention, login/sync/logout choices, device/connection management, all three deletion scopes, webhook settings/events and processing, per-device notifications and unsupported push environments. Describe `lane-dev://` versus `lane://` callback/open/repository/task links. No decision-item links are included. Public docs show supported behavior and stable public interfaces, not repository-internal contracts or operational secret paths.
 
 Native distributions retain the existing SDK, embedded production-bundle and license-notice contracts. A desktop package must make its matching `lane sync run` helper available to host supervision without assuming a globally installed npm package. Register deep-link routes by build channel; queue cold-launch routing until storage/UI listeners are ready. Formal signing/store setup is separate from unsigned build/install/behavior validation. Do not add WNS registration to Windows packaging.
+
+## Tag-based binary distribution
+
+Every validated `delino@vMAJOR.MINOR.PATCH` release builds all six CLI targets and
+macOS Intel/Apple Silicon plus Windows x64 desktop archives through the
+[Lane binary publication procedure](repository-workflow-contract.md#lane-binary-publication).
+The GitHub Release includes direct CLI archives, the lightweight `@delinoio/lane` npm
+launcher and all six optional platform npm archives, desktop application archives, checksums and source/platform metadata.
+Lane CLI/npm package versions remain independent of the Delino tag version.
+Desktop packages embed the matching verified CLI and notices. macOS packages are
+ad-hoc signed; Windows packages are unsigned portable archives. No signing
+identity, npm registry credential or store upload is required for this workflow.
+
+Assembly verifies each platform package directly before installation, including its OS/CPU metadata, source revision, executable checksum and notices. It does not add platform binaries to the launcher archive. Publication requires all targets before upload. Existing published assets must
+match byte-for-byte on retry; a mismatch fails without replacing the asset.
+Windows ARM64 CLI is cross-built; host smoke checks execute only native targets.
+These release builds do not establish native installation or GUI acceptance.
 
 ## Desktop Chrome companion packaging
 
@@ -64,6 +81,10 @@ Verify executable source/version/platform and checksums. Keep signing, npm publi
 Installer/launcher errors identify platform/version and safe failure categories, never user data, credentials or environment dumps. Runtime CLI logging follows its owning contract; package installation must not upload diagnostics.
 
 ## Build and Test
+
+Windows packaging and smoke checks invoke npm's JavaScript entry with Node,
+without shell parsing of paths or arguments. Resolve that entry from the installed
+`npm.cmd` location; do not execute the command shim as a native executable.
 
 Run root install, package-local checks and packed-package smoke tests from a disposable install directory. Use an isolated loopback npm registry serving only local candidate archives to test normal platform selection without public publication or a pre-populated cache. Verify that installation retains only the host platform package and that omitting optional dependencies produces an actionable error. Verify archive contents, checksums, licenses, executable selection, missing/unsupported platform errors, argument/stdin/stdout/stderr/exit propagation, and local stdio MCP startup. Build macOS/Windows/Linux binaries with the matching Rust targets, C linker/native SDK and `protoc`, and record which were actually executed. The default package build requires all six target toolchains; repeated `--platform` selections produce explicitly partial validation artifacts. CI uses the Linux amd64 host subset. Full release candidates must contain all six artifacts. Native SDK build/install/behavior and accessibility acceptance remain separate on all native targets.
 

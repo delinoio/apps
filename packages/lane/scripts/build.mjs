@@ -14,6 +14,7 @@ import { parseArgs } from "node:util";
 import { platforms, platformPackage } from "../bin/verify.mjs";
 import { targets } from "./targets.mjs";
 import { collectNotices } from "./notices.mjs";
+import { npm } from "./npm.mjs";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const { values } = parseArgs({
   options: {
@@ -194,14 +195,10 @@ for (const key of selectedPlatforms) {
       2,
     )}\n`,
   );
-  execFileSync(
-    "npm",
-    ["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"],
-    {
-      cwd: platformStage,
-      stdio: "inherit",
-    },
-  );
+  npm(["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"], {
+    cwd: platformStage,
+    stdio: "inherit",
+  });
   execFileSync("tar", [
     "-czf",
     resolve(dist, `${directory}-${pkg.version}.tar.gz`),
@@ -230,11 +227,10 @@ if (
     "CLI source changed during packaging; discard artifacts and rebuild",
   );
 rmSync(resolve(stage, "THIRD_PARTY_NOTICES"), { recursive: true, force: true });
-execFileSync(
-  "npm",
-  ["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"],
-  { cwd: stage, stdio: "inherit" },
-);
+npm(["pack", "--ignore-scripts", "--pack-destination", dist, "--quiet"], {
+  cwd: stage,
+  stdio: "inherit",
+});
 const files = selectedPlatforms
   .flatMap((key) => [
     `lane-${key}-${pkg.version}.tar.gz`,
