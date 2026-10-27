@@ -14,6 +14,7 @@ export function installAccessibility(view) {
   let previousCommand;
   const pendingAnnouncements = new WeakSet();
   const wired = new WeakSet();
+  const focusRequests = new WeakMap();
   const focusables = (root) =>
     [
       ...root.querySelectorAll('x-view[role="button"], x-input, x-textarea'),
@@ -65,6 +66,14 @@ export function installAccessibility(view) {
       button.setAttribute("role", "button");
       const disabled = button.classList.contains("disabled");
       button.setAttribute("aria-disabled", String(disabled));
+      const focusRequest = button.getAttribute("data-focus-request");
+      if (focusRequest && focusRequests.get(button) !== focusRequest) {
+        focusRequests.set(button, focusRequest);
+        requestAnimationFrame(() => {
+          if (button.isConnected && button.closest('[data-active-tab="true"]'))
+            focus(button);
+        });
+      }
       if (button.classList.contains("command-result")) {
         button.setAttribute(
           "aria-pressed",
@@ -321,6 +330,7 @@ export function installAccessibility(view) {
         "data-settings-target",
         "data-pressed",
         "data-expanded",
+        "data-focus-request",
         "data-invalid",
         "disabled",
       ],
@@ -334,6 +344,21 @@ export function installAccessibility(view) {
           event.isComposing
         )
           return;
+        if (
+          event.key === "Escape" &&
+          root.activeElement?.closest(".filter-region")
+        ) {
+          const trigger = root.activeElement
+            .closest(".compact-filters")
+            ?.querySelector(".filter-actions .button");
+          if (trigger) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            trigger.click();
+            requestAnimationFrame(() => focus(trigger));
+            return;
+          }
+        }
         if (
           (event.metaKey || event.ctrlKey) &&
           !event.altKey &&
