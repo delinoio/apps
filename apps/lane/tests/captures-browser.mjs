@@ -218,6 +218,7 @@ try {
   assert.equal(await page.locator(".capture-result script").count(), 0);
   assert.equal(await page.locator(".capture-result input").count(), 0);
 
+  await freshPage();
   await fixture({ captures: [{ attachmentId: ids[0] }] });
   await openPrompt();
   await page.getByText("Capture 1 of 1", { exact: true }).waitFor();
