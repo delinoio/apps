@@ -42,6 +42,8 @@ export function URLConnections({
     chosen?: UI<EntityVersion>;
     requestId: string;
   }>();
+  const resolutionRef = useRef(resolution);
+  resolutionRef.current = resolution;
   const [discard, setDiscard] = useState(false);
   const [discardConflict, setDiscardConflict] = useState(false);
   useEffect(() => {
@@ -449,8 +451,33 @@ export function URLConnections({
                   throw new Error(
                     "The conflict changed. Refresh and compare all alternatives.",
                   );
-                setResolution((current) =>
-                  current === resolution ? undefined : current,
+                const current = resolutionRef.current;
+                const savedVersion = reply.result.version;
+                const retained = current?.chosen
+                  ? connectionOf(current.chosen)
+                  : undefined;
+                const canRebase =
+                  !!current &&
+                  current !== resolution &&
+                  !!retained &&
+                  !!savedVersion;
+                if (
+                  current &&
+                  current !== resolution &&
+                  retained &&
+                  savedVersion
+                ) {
+                  setEditing({
+                    sessionId: newId(),
+                    id: savedVersion.entityId,
+                    base: savedVersion.versionId,
+                    prefix: retained.prefix,
+                    repositoryId: retained.repositoryId,
+                    requestId: current.requestId,
+                  });
+                }
+                setResolution((active) =>
+                  active === resolution || canRebase ? undefined : active,
                 );
               })
             }

@@ -423,10 +423,39 @@ test("a resolution selection accepted just before Save survives the older reply"
     f.calls[0].input.resolved?.body.value.prefix,
     "https://one.example/app",
   );
-  f.calls[0].resolve({ result: { result: ResultKind.APPLIED } });
+  const firstRequestId = f.calls[0].input.meta.requestId;
+  f.calls[0].resolve({
+    result: {
+      result: ResultKind.APPLIED,
+      version: rule("https://one.example/app", "repo-one", "resolved-v3"),
+    },
+  });
   await f.view.settle();
   assert.equal(f.dirty(), true);
-  assert.match(f.button("Use this version", 1).props.className, /primary/);
+  assert.equal(f.buttons("Save resolution").length, 0);
+  assert.equal(
+    f.values.get(`#${f.input().props.id}`),
+    "https://two.example/app",
+  );
+  assert.equal(f.buttons("Save").length, 1);
   assert.equal(f.calls.length, 1);
+
+  await f.tap("Save");
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[1].method, "SaveURLConnection");
+  assert.equal(f.calls[1].input.expectedVersionId, "resolved-v3");
+  assert.deepEqual(f.calls[1].input.connection, {
+    prefix: "https://two.example/app",
+    repositoryId: "repo-two",
+  });
+  assert.notEqual(f.calls[1].input.meta.requestId, firstRequestId);
+  f.calls[1].resolve({
+    result: {
+      result: ResultKind.APPLIED,
+      version: rule("https://two.example/app", "repo-two", "resolved-v4"),
+    },
+  });
+  await f.view.settle();
+  assert.equal(f.dirty(), false);
   f.view.unmount();
 });
