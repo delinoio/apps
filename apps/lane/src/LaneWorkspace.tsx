@@ -1078,6 +1078,7 @@ export function LaneWorkspace({
           >
             <Settings
               adapter={adapter}
+              mobile={mobile}
               target={settingsTarget}
               stateChanged={(dirty, busy, exitBusy) => {
                 setSettingsDirty(dirty);

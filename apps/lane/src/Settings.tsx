@@ -6,6 +6,7 @@ import {
   DataDeletionMode,
   LocalRetention,
   NotificationContent,
+  NotificationPermission,
   type Device as ProtoDevice,
   type Connection as ProtoConnection,
 } from "@repo/protos/lane/v1/lane_pb";
@@ -39,17 +40,35 @@ const notificationContent = (
     : NotificationContent.DETAIL;
 const time = (value?: { seconds: string }) =>
   value ? new Date(Number(value.seconds) * 1000).toLocaleString() : "Never";
+type LoadState = "loading" | "ready" | "failed";
+const permissionLabel = (permission: NotificationPreferences["permission"]) => {
+  switch (permission) {
+    case NotificationPermission.GRANTED:
+    case "NOTIFICATION_PERMISSION_GRANTED":
+      return "Granted";
+    case NotificationPermission.DENIED:
+    case "NOTIFICATION_PERMISSION_DENIED":
+      return "Denied";
+    case NotificationPermission.UNSUPPORTED:
+    case "NOTIFICATION_PERMISSION_UNSUPPORTED":
+      return "Unsupported";
+    default:
+      return "Not requested";
+  }
+};
 export function Settings({
   adapter,
   onReset,
   target,
   stateChanged,
   active: visible = true,
+  mobile = false,
   beforeDataChange,
 }: {
   adapter: LaneAdapter;
   onReset: () => void;
   active?: boolean;
+  mobile?: boolean;
   beforeDataChange?: () => Promise<boolean>;
   stateChanged?: (dirty: boolean, busy: boolean, exitBusy: boolean) => void;
   target?: { section: SettingsSection; request: number };
@@ -90,10 +109,14 @@ export function Settings({
     };
   }, [adapter]);
   const [status, setStatus] = useState<LocalStatus>();
+  const [statusLoad, setStatusLoad] = useState<LoadState>("loading");
   const prefsDirty = useRef(false);
   const [prefs, setPrefs] = useState<NotificationPreferences>();
+  const [prefsLoad, setPrefsLoad] = useState<LoadState>("loading");
   const [devices, setDevices] = useState<Device[]>([]);
+  const [devicesLoad, setDevicesLoad] = useState<LoadState>("loading");
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [connectionsLoad, setConnectionsLoad] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [operationBusy, setBusy] = useState(false);
@@ -125,34 +148,60 @@ export function Settings({
     }
   };
   const load = async () => {
-    const local = await adapter.local("GetLocalStatus", {});
-    setStatus(local);
-    const latestPreferences = await adapter.local(
-      "GetNotificationPreferences",
-      {},
-    );
-    if (!prefsDirty.current) setPrefs(latestPreferences);
-    // Account lists are online-only; local preferences stay usable if these fail.
-    const ds: Device[] = [];
-    let cursor = "";
-    do {
-      const r = await adapter.call(AccountService.method.listDevices, {
-        page: { size: 100, cursor },
-      });
-      ds.push(...r.items);
-      cursor = r.nextCursor;
-    } while (cursor);
-    setDevices(ds);
-    const cs: Connection[] = [];
-    cursor = "";
-    do {
-      const r = await adapter.call(AccountService.method.listConnections, {
-        page: { size: 100, cursor },
-      });
-      cs.push(...r.items);
-      cursor = r.nextCursor;
-    } while (cursor);
-    setConnections(cs);
+    setStatusLoad("loading");
+    setPrefsLoad("loading");
+    setDevicesLoad("loading");
+    setConnectionsLoad("loading");
+    try {
+      const local = await adapter.local("GetLocalStatus", {});
+      setStatus(local);
+      setStatusLoad("ready");
+      const latestPreferences = await adapter.local(
+        "GetNotificationPreferences",
+        {},
+      );
+      if (!prefsDirty.current) setPrefs(latestPreferences);
+      setPrefsLoad("ready");
+    } catch (cause) {
+      setStatusLoad("failed");
+      setPrefsLoad("failed");
+      setDevicesLoad("failed");
+      setConnectionsLoad("failed");
+      throw cause;
+    }
+    // Fetch the online lists independently. Either failure leaves local settings usable.
+    const readDevices = async () => {
+      const items: Device[] = [];
+      let cursor = "";
+      do {
+        const page = await adapter.call(AccountService.method.listDevices, {
+          page: { size: 100, cursor },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setDevices(items);
+      setDevicesLoad("ready");
+    };
+    const readConnections = async () => {
+      const items: Connection[] = [];
+      let cursor = "";
+      do {
+        const page = await adapter.call(AccountService.method.listConnections, {
+          page: { size: 100, cursor },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setConnections(items);
+      setConnectionsLoad("ready");
+    };
+    const results = await Promise.allSettled([
+      readDevices(),
+      readConnections(),
+    ]);
+    if (results[0].status === "rejected") setDevicesLoad("failed");
+    if (results[1].status === "rejected") setConnectionsLoad("failed");
   };
   useEffect(() => {
     void run(load);
@@ -235,23 +284,45 @@ export function Settings({
   }, [target, adapter, visible]);
   return (
     <view
-      className="section"
+      className="section settings-page"
       data-settings-target={
         visible && target ? `${target.section}:${target.request}` : ""
       }
     >
-      <text className="heading">Settings</text>
+      <view className="settings-header">
+        <view className="settings-header-copy">
+          <text className="heading settings-title" accessibility-heading>
+            Settings
+          </text>
+          <text className="settings-description">
+            Manage this device, synchronization, and account access.
+          </text>
+        </view>
+        <Button disabled={busy} onClick={() => void run(load)}>
+          Refresh settings
+        </Button>
+      </view>
       {visible && (
         <AppUpdates
+          desktop={adapter.mode === "native" && !mobile}
           settingsDirty={() => prefsDirty.current}
-          settingsBusy={operationBusy}
+          settingsBusy={
+            operationBusy || resetOpen || confirm !== null || !!deletion
+          }
           onBusyChange={setUpdateBusy}
         />
       )}
-      <Button onClick={() => void run(load)}>Refresh settings</Button>
-      {error && <Notice>{error}</Notice>}
-      {message && <Notice>{message}</Notice>}
-      <view className="card">
+      {error && (
+        <view accessibility-live-region="polite">
+          <Notice>{error}</Notice>
+        </view>
+      )}
+      {message && (
+        <view accessibility-live-region="polite">
+          <Notice>{message}</Notice>
+        </view>
+      )}
+      <view className="card settings-card">
         <view
           id="settings-account"
           accessibility-element
@@ -263,23 +334,39 @@ export function Settings({
               : "Online account"
           }
         >
-          <text className="heading" accessibility-elements-hidden>
+          <text
+            className="heading settings-section-title"
+            accessibility-elements-hidden
+          >
             {adapter.mode === "native"
               ? "Local data and synchronization"
               : "Online account"}
           </text>
         </view>
-        <text>
-          {status?.syncEnabled
-            ? "Synchronization enabled"
-            : adapter.mode === "native"
-              ? "Local data on this device"
-              : "Web requires an online connection"}
+        <text className="settings-status">
+          {statusLoad === "loading"
+            ? "Loading account status…"
+            : statusLoad === "failed" && !status
+              ? "Account status unavailable"
+              : status?.syncEnabled
+                ? "Synchronization enabled"
+                : adapter.mode === "native"
+                  ? "Local data on this device"
+                  : "Web requires an online connection"}
         </text>
-        <text>
-          {status?.connected ? "Connected" : "Disconnected"} · Pending items:{" "}
-          {status?.pendingItemCount ?? "Unknown"}
-        </text>
+        <view className="settings-metadata">
+          <text className="settings-status">
+            {statusLoad === "loading"
+              ? "Connection: Loading…"
+              : statusLoad === "failed" && !status
+                ? "Connection: Unavailable"
+                : status?.connected
+                  ? "Connection: Connected"
+                  : "Connection: Disconnected"}
+          </text>
+          <text>Pending items: {status?.pendingItemCount ?? "Unknown"}</text>
+          <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
+        </view>
         {status?.reconnectRequired && (
           <Notice>
             Reconnection required. Synchronization is stopped. Retained local
@@ -287,7 +374,6 @@ export function Settings({
           </Notice>
         )}
         {status?.syncErrorReason && <Notice>{status.syncErrorReason}</Notice>}
-        <text>Last synchronization: {status?.lastSyncAt || "Never"}</text>
         {status?.itemErrors?.map((e) => (
           <Notice key={e.entityId}>
             {e.entityId}: {describeItemError(e.reason)} Other eligible items can
@@ -310,7 +396,7 @@ export function Settings({
             Retry blocked items
           </Button>
         )}
-        <view className="row wrap">
+        <view className="row wrap settings-actions">
           <Button
             disabled={busy}
             onClick={() => {
@@ -342,7 +428,7 @@ export function Settings({
           </Button>
         </view>
       </view>
-      <view className="card">
+      <view className="card settings-card">
         <view
           id="settings-notifications"
           accessibility-element
@@ -350,7 +436,10 @@ export function Settings({
           focusable
           accessibility-label="Notifications on this device"
         >
-          <text className="heading" accessibility-elements-hidden>
+          <text
+            className="heading settings-section-title"
+            accessibility-elements-hidden
+          >
             Notifications on this device
           </text>
         </view>
@@ -358,9 +447,18 @@ export function Settings({
           Only new proposals created through MCP notify you. In-app proposal
           counts remain available.
         </text>
+        {prefsLoad === "loading" && !prefs && (
+          <text>Loading notification preferences…</text>
+        )}
+        {prefsLoad === "failed" && !prefs && (
+          <text>
+            Notification preferences unavailable. Refresh settings to try again.
+          </text>
+        )}
         {prefs && (
           <>
             <Choices
+              exclusive
               disabled={busy}
               label="Enable notifications"
               value={prefs.enabled ? "on" : "off"}
@@ -374,6 +472,7 @@ export function Settings({
               }}
             />
             <Choices
+              exclusive
               disabled={busy}
               label="Notification content"
               value={notificationContent(prefs.content)}
@@ -386,7 +485,9 @@ export function Settings({
                 setPrefs({ ...prefs, content });
               }}
             />
-            <text>Permission: {String(prefs.permission)}</text>
+            <text className="settings-status">
+              Permission: {permissionLabel(prefs.permission)}
+            </text>
             <Button
               disabled={busy}
               primary
@@ -417,75 +518,116 @@ export function Settings({
           local notifications and in-app indications.
         </text>
       </view>
-      <view className="card">
-        <text className="heading">Devices</text>
+      <view className="card settings-card">
+        <text className="heading settings-section-title" accessibility-heading>
+          Devices
+        </text>
         <text>
           Disconnection blocks later server access. It cannot erase an offline
           device’s existing data.
         </text>
-        {devices.map((d) => (
-          <view className="card" key={d.id}>
-            <text>{d.name}</text>
-            <text>
-              Last synchronization: {time(d.lastSyncAt)} ·{" "}
-              {d.disconnectedAt ? "Disconnected" : "Connected"}
-            </text>
-            <Button
-              disabled={busy || !!d.disconnectedAt}
-              onClick={() =>
-                void run(async () => {
-                  await adapter.call(AccountService.method.disconnectDevice, {
-                    meta: meta(),
-                    deviceId: d.id,
-                  });
-                  await load();
-                })
-              }
-            >
-              Disconnect device
-            </Button>
-          </view>
-        ))}
+        {devicesLoad === "loading" && <text>Loading devices…</text>}
+        {devicesLoad === "failed" && (
+          <text>Devices unavailable. Refresh settings to try again.</text>
+        )}
+        {devicesLoad === "ready" && devices.length === 0 && (
+          <text>No devices</text>
+        )}
+        {devicesLoad === "ready" &&
+          devices.map((d) => (
+            <view className="settings-list-row" key={d.id}>
+              <view className="settings-list-details">
+                <text className="settings-row-name">{d.name}</text>
+                <text className="muted">
+                  Last synchronization: {time(d.lastSyncAt)}
+                </text>
+                <text className="settings-status">
+                  {d.disconnectedAt ? "Disconnected" : "Connected"}
+                </text>
+              </view>
+              <Button
+                disabled={busy || !!d.disconnectedAt}
+                onClick={() =>
+                  void run(async () => {
+                    await adapter.call(AccountService.method.disconnectDevice, {
+                      meta: meta(),
+                      deviceId: d.id,
+                    });
+                    await load();
+                  })
+                }
+              >
+                Disconnect device
+              </Button>
+            </view>
+          ))}
       </view>
-      <view className="card">
-        <text className="heading">Approved remote MCP connections</text>
+      <view className="card settings-card">
+        <text className="heading settings-section-title" accessibility-heading>
+          Approved remote MCP connections
+        </text>
         <Notice>
           Each approved connection has full management access to every
           repository in this account.
         </Notice>
-        {connections.map((c) => (
-          <view className="card" key={c.id}>
-            <text>
-              {c.name} · Approved {time(c.approvedAt)}
-            </text>
-            <text>{c.revokedAt ? "Revoked" : "Full management access"}</text>
-            <Button
-              disabled={busy || !!c.revokedAt}
-              onClick={() =>
-                void run(async () => {
-                  await adapter.call(AccountService.method.revokeConnection, {
-                    meta: meta(),
-                    connectionId: c.id,
-                  });
-                  await load();
-                })
-              }
-            >
-              Revoke access
-            </Button>
-          </view>
-        ))}
+        {connectionsLoad === "loading" && (
+          <text>Loading approved remote MCP connections…</text>
+        )}
+        {connectionsLoad === "failed" && (
+          <text>
+            Approved remote MCP connections unavailable. Refresh settings to try
+            again.
+          </text>
+        )}
+        {connectionsLoad === "ready" && connections.length === 0 && (
+          <text>No approved remote MCP connections</text>
+        )}
+        {connectionsLoad === "ready" &&
+          connections.map((c) => (
+            <view className="settings-list-row" key={c.id}>
+              <view className="settings-list-details">
+                <text className="settings-row-name">{c.name}</text>
+                <text className="muted">Approved: {time(c.approvedAt)}</text>
+                <text className="settings-status">
+                  {c.revokedAt ? "Revoked" : "Full management access"}
+                </text>
+              </view>
+              <Button
+                disabled={busy || !!c.revokedAt}
+                onClick={() =>
+                  void run(async () => {
+                    await adapter.call(AccountService.method.revokeConnection, {
+                      meta: meta(),
+                      connectionId: c.id,
+                    });
+                    await load();
+                  })
+                }
+              >
+                Revoke access
+              </Button>
+            </view>
+          ))}
       </view>
       {adapter.mode === "native" && (
-        <view className="card">
-          <text className="heading">Development data</text>
+        <view className="card settings-card">
+          <text
+            className="heading settings-section-title"
+            accessibility-heading
+          >
+            Development data
+          </text>
           <text>
             Lane is pre-release. If a data space cannot be opened because its
             format is outdated, or you want to discard disposable development
             data, reset this space explicitly. Lane never resets data
             automatically.
           </text>
+          <text className="muted">
+            There is no recovery. Reset does not contact or delete server data.
+          </text>
           <Button
+            disabled={busy}
             onClick={() => {
               setError("");
               setResetOpen(true);
@@ -495,30 +637,65 @@ export function Settings({
           </Button>
         </view>
       )}
-      <view className="card">
-        <text className="heading">Delete Lane data</text>
+      <view className="card settings-card settings-deletion">
+        <text className="heading settings-section-title" accessibility-heading>
+          Delete Lane data
+        </text>
         <text>These actions preserve your shared Logto identity.</text>
         {adapter.mode === "native" && (
-          <Button onClick={() => setConfirm("local")}>
-            Remove only this device’s data
-          </Button>
+          <view className="settings-list-row settings-delete-row">
+            <view className="settings-list-details">
+              <text className="settings-row-name">
+                Remove only this device’s data
+              </text>
+              <text className="muted">
+                Server data stays. Unsynchronized content cannot be recovered.
+              </text>
+            </view>
+            <Button disabled={busy} onClick={() => setConfirm("local")}>
+              Remove only this device’s data
+            </Button>
+          </view>
         )}
-        <Button
-          onClick={() => {
-            cancelDeletion();
-            setConfirm("everywhere");
-          }}
-        >
-          Delete server and connected-device data
-        </Button>
-        <Button
-          onClick={() => {
-            cancelDeletion();
-            setConfirm("server");
-          }}
-        >
-          Delete server data, keep local data
-        </Button>
+        <view className="settings-list-row settings-delete-row">
+          <view className="settings-list-details">
+            <text className="settings-row-name">
+              Delete server and connected-device data
+            </text>
+            <text className="muted">
+              Offline devices receive a deletion directive on reconnect.
+            </text>
+          </view>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              cancelDeletion();
+              setConfirm("everywhere");
+            }}
+          >
+            Delete server and connected-device data
+          </Button>
+        </view>
+        <view className="settings-list-row settings-delete-row">
+          <view className="settings-list-details">
+            <text className="settings-row-name">
+              Delete server data, keep local data
+            </text>
+            <text className="muted">
+              All devices disconnect. Uploading again requires explicit
+              reconnection.
+            </text>
+          </view>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              cancelDeletion();
+              setConfirm("server");
+            }}
+          >
+            Delete server data, keep local data
+          </Button>
+        </view>
       </view>
       {resetOpen && (
         <ResetDevelopmentDialog
@@ -533,7 +710,11 @@ export function Settings({
         />
       )}
       {deletion && (
-        <Dialog title="Complete data deletion" onClose={cancelDeletion}>
+        <Dialog
+          title="Complete data deletion"
+          onClose={cancelDeletion}
+          className="settings-dialog"
+        >
           <Notice>
             {deletion.ready
               ? "Reauthentication completed. Select Delete now to permanently remove the confirmed data."
@@ -577,6 +758,7 @@ export function Settings({
                 : "Confirm permanent data removal"
           }
           onClose={() => setConfirm(null)}
+          className="settings-dialog"
         >
           {confirm === "reconnect" ? (
             <Notice>

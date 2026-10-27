@@ -9,6 +9,7 @@ const lane = fileURLToPath(new URL("../..", import.meta.url));
 const harness = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 
 export interface UpdateProps {
+  desktop: boolean;
   settingsDirty: () => boolean;
   settingsBusy: boolean;
   onBusyChange: (busy: boolean) => void;

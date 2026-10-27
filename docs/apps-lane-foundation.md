@@ -224,6 +224,30 @@ shutdown permission, successful swap/startup and rollback with disposable
 fixtures. Record real macOS and Windows upgrade/restart acceptance separately
 from these fixtures and native packaging builds.
 
+### Settings presentation
+
+Settings uses one centered scrolling column within the existing pane, at most
+960 logical pixels wide. The header explains device, synchronization, and
+account access and keeps Refresh settings explicit. Native desktop shows seven
+expanded sections in order: App updates, Local data and synchronization,
+Notifications on this device, Devices, Approved remote MCP connections,
+Development data, and Delete Lane data. Web uses Online account in place of
+the native account section and omits App updates, Development data, and local
+device removal. Mobile omits the desktop updater. The application rail, sidebar,
+workspace tabs, and RealQA settings remain separate.
+
+Use divided device and connection rows with textual status and the existing
+direct actions. Keep each data-removal action next to its full scope and
+consequences. Show loading before the first status or list result, an empty
+message only after an acknowledged empty list, and an unavailable message on
+list failure. A failed online list must not block native local notification
+preferences. Show the actual notification permission as text. Keep notification
+choices and Save explicit, preserve dirty drafts and server acknowledgements,
+and retain account, deletion, reset, and updater safeguards above. Use readable
+wrapping content and at least 44-pixel controls in the 900-pixel and 360-pixel
+layouts. Keep section reveal targets, keyboard access, dialog focus handling,
+and text alternatives for status and progress.
+
 ### Navigation command menu
 
 Provide a navigation command menu with `Cmd+K` on macOS and `Ctrl+K` on
