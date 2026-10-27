@@ -57,6 +57,7 @@ only for the behavior specified here; Pace remains outside this scope.
 - The first capture's matching rule preselects the repository. Without a match, including non-Chrome captures, leave it unselected for the user to choose. Do not infer the last-used or current Lane repository.
 - When another capture matches a different repository, retain the composer's current repository and show a warning. The user can change the repository explicitly.
 - Concurrent changes to a rule preserve both alternatives and require explicit resolution. Exclude unresolved rules from automatic selection and show the conflict.
+- During a URL-rule create, save, or conflict-resolution request, disable the fields and choices that define the submitted rule or resolution. A successful reply may close only the unchanged submitted draft. Keep a later accepted edit visible and unsaved; do not submit it automatically. On rejection or conflict, keep the draft, show the error, and allow an explicit retry with the same request identity when the submitted values are unchanged.
 - Deleting the target repository deletes its rules. An open composer referencing that repository must require repository reselection before saving.
 
 ### Approved design A: floating composer and image editor
