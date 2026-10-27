@@ -46,18 +46,21 @@ const updateTabMenu = () => {
       item.menuItem.enabled = !!active && tabCommandAvailable(item, tabState);
 };
 const dispatchTabCommand = (request, focusedWindow, event) => {
-  if (
-    !dispatchReadyTabCommand(
-      request,
-      focusedWindow,
-      event,
-      window,
-      windowSession,
-      tabState,
-      stopping,
+  try {
+    if (
+      !dispatchReadyTabCommand(
+        request,
+        focusedWindow,
+        event,
+        window,
+        windowSession,
+        tabState,
+        stopping,
+      )
     )
-  ) {
-    log("lane_tab_command_rejected");
+      log("lane_tab_command_rejected");
+  } catch {
+    log("lane_tab_command_failed");
   }
 };
 const pendingRealQA = [];

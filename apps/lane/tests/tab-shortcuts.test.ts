@@ -177,4 +177,9 @@ test("host sends one command only to its focused, ready main session", () => {
   destroyed = true;
   assert.equal(deliver(owner), false);
   assert.equal(sent.length, 1);
+  destroyed = false;
+  owner.sendGlobalEvent = () => {
+    throw new Error("private renderer details");
+  };
+  assert.throws(() => deliver(owner), /private renderer details/);
 });
