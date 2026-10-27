@@ -183,13 +183,10 @@ export function packageDesktop(destination, identity = releaseIdentity()) {
     );
   mkdirSync(destination, { recursive: true });
   const name = `lane-desktop-${platform}-${identity.tag.replace("lane@", "")}.tar.gz`;
-  run("tar", [
-    "-czf",
-    resolve(destination, name),
-    "-C",
-    build,
-    mac ? "Lane.app" : "application",
-  ]);
+  // Use a relative archive name so GNU tar accepts Windows output paths.
+  run("tar", ["-czf", name, "-C", build, mac ? "Lane.app" : "application"], {
+    cwd: destination,
+  });
   writeFileSync(
     resolve(destination, `desktop-${platform}.json`),
     JSON.stringify(

@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -241,7 +241,10 @@ test("relative links resolve to files and headings", () => {
         : resolve(packageRoot, name);
       assert.ok(existsSync(targetName), `${name} links to missing ${target}`);
       if (anchor) {
-        const relative = targetName.slice(packageRoot.length + 1);
+        const relative = targetName
+          .slice(packageRoot.length + 1)
+          .split(sep)
+          .join("/");
         assert.ok(
           anchors(files[relative]).has(anchor),
           `${name} links to missing heading ${target}`,

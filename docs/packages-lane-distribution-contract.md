@@ -84,6 +84,8 @@ Installer/launcher errors identify platform/version and safe failure categories,
 
 ## Build and Test
 
+Archive creation, listing and extraction use relative archive names from the output directory so GNU tar accepts Windows drive paths. Guidance link validation normalizes native path separators before looking up Markdown headings.
+
 Windows packaging and smoke checks invoke npm's JavaScript entry with Node,
 without shell parsing of paths or arguments. Resolve that entry from the installed
 `npm.cmd` location; do not execute the command shim as a native executable.
