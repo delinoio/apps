@@ -38,8 +38,9 @@ await page.route("**/host.js", async (route) => {
   );
   body = body.replace(
     "view.onNativeModulesCall = async (name, data, moduleName) => {",
-    `const calls=[];let opens=0;let resetDone=false;let retried=false;const flags=new URLSearchParams(location.search);
+    `const calls=[];let opens=0;let resetDone=false;let retried=false;let resetMode='success';let releaseReset;const flags=new URLSearchParams(location.search);
 window.fixtureCalls=()=>({calls,opens});
+window.fixtureReset={mode(value){resetMode=value;},release(value){resetMode=value;releaseReset?.();}};
 view.onNativeModulesCall = async (name, data, moduleName) => {
 if(moduleName==='bridge') {
  const {module,method,args}=data;
@@ -51,7 +52,12 @@ if(moduleName==='bridge') {
  if(args[0]==='GetLocalStatus')return JSON.stringify({ok:true,response:{syncEnabled:true,pendingItemCount:'1',connected:true,itemErrors:flags.get('blocked')&&!retried?[{entityId:'task-1',reason:'CONSTRAINT_VIOLATION:PARENT_CYCLE'}]:[]}});
  if(args[0]==='RetryBlockedItems'){retried=true;return JSON.stringify({ok:true,response:{}});}
  if(args[0]==='GetNotificationPreferences')return JSON.stringify({ok:true,response:{enabled:false,content:1,permission:1}});
- if(args[0]==='ResetDevelopmentData'){resetDone=true;return JSON.stringify({ok:true,response:{completed:true}});}
+ if(args[0]==='ResetDevelopmentData'){
+  if(resetMode==='pending')await new Promise(resolve=>{releaseReset=resolve;});
+  if(resetMode==='busy')return JSON.stringify({ok:false,error:{reason:'STORAGE_BUSY',message:'Close other Lane windows.'}});
+  if(resetMode==='permission')return JSON.stringify({ok:false,error:{reason:'STORAGE_PERMISSION',message:'Storage permission denied.'}});
+  resetDone=true;return JSON.stringify({ok:true,response:{completed:true}});
+ }
  if(lists[args[0]])return JSON.stringify({ok:true,response:{items:[]}});
  return JSON.stringify({ok:false,error:{reason:'INVALID_INPUT',message:'Unexpected fixture call '+args[0]}});
  }
@@ -84,6 +90,44 @@ try {
   });
   assert.equal(await confirm.getAttribute("aria-disabled"), "true");
   const input = dialog.getByRole("textbox");
+  assert.equal(await dialog.getAttribute("role"), "dialog");
+  assert.equal(await dialog.getAttribute("aria-modal"), "true");
+  assert.equal(
+    await dialog.getAttribute("aria-label"),
+    "Reset development data?",
+  );
+  await page.waitForFunction(() =>
+    document
+      .querySelector("lynx-view")
+      ?.shadowRoot?.activeElement?.matches(
+        'x-input[data-dialog-default="true"]',
+      ),
+  );
+  assert.equal(
+    await input.evaluate(
+      (element) => element === element.getRootNode().activeElement,
+    ),
+    true,
+  );
+  for (const sentence of [
+    "Only reset disposable development data.",
+    "Permanent local deletion",
+    "This removes every repository, task, prompt, label, milestone, cycle, history, attachment and pending change in this local data space.",
+    "There is no recovery.",
+    "Server data is not deleted. This does not contact the server or sign you out.",
+    "An account-linked space will need explicit reconnection before sync resumes.",
+  ])
+    assert.equal(
+      (await dialog.getByText(sentence, { exact: false }).count()) > 0,
+      true,
+    );
+  assert.equal(
+    await dialog
+      .locator(".reset-actions .button")
+      .first()
+      .getAttribute("aria-label"),
+    "Cancel",
+  );
   await input.fill("reset");
   assert.equal(await confirm.getAttribute("aria-disabled"), "true");
   await page.keyboard.press("Escape");
@@ -100,6 +144,37 @@ try {
     "Reset development data",
   );
   assert.deepEqual(await resetCalls(), []);
+
+  for (const action of ["Cancel", "Close"]) {
+    await button("Reset development data").click();
+    await dialog.getByRole("button", { name: action, exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+    assert.deepEqual(await resetCalls(), []);
+    assert.equal(
+      await page
+        .locator("lynx-view")
+        .evaluate((view) =>
+          view.shadowRoot.activeElement?.getAttribute("aria-label"),
+        ),
+      "Reset development data",
+    );
+  }
+
+  await button("Reset development data").click();
+  for (const phrase of [
+    "",
+    "RESET DEVELOPMENT DATA",
+    "reset development",
+    "reset development datum",
+  ]) {
+    await dialog.getByRole("textbox").fill(phrase);
+    assert.equal(await confirm.getAttribute("aria-disabled"), "true");
+    assert.deepEqual(await resetCalls(), []);
+  }
+  await dialog.getByRole("textbox").fill("  reset development data  ");
+  await dialog.getByRole("textbox").press("Enter");
+  assert.deepEqual(await resetCalls(), []);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
 
   // The exact displayed text enables the destructive action; it sends the confirmation flag once.
   await button("Reset development data").click();
@@ -145,6 +220,66 @@ try {
     opensBefore,
   );
 
+  // Hold the bridge request to verify one submission and all pending controls.
+  await button("Settings").first().click();
+  await page.getByText("Development data", { exact: true }).waitFor();
+  await page.evaluate(() => window.fixtureReset.mode("pending"));
+  await button("Reset development data").click();
+  const heldInput = dialog.getByRole("textbox");
+  await heldInput.fill("  reset development data  ");
+  const callsBeforeHold = (await resetCalls()).length;
+  await dialog
+    .getByRole("button", { name: "Reset development data" })
+    .evaluate((button) => {
+      button.click();
+      button.click();
+    });
+  await page.waitForFunction(
+    (count) =>
+      window
+        .fixtureCalls()
+        .calls.filter((call) => call.method === "ResetDevelopmentData").length >
+      count,
+    callsBeforeHold,
+  );
+  for (const name of ["Resetting…", "Cancel", "Close"]) {
+    assert.equal(
+      await dialog
+        .getByRole("button", { name, exact: true })
+        .getAttribute("aria-disabled"),
+      "true",
+    );
+  }
+  assert.equal(await heldInput.getAttribute("disabled"), "");
+  assert.equal(
+    await dialog
+      .locator("[accessibility-live-region]")
+      .getAttribute("aria-live"),
+    "polite",
+  );
+  await page.keyboard.press("Escape");
+  assert.equal(await dialog.count(), 1);
+  await page.evaluate(() => window.fixtureReset.release("busy"));
+  await dialog
+    .getByText(
+      "Close other Lane windows, CLI or MCP handles, or stop the sync worker",
+      { exact: false },
+    )
+    .waitFor();
+  assert.equal(
+    await dialog.locator(".validation").getAttribute("role"),
+    "alert",
+  );
+  assert.equal(await heldInput.inputValue(), "  reset development data  ");
+  assert.equal((await resetCalls()).length, callsBeforeHold + 1);
+  await page.evaluate(() => window.fixtureReset.mode("permission"));
+  await dialog.getByRole("button", { name: "Reset development data" }).click();
+  await dialog
+    .getByText("Storage permission denied.", { exact: false })
+    .waitFor();
+  assert.equal(await heldInput.inputValue(), "  reset development data  ");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
   // Rejected synchronization items are explained, kept visible and retried explicitly.
   await page.goto(`${base}/?blocked=1`);
   await button("+ New task").waitFor();
@@ -170,18 +305,66 @@ try {
     .getByText("This data space cannot be opened", { exact: true })
     .waitFor();
   await page
+    .getByText("Your data has not been changed.", { exact: true })
+    .waitFor();
+  await page
+    .getByText("Lane cannot open this data format.", { exact: false })
+    .waitFor();
+  await page
+    .getByText(
+      "For a specific data space, use the existing CLI reset procedure.",
+      { exact: true },
+    )
+    .waitFor();
+  await page
     .getByText("Unsupported store format.", { exact: false })
     .first()
     .waitFor();
   assert.equal(await button("+ New task").count(), 0);
+  assert.equal((await resetCalls()).length, 0);
+  assert.equal(
+    await page.locator(".store-recovery .button.primary").count(),
+    0,
+  );
+  await page.setViewportSize({ width: 360, height: 560 });
+  await page.locator(".app.mobile").waitFor();
+  assert.equal(
+    await page
+      .locator(".store-recovery")
+      .evaluate(
+        (recovery) => recovery.getBoundingClientRect().right <= innerWidth,
+      ),
+    true,
+  );
   await button("Reset development data").click();
   const recoveryConfirm = dialog.getByRole("button", {
     name: "Reset development data",
     exact: true,
   });
   assert.equal(await recoveryConfirm.getAttribute("aria-disabled"), "true");
+  assert.equal(
+    await page
+      .getByText("Your data has not been changed.", { exact: true })
+      .getAttribute("aria-hidden"),
+    "true",
+  );
+  assert.equal(
+    await dialog
+      .locator(".reset-actions .button")
+      .first()
+      .getAttribute("aria-label"),
+    "Cancel",
+  );
+  assert.equal(
+    await dialog
+      .locator(".reset-actions .button")
+      .first()
+      .evaluate((node) => node.getBoundingClientRect().height >= 44),
+    true,
+  );
   await dialog.getByRole("textbox").fill("reset development data");
-  await recoveryConfirm.click();
+  await recoveryConfirm.focus();
+  await page.keyboard.press("Enter");
   await button("+ New task").waitFor();
   const unopened = (
     await page.evaluate(() => window.fixtureCalls())
@@ -190,7 +373,6 @@ try {
     { method: "ResetDevelopmentData", request: { confirmed: true } },
   ]);
 } catch (error) {
-  await page.screenshot({ path: "/tmp/lane-reset-failure.png" });
   console.error(errors);
   throw error;
 } finally {

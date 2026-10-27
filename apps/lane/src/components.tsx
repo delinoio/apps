@@ -84,6 +84,7 @@ export function Field({
   focus = false,
   error,
   help,
+  prefix,
 }: {
   label: string;
   value: string;
@@ -94,6 +95,7 @@ export function Field({
   // Validation message shown in text next to the field, never by color alone.
   error?: string;
   help?: string;
+  prefix?: ReactNode;
 }) {
   const [id] = useState(() => "field-" + Math.random().toString(36).slice(2));
   useEffect(() => {
@@ -116,6 +118,7 @@ export function Field({
   const props = {
     id,
     className: `input ${multiline ? "multiline" : ""}`,
+    "data-dialog-default": focus ? "true" : undefined,
     "accessibility-label": error ? `${label}. ${error}` : label,
     disabled,
     maxlength: 2147483647,
@@ -124,6 +127,7 @@ export function Field({
   return (
     <view className="field" data-invalid={error ? "true" : undefined}>
       <text className="label">{label}</text>
+      {prefix}
       {multiline ? <textarea {...props} /> : <input {...props} />}
       {help && !error && <text className="muted">{help}</text>}
       {error && <text className="validation">{error}</text>}
@@ -229,10 +233,14 @@ export function Dialog({
   title,
   children,
   onClose,
+  closeDisabled = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  closeDisabled?: boolean;
+  className?: string;
 }) {
   useEffect(() => {
     "background only";
@@ -245,13 +253,19 @@ export function Dialog({
     <view
       className="overlay"
       global-bindkeydown={(e) => {
-        if (e.key === "Escape") onClose();
+        if (e.key === "Escape" && !closeDisabled) onClose();
       }}
     >
-      <view className="dialog" accessibility-label={title}>
-        <view className="row between">
+      <view
+        className={`dialog ${className}`}
+        accessibility-element
+        accessibility-label={title}
+      >
+        <view className="row between dialog-header">
           <text className="heading">{title}</text>
-          <Button onClick={onClose}>Close</Button>
+          <Button disabled={closeDisabled} onClick={onClose}>
+            Close
+          </Button>
         </view>
         <scroll-view className="dialog-scroll" scroll-orientation="vertical">
           {children}

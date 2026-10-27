@@ -14,10 +14,23 @@ export function installAccessibility(view) {
   let previousCommand;
   const pendingAnnouncements = new WeakSet();
   const wired = new WeakSet();
+  const resetDefaultFocused = new WeakSet();
+  const modalHidden = new Map();
+  const queryAllDeep = (node, selector) => {
+    const found = [];
+    for (const child of node.children || []) {
+      if (child.matches?.(selector)) found.push(child);
+      if (child.shadowRoot)
+        found.push(...queryAllDeep(child.shadowRoot, selector));
+      found.push(...queryAllDeep(child, selector));
+    }
+    return found;
+  };
   const focusables = (root) =>
-    [
-      ...root.querySelectorAll('x-view[role="button"], x-input, x-textarea'),
-    ].filter(
+    (root.classList?.contains("reset-dialog")
+      ? queryAllDeep(root, 'x-view[role="button"], x-input, x-textarea')
+      : [...root.querySelectorAll('x-view[role="button"], x-input, x-textarea')]
+    ).filter(
       (e) =>
         e.getAttribute("aria-disabled") !== "true" &&
         !e.hasAttribute("disabled"),
@@ -189,10 +202,60 @@ export function installAccessibility(view) {
       notice.setAttribute("role", "status");
       notice.setAttribute("aria-live", "polite");
     }
+    for (const live of root.querySelectorAll("[accessibility-live-region]")) {
+      live.setAttribute("role", "status");
+      live.setAttribute(
+        "aria-live",
+        live.getAttribute("accessibility-live-region"),
+      );
+    }
     const dialogs = [...root.querySelectorAll(".dialog")].filter(
       (dialog) => !dialog.closest('[data-active-tab="false"]'),
     );
     const dialog = dialogs[dialogs.length - 1];
+    if (dialog?.classList.contains("reset-dialog")) {
+      for (const element of queryAllDeep(dialog, "[accessibility-label]"))
+        element.setAttribute(
+          "aria-label",
+          element.getAttribute("accessibility-label"),
+        );
+      for (const message of queryAllDeep(dialog, ".validation"))
+        message.setAttribute("role", "alert");
+      for (const live of queryAllDeep(dialog, "[accessibility-live-region]")) {
+        live.setAttribute("role", "status");
+        live.setAttribute(
+          "aria-live",
+          live.getAttribute("accessibility-live-region"),
+        );
+      }
+    }
+    const hiddenByModal = new Set();
+    for (
+      let node = dialog?.classList.contains("reset-dialog") ? dialog : null;
+      node && node !== root;
+      node = node.parentNode || node.host
+    ) {
+      for (const sibling of node.parentNode?.children || []) {
+        if (sibling !== node) hiddenByModal.add(sibling);
+      }
+    }
+    for (const [node, previous] of modalHidden) {
+      if (hiddenByModal.has(node)) continue;
+      node.inert = previous.inert;
+      if (previous.ariaHidden === null) node.removeAttribute("aria-hidden");
+      else node.setAttribute("aria-hidden", previous.ariaHidden);
+      modalHidden.delete(node);
+    }
+    for (const node of hiddenByModal) {
+      if (!modalHidden.has(node))
+        modalHidden.set(node, {
+          inert: node.inert,
+          ariaHidden: node.getAttribute("aria-hidden"),
+        });
+      if (!node.inert) node.inert = true;
+      if (node.getAttribute("aria-hidden") !== "true")
+        node.setAttribute("aria-hidden", "true");
+    }
     if (dialog !== previousDialog) {
       if (dialog) {
         if (!previousDialog)
@@ -212,6 +275,24 @@ export function installAccessibility(view) {
         else focus(root.querySelector("#lane-workspace"));
       }
       previousDialog = dialog;
+    }
+    if (
+      dialog?.classList.contains("reset-dialog") &&
+      !resetDefaultFocused.has(dialog)
+    ) {
+      resetDefaultFocused.add(dialog);
+      let attempts = 0;
+      const focusWhenReady = () => {
+        if (!dialog.isConnected || previousDialog !== dialog) return;
+        const defaultField = queryAllDeep(
+          dialog,
+          'x-input[data-dialog-default="true"]',
+        )[0];
+        const input = defaultField?.shadowRoot?.querySelector("input");
+        if (input) focus(input);
+        else if (attempts++ < 30) requestAnimationFrame(focusWhenReady);
+      };
+      requestAnimationFrame(focusWhenReady);
     }
     const command = root.querySelector(".command-selected");
     if (command !== previousCommand) {
@@ -370,8 +451,16 @@ export function installAccessibility(view) {
     );
     root.addEventListener("focusin", (event) => {
       const target = event.composedPath()[0];
-      if (target instanceof Element && !target.closest(".dialog"))
-        lastOutside = target.closest("x-view.button") || target;
+      if (
+        !(target instanceof Element) ||
+        event.composedPath().includes(previousDialog)
+      )
+        return;
+      if (previousDialog?.classList.contains("reset-dialog")) {
+        focus(focusables(previousDialog)[0]);
+        return;
+      }
+      lastOutside = target.closest("x-view.button") || target;
     });
     // Activation (pointer or keyboard) names the trigger precisely, even when the
     // button is not the element that received focus.
