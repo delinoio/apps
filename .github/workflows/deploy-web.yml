@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         app: ${{ fromJSON(inputs.apps) }}
-    environment: ${{ matrix.app == 'devbase' && 'devbase-production' || matrix.app == 'delitools' && 'delitools-production' || 'delino-site-production' }}
+    environment: delino-site-production
     concurrency:
       group: release-web-${{ matrix.app }}
       cancel-in-progress: false
@@ -32,16 +32,14 @@ jobs:
           lfs: true
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-node
-      - name: Validate deployment configuration
+      - name: Prepare the selected Pages project
+        id: config
         env:
+          WEB_APP: ${{ matrix.app }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || 'CLOUDFLARE_PAGES_PROJECT'] }}
-        run: |
-          set -euo pipefail
-          test -n "$CLOUDFLARE_API_TOKEN"
-          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-f0-9]{32}$ ]]
-          [[ "$CLOUDFLARE_PAGES_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,57}$ ]]
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || matrix.app == 'devbase' && 'CLOUDFLARE_PAGES_PROJECT_DEVBASE' || 'CLOUDFLARE_PAGES_PROJECT_DELITOOLS'] }}
+        run: node "scripts/release/web.mjs"
       - name: Install locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate and build the selected web application
@@ -72,7 +70,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.151.1"
-          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ vars[matrix.app == 'delino-site' && 'CLOUDFLARE_PAGES_PROJECT_SITE' || matrix.app == 'delino-docs' && 'CLOUDFLARE_PAGES_PROJECT_DOCS' || matrix.app == 'git-tracker' && 'CLOUDFLARE_PAGES_PROJECT_GIT_TRACKER' || matrix.app == 'lane' && 'CLOUDFLARE_PAGES_PROJECT_LANE' || 'CLOUDFLARE_PAGES_PROJECT'] }} --branch=main --commit-hash=${{ inputs.revision }}
+          command: pages deploy "apps/${{ matrix.app }}/dist" --project-name=${{ steps.config.outputs.project }} --branch=main --commit-hash=${{ inputs.revision }}
       - name: Remove generated frontend output
         if: always()
         run: rm -rf "apps/${{ matrix.app }}/dist"

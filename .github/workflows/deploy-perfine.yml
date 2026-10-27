@@ -193,7 +193,7 @@ jobs:
     needs: [source, build, prepare-set]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: perfine-production
+    environment: release-publish
     permissions:
       contents: write
       id-token: write

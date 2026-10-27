@@ -181,3 +181,28 @@ test("shared protocol records include Rust server consumers outside the npm grap
   ]);
   assert.deepEqual(Object.keys(result.changes), ["protos/package.json"]);
 });
+
+test("release credentials stay in the three repository-wide environments", () => {
+  const workflow = (name) => yaml.load(read(`.github/workflows/${name}.yml`));
+  const web = workflow("deploy-web").jobs.deploy;
+  assert.equal(web.environment, "delino-site-production");
+  assert.equal(
+    workflow("deploy-perfine").jobs.publish.environment,
+    "release-publish",
+  );
+  const mobile = workflow("deploy-delitools-mobile").jobs;
+  for (const platform of ["android", "ios"]) {
+    assert.equal(mobile[platform].environment, "release-signing");
+    assert.equal(mobile[`${platform}-publish`].environment, "release-publish");
+    assert.equal(mobile[`${platform}-publish`].needs, platform);
+  }
+  const prepare = web.steps.find((step) => step.id === "config");
+  assert.equal(
+    prepare.env.CLOUDFLARE_API_TOKEN,
+    "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+  );
+  const deploy = web.steps.find((step) =>
+    step.name?.startsWith("Deploy the release build"),
+  );
+  assert.match(deploy.with.command, /steps.config.outputs.project/);
+});

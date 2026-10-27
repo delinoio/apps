@@ -20,7 +20,7 @@ The title is `DeliTools`; the application identifier is `io.delino.delitools`. D
 
 The shared frontend also runs as a standalone web application. Cloudflare Pages builds it from the repository root with `pnpm --filter @apps/delitools build` and publishes `apps/delitools/dist`. Include root `LICENSE` and `NOTICE` in web distributions. Domain binding and deployment require separate platform configuration. Billable tools use server-side delcore authorization and metering; the scaffold does not implement billing or API clients, and the DeliTools API server is not part of the application build or release.
 
-Web publication uses `.github/workflows/release.yml` and the `delitools-production` environment after shared release preparation. The selected app release calls reusable web and mobile workflows at the same commit. Mobile distribution uses the release workflow run number as its build number and builds both platforms without store uploads; the component tag follows successful completion. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
+Web publication uses `.github/workflows/release.yml` and the shared `delino-site-production` environment (optional Pages project override `CLOUDFLARE_PAGES_PROJECT_DELITOOLS`) after shared release preparation. The selected app release calls reusable web and mobile workflows at the same commit. Mobile distribution uses the release workflow run number as its build number and builds both platforms without store uploads; the component tag follows successful completion. Follow the [release procedure](repository-workflow-contract.md#native-publication-handoff).
 
 ## Storage
 
@@ -28,9 +28,9 @@ There is no product data. Native build projects under `src-tauri/gen` and fronte
 
 ## Security
 
-No application capabilities are granted. Desktop retains CEF's required sandbox on macOS/Linux and its upstream automatic-policy limitation on Windows. Mobile release secrets are supplied through the `delitools-mobile` GitHub environment, never committed or included in artifacts. Release dispatch is main-only. Store submission is opt-in and targets Google Play internal testing and TestFlight, not public production release.
+No application capabilities are granted. Desktop retains CEF's required sandbox on macOS/Linux and its upstream automatic-policy limitation on Windows. Mobile signing secrets are supplied through the repository-wide `release-signing` GitHub environment; separate store upload jobs use `release-publish`, never committed or included in artifacts. Release dispatch is main-only. Store submission is opt-in and targets Google Play internal testing and TestFlight, not public production release.
 
-The environment supplies Android secrets `DELITOOLS_ANDROID_KEYSTORE_B64`, `DELITOOLS_ANDROID_KEYSTORE_PASSWORD`, `DELITOOLS_ANDROID_KEY_ALIAS`, `DELITOOLS_ANDROID_KEY_PASSWORD`, and `DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`. The protected `DELITOOLS_ANDROID_CERTIFICATE_SHA256` variable pins the SHA-256 fingerprint of the registered Android upload certificate; both build-only and publishing modes reject a different signer before retaining the candidate. iOS uses `APPLE_API_ISSUER`, `APPLE_API_KEY_ID`, `APPLE_API_PRIVATE_KEY_B64` and the `DELITOOLS_APPLE_TEAM_ID` variable. Maintainers must register the application in both stores, enroll Play App Signing, configure the upload certificate and give the service account access to this app. Initial Google Play setup and store agreements remain account-side prerequisites.
+The shared signing environment supplies Android secrets `DELITOOLS_ANDROID_KEYSTORE_B64`, `DELITOOLS_ANDROID_KEYSTORE_PASSWORD`, `DELITOOLS_ANDROID_KEY_ALIAS`, `DELITOOLS_ANDROID_KEY_PASSWORD`. The shared publishing environment supplies `DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`. The protected `DELITOOLS_ANDROID_CERTIFICATE_SHA256` variable pins the SHA-256 fingerprint of the registered Android upload certificate; both build-only and publishing modes reject a different signer before retaining the candidate. iOS uses `APPLE_API_ISSUER`, `APPLE_API_KEY_ID`, `APPLE_API_PRIVATE_KEY_B64` and the shared `APPLE_TEAM_ID` secret. Maintainers must register the application in both stores, enroll Play App Signing, configure the upload certificate and give the service account access to this app. Initial Google Play setup and store agreements remain account-side prerequisites.
 
 ## Logging
 
@@ -48,7 +48,7 @@ Android release preparation installs SDK platform `platforms;android-37.0`, Buil
 
 `@packages/ui` supplies optional shared components and PostCSS configuration. Follow [the shared UI contract](packages-ui-foundation.md) for stylesheet imports and component adoption.
 
-Use the shared verified Tauri CLI wrapper. CEF notices remain attached to desktop packaging. Android requires Java 17, the Android SDK and NDK; iOS requires Xcode and an Apple Developer team. The release job explicitly selects the hosted image's Xcode 26.3 through `DEVELOPER_DIR` and verifies the iOS 26 SDK before project generation; it does not use the macOS image's default Xcode. Store uploads use Google's Android Publisher API and Apple's altool.
+Use the shared verified Tauri CLI wrapper. CEF notices remain attached to desktop packaging. Android requires Java 17, the Android SDK and NDK; iOS requires Xcode and an Apple Developer team. The release job explicitly selects the hosted image's Xcode 26.3 through `DEVELOPER_DIR` and verifies the iOS 26 SDK before project generation; it does not use the macOS image's default Xcode. Store uploads use Google's Android Publisher API and Apple's altool from separate `release-publish` jobs after downloading the signed build artifacts. Apple API credentials required for provisioning belong to `release-signing`; credentials for TestFlight upload belong to `release-publish`.
 
 ## Change Triggers
 

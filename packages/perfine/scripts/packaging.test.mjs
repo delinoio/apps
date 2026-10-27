@@ -237,7 +237,7 @@ test("release pipeline is manual, opt-in, protected and separates build from pub
   assert.match(text, /workflow_call:/);
   assert.doesNotMatch(text, /^  (push|pull_request):/m);
   assert.match(text, /default: false/);
-  assert.match(text, /environment: perfine-production/);
+  assert.match(text, /environment: release-publish/);
   assert.match(text, /if: inputs.publish/);
   assert.doesNotMatch(text, /--force|--clobber/);
   for (const path of [".github/workflows/deploy-perfine.yml"]) {

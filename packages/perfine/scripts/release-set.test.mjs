@@ -201,7 +201,7 @@ test("only owning manual release admits macOS and publication requires the compl
     "build",
     "prepare-set",
   ]);
-  assert.equal(workflow.jobs.publish.environment, "perfine-production");
+  assert.equal(workflow.jobs.publish.environment, "release-publish");
   const steps = workflow.jobs.publish.steps;
   const preflight = steps.findIndex((x) => x.run?.includes(" preflight "));
   const action = steps.findIndex((x) => x.run?.includes(" publish-action"));

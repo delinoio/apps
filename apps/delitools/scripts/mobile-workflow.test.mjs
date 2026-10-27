@@ -25,11 +25,21 @@ test("DeliTools release is main-only, serialized and uses protected test-channel
   for (const platform of ["ios", "android"]) {
     const job = workflow.jobs[platform];
     assert.equal(job.needs, "preflight");
-    assert.equal(job.environment, "delitools-mobile");
-    const publish = job.steps.find((step) =>
-      step.name?.startsWith("Upload to"),
+    assert.equal(job.environment, "release-signing");
+    const publishing = workflow.jobs[`${platform}-publish`];
+    assert.equal(publishing.environment, "release-publish");
+    assert.equal(publishing.needs, platform);
+    assert.match(publishing.if, /inputs.publish/);
+    assert.ok(!job.steps.some((step) => step.name?.startsWith("Upload to")));
+    const download = publishing.steps.find((step) =>
+      step.uses?.startsWith("actions/download-artifact@"),
     );
-    assert.equal(publish.if, "${{ inputs.publish }}");
+    assert.equal(
+      download.with.name,
+      "delitools-" +
+        platform +
+        "-${{ inputs.build_number }}-${{ inputs.revision }}",
+    );
     const cleanup = job.steps.find(
       (step) => step.name === "Remove signing material",
     );
@@ -37,7 +47,6 @@ test("DeliTools release is main-only, serialized and uses protected test-channel
     const upload = job.steps.find((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
-    assert.ok(job.steps.indexOf(upload) < job.steps.indexOf(publish));
     assert.equal(upload.with.path, "mobile-artifacts/");
     assert.equal(upload.with["if-no-files-found"], "error");
   }
