@@ -78,12 +78,22 @@ async function assertDraftRetained(page) {
     await field(page, "Prompt Markdown").inputValue(),
     retained.prompt,
   );
+  const narrow = page.viewportSize().width < 900;
+  if (narrow) await page.getByRole("button", { name: /^Tabs \(/ }).click();
   await button(page, `Close ${retained.title}`).click();
   await page
     .getByRole("dialog", { name: "Discard unsaved changes?" })
     .waitFor();
   await page.keyboard.press("Escape");
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?", exact: true })
+    .waitFor({ state: "hidden" });
+  if (narrow) {
+    await page.keyboard.press("Escape");
+    await page
+      .getByRole("dialog", { name: "Open tabs", exact: true })
+      .waitFor({ state: "hidden" });
+  }
   assert.equal(await field(page, "Title").inputValue(), retained.title);
 }
 const requestCount = async () => (await control("")).length;

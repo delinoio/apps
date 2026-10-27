@@ -1027,3 +1027,8 @@ text {
 .miniapp-card .app-icon image {
   border-radius: 8px;
 }
+
+.tab-sidebar-scroll {
+  width: 100%;
+  height: 100%;
+}

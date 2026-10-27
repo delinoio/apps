@@ -55,112 +55,118 @@ export function TabBar({
       .invoke({ method: "setFocus", params: { focus: true } })
       .exec();
   };
+  // The outer scroller handles short windows; the minimum keeps tab rows
+  // reachable between the header and utility actions.
   return (
-    <scroll-view
+    <view
       className="tab-sidebar"
-      scroll-orientation="vertical"
       bindlayoutchange={(event) => setHeight(event.detail.height)}
     >
-      <view
-        className="tab-bar"
-        style={{ height: `${Math.max(height, 360)}px` }}
-      >
-        <view className="tab-heading">
-          <text className="heading">Tabs</text>
-          <Button primary label="New tab" onClick={create}>
-            + New tab
-          </Button>
-        </view>
-        <scroll-view
-          className="tab-scroll"
-          accessibility-label="Workspace tabs"
-          scroll-orientation="vertical"
-          scroll-to-index={Math.max(0, index)}
+      <scroll-view className="tab-sidebar-scroll" scroll-orientation="vertical">
+        <view
+          className="tab-bar"
+          style={{ height: `${Math.max(height, 360)}px` }}
         >
-          {tabs.map((tab) => {
-            const report = reports[tab.id];
-            const title = report?.title || tab.target.label;
-            const active = tab.id === selected;
-            return (
-              <view
-                className={`workspace-tab ${active ? "selected" : ""}`}
-                key={tab.id}
-              >
+          <view className="tab-heading">
+            <text className="heading">Tabs</text>
+            <Button primary label="New tab" onClick={create}>
+              + New tab
+            </Button>
+          </view>
+          <scroll-view
+            className="tab-scroll"
+            accessibility-label="Workspace tabs"
+            scroll-orientation="vertical"
+            scroll-to-index={Math.max(0, index)}
+          >
+            {tabs.map((tab) => {
+              const report = reports[tab.id];
+              const title = report?.title || tab.target.label;
+              const active = tab.id === selected;
+              return (
                 <view
-                  id={`tab-${tab.id}`}
-                  className="button tab-select"
-                  data-workspace-tab={tab.id}
-                  data-tab-selected={String(active)}
-                  data-tab-focus={String(tab.id === focused)}
-                  accessibility-element
-                  accessibility-traits="button"
-                  accessibility-label={`${title}${report?.dirty ? ", Unsaved changes" : ""}`}
-                  accessibility-value={active ? "Selected" : ""}
-                  focusable={tab.id === focused}
-                  bindtap={() => select(tab.id)}
-                  bindkeydown={(event) => {
-                    if (NativeModules.LaneOnline) return;
-                    if (
-                      ["ArrowUp", "ArrowDown", "Home", "End"].includes(
-                        event.key,
-                      )
-                    )
-                      moveFocus(tab.id, event.key);
-                    else if (event.key === "Enter" || event.key === " ")
-                      select(tab.id);
-                  }}
+                  className={`workspace-tab ${active ? "selected" : ""}`}
+                  key={tab.id}
                 >
-                  {tab.target.kind === TabKind.NewTab ? (
-                    <text className="tab-symbol">+</text>
-                  ) : (
-                    <AppIcon app={tab.target.app ?? MiniApp.Lane} />
-                  )}
-                  <text
-                    className="tab-title"
-                    text-maxline={fullTitles ? undefined : "1"}
-                  >
-                    {`${title}${fullTitles && report?.dirty ? " · Unsaved changes" : ""}`}
-                  </text>
-                  {report?.dirty && (
-                    <view className="tab-dirty" accessibility-elements-hidden />
-                  )}
                   <view
-                    className="tab-tooltip"
-                    accessibility-elements-hidden
-                    user-interaction-enabled={false}
+                    id={`tab-${tab.id}`}
+                    className="button tab-select"
+                    data-workspace-tab={tab.id}
+                    data-tab-selected={String(active)}
+                    data-tab-focus={String(tab.id === focused)}
+                    accessibility-element
+                    accessibility-traits="button"
+                    accessibility-label={`${title}${report?.dirty ? ", Unsaved changes" : ""}`}
+                    accessibility-value={active ? "Selected" : ""}
+                    focusable={tab.id === focused}
+                    bindtap={() => select(tab.id)}
+                    bindkeydown={(event) => {
+                      if (NativeModules.LaneOnline) return;
+                      if (
+                        ["ArrowUp", "ArrowDown", "Home", "End"].includes(
+                          event.key,
+                        )
+                      )
+                        moveFocus(tab.id, event.key);
+                      else if (event.key === "Enter" || event.key === " ")
+                        select(tab.id);
+                    }}
                   >
-                    <text>
-                      {title}
-                      {report?.dirty ? " · Unsaved changes" : ""}
+                    {tab.target.kind === TabKind.NewTab ? (
+                      <text className="tab-symbol">+</text>
+                    ) : (
+                      <AppIcon app={tab.target.app ?? MiniApp.Lane} />
+                    )}
+                    <text
+                      className="tab-title"
+                      text-maxline={fullTitles ? undefined : "1"}
+                    >
+                      {`${title}${fullTitles && report?.dirty ? " · Unsaved changes" : ""}`}
                     </text>
+                    {report?.dirty && (
+                      <view
+                        className="tab-dirty"
+                        accessibility-elements-hidden
+                      />
+                    )}
+                    <view
+                      className="tab-tooltip"
+                      accessibility-elements-hidden
+                      user-interaction-enabled={false}
+                    >
+                      <text>
+                        {title}
+                        {report?.dirty ? " · Unsaved changes" : ""}
+                      </text>
+                    </view>
                   </view>
+                  <Button
+                    label={`Close ${title}`}
+                    disabled={report?.busy}
+                    onClick={() => close(tab.id)}
+                  >
+                    ×
+                  </Button>
                 </view>
-                <Button
-                  label={`Close ${title}`}
-                  disabled={report?.busy}
-                  onClick={() => close(tab.id)}
-                >
-                  ×
-                </Button>
-              </view>
-            );
-          })}
-        </scroll-view>
-        <view className="tab-actions">
-          <Button
-            label="Account & sync"
-            onClick={() => openSettings(SettingsSection.Account)}
-          >
-            Account & sync
-          </Button>
-          <Button
-            label="App settings"
-            onClick={() => openSettings(SettingsSection.Notifications)}
-          >
-            App settings
-          </Button>
+              );
+            })}
+          </scroll-view>
+          <view className="tab-actions">
+            <Button
+              label="Account & sync"
+              onClick={() => openSettings(SettingsSection.Account)}
+            >
+              Account & sync
+            </Button>
+            <Button
+              label="App settings"
+              onClick={() => openSettings(SettingsSection.Notifications)}
+            >
+              App settings
+            </Button>
+          </view>
         </view>
-      </view>
-    </scroll-view>
+      </scroll-view>
+    </view>
   );
 }
