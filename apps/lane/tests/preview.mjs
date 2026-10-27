@@ -303,11 +303,23 @@ createServer(async (req, res) => {
       return;
     }
     if (planning && url.pathname === "/test/plan") {
-      const body = JSON.parse(url.searchParams.get("body") || "{}");
+      const source =
+        req.method === "POST"
+          ? await new Promise((resolve) => {
+              let data = "";
+              req.on("data", (chunk) => (data += chunk));
+              req.on("end", () => resolve(data));
+            })
+          : url.searchParams.get("body");
+      const body = JSON.parse(source || "{}");
       if (body.failNext) planning.failNext = body.failNext;
       if (body.delayMs !== undefined) planning.delayMs = body.delayMs;
       if ("conflictTask" in body) planning.conflictTask = body.conflictTask;
       if ("heads" in body) planning.heads = body.heads;
+      if ("proposalTasks" in body) {
+        planning.tasks = body.proposalTasks;
+        planning.proposalMode = true;
+      }
       res.end("{}");
       return;
     }

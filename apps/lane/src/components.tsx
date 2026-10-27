@@ -166,6 +166,112 @@ export function Choices<T extends string | number>({
     </view>
   );
 }
+export function MenuChoices<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  const [id] = useState(() => "menu-" + Math.random().toString(36).slice(2));
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(0);
+  const current = options.findIndex(([option]) => option === value);
+  const focus = (index: number) => {
+    "background only";
+    lynx
+      .createSelectorQuery()
+      .select(`#${id}-option-${index}`)
+      .invoke({ method: "setFocus", params: { focus: true } })
+      .exec();
+  };
+  const restore = () => {
+    "background only";
+    setOpen(false);
+    lynx
+      .createSelectorQuery()
+      .select(`#${id}-trigger`)
+      .invoke({ method: "setFocus", params: { focus: true } })
+      .exec();
+  };
+  const show = () => {
+    "background only";
+    if (disabled) return;
+    const index = Math.max(0, current);
+    setFocused(index);
+    setOpen(true);
+  };
+  useEffect(() => {
+    "background only";
+    if (open) focus(focused);
+  }, [open, focused]);
+  const select = (option: T) => {
+    onChange(option);
+    restore();
+  };
+  return (
+    <view className="field menu-field">
+      <text className="label">{label}</text>
+      <view
+        id={`${id}-trigger`}
+        className={`button menu-trigger ${disabled ? "disabled" : ""}`}
+        data-expanded={String(open)}
+        accessibility-element
+        accessibility-traits="button"
+        accessibility-label={`${label}: ${options[current]?.[1] ?? ""}`}
+        accessibility-value={
+          disabled ? "Disabled" : open ? "Expanded" : "Collapsed"
+        }
+        focusable={!disabled}
+        bindtap={() => (open ? restore() : show())}
+        bindkeydown={(event) => {
+          if (event.key === "Enter" || event.key === " ")
+            open ? restore() : show();
+        }}
+      >
+        <text>{options[current]?.[1] ?? ""}</text>
+        <text accessibility-elements-hidden>⌄</text>
+      </view>
+      {open && (
+        <view className="menu-options" accessibility-label={label}>
+          {options.map(([option, title], index) => (
+            <view
+              id={`${id}-option-${index}`}
+              className={`button menu-option ${option === value ? "menu-selected" : ""}`}
+              key={option}
+              accessibility-element
+              accessibility-traits="button"
+              accessibility-label={`${label}: ${title}`}
+              accessibility-value={option === value ? "Selected" : undefined}
+              focusable
+              bindtap={() => select(option)}
+              bindkeydown={(event) => {
+                if (event.key === "Escape") restore();
+                else if (event.key === "Enter" || event.key === " ")
+                  select(option);
+                else if (event.key === "ArrowDown" || event.key === "ArrowUp")
+                  setFocused(
+                    (index +
+                      (event.key === "ArrowDown" ? 1 : -1) +
+                      options.length) %
+                      options.length,
+                  );
+              }}
+            >
+              <text>{title}</text>
+            </view>
+          ))}
+        </view>
+      )}
+    </view>
+  );
+}
 // Multi-select chips: every option exposes its own pressed state.
 export function MultiChoices({
   label,
