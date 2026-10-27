@@ -199,13 +199,18 @@ for (const key of selectedPlatforms) {
     cwd: platformStage,
     stdio: "inherit",
   });
-  execFileSync("tar", [
-    "-czf",
-    resolve(dist, `${directory}-${pkg.version}.tar.gz`),
-    "-C",
-    resolve(dist, "artifacts"),
-    directory,
-  ]);
+  // GNU tar treats drive-qualified archive names as remote hosts on Windows.
+  execFileSync(
+    "tar",
+    [
+      "-czf",
+      `${directory}-${pkg.version}.tar.gz`,
+      "-C",
+      "artifacts",
+      directory,
+    ],
+    { cwd: dist },
+  );
 }
 writeFileSync(
   resolve(stage, "manifest.json"),

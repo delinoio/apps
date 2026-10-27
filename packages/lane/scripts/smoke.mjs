@@ -68,8 +68,8 @@ try {
   );
   const launcherEntries = execFileSync(
     "tar",
-    ["-tzf", resolve(source, "dist", `delinoio-lane-${version}.tgz`)],
-    { encoding: "utf8" },
+    ["-tzf", `delinoio-lane-${version}.tgz`],
+    { cwd: resolve(source, "dist"), encoding: "utf8" },
   );
   assert.doesNotMatch(
     launcherEntries,
@@ -102,12 +102,11 @@ try {
     );
     const packedPlatform = resolve(temporary, `packed-${key}`);
     mkdirSync(packedPlatform);
-    execFileSync("tar", [
-      "-xzf",
-      resolve(source, "dist", `delinoio-lane-${key}-${version}.tgz`),
-      "-C",
-      packedPlatform,
-    ]);
+    execFileSync(
+      "tar",
+      ["-xzf", `delinoio-lane-${key}-${version}.tgz`, "-C", packedPlatform],
+      { cwd: resolve(source, "dist") },
+    );
     assert.deepEqual(
       readFileSync(resolve(packedPlatform, "package", entry.path)),
       bytes,
@@ -118,8 +117,11 @@ try {
       "THIRD_PARTY_NOTICES/modules.json",
     ])
       assert.ok(lstatSync(resolve(packedPlatform, "package", notice)).isFile());
-    const archive = resolve(source, "dist", `lane-${key}-${version}.tar.gz`);
-    const entries = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
+    const archive = `lane-${key}-${version}.tar.gz`;
+    const entries = execFileSync("tar", ["-tzf", archive], {
+      cwd: resolve(source, "dist"),
+      encoding: "utf8",
+    })
       .trim()
       .split("\n");
     assert.ok(
@@ -140,7 +142,9 @@ try {
       assert.ok(entries.includes(`lane-${key}/${required}`), required);
     const extracted = resolve(temporary, key);
     mkdirSync(extracted);
-    execFileSync("tar", ["-xzf", archive, "-C", extracted]);
+    execFileSync("tar", ["-xzf", archive, "-C", extracted], {
+      cwd: resolve(source, "dist"),
+    });
     const binary = resolve(
       extracted,
       `lane-${key}`,
